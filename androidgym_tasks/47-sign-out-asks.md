@@ -5,11 +5,11 @@
 - Shell · Android 16e Sign out? with unconfirmed changes: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1127) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1257)
 - System parts: the M3 kit Basic dialog (16e adds a third action); destructive actions in the M3 error role.
 
-**Today** (paths start with `platform/` = `apps/android/platform/src/main/kotlin/works/windmill/platform/`, `gym/` = `apps/android/gym/src/main/kotlin/works/windmill/gym/`, `sync/` = `apps/android/sync-engine/src/main/kotlin/works/windmill/sync/engine/`)
-- **Sign out** in You signs out at once, with no question (`platform/you/YouSheet.kt:101-121`, then `AuthStore.signOut`, `platform/auth/Auth.kt:214-230`, which calls the lifecycle's `signOut`).
-- The gym's lifecycle always keeps unconfirmed changes: `GymEngineSession.signOut` opens the engine's sign-out and finishes it with `SignOutChoice.keep` (`gym/store/GymEngineSession.kt:116-124`), then emits `gym_sign_out` `action=keep`.
-- The engine already offers what the dialog needs: `SyncRuntime.signOut()` returns a `SignOutSession` with `unsent` (ready + sent + pending), `finish(keep | discard)` and `cancel()` (`sync/Lifecycle.kt:39-55`).
-- A failed sign-out says *Sign-out could not be saved. Your work is still on this phone. Try again.* (`platform/you/YouSheet.kt:112`).
+**Implementation**
+- You opens the engine’s held sign-out question and displays its unconfirmed count. Cancel restores the current account; Keep and Discard finish only the prepared original account.
+- AuthStore retains the question across UI recreation. It persists the exact account and confirmed choice before engine completion, then persists cleanup owed before clearing credentials. Restart recovery never replaces Discard with Keep or signs out a newer account.
+- The transition fences product writes at entry and commit, notification actions and ordinary sync workers. Only the already-accepted workout controls drain before the held count. Startup recovery runs before runtime launch, token pruning and held-release workers.
+- Native Dark/Daylight acceptance and collector verification remain pending; this source is not marked in production.
 
 **Change**
 - **Sign out** opens the engine's sign-out first and reads `unsent`, then asks:
@@ -17,7 +17,7 @@
   - 16e, `unsent` > 0: *Sign out?* / *3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.* (*{n} changes* / *1 change hasn’t*) / **Cancel** · **Discard** (error role) · **Keep**.
 - **Sign out** and **Keep** finish with `keep`: the changes stay hidden on this phone and are sent at this account's next sign-in. **Discard** finishes with `discard`: they are deleted from this phone only; a change already sent may already be in the account, so no word says *for good*.
 - **Cancel** cancels the engine's sign-out and leaves the lifter signed in, with You still open.
-- Only then does `AuthStore.signOut` end the session. Move the choice through the `AuthLifecycle` so the platform sheet asks and the gym session finishes with the lifter's answer; the platform stays product-neutral.
+- `AuthStore` ends the saved account only after the confirmed engine choice succeeds. `AuthLifecycle` carries the held question and choice; the platform stays product-neutral.
 - The dialog survives recreation (a mode switch keeps it up with the same count).
 
 **Out of scope:** You's rows (46); Delete account (48); the journal (Android carries the gym only).

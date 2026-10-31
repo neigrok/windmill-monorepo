@@ -36,6 +36,7 @@ internal class EngineRoomFixture(
     private val telemetry: Telemetry = Telemetry.None,
     private val workoutClock: WorkoutClock? = null,
     private val workoutAuthority: (String?) -> Boolean = { true },
+    private val writeAuthority: () -> Boolean = { true },
     private val localCoach: LocalCoach? = null,
     private val elapsedNanos: () -> Long = System::nanoTime,
     private val mintRoutine: () -> String = Ids::routine,
@@ -82,7 +83,7 @@ internal class EngineRoomFixture(
     val engine = createEngine?.invoke(snapshot, engineClock) ?: Engine.memory(SyncSchema.registry, snapshot, clock = engineClock,
         intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
-    val training = EngineTraining(engine)
+    val training = EngineTraining(engine, writeAuthority = writeAuthority)
     val controlsFile = File(directory, "control.json")
     val store = freshStore()
     // As in the application: the REST doors answer only while an account is signed in.

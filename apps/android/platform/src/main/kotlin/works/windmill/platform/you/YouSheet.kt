@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.platform.auth.AuthStatus
+import works.windmill.platform.auth.AuthSignOutChoice
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.SignInDoor
 import works.windmill.platform.design.LocalWindmillPalette
@@ -34,7 +36,7 @@ import works.windmill.platform.design.WindmillSheetWindow
 
 data class YouDestination(val id: String, val label: String, val onOpen: () -> Unit)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun YouSheet(
     auth: AuthStore,
@@ -49,14 +51,13 @@ fun YouSheet(
     var form by rememberSaveable(startSignIn) { mutableStateOf(startSignIn) }
     var busy by remember(auth) { mutableStateOf(false) }
     var closing by remember(auth) { mutableStateOf(false) }
-    var refusal by remember(auth) { mutableStateOf<String?>(null) }
     val identity = remember(auth) { Any() }
     val currentIdentity by rememberUpdatedState(identity)
     val formState = rememberSaveableStateHolder()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
-        confirmValueChange = { it != SheetValue.Hidden || !busy })
+        confirmValueChange = { it != SheetValue.Hidden || !busy && !auth.signOutBusy && auth.signOutQuestion == null })
     fun dismiss(after: () -> Unit = {}) {
-        if (busy || closing) return
+        if (busy || auth.signOutBusy || auth.signOutQuestion != null || closing) return
         closing = true
         focus.clearFocus(force = true)
         keyboard?.hide()
@@ -98,11 +99,11 @@ fun YouSheet(
                         Text("You", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = palette.ink)
                         auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.ink) }
                     }
-                    refusal?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
+                    auth.signOutFailure?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
                     destinations.forEach { destination ->
                         key(destination.id) {
                             Row(Modifier.fillMaxWidth()
-                                .clickable(enabled = !busy && !closing, role = Role.Button) { dismiss(after = destination.onOpen) }
+                                .clickable(enabled = !busy && !auth.signOutBusy && !closing, role = Role.Button) { dismiss(after = destination.onOpen) }
                                 .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(destination.label, style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp),
@@ -114,29 +115,64 @@ fun YouSheet(
                     }
                 }
                 TextButton(onClick = {
-                    if (busy || closing) return@TextButton
+                    if (busy || auth.signOutBusy || auth.signOutQuestion != null || closing) return@TextButton
                     if (auth.status !is AuthStatus.SignedIn) form = true
-                    else {
-                        busy = true
-                        scope.launch {
-                            var signedOut = false
-                            try { auth.signOut(); signedOut = true }
-                            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                            catch (failure: Exception) {
-                                auth.telemetry.failure("auth_sign_out", failure)
-                                if (currentIdentity === identity) refusal = "Sign-out could not be saved. Your work is still on this phone. Try again."
-                            }
-                            finally { if (currentIdentity === identity) busy = false }
-                            if (signedOut && currentIdentity === identity) dismiss()
-                        }
+                    else scope.launch {
+                        auth.prepareSignOut()
+                        if (auth.status == AuthStatus.SignedOut) dismiss()
                     }
-                }, enabled = !busy && !closing,
+                }, enabled = !busy && !auth.signOutBusy && !closing,
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                         .padding(top = 20.dp, bottom = 16.dp).heightIn(min = 48.dp)) {
-                    Text(if (busy) "Signing out…" else if (auth.status is AuthStatus.SignedIn) "Sign out" else "Sign in",
+                    Text(if (auth.signOutBusy) "Signing out…" else if (auth.status is AuthStatus.SignedIn) "Sign out" else "Sign in",
                         style = MaterialTheme.typography.labelLarge, color = palette.ink)
                 }
             }
         }
     }
+    auth.signOutQuestion?.let { question ->
+        val dark = LocalWindmillDark.current
+        val current = MaterialTheme.colorScheme
+        val scheme = if (dark) darkColorScheme(primary = current.primary, error = current.error)
+            else lightColorScheme(primary = current.primary, error = current.error)
+        fun cancel() { if (!auth.signOutBusy) scope.launch { auth.cancelSignOut() } }
+        fun finish(choice: AuthSignOutChoice) {
+            if (auth.signOutBusy) return
+            scope.launch {
+                auth.confirmSignOut(choice)
+                if (auth.status == AuthStatus.SignedOut) dismiss()
+            }
+        }
+        MaterialTheme(colorScheme = scheme) {
+            BasicAlertDialog(onDismissRequest = ::cancel) {
+                Surface(modifier = Modifier.testTag("sign-out-question"), shape = RoundedCornerShape(28.dp), color = scheme.surfaceContainerHigh) {
+                    Column(Modifier.widthIn(min = 280.dp, max = 560.dp)) {
+                        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                            .padding(start = 24.dp, end = 24.dp, top = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text("Sign out?", style = MaterialTheme.typography.headlineSmall, color = scheme.onSurface)
+                            val copy = if (question.unsent == 0) "Your log stays in your account and leaves this phone."
+                                else "${question.unsent} " + (if (question.unsent == 1) "change hasn’t" else "changes haven’t") +
+                                    " been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone."
+                            Text(copy, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        }
+                        FlowRow(Modifier.fillMaxWidth().padding(start = 8.dp, end = 24.dp, top = 20.dp, bottom = 20.dp),
+                            horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = ::cancel, enabled = !auth.signOutBusy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+                            if (question.unsent > 0) {
+                                TextButton(onClick = { finish(AuthSignOutChoice.Discard) }, enabled = !auth.signOutBusy,
+                                    modifier = Modifier.heightIn(min = 48.dp), colors = ButtonDefaults.textButtonColors(contentColor = scheme.error)) { Text("Discard") }
+                            } else Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = { finish(AuthSignOutChoice.Keep) }, enabled = !auth.signOutBusy,
+                                modifier = Modifier.heightIn(min = 48.dp), colors = ButtonDefaults.textButtonColors(
+                                    contentColor = if (question.unsent == 0) scheme.error else scheme.primary)) {
+                                Text(if (question.unsent == 0) "Sign out" else "Keep")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 }

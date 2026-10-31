@@ -490,7 +490,8 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Outer routine Save | `gym_action` | screen: `routine_editor`; action: `save`; outcome: `ok`, `refused`, `failed` |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |
 | Workout imports | `gym_import_recovery` | action: `inspect`, `keep`, `fix`, `retry`, `discard`; bounded state and outcome labels above |
-| Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
+| Sign-in decisions | `gym_sign_in_decision` | state, action, outcome |
+| Sign-out question and recovery | `gym_sign_out` | state: `shown`; action: `keep`, `discard`, `cancel`; outcome: `completed`, `failed` |
 | Connectivity | `sync_connectivity` | state |
 | Update | `client_update_required` | state, action, status, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, outcome, method, route, status, failure_kind, duration_ms, network_phase |
@@ -657,3 +658,10 @@ values remain `notes` and `connections`; the retired `settings` route emits no v
 About Windmill retains its onboarding replay events. Restoring malformed or unknown navigation
 reports `gym.restoreNavigation`; removal of a known retired Settings entry is a migration, not a failure.
 The removed units control emits no events. Android reads confirmation feedback without changing shared wire units; no preferences-write UI remains.
+
+Sign-out preparation emits `gym_sign_out` with `state=shown`; finishing or cancelling emits only
+the finite action/outcome labels above. The held count, account, credential and user content are
+excluded. `auth_signed_out` fires when the saved account has been cleared. Finish and recovery
+failures report under `auth_sign_out`; best-effort original-credential logout uses `auth_logout`.
+Unreadable sealed choice data reports `session_sign_out_decode`. Existing storage and vault
+boundaries report failed writes or decryption. A pending choice does not run ordinary auth restore.

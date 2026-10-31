@@ -15,6 +15,8 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.platform.User
+import works.windmill.platform.auth.AuthSignOutChoice
+import works.windmill.platform.auth.AuthSignOutSession
 import works.windmill.platform.auth.AuthLifecycle
 import works.windmill.platform.auth.KeptValues
 import works.windmill.platform.auth.MemorySessions
@@ -33,6 +35,33 @@ class AiInstallationTest {
     private val telemetry = Events()
     private val api = Api()
     private fun store() = AiInstallation(values, SecretVault { key }, api, telemetry)
+
+    @Test fun preparedSignOutAndRecoveryDelegateWithoutChangingInstallationBinding() = runTest {
+        val calls = mutableListOf<String>()
+        val held = object : AuthSignOutSession {
+            override val account = "account"
+            override val unsent = 3
+            override suspend fun finish(choice: AuthSignOutChoice) { calls += "finish:$choice" }
+            override suspend fun cancel() { calls += "cancel" }
+        }
+        val delegate = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) = Unit
+            override suspend fun signOut(): Unit = error("Prepared sign-out cannot use the forced path.")
+            override suspend fun prepareSignOut(account: String): AuthSignOutSession { calls += "prepare:$account"; return held }
+            override suspend fun recoverSignOut(account: String, choice: AuthSignOutChoice) { calls += "recover:$account:$choice" }
+            override suspend fun cleanupSignOut(account: String) { calls += "cleanup:$account" }
+        }
+        store().retainBindingIntent()
+        val before = values.kept.toMap()
+        val lifecycle = AiInstallationLifecycle(delegate, store(), backgroundScope, telemetry)
+        assertSame(held, lifecycle.prepareSignOut("account"))
+        lifecycle.recoverSignOut("account", AuthSignOutChoice.Discard)
+        lifecycle.cleanupSignOut("account")
+        assertEquals(listOf("prepare:account", "recover:account:Discard", "cleanup:account"), calls)
+        assertEquals(before, values.kept)
+        assertEquals(0, api.issues)
+        assertTrue(api.bindings.isEmpty())
+    }
 
     @Test fun importAndInstallationEventsAcceptOnlyTheirFiniteLabels() {
         assertEquals(mapOf("outcome" to "committed"), TelemetryPolicy.eventProperties("gym_coach_import",
