@@ -1008,6 +1008,11 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   shows it through its existing `invalidSet` line, *Refused by the log — fix the workout, then retry.*,
   which does not say *0 or more*, the words Fix set and the editor use. Android's recovery fix edits
   through Fix set, whose inline line already says them. iOS needs that refusal copy.
+- **12r · Web past workout: a barbell load of 0 reads as *bodyweight* (needs words).** The web
+  past-workout form labels a load of exactly 0 as *bodyweight* for every movement
+  (`web/src/products/gym/backfill/draft.js` `valueLabel`). Since 0 is the barbell and dumbbell floor,
+  the lowest allowed barbell load reads as *bodyweight*. The same form labels a negative bodyweight load
+  *kg added*, while the session page reads *kg assisted*. The form needs equipment-aware load words.
 
 ### Coach on the client
 
