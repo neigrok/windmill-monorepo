@@ -28,8 +28,10 @@ class ProgressWireTests {
                 Change.create(Gym.Types.set, NewID.Given(RecordID("estimate")), mapOf("sessionId" to Json.of("session1"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(80), "reps" to Json.of(1), "rpe" to Json.Null, "note" to Json.of(""), "completedAt" to Json.of(30L))),
             )))
             val api = EngineTraining(engine)
-            assertEquals(StatsProgress(99, listOf(ProgressSession("session1", 10, listOf(MovementSessionFact("bench-press", 2,
-                PerformedFact("heavyset", 100.0, 12, 6.0), EstimatedFact("estimate", 80.0, 1, null, 80.0)))))), api.progress())
+            val progress = api.progress()
+            assertEquals(99, progress.asOf)
+            assertEquals(listOf(ProgressSession("session1", 10, listOf(MovementSessionFact("bench-press", 2,
+                PerformedFact("heavyset", 100.0, 12, 6.0), EstimatedFact("estimate", 80.0, 1, null, 80.0))))), progress.sessions)
         }
     }
 }

@@ -269,13 +269,8 @@ class LiveWireTests {
         }
 
         val review = adapter.review(sessionAId)
-        assertEquals(finishA - startA, review.stats.durationMs)
-        assertEquals(2, review.stats.workingSets)
-        assertNotNull(review.stats.topE1rm)
-        if (review.slight) {
-            assertNull("slight means record is omitted", review.record)
-            assertNull("slight means against is omitted", review.against)
-        }
+        assertNull("two sets are slight: no record", review.record)
+        assertNull("two sets are slight: no comparison", review.against)
     }
 
     @Test

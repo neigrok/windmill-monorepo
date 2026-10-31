@@ -23,8 +23,8 @@ class LogReadoutTests {
             LogReadout.row(summary, progress, now, zone))
         assertEquals(LogReadout.Row(summary, "Push A", "4 sets · 1 h 00 min", "18:00", false),
             LogReadout.row(summary, progress, now, zone, selectedMarker = true))
-        assertEquals(false, LogReadout.row(summary.copy(record = true), StatsProgress.of(listOf(best), now), now, zone).record)
-        assertEquals(false, LogReadout.row(summary.copy(record = true), progress.copy(sessions = emptyList()), now, zone).record)
+        assertEquals(false, LogReadout.row(summary, StatsProgress.of(listOf(best), now), now, zone).record)
+        assertEquals(false, LogReadout.row(summary, StatsProgress.empty(now), now, zone).record)
     }
 
     @Test

@@ -64,6 +64,7 @@ import works.windmill.gym.domain.PersonalRecord
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.sync.SessionReview
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -90,11 +91,9 @@ object Finish {
     // A kind this build has never heard of draws NOTHING; the slot is allowed to be empty.
     fun recordSentence(record: PersonalRecord?, catalog: List<Exercise>): String? {
         if (record == null) return null
-        val previous = record.previous ?: return null
-        val previousAt = record.previousAtMs ?: return null
         val movement = Readout.movement(record.exerciseId, catalog)
-        val priorValue = if (record.kind == "e1rm") Readout.estimatedWeight(previous) else Readout.weight(previous)
-        val past = "past $priorValue from ${Readout.day(previousAt)}"
+        val priorValue = if (record.kind == "e1rm") Readout.estimatedWeight(record.previous) else Readout.weight(record.previous)
+        val past = "past $priorValue from ${Readout.day(record.previousAtMs)}"
         return when (record.kind) {
             "e1rm" -> "$movement e1RM ${Readout.estimatedWeight(record.value)} kg — $past."
             "heaviest" -> "$movement ${Readout.weight(record.value)} kg × ${record.reps} — $past."
@@ -171,7 +170,7 @@ data class FinishedSession(
     val suggestsKeep: Boolean = false,
 ) {
     val routine: String? get() = session.plan?.routine
-    val slight: Boolean get() = sets.size < Review.slightSets
+    val slight: Boolean get() = sets.size < SessionReview.slightSets
 }
 
 @Composable

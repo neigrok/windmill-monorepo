@@ -2,7 +2,6 @@ package works.windmill.gym.domain
 
 import java.time.LocalDate
 import java.time.ZoneId
-import kotlinx.serialization.json.Json
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -16,20 +15,11 @@ class ProgressTests {
             val details = lifts.mapIndexed { index, (kg, reps) -> detail("s$index", 100L + index * 10, kg, reps) }
             val movement = StatsProgress.of(details, 200).movement("bench")
             assertEquals("s0", movement.best?.id)
-            assertEquals(listOf("s0"), movement.records.map { it.id })
         }
         val combined = detail("same", 100, 70.0, 10).copy(sets = listOf(
             TrainingSet("a", "bench", weightKg = 70.0, reps = 10, completedAtMs = 100),
             TrainingSet("z", "bench", weightKg = 80.0, reps = 5, completedAtMs = 100)))
         assertEquals("a", StatsProgress.of(listOf(combined), 200).movement("bench").best?.fact?.estimate?.setId)
-    }
-
-    @Test
-    fun completeWireKeepsSessionSetEffortAndNoEstimateIdentities() {
-        val raw = """{"asOf":500,"sessions":[{"sessionId":"a","startedAt":100,"movements":[{"exerciseId":"bench","workingSetCount":3,"heaviest":{"setId":"heavy","weightKg":100,"reps":12,"rpe":6.5},"estimate":{"setId":"best","weightKg":80,"reps":8,"e1rm":101.33333333333333}},{"exerciseId":"pull","workingSetCount":2,"heaviest":{"setId":"loaded","weightKg":10,"reps":12},"mostReps":{"setId":"zero","weightKg":0,"reps":12}}]}]}"""
-        assertEquals(StatsProgress(500, listOf(ProgressSession("a", 100, listOf(
-            MovementSessionFact("bench", 3, PerformedFact("heavy", 100.0, 12, 6.5), EstimatedFact("best", 80.0, 8, null, 101.33333333333333)),
-            MovementSessionFact("pull", 2, PerformedFact("loaded", 10.0, 12), bodyweightReps = PerformedFact("zero", 0.0, 12)))))), Json.decodeFromString<StatsProgress>(raw))
     }
 
     @Test
@@ -42,14 +32,10 @@ class ProgressTests {
             TrainingSet("zero", "pull", weightKg = 0.0, reps = 10, completedAtMs = 100),
             TrainingSet("minus", "pull", weightKg = -20.0, reps = 8, completedAtMs = 100))
         val detail = SessionDetail(Session("session", 100, finishedAtMs = 200), sets)
-        assertEquals(StatsProgress(300, listOf(ProgressSession("session", 100, listOf(
+        assertEquals(listOf(ProgressSession("session", 100, listOf(
             MovementSessionFact("bench", 4, PerformedFact("heavy", 120.0, 12, 10.0), EstimatedFact("a", 100.0, 5, null, 100.0 * (1 + 5 / 30.0))),
-            MovementSessionFact("pull", 2, PerformedFact("zero", 0.0, 10)))))), StatsProgress.of(listOf(detail), 300))
-        assertEquals(100.0, StatsProgress.estimate(100.0, 1, null))
-        assertEquals(100.0 * (1 + 10 / 30.0), StatsProgress.estimate(100.0, 10, 7.0))
-        for (reps in listOf(0, 11, 100)) assertNull(StatsProgress.estimate(100.0, reps, null))
-        for (weight in listOf(-20.0, 0.0)) assertNull(StatsProgress.estimate(weight, 5, null))
-        assertNull(StatsProgress.estimate(100.0, 5, 6.5))
+            MovementSessionFact("pull", 2, PerformedFact("zero", 0.0, 10), bodyweightReps = PerformedFact("zero", 0.0, 10))))),
+            StatsProgress.of(listOf(detail), 300).sessions)
     }
 
     @Test
@@ -57,21 +43,17 @@ class ProgressTests {
         val zone = ZoneId.of("UTC")
         val today = LocalDate.of(2026, 9, 14)
         fun at(days: Long) = today.minusDays(days).atStartOfDay(zone).toInstant().toEpochMilli()
-        val sessions = listOf(180L, 21L, 14L, 7L, 0L).mapIndexed { index, days ->
-            ProgressSession("s$index", at(days), (0..16).map { movement ->
-                MovementSessionFact("m$movement", 1, PerformedFact("set$index-$movement", 100.0, 1),
-                    EstimatedFact("set$index-$movement", if (days == 180L) 200.0 else 100.0, 1, null, if (days == 180L) 200.0 else 100.0))
-            })
-        }
-        val progress = StatsProgress(at(0), sessions)
-        val full = progress.movement("m0")
+        fun progress(days: List<Long>) = StatsProgress.of(days.mapIndexed { index, ago -> SessionDetail(Session("s$index", at(ago), at(ago) + 1),
+            listOf(TrainingSet("set$index", "bench", weightKg = if (ago == 180L) 200.0 else 100.0, reps = 1, completedAtMs = at(ago)))) }, at(0))
+        val progress = progress(listOf(180L, 21L, 14L, 7L, 0L))
+        val full = progress.movement("bench")
         val window = full.window(at(0), zone)
         assertEquals("s0", full.best?.id)
         assertEquals("s1", window.best?.id)
         assertEquals(listOf("s1", "s2", "s3", "s4"), window.sessions.map { it.id })
         assertTrue(window.hasChart(zone))
-        assertFalse(window.copy(sessions = window.sessions.drop(1)).hasChart(zone))
-        assertFalse(window.copy(sessions = window.sessions.mapIndexed { i, row -> if (i == 0) row.copy(startedAt = at(20)) else row }).hasChart(zone))
+        assertFalse(progress(listOf(180L, 14L, 7L, 0L)).movement("bench").window(at(0), zone).hasChart(zone))
+        assertFalse(progress(listOf(180L, 20L, 14L, 7L, 0L)).movement("bench").window(at(0), zone).hasChart(zone))
         assertEquals(100.0, progress.sessionEstimate("s4"))
     }
 

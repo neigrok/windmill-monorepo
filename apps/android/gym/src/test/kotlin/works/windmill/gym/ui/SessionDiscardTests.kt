@@ -106,7 +106,7 @@ class SessionDiscardTests {
             compose.onNodeWithText("Discard workout").performScrollTo().assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals("and this is NOT the slight session the finish screen draws it for",
-                    Review.slightSets, room.store.recent.single().workingSetCount)
+                    works.windmill.gym.domain.sync.SessionReview.slightSets, room.store.recent.single().workingSetCount)
             }
         } } finally { scope.cancel() }
     }
