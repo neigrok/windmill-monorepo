@@ -13,7 +13,7 @@
   },
   {
     "board": "02.12", "name": "combined-load-keyboard", "account": "fixture",
-    "steps": [{"tap": "Landmine Press"}, {"keyboard": "show"}, {"tap": "Load, kg"}, {"wait": "Done"}],
+    "steps": [{"tap": "Landmine Press"}, {"keyboard": "show"}, {"tap": "Load, kg total"}, {"wait": "Done"}],
     "after": [{"keyboard": "hide"}, {"tap": "Increase Load"}, {"tap": "Cancel"}]
   },
   {
