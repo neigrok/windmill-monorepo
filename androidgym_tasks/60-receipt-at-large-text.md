@@ -7,11 +7,11 @@
 - 03.15 First workout, signed out: [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42292)
 
 **Current implementation** (`FinishSheet`/`FinishScreen`)
-- **Signed out:** the line *Only on this phone · Keep it* pushes *Performed* under the pinned buttons. The movement name is clipped and the sheet does not open far enough (`manual/m33-finish-ask.png`).
+- **Signed out:** the line *Only on this phone · Keep it* pushes *Performed* under the pinned buttons. The movement name is clipped and the sheet does not open far enough (finish a first workout while signed out).
 - **At 320 dp / 200 %:**
   - The stats stack vertically, so Volume and Performed fall off-screen.
   - "Share with Coach" wraps.
-  - The sheet will not grow (`runs/thisworkout/failure-ui.png`).
+  - The sheet will not grow (finish any workout at 320 dp / 200 %).
 
 **Change**
 - **Large text (03.36):** at large text the sheet opens full height. The body scrolls under the pinned *Share with Coach* and *Done*, and the facts wrap two per row.

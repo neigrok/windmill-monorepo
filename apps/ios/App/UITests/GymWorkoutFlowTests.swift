@@ -426,4 +426,27 @@ import XCTest
     XCTAssertTrue(field.waitForNonExistence(timeout: 5))
     XCTAssertTrue(set.waitForLabel("Set 2, logged, 100 kilograms, 5 reps"))
   }
+
+  // Fix set's load opens selected each time it is tapped into, so the first key replaces the load it shows.
+  func testFixSetLoadOpensSelectedSoTheFirstKeyReplacesIt() {
+    let app = launchTypingTheRack()
+    app.buttons["workout-load-done"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
+    let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set 2,")).firstMatch
+    XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
+    let field = app.textFields["workout-fix-load"]
+    XCTAssertTrue(field.waitForExistence(timeout: 5) && field.waitForValue("100")); field.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    field.typeText("95")
+    XCTAssertTrue(field.waitForValue("95"))
+    let note = app.descendants(matching: .any)["workout-fix-note"]
+    XCTAssertTrue(note.waitForExistence(timeout: 5)); note.tap()
+    XCTAssertTrue(field.waitForValue("95"))
+    field.tap()
+    field.typeText("90")
+    XCTAssertTrue(field.waitForValue("90"))
+    app.buttons["workout-fix-save"].tap()
+    XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(set.waitForLabel("Set 2, logged, 90 kilograms, 5 reps"))
+  }
 }

@@ -6,7 +6,7 @@
 
 **Current implementation**
 - `store/WithheldDelete.kt` holds a deleted weigh-in for a fixed `windowMs = 9_000L`, and `TrainingStore` takes it as `undoWindowMs`.
-- When the snackbar closes, the *Weigh in* extended FAB drops into the space it left, under the lifter's finger. The capture rig's Undo tap opened the Weigh-in sheet instead (`runs/main/05.1-log-weight-undo-dark.png` → `runs/main/failure-ui.png`).
+- When the snackbar closes, the *Weigh in* extended FAB drops into the space it left, under the lifter's finger. The capture rig's `log.json` weight-undo step taps Undo and opens the Weigh-in sheet instead.
 
 **Change**
 - **Placement:** the snackbar rises above the FAB, which never moves. This is the standard Scaffold layout: the snackbar host sits above the FAB slot.

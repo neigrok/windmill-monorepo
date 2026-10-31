@@ -16,7 +16,7 @@ struct RoutineMovementDraft: Equatable {
   init(exercise: Exercise, base: Exercise?, entry: RoutineEntry?) {
     self.base = base; opening = exercise; adding = entry == nil
     name = exercise.name; equipment = exercise.equipment
-    loadCount = exercise.equipment == "dumbbell" ? exercise.loadCount : 2
+    loadCount = Equipment(exercise.equipment) == .dumbbell ? exercise.loadCount : 2
     initialTargets = RoutineTargetDraft(sets: entry?.sets)
     targets = initialTargets
   }
@@ -30,8 +30,8 @@ struct RoutineMovementDraft: Equatable {
   var isDirty: Bool { exercise != opening || targets != initialTargets }
   var problem: String? {
     if let problem = MovementName.problem(name) { return problem }
-    if !MovementEquipment.choices.contains(equipment) && !(base?.equipment == "other" && equipment == "other") { return "Choose equipment." }
-    if equipment == "dumbbell" && ![1, 2].contains(loadCount) { return "Choose one or two dumbbells." }
+    if !MovementEquipment.choices.contains(equipment) && !(Equipment(base?.equipment) == .other && Equipment(equipment) == .other) { return "Choose equipment." }
+    if Equipment(equipment) == .dumbbell && ![1, 2].contains(loadCount) { return "Choose one or two dumbbells." }
     return targets.refusal?.message
   }
 }
@@ -75,8 +75,8 @@ struct RoutineMovementEditor: View {
           headField("Reps", field: .reps, placeholder: movement.targets.varies(.reps) ? "varies" : "max", focus: .reps)
           headField(MovementEquipment(exercise).unit, field: .weight, placeholder: movement.targets.varies(.weight) ? "varies" : "last time", focus: .weight)
         } header: { Text("Targets") } footer: {
-          if exercise.equipment != "other" {
-            Text(exercise.equipment == "bodyweight" ? "Enter added weight or a negative value for assistance. Blank means no load target." : MovementEquipment(exercise).help)
+          if Equipment(exercise.equipment) != .other {
+            Text(Equipment(exercise.equipment) == .bodyweight ? "Enter added weight or a negative value for assistance. Blank means no load target." : MovementEquipment(exercise).help)
           }
         }
         Section {
@@ -171,7 +171,7 @@ struct RoutineMovementEditor: View {
         Stepper(label) { movement.targets.step(field, direction: 1); feedback += 1 } onDecrement: { movement.targets.step(field, direction: -1); feedback += 1 }
           .labelsHidden()
           .accessibilityIdentifier("gym-target-\(field)-stepper")
-        if field == .weight && exercise.equipment == "bodyweight" { signButton(row: nil) }
+        if field == .weight && Equipment(exercise.equipment) == .bodyweight { signButton(row: nil) }
       }
       .disabled(!enabled)
       if refused, let refusal = movement.targets.headRefusal { refusalLine(refusal.message) }
@@ -186,13 +186,13 @@ struct RoutineMovementEditor: View {
         rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
         HStack {
           rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
-          if exercise.equipment == "bodyweight" { signButton(row: index) }
+          if Equipment(exercise.equipment) == .bodyweight { signButton(row: index) }
         }
       } else {
         HStack(spacing: 16) {
           rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
           rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
-          if exercise.equipment == "bodyweight" { signButton(row: index) }
+          if Equipment(exercise.equipment) == .bodyweight { signButton(row: index) }
         }
       }
       if let refusal { refusalLine(refusal.message) }

@@ -66,6 +66,34 @@ The 2026-10-31 review of the Android app (native experience on the emulator, cod
 
 Stage A tasks touch disjoint areas and can run in parallel. 56 uses 53's back guard; 68 follows 53 so the room is not rewritten twice; 67 and 68 are wide refactors best done when the visual tasks have landed.
 
+### Working on a native-wave task
+
+- **Read first:**
+  - [AGENTS.md](../AGENTS.md)
+  - [apps/android/README.md](../apps/android/README.md): toolchain, local backend, release flow
+  - [tools/DESIGN_CAPTURE.md](../apps/android/tools/DESIGN_CAPTURE.md): the capture rig
+  - [docs/ANDROID_OBSERVABILITY.md](../docs/ANDROID_OBSERVABILITY.md)
+  - [docs/foundation/domain-kit.md](../docs/foundation/domain-kit.md), for tasks 57, 58, 71 and 72
+- **Figma:**
+  - Gym file `vdmdiKWrmZoS1FtcvJRf6O`, Android page `56:2`.
+  - Shell file `tkI7GnS6TcZvQSDi9lwrBf`, Android page `1:6`.
+  - Android numbers follow ledger 11r: no number names two screens across the phone pages.
+- **The gate:**
+  - Run the full `./gradlew build`, with `ANDROID_SENTRY_DSN` set to any well-formed DSN. CI runs exactly that, release unit tests and lint included. A narrower local run has turned CI red before.
+  - Tasks that touch iOS (57, 58, 71) also pass `swift test` for `GymDomain`. CI pins Xcode 26.3, so keep `#expect` expressions simple and never name a closure like a method it shadows.
+- **Traps:**
+  - **apiBase:** an APK with a malformed `apiBase` silently falls back to production. Check `BuildConfig` before every install, and never point a build or a test at production.
+  - **Parallel work:** several agents may share this machine. Use a private backend port, your own emulator instance (`-read-only -port …`) and namespaced scratch, and never stop an emulator or backend you did not start.
+  - **Kotlin:**
+    - Every store `catch` rethrows `CancellationException`.
+    - A value with an injected source (a clock, a window length) is never read from the ambient one; Robolectric shadows only the virtual clock.
+    - Compose tests wait for a condition, never a moment.
+  - **Shared rules:** a domain rule lands as vectors in `packages/api-contract/gym/domain/` and passes on Kotlin, Swift and web. A rule the server also judges must hold in the C++ backend and both model servers too.
+  - **Emulator limits:** on the API 37 image the notification shade draws empty pills, and `screencap` can omit the status bar. Judge those from `dumpsys`.
+- **Delivery:**
+  - One commit per task, then the gauntlet: an adversarial review that executes its findings, one fix pass, then native and local-stack acceptance including failures, Sentry and content-free events.
+  - After merge, mark the boards 🚀 In production once the release carrying them is published, and delete superseded boards (05.16 when 61 ships).
+
 ## Execution order
 
 Build the shared foundations first, then choose a task whose numbered and named prerequisites are satisfied. The ordering below includes only the active release scope and is checked against its dependency graph; independent work within a row may proceed in parallel. Backend or design gates written inside a task still apply.

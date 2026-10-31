@@ -8,7 +8,7 @@
 
 **Current implementation**
 - Signed load fields (number | signed | decimal, IME `0x3002`) exist on purpose: assisted machines take a negative load.
-- A barbell *total* of −12.5 kg is accepted in routine targets and in Fix set. Evidence: `manual/m08-negative-done.png`, `runs/rack/03.3-fix-set-keyboard-light.png`.
+- A barbell *total* of −12.5 kg is accepted in routine targets and in Fix set. To reproduce: type −12.5 into a barbell movement's Load in the editor, or in Fix set, and press Done.
 - The field types a hyphen while the summary shows a minus sign.
 - The "kg blank: pick it at the rack…" hint stays visible after a load is entered.
 - No shared vector pins a lower bound per equipment, so iOS, web and Android can disagree.
