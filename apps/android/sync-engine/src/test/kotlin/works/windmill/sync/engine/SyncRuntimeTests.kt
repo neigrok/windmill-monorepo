@@ -173,6 +173,27 @@ class SyncRuntimeTests {
         }
     }
 
+    @Test fun theFirstPullLandingDuringTheSendersHelloDoesNotStrandTheQueuedPush() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            val hello = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = hello
+            fixture.create()
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array()))))
+            until { fixture.engine.device.current().meta["serverEpoch"] == Json.of("ep-1") }
+            hello.complete(helloResponse())
+            assertEquals("the epoch learned during the hello asks for another hello before numbering",
+                "token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            until { fixture.engine.device.current().entries().map { it.state } == listOf("acked") }
+        }
+    }
+
     @Test fun aLocalEpochChangeDuringHelloRequiresAnotherHelloBeforeNumbering() = runBlocking {
         Fixture().use { fixture ->
             fixture.create()
@@ -796,6 +817,31 @@ class SyncRuntimeTests {
             assertFalse(fixture.runtime.pullerStep())
             delay(50)
             assertEquals(pulls, fixture.transport.pulling.get())
+        }
+    }
+
+    @Test fun aPullStepAlreadyUnderWayWhenTheAppLeavesSendsNoRequest() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.runtime.enter()
+            withTimeout(2_000) { fixture.transport.opened.await() }
+            until { fixture.transport.pulling.get() > 0 }
+            val inside = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            fixture.clock.beforeReading = {
+                if (Thread.currentThread().name.startsWith("held-puller") && !inside.isCompleted) { inside.complete(Unit); release.await() }
+            }
+            @Suppress("UNCHECKED_CAST")
+            (SyncRuntime::class.java.getDeclaredField("pullWanted").apply { isAccessible = true }.get(fixture.runtime) as MutableSet<ScopeRef>).add(product)
+            newSingleThreadContext("held-puller").use { held ->
+                val step = async(held) { fixture.runtime.pullerStep() }
+                withTimeout(2_000) { inside.await() }
+                val pulls = fixture.transport.pulling.get()
+                fixture.runtime.leave()
+                release.countDown()
+                withTimeout(2_000) { step.await() }
+                assertEquals("a step that passed its foreground check before the leave sends nothing after it",
+                    pulls, fixture.transport.pulling.get())
+            }
         }
     }
 

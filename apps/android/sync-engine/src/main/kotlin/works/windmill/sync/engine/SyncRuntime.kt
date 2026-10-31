@@ -407,7 +407,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 if (!current(seat) || !ready()) return@withLock null
                 changedEpoch = engine.device.current().meta["serverEpoch"] != epoch
                 if (changedEpoch) null else engine.nextPush(pushLimit)
-            } ?: return@withLock changedEpoch
+            } ?: run {
+                // An epoch learned during the hello needs another hello before numbering, and a pull never wakes the sender.
+                if (changedEpoch) senderWake.trySend(Unit)
+                return@withLock changedEpoch
+            }
             if (!current(seat) || !ready()) return@withLock false
             val send = engine.clock.reading()
             val job = currentCoroutineContext()[Job]
@@ -460,8 +464,9 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         return if (draining) again else true
     }
+    private fun pulling() = !closed && foreground && online && !upgradeRequired
     suspend fun pullerStep(): Boolean = pullerTurn.withLock {
-        if (closed || !foreground || !online || upgradeRequired || mono() < pullFloor) return@withLock false
+        if (!pulling() || mono() < pullFloor) return@withLock false
         val seat = pullSeat() ?: return@withLock false
         val scopes = engine.subscriptions(products)
         engine.reconcile(scopes)
@@ -485,7 +490,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         if (batch.isNotEmpty()) batches.add(batch)
         batches.addAll(due.filter { it in dueDoubts }.map { listOf(it) })
         for (planned in batches) {
-            if (!current(seat)) break
+            if (!pulling() || !current(seat)) break
             val request = engine.pullRequest(planned) ?: continue
             val pulled = request.member("scopes").arr().map { ScopeRef(it.member("scope")) }
             engine.lock.withLock { dueDoubts.filter { it in pulled }.forEach(engine.doubts::pulling) }
