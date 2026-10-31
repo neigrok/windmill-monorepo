@@ -84,8 +84,8 @@ internal fun CoachChoices(clarification: CoachClarification, selected: Map<Strin
                     group.options.forEach { option ->
                         val chosen = option.id in selected[group.id].orEmpty()
                         FilterChip(selected = chosen, enabled = enabled, onClick = { onChoose(group.id, option.id) },
-                            label = { Text(option.label, fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium,
-                                fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .1.sp) },
+                            label = { Text(option.label, Modifier.padding(vertical = 6.dp), fontFamily = FontFamily.Default,
+                                fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .1.sp) },
                             leadingIcon = if (chosen) { { Icon(painterResource(R.drawable.gym_coach_selected), null, Modifier.size(18.dp)) } } else null,
                             border = BorderStroke(1.dp, if (chosen) skin.accent else skin.line),
                             colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = skin.ink,

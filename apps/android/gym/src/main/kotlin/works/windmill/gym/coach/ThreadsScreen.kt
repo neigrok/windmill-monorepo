@@ -228,7 +228,7 @@ fun ThreadScreen(
         receipts = receipts, lookedAt = lookedAt, asking = asking, cap = cap,
         onAsk = { ask(it) }, onPhotoAsk = { text, photo -> ask(text, photo = photo) },
         onStop = if (coach.anonymous) null else ({ coach.stopChat(threadId) }), upload = upload,
-        onRetry = { conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) } },
+        onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
         onAskNew = onAskNew, seed = "", origin = origin, backTo = backTo, onBack = onBack, seat = seat, composerEnabled = composerEnabled,
         composerVisible = !coach.anonymous || coach.anonymousAccess == works.windmill.gym.coach.onboarding.AnonymousCoachAccess.Available,
         onSignIn = onSignIn,

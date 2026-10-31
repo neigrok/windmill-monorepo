@@ -38,6 +38,11 @@ internal object CoachSources {
     fun readOnly(steps: List<AskStep>, proposals: Boolean, results: Boolean, drafts: Boolean): Boolean =
         !proposals && !results && !drafts && steps.all { it.tool in readTools }
 
+    // Choices that read nothing from the log stand alone: a sources row would only say so.
+    fun choicesAlone(steps: List<AskStep>, read: ReadTally, acted: Boolean): Boolean =
+        !acted && !read.anything && steps.all { it.tool in readTools || it.tool == "ask_setup_details" } &&
+            steps.none { it.tool == "list_notes" && !it.failed }
+
     fun tally(read: ReadTally): String {
         val parts = buildList {
             if (read.sessions > 0) add(if (read.sessions == 1) "1 workout" else "${read.sessions} workouts")

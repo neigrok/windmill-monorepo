@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import android.text.format.DateFormat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -85,12 +86,15 @@ internal fun coachDailyNotice(deadline: Long?, now: Long, locale: Locale, zone: 
     return "You can ask again on $time."
 }
 
-internal fun coachAllowanceNotice(anonymous: Boolean, deadline: Long?, locale: Locale, zone: ZoneId): String {
+// The reset names its year only when it falls in another year than now.
+internal fun coachAllowanceNotice(anonymous: Boolean, deadline: Long?, now: Long, locale: Locale, zone: ZoneId): String {
     if (anonymous) return AskCap.Allowance.wordless + "\nSign in to continue."
     if (deadline == null || deadline <= 0) return AskCap.Allowance.wordless
-    val time = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(locale).withZone(zone)
-        .format(Instant.ofEpochMilli(deadline))
-    return AskCap.Allowance.wordless + "\nYou can use Coach again on $time."
+    val at = Instant.ofEpochMilli(deadline).atZone(zone)
+    val format = if (at.year == Instant.ofEpochMilli(now).atZone(zone).year)
+        DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "MMMdjmm"), locale)
+    else DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(locale)
+    return AskCap.Allowance.wordless + "\nYou can use Coach again on ${format.format(at)}."
 }
 
 @Composable
@@ -102,7 +106,7 @@ internal fun CoachCapNotice(cap: AskCap, exchange: AskExchange?, anonymous: Bool
     if (cap == AskCap.Allowance) {
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(coachAllowanceNotice(anonymous, exchange?.retryAtMs, configuration.locales[0], ZoneId.systemDefault()),
+            Text(coachAllowanceNotice(anonymous, exchange?.retryAtMs, System.currentTimeMillis(), configuration.locales[0], ZoneId.systemDefault()),
                 style = CoachType.body(14).copy(lineHeight = 20.sp), color = skin.inkDim, textAlign = TextAlign.Center,
                 modifier = Modifier.widthIn(max = 300.dp))
             if (anonymous && onSignIn != null) FilledTonalButton(onClick = onSignIn,

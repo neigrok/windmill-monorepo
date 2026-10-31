@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import androidx.compose.runtime.CompositionLocalProvider
+import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -99,6 +101,32 @@ class CoachSetupTests {
         }
     }
 
+    @Test fun theGreetingCountsOneShownStepAcrossRecreation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest()).use { room ->
+            runBlocking { room.select("alice") }
+            val id = room.store.coach.freshChat(setup = true)
+            val restore = StateRestorationTester(compose)
+            restore.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { GymMaterial {
+                AskScreen(room.store, emptyList(), emptyList(), emptySet(), false, null, {}, {}, {}, "", "http://localhost",
+                    onThreads = {}, onNotes = {}, onReview = {}, conversationId = id, onBuildRoutine = {})
+            } } }
+            compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
+            restore.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(listOf("gym_setup_step" to mapOf("screen" to "coach", "action" to "shown")),
+                    events.filter { it.first == "gym_setup_step" })
+                scope.cancel()
+            }
+        }
+    }
+
     @Test fun emptyHydratedGymOpensCoachAndTheChosenTabWinsRecreation() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest()).use { room ->
@@ -117,6 +145,37 @@ class CoachSetupTests {
             restore.emulateSavedInstanceStateRestore()
             compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertDoesNotExist()
+            compose.runOnIdle { scope.cancel() }
+        }
+    }
+
+    @Test fun aPhoneDraftMovesIntoTheAccountWhenTheFirstPullCompletesWithoutRecreation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = File(temporary.root, "coach.json")
+        val disk = LocalCoach(file)
+        val phone = disk.anonymousOwner()
+        disk.saveChat(phone, LocalChat("phone-chat", setup = true), true)
+        disk.saveDraft(phone, "phone-chat", CoachDraft("Phone draft"))
+        var settled by mutableStateOf(false)
+        EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest(), localCoach = disk, workoutAuthority = { settled }).use { room ->
+            runBlocking { room.select("alice") }
+            assertFalse(room.store.accountReady)
+            compose.setContent { GymMaterial { GymRoom(room.account(), room.store) } }
+            compose.runOnIdle { assertEquals(CoachDraft("Phone draft"), LocalCoach(file).draft(phone, "phone-chat")) }
+            compose.runOnIdle {
+                settled = true
+                runBlocking { room.store.connect(room.account()) }
+                room.pull(EngineRoomFixture.server())
+                runBlocking { room.store.refreshEngine() }
+            }
+            compose.waitForIdle()
+            compose.waitUntil(5_000) { LocalCoach(file).draft(phone, "phone-chat") == CoachDraft() }
+            compose.runOnIdle {
+                val adopted = LocalCoach(file)
+                assertEquals(CoachDraft("Phone draft", setup = true), adopted.draft("alice", requireNotNull(adopted.selected("alice"))))
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText("Phone draft").assertIsDisplayed()
             compose.runOnIdle { scope.cancel() }
         }
     }

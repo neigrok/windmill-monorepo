@@ -54,16 +54,26 @@ class CoachAccessTests {
 
     @Test fun allowanceNoticeUsesTheActualResetInTheCurrentLocaleAndZoneOnlyWhenPresent() {
         val at = Instant.parse("2026-11-01T00:00:00Z").toEpochMilli()
+        val lastYear = Instant.parse("2025-12-01T00:00:00Z").toEpochMilli()
         assertEquals("You have used all of your AI allowance.\nSign in to continue.",
-            coachAllowanceNotice(true, at, Locale.UK, ZoneId.of("UTC")))
-        assertEquals(AskCap.Allowance.wordless, coachAllowanceNotice(false, null, Locale.UK, ZoneId.of("UTC")))
-        assertEquals(AskCap.Allowance.wordless, coachAllowanceNotice(false, 0, Locale.UK, ZoneId.of("UTC")))
+            coachAllowanceNotice(true, at, lastYear, Locale.UK, ZoneId.of("UTC")))
+        assertEquals(AskCap.Allowance.wordless, coachAllowanceNotice(false, null, lastYear, Locale.UK, ZoneId.of("UTC")))
+        assertEquals(AskCap.Allowance.wordless, coachAllowanceNotice(false, 0, lastYear, Locale.UK, ZoneId.of("UTC")))
         assertEquals("You have used all of your AI allowance.\nYou can use Coach again on 1 Nov 2026, 00:00.",
-            coachAllowanceNotice(false, at, Locale.UK, ZoneId.of("UTC")))
+            coachAllowanceNotice(false, at, lastYear, Locale.UK, ZoneId.of("UTC")))
         assertEquals("You have used all of your AI allowance.\nYou can use Coach again on 31 Oct 2026, 20:00.",
-            coachAllowanceNotice(false, at, Locale.UK, ZoneId.of("America/New_York")))
-        assertNotEquals(coachAllowanceNotice(false, at, Locale.UK, ZoneId.of("UTC")),
-            coachAllowanceNotice(false, at, Locale.FRANCE, ZoneId.of("UTC")))
+            coachAllowanceNotice(false, at, lastYear, Locale.UK, ZoneId.of("America/New_York")))
+        assertNotEquals(coachAllowanceNotice(false, at, lastYear, Locale.UK, ZoneId.of("UTC")),
+            coachAllowanceNotice(false, at, lastYear, Locale.FRANCE, ZoneId.of("UTC")))
+    }
+
+    @Test fun anAllowanceResetThisYearOmitsTheYearAsTheBoardReadsIt() {
+        val at = Instant.parse("2026-11-01T00:00:00Z").toEpochMilli()
+        val now = Instant.parse("2026-10-31T12:00:00Z").toEpochMilli()
+        assertEquals("You have used all of your AI allowance.\nYou can use Coach again on Nov 1, 12:00 AM.",
+            coachAllowanceNotice(false, at, now, Locale.US, ZoneId.of("UTC")))
+        assertEquals("You have used all of your AI allowance.\nYou can use Coach again on 1 Nov, 00:00.",
+            coachAllowanceNotice(false, at, now, Locale.UK, ZoneId.of("UTC")))
     }
 
     @Test fun persistedDeadlineIsRecomputedForTheClockLocaleAndZoneWithoutInventedTiming() {

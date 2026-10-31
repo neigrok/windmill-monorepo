@@ -1,6 +1,6 @@
 # Allowance used: signed out, signed in (interim), Windmill One
 
-**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; 01.12 stays 🚧 In progress and unbuilt. 01.10 and 01.11 match natively in Dark, Daylight and 200 % text; `gym_ask_outcome` `capped` with `cap=allowance` (and `state=anonymous` signed out) and `gym_setup_step` `sign_in` arrive, and a 429 files no Issue. The rig cannot reach either board, because its allowances are fixed. Open: an empty date header sits above the notice, and 01.11's date carries the year (*Nov 1, 2026*) where the board reads *Nov 1*.
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; 01.12 stays 🚧 In progress and unbuilt. 01.10 and 01.11 match natively in Dark, Daylight and 200 % text; `gym_ask_outcome` `capped` with `cap=allowance` (and `state=anonymous` signed out) and `gym_setup_step` `sign_in` arrive, and a 429 files no Issue. The rig cannot reach either board, because its allowances are fixed. The refused question no longer leaves an empty date header, and a reset in the current year reads *Nov 1, 12:00 AM* as the board does; both are covered by JVM tests and await native re-acceptance.
 
 **Figma:**
 - 01.10 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-35870) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39675)

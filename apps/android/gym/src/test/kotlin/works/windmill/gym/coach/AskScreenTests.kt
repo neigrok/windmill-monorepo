@@ -13,6 +13,11 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assert
@@ -196,6 +201,25 @@ class AskScreenTests {
         compose.runOnIdle { assertEquals(listOf("3 days. Dumbbells, Bodyweight."), sent) }
     }
 
+    @Test fun choiceChipsGrowWithTheTextSize() {
+        val clarification = CoachClarification("choice-123", "How many days?", listOf(CoachClarification.Group("days", "Days each week", false,
+            listOf(CoachClarification.Option("d3", "3 days")))))
+        var fontScale by mutableStateOf(1f)
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                GymMaterial { CoachChoices(clarification, emptyMap(), true) { _, _ -> } }
+            }
+        }
+        val regular = compose.onNodeWithText("3 days").getBoundsInRoot()
+        compose.runOnIdle { fontScale = 2f }
+        val large = compose.onNodeWithText("3 days").getBoundsInRoot()
+        val label = compose.onNodeWithText("3 days", useUnmergedTree = true).getBoundsInRoot()
+        assertEquals(32f, regular.height.value, .5f)
+        assertTrue("the chip grows: $regular -> $large", large.height > regular.height)
+        assertTrue("the label keeps its padding: $label in $large", label.top - large.top >= 5.5.dp && large.bottom - label.bottom >= 5.5.dp)
+    }
+
     @Test fun continuingAKeptDraftPreservesTheCurrentComposerAndRestoresAPhotoOnlyDraft() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val file = java.io.File(tmp.root, "held.json")
@@ -300,6 +324,24 @@ class AskScreenTests {
         assertTrue(terminal.length > initial.length && terminal.length < whole.length && whole.startsWith(terminal))
         compose.mainClock.advanceTimeBy(2000)
         assertEquals(whole, shown())
+        scope.cancel()
+    }
+
+    @Test
+    fun anInterruptedExchangeAboveANewerOneKeepsTryAgainAndRetriesItsOwnRequest() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        val older = AskExchange("Older question", trouble = Ask.interrupted, again = true, requestId = "request-a")
+        val newer = AskExchange("Newer question", answer = AskAnswer("Newer answer", ReadTally()), requestId = "request-b")
+        val retried = mutableListOf<AskExchange>()
+        compose.setContent {
+            AskScreen(store, listOf(older, newer), emptyList(), emptySet(), false, null,
+                onAsk = {}, onRetry = { retried += it }, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
+        }
+        compose.onNodeWithText(Ask.interrupted).assertIsDisplayed()
+        compose.onNodeWithText("Try again").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf(older), retried) }
         scope.cancel()
     }
 
@@ -488,6 +530,35 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Question").performTextReplacement("Keep my edited input")
         compose.onNodeWithContentDescription("Send").performClick()
         assertEquals(listOf("signIn", "ask:Keep my edited input"), doors)
+        scope.cancel()
+    }
+
+    @Test fun aRefusedQuestionHeldInTheComposerDrawsNoDateHeaderAboveTheNotice() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        store.coach.saveDraft("new", CoachDraft("Swap chin-ups for pulldowns"))
+        val asked = AskExchange("How heavy should I start squats?", answer = AskAnswer("Choose a weight you can lift 8 times.", ReadTally()),
+            requestId = "request-a", atMs = System.currentTimeMillis() - 60_000)
+        val refused = AskExchange("Swap chin-ups for pulldowns", trouble = AskCap.Allowance.wordless, requestId = "request-b",
+            atMs = System.currentTimeMillis())
+        room(store, listOf(asked, refused), AskCap.Allowance, mutableListOf())
+        compose.onNodeWithText(AskCap.Allowance.wordless).assertIsDisplayed()
+        assertEquals(1, compose.onAllNodesWithText("Today ", substring = true).fetchSemanticsNodes().size)
+        scope.cancel()
+    }
+
+    @Test fun choicesThatReadNothingFromTheLogStandWithoutASourcesRow() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        val clarification = CoachClarification("choice-123", "How many days and what equipment?", listOf(
+            CoachClarification.Group("days", "Days each week", false, listOf(CoachClarification.Option("d3", "3 days")))))
+        val raw = works.windmill.platform.net.WindmillJson.encodeToJsonElement(CoachClarification.serializer(), clarification)
+        val exchange = AskExchange("Build me a program to get stronger.", answer = AskAnswer("How many days and what equipment?", ReadTally(),
+            steps = listOf(AskStep("list_exercises"), AskStep("ask_setup_details")),
+            receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_exercises"))), clarification = raw), requestId = "request-123")
+        room(store, listOf(exchange), null, mutableListOf())
+        compose.onNodeWithText("3 days").assertIsDisplayed()
+        compose.onNodeWithText("Read nothing from your log").assertDoesNotExist()
         scope.cancel()
     }
 

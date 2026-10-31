@@ -127,7 +127,8 @@ result updates the retained credential's state before another Send; bound reques
 their original result by GET.
 
 Coach setup emits `gym_setup_step` with `screen=coach` and the bounded actions
-`shown|screenshot|build_manually|photo_selected|photo_removed|sign_in`. Photo selection and removal emit only
+`shown|screenshot|build_manually|photo_selected|photo_removed|sign_in`. `shown` fires once each time the
+greeting appears; a configuration change or activity recreation does not repeat it. Photo selection and removal emit only
 after the draft reference is saved; failed removal retains the previous reference. Picking a photo
 does not send a model request. No photo bytes, size, filename, URI or identifier enters these events.
 Signed-out photo preparation failures report once under `gym.coachOnboarding`; signed-in preparation

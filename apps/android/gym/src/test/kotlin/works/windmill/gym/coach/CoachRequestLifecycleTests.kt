@@ -90,6 +90,29 @@ class CoachRequestLifecycleTests {
         }
     }
 
+    @Test fun retryingAnOlderInterruptedQuestionResendsItsOwnIdInPlaceAndLeavesTheComposerDraft() = runTest {
+        val asked = mutableListOf<Pair<String?, String>>()
+        val api = object : GymRest by FakeGymRest() {
+            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
+                asked += question.requestId to question.question
+                return AskGeneration("generation-${asked.size}", requireNotNull(question.requestId), question.question,
+                    if (asked.size == 1) "failed" else "completed", "Answer ${asked.size}", revision = 1).response()
+            }
+        }
+        val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, LocalCoach(File(tmp.root, "older-retry")), Telemetry.None,
+            System::nanoTime, backgroundScope)
+        val chat = store.freshChat()
+        assertTrue(store.submit(chat, "Question A", requestId = "request-a")); until { !store.isAsking(chat) }
+        assertTrue(store.submit(chat, "Question B", requestId = "request-b")); until { !store.isAsking(chat) }
+        assertEquals(listOf(true, false), store.chat(chat)!!.exchanges.map { it.again })
+        store.saveDraft(chat, CoachDraft("Typing C"))
+        assertTrue(store.submit(chat, "Question A", requestId = "request-a")); until { !store.isAsking(chat) }
+        assertEquals(listOf("request-a" to "Question A", "request-b" to "Question B", "request-a" to "Question A"), asked)
+        assertEquals(listOf(Triple("request-a", "Answer 3", false), Triple("request-b", "Answer 2", false)),
+            store.chat(chat)!!.exchanges.map { Triple(it.requestId, it.answer?.answer, it.again) })
+        assertEquals(CoachDraft("Typing C"), store.draft(chat))
+    }
+
     @Test fun aSameIdRetrySurvivesAnOldStopQueuedBeforeSnapshotStorageOrBeforePendingClear() = runTest {
         for (beforeClear in listOf(false, true)) {
             val io = RequestQueue()

@@ -267,15 +267,17 @@ class CoachStore internal constructor(
         val chat = chat(id) ?: return false
         if (owner == null || isAsking(id) || Ask.needsNew(chat.exchanges) ||
             (!Ask.sendable(text) && (photo == null || text.toByteArray().size > Ask.maxTurnBytes))) return false
-        val prior = chat.exchanges.lastOrNull()?.takeIf { it.requestId == requestId }
-        val from = if (prior != null) chat.exchanges.dropLast(1) else chat.exchanges
+        val at = chat.exchanges.indexOfLast { it.requestId == requestId }
+        val prior = chat.exchanges.getOrNull(at)
+        val from = if (prior != null) chat.exchanges.take(at) else chat.exchanges
+        val since = if (prior != null) chat.exchanges.drop(at + 1) else emptyList()
         val attachments = prior?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
         val pending = AskExchange(text.trim(), requestId = requestId, generation = prior?.generation, attachments = attachments,
             atMs = prior?.atMs ?: System.currentTimeMillis())
         val submittedDraft = draft(seat, id).copy(text = pending.question, photo = attachments.firstOrNull())
         try {
-            saveDraft(id, submittedDraft)
-            keepChat(seat, chat.copy(exchanges = from + pending, cap = null, updatedAtMs = System.currentTimeMillis()))
+            if (prior == null) saveDraft(id, submittedDraft)
+            keepChat(seat, chat.copy(exchanges = from + pending + since, cap = null, updatedAtMs = System.currentTimeMillis()))
         } catch (_: Exception) { return false }
         val key = seat to id
         val admission = admit(seat)
@@ -289,7 +291,7 @@ class CoachStore internal constructor(
                     onSnapshot = { snapshot ->
                         if (admissions[key] === admission && admission.active) {
                             val current = archive[key] ?: chat
-                            archive[key] = current.copy(exchanges = from + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments }, atMs = pending.atMs, position = prior?.position ?: 0))
+                            archive[key] = current.copy(exchanges = from + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments }, atMs = pending.atMs, position = prior?.position ?: 0) + since)
                         }
                     }, onUpload = { progress ->
                         if (admissions[key] === admission && admission.active) {
@@ -298,7 +300,7 @@ class CoachStore internal constructor(
                     })
                 if (admissions[key] !== admission || !admission.active) return@launch
                 val current = archive[key] ?: chat
-                keepChat(seat, current.copy(exchanges = from + outcome.exchange(pending),
+                keepChat(seat, current.copy(exchanges = from + outcome.exchange(pending) + since,
                     cap = (outcome as? AskOutcome.Capped)?.cap?.name, absent = outcome is AskOutcome.Absent))
                 if (outcome is AskOutcome.Answered && draft(seat, id) == submittedDraft)
                     saveDraft(seat, id, CoachDraft())
@@ -323,13 +325,14 @@ class CoachStore internal constructor(
         val question = text.trim()
         if (question.toByteArray().size > CoachOnboardingLimits.textBytes || question.isEmpty() && photo == null) return false
         val seat = archiveOwner
-        val held = CoachDraft(text, photo)
-        try { saveDraft(seat, id, held) } catch (_: Exception) { return false }
+        val existing = try {
+            coordinator.records(seat, id).firstOrNull { it.requestId == requestId && it.request().text == question }
+                .also { if (it == null) saveDraft(seat, id, CoachDraft(text, photo)) }
+        } catch (_: Exception) { return false }
         val key = seat to id
         busy[key] = true
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val existing = coordinator.records(seat, id).firstOrNull { it.requestId == requestId && it.request().text == question }
                 val outcome = if (existing != null) coordinator.retry(seat, existing.requestId).await() else {
                     val image = photo?.let { attachment ->
                         val bytes = withContext(storageDispatcher) { localCoach?.photoFile(seat, attachment.id)?.readBytes() }
@@ -339,9 +342,7 @@ class CoachStore internal constructor(
                     if (owner != null || archiveOwner != seat || archive[key] == null) return@launch
                     coordinator.send(id, question, image, photo).await()
                 }
-                val answered = (outcome as? CoachOnboardingOutcome.Answered)?.record
-                if (answered?.request()?.text == question && answered.attachment == photo && draft(seat, id) == held)
-                    saveDraft(seat, id, CoachDraft())
+                (outcome as? CoachOnboardingOutcome.Answered)?.let { clearAnsweredDraft(it.record) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { reportFailure("gym.coachOnboarding", failure) }
             finally { busy.remove(key); jobs.remove(key); onboardingRevision++ }
@@ -349,6 +350,22 @@ class CoachStore internal constructor(
         jobs[key] = job
         job.start()
         return true
+    }
+
+    // Recovers the signed-out questions a dead process left asking; an answer clears the draft that asked it.
+    fun resumeAnonymous() {
+        val coordinator = onboarding ?: return
+        coordinator.resume().forEach { recovery -> scope.launch {
+            val answered = recovery.await() as? CoachOnboardingOutcome.Answered ?: return@launch
+            try { clearAnsweredDraft(answered.record) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { }
+        } }
+    }
+
+    private fun clearAnsweredDraft(record: CoachOnboardingRecord) {
+        val draft = draft(record.owner, record.chat)
+        if (draft.text.trim() == record.request().text && draft.photo == record.attachment) saveDraft(record.owner, record.chat, CoachDraft())
     }
 
     fun resumeChats() {
@@ -553,11 +570,15 @@ class CoachStore internal constructor(
         return localCoach?.choices(archiveOwner, key, "$requestId:$clarificationId").orEmpty()
     }
 
+    var adoptingDraft by mutableStateOf(false)
+        private set
+
     suspend fun adoptPhoneDraft(account: String) {
         if (owner != account) return
         val disk = localCoach ?: return
         val revision = ownerRevision
         val unsaved = unsavedDrafts.toSet()
+        adoptingDraft = true
         try {
             val authority = disk.admit(account)
             val (moved, recovered) = withContext(storageDispatcher) {
@@ -584,7 +605,7 @@ class CoachStore internal constructor(
         catch (failure: Exception) {
             reportFailure("gym.adoptCoachDraft", failure)
             if (owner == account) archiveFailure = "Your draft couldn’t be saved. Try again."
-        }
+        } finally { adoptingDraft = false }
     }
 
     fun draftChangeReady(key: String): Boolean {

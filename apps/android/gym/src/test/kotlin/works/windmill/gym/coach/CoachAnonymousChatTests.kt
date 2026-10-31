@@ -284,6 +284,41 @@ class CoachAnonymousChatTests {
         assertEquals(CoachDraft(), store.draft(chat))
     }
 
+    @Test fun aQuestionAnsweredWhileTheAppWasDeadLeavesTheComposerEmptySoSendCannotAskItAgain() = runTest {
+        val file = File(temporary.root, "archive")
+        val posts = mutableListOf<String>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val dead = LocalCoach(file)
+        val origin = CoachOnboardingSeat(dead.anonymousOwner(), "replica")
+        val stalled = object : CoachOnboardingApi {
+            override suspend fun start(body: String, credential: String): CoachOnboardingResponse {
+                posts += body
+                return CompletableDeferred<CoachOnboardingResponse>().await()
+            }
+            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
+        }
+        val before = CoachStore({ null }, { emptySet() }, {}, { null }, dead, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
+            CoachOnboardingStore(dead, installation(), stalled, { origin }, backgroundScope, storageDispatcher = dispatcher, requestId = { id }))
+        before.refreshAnonymousAccess(); runCurrent()
+        val chat = before.freshChat()
+        before.saveDraft(chat, CoachDraft("Make Push A harder "))
+        assertTrue(before.submit(chat, "Make Push A harder ")); runCurrent()
+        assertEquals(1, posts.size)
+        val relaunched = LocalCoach(file)
+        val answering = object : CoachOnboardingApi {
+            override suspend fun start(body: String, credential: String): CoachOnboardingResponse { posts += body; error("unexpected POST") }
+            override suspend fun get(requestId: String, credential: String) =
+                CoachOnboardingResponse(id, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "Answer")
+        }
+        val after = CoachStore({ null }, { emptySet() }, {}, { null }, relaunched, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
+            CoachOnboardingStore(relaunched, installation(), answering, { origin }, backgroundScope, storageDispatcher = dispatcher, requestId = { id }))
+        after.resumeAnonymous(); repeat(50) { runCurrent() }
+        assertEquals(CoachDraft(), after.draft(chat))
+        assertEquals(CoachDraft(), LocalCoach(file).draft(origin.owner, chat))
+        assertEquals(listOf("Make Push A harder" to "Answer"), after.chat(chat)!!.exchanges.map { it.question to it.answer?.answer })
+        assertEquals(1, posts.size)
+    }
+
     @Test fun trailingWhitespaceIsTrimmedBeforeTheLimitAndTheRequest() = runTest {
         val local = LocalCoach(File(temporary.root, "archive"))
         val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")

@@ -534,7 +534,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
         if (standing != null) seatRead = true
         store.connect(account)
-        if (store.accountReady) account.user?.id?.let { store.coach.adoptPhoneDraft(it) }
         try {
             store.coach.resumeChats()
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
@@ -542,8 +541,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     }
 
-    LaunchedEffect(store.initialGymEmpty, account.resolved, store.coach.accountKey, tab, away, building, selectedRoutineId, anonymousCoachAccess) {
-        if (!account.resolved) return@LaunchedEffect
+    LaunchedEffect(account.user?.id, account.resolved, store.accountReady) {
+        if (account.resolved && store.accountReady) account.user?.id?.let { store.coach.adoptPhoneDraft(it) }
+    }
+
+    // A phone draft moving into the account chooses its chat first; a fresh chat waits for it.
+    LaunchedEffect(store.initialGymEmpty, account.resolved, store.coach.accountKey, store.coach.adoptingDraft, tab, away, building,
+        selectedRoutineId, anonymousCoachAccess) {
+        if (!account.resolved || store.coach.adoptingDraft) return@LaunchedEffect
         val empty = store.initialGymEmpty
         if (empty != null && store.coach.selectedChatId == null && (tab == Tab.Coach || away.lastOrNull() is Away.Coach)) {
             try { store.coach.freshChat(setup = empty) }
@@ -1240,11 +1245,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
                             onSignIn = shell.openSignIn,
                             onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
-                            // Only the newest question is ever asked again: a retry further up would drop
-                            // everything asked since.
-                            onRetry = {
-                                conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
-                            },
+                            onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
                             onAskNew = { askSomethingNew() },
                             seed = "",
                             onNewDraft = { askSomethingNew(it) },
@@ -1312,9 +1313,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
                             onSignIn = shell.openSignIn,
                             onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
-                            onRetry = {
-                                conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
-                            },
+                            onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
                             onAskNew = { askSomethingNew() },
                             seed = "",
                             onNewDraft = { askSomethingNew(it) },

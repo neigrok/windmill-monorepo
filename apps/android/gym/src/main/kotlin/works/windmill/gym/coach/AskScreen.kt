@@ -44,6 +44,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -82,7 +83,7 @@ fun AskScreen(
     asking: Boolean,
     cap: AskCap?,
     onAsk: (String) -> Unit,
-    onRetry: () -> Unit,
+    onRetry: (AskExchange) -> Unit,
     onAskNew: () -> Unit,
     seed: String,
     origin: String,
@@ -139,8 +140,10 @@ fun AskScreen(
     presentation.tolerance = with(LocalDensity.current) { 48.dp.roundToPx() }
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
+    var greetingCounted by rememberSaveable(account, conversationId) { mutableStateOf(false) }
     LaunchedEffect(account, conversationId, greeting) {
-        if (greeting) telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "shown"))
+        if (greeting && !greetingCounted) telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "shown"))
+        greetingCounted = greeting
     }
     val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
@@ -205,11 +208,11 @@ fun AskScreen(
                     if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            ChatTimestamp(exchange.atMs, nowMs)
+                            val heldInComposer = cap != null && index == thread.lastIndex && exchange.answer == null &&
+                                exchange.question == store.coach.draft(conversationId.ifEmpty { "new" }).text
+                            if (!heldInComposer || exchange.attachments.isNotEmpty() || exchange.generation != null) ChatTimestamp(exchange.atMs, nowMs)
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 exchange.attachments.forEach { CoachPhoto(store.coach, conversationId, it, Modifier.size(160.dp)) }
-                                val heldInComposer = cap != null && index == thread.lastIndex && exchange.answer == null &&
-                                    exchange.question == store.coach.draft(conversationId.ifEmpty { "new" }).text
                                 if (exchange.question.isNotEmpty() && !heldInComposer) CoachQuestion(exchange.question, if (exchange.attachments.isEmpty()) CoachGroup.Single else CoachGroup.Last)
                             }
                             val answered = exchange.answer ?: exchange.generation?.response()
@@ -217,9 +220,9 @@ fun AskScreen(
                             if (exchange.pending && text.isEmpty()) CoachTyping()
                             answered?.let { answer ->
                                 val clarification = remember(answer.clarification) { CoachClarification.from(answer.clarification) }
-                                val setupOnly = clarification != null && answer.proposals.isEmpty() && answer.results.isEmpty() && answer.routineDrafts.isEmpty() &&
-                                    !(answer.receipt?.read ?: answer.read).anything &&
-                                    (answer.receipt?.steps ?: answer.steps).all { it.tool == "ask_setup_details" }
+                                val setupOnly = clarification != null && CoachSources.choicesAlone(answer.receipt?.steps ?: answer.steps,
+                                    answer.receipt?.read ?: answer.read,
+                                    acted = answer.proposals.isNotEmpty() || answer.results.isNotEmpty() || answer.routineDrafts.isNotEmpty())
                                 if (setupOnly) CoachAnswer(text.ifEmpty { requireNotNull(clarification).question }, null, store.catalog, nowMs,
                                     copyText = answer.answer.ifEmpty { requireNotNull(clarification).question })
                                 else Answer(answer, text, exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
@@ -246,9 +249,7 @@ fun AskScreen(
                                 if ((cap != null || exchange.needsNew) && index == thread.lastIndex) return@let
                                 Trouble(
                                     said = said,
-                                    onRetry = onRetry.takeIf {
-                                        exchange.again && !asking && index == thread.lastIndex
-                                    },
+                                    onRetry = if (exchange.again && !asking) ({ onRetry(exchange) }) else null,
                                 )
                             }
                         }
@@ -317,7 +318,7 @@ fun AskScreen(
                 else -> if (composerVisible) CoachComposer(store.coach, conversationId.ifEmpty { "new" }, seed, asking,
                     onSend = { text, photo ->
                         val last = thread.lastOrNull()
-                        if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry()
+                        if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry(last)
                         else if (onPhotoAsk != null) onPhotoAsk(text, photo)
                         else { onAsk(text); store.coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
                     }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy, photoRequest = photoRequest, onDraftSync = { syncDraft = it })

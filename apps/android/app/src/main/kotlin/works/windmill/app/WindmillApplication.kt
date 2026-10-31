@@ -203,7 +203,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
                 auth.completeAccountDeletion(pending.user, pending.credential)
             }, telemetry = telemetry)
         scope.launch {
-            try { if (!deletionPending()) coachOnboarding.resume() }
+            try { if (!deletionPending()) store.coach.resumeAnonymous() }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { telemetry.failure("gym.coachOnboarding", java.io.IOException("Coach recovery could not be read.")) }
         }
