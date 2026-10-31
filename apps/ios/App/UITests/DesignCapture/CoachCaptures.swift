@@ -770,10 +770,10 @@ final class CoachCaptures: DesignCapture {
       let app = askOverUpperA(look, board: "workout")
       app.buttons["coach-close"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForNonExistence(timeout: 5))
-      for _ in 0..<2 where !app.buttons["Seated Cable Row"].exists {
+      for _ in 0..<2 where !app.movementHeader("Seated Cable Row").exists {
         app.descendants(matching: .any)["workout-current-set"].swipeLeft(); RunLoop.current.run(until: Date().addingTimeInterval(0.6))
       }
-      XCTAssertTrue(app.buttons["Seated Cable Row"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.movementHeader("Seated Cable Row").waitForExistence(timeout: 5))
       app.buttons["workout-log"].tap()
       app.buttons["workout-coach"].tap()
       XCTAssertTrue(app.buttons["coach-history"].waitForExistence(timeout: 10)); app.buttons["coach-history"].tap()
