@@ -1,7 +1,6 @@
 package works.windmill.gym.ui
 
-import works.windmill.platform.design.WindmillSheetWindow
-import works.windmill.platform.design.WindmillSheetBack
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,13 +31,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -251,8 +248,7 @@ fun RoutineBuilder(
 
     val open = sheet
     if (open != null) {
-        ModalBottomSheet(onDismissRequest = ::requestClose, sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+        WindmillSheet(onDismissRequest = ::requestClose, onBack = ::requestClose, sheetState = sheetState,
             containerColor = skin.surface, scrimColor = skin.scrim,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             dragHandle = {
@@ -260,54 +256,51 @@ fun RoutineBuilder(
                     Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
                 }
             }) {
-            WindmillSheetWindow()
-            WindmillSheetBack(onDismiss = ::requestClose) {
-                val sheetKeyboard = LocalSoftwareKeyboardController.current
-                BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
-                when (open) {
-                    is BuilderSheet.Target -> {
-                        val movement = open.movement ?: draft.movement(open.exerciseId, store.catalog)
-                        if (movement != null) MovementForm(movement, open.scheme,
-                            title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
-                            commitLabel = if (open.adding) "Add" else "Done",
-                            onMovement = { changed ->
-                                val latest = sheet as? BuilderSheet.Target
-                                if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
-                            },
-                            onScheme = { changed ->
-                                val latest = sheet as? BuilderSheet.Target
-                                if (latest != null) sheet = latest.copy(scheme = changed)
-                            }, onCancel = ::requestClose,
-                            onCommit = commit@ {
-                                if (closing || saving) return@commit
-                                val latest = sheet as? BuilderSheet.Target
-                                val edited = latest?.movement ?: movement
-                                val reading = latest?.scheme?.reading ?: open.scheme.reading
-                                val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
-                                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
-                                    "outcome" to if (valid) "ok" else "refused"))
-                                if (valid) {
-                                    focusManager.clearFocus(); keyboard?.hide()
-                                    onDraft(draft.staging(edited, reading))
-                                    close()
-                                }
-                            }, creating = open.creating, busy = closing)
-                    }
-                    BuilderSheet.Picker -> MovementPicker(
-                        catalog = store.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
-                        nowMs = 0, sessions = store.recent, title = "Add movement",
-                        onPick = { id ->
-                            val movement = draft.movement(id, store.catalog)
-                            if (movement == null) say("That movement is no longer on the log.")
-                            else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.domain.SetTarget>()), movement, adding = true)
-                        }, onCreate = null,
-                        onCreateDraft = { exercise, scheme ->
-                            sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)
-                        }, state = pickerState,
-                        modifier = Modifier.heightIn(max = pickerMaxHeight()).padding(horizontal = GymLayout.gutter)
-                            .padding(bottom = GymLayout.sheetBottom), onClose = ::close,
-                    )
+            val sheetKeyboard = LocalSoftwareKeyboardController.current
+            BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
+            when (open) {
+                is BuilderSheet.Target -> {
+                    val movement = open.movement ?: draft.movement(open.exerciseId, store.catalog)
+                    if (movement != null) MovementForm(movement, open.scheme,
+                        title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
+                        commitLabel = if (open.adding) "Add" else "Done",
+                        onMovement = { changed ->
+                            val latest = sheet as? BuilderSheet.Target
+                            if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
+                        },
+                        onScheme = { changed ->
+                            val latest = sheet as? BuilderSheet.Target
+                            if (latest != null) sheet = latest.copy(scheme = changed)
+                        }, onCancel = ::requestClose,
+                        onCommit = commit@ {
+                            if (closing || saving) return@commit
+                            val latest = sheet as? BuilderSheet.Target
+                            val edited = latest?.movement ?: movement
+                            val reading = latest?.scheme?.reading ?: open.scheme.reading
+                            val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
+                            telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
+                                "outcome" to if (valid) "ok" else "refused"))
+                            if (valid) {
+                                focusManager.clearFocus(); keyboard?.hide()
+                                onDraft(draft.staging(edited, reading))
+                                close()
+                            }
+                        }, creating = open.creating, busy = closing)
                 }
+                BuilderSheet.Picker -> MovementPicker(
+                    catalog = store.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
+                    nowMs = 0, sessions = store.recent, title = "Add movement",
+                    onPick = { id ->
+                        val movement = draft.movement(id, store.catalog)
+                        if (movement == null) say("That movement is no longer on the log.")
+                        else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.domain.SetTarget>()), movement, adding = true)
+                    }, onCreate = null,
+                    onCreateDraft = { exercise, scheme ->
+                        sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)
+                    }, state = pickerState,
+                    modifier = Modifier.heightIn(max = pickerMaxHeight()).padding(horizontal = GymLayout.gutter)
+                        .padding(bottom = GymLayout.sheetBottom), onClose = ::close,
+                )
             }
         }
     }

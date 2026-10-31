@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,8 +43,6 @@ import works.windmill.gym.store.Older
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.RecoveryRead
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSheetBack
-import works.windmill.platform.design.WindmillSheetWindow
 import works.windmill.platform.telemetry.LocalTelemetry
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -163,28 +162,25 @@ fun LogScreen(
             )
         }
     }
-    if (weighingIn) ModalBottomSheet(onDismissRequest = { close() }, sheetState = sheetState,
-        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false), containerColor = skin.surface, scrimColor = skin.scrim,
+    if (weighingIn) WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
+        containerColor = skin.surface, scrimColor = skin.scrim,
         dragHandle = { WeighInHandle() }, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
-        WindmillSheetWindow()
         formState.SaveableStateProvider("weigh-in") {
-            WindmillSheetBack(onDismiss = { close() }) {
-                BackHandler(saving || closing) {}
-                WeighInSheet(null, null, now(), saving || closing, refused,
-                    onSave = { date, kg ->
-                        if (!saving && !closing) {
-                            saving = true
-                            refused = null
-                            scope.launch {
-                                try {
-                                    val failure = store.weighIn(date, kg)
-                                    if (failure != null) refused = failure.line("That weigh-in could not be saved.")
-                                    else { saving = false; close() }
-                                } finally { saving = false }
-                            }
+            BackHandler(saving || closing) {}
+            WeighInSheet(null, null, now(), saving || closing, refused,
+                onSave = { date, kg ->
+                    if (!saving && !closing) {
+                        saving = true
+                        refused = null
+                        scope.launch {
+                            try {
+                                val failure = store.weighIn(date, kg)
+                                if (failure != null) refused = failure.line("That weigh-in could not be saved.")
+                                else { saving = false; close() }
+                            } finally { saving = false }
                         }
-                    }, onDelete = null, draftKey = "${store.accountKey}:new")
-            }
+                    }
+                }, onDelete = null, draftKey = "${store.accountKey}:new")
         }
     }
 }

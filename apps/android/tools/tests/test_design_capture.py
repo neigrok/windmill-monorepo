@@ -423,6 +423,25 @@ class DesignCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             device.touch({"phase": "down", "target": "Cable Fly", "row": "true"})
 
+    def test_screen_touch_holds_a_back_gesture_from_the_window_edge(self):
+        device = capture.Device(Path("/android-sdk"), 5582)
+        device.tree = lambda: capture.ET.fromstring('<hierarchy><node bounds="[0,0][1080,2400]"><node text="Bodyweight" bounds="[150,100][600,160]" /></node></hierarchy>')
+        calls = []
+        device.run = lambda *args, **kwargs: calls.append(args)
+        device.touch({"phase": "down", "screen": True, "at": [0, .55]})
+        device.touch({"phase": "move", "at": [.3, .55]})
+        device.release_touch()
+        self.assertEqual([
+            ("shell", "input", "motionevent", "DOWN", "0", "1320"),
+            ("shell", "input", "motionevent", "MOVE", "324", "1320"),
+            ("shell", "input", "motionevent", "UP", "324", "1320"),
+        ], calls)
+        for wrong in ({"phase": "down", "screen": True, "target": "Bodyweight"},
+                      {"phase": "down", "screen": True, "row": True},
+                      {"phase": "down", "screen": "true"}):
+            with self.assertRaises(ValueError):
+                device.touch(wrong)
+
     def test_specimen_viewport_is_bounded_and_resets_size_and_density(self):
         device = capture.Device(Path("/android-sdk"), 5582)
         calls = []

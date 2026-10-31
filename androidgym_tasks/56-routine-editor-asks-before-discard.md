@@ -21,7 +21,7 @@
 
   Discard leaves; Keep editing stays.
 - **Clean draft:** leaves at once.
-- **Gesture preview:** a dirty draft shows no predictive-back preview. Register with task 53's back guard. If 53 hasn't landed, intercept with a `BackHandler` enabled only while dirty.
+- **Gesture preview:** a dirty draft shows no predictive-back preview. Register task 53's back guard, `BackGuard(enabled = dirty) { … }` in `GymNavigator.kt`: while it is enabled, Back previews nothing and calls it instead of leaving.
 - **02.17:** the dismiss button reads **Keep editing**.
 - **Name field:** the outlined field with its label inside, as in the movement form (02.20 draws it).
 - "Dirty" means the draft differs from what was opened, by the editor's existing equality, so reorder-and-back counts.

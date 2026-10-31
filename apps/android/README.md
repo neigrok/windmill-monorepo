@@ -142,6 +142,14 @@ inactive tap opens Routines without starting anything. An active tap rechecks th
 before opening it. Routines requests clear read-only pushed navigation and preserve open drafts;
 each request is consumed once, including across activity recreation.
 
+`GymNavigator` keeps the tab and the pushed stack across recreation, and `Standing` decides what
+Back means. `GymStage` moves the room's frame: pushes and pops travel along the shared X axis and
+tab changes fade through, 300 ms with emphasized easing. A back gesture shrinks a pushed screen, the
+logger or the routine editor toward 90 % over the frame its release returns to. A screen holding
+work registers a `BackGuard`, and a busy `BackHandler` swallows the gesture. Every sheet is a
+`WindmillSheet`, which previews Back from its own window. With Remove animations on, all of these
+cut.
+
 The rack and Fix set keep native number input separate from committed values. IME Done and explicit
 Log set / Save fix validate the current buffer; plain blur or Cancel restores the committed value.
 `NumberEntry` owns signed/comma parsing and performed-set bounds, while `NumberStepper` owns the

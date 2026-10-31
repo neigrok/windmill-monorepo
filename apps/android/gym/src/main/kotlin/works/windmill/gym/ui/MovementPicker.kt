@@ -1,7 +1,6 @@
 package works.windmill.gym.ui
 
-import works.windmill.platform.design.WindmillSheetWindow
-import works.windmill.platform.design.WindmillSheetBack
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,8 +29,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -363,9 +360,8 @@ fun MovementPicker(
             state.createOpen = false
             telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "cancel", "outcome" to "ok"))
         }
-        ModalBottomSheet(
-            onDismissRequest = ::cancelCreate, sheetState = createSheet,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+        WindmillSheet(
+            onDismissRequest = ::cancelCreate, onBack = ::cancelCreate, sheetState = createSheet,
             containerColor = skin.surface, scrimColor = skin.scrim,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             dragHandle = {
@@ -374,53 +370,50 @@ fun MovementPicker(
                 }
             },
         ) {
-            WindmillSheetWindow()
-            WindmillSheetBack(onDismiss = ::cancelCreate) {
-                val sheetKeyboard = LocalSoftwareKeyboardController.current
-                BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
-                val submitted = state.submitted
-                val movement = state.created ?: Exercise(state.requestId, submitted?.name ?: state.createName.orEmpty(),
-                    Exercise.unclassified, submitted?.equipment ?: state.equipment, custom = true,
-                    loadCount = submitted?.loadCount ?: state.loadCount)
-                MovementForm(RoutineMovement(null, movement), scheme = null, title = "Create movement",
-                    commitLabel = if (state.busy) "Creating…" else "Create and add", creating = true,
-                    onMovement = {
-                        state.createName = it.current.name
-                        state.equipment = it.current.equipment
-                        state.loadCount = it.current.loadCount
-                        state.refusal = null
-                    }, onScheme = {}, onCancel = ::cancelCreate, busy = state.busy,
-                    movementEditable = submitted == null && state.created == null,
-                    refusal = state.refusal,
-                    onCommit = {
-                        if (!state.busy) {
-                            state.busy = true
-                            val write = state.submitted ?: ExerciseWrite(state.requestId, movement.name.trim(),
-                                Exercise.unclassified, movement.equipment, loadCount = movement.loadCount)
-                            state.submitted = write
-                            scope.launch {
-                                try {
-                                    when (val result = requireNotNull(onCreate)(write)) {
-                                        is MovementCreateOutcome.Added -> {
-                                            state.createOpen = false
-                                            state.createName = null
-                                            state.created = null
-                                            state.submitted = null
-                                            state.refusal = null
-                                            onAdded()
-                                        }
-                                        is MovementCreateOutcome.Failed -> {
-                                            state.created = result.created
-                                            if (result.created == null && result.why is WriteFailure.Refused) state.submitted = null
-                                            state.refusal = result.why.line(if (result.created == null)
-                                                "check this movement before retrying" else "the movement was created; retry adding it to this workout")
-                                        }
+            val sheetKeyboard = LocalSoftwareKeyboardController.current
+            BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
+            val submitted = state.submitted
+            val movement = state.created ?: Exercise(state.requestId, submitted?.name ?: state.createName.orEmpty(),
+                Exercise.unclassified, submitted?.equipment ?: state.equipment, custom = true,
+                loadCount = submitted?.loadCount ?: state.loadCount)
+            MovementForm(RoutineMovement(null, movement), scheme = null, title = "Create movement",
+                commitLabel = if (state.busy) "Creating…" else "Create and add", creating = true,
+                onMovement = {
+                    state.createName = it.current.name
+                    state.equipment = it.current.equipment
+                    state.loadCount = it.current.loadCount
+                    state.refusal = null
+                }, onScheme = {}, onCancel = ::cancelCreate, busy = state.busy,
+                movementEditable = submitted == null && state.created == null,
+                refusal = state.refusal,
+                onCommit = {
+                    if (!state.busy) {
+                        state.busy = true
+                        val write = state.submitted ?: ExerciseWrite(state.requestId, movement.name.trim(),
+                            Exercise.unclassified, movement.equipment, loadCount = movement.loadCount)
+                        state.submitted = write
+                        scope.launch {
+                            try {
+                                when (val result = requireNotNull(onCreate)(write)) {
+                                    is MovementCreateOutcome.Added -> {
+                                        state.createOpen = false
+                                        state.createName = null
+                                        state.created = null
+                                        state.submitted = null
+                                        state.refusal = null
+                                        onAdded()
                                     }
-                                } finally { state.busy = false }
-                            }
+                                    is MovementCreateOutcome.Failed -> {
+                                        state.created = result.created
+                                        if (result.created == null && result.why is WriteFailure.Refused) state.submitted = null
+                                        state.refusal = result.why.line(if (result.created == null)
+                                            "check this movement before retrying" else "the movement was created; retry adding it to this workout")
+                                    }
+                                }
+                            } finally { state.busy = false }
                         }
-                    })
-            }
+                    }
+                })
         }
     }
 }
