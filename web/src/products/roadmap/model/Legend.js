@@ -41,6 +41,24 @@ export function inUseCount(legend, nodes) {
   return withCounts(legend, nodes).filter((kind) => kind.count > 0).length;
 }
 
+// The kind filter's options. Hue is the key because hue is what a node stores: two legend kinds
+// sharing one hue are one option. A roadmap wearing one hue gets no options at all.
+export function kindOptions(tree, legend = []) {
+  const worn = new Set(tree.nodes.map((node) => node.color ?? DEFAULT_NODE_COLOR));
+  if (worn.size < 2) return [];
+  const named = new Map();
+  for (const kind of legend ?? []) if (!named.has(kind.hue)) named.set(kind.hue, kind);
+  const hues = [
+    ...(legend ?? []).map((kind) => kind.hue).filter((hue) => worn.has(hue)),
+    ...NODE_COLOR_NAMES.filter((hue) => worn.has(hue) && !named.has(hue)),
+  ];
+  return [...new Set(hues)].map((hue) => ({
+    id: named.get(hue)?.id ?? hue,
+    hue,
+    label: named.get(hue)?.label || `${hue[0].toUpperCase()}${hue.slice(1)}`,
+  }));
+}
+
 // null once all six palette hues are taken.
 export function freeHue(legend) {
   const taken = new Set(legend.map((kind) => kind.hue));

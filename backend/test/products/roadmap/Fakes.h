@@ -72,7 +72,12 @@ struct FakeTreeRepository : TreeRepository {
   std::set<std::string> deletedIds;
   // One entry per save call: how many node rows the slice carried.
   std::vector<std::size_t> savedNodeCounts;
+  bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
   std::optional<StoredTree> load(const TreeId& tree) override {
+    if (latticeLoadsFail) throw std::runtime_error("connection reset mid-read");
+    return row(tree);
+  }
+  std::optional<StoredTree> row(const TreeId& tree) const {
     if (deletedIds.count(tree.str())) return std::nullopt;
     auto it = byId.find(tree.str());
     if (it == byId.end()) return std::nullopt;
@@ -80,7 +85,7 @@ struct FakeTreeRepository : TreeRepository {
   }
   // The same two facts the real repository reads with a two-column select, projected off the stored tree.
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override {
-    const std::optional<StoredTree> stored = load(tree);
+    const std::optional<StoredTree> stored = row(tree);
     if (!stored) return std::nullopt;
     return TreeAccess{stored->owner, stored->visibility};
   }

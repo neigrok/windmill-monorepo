@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -24,22 +25,22 @@ struct Harness {
   std::shared_ptr<FakeOpLog> ops = std::make_shared<FakeOpLog>();
   FakeBus bus;
   FakeTokens tokens;
-  FakeClock clock;
+  std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
   FakeAuthRepository authRepo;
   FakeEmail email;
   std::shared_ptr<RoomRegistry> rooms = std::make_shared<RoomRegistry>(*trees, *ops, bus);
   FakeOAuthRepository oauthRepo;
-  OAuthService oauth{oauthRepo, tokens, clock};
+  OAuthService oauth{oauthRepo, tokens, *clock};
   FakeAccountFootprint footprint;
   FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
-  std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens);
-  TreeApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork};
+      std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
+  std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens, *clock);
+  TreeApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork, clock};
 
   UserId signIn(const std::string& sessionSecret, const std::string& email = "sam@example.com") {
     User user = authRepo.createUser(Email{email}, "sam");
-    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000, "", "", clock.now);
+    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock->now + 1'000'000, "", "", clock->now);
     return user.id;
   }
 
@@ -386,6 +387,25 @@ TEST(fork_of_a_private_source_you_dont_own_is_404_like_absent) {
   CHECK(h.trees->forkedFrom.empty());
 }
 
+// The request exception boundary answers 500 and reports the Issue; a 404 here would hide the failure.
+TEST(fork_lets_an_infrastructure_failure_reach_the_request_exception_boundary) {
+  Harness h;
+  h.signIn("s-me");
+  h.seedSource("t_src", "Learn to sail");
+  h.trees->latticeLoadsFail = true;
+
+  bool threw = false;
+  drogon::HttpResponsePtr response;
+  try {
+    response = sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-me"), "t_src");
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  CHECK(threw);
+  CHECK(response == nullptr);
+  CHECK(h.trees->forkedFrom.empty());
+}
+
 TEST(fork_of_your_own_private_source_succeeds) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -485,6 +505,29 @@ TEST(put_to_an_absent_id_creates_a_tree_owned_by_the_caller) {
   CHECK(h.trees->byId["t_00000000000000e0"].visibility == Visibility::private_);
   CHECK_EQ(h.trees->byId["t_00000000000000e0"].title.value, std::string("Learn to sail"));
   CHECK_EQ(storedNodeIds(*h.trees, "t_00000000000000e0"), std::vector<std::string>{"hull"});
+}
+
+TEST(put_to_an_absent_id_adds_its_steps_now_and_a_put_into_a_standing_tree_stays_at_genesis) {
+  Harness h;
+  h.clock->now = 1'800'000'000'000;
+  UserId me = h.signIn("s-me");
+  const Hlc genesis{1, 0, "genesis"};
+
+  CHECK_EQ(sendPut(h.api, "s-me", "t_00000000000000e1", document("Learn to sail", "hull"))->getStatusCode(),
+           drogon::k200OK);
+  const StoredTree& created = h.trees->byId["t_00000000000000e1"];
+  REQUIRE_EQ(created.state.nodes.size(), 1u);
+  CHECK_EQ(created.state.nodes[0].createdAt, (Hlc{1'800'000'000'000, 0, "srv"}));
+  CHECK_EQ(created.state.nodes[0].labelAt, (Hlc{1'800'000'000'000, 0, "srv"}));
+  REQUIRE_EQ(created.legend.kinds.size(), 3u);
+  for (const KindStateEntry& kind : created.legend.kinds) CHECK_EQ(kind.createdAt, genesis);
+
+  h.seed("t_00000000000000e2", "Standing", me, Visibility::unlisted);
+  CHECK_EQ(sendPut(h.api, "s-me", "t_00000000000000e2", document("Standing", "mast"))->getStatusCode(),
+           drogon::k200OK);
+  const std::optional<NodeStateEntry> mast = LooseGraph(h.trees->byId["t_00000000000000e2"].state).exportNode(NodeId{"mast"});
+  REQUIRE(mast.has_value());
+  CHECK_EQ(mast->createdAt, genesis);
 }
 
 TEST(put_by_the_owner_overwrites_the_document_and_keeps_the_owner) {

@@ -196,7 +196,9 @@ Rules:
   flips the room to all-dirty.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
   Forks snapshot the source room's graph and legend, clear authored progress baselines, and start
-  a fresh op log with `forked_from` provenance.
+  a fresh op log with `forked_from` provenance. Every present step is added to the fork afresh: a
+  stamp from the source room's clock, one counter tick apart in creation order, so a step's
+  creation stamp is when it joined this tree and sibling ties keep their order.
 
 ## Authorization
 
@@ -241,13 +243,17 @@ Registered in `products/roadmap/routes.cpp`.
 | GET | `/og/{id}.png` |
 
 Single edits have no REST endpoint — they ride the socket; `PUT /v1/trees/{id}` takes a whole
-document and joins it as one write. Inbound models are suffixed `Request`, outbound `Response`.
+document and joins it as one write. A PUT that creates the tree stamps its steps at the moment of
+creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
+and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
+and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
 A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a client-supplied id
 (claim-create, fork) must match byte for byte.
 
 `POST /v1/trees` accepts initial `TreeData` plus an optional client-minted `id` and returns
-`{treeId, existed}`. Retrying an owned existing ID returns `existed: true`. Another account's ID
+`{treeId, existed}`. The initial steps share one stamp at the moment of creation; the legend takes
+the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existing ID returns `existed: true`. Another account's ID
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
 that deleted tree under a fresh ID.
 

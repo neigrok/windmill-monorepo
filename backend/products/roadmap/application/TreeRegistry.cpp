@@ -1,5 +1,6 @@
 #include "products/roadmap/application/TreeRegistry.h"
 
+#include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Legend.h"
@@ -32,7 +33,10 @@ TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& i
     return Creation::taken;
   }
 
-  GraphState state = LooseGraph(initial, genesis_).exportState();  // seed the starting nodes/edges
+  // The starting steps are added to this tree now. The legend stays at genesis, byte-equal to the
+  // one a device-born tree seeds, so a claim converges.
+  const Hlc plantedAt{clock_.nowMs(), 0, std::string{TreeRoom::kServerActor}};
+  GraphState state = LooseGraph(initial, plantedAt).exportState();
   // Honour a posted legend; otherwise a blank tree is born with the three defaults.
   LegendState legend = initial.kinds.empty() ? Legend::seededDefaults(genesis_).exportState()
                                              : Legend(initial.kinds, genesis_).exportState();
