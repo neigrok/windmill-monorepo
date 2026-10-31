@@ -90,6 +90,11 @@ public:
 
   TreeData toTreeData(const TreeId& id, const std::string& title) const;
   GraphState exportState() const;
+  // The state a fork of this graph starts from. Every present node is added to the fork afresh,
+  // `plantedAt` plus one counter tick per node in (creation stamp, id) order, so sibling ties keep
+  // their order; every status seed is cleared. Tombstones and edges keep their stamps.
+  // `plantedAt` must dominate every stamp the graph holds.
+  GraphState forkState(const Hlc& plantedAt) const;
   // One entry's full CRDT state, for sparse persistence. nullopt for a never-seen key.
   std::optional<NodeStateEntry> exportNode(const NodeId& id) const;
   std::optional<EdgeStateEntry> exportEdge(const Edge& edge) const;

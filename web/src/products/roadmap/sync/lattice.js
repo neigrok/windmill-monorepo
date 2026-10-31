@@ -3,6 +3,8 @@
 // projection. The register laws — add-biased life, last-writer-wins fields — must match the
 // backend bit-for-bit, and nothing enforces it.
 
+import { GENESIS_STAMP } from '../../../../../packages/api-contract/genesis.js';
+
 const UNSET = { ms: 0, counter: 0, actor: '' };
 
 export function parseHlc(text) {
@@ -23,6 +25,12 @@ export function hlcText(h) {
 
 function hlcIsSet(h) {
   return h.ms !== 0 || h.counter !== 0 || h.actor !== '';
+}
+
+// The wall time a stamp records, or null when it records none: unset, or the genesis baseline that
+// seeds carry instead of a moment.
+function stampedMs(h) {
+  return hlcIsSet(h) && hlcText(h) !== GENESIS_STAMP ? h.ms : null;
 }
 
 // -1 / 0 / 1 for a vs b, ordered by (ms, counter, actor).
@@ -390,6 +398,7 @@ export class TreeLattice {
         color: record.color.v,
         order: record.order.v,                 // the sibling sort key; '' ⇒ creation-time fallback
         createdAt: { ...record.life.addedAt },  // the creation stamp that fallback compares
+        createdMs: stampedMs(record.life.addedAt),  // when the step was added to this tree; null is unknown
         prerequisites: parentsOf.get(id) ?? [],
         position: record.position.v ? { ...record.position.v } : undefined,
         status: record.status.v ?? undefined,

@@ -196,7 +196,9 @@ Rules:
   flips the room to all-dirty.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
   Forks snapshot the source room's graph and legend, clear authored progress baselines, and start
-  a fresh op log with `forked_from` provenance.
+  a fresh op log with `forked_from` provenance. Every present step is added to the fork afresh: a
+  stamp from the source room's clock, one counter tick apart in creation order, so a step's
+  creation stamp is when it joined this tree and sibling ties keep their order.
 
 ## Authorization
 
@@ -247,7 +249,8 @@ A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a clien
 (claim-create, fork) must match byte for byte.
 
 `POST /v1/trees` accepts initial `TreeData` plus an optional client-minted `id` and returns
-`{treeId, existed}`. Retrying an owned existing ID returns `existed: true`. Another account's ID
+`{treeId, existed}`. The initial steps share one stamp at the moment of creation; the legend takes
+the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existing ID returns `existed: true`. Another account's ID
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
 that deleted tree under a fresh ID.
 

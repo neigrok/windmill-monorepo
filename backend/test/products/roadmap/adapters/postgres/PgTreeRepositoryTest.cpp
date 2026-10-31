@@ -75,7 +75,8 @@ TEST(pg_an_erased_accounts_live_room_is_retired_so_its_tree_is_neither_served_no
   CHECK_EQ(announced, std::vector<std::string>{kTree.str()});
   CHECK_FALSE(registry.accessOf(kTree).has_value());
   FakeTokens tokens;
-  ForkService forks{registry, trees, tokens};
+  FakeClock clock;
+  ForkService forks{registry, trees, tokens, clock};
   CHECK(forks.fork(kTree, "", "", kEve).outcome == ForkService::Outcome::noSource);
   registry.sweep(std::chrono::steady_clock::duration::zero());
   CHECK_EQ(rowsOfTheTree(), 0L);
