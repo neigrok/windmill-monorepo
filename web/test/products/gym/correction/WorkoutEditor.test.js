@@ -44,6 +44,25 @@ for (const future of [false, true]) test(`a ${future ? 'future' : 'known overlap
   assert.match(textOf(findByClass(view.tree, 'gym-read-failed')[0]), future ? /past now/ : /cross a workout/);
 });
 
+test('a correction that moves a barbell load below zero says the floor in the failure line and queues nothing', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 24, 18).getTime() });
+  browserWith();
+  const session = { id: 'ses_correction', startedAt: new Date(2026, 8, 21, 18).getTime(), finishedAt: new Date(2026, 8, 21, 19).getTime() };
+  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, completedAt: session.startedAt + 60000 };
+  const { id: setId, ...setFields } = set;
+  const gym = await gymAccount(t, [confirmed('session', session.id, { startedAt: session.startedAt, finishedAt: session.finishedAt }),
+    confirmed('set', setId, { ...setFields, sessionId: session.id })]);
+  const { WorkoutEditor } = await loadScreen('products/gym/correction/WorkoutEditor.jsx');
+  const view = renderHook(t, () => WorkoutEditor({ session, sets: [set], catalog: [{ id: 'bench-press', name: 'Bench Press', equipment: 'barbell' }], log: roomLog(), from: '#/gym/log' }));
+  const field = (name) => elementsOf(view.tree).find((node) => node.type === 'input' && node.props.name === name);
+  window.location.hash = '#/gym/session/ses_correction/edit';
+  field('weightKg').props.onChange({ target: { value: '-5' } });
+  await findByClass(view.tree, 'gym-correction-form')[0].props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(gym.owed(), []);
+  assert.equal(field('weightKg').props.value, '-5');
+  assert.equal(textOf(findByClass(view.tree, 'gym-read-failed')[0]), 'Load, 0 or more.');
+});
+
 test('a late correction refusal restores literal input after remount and waits for successful retry admission', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 24, 18).getTime() });
   browserWith();

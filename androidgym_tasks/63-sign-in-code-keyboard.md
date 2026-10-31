@@ -11,7 +11,7 @@
 - `SignInDoorTests.emailAndCodeOfferAutofillAndTheCodeOpensTheDigitKeyboard` asserts the hints and the platform input types.
 
 **Change**
-- **Code field:** a digits-only keyboard (`KeyboardType.NumberPassword`, or `Number` with no separators) that accepts digits only.
+- **Code field:** the digit keyboard (`KeyboardType.NumberPassword`). The keyboard enters digits; the field still accepts a pasted email link, which the board promises.
 - **Autofill:** content types for the email address and the one-time code (Compose `ContentType` semantics, or `autofill` modifiers on the platform this targets), so SMS and email code suggestions and saved emails appear.
 - The TalkBack label "Email field" becomes "Email".
 

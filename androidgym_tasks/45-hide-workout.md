@@ -42,7 +42,7 @@
 - A test leaves a live workout with Hide and with Back, sees the workout bar on Routines, The log and Coach, taps it, and lands in the logger with the same rack. Another test recreates the activity with the workout hidden and finds the bar, not the logger.
 - Events: `gym_action` with `screen=workout`, `action=hide`; `screen=workout_bar`, `action=open`; `screen=workout`, `action=show_notification`, `outcome=ok` / `refused`. List them in `docs/ANDROID_OBSERVABILITY.md`. The time and the routine name are never event properties.
 - A failed Show still reports under `gym.showWorkout`.
-- Tests: `GymTabsTests.kt`, `GymRailTests.kt` (the rail and the bar stand together while hidden), `ui/LoggerScreenTests.kt`, `notification/WorkoutNotificationsTests.kt` (the swipe turns the notification off and leaves the workout shown).
+- Tests: `GymNavigatorTests.kt`, `GymRailTests.kt` (the rail and the bar stand together while hidden), `ui/LoggerScreenTests.kt`, `notification/WorkoutNotificationsTests.kt` (the swipe turns the notification off and leaves the workout shown).
 
 **Depends on:** 03, 11.
 

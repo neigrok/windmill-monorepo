@@ -99,12 +99,14 @@ export function namedZone(timeZone) {
   } };
 }
 
-// `kept` is the stored load a refused fix leaves in place, where the call site knows it.
+// `kept` is the stored load a refused fix leaves in place, where the call site knows it; a past workout or a session
+// correction names the floor alone.
 export function gymRefusalError(refused, { kept = null } = {}) {
   if (refused.kind === 'invalid') {
     const violation = refused.violation;
-    if (violation.rule === SetRules.loadFloor && kept !== null) {
-      return new GymRefusal('load-floor', { sentence: fixLoadFloorLine(violation.reason.min, kept) });
+    if (violation.rule === SetRules.loadFloor) {
+      const floor = violation.reason.min;
+      return new GymRefusal('load-floor', { sentence: kept === null ? loadFloorLine(floor) : fixLoadFloorLine(floor, kept) });
     }
     if (violation.rule === RoutineRules.loadFloor) return new GymRefusal('load-floor', { sentence: loadFloorLine(violation.reason.min) });
     let sentence;

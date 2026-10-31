@@ -10,8 +10,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.SaverScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
@@ -19,6 +23,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
@@ -202,6 +207,92 @@ class GymNavigatorTests {
         assertEquals(1 to 1, popped to asked)
     }
 
+    @Test
+    fun aSecondBackDuringTheReleasePopsAgainAndTheStageSettles() {
+        var popped = 0
+        stage(busy = false, guarded = false, onPop = { popped++ }, away = listOf(Away.Notes, Away.Bodyweight))
+        compose.mainClock.autoAdvance = false
+        repeat(2) {
+            compose.runOnIdle {
+                activity.onBackPressedDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 400f, 0f, BackEventCompat.EDGE_LEFT))
+                activity.onBackPressedDispatcher.dispatchOnBackProgressed(BackEventCompat(120f, 400f, .5f, BackEventCompat.EDGE_LEFT))
+                activity.onBackPressedDispatcher.onBackPressed()
+            }
+            compose.mainClock.advanceTimeBy(100)
+        }
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        assertEquals(2, popped)
+        compose.onNodeWithText("away:1:notes").assertDoesNotExist()
+        compose.onNodeWithText("away:2:bodyweight").assertDoesNotExist()
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val settled = compose.onNodeWithText("tab:Routines").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertEquals("the stage stands square, not half way out", root.left, settled.left)
+    }
+
+    @Test
+    fun aBackRightAfterACancelledGesturePopsOnceAndSettles() {
+        var popped = 0
+        stage(busy = false, guarded = false, onPop = { popped++ })
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle {
+            activity.onBackPressedDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 400f, 0f, BackEventCompat.EDGE_LEFT))
+            activity.onBackPressedDispatcher.dispatchOnBackProgressed(BackEventCompat(120f, 400f, .5f, BackEventCompat.EDGE_LEFT))
+            activity.onBackPressedDispatcher.dispatchOnBackCancelled()
+        }
+        compose.mainClock.advanceTimeBy(48)
+        compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        assertEquals(1, popped)
+        compose.onNodeWithText("away:1:notes").assertDoesNotExist()
+        compose.onNodeWithText("tab:Routines").assertIsDisplayed()
+    }
+
+    @Test
+    fun theSameScreenAtTwoDepthsIsTwoFramesWithTheirOwnSavedState() {
+        val navigator = GymNavigator(away = listOf(Away.Notes, Away.Bodyweight))
+        val seen = mutableListOf<String>()
+        compose.setContent {
+            activity = LocalActivity.current as ComponentActivity
+            val states = rememberSaveableStateHolder()
+            GymStage(navigator.standing(building = false, logger = false), navigator.guards,
+                onBack = { navigator.pop() }) { frame ->
+                states.SaveableStateProvider(frame.key) {
+                    val opened = rememberSaveable { frame.key }
+                    Text(opened)
+                    SideEffect { seen += opened }
+                }
+            }
+        }
+        compose.onNodeWithText("away:2:bodyweight").assertExists()
+        compose.runOnIdle { navigator.reset(listOf(Away.Bodyweight)) }
+        compose.onNodeWithText("away:1:bodyweight").assertExists()
+        compose.onNodeWithText("away:2:bodyweight").assertDoesNotExist()
+        assertEquals("both frames stood on the stage together, each with its own state",
+            listOf("away:2:bodyweight", "away:1:bodyweight"), seen.distinct())
+    }
+
+    @Test
+    fun backKeepsWhatTheScreenHasTypedBeforeItLeaves() {
+        val order = mutableListOf<String>()
+        compose.setContent {
+            activity = LocalActivity.current as ComponentActivity
+            val navigator = remember { GymNavigator(away = listOf(Away.Notes, Away.Bodyweight)) }
+            GymStage(navigator.standing(building = false, logger = false), navigator.guards,
+                onBack = { order += "back"; navigator.pop() }) { frame ->
+                Text(frame.key)
+                if (frame is Frame.Pushed) KeepOnBack { order += "kept ${frame.key}" }
+            }
+        }
+        startGesture()
+        compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("away:1:notes").assertExists()
+        compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("tab:Routines").assertExists()
+        assertEquals(listOf("kept away:2:bodyweight", "kept away:1:notes", "back", "kept away:1:notes", "back"), order)
+    }
+
     private fun startGesture() {
         compose.runOnIdle {
             activity.onBackPressedDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 400f, 0f, BackEventCompat.EDGE_LEFT))
@@ -221,11 +312,11 @@ class GymNavigatorTests {
         return gone
     }
 
-    private fun stage(busy: Boolean, guarded: Boolean, onPop: () -> Unit, onAsk: () -> Unit = {}) {
+    private fun stage(busy: Boolean, guarded: Boolean, onPop: () -> Unit, onAsk: () -> Unit = {}, away: List<Away> = listOf(Away.Notes)) {
         this.guarded = guarded
         compose.setContent {
             activity = LocalActivity.current as ComponentActivity
-            val navigator = remember { GymNavigator(away = listOf(Away.Notes)) }
+            val navigator = remember { GymNavigator(away = away) }
             GymStage(navigator.standing(building = false, logger = false), navigator.guards,
                 onBack = { navigator.pop(); onPop() }) { frame ->
                 Text(frame.key)

@@ -1,20 +1,17 @@
 # The rack fits its number, scrolls as one at large text, and keeps a typed value when focus moves
 
-**Status:** 🔨 Implemented on its branch, not merged. The boards flip to 🚀 after merge.
+**Status:** Implemented, awaiting merge. The boards flip to 🚀 after merge.
 
 **Figma:**
 - 03.34 Rack, the numeral fits first: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40960) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41112)
 - 03.35 Rack at 320 dp / 200 %: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41245) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41402)
 - 03.2 Rack with the keyboard: [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28178)
 
-**Current implementation**
-- **Unit wraps:** a real 22.5 kg total wraps "kg total" onto its own line, so the rack panel grows about 80 px and the layout jumps while stepping (step a barbell load from 20 to 22.5 kg in a live workout).
-- **Keyboard up:** the set list collapses to a clipped sliver, and the current row is cut mid-glyph (the rig's `03.12` rack-keyboard capture).
-- **Large text:** at 320 dp / 200 % the list is clipped the same way (`adb shell wm size 840x1866` plus `settings put system font_scale 2.0` gives 320 dp / 200 % on a Pixel 8 profile).
-- **Typed value lost:**
-  - `ui/NumberDraft.kt` `focus(active)` calls `cancel()` when focus leaves.
-  - A typed load is therefore thrown away when the lifter taps Reps instead of the keyboard's Done; it reproduces every time.
-  - iOS commits a typed value on focus loss (iOS task 61's fix).
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/ui/`)
+- **Numeral:** `NumberStepper.kt` fits the Display numeral beside its unit by measurement, from 88 sp down to 64 sp, and keeps the 88 sp line, so stepping between 20 and 22.5 kg keeps the rack panel's height. Only below 64 sp does the unit go under the number.
+- **Large text and keyboard:** `LoggerScreen.kt` scrolls the movement head, the ledger and the rack as one page above the pinned Log set band; the ledger's window holds three whole rows. While a number is typed, the page scrolls so the whole rack stands on the band above the keyboard.
+- **Focus:** leaving a `NumberDraft` field commits a valid typed value the way Done does; an invalid one keeps its refusal and the committed value (rack, Fix set, targets). The logger owns the rack's entry (`RackEntry`), so Hide, Finish, Back and a move to another movement commit a valid typed value first.
+- Tests: `LoggerScreenTests` (panel height between 20 and 22.5 kg, the typed load kept on Reps, Hide, Finish and a move), `FixSheetNumberEntryTests`, `NumberStepperTests`. The rig's `compact-rack.json` captures 03.34 and 03.35.
 
 **Change**
 - **Numeral (03.34):** fit the load numeral inline first, from 88 sp down to a 64 sp floor. Only below 64 sp does the unit go under the number, so "22.5 kg total" no longer grows the panel.

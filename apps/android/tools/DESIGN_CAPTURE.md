@@ -111,7 +111,8 @@ The Record fixture has six factual workouts, five daily chart points and two ear
 
 `--fixture apps/android/tools/capture-recipes/compact-rack-fixture.json` with
 `--scenarios apps/android/tools/capture-recipes/compact-rack.json` covers the three equipment rack
-boards plus native keyboard, long-name/many-movement and single-movement variants. The canonical
+boards plus native keyboard, long-name/many-movement and single-movement variants, the fitted
+22.5 kg numeral (03.34) and the 320 dp / 200% text page (03.35). The canonical
 loads are 24 kg each, 10 kg added and 75 kg total. These recipes retain exact numeric values and
 geometry while normalizing only the identified workout clock descriptions for settlement.
 

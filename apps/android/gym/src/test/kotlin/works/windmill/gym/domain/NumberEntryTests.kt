@@ -43,6 +43,12 @@ class NumberEntryTests {
                 NumberEntry.bumped(-2.5, -1, big = true, floor = null)))
     }
 
+    @Test fun aKeptLoadUnderTheFloorNeverStepsDownToItAndStepsUpOnlyAsFarAsIt() {
+        assertEquals(listOf(-10.0, -10.0, 0.0, 0.0),
+            listOf(NumberEntry.bumped(-10.0, -1, big = false, floor = 0.0), NumberEntry.bumped(-10.0, -1, big = true, floor = 0.0),
+                NumberEntry.bumped(-10.0, 1, big = false, floor = 0.0), NumberEntry.bumped(-10.0, 1, big = true, floor = 0.0)))
+    }
+
     @Test fun loadRoundingUsesHundredthsAndHalfAwayFromZero() {
         val cases = mapOf(
             "102.505" to 102.51,

@@ -489,28 +489,37 @@ struct TrainingTests {
       return
     }
     let result: JSON
-    switch try vector.input.member("action").asString() {
+    let name = try vector.input.member("action").asString()
+    let recorded = name.hasSuffix(".recorded")
+    switch recorded ? String(name.dropLast(".recorded".count)) : name {
     case "StartSession":
       result = try corpus.decision(of: StartSession(id: ID(try RecordID(json: input.member("id"))), routineId: try input["routineId"].map { ID(try RecordID(json: $0)) }, startedAt: try input["startedAt"].map { Instant(ms: try $0.asInteger()) }), vector, result: \.json, refusal: \.form)
     case "FinishSession":
       result = try corpus.decision(of: FinishSession(id: ID(try RecordID(json: input.member("id"))), finishedAt: try input["finishedAt"].map { Instant(ms: try $0.asInteger()) }), vector, result: { _ in .null }, refusal: \.form)
-    case "AppendSet": result = try corpus.decision(of: AppendSet(Self.trainingSet(try input.member("set"))), vector, result: \.json, refusal: \.form)
-    case "CorrectSet": result = try corpus.decision(of: CorrectSet(Self.trainingSet(try input.member("set"))), vector, result: { _ in .null }, refusal: \.form)
+    case "AppendSet": result = try Self.door(AppendSet(Self.trainingSet(try input.member("set"))), recorded, vector, corpus, result: \.json)
+    case "CorrectSet": result = try Self.door(CorrectSet(Self.trainingSet(try input.member("set"))), recorded, vector, corpus, result: { _ in .null })
     case "DiscardSession": result = try corpus.decision(of: DiscardSession(ID(try RecordID(json: input.member("id")))), vector, result: { _ in .null }, refusal: \.form)
     case "DeleteSet": result = try corpus.decision(of: DeleteSet(ID(try RecordID(json: input.member("id")))), vector, result: { _ in .null }, refusal: \.form)
     case "ImportSession":
       let sets = try input.member("sets").asArray().map { json in
         ImportedSet(id: ID(try RecordID(json: json.member("id"))), exerciseId: ID(try RecordID(json: json.member("exerciseId"))), weightKg: try json.member("weightKg").asDouble(), reps: Int(try json.member("reps").asInteger()), completedAt: Instant(ms: try json.member("completedAt").asInteger()), rpe: try json["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try json["note"]?.asString(), rpeNamed: json["rpe"] != nil)
       }
-      result = try corpus.decision(of: ImportSession(id: ID(try RecordID(json: input.member("id"))), startedAt: Instant(ms: try input.member("startedAt").asInteger()), finishedAt: Instant(ms: try input.member("finishedAt").asInteger()), sets: sets, routineId: try input["routineId"].map { ID(try RecordID(json: $0)) }), vector, result: \.json, refusal: \.form)
+      result = try Self.door(ImportSession(id: ID(try RecordID(json: input.member("id"))), startedAt: Instant(ms: try input.member("startedAt").asInteger()), finishedAt: Instant(ms: try input.member("finishedAt").asInteger()), sets: sets, routineId: try input["routineId"].map { ID(try RecordID(json: $0)) }), recorded, vector, corpus, result: \.json)
     case "CorrectSession":
       let sets = try input.member("sets").asArray().map { json in
         CorrectedSet(id: ID(try RecordID(json: json.member("id"))), exerciseId: ID(try RecordID(json: json.member("exerciseId"))), setNumber: Int(try json.member("setNumber").asInteger()), weightKg: try json.member("weightKg").asDouble(), reps: Int(try json.member("reps").asInteger()), completedAt: Instant(ms: try json.member("completedAt").asInteger()), rpe: try json["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try json["note"]?.asString(), rpeNamed: json["rpe"] != nil)
       }
-      result = try corpus.decision(of: CorrectSession(id: ID(try RecordID(json: input.member("sessionId"))), requestId: input.member("requestId").asString(), startedAt: Instant(ms: try input.member("startedAt").asInteger()), finishedAt: Instant(ms: try input.member("finishedAt").asInteger()), routineName: input.member("routineName").isNull ? nil : input.member("routineName").asString(), sets: sets, preserveOtherSets: input["preserveOtherSets"] == .bool(true)), vector, result: { _ in .null }, refusal: \.form)
+      result = try Self.door(CorrectSession(id: ID(try RecordID(json: input.member("sessionId"))), requestId: input.member("requestId").asString(), startedAt: Instant(ms: try input.member("startedAt").asInteger()), finishedAt: Instant(ms: try input.member("finishedAt").asInteger()), routineName: input.member("routineName").isNull ? nil : input.member("routineName").asString(), sets: sets, preserveOtherSets: input["preserveOtherSets"] == .bool(true)), recorded, vector, corpus, result: { _ in .null })
     case let action: throw ContractError("unclaimed training action \(action)")
     }
     #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
+  }
+
+  // `<Action>.recorded` is the action's replay of facts already recorded, never held to the load floor.
+  static func door<A: EntersLoads>(_ action: A, _ recorded: Bool, _ vector: Vector, _ corpus: ProductCorpus,
+                                   result: (A.Result) -> JSON) throws -> JSON {
+    if recorded { return try corpus.decision(of: action.recorded, vector, result: result, refusal: \.form) }
+    return try corpus.decision(of: action, vector, result: result, refusal: \.form)
   }
 
   static func trainingSet(_ input: JSON) throws -> TrainingSet {

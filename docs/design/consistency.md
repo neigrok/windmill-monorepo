@@ -1003,6 +1003,11 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   ‹routine›* sends the edited plan through `SaveRoutinePlan`, so such a target now reads the generic
   *‹routine› wasn't changed. Try again.*, which a retry cannot fix; Edit sets checks only the target's
   shape. The receipt needs its own refusal copy, or Edit sets refuses the load first.
+- **12q · iOS recovery fix and a load under 0 (needs words).** A recovery fix that moves a barbell or
+  two-dumbbell load under 0 is refused (`set.loadFloor`; Android `invalid-set`). iOS `WorkoutFixSheet`
+  shows it through its existing `invalidSet` line, *Refused by the log — fix the workout, then retry.*,
+  which does not say *0 or more*, the words Fix set and the editor use. Android's recovery fix edits
+  through Fix set, whose inline line already says them. iOS needs that refusal copy.
 
 ### Coach on the client
 

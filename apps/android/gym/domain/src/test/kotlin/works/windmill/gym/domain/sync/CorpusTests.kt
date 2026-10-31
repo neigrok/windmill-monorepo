@@ -303,11 +303,14 @@ class CorpusTests {
                 else -> error("unclaimed training read")
             }
         }
-        return when (vector.input.member("action").str()) {
+        val name = vector.input.member("action").str()
+        // `<Action>.recorded` is the action's replay of facts already recorded, never held to the load floor.
+        fun <L, T> door(action: EntersLoads<L, T>): Action<L, T, GymRefusal> = if (name.endsWith(".recorded")) action.recorded else action
+        return when (name.removeSuffix(".recorded")) {
             "StartSession" -> corpus.decision(StartSession(f.ref("id", Session), f.optionalRef("routineId", Routine), f.optionalInstant("startedAt")), vector, { it.json }, ::refusalForm)
             "FinishSession" -> corpus.decision(FinishSession(f.ref("id", Session), f.optionalInstant("finishedAt")), vector, { Json.Null }, ::refusalForm)
-            "AppendSet" -> corpus.decision(AppendSet(TrainingSet.fromForm(input.member("set"))), vector, { it.json }, ::refusalForm)
-            "CorrectSet" -> corpus.decision(CorrectSet(TrainingSet.fromForm(input.member("set"))), vector, { Json.Null }, ::refusalForm)
+            "AppendSet" -> corpus.decision(door(AppendSet(TrainingSet.fromForm(input.member("set")))), vector, { it.json }, ::refusalForm)
+            "CorrectSet" -> corpus.decision(door(CorrectSet(TrainingSet.fromForm(input.member("set")))), vector, { Json.Null }, ::refusalForm)
             "DiscardSession" -> corpus.decision(DiscardSession(f.ref("id", Session)), vector, { Json.Null }, ::refusalForm)
             "DeleteSet" -> corpus.decision(deleteSet(f.ref("id", TrainingSet)), vector, { Json.Null }, ::refusalForm)
             "ImportSession" -> {
@@ -316,7 +319,7 @@ class CorpusTests {
                     ImportedSet(s.ref("id", TrainingSet), s.ref("exerciseId", Exercise), s.double("weightKg"), s.int("reps"), s.instant("completedAt"),
                         s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null)
                 }
-                corpus.decision(ImportSession(f.ref("id", Session), f.instant("startedAt"), f.instant("finishedAt"), sets, f.optionalRef("routineId", Routine)), vector, { it.json }, ::refusalForm)
+                corpus.decision(door(ImportSession(f.ref("id", Session), f.instant("startedAt"), f.instant("finishedAt"), sets, f.optionalRef("routineId", Routine))), vector, { it.json }, ::refusalForm)
             }
             "CorrectSession" -> {
                 val sets = input.member("sets").arr().map { raw ->
@@ -324,8 +327,8 @@ class CorpusTests {
                     CorrectedSet(s.ref("id", TrainingSet), s.ref("exerciseId", Exercise), raw.member("setNumber").long(), s.double("weightKg"), s.int("reps"), s.instant("completedAt"),
                         s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null)
                 }
-                corpus.decision(CorrectSession(f.ref("sessionId", Session), f.string("requestId"), f.instant("startedAt"), f.instant("finishedAt"), f.optionalString("routineName"), sets,
-                    input["preserveOtherSets"] == Json.of(true)), vector, { Json.Null }, ::refusalForm)
+                corpus.decision(door(CorrectSession(f.ref("sessionId", Session), f.string("requestId"), f.instant("startedAt"), f.instant("finishedAt"), f.optionalString("routineName"), sets,
+                    input["preserveOtherSets"] == Json.of(true))), vector, { Json.Null }, ::refusalForm)
             }
             else -> error("unclaimed training action")
         }

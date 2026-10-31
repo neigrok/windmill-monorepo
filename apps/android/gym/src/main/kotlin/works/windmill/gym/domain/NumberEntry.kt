@@ -39,9 +39,11 @@ object NumberEntry {
         return Reading(value, repsHint)
     }
 
-    // The ladder never clamps; a load field with a floor stops the step at it.
+    // The ladder never clamps; a load field with a floor stops a step at it, and a load kept from under it
+    // only climbs back to it.
     fun bumped(load: Double, direction: Int, big: Boolean, floor: Double?): Double {
         val next = Ladder.bump(load, direction, big)
-        return if (floor != null && next < floor) floor else next
+        if (floor == null || next >= floor) return next
+        return if (direction < 0) minOf(load, floor) else floor
     }
 }

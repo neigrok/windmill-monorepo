@@ -18,8 +18,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,7 +34,9 @@ import androidx.compose.ui.util.lerp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // The one modal sheet every room raises, over Material's own.
 //
@@ -61,6 +66,7 @@ fun WindmillSheet(
     val scope = rememberCoroutineScope()
     val preview = remember { Animatable(0f) }
     val animate = animationsOn()
+    var closing by remember { mutableStateOf(false) }
     LaunchedEffect(sheetState.isVisible) { if (!sheetState.isVisible) preview.snapTo(0f) }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -99,6 +105,10 @@ fun WindmillSheet(
         }
         CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides owner) {
             PredictiveBackHandler { gesture ->
+                if (closing) {
+                    gesture.collect {}
+                    return@PredictiveBackHandler
+                }
                 try {
                     gesture.collect { if (animate) preview.snapTo(NavigationMotion.backProgress(it.progress)) }
                 } catch (cancelled: CancellationException) {
@@ -106,8 +116,14 @@ fun WindmillSheet(
                     throw cancelled
                 }
                 if (onBack == null) {
-                    sheetState.hide()
-                    onDismissRequest()
+                    // The close is one: a second back while it slides down cannot cancel it or close twice.
+                    closing = true
+                    try {
+                        withContext(NonCancellable) {
+                            sheetState.hide()
+                            onDismissRequest()
+                        }
+                    } finally { closing = false }
                     return@PredictiveBackHandler
                 }
                 onBack()

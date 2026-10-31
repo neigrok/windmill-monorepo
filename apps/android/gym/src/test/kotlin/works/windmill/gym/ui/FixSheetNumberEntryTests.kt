@@ -68,11 +68,25 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("-12.5")
         compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("Load", "kg total", "−12.5")
         compose.onNodeWithText("Enter 0 or more, or cancel to keep 75").assertExists()
-        compose.onNodeWithText("Save fix").performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Save fix").assertIsNotEnabled().performClick()
         compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("0")
         compose.onNodeWithText("Enter 0 or more, or cancel to keep 75").assertDoesNotExist()
-        compose.onNodeWithText("Save fix").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithText("Save fix").assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = 0.0)), saved) }
+    }
+
+    @Test fun aKeptBarbellLoadUnderZeroCannotBeSteppedDownAndStepsUpOnlyToZero() {
+        val saved = mutableListOf<SetFix>()
+        val set = TrainingSet("set_1", exerciseId = "bench-press", setNumber = 1, weightKg = -10.0, reps = 8, completedAtMs = 0)
+        compose.setContent { GymMaterial {
+            FixSheet(set, "Bench Press", 1, null, onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {},
+                exercise = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5))
+        } }
+        val (bigDown, down, up) = works.windmill.gym.domain.Ladder.labels(-10.0)
+        listOf(bigDown, down).forEach { compose.onNodeWithText(it).assertIsNotEnabled() }
+        compose.onNodeWithContentDescription("Decrease Load").assertIsNotEnabled()
+        compose.onNodeWithText(up).performClick()
+        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("Load", "kg total", "0")
     }
 
     @Test fun aBodyweightLoadBelowZeroKeepsItsSign() {
@@ -80,7 +94,7 @@ class FixSheetNumberEntryTests {
         loadedSheet(saved, Exercise("chin-up", "Chin Up", "pull", "bodyweight", 2.5))
         compose.onNodeWithContentDescription("Load, kg added").performClick().performTextReplacement("-12.5")
         compose.onNodeWithText("Enter 0 or more, or cancel to keep 75").assertDoesNotExist()
-        compose.onNodeWithText("Save fix").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithText("Save fix").assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -12.5)), saved) }
     }
 
@@ -91,7 +105,7 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-102,505")
         compose.onNodeWithContentDescription("Load, kg").performImeAction()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "−102.51")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = -102.51)), saved)
             assertEquals(listOf(HapticFeedbackType.TextHandleMove), sensations)
@@ -103,7 +117,7 @@ class FixSheetNumberEntryTests {
         val sensations = mutableListOf<HapticFeedbackType>()
         sheet(saved, sensations)
         compose.onNodeWithContentDescription("Reps, reps").performClick().performTextReplacement("8")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(reps = 8)), saved)
             assertEquals(emptyList<HapticFeedbackType>(), sensations)
@@ -115,12 +129,12 @@ class FixSheetNumberEntryTests {
         sheet(saved)
         val field = compose.onNodeWithContentDescription("Load, kg")
         field.performClick().performTextReplacement("1e999")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.onNodeWithText("That is not a number yet.").performScrollTo().assertExists()
         field.assertTextEquals("Load", "kg", "1e999").assertIsFocused()
         compose.runOnIdle { assertEquals(emptyList<SetFix>(), saved) }
         field.performTextReplacement("-499.99")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -499.99)), saved) }
     }
 
@@ -134,7 +148,7 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithText("Whole reps, 1 to 99.").assertExists()
         field.performTextReplacement("99")
         field.performImeAction()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(reps = 99)), saved) }
     }
 
@@ -150,7 +164,7 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithContentDescription("Reps, reps").performClick()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "−12.5")
         compose.onNodeWithText(works.windmill.gym.domain.NumberEntry.notANumber).assertDoesNotExist()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = -12.5)), saved)
             assertEquals(emptyList<HapticFeedbackType>(), sensations)
@@ -167,7 +181,7 @@ class FixSheetNumberEntryTests {
         field.performClick().performTextReplacement("-")
         compose.runOnIdle { assertNotNull(cancel); cancel!!() }
         field.assertTextEquals("Load", "kg", "−12.5")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -12.5)), saved) }
     }
 
@@ -182,7 +196,7 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithText("Enter a number, or cancel to keep 85").assertExists()
         compose.onNodeWithContentDescription("Load, kg").performTextReplacement("85")
         compose.onNodeWithContentDescription("Load, kg").performImeAction()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = 85.0, reps = 6)), saved)
             assertEquals(List(2) { HapticFeedbackType.TextHandleMove }, sensations)
@@ -210,7 +224,7 @@ class FixSheetNumberEntryTests {
         reps.performClick().performTextReplacement("5")
         compose.onNodeWithContentDescription("Decrease Reps").assertIsEnabled().performClick()
         reps.assertTextEquals("Reps", "reps", "4")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = 11.0, reps = 4)), saved)
             assertEquals(List(5) { HapticFeedbackType.TextHandleMove }, sensations)
@@ -224,7 +238,7 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-12,5")
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "−12,5")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -12.5)), saved) }
     }
     @Test fun anInvalidSaveEmitsOneRefusalWithoutTheRawNumberOrNote() {
@@ -246,7 +260,7 @@ class FixSheetNumberEntryTests {
         field.performClick().performTextReplacement("1e999")
         field.performImeAction()
         compose.runOnIdle { assertEquals(emptyList<Pair<String, Map<String, String>>>(), events) }
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         field.assertTextEquals("Load", "kg", "1e999").assertIsFocused()
         compose.runOnIdle {
             assertEquals(0, saves)

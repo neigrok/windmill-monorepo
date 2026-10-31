@@ -741,7 +741,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 
     // Signed-out training prepared for this account: confirmed starts settle, then the sets an
-    // unfinished workout still owes follow it under their own ids.
+    // unfinished workout still owes follow it under their own ids, replayed as they were recorded.
     suspend fun reconcileImports() {
         imports.reconcileConfirmed()
         if (anonymous || firstPullComplete) for (deletion in imports.deletedSets()) {
@@ -781,9 +781,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                     throw TrainingRefused("set-id-taken", "that set id is already used")
                 val decision = when {
                     entry.write == Owed.Delete -> Remove(EngineSet, value.id, GymRefusal).decide(known, ids)
-                    known == null -> AppendSet(value).decide(state, ids)
+                    known == null -> AppendSet(value).recorded.decide(state, ids)
                     entry.write == Owed.Fix -> CorrectSet(known.copy(weightKg = value.weightKg, reps = value.reps,
-                        rpe = value.rpe, note = value.note)).decide(state, ids)
+                        rpe = value.rpe, note = value.note)).recorded.decide(state, ids)
                     else -> Decision.Unchanged(Unit)
                 }
                 val plan = when (decision) {

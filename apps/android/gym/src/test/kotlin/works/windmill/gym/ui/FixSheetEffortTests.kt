@@ -193,7 +193,7 @@ class FixSheetEffortTests {
         compose.onNodeWithText("RPE 8.5").assertExists()
         compose.onNodeWithText("Set note").assert(SemanticsMatcher.expectValue(
             SemanticsProperties.StateDescription, SetEffort.noteCaption))
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(note = raw, rpe = 8.5, rpeNamed = true)), notes) }
     }
 

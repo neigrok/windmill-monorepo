@@ -30,6 +30,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -37,6 +38,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -201,21 +203,39 @@ internal data class Standing(val tab: Tab, val away: List<Away>, val building: B
 }
 
 // A screen holding work that back would lose registers a guard. While one is enabled, back previews
-// nothing and asks that screen instead of leaving.
+// nothing and asks that screen instead of leaving. A screen holding typed entry registers a keeper
+// instead: back keeps what is typed, then leaves.
 @Stable
 internal class BackGuards {
     internal class Guard(val ask: () -> Unit) {
         var enabled by mutableStateOf(false)
     }
 
+    internal class Keeper(val keep: () -> Unit)
+
     private val held = mutableStateListOf<Guard>()
+    private val keepers = mutableListOf<Keeper>()
     val active: Guard? get() = held.lastOrNull { it.enabled }
 
     fun hold(guard: Guard) { held += guard }
     fun release(guard: Guard) { held -= guard }
+    fun hold(keeper: Keeper) { keepers += keeper }
+    fun release(keeper: Keeper) { keepers -= keeper }
+    fun keepTyped() = keepers.toList().forEach { it.keep() }
 }
 
 internal val LocalBackGuards = staticCompositionLocalOf { BackGuards() }
+
+@Composable
+internal fun KeepOnBack(keep: () -> Unit) {
+    val guards = LocalBackGuards.current
+    val currentKeep by rememberUpdatedState(keep)
+    val keeper = remember { BackGuards.Keeper { currentKeep() } }
+    DisposableEffect(guards, keeper) {
+        guards.hold(keeper)
+        onDispose { guards.release(keeper) }
+    }
+}
 
 @Composable
 internal fun BackGuard(enabled: Boolean, ask: () -> Unit) {
@@ -261,7 +281,8 @@ internal fun rememberGymNavigator(telemetry: Telemetry): GymNavigator =
     rememberSaveable(saver = remember(telemetry) { GymNavigator.saver(telemetry) }) { GymNavigator() }
 
 // A back gesture over the frame: how far it has come, the edge it started from, and the frame it is
-// shrinking.
+// shrinking. One gesture holds it from its first event until it settles; a back that lands meanwhile
+// waits, and a write from a gesture that no longer holds it is dropped.
 @Stable
 private class BackGesture {
     enum class Phase { Idle, Previewing, Releasing, Settling }
@@ -269,8 +290,31 @@ private class BackGesture {
     val progress = Animatable(0f)
     val release = Animatable(0f)
     var phase by mutableStateOf(Phase.Idle)
+        private set
     var shrinking by mutableStateOf<String?>(null)
+        private set
     var fromLeft by mutableStateOf(true)
+        private set
+    private var turn = 0
+
+    suspend fun awaitIdle() {
+        snapshotFlow { phase }.first { it == Phase.Idle }
+    }
+
+    fun begin(frame: Frame, edge: Int): Int {
+        shrinking = frame.key
+        fromLeft = edge == BackEventCompat.EDGE_LEFT
+        phase = Phase.Previewing
+        return ++turn
+    }
+
+    fun releasing(held: Int) {
+        if (held == turn) phase = Phase.Releasing
+    }
+
+    fun settle(held: Int) {
+        if (held == turn) phase = Phase.Settling
+    }
 
     suspend fun reset() {
         progress.snapTo(0f)
@@ -292,13 +336,13 @@ internal fun GymStage(
 ) {
     val animate = animationsOn()
     val frame = standing.frame
-    val beneath = standing.afterBack()?.frame
-    val means = standing.means
-    val guard = guards.active
     val gesture = remember { BackGesture() }
     val transition = remember { SeekableTransitionState(frame) }
     val scope = rememberCoroutineScope()
     val slidePx = with(LocalDensity.current) { NavigationMotion.sharedAxisSlide.roundToPx() }
+    val latest by rememberUpdatedState(standing)
+    val latestAnimate by rememberUpdatedState(animate)
+    val latestOnBack by rememberUpdatedState(onBack)
 
     LaunchedEffect(frame, gesture.phase) {
         when (gesture.phase) {
@@ -311,38 +355,48 @@ internal fun GymStage(
         }
     }
 
-    PredictiveBackHandler(enabled = means != BackMeans.LeaveTheApp || guard != null) { events ->
-        val previews = animate && guard == null && means.previews && beneath != null
+    PredictiveBackHandler(enabled = standing.means != BackMeans.LeaveTheApp || guards.active != null) { events ->
+        gesture.awaitIdle()
+        val at = latest
+        val means = at.means
+        val guard = guards.active
+        val beneath = at.afterBack()?.frame
+        val previews = latestAnimate && guard == null && means.previews && beneath != null
+        var held: Int? = null
         try {
             events.collect { event ->
                 if (!previews) return@collect
-                if (gesture.phase == BackGesture.Phase.Idle) {
-                    gesture.shrinking = frame.key
-                    gesture.fromLeft = event.swipeEdge == BackEventCompat.EDGE_LEFT
-                    gesture.phase = BackGesture.Phase.Previewing
+                if (held == null) {
+                    held = gesture.begin(at.frame, event.swipeEdge)
                     transition.seekTo(0f, beneath!!)
                 }
                 gesture.progress.snapTo(NavigationMotion.backProgress(event.progress))
             }
         } catch (cancelled: CancellationException) {
-            if (gesture.phase == BackGesture.Phase.Previewing) scope.launch {
-                gesture.progress.animateTo(0f, tween(NavigationMotion.durationMs / 2, easing = NavigationMotion.emphasized))
-                gesture.phase = BackGesture.Phase.Settling
-            }
+            held?.let { turn -> scope.launch {
+                try { gesture.progress.animateTo(0f, tween(NavigationMotion.durationMs / 2, easing = NavigationMotion.emphasized)) }
+                finally { gesture.settle(turn) }
+            } }
             throw cancelled
         }
         if (guard != null) {
             guard.ask()
             return@PredictiveBackHandler
         }
-        if (gesture.phase == BackGesture.Phase.Previewing) {
-            gesture.phase = BackGesture.Phase.Releasing
-            gesture.release.animateTo(1f, tween(NavigationMotion.durationMs, easing = NavigationMotion.emphasizedAccelerate))
-            onBack(means)
-            gesture.phase = BackGesture.Phase.Settling
+        val turn = held
+        if (turn == null) {
+            guards.keepTyped()
+            latestOnBack(means)
             return@PredictiveBackHandler
         }
-        onBack(means)
+        gesture.releasing(turn)
+        // A second back cancels the release animation, never the pop it committed to.
+        try { gesture.release.animateTo(1f, tween(NavigationMotion.durationMs, easing = NavigationMotion.emphasizedAccelerate)) }
+        finally {
+            guards.keepTyped()
+            latestOnBack(means)
+            gesture.settle(turn)
+        }
     }
 
     rememberTransition(transition).AnimatedContent(

@@ -87,9 +87,16 @@ Coach action and review presentation keeps its existing formatter.
 
 **Load floor.** `ExerciseRules.loadFloor` takes resolved `equipment` and `loadCount`: a movement whose
 loading choice is barbell or dumbbell (two dumbbells) has a floor of 0; every other loading, one
-dumbbell included, keeps its sign. `AppendSet` refuses a load under the floor with
-`set.loadFloor` (`reason` `below`, `min` 0) once the catalogue resolves the movement; `CorrectSet`
-refuses it only when the correction changes the load. `SaveRoutinePlan` refuses a target load under
+dumbbell included, keeps its sign. The floor guards a load a person enters now; a load already
+recorded is never refused by it. `AppendSet`, `CorrectSet`, `ImportSession` and `CorrectSession` are
+the person's doors: once their other checks pass, each set whose movement the catalogue resolves and
+whose movement or load differs from the set recorded under its id is refused under the floor with
+`set.loadFloor` (`reason` `below`, `min` 0), at `weightKg` for one set and `sets.<i>.weightKg` for a
+session. Each door's `recorded` is the replay of facts already recorded (a signed-out workout's
+import, start or sets, an owed set or fix, a stranded set's recovery): the same checks and write,
+without the floor. `AdoptWorkout` and `RecoverStrandedSets` replay the saved copy; a `revised` copy's
+sets whose load differs from the saved copy meet the floor at `sets.<i>.weightKg` of the copy, and
+`WorkoutFix` reports the same refusal live. `SaveRoutinePlan` refuses a target load under
 the floor with `routine.loadFloor` at `entries.<i>.sets.<j>.weightKg` on each line whose targets
 changed or whose staged movement changed its loading; a line the save leaves alone keeps its loads.
 
@@ -135,6 +142,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `StartSession` | `{id,routineId?,startedAt?}` | Predicted or joined session id; always sends `joinOpenSession:true` |
 | `FinishSession` | `{id,finishedAt?}` | `null` |
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |
+| `AppendSet.recorded`, `CorrectSet.recorded`, `ImportSession.recorded`, `CorrectSession.recorded` | as the action | as the action; the replay of a recorded fact, never refused by the load floor |
 | `DiscardSession` | `{id}` | `null`; held, refuses an active non-stale session |
 | `ImportSession` | `{id,routineId?,startedAt,finishedAt,sets:[ImportedSet]}` | Session id |
 | `CorrectSession` | `{sessionId,requestId,startedAt,finishedAt,routineName,sets:[CorrectedSet],preserveOtherSets?}` | `null` |

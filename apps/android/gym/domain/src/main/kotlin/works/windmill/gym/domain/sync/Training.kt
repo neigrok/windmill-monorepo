@@ -76,6 +76,13 @@ object SetRules {
     val note = TextSpec("set.note", MeasureUnit.bytes, 0, 4000, trim = false, nfc = false)
     const val loadFloor = "set.loadFloor"
     val rules = listOf(weightKg, reps, rpe, note).map(Rule::local) + Rule.local("set.completedAt", Gym.Types.set) + Rule.local(loadFloor, Gym.Types.set)
+    // A load a person enters now meets its movement's floor. A set recorded with the same movement and load is a fact
+    // the floor never refuses, and a movement the catalogue lacks is the log's to refuse.
+    fun floored(entered: TrainingSet, recorded: List<TrainingSet>, catalogue: Catalogue, at: Path) {
+        val load = weightKg.apply(entered.weightKg, at)
+        if (recorded.any { it.id == entered.id && it.exerciseId == entered.exerciseId && it.weightKg == load }) return
+        catalogue.find(entered.exerciseId)?.floored(load, loadFloor, at)
+    }
     fun nextNumber(sets: List<TrainingSet>, sessionId: Id<Session>, exerciseId: Id<Exercise>): Int? {
         val last = sets.filter { it.sessionId == sessionId && it.exerciseId == exerciseId }.maxOfOrNull { it.setNumber ?: 0 } ?: 0
         return if (last == Int.MAX_VALUE) null else last + 1

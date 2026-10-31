@@ -215,7 +215,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("controlled tempo").assertExists()
             compose.runOnIdle { assertEquals(listOf(original), room.training.session(live.id)!!.sets) }
             compose.onNode(load).performClick().performTextReplacement("61")
-            compose.onNodeWithText("Save fix").performScrollTo().performClick()
+            compose.onNodeWithText("Save fix").performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("Fix set")).fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
                 assertEquals(listOf(original.copy(weightKg = 61.0, note = "controlled tempo")), room.training.session(live.id)!!.sets)
@@ -327,7 +327,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
         compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).assertIsDisplayed()
         compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { runBlocking {
             val set = room.training.session(localId)!!.sets.single()
             assertEquals(setId, set.id)
@@ -568,7 +568,7 @@ class WorkoutRecoveryTests {
                 compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).assertIsDisplayed()
                 compose.onNodeWithText("1e999").assertDoesNotExist()
             }
-            compose.onNodeWithText("Save fix").performScrollTo().performClick()
+            compose.onNodeWithText("Save fix").performClick()
             compose.runOnIdle {
                 val fixed = logged.copy(note = "Live retained note", rpe = 9.5)
                 assertEquals(listOf(fixed), runBlocking { room.training.session(sessionId) }!!.sets)

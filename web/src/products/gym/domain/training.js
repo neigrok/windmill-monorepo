@@ -11,6 +11,7 @@ import { PlanSnapshot, Routine } from './routines.js';
 
 /** @typedef {import('../../../platform/domain-kit/time.js').Instant} Instant */
 /** @typedef {import('./catalogue.js').ExerciseValue} ExerciseValue */
+/** @typedef {import('./catalogue.js').Catalogue} Catalogue */
 /** @typedef {import('./routines.js').RoutineValue} RoutineValue */
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 
@@ -247,6 +248,14 @@ export const SetRules = Object.freeze({
   note: new TextSpec('set.note', { unit: 'bytes', min: 0, max: 4000, trim: false, nfc: false }),
   maxNumber: 2_147_483_647,
   loadFloor: 'set.loadFloor',
+  // A load a person enters now meets its movement's floor. A set recorded with the same movement and load is a fact the
+  // floor never refuses, and a movement the catalogue lacks is the log's to refuse.
+  /** @param {TrainingSetValue} entered @param {readonly TrainingSetValue[]} recorded @param {Catalogue} catalogue @param {Path} path */
+  floored(entered, recorded, catalogue, path) {
+    const load = SetRules.weightKg.apply(entered.weightKg, path);
+    if (recorded.some((set) => set.id.equals(entered.id) && set.exerciseId.equals(entered.exerciseId) && set.weightKg === load)) return;
+    catalogue.find(entered.exerciseId)?.floored(load, SetRules.loadFloor, path);
+  },
   /** @param {readonly TrainingSetValue[]} sets @param {Id<SessionValue>} sessionId @param {Id<ExerciseValue>} exerciseId */
   nextNumber(sets, sessionId, exerciseId) {
     const numbers = sets.filter((set) => set.sessionId.equals(sessionId) && set.exerciseId.equals(exerciseId))

@@ -111,6 +111,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.SideEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import works.windmill.gym.KeepOnBack
 import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.WorkoutChange
 import works.windmill.gym.domain.NumberEntry
@@ -192,23 +193,6 @@ fun LoggerScreen(
     val sheetStates = rememberSaveableStateHolder()
     val direction = LocalLayoutDirection.current
 
-    // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
-    fun close() {
-        store.editWorkout(false)
-        scope.launch { sheetState.hide() }.invokeOnCompletion {
-            sheet?.let { sheetStates.removeState(if (it is LoggerSheet.Fix) "fix:${it.setId}" else it.javaClass.simpleName) }
-            sheet = null
-        }
-    }
-
-    fun move(to: String, fromPicker: Boolean = false): Boolean {
-        if (goingTo != null) return false
-        say(null)
-        goingTo = LoggerMove(to, fromPicker)
-        if (sheet != null) close()
-        return true
-    }
-
     LaunchedEffect(sheet, goingTo, rackOwner, rackSession) {
         if (sheet != null) return@LaunchedEffect
         val destination = goingTo ?: return@LaunchedEffect
@@ -259,10 +243,45 @@ fun LoggerScreen(
     val bodyDrag = remember { MutableInteractionSource() }
     var dragCancelled by remember(store.accountKey, store.session?.id) { mutableStateOf(false) }
     var dragStopped by remember(store.accountKey, store.session?.id) { mutableStateOf(false) }
-    val onMove by rememberUpdatedState<(String) -> Boolean> { move(it) }
     val ready = !pager.isScrollInProgress && pager.currentPageOffsetFraction == 0f && !dragCancelled &&
         order.getOrNull(pager.settledPage) == movement && goingTo == null
     val fling = PagerDefaults.flingBehavior(state = pager)
+    val finishing = store.isFinishing || store.workoutFailure != null
+    val rackExercise = store.catalog.firstOrNull { it.id == movement }
+    val rackKey = "$rackOwner:$rackSession:$movement"
+    val entry = RackEntry(
+        load = rememberNumberDraft(rackKey, NumberEntry.Field.Load, weightKg, rackExercise?.loadFloor),
+        count = rememberNumberDraft(rackKey, NumberEntry.Field.Reps, reps.toDouble()),
+        accepting = ready && !finishing,
+        change = store::editRack,
+    )
+    // Back hides the workout as the button does, keeping what is typed first.
+    KeepOnBack { entry.leave() }
+
+    // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
+    fun close() {
+        store.editWorkout(false)
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            sheet?.let { sheetStates.removeState(if (it is LoggerSheet.Fix) "fix:${it.setId}" else it.javaClass.simpleName) }
+            sheet = null
+        }
+    }
+
+    fun move(to: String, fromPicker: Boolean = false): Boolean {
+        if (goingTo != null) return false
+        entry.leave()
+        say(null)
+        goingTo = LoggerMove(to, fromPicker)
+        if (sheet != null) close()
+        return true
+    }
+
+    fun hide() {
+        entry.leave()
+        sheet = null
+        onHide()
+    }
+    val onMove by rememberUpdatedState<(String) -> Boolean> { move(it) }
 
     LaunchedEffect(store.accountKey, store.session?.id, movement, order) {
         if (alignedMovement == movement && alignedOrder == order) return@LaunchedEffect
@@ -317,8 +336,8 @@ fun LoggerScreen(
     GymScreen(
         title = title,
         titleAlignment = TextAlign.Center,
-        navigation = { TopAction("Finish", enabled = store.canFinish, onClick = onFinish) },
-        actions = { IconButton(onClick = { sheet = null; onHide() }) {
+        navigation = { TopAction("Finish", enabled = store.canFinish, onClick = { entry.leave(); onFinish() }) },
+        actions = { IconButton(onClick = ::hide) {
             Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = skin.inkDim)
         } },
     ) {
@@ -369,7 +388,7 @@ fun LoggerScreen(
 
         var pageHeight by remember { mutableStateOf(0.dp) }
         Rack(
-            draftKey = "${store.accountKey}:${store.session?.id}:$movement",
+            entry = entry,
             modifier = Modifier.weight(1f),
             top = {
                 val density = LocalDensity.current
@@ -430,13 +449,10 @@ fun LoggerScreen(
                         .onSizeChanged { size -> transientHeight = with(density) { size.height.toDp() } }) }
                 }
             },
-            weightKg = weightKg,
-            exercise = store.catalog.firstOrNull { it.id == movement },
-            reps = reps,
-            finishing = store.isFinishing || store.workoutFailure != null,
+            exercise = rackExercise,
+            finishing = finishing,
             failure = store.workoutFailure,
             enabled = ready,
-            onChange = store::editRack,
             onEdit = { active ->
                 if (store.accountKey == rackOwner && store.session?.id == rackSession && store.exerciseId == rackMovement &&
                     rackEditing != active) {
@@ -486,7 +502,7 @@ fun LoggerScreen(
                         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "remove", "outcome" to if (accepted) "ok" else "refused"))
                         accepted
                     },
-                    onHide = { sheet = null; onHide() },
+                    onHide = ::hide,
                     notificationOff = notification?.hidden == true,
                     onShowNotification = {
                         val result = notification?.key?.let { store.showWorkout(it, false) }
@@ -722,18 +738,65 @@ private fun Ledger(
     }
 }
 
+// The rack's two numbers, owned by the screen so that leaving it never drops one. A field commits against what
+// the other one stands for; Log set reads both; Hide, Finish, Back and a move commit a valid typed value the way
+// Done does, and an invalid one keeps its refusal and the old value.
+private class RackEntry(
+    val load: NumberDraft,
+    val count: NumberDraft,
+    private val accepting: Boolean,
+    private val change: (Double, Int) -> WorkoutChange,
+) {
+    fun save(loadValue: Double, repsValue: Int, field: NumberDraft): NumberEditResult {
+        if (!accepting) return NumberEditResult.Refused
+        if (loadValue == load.committed && repsValue.toDouble() == count.committed) {
+            load.accept(loadValue)
+            count.accept(repsValue.toDouble())
+            return NumberEditResult.Unchanged
+        }
+        return when (val result = change(loadValue, repsValue)) {
+            WorkoutChange.Saved -> {
+                val loadChanged = load.accept(loadValue) == NumberEditResult.Changed
+                val repsChanged = count.accept(repsValue.toDouble()) == NumberEditResult.Changed
+                if (loadChanged || repsChanged) NumberEditResult.Changed else NumberEditResult.Unchanged
+            }
+            WorkoutChange.Stale -> field.refuse("The workout changed. Check the current set.")
+            is WorkoutChange.Unavailable -> field.refuse(result.reason)
+        }
+    }
+
+    fun commit(field: NumberDraft, both: Boolean = false): NumberEditResult {
+        val loadValue = (if (both || field === load) load.read() else load.standing) ?: return NumberEditResult.Refused
+        val repsValue = (if (both || field === count) count.read() else count.standing) ?: return NumberEditResult.Refused
+        return save(loadValue, repsValue.toInt(), field)
+    }
+
+    fun stepLoad(step: NumberStep, big: Boolean): NumberEditResult {
+        val loadValue = load.bumped(if (step == NumberStep.Increase) 1 else -1, big) ?: return NumberEditResult.Refused
+        return save(loadValue, count.standing.toInt(), load)
+    }
+
+    fun stepReps(step: NumberStep): NumberEditResult {
+        val repsValue = count.read() ?: return NumberEditResult.Refused
+        return save(load.standing, Ladder.bumpReps(repsValue.toInt(), if (step == NumberStep.Increase) 1 else -1)
+            .coerceAtMost(LoggedSetLimits.maxReps), count)
+    }
+
+    fun leave() {
+        if (load.isEdited) commit(load)
+        if (count.isEdited) commit(count)
+    }
+}
+
 // The page above the rack and the rack's controls scroll as one; Log set stays in a band pinned below them. While
 // everything fits, the page stands still and the rack sits on the band.
 @Composable
 private fun Rack(
-    draftKey: String,
-    weightKg: Double,
+    entry: RackEntry,
     exercise: works.windmill.gym.domain.Exercise?,
-    reps: Int,
     finishing: Boolean,
     failure: String?,
     enabled: Boolean,
-    onChange: (Double, Int) -> WorkoutChange,
     onEdit: (Boolean) -> Unit,
     onLog: () -> Unit,
     top: @Composable () -> Unit,
@@ -743,41 +806,16 @@ private fun Rack(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
-    val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg, exercise?.loadFloor)
-    val count = rememberNumberDraft(draftKey, NumberEntry.Field.Reps, reps.toDouble())
+    val load = entry.load
+    val count = entry.count
     val loadFeedback = rememberNumberStepperFeedback()
     val page = rememberScrollState()
     val panel = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(skin.accent, Color.Transparent), endY = 24.dp.toPx()) }
-    DisposableEffect(draftKey) { onDispose { if (load.focused || count.focused) onEdit(false) } }
-
-    fun save(loadValue: Double, repsValue: Int, field: NumberDraft): NumberEditResult {
-        if (!enabled || finishing) return NumberEditResult.Refused
-        if (loadValue == load.committed && repsValue.toDouble() == count.committed) {
-            load.accept(loadValue)
-            count.accept(repsValue.toDouble())
-            return NumberEditResult.Unchanged
-        }
-        return when (val result = onChange(loadValue, repsValue)) {
-            WorkoutChange.Saved -> {
-                val changed = load.accept(loadValue) == NumberEditResult.Changed
-                val repsChanged = count.accept(repsValue.toDouble()) == NumberEditResult.Changed
-                if (changed || repsChanged) NumberEditResult.Changed else NumberEditResult.Unchanged
-            }
-            WorkoutChange.Stale -> field.refuse("The workout changed. Check the current set.")
-            is WorkoutChange.Unavailable -> field.refuse(result.reason)
-        }
-    }
-    // A field commits against what the other one stands for; Log set reads both.
-    fun commit(field: NumberDraft, both: Boolean = false): NumberEditResult {
-        val loadValue = (if (both || field === load) load.read() else load.standing) ?: return NumberEditResult.Refused
-        val repsValue = (if (both || field === count) count.read() else count.standing) ?: return NumberEditResult.Refused
-        return save(loadValue, repsValue.toInt(), field)
-    }
-    fun stepLoad(step: NumberStep, big: Boolean): NumberEditResult {
-        val loadValue = load.bumped(if (step == NumberStep.Increase) 1 else -1, big) ?: return NumberEditResult.Refused
-        return save(loadValue, count.standing.toInt(), load)
-    }
+    DisposableEffect(load) { onDispose { if (load.focused || count.focused) onEdit(false) } }
+    // While a number is typed, the whole rack stands on the band above the keyboard and the page above it scrolls away.
+    val typing = load.focused || count.focused
+    LaunchedEffect(typing, page.maxValue) { if (typing) page.animateScrollTo(page.maxValue) }
     Column(modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val viewport = constraints.maxHeight
@@ -787,22 +825,17 @@ private fun Rack(
                     .testTag("Numeric rack").padding(horizontal = GymLayout.gutter).padding(top = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     NumberStepper(load.text, load::edit, "Load", unit,
-                        onStep = { stepLoad(it, false) }, onCommit = { commit(load) },
+                        onStep = { entry.stepLoad(it, false) }, onCommit = { entry.commit(load) },
                         size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
                         refusal = load.shownRefusal ?: failure, enabled = enabled && !finishing, decreaseEnabled = load.canDecrease,
                         feedback = loadFeedback,
-                        onFocusChange = { load.focus(it) { commit(load) }; onEdit(load.focused || count.focused) })
-                    LadderRow(load.reading.value ?: load.committed, onDial = { step, big -> loadFeedback.accept(stepLoad(step, big), step) },
-                        enabled = enabled && !finishing)
+                        onFocusChange = { load.focus(it) { entry.commit(load) }; onEdit(load.focused || count.focused) })
+                    LadderRow(load.reading.value ?: load.committed, onDial = { step, big -> loadFeedback.accept(entry.stepLoad(step, big), step) },
+                        enabled = enabled && !finishing, decreaseEnabled = load.canDecrease)
                     NumberStepper(count.text, count::edit, "Reps", "reps",
-                        onStep = { step ->
-                            val repsValue = count.read()
-                            if (repsValue == null) NumberEditResult.Refused
-                            else save(load.standing, Ladder.bumpReps(repsValue.toInt(), if (step == NumberStep.Increase) 1 else -1)
-                                .coerceAtMost(LoggedSetLimits.maxReps), count)
-                        }, onCommit = { commit(count) }, refusal = count.refusal, enabled = enabled && !finishing,
+                        onStep = entry::stepReps, onCommit = { entry.commit(count) }, refusal = count.refusal, enabled = enabled && !finishing,
                         decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble(),
-                        onFocusChange = { count.focus(it) { commit(count) }; onEdit(load.focused || count.focused) })
+                        onFocusChange = { count.focus(it) { entry.commit(count) }; onEdit(load.focused || count.focused) })
                 }
             }, modifier = Modifier.fillMaxWidth().testTag("Rack page").verticalScroll(page)) { measurables, limits ->
                 val rack = measurables[1].measure(limits.copy(minHeight = 0, maxHeight = Constraints.Infinity))
@@ -815,7 +848,7 @@ private fun Rack(
             }
         }
         LogBand(lifted = page.maxValue > 0, finishing = finishing, enabled = enabled) {
-            if (commit(if (count.focused) count else load, both = true) != NumberEditResult.Refused) {
+            if (entry.commit(if (count.focused) count else load, both = true) != NumberEditResult.Refused) {
                 focus.clearFocus()
                 keyboard?.hide()
                 onEdit(false)
@@ -828,7 +861,7 @@ private fun Rack(
 // Four steps in one row while their labels fit, two rows of two when large text needs the room.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, enabled: Boolean = true) {
+internal fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, enabled: Boolean = true, decreaseEnabled: Boolean = true) {
     val skin = LocalGymColors.current
     val measurer = rememberTextMeasurer()
     val labels = Ladder.labels(weightKg)
@@ -843,9 +876,10 @@ internal fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, 
                 labels.withIndex().chunked(perRow).forEach { line ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                         line.forEach { (index, label) ->
+                            val step = if (index < 2) NumberStep.Decrease else NumberStep.Increase
                             FilledTonalButton(
-                                onClick = { onDial(if (index < 2) NumberStep.Decrease else NumberStep.Increase, index == 0 || index == 3) },
-                                enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                                onClick = { onDial(step, index == 0 || index == 3) },
+                                enabled = enabled && (step == NumberStep.Increase || decreaseEnabled), modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                                 contentPadding = PaddingValues(vertical = 10.dp), shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
                             ) { Text(label, style = style, maxLines = 1) }

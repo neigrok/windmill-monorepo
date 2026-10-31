@@ -62,7 +62,7 @@ class FixSheetStateTests {
         }
         compose.onNodeWithText("Bench Press · Set 3").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("left shoulder")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.onNodeWithText("Saving…").assertIsNotEnabled().performClick()
         compose.onNodeWithText("Delete set").assertIsNotEnabled().performClick()
         compose.onNodeWithText("60").assertIsNotEnabled()
@@ -75,7 +75,7 @@ class FixSheetStateTests {
         }
         compose.onNodeWithText("The log didn’t answer — that set wasn’t changed.").assertIsDisplayed()
         compose.onNodeWithText("left shoulder").assertIsDisplayed()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(note = "left shoulder"), SetFix(note = "left shoulder")), attempts)
             assertEquals(listOf(true, false, true, false), busy)
@@ -108,7 +108,7 @@ class FixSheetStateTests {
         compose.runOnIdle { cancel!!() }
         compose.onNodeWithText("60").assertIsDisplayed()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         restorer.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("This workout belongs to another account.").assertIsDisplayed()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
@@ -126,7 +126,7 @@ class FixSheetStateTests {
                 onSave = { FixOutcome.Gone("That set is no longer in the log.") },
                 onDelete = {}, onSaved = { saves++ }, onGone = { missing += it })
         }
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf("That set is no longer in the log."), missing)
             assertEquals(0, saves)
@@ -155,7 +155,7 @@ class FixSheetStateTests {
         compose.runOnIdle { cancel!!() }
         compose.onNodeWithText("70").assertIsDisplayed()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = 70.0, note = "controlled tempo")), attempts) }
     }
 
@@ -171,7 +171,7 @@ class FixSheetStateTests {
                 onSave = { attempts += it; answer.await() }, onDelete = {}, onBusy = { busy += it })
         }
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { set = set.copy(id = "canonical_set") }
         compose.onNodeWithText("Saving…").assertIsNotEnabled().performClick()
         compose.onNodeWithText("Delete set").assertIsNotEnabled()
@@ -220,7 +220,7 @@ class FixSheetStateTests {
                 } }
                 compose.onNodeWithText("Set note").performTextInput("  exact note\n  ")
                 compose.runOnIdle { hold = true }
-                compose.onNodeWithText("Save fix").performScrollTo().performClick()
+                compose.onNodeWithText("Save fix").performClick()
                 compose.onNodeWithText("Saving…").assertIsNotEnabled()
                 compose.runOnIdle {
                     assertEquals(1, waiting.size)

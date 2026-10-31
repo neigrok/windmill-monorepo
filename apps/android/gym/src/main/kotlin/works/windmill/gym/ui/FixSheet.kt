@@ -10,7 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -137,91 +139,8 @@ fun FixSheet(
         return count.accept(value)
     }
 
-    Column(
-        Modifier.fillMaxWidth().background(skin.surface)
-            .verticalScroll(rememberScrollState()).imePadding()
-            .padding(horizontal = GymLayout.gutter)
-            .padding(bottom = GymLayout.sheetBottom),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Fix set", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp),
-                color = skin.ink, modifier = Modifier.semantics { heading() })
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                exercise?.let { EquipmentIcon(it.equipment, tint = skin.inkDim) }
-                Text("$movement · Set $setNumber", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
-            }
-        }
-        fun commitLoad(): NumberEditResult = load.read()?.let(::acceptLoad) ?: NumberEditResult.Refused
-        fun commitReps(): NumberEditResult = count.read()?.let(::acceptReps) ?: NumberEditResult.Refused
-        NumberStepper(load.text, load::edit, "Load", unit,
-            onStep = { step -> load.bumped(if (step == NumberStep.Increase) 1 else -1, false)?.let(::acceptLoad) ?: NumberEditResult.Refused },
-            onCommit = ::commitLoad,
-            size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
-            refusal = load.shownRefusal, enabled = !busy, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
-            onFocusChange = { load.focus(it, ::commitLoad) })
-        LadderRow(load.reading.value ?: load.committed, onDial = { step, big ->
-            load.bumped(if (step == NumberStep.Increase) 1 else -1, big)?.let { loadFeedback.accept(acceptLoad(it), step) }
-        }, enabled = !busy)
-        NumberStepper(count.text, count::edit, "Reps", "reps",
-            onStep = { step ->
-                count.read()?.let {
-                    acceptReps(Ladder.bumpReps(it.toInt(), if (step == NumberStep.Increase) 1 else -1)
-                        .coerceAtMost(LoggedSetLimits.maxReps).toDouble())
-                } ?: NumberEditResult.Refused
-            },
-            onCommit = ::commitReps,
-            refusal = count.refusal, enabled = !busy, onFocusChange = { count.focus(it, ::commitReps) },
-            decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble())
-        ExposedDropdownMenuBox(expanded = effortOpen, onExpandedChange = { if (!busy) effortOpen = it }) {
-            TextField(value = rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
-                onValueChange = {}, readOnly = true, enabled = !busy, singleLine = true,
-                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
-                label = { Text("Effort", style = WindmillFont.body(12).copy(lineHeight = 16.sp)) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(effortOpen) },
-                colors = fieldColors)
-            ExposedDropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false }, containerColor = skin.raised) {
-                (listOf<Double?>(null) + SetEffort.rpeBand).forEach { value ->
-                    val label = value?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated
-                    DropdownMenuItem(text = { Text(label, style = WindmillFont.body(16), color = skin.ink) },
-                        onClick = { rpe = value; effortOpen = false },
-                        modifier = Modifier.heightIn(min = 48.dp).semantics { selected = rpe == value })
-                }
-            }
-        }
-        refusal?.let { message ->
-            Text(message, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.alarmInk,
-                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
-        }
-        BasicTextField(
-            value = note, onValueChange = { note = it }, enabled = !busy,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = skin.ink, lineHeight = 24.sp),
-            cursorBrush = SolidColor(skin.accent), maxLines = 6, interactionSource = noteInteraction,
-            modifier = Modifier.fillMaxWidth().semantics {
-                stateDescription = SetEffort.noteCaption
-                if (tooLong) error(SetEffort.noteTooLong)
-            },
-            decorationBox = { field ->
-                Box(Modifier.heightIn(min = 56.dp)) {
-                    TextFieldDefaults.Container(!busy, tooLong, noteInteraction, Modifier.matchParentSize(), fieldColors)
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text(SetEffort.noteLabel, style = WindmillFont.body(12).copy(lineHeight = 16.sp),
-                            color = if (tooLong) skin.error else if (noteFocused) skin.accent else skin.inkDim)
-                        Box {
-                            if (note.isEmpty()) Text("Add a note", style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp), color = skin.inkDim)
-                            field()
-                        }
-                    }
-                }
-            },
-        )
-        if (tooLong) {
-            Text(SetEffort.noteTooLong, style = WindmillFont.body(14), color = skin.alarmInk,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        }
-        SetEffort.noteCounter(note)?.let { counter ->
-            Text(counter, style = GymType.numeral(12), color = if (tooLong) skin.alarmInk else skin.inkDim)
-        }
+    @Composable
+    fun SaveFix(modifier: Modifier) {
         Button(
             onClick = {
                 if (busy || tooLong || load.reading.belowFloor) return@Button
@@ -257,18 +176,118 @@ fun FixSheet(
                 }
             },
             enabled = !busy && !tooLong && !load.reading.belowFloor,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+            modifier = modifier.heightIn(min = 64.dp),
             shape = RoundedCornerShape(WindmillRadius.lg),
             colors = ButtonDefaults.buttonColors(
                 containerColor = skin.accent, contentColor = skin.onAccent,
                 disabledContainerColor = skin.accent.copy(alpha = 0.4f), disabledContentColor = skin.onAccent,
             ),
         ) { Text(if (busy) "Saving…" else "Save fix", style = WindmillFont.body(16, FontWeight.Bold)) }
+    }
+
+    @Composable
+    fun DeleteAndPlanNote() {
         GymErrorTextButton("Delete set", onClick = onDelete, enabled = !busy,
             modifier = Modifier.fillMaxWidth(), minimumHeight = 48.dp)
         routine?.let {
             Text("$it keeps its planned targets.", style = WindmillFont.body(14).copy(lineHeight = 18.sp),
                 color = skin.inkDim)
+        }
+    }
+
+    // Save fix stands below the scrolling fields, so the keyboard never covers it, as it never covers Log set or
+    // Done. While the keyboard is up, Delete set and the routine line scroll with the fields to leave them room.
+    val typing = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    Column(Modifier.fillMaxWidth().background(skin.surface).padding(bottom = GymLayout.sheetBottom)) {
+        Column(
+            Modifier.fillMaxWidth().weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = GymLayout.gutter),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Fix set", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp),
+                    color = skin.ink, modifier = Modifier.semantics { heading() })
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    exercise?.let { EquipmentIcon(it.equipment, tint = skin.inkDim) }
+                    Text("$movement · Set $setNumber", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
+                }
+            }
+            fun commitLoad(): NumberEditResult = load.read()?.let(::acceptLoad) ?: NumberEditResult.Refused
+            fun commitReps(): NumberEditResult = count.read()?.let(::acceptReps) ?: NumberEditResult.Refused
+            NumberStepper(load.text, load::edit, "Load", unit,
+                onStep = { step -> load.bumped(if (step == NumberStep.Increase) 1 else -1, false)?.let(::acceptLoad) ?: NumberEditResult.Refused },
+                onCommit = ::commitLoad,
+                size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
+                refusal = load.shownRefusal, enabled = !busy, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
+                onFocusChange = { load.focus(it, ::commitLoad) })
+            LadderRow(load.reading.value ?: load.committed, onDial = { step, big ->
+                load.bumped(if (step == NumberStep.Increase) 1 else -1, big)?.let { loadFeedback.accept(acceptLoad(it), step) }
+            }, enabled = !busy, decreaseEnabled = load.canDecrease)
+            NumberStepper(count.text, count::edit, "Reps", "reps",
+                onStep = { step ->
+                    count.read()?.let {
+                        acceptReps(Ladder.bumpReps(it.toInt(), if (step == NumberStep.Increase) 1 else -1)
+                            .coerceAtMost(LoggedSetLimits.maxReps).toDouble())
+                    } ?: NumberEditResult.Refused
+                },
+                onCommit = ::commitReps,
+                refusal = count.refusal, enabled = !busy, onFocusChange = { count.focus(it, ::commitReps) },
+                decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble())
+            ExposedDropdownMenuBox(expanded = effortOpen, onExpandedChange = { if (!busy) effortOpen = it }) {
+                TextField(value = rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
+                    onValueChange = {}, readOnly = true, enabled = !busy, singleLine = true,
+                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                    label = { Text("Effort", style = WindmillFont.body(12).copy(lineHeight = 16.sp)) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(effortOpen) },
+                    colors = fieldColors)
+                ExposedDropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false }, containerColor = skin.raised) {
+                    (listOf<Double?>(null) + SetEffort.rpeBand).forEach { value ->
+                        val label = value?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated
+                        DropdownMenuItem(text = { Text(label, style = WindmillFont.body(16), color = skin.ink) },
+                            onClick = { rpe = value; effortOpen = false },
+                            modifier = Modifier.heightIn(min = 48.dp).semantics { selected = rpe == value })
+                    }
+                }
+            }
+            refusal?.let { message ->
+                Text(message, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.alarmInk,
+                    modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
+            }
+            BasicTextField(
+                value = note, onValueChange = { note = it }, enabled = !busy,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = skin.ink, lineHeight = 24.sp),
+                cursorBrush = SolidColor(skin.accent), maxLines = 6, interactionSource = noteInteraction,
+                modifier = Modifier.fillMaxWidth().semantics {
+                    stateDescription = SetEffort.noteCaption
+                    if (tooLong) error(SetEffort.noteTooLong)
+                },
+                decorationBox = { field ->
+                    Box(Modifier.heightIn(min = 56.dp)) {
+                        TextFieldDefaults.Container(!busy, tooLong, noteInteraction, Modifier.matchParentSize(), fieldColors)
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Text(SetEffort.noteLabel, style = WindmillFont.body(12).copy(lineHeight = 16.sp),
+                                color = if (tooLong) skin.error else if (noteFocused) skin.accent else skin.inkDim)
+                            Box {
+                                if (note.isEmpty()) Text("Add a note", style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp), color = skin.inkDim)
+                                field()
+                            }
+                        }
+                    }
+                },
+            )
+            if (tooLong) {
+                Text(SetEffort.noteTooLong, style = WindmillFont.body(14), color = skin.alarmInk,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
+            SetEffort.noteCounter(note)?.let { counter ->
+                Text(counter, style = GymType.numeral(12), color = if (tooLong) skin.alarmInk else skin.inkDim)
+            }
+            if (typing) DeleteAndPlanNote()
+        }
+        Column(Modifier.padding(horizontal = GymLayout.gutter).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SaveFix(Modifier.fillMaxWidth())
+            if (!typing) DeleteAndPlanNote()
         }
     }
 }

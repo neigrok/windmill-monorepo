@@ -79,12 +79,13 @@ class SessionCommandsTests {
         val workout = Session(sessionId, start, finish, "stale", routineId, plan = PlanSnapshot(routine))
         val old = imported.value(sessionId).copy(rpe = 8.0, note = "keep", setNumber = 3)
         val removed = old.copy(id = Id("set00002", TrainingSet), setNumber = 7)
-        val added = corrected.copy(id = Id("set00003", TrainingSet), setNumber = 9, completedAt = start, weightKg = -20.125)
+        val assisted = Id("back-extension", Exercise)
+        val added = corrected.copy(id = Id("set00003", TrainingSet), exerciseId = assisted, setNumber = 9, completedAt = start, weightKg = -20.125)
         val kept = corrected.copy(completedAt = finish)
         val result = writing(decide(CorrectSession(sessionId, "request1", start, finish, "  New name  ", listOf(kept, added)),
             reader(listOf(row(workout), setRow(old), setRow(removed)))))
         val expectedKept = old.copy(completedAt = finish, weightKg = 80.13)
-        val expectedAdded = TrainingSet(added.id, sessionId, squat, -20.13, 5, completedAt = start, setNumber = 9)
+        val expectedAdded = TrainingSet(added.id, sessionId, assisted, -20.13, 5, completedAt = start, setNumber = 9)
         assertEquals(listOf(Prediction.update(Session, sessionId, workout.copy(closedBy = "finish", displayName = "  New name  ").fields()),
             Prediction.update(TrainingSet, setId, expectedKept.fields()), Prediction.create(TrainingSet, added.id, expectedAdded.fields()),
             Prediction.remove(TrainingSet, removed.id)), result.plan.predictions)

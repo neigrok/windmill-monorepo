@@ -589,7 +589,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             when (val ended = store.finish()) {
                 is FinishOutcome.Closed -> {
                     if (owner != currentAccount.user?.id) return@launch
-                    sessionStates.removeState("workout:${ended.detail.session.id}")
+                    sessionStates.removeState("${Frame.Workout(navigator.tab).key}:${ended.detail.session.id}")
                     if (ended.detail.sets.isNotEmpty()) haptics.finished()
                     navigator.reset(listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail)))
                     pruneReceipts()
@@ -1025,7 +1025,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
             @Composable
             fun TabScreen(tab: Tab) = when (tab) {
-                Tab.Log -> sessionStates.SaveableStateProvider("log") { LogScreen(
+                Tab.Log -> LogScreen(
                     store = store,
                     seat = youInitial,
                     onOpenSession = { look(Away.Session(it)) },
@@ -1035,7 +1035,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     onDiscardSession = { discard(it, "log") },
                     onOpenRecovery = { id -> look(if (id == null) Away.OnThisPhone else Away.InspectWorkout(id)) },
                     recovery = recoveryRead,
-                ) }
+                )
                 Tab.Coach -> CoachStance { Conversation(backTo = null, onBack = null) }
                 Tab.Routines -> RoutinesScreen(
                     store = store,
@@ -1088,23 +1088,21 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         onBack = { back() },
                         onDone = { back() },
                     )
-                    is Away.Session -> sessionStates.SaveableStateProvider(standing.summary.id) {
-                        if (finished?.let { it.session.id == standing.summary.id && it.sets.isEmpty() } == true) {
-                            GymScreen(title = standing.summary.plan?.routine ?: Readout.noRoutine,
-                                onBack = { back() }, backTo = backTo) { }
-                        } else SessionScreen(
-                            summary = standing.summary,
-                            seed = standing.detail,
-                            store = store,
-                            sharing = sharing,
-                            backTo = backTo,
-                            onBack = { back() },
-                            say = { note = it },
-                            onOpenMovement = { look(Away.Movement(it)) },
-                            onDiscard = { discard(it, "session") },
-                            onDraftOpen = { pushedDraftOpen = it },
-                        )
-                    }
+                    is Away.Session -> if (finished?.let { it.session.id == standing.summary.id && it.sets.isEmpty() } == true) {
+                        GymScreen(title = standing.summary.plan?.routine ?: Readout.noRoutine,
+                            onBack = { back() }, backTo = backTo) { }
+                    } else SessionScreen(
+                        summary = standing.summary,
+                        seed = standing.detail,
+                        store = store,
+                        sharing = sharing,
+                        backTo = backTo,
+                        onBack = { back() },
+                        say = { note = it },
+                        onOpenMovement = { look(Away.Movement(it)) },
+                        onDiscard = { discard(it, "session") },
+                        onDraftOpen = { pushedDraftOpen = it },
+                    )
                     Away.OnThisPhone -> if (recoveryRead != null) OnThisPhoneScreen(recoveryRead,
                         onBack = { back() }, onInspect = { look(Away.InspectWorkout(it)) }) else TabScreen(frame.tab)
                     is Away.InspectWorkout -> if (recoveryRead != null) {
@@ -1211,35 +1209,37 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         }
                     },
                 ) { inner ->
+                    // Each frame keeps its saved state under its own key, so two frames on the stage at once
+                    // never share one, even when both show the same session. The logger's state is its
+                    // session's and leaves the stage with it.
+                    val stateKey = if (frame is Frame.Workout) liveSession?.let { "${frame.key}:${it.id}" } else frame.key
                     // Consumed as well as applied: a screen inside that pads itself for the keyboard would
                     // otherwise count the navigation bar twice and leave a gap above the keys.
                     Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
-                        when (frame) {
-                            is Frame.Workout -> liveSession?.let { session ->
-                                sessionStates.SaveableStateProvider("workout:${session.id}") {
-                                    LoggerScreen(
+                        if (stateKey != null) sessionStates.SaveableStateProvider(stateKey) {
+                            when (frame) {
+                                is Frame.Workout -> LoggerScreen(
+                                    store = store,
+                                    say = { note = it },
+                                    onFinish = { close() },
+                                    onHide = ::hideWorkout,
+                                    transient = transient,
+                                )
+                                // A day being built outranks a tab and nothing else, and it covers the rail.
+                                is Frame.Draft -> (building?.also { leavingDraft.draft = it } ?: leavingDraft.draft)?.let { draft ->
+                                    RoutineBuilder(
+                                        draft = draft,
                                         store = store,
+                                        saving = savingRoutine,
+                                        onDraft = { building = it },
+                                        onSave = { building?.let(::write) },
+                                        onClose = { building = null },
                                         say = { note = it },
-                                        onFinish = { close() },
-                                        onHide = ::hideWorkout,
-                                        transient = transient,
                                     )
                                 }
+                                is Frame.Pushed -> PushedScreen(frame)
+                                is Frame.Root -> TabScreen(frame.tab)
                             }
-                            // A day being built outranks a tab and nothing else, and it covers the rail.
-                            is Frame.Draft -> (building?.also { leavingDraft.draft = it } ?: leavingDraft.draft)?.let { draft ->
-                                RoutineBuilder(
-                                    draft = draft,
-                                    store = store,
-                                    saving = savingRoutine,
-                                    onDraft = { building = it },
-                                    onSave = { building?.let(::write) },
-                                    onClose = { building = null },
-                                    say = { note = it },
-                                )
-                            }
-                            is Frame.Pushed -> PushedScreen(frame)
-                            is Frame.Root -> TabScreen(frame.tab)
                         }
                     }
                 }

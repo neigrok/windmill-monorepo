@@ -82,6 +82,8 @@ class LoggerScreenTests {
         haptics: HapticFeedback? = null,
         preferences: GymPreferences = GymPreferences(),
         say: (String?) -> Unit = {},
+        onFinish: () -> Unit = {},
+        onHide: () -> Unit = {},
     ): EngineRoomFixture {
         // No delete window here, so a deleted set settles the moment it is deleted.
         val room = EngineRoomFixture(tmp.newFolder(), scope, undoWindowMs = 0)
@@ -120,7 +122,7 @@ class LoggerScreenTests {
         room.store.observeEngine()
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
-                LoggerScreen(store = room.store, say = say, onFinish = {})
+                LoggerScreen(store = room.store, say = say, onFinish = onFinish, onHide = onHide)
             }
         }
         return room
@@ -281,6 +283,35 @@ class LoggerScreenTests {
                 val saved = room.store.sets.single()
                 assertEquals(saved.copy(weightKg = 82.5, reps = 7, exerciseId = "bench-press", setNumber = null), saved)
             }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun aTypedLoadIsKeptWhenTheRackLeavesByHideFinishOrAMove() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val left = mutableListOf<String>()
+        try { logger(scope, logged = true, onFinish = { left += "finish" }, onHide = { left += "hide" }).use { room ->
+            val load = compose.onNodeWithContentDescription("Load, kg total")
+            load.performClick().performTextReplacement("82.5")
+            compose.onNodeWithContentDescription("Hide workout").performClick()
+            compose.runOnIdle { assertEquals(82.5 to listOf("hide"), room.store.rack!!.weightKg to left.toList()) }
+            load.performClick().performTextReplacement("85")
+            compose.onNodeWithText("Finish").performClick()
+            compose.runOnIdle { assertEquals(85.0 to listOf("hide", "finish"), room.store.rack!!.weightKg to left.toList()) }
+            load.performClick().performTextReplacement("1e999")
+            compose.onNodeWithContentDescription("Hide workout").performClick()
+            load.assertTextEquals("Load", "kg total", "1e999")
+            compose.onNodeWithText("That is not a number yet.").assertExists()
+            compose.runOnIdle { assertEquals(85.0, room.store.rack!!.weightKg, 0.0) }
+            load.performClick().performTextReplacement("87.5")
+            val kept = mutableListOf<Double>()
+            compose.runOnIdle {
+                val next = place().fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Next movement" }
+                next.action()
+                kept += room.store.rack!!.weightKg
+            }
+            compose.onNode(hasContentDescription("Exercise 2 of 3")).assertExists()
+            assertEquals("the typed load was written to bench press before the move", listOf(87.5), kept)
         } } finally { scope.cancel() }
     }
 

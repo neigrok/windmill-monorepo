@@ -98,6 +98,23 @@ class WindmillSheetTests {
     }
 
     @Test
+    fun aGestureStartedWhileTheSheetSlidesDownCannotStopItsDismissal() {
+        sheet()
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { back.onBackPressed() }
+        compose.mainClock.advanceTimeBy(100)
+        compose.runOnIdle {
+            back.dispatchOnBackStarted(BackEventCompat(0f, 600f, 0f, BackEventCompat.EDGE_LEFT))
+            back.dispatchOnBackCancelled()
+        }
+        compose.mainClock.autoAdvance = true
+        compose.waitUntil(5_000) { dismissed > 0 }
+        compose.waitForIdle()
+        assertEquals(1, dismissed)
+        compose.onNodeWithText("Sheet body").assertDoesNotExist()
+    }
+
+    @Test
     fun aCancelledGestureKeepsTheSheet() {
         sheet()
         compose.runOnIdle {

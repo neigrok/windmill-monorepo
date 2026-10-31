@@ -143,15 +143,22 @@ before opening it. Routines requests clear read-only pushed navigation and prese
 each request is consumed once, including across activity recreation.
 
 `GymNavigator` keeps the tab and the pushed stack across recreation, and `Standing` decides what
-Back means. `GymStage` moves the room's frame: pushes and pops travel along the shared X axis and
-tab changes fade through, 300 ms with emphasized easing. A back gesture shrinks a pushed screen, the
-logger or the routine editor toward 90 % over the frame its release returns to. A screen holding
-work registers a `BackGuard`, and a busy `BackHandler` swallows the gesture. Every sheet is a
-`WindmillSheet`, which previews Back from its own window. With Remove animations on, all of these
-cut.
+Back means. `GymStage` moves the room's frame and keeps each frame's saved state under the frame's
+key: pushes and pops travel along the shared X axis and tab changes fade through, 300 ms with
+emphasized easing. A back gesture shrinks a pushed screen, the logger or the routine editor toward
+90 % over the frame its release returns to. A Back that lands during a release cannot stop the pop
+it committed to; it waits for the stage to settle and then acts on where the room stands. A busy
+`BackHandler` swallows the gesture. `BackGuard` is the API for a screen to veto the preview and ask
+instead of leaving; no screen registers one yet, and task 56's routine editor is its first user.
+`KeepOnBack` lets a screen keep typed entry before Back leaves it; the logger's rack registers one.
+Every sheet is a `WindmillSheet`, which previews Back from its own window and finishes a close it
+has begun even when another Back arrives. With Remove animations on, all of these cut.
 
 The rack and Fix set keep native number input separate from committed values. IME Done and explicit
-Log set / Save fix validate the current buffer; plain blur or Cancel restores the committed value.
+Log set / Save fix validate the current buffer. Leaving a field commits a valid typed value the way
+Done does, and an invalid one keeps its refusal and the committed value; Cancel restores the
+committed value. The logger owns the rack's entry, so Hide, Finish, Back and a move to another
+movement commit a valid typed value first.
 `NumberEntry` owns signed/comma parsing and performed-set bounds, while `NumberStepper` owns the
 stable editor, accessibility actions and accepted-change feedback. Planned target fields retain
 separate domain rules. Focused number editing owns horizontal drag so it cannot page movements.
