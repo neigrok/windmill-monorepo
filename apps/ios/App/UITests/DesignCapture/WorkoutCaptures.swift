@@ -75,6 +75,21 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
+  // Create movement over the workout, opened from a search no movement matches.
+  func testCreateMovement() {
+    captureBoard("gym-workout-create-movement", settle: 1.5) { look in
+      let app = launch("workout-planned", look)
+      let menu = app.buttons["workout-movement-menu"]
+      XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
+      XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5)); app.buttons["Add movement"].tap()
+      XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+      app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Zercher squat")
+      XCTAssertTrue(app.buttons["gym-create-movement"].waitForExistence(timeout: 5)); app.buttons["gym-create-movement"].tap()
+      XCTAssertTrue(app.textFields["gym-movement-name"].waitForValue("Zercher squat"))
+      return app
+    }
+  }
+
   // The rack at Upper A's dumbbell press, after a +1 and one rep fewer, and at the pull-up's added load.
   func testRack() {
     let rack = { (look: Look) -> XCUIApplication in
