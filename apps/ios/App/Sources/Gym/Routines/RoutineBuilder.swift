@@ -45,7 +45,7 @@ final class RoutineEditingSession: Identifiable {
 
   func createMovement(_ gym: GymModel) {
     let equipment = Equipment.barbell
-    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: NameField.movement.capped(NameField.movement.trimmed(query)),
+    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: NameField.movement.taken(from: query),
                             pattern: "isolation", equipment: equipment, stepKg: ExerciseRules.defaultStepKg(equipment: equipment.rawValue))
     editor = RoutineMovementDraft(exercise: exercise, base: nil, entry: nil)
     path.append(.editor)

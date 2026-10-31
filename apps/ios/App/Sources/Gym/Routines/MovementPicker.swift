@@ -66,7 +66,7 @@ enum MovementPickerOptions {
     let unread = readFailed || catalogue.isEmpty ? catalogueUnread : nil
     let exact = catalogue.contains { ([$0.name] + $0.aliases).contains { NameField.movement.trimmed($0).lowercased() == term } }
     return Result(six: six, matches: matches, unread: unread,
-                  create: term.isEmpty || exact || unread != nil ? nil : NameField.movement.capped(NameField.movement.trimmed(query)))
+                  create: term.isEmpty || exact || unread != nil ? nil : NameField.movement.taken(from: query))
   }
 }
 
@@ -101,7 +101,7 @@ struct MovementCreationDraft: Identifiable {
 
   // A draft reopens as the owner left it; a nameless one takes the search it opens from.
   mutating func takeQuery(_ query: String) {
-    if NameField.movement.trimmed(name).isEmpty { name = NameField.movement.capped(NameField.movement.trimmed(query)) }
+    if NameField.movement.trimmed(name).isEmpty { name = NameField.movement.taken(from: query) }
   }
 }
 

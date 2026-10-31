@@ -18,7 +18,7 @@ struct GymTransient: View {
     }
 
     init?(readFailed: Bool, error: String?, notices: [(id: String, text: String)], local: String?, retries: Bool, dismisses: Bool, noticeText: String?) {
-      if readFailed { self = .readFailure(local ?? error ?? "Gym could not be read from this phone. Try again."); return }
+      if readFailed { self = .readFailure(local ?? error ?? GymModel.unreadable); return }
       if let local { self = .local(local, retries: retries, dismisses: dismisses); return }
       if let error, !notices.contains(where: { $0.text == error }), error != noticeText { self = .error(error); return }
       guard let notice = notices.last else { return nil }
@@ -66,7 +66,8 @@ struct GymTransient: View {
     switch band {
     case .notice(let id, _): return { gym.dismissNotice(id) }
     case .local(let text, _, _): return { dismiss?(); gym.dismissError(text) }
-    case .readFailure(let text), .error(let text): return { gym.dismissError(text) }
+    case .error(let text): return { gym.dismissError(text) }
+    case .readFailure: return nil
     }
   }
 

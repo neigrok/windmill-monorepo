@@ -14,7 +14,9 @@ Routine summaries are sheets with Close, Edit and Start. Starting waits for dism
 opening the workout. Start stands in the sheet's reach band, not its system bottom bar: iOS 27 sizes
 a bottom-bar toolbar item to its content and ignores `.frame(maxWidth: .infinity)`, so a bar item
 there measures 38 pt wide against 355 pt in the band. The band is on a surface, so the movements
-pass under it on a hard edge over the bar material and no row reads through Start. Workout pages use the native pager and page control. The compact ledger
+pass under it on a hard edge over the bar material and no row reads through Start.
+`GymIntegrationFlowTests.testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit` holds Start to at least 85% of the
+window's width. Workout pages use the native pager and page control. The compact ledger
 contains the saved sets and preserves access to earlier rows without a duplicate statistics strip.
 
 Coach history invalidates reads at both the start and completion of deletion, so a concurrent
@@ -307,15 +309,15 @@ function; release-device performance remains unmeasured.
 Built with the iOS 27 SDK, the room menu's inline picker rows reach XCTest without their `room-…`
 identifiers, labelled only by their room's title, so every UI test that switched rooms by identifier
 stopped at the open menu. UI tests find a room through `XCUIApplication.roomItem(_:)`, which takes the
-identifier or the title. `GymIntegrationFlowTests.testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit`
-holds the routine summary's Start to at least 85% of the window's width, and `PalettesTests` holds the
-palettes to exactly the theme catalog's colours, each carried by the app's bundle.
+identifier or the title. `PalettesTests` holds the palettes to exactly the theme catalog's colours, each
+carried by the app's bundle.
 
 Every button role a room draws lives in `Theme/RoomControls.swift`: the primary (`RoomPrimaryStyle`), the
 secondary, the glass seat and a card's decision (`RoomDecisionStyle`, prominent or quiet, a
 destructive quiet one in system red). `RoomGlass` is the one Liquid Glass surface, the regular material before
 iOS 26, under the seat, the floating act and the transient band. `GymTransient.Band` resolves the band's words
-and its one control from plain values, and `GymModel.dismissError(_:)` clears the error a band showed.
+and its one control from plain values, and `GymModel.dismissError(_:)` clears the error a band showed. A read
+the room cannot make goes through `GymModel.failRead(_:)`, which says `GymModel.unreadable` and reports under `gym_read`.
 `DestructiveQuestion` takes only telemetry and the account. `RoomSpace` names the 52 pt control height and the
 22 and 24 pt radii Coach's cards and the weigh-in keep apart from `cardRadius`; that drift, the drawn card
 decisions and the weigh-in's own rows wait on Figma in `docs/design/consistency.md`.
@@ -330,6 +332,3 @@ levels between any two runs, the same build's included. Coach's cards were not r
 helpers fail before Coach opens. Their decision style renders byte-identical to the previous one in an
 `ImageRenderer` check, light and dark, enabled and disabled. iOS 18's material branch has no simulator here and
 is unverified.
-
-Gym's read failure, "Gym could not be read from this phone. Try again.", is written three times in
-`GymModel.swift` and once in the band's resolver; one named constant would keep them together.

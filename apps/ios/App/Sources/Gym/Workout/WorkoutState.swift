@@ -409,9 +409,8 @@ struct FinishWorkout: Action {
       }
     }
     catch {
-      finishQueued = true; gym.readFailed = true
-      message = Self.orderUnread
-      gym.error = "Gym could not be read from this phone. Try again."; gym.report("gym_read", error); return
+      finishQueued = true; message = Self.orderUnread
+      gym.failRead(error); return
     }
     if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil; typedLoad = nil }
     sessionId = open.id; (walk, finishQueued) = restored
@@ -430,8 +429,7 @@ struct FinishWorkout: Action {
          try read.commands().contains { $0.command.name == Gym.Commands.finish && $0.command.args["sessionId"] == session.id.json })
       }
     } catch {
-      gym.report("gym_read", error); finishQueued = true; gym.readFailed = true
-      gym.error = "Gym could not be read from this phone. Try again."; return
+      finishQueued = true; gym.failRead(error); return
     }
     if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)

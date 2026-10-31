@@ -24,6 +24,9 @@ struct NameField {
     return String(kept)
   }
 
+  // A search's text taken as a name: trimmed, then cut at the rule's length.
+  func taken(from query: String) -> String { capped(trimmed(query)) }
+
   // A violation the form has no words for is the save's to refuse, in the refusal's words.
   func problem(_ value: String) -> String? {
     do throws(Violation) {
