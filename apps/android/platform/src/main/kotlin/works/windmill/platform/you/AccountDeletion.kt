@@ -165,6 +165,8 @@ class AccountDeletionStore(
         private set
     var deletedReceipt by mutableStateOf<AccountDeletionResponse?>(null)
         private set
+    var exitRequested by mutableStateOf(false)
+        private set
     private var preparing by mutableStateOf(false)
     val transitionPending: Boolean get() = preparing || storage.blocked
     var operationRevision by mutableStateOf(0L)
@@ -191,6 +193,7 @@ class AccountDeletionStore(
             failure = null
             page = AccountDeletionPage.Confirm
         }
+        exitRequested = false
         visible = true
         telemetry.event("account_delete", mapOf("state" to "shown"))
     }
@@ -207,6 +210,7 @@ class AccountDeletionStore(
         preparing = false
         operationRevision += 1
         visible = false
+        if (exitRequested) { exitRequested = false; return }
         telemetry.event("account_delete", mapOf("action" to if (page == AccountDeletionPage.Deleted) "done" else "back"))
         if (!storage.blocked && page != AccountDeletionPage.Deleted)
             telemetry.event("account_delete", mapOf("outcome" to "cancelled"))
@@ -239,24 +243,14 @@ class AccountDeletionStore(
             accept(record, receipt)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (refusal: WindmillApiException.Refused) {
-            val definite = submitted && refusal.status in setOf(400, 409) &&
-                refusal.refusal.code in setOf("malformed", "account-mismatch", "clock-ahead")
-            if (definite) {
-                storage.replace(requireNotNull(attempted), null)
-                releaseHold()
-                preparing = false
-                page = AccountDeletionPage.Confirm
-                failure = "Couldn’t delete your account. Check your connection and try again."
-                telemetry.event("account_delete", mapOf("outcome" to "refused"))
-                if (refusal.refusal.code == "account-mismatch") visible = false
-            } else uncertain(refusal)
+            if (submitted && closedNothing(refusal)) refused(requireNotNull(attempted), refusal) else uncertain(refusal)
         } catch (failure: Exception) {
             if (submitted || storage.blocked) uncertain(failure)
             else {
                 releaseHold()
                 preparing = false
                 page = AccountDeletionPage.Confirm
-                this.failure = "Couldn’t delete your account. Check your connection and try again."
+                this.failure = failedSentence
                 report(failure, "account_delete_prepare")
                 telemetry.event("account_delete", mapOf("outcome" to "failed"))
             }
@@ -273,9 +267,44 @@ class AccountDeletionStore(
         try {
             if (pending.receipt != null) clean(pending)
             else if (knownClosed?.first?.request == pending.request) accept(pending, requireNotNull(knownClosed).second)
+            else if (admissible(pending.request)) resend(pending)
             else accept(pending, api.result(pending.request))
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { uncertain(failure) }
+    }
+
+    // The session is checked before the operation, so a 401 here means a committed close revoked it or it lapsed.
+    private suspend fun resend(pending: PendingAccountDeletion) {
+        try { accept(pending, api.close(pending.request, pending.credential)) }
+        catch (refusal: WindmillApiException.Refused) {
+            when {
+                closedNothing(refusal) -> refused(pending, refusal)
+                refusal.status == 401 -> accept(pending, api.result(pending.request))
+                else -> throw refusal
+            }
+        }
+    }
+
+    private fun admissible(request: AccountDeletionRequest): Boolean =
+        now() - request.requestedAtMs in 0 until admissionWindowMs
+
+    // A 404 from the close itself is an authenticated session with no committed operation: a slow phone clock.
+    private fun closedNothing(refusal: WindmillApiException.Refused): Boolean =
+        refusal.status == 400 && refusal.refusal.code == "malformed" ||
+            refusal.status == 409 && refusal.refusal.code in setOf("account-mismatch", "clock-ahead") ||
+            refusal.status == 404 && refusal.refusal.code == "unavailable"
+
+    private suspend fun refused(attempted: PendingAccountDeletion, refusal: WindmillApiException.Refused) {
+        storage.replace(attempted, null)
+        releaseHold()
+        preparing = false
+        knownClosed = null
+        confirmingUser = identity()?.user?.takeIf { it.id == attempted.user.id } ?: confirmingUser
+        count = unsent()
+        page = AccountDeletionPage.Confirm
+        failure = if (refusal.refusal.code in setOf("clock-ahead", "unavailable")) clockSentence else failedSentence
+        telemetry.event("account_delete", mapOf("outcome" to "refused"))
+        if (refusal.refusal.code == "account-mismatch") exitRequested = true
     }
 
     private suspend fun accept(expected: PendingAccountDeletion, receipt: AccountDeletionResponse) {
@@ -350,11 +379,18 @@ class AccountDeletionStore(
             } catch (failure: Exception) {
                 report(failure, "account_delete_recovery")
                 page = if (storage.blocked) AccountDeletionPage.Unavailable else AccountDeletionPage.Confirm
-                this@AccountDeletionStore.failure = "Couldn’t delete your account. Check your connection and try again."
+                this@AccountDeletionStore.failure = failedSentence
                 try { releaseHold(); preparing = false }
                 catch (_: Exception) { preparing = true }
             } finally { busy = false }
         }.also { it.start() }
         requireNotNull(work).await()
+    }
+
+    companion object {
+        const val admissionWindowMs = 5 * 60 * 1_000L
+        const val failedSentence = "Couldn’t delete your account. Check your connection and try again."
+        // The clock refusal's sentence awaits design; it says the failed sentence until it is drawn.
+        const val clockSentence = failedSentence
     }
 }

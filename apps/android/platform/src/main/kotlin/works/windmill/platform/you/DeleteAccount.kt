@@ -55,6 +55,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
         }
     }
     BackHandler { exit() }
+    LaunchedEffect(store.exitRequested, store.busy) { if (store.exitRequested && !store.busy) exit() }
     Column(Modifier.fillMaxSize().background(palette.canvas).statusBarsPadding().navigationBarsPadding().imePadding()
         .testTag("account-deletion-page")) {
         if (page != AccountDeletionPage.Deleted) TopAppBar(

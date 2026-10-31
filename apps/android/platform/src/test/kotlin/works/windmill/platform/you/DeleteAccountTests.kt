@@ -99,4 +99,32 @@ class DeleteAccountTests {
         compose.onNodeWithText("Delete account").assertDoesNotExist()
         compose.onNodeWithText("Sign in").assertExists()
     }
+
+    @Test fun anAccountMismatchRefusalLeavesThroughTheExitSoYouReopens() {
+        val mismatched = AccountDeletionStore(storage, object : AccountDeletionApi {
+            override suspend fun close(request: AccountDeletionRequest, credential: String): AccountDeletionResponse =
+                throw works.windmill.platform.net.WindmillApiException.Refused(409,
+                    works.windmill.platform.net.Refusal(code = "account-mismatch"))
+            override suspend fun result(request: AccountDeletionRequest): AccountDeletionResponse = error("No pending recovery in this test")
+        }, scope, { identity }, { identity = it.copy(revision = it.revision + 1); identity }, { count }, {
+            object : AuthSignOutSession {
+                override val account = user.id
+                override val unsent = count
+                override suspend fun finish(choice: AuthSignOutChoice) = error("A refused close finishes nothing")
+                override suspend fun cancel() = Unit
+            }
+        }, { _, _ -> error("A refused close finishes nothing") }, {})
+        mismatched.open()
+        val exits = mutableListOf<Boolean>()
+        compose.setContent { WindmillMaterial { if (mismatched.visible) DeleteAccount(mismatched) { exits += it } } }
+        compose.onNodeWithTag("deletion-email").performTextInput(user.email)
+        compose.onNodeWithTag("deletion-primary").performClick()
+        compose.waitUntil(5_000) { exits.isNotEmpty() }
+        compose.runOnIdle {
+            assertEquals(listOf(false), exits)
+            assertFalse(mismatched.visible)
+            assertFalse(storage.blocked)
+        }
+        compose.onNodeWithTag("account-deletion-page").assertDoesNotExist()
+    }
 }

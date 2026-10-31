@@ -336,7 +336,7 @@ class AuthStore(
         try {
             lifecycle.signedIn(proposed.user, proposed.secret, restoring)
             if (attempt != generation || sessions.proposed != proposed) throw CancellationException("Authentication changed.")
-            if (!restoring) onVerifiedSignIn(proposed.user)
+            onVerifiedSignIn(proposed.user)
             sessions.publishProposed(proposed)
         } catch (cancelled: CancellationException) {
             val completed = withContext(NonCancellable) { lifecycle.cancelSignIn(proposed.user, proposed.secret) }

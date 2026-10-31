@@ -1,6 +1,6 @@
 # Delete account, from You, signed in (Shell file)
 
-**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; the captures for Shell 27a–27g and D1–D5 and the full local-stack fault acceptance remain.
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; the captures for Shell 27a–27g and D1–D5 and the full local-stack fault acceptance remain. A close that never arrived is sent again with its original tuple while the server's five-minute admission window lasts; past it, an unavailable receipt keeps D3, and the way out of D3 awaits design. The clock refusal shows the existing failure sentence until its own sentence is approved.
 
 **Figma:**
 - Shell · Android 27a Delete your account?: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1269) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1667)

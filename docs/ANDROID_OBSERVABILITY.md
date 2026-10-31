@@ -669,7 +669,9 @@ boundaries report failed writes or decryption. A pending choice does not run ord
 
 Account deletion emits only the finite labels above. `ok` follows a confirmed closed receipt and
 successful local cleanup; an unknown result emits `pending_confirmation`, and owed local removal
-emits `cleanup_pending`. No email, account/operation id, recovery proof, credential, deadline or
+emits `cleanup_pending`. A close the server answered without closing anything (malformed, another account,
+a clock ahead or behind) emits `refused`; Check deletion inside the five-minute admission window sends
+the original close again under `account_delete_request`. No email, account/operation id, recovery proof, credential, deadline or
 body is an event property. `account_delete_request` and `account_delete_result` identify transport
 failures; sealed-record failures use `account_delete_storage`, preparation uses
 `account_delete_prepare`, and local cleanup/recovery use `account_delete_cleanup` and
