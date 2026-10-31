@@ -254,7 +254,7 @@ class LoggerScreenTests {
     }
 
     @Test
-    fun invalidLogKeepsTheDraftAndBlurRestoresTheCommittedRack() {
+    fun aTypedLoadSurvivesTheTapOnRepsAndAnUnreadableOneKeepsTheRackAndItsRefusal() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope).use { room ->
             val load = compose.onNodeWithContentDescription("Load, kg total")
@@ -267,13 +267,38 @@ class LoggerScreenTests {
                 assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
             }
             compose.onNodeWithContentDescription("Reps, reps").performClick()
-            load.assertTextEquals("Load", "kg total", "20")
+            load.assertTextEquals("Load", "kg total", "1e999")
+            compose.onNodeWithText("That is not a number yet.").assertExists()
+            compose.runOnIdle { assertEquals(20.0, room.store.rack!!.weightKg, 0.0) }
+            load.performClick().performTextReplacement("82.5")
+            compose.onNodeWithContentDescription("Reps, reps").performClick()
+            load.assertTextEquals("Load", "kg total", "82.5")
+            compose.onNodeWithText("That is not a number yet.").assertDoesNotExist()
+            compose.runOnIdle { assertEquals(82.5, room.store.rack!!.weightKg, 0.0) }
             compose.onNodeWithContentDescription("Reps, reps").performTextReplacement("7")
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
                 val saved = room.store.sets.single()
-                assertEquals(saved.copy(weightKg = 20.0, reps = 7, exerciseId = "bench-press", setNumber = null), saved)
+                assertEquals(saved.copy(weightKg = 82.5, reps = 7, exerciseId = "bench-press", setNumber = null), saved)
             }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun steppingTheRackBetweenTwentyAndTwentyTwoAndAHalfKeepsItsPanelHeight() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { logger(scope).use { room ->
+            val load = compose.onNodeWithContentDescription("Load, kg total")
+            val panel = compose.onNodeWithTag("Numeric rack")
+            load.assertTextEquals("Load", "kg total", "20")
+            val heights = listOf("+2.5" to "22.5", "−2.5" to "20").map { (step, shown) ->
+                val before = panel.getBoundsInRoot().height
+                compose.onNodeWithText(step).performClick()
+                load.assertTextEquals("Load", "kg total", shown)
+                before to panel.getBoundsInRoot().height
+            }
+            compose.runOnIdle { assertEquals(20.0, room.store.rack!!.weightKg, 0.0) }
+            assertEquals(List(2) { heights[0].first to heights[0].first }, heights)
         } } finally { scope.cancel() }
     }
 

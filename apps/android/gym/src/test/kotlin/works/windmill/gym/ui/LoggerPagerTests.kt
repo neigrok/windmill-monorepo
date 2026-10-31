@@ -308,7 +308,7 @@ class LoggerPagerTests {
     fun aVerticalStrokeScrollsOnlyTheLedgerAndAHorizontalOneWalks() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope).use { room ->
-            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack"))
+            val ledger = compose.onNode(hasTestTag("Set ledger"))
             val head = compose.onNodeWithText("Bench Press").assertIsDisplayed().getBoundsInRoot()
             val initial = ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
             assertTrue("the ledger overflows",

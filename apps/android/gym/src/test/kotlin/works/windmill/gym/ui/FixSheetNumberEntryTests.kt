@@ -138,16 +138,21 @@ class FixSheetNumberEntryTests {
         compose.runOnIdle { assertEquals(listOf(SetFix(reps = 99)), saved) }
     }
 
-    @Test fun plainBlurRestoresThePriorLoadAndDoesNotTickOrChangeTheFix() {
+    @Test fun leavingTheLoadCommitsItSilentlyAndAnUnreadableOneKeepsItsRefusal() {
         val saved = mutableListOf<SetFix>()
         val sensations = mutableListOf<HapticFeedbackType>()
         sheet(saved, sensations)
+        compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("1e999")
+        compose.onNodeWithContentDescription("Reps, reps").performClick()
+        compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "1e999")
+        compose.onNodeWithText(works.windmill.gym.domain.NumberEntry.notANumber).assertExists()
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-12.5")
         compose.onNodeWithContentDescription("Reps, reps").performClick()
-        compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "82.5")
+        compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "−12.5")
+        compose.onNodeWithText(works.windmill.gym.domain.NumberEntry.notANumber).assertDoesNotExist()
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
         compose.runOnIdle {
-            assertEquals(listOf(SetFix()), saved)
+            assertEquals(listOf(SetFix(weightKg = -12.5)), saved)
             assertEquals(emptyList<HapticFeedbackType>(), sensations)
         }
     }

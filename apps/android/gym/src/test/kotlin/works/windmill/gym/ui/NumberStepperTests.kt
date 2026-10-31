@@ -57,6 +57,23 @@ import org.robolectric.annotation.Config
 class NumberStepperTests {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun aDisplayLoadOfTwentyOrTwentyTwoAndAHalfKeepsItsUnitInlineAndItsHeight() {
+        var value by mutableStateOf("20")
+        compose.setContent { GymMaterial { Column(Modifier.width(372.dp)) {
+            NumberStepper(value, { value = it }, "Load", "kg total", onStep = { NumberEditResult.Unchanged },
+                onCommit = { NumberEditResult.Unchanged }, size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal)
+        } } }
+        val field = compose.onNodeWithContentDescription("Load, kg total")
+        val unit = compose.onNodeWithText("kg total", useUnmergedTree = true)
+        val drawn = listOf("20", "22.5", "20").map { typed ->
+            compose.runOnIdle { value = typed }
+            field.assertTextEquals("Load", "kg total", typed)
+            val bounds = field.getBoundsInRoot()
+            bounds.height to (unit.getBoundsInRoot().left - bounds.left > 40.dp)
+        }
+        assertEquals(List(3) { drawn[0].first to true }, drawn)
+    }
+
     @Test fun newFocusStartsAfterTheValueAndAccessibilityStepsShareAcceptedFeedback() {
         val sensations = mutableListOf<HapticFeedbackType>()
         val feedback = object : HapticFeedback {

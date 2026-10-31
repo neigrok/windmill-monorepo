@@ -113,8 +113,10 @@ fun FixSheet(
     var busy by remember(draftKey) { mutableStateOf(false) }
     val tooLong = SetEffort.noteOverlong(note)
     val cancelEntry: () -> Unit = remember(load, count, focus, keyboard) { {
-        load.focus(false)
-        count.focus(false)
+        load.cancel()
+        count.cancel()
+        load.focus(false) { NumberEditResult.Unchanged }
+        count.focus(false) { NumberEditResult.Unchanged }
         focus.clearFocus()
         keyboard?.hide()
     } }
@@ -157,7 +159,7 @@ fun FixSheet(
             onCommit = ::commitLoad,
             size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
             refusal = load.shownRefusal, enabled = !busy, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
-            onFocusChange = load::focus)
+            onFocusChange = { load.focus(it, ::commitLoad) })
         LadderRow(load.reading.value ?: load.committed, onDial = { step, big ->
             load.bumped(if (step == NumberStep.Increase) 1 else -1, big)?.let { loadFeedback.accept(acceptLoad(it), step) }
         }, enabled = !busy)
@@ -169,7 +171,7 @@ fun FixSheet(
                 } ?: NumberEditResult.Refused
             },
             onCommit = ::commitReps,
-            refusal = count.refusal, enabled = !busy, onFocusChange = count::focus,
+            refusal = count.refusal, enabled = !busy, onFocusChange = { count.focus(it, ::commitReps) },
             decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble())
         ExposedDropdownMenuBox(expanded = effortOpen, onExpandedChange = { if (!busy) effortOpen = it }) {
             TextField(value = rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
