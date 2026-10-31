@@ -23,13 +23,13 @@ struct RoutineMovementDraft: Equatable {
 
   var id: ID<Exercise> { opening.id }
   var exercise: Exercise {
-    Exercise(id: id, name: MovementName.trimmed(name), pattern: opening.pattern, equipment: equipment,
+    Exercise(id: id, name: NameField.movement.trimmed(name), pattern: opening.pattern, equipment: equipment,
              stepKg: base == nil ? ExerciseRules.defaultStepKg(equipment: equipment) : opening.stepKg, loadCount: loadCount, aliases: opening.aliases)
   }
   var equipmentChanged: Bool { base != nil && (equipment != base?.equipment || exercise.loadCount != base?.loadCount) }
   var isDirty: Bool { exercise != opening || targets != initialTargets }
   var problem: String? {
-    if let problem = MovementName.problem(name) { return problem }
+    if let problem = NameField.movement.problem(name) { return problem }
     if !MovementEquipment.choices.contains(equipment) && !(Equipment(base?.equipment) == .other && Equipment(equipment) == .other) { return "Choose equipment." }
     if Equipment(equipment) == .dumbbell && ![1, 2].contains(loadCount) { return "Choose one or two dumbbells." }
     return targets.refusal?.message
@@ -66,8 +66,8 @@ struct RoutineMovementEditor: View {
               .textInputAutocapitalization(.words).autocorrectionDisabled()
               .accessibilityIdentifier("gym-movement-name").onSubmit { nextField() }
           }
-          if let counter = MovementName.counter(movement.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-          if !movement.name.isEmpty, let problem = MovementName.problem(movement.name) { refusalLine(problem) }
+          if let counter = NameField.movement.counter(movement.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          if !movement.name.isEmpty, let problem = NameField.movement.problem(movement.name) { refusalLine(problem) }
           MovementEquipmentPicker(equipment: $movement.equipment, loadCount: $movement.loadCount, identifier: "gym-movement-equipment")
         }
         Section {

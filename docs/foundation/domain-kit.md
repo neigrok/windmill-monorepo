@@ -528,10 +528,12 @@ text spec. Past those limits, keeping a spec within the registry is the product'
 public protocol ValueSpec: Sendable { var path: String { get }; var json: JSON { get } }
 public enum TextUnit: String, Sendable { case chars, bytes }
 public struct TextSpec: ValueSpec {
+  public let max: Int
   public init(_ path: String, unit: TextUnit, min: Int, max: Int, trim: Bool, nfc: Bool)
   public func apply(_ s: String, at: Path) throws(Violation) -> String
   public func apply(_ s: String?, at: Path) throws(Violation) -> String?   // nil passes
   public func measure(_ s: String) -> Int                                   // §4.3 steps 1, 2 and 4
+  public func normalised(_ s: String) -> String                             // §4.3 steps 1 and 2
   public static func isBlank(_ s: String) -> Bool                           // only §4.3's whitespace
 }
 public struct NumberSpec: ValueSpec {

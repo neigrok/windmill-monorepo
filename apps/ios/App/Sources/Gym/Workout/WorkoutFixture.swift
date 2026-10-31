@@ -29,7 +29,7 @@ enum WorkoutFixture {
     let upper = board.contains("upper"), planned = upper || board.contains("planned")
     let other = board == "workout-upper-other"
     if other {
-      guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: "other"))?.refusal == nil else { return true }
+      guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: Equipment.other.rawValue))?.refusal == nil else { return true }
     }
     // The plan's rests are the boards' (03.20): three minutes for the squat, two for the press and the pull-up, none after.
     let targets = { (id: String, count: Int, reps: Int, kg: Double) in
@@ -94,7 +94,7 @@ enum WorkoutFixture {
     do { try await model.signIn(server.identity(email: "workout-in-flight-fixture@example.com")) }
     catch { gym.error = "The in-flight fixture could not sign in."; return true }
     model.openRoom(.gym)
-    guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: "bodyweight"))?.refusal == nil else { return true }
+    guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: Equipment.bodyweight.rawValue))?.refusal == nil else { return true }
     let entry = { (id: String, count: Int, reps: Int, kg: Double, rest: Int?) in
       RoutineEntry(exerciseId: ID(RecordID(id)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: count), restSeconds: rest)
     }

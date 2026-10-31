@@ -1,50 +1,5 @@
 import SwiftUI
-import DomainKit
 import GymDomain
-
-// A movement's name as the domain's `exercise.name` rule reads it: composed, trimmed, and counted in code points.
-enum MovementName {
-  static let rule = ExerciseRules.name
-  static let counterFrom = rule.max * 4 / 5
-
-  static func trimmed(_ value: String) -> String { rule.normalised(value) }
-
-  // The typed text up to the scalar that would take it past the rule's length.
-  static func capped(_ value: String) -> String {
-    guard rule.measure(value) > rule.max else { return value }
-    var kept = String.UnicodeScalarView()
-    for scalar in value.unicodeScalars {
-      var longer = kept
-      longer.append(scalar)
-      if rule.measure(String(longer)) > rule.max { break }
-      kept = longer
-    }
-    return String(kept)
-  }
-
-  // A violation the form has no words for is the save's to refuse, in the refusal's words.
-  static func problem(_ value: String) -> String? {
-    do throws(Violation) {
-      _ = try rule.apply(value, at: "name")
-      return nil
-    } catch {
-      switch error.reason {
-      case .blank, .tooShort: return "Name it to save it."
-      case .tooLong(let max, _, _): return "Use \(max) characters or fewer."
-      default: return nil
-      }
-    }
-  }
-
-  static func counter(_ value: String) -> String? {
-    let count = rule.measure(value)
-    return count < counterFrom ? nil : "\(count)/\(rule.max)"
-  }
-
-  static func changed(from: String, to: String) -> Bool {
-    problem(to) == nil && trimmed(to) != from
-  }
-}
 
 // A movement's equipment and the basis of its entered load: a pair of dumbbells per dumbbell, one dumbbell as itself.
 // `value` is the record's string; `kind` is nil for one this phone does not know.

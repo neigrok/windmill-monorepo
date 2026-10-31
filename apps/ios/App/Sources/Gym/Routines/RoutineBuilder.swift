@@ -29,7 +29,7 @@ final class RoutineEditingSession: Identifiable {
   }
 
   func leaveName() {
-    guard draft.current.name != draft.base.name, let problem = MovementName.problem(draft.current.name) else { return }
+    guard draft.current.name != draft.base.name, let problem = NameField.routine.problem(draft.current.name) else { return }
     refusal = problem
   }
 
@@ -44,8 +44,9 @@ final class RoutineEditingSession: Identifiable {
   }
 
   func createMovement(_ gym: GymModel) {
-    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query)),
-                            pattern: "isolation", equipment: "barbell", stepKg: ExerciseRules.defaultStepKg(equipment: "barbell"))
+    let equipment = Equipment.barbell
+    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: NameField.movement.capped(NameField.movement.trimmed(query)),
+                            pattern: "isolation", equipment: equipment, stepKg: ExerciseRules.defaultStepKg(equipment: equipment.rawValue))
     editor = RoutineMovementDraft(exercise: exercise, base: nil, entry: nil)
     path.append(.editor)
   }
@@ -178,7 +179,7 @@ struct RoutineBuilder: View {
         Section {
           TextField("Name", text: $editing.draft.current.name).focused($nameFocused)
             .onSubmit { nameFocused = false }.accessibilityIdentifier("routine-name")
-          if let counter = MovementName.counter(editing.draft.current.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          if let counter = NameField.routine.counter(editing.draft.current.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
         }
         Section {
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
@@ -252,7 +253,7 @@ struct RoutineBuilder: View {
 
 enum RoutinePlanning {
   static func problem(_ routine: Routine) -> String? {
-    if let problem = MovementName.problem(routine.name) { return problem }
+    if let problem = NameField.routine.problem(routine.name) { return problem }
     if routine.entries.isEmpty { return "A routine is at least one movement." }
     if routine.entries.count > 50 { return "Use 50 movements or fewer." }
     return nil

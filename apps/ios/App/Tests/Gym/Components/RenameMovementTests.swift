@@ -19,16 +19,16 @@ import SyncTesting
   }
 
   @Test func nameRefusalsNoChangeAndCounterMatchAndroidCodePoints() {
-    #expect(MovementName.problem(" \n\t ") == "Name it to save it.")
-    #expect(MovementName.problem(String(repeating: "a", count: 61)) == "Use 60 characters or fewer.")
-    #expect(MovementName.problem("  Row \n") == nil)
-    #expect(!MovementName.changed(from: "Row", to: " Row \n"))
-    #expect(MovementName.changed(from: "Row", to: "Renamed row"))
-    #expect(MovementName.counter(String(repeating: "a", count: 47)) == nil)
-    #expect(MovementName.counter(String(repeating: "a", count: 48)) == "48/60")
+    #expect(NameField.movement.problem(" \n\t ") == "Name it to save it.")
+    #expect(NameField.movement.problem(String(repeating: "a", count: 61)) == "Use 60 characters or fewer.")
+    #expect(NameField.movement.problem("  Row \n") == nil)
+    #expect(!NameField.movement.changed(from: "Row", to: " Row \n"))
+    #expect(NameField.movement.changed(from: "Row", to: "Renamed row"))
+    #expect(NameField.movement.counter(String(repeating: "a", count: 47)) == nil)
+    #expect(NameField.movement.counter(String(repeating: "a", count: 48)) == "48/60")
     let scalars = String(repeating: "😀", count: 61)
-    #expect(MovementName.capped(scalars) == String(repeating: "😀", count: 60))
-    #expect(MovementName.counter(MovementName.capped(scalars)) == "60/60")
+    #expect(NameField.movement.capped(scalars) == String(repeating: "😀", count: 60))
+    #expect(NameField.movement.counter(NameField.movement.capped(scalars)) == "60/60")
   }
 
   // A name counts as the domain stores it, composed: 31 decomposed é are 62 code points as typed and 31 as saved, so the
@@ -36,13 +36,13 @@ import SyncTesting
   @Test func aDecomposedNameCountsAsItComposes() throws {
     let scalars = { (text: String) in text.unicodeScalars.map(\.value) }
     let decomposed = String(repeating: "e\u{301}", count: 31)
-    #expect(MovementName.problem(decomposed) == nil && MovementName.counter(decomposed) == nil)
-    #expect(scalars(MovementName.capped(decomposed)) == scalars(decomposed))
-    #expect(scalars(MovementName.trimmed(" e\u{301} ")) == [0xE9])
+    #expect(NameField.movement.problem(decomposed) == nil && NameField.movement.counter(decomposed) == nil)
+    #expect(scalars(NameField.movement.capped(decomposed)) == scalars(decomposed))
+    #expect(scalars(NameField.movement.trimmed(" e\u{301} ")) == [0xE9])
     let long = String(repeating: "e\u{301}", count: 61)
-    #expect(MovementName.problem(long) == "Use 60 characters or fewer.")
-    #expect(scalars(MovementName.capped(long)) == scalars(String(repeating: "e\u{301}", count: 60)))
-    #expect(MovementName.counter(MovementName.capped(long)) == "60/60")
+    #expect(NameField.movement.problem(long) == "Use 60 characters or fewer.")
+    #expect(scalars(NameField.movement.capped(long)) == scalars(String(repeating: "e\u{301}", count: 60)))
+    #expect(NameField.movement.counter(NameField.movement.capped(long)) == "60/60")
     let (_, gym) = fixture()
     let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: "Original", pattern: "isolation", equipment: .machine, stepKg: 5)
     gym.run(CreateExercise(exercise))

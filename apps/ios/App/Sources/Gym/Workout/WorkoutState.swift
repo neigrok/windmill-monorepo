@@ -334,7 +334,7 @@ struct FinishWorkout: Action {
       if let sessionId, var record = try activityRecord() {
         record.offer = nil; revoke = record
         if canLog, !rackEditing, !gym.workoutHidden,
-           weightKg.isFinite, (1...99).contains(reps),
+           weightKg.isFinite, SetRules.loggedReps.contains(reps),
            let session, session.holdsRack(of: offerSession), LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected {
           record.offer = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description,
             movementID: selected.description, weightKg: weightKg, reps: reps, setID: gym.runner.mint(TrainingSet.self).description)
@@ -451,7 +451,7 @@ struct FinishWorkout: Action {
   func prefill() {
     guard let session, let selected else { offerSession = nil; return }
     let value = Prefill.of(todaySets: currentSets, planEntry: entry, lastTime: gym.log?.lastTime(for: selected))
-    restoreRack(weightKg: value.weightKg, reps: min(99, value.reps))
+    restoreRack(weightKg: value.weightKg, reps: min(SetRules.loggedReps.upperBound, value.reps))
     offerSession = session; offerSets = sets; rackPrefilled = true
   }
   // Numbers the lifter left on the rack come back as theirs: a draft kept for the movement, or the offer outside the app.
@@ -552,7 +552,7 @@ struct FinishWorkout: Action {
     guard flushRack() else { return false }
     guard canLog, let selected, let session else { message = "Check the weight and reps before logging."; return false }
     guard session.holdsRack(of: offerSession) && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = "The workout changed. Check the current set."; prefill(); return false }
-    guard weightKg.isFinite, (1...99).contains(reps) else { message = "Check the weight and reps before logging."; return false }
+    guard weightKg.isFinite, SetRules.loggedReps.contains(reps) else { message = "Check the weight and reps before logging."; return false }
     let offer = offered ?? activityOffer()
     let now: Instant
     do { now = try gym.runner.moment().now }
