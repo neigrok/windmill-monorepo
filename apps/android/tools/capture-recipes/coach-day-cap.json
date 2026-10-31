@@ -1,0 +1,16 @@
+[
+  {
+    "board": "08.8",
+    "name": "coach-day-cap",
+    "account": "fixture",
+    "responses": [[{"type": "text", "text": "Three training days fit your week."}], [{"type": "text", "text": "Keep Thursday light after a heavy Monday."}], [{"type": "text", "text": "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times."}]],
+    "steps": [{"tap": "Question"}, {"text": "How many days should I train?"}, {"wait": "How many days should I train?"}, {"tap": "Send"}, {"wait": "Three training days fit your week."}, {"tap": "Question"}, {"text": "Is Monday too heavy?"}, {"wait": "Is Monday too heavy?"}, {"tap": "Send"}, {"wait": "Keep Thursday light after a heavy Monday."}, {"tap": "Question"}, {"text": "Bench has stalled for three weeks. Is Push A still doing anything?"}, {"wait": "Bench has stalled for three weeks. Is Push A still doing anything?"}, {"tap": "Send"}, {"wait": "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times."}, {"tap": "Question"}, {"text": "What should Thursday look like?"}, {"wait": "What should Thursday look like?"}, {"tap": "Send"}, {"wait": "Use your own AI agent"}, {"keyboard": "hide"}]
+  },
+  {
+    "board": "08.8",
+    "name": "coach-day-cap-200",
+    "account": "fixture",
+    "viewport": {"width": 1080, "height": 2400, "density": 420, "fontScale": 2},
+    "steps": [{"wait": "Use your own AI agent"}]
+  }
+]

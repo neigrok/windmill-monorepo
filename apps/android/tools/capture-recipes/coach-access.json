@@ -1,0 +1,15 @@
+[
+  {
+    "board": "08.58",
+    "name": "coach-no-seat",
+    "account": "empty",
+    "steps": [{"tap": "Coach"}, {"wait": "Coach needs your workout log. Please sign in."}, {"wait": "Sign in"}]
+  },
+  {
+    "board": "08.58",
+    "name": "coach-no-seat-200",
+    "account": "empty",
+    "viewport": {"width": 1080, "height": 2400, "density": 420, "fontScale": 2},
+    "steps": [{"wait": "Coach needs your workout log. Please sign in."}, {"wait": "Sign in"}]
+  }
+]
