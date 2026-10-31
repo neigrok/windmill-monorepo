@@ -80,7 +80,7 @@ struct MovementPickerRanking {
   }
 }
 
-struct MovementCreationDraft {
+struct MovementCreationDraft: Identifiable {
   let id: ID<Exercise>
   var name: String
   var equipment = "barbell"
@@ -146,7 +146,7 @@ struct MovementPicker: View {
   @FocusState private var searchFocused: Bool
   @State var ranking = MovementPickerRanking()
   @State var creation: MovementCreationDraft?
-  @State var showingCreation = false
+  @State var creationOpen = false
   @State private var pickingAccount: String?
   @State private var pickingAnonymous: Bool
 
@@ -191,13 +191,12 @@ struct MovementPicker: View {
     .onChange(of: gym.sessions) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
     .onChange(of: gym.sets) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
     .onChange(of: gym.log?.firstPullComplete) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-    .sheet(isPresented: $showingCreation) {
-      if let draft = creation {
-        NavigationStack {
-          CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
-                              account: pickingAccount, anonymous: pickingAnonymous, onCreated: onSelect)
-        }.modifier(GymPage()).presentationDetents([.medium])
-      }
+    // Presented by its draft, the sheet opens with the draft it was asked for; closing it keeps the draft for the next Create.
+    .sheet(item: Binding(get: { creationOpen ? creation : nil }, set: { if $0 == nil { creationOpen = false } })) { draft in
+      NavigationStack {
+        CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
+                            account: pickingAccount, anonymous: pickingAnonymous, onCreated: onSelect)
+      }.modifier(GymPage()).presentationDetents([.medium])
     }
   }
 
@@ -207,7 +206,7 @@ struct MovementPicker: View {
     if let onCreate { onCreate(); return }
     var draft = creation ?? MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "")
     draft.takeQuery(query)
-    creation = draft; showingCreation = true
+    creation = draft; creationOpen = true
   }
 
   private var movementList: some View {

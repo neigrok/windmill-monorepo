@@ -85,6 +85,28 @@ import XCTest
     XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 105 kg total")
   }
 
+  // A search with no match offers Create “name” from the movement menu's Add movement, and Create movement opens over
+  // the workout with that name; Add puts the new movement on the rack.
+  func testCreateFromASearchOpensWithTheSearchedName() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-planned", "-onboarding-appearance", "dark"]
+    app.launch()
+    let menu = app.buttons["workout-movement-menu"]
+    XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
+    XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5)); app.buttons["Add movement"].tap()
+    XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+    app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Zercher squat")
+    let create = app.buttons["gym-create-movement"]
+    XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
+    let name = app.textFields["gym-movement-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    XCTAssertEqual(name.value as? String, "Zercher squat")
+    app.buttons["gym-movement-create-commit"].tap()
+    XCTAssertTrue(app.movementHeader("Zercher squat").waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["workout-log"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["gym-movement-creation"].exists)
+  }
+
   func testReceiptOptionsKeepsMinimumNativeTouchTarget() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "workout-planned", "-onboarding-appearance", "dark"]
