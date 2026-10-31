@@ -94,7 +94,7 @@ public struct TextSpec: ValueSpec {
   public let path: String
   let unit: TextUnit
   let min: Int
-  let max: Int
+  public let max: Int
   let trim: Bool
   let nfc: Bool
 

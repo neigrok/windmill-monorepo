@@ -124,6 +124,8 @@ public enum SetRules {
   public static let rpe = NumberSpec("set.rpe", min: 1, max: 10, quantum: 0.1)
   public static let note = TextSpec("set.note", unit: .bytes, min: 0, max: 4000, trim: false, nfc: false)
   public static let maxNumber = 2_147_483_647
+  // The reps a lifter enters for a set they performed; `reps` admits up to 500 for history brought in from elsewhere.
+  public static let loggedReps = 1...99
   static let rules: [Rule] = [.local(weightKg), .local(reps), .local(rpe), .local(note),
                               .local("set.completedAt", subject: TrainingSet.type),
                               .local("set.identity", subject: TrainingSet.type), .local("set.setNumber", subject: TrainingSet.type)]

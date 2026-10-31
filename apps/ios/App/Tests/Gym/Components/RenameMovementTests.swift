@@ -29,7 +29,25 @@ import SyncTesting
     let scalars = String(repeating: "😀", count: 61)
     #expect(MovementName.capped(scalars) == String(repeating: "😀", count: 60))
     #expect(MovementName.counter(MovementName.capped(scalars)) == "60/60")
-    #expect(MovementName.capped(String(repeating: "e\u{301}", count: 31)).unicodeScalars.count == 60)
+  }
+
+  // A name counts as the domain stores it, composed: 31 decomposed é are 62 code points as typed and 31 as saved, so the
+  // field keeps all of them, shows no counter and saves them; 61 stop at the 60th, whole.
+  @Test func aDecomposedNameCountsAsItComposes() throws {
+    let scalars = { (text: String) in text.unicodeScalars.map(\.value) }
+    let decomposed = String(repeating: "e\u{301}", count: 31)
+    #expect(MovementName.problem(decomposed) == nil && MovementName.counter(decomposed) == nil)
+    #expect(scalars(MovementName.capped(decomposed)) == scalars(decomposed))
+    #expect(scalars(MovementName.trimmed(" e\u{301} ")) == [0xE9])
+    let long = String(repeating: "e\u{301}", count: 61)
+    #expect(MovementName.problem(long) == "Use 60 characters or fewer.")
+    #expect(scalars(MovementName.capped(long)) == scalars(String(repeating: "e\u{301}", count: 60)))
+    #expect(MovementName.counter(MovementName.capped(long)) == "60/60")
+    let (_, gym) = fixture()
+    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: "Original", pattern: "isolation", equipment: .machine, stepKg: 5)
+    gym.run(CreateExercise(exercise))
+    #expect(gym.renameMovement(exercise, to: String(repeating: "e\u{301}", count: 40)))
+    #expect(try scalars(#require(gym.catalogue.find(exercise.id)).name) == Array(repeating: 0xE9, count: 40))
   }
 
   // A load reads by its equipment: a barbell's total, a dumbbell pair's weight per hand, one dumbbell's own weight, the
@@ -37,16 +55,24 @@ import SyncTesting
   @Test func eachEquipmentSaysWhatItsLoadMeans() {
     let basis = [MovementEquipment("barbell"), MovementEquipment("dumbbell"), MovementEquipment("dumbbell", loadCount: 1),
                  MovementEquipment("bodyweight"), MovementEquipment("machine"), MovementEquipment("cable", loadCount: 2),
-                 MovementEquipment("kettlebell"), MovementEquipment("other"), MovementEquipment(nil)]
+                 MovementEquipment("kettlebell"), MovementEquipment("other"), MovementEquipment(nil), MovementEquipment("sled")]
     #expect(basis.map { "\($0.title) | \($0.choice) | \($0.unit) | \($0.loadCount) | \($0.each ? "each" : "whole")" } == [
       "Barbell | Barbell | kg total | 1 | whole", "Dumbbells | Dumbbells | kg each | 2 | each",
       "One dumbbell | Dumbbells | kg | 1 | whole", "Bodyweight | Bodyweight | kg added | 1 | whole",
       "Machine | Machine | kg | 1 | whole", "Cable | Cable | kg | 1 | whole", "Kettlebell | Kettlebell | kg | 1 | whole",
-      "Other | Other | kg | 1 | whole", " |  | kg | 1 | whole",
+      "Other | Other | kg | 1 | whole", " |  | kg | 1 | whole", "Sled | Sled | kg | 1 | whole",
     ])
     #expect(basis.map(\.symbol) == ["figure.strengthtraining.traditional", "dumbbell.fill", "dumbbell.fill",
       "figure.strengthtraining.functional", "figure.strengthtraining.functional", "figure.strengthtraining.functional",
-      "dumbbell", nil, nil])
+      "dumbbell", nil, nil, nil])
+    #expect(basis.map(\.signed) == [false, false, false, true, false, false, false, true, false, false])
+    #expect(basis.map(\.help) == [
+      "Enter the total weight, including the bar.", "Enter the weight of one dumbbell. Volume counts both.",
+      "Enter the dumbbell’s weight. Volume counts one dumbbell.",
+      "Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight.",
+      "Enter the external weight you lift.", "Enter the external weight you lift.", "Enter the external weight you lift.",
+      "Enter the external weight you lift.", "Enter the external weight you lift.", "Enter the external weight you lift.",
+    ])
     #expect(MovementEquipment.choices == ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"])
   }
 
