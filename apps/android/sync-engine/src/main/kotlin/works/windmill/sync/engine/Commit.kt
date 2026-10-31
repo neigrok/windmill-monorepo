@@ -53,8 +53,9 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
     }
     private fun placed(type: TypeDef, id: RecordID, values: Map<String, Json>, anchor: OrderAnchor): Map<String, Json> {
         if (type.fields[anchor.field]?.domain?.type != "fracKey" || anchor.field in values) malformed("order-field")
+        val outbox = engine.outboxDeltas(replica, scope)
         fun members(mode: ViewMode) = engine.keys(replica, scope, type.name).mapNotNull { key ->
-            val record = engine.view(replica, scope, key, mode, gone) ?: return@mapNotNull null
+            val record = engine.view(replica, scope, key, mode, gone, outbox[key].orEmpty()) ?: return@mapNotNull null
             if (!record.isVisible) return@mapNotNull null
             record.values[anchor.field]?.str()?.let { ListMember(record.id.json, FractionalKey(it)) }
         }
@@ -201,10 +202,11 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         val cap = type.cap ?: continue
         val keys = keys(replica, scope, type.name) + deltas.filter { it.key.type == type.name }.map { it.key }
         var before = 0; var after = 0
+        val outbox = outboxDeltas(replica, scope)
         for (key in keys) {
-            val shown = view(replica, scope, key, ViewMode.stored, gone)
+            val shown = view(replica, scope, key, ViewMode.stored, gone, outbox[key].orEmpty())
             if (shown?.isVisible == true) before++
-            var lattice = latticeView(replica, scope, key, ViewMode.stored, gone) ?: Lattice()
+            var lattice = latticeView(replica, scope, key, ViewMode.stored, gone, outbox[key].orEmpty()) ?: Lattice()
             val texts = shown?.texts?.mapValues { TextValueState(it.value.text, it.value.merged, it.value.pending) }?.toMutableMap() ?: mutableMapOf()
             for (delta in deltas.filter { it.key == key }) {
                 lattice = Join.record(type, lattice, delta.lattice)

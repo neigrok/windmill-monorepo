@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import kotlin.time.Duration.Companion.minutes
 import java.io.File
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -155,8 +154,7 @@ class EngineLifecycleStoreTests {
         }
     }
 
-    // Two hundred and one engine commits make this the slowest store test; it keeps a generous clock.
-    @Test fun tooManyImportedSetsRefuseTheWholeWorkoutWithoutDroppingAnyRows() = runTest(timeout = 5.minutes) {
+    @Test fun tooManyImportedSetsRefuseTheWholeWorkoutWithoutDroppingAnyRows() = runTest {
         engine().use { engine ->
             val gym = EngineTraining(engine)
             gym.startSession(SessionStart("session1", clockMs - 300_000))

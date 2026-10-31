@@ -10,13 +10,21 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
+  // 02.19: Start on the sheet's bottom bar, then the last movement scrolled clear of it.
   func testRoutineSummary() {
-    captureBoard("02.2-routine-summary") { look in
+    for look in Look.both + Look.bothAtLargestText {
       let app = launchSignedInCoach(look, arguments: ["-coach-board", "summary"])
       open(.routines, app)
       app.buttons["routine-board-lower"].tap()
-      XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10))
-      return app
+      let start = app.buttons["routine-start"]
+      XCTAssertTrue(start.waitForExistence(timeout: 10))
+      capture("02.19-routine-summary", look, app)
+      let list = app.collectionViews["routine-detail"]
+      let last = list.cells.containing(.any, identifier: "routine-detail-movement-hip-thrust").firstMatch
+      for _ in 0..<6 where !(onScreen(last, app) && last.frame.maxY <= start.frame.minY) { list.swipeUp(velocity: .slow) }
+      XCTAssertLessThanOrEqual(last.frame.maxY, start.frame.minY)
+      capture("02.19-routine-summary-end", look, app)
+      app.terminate()
     }
   }
 
