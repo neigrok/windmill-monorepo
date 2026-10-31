@@ -186,6 +186,7 @@ class TrainingStore(
         controls.engineReplica == training.engine.activeReplica()
 
     suspend fun restoreWorkout(cachedOwner: String?, authorized: Boolean): Boolean {
+        if (!authorized) { localWorkoutAuthorized = false; workoutFacts.value = null; return false }
         if (workoutReady) return true
         localWorkoutAuthorized = authorized
         owner = cachedOwner
@@ -695,6 +696,25 @@ class TrainingStore(
     // instant some other clock wrote.
     val wayBackLeftMs: Long
         get() = (holding?.untilMs ?: 0L) - now()
+
+    fun eraseDeletedOwner(account: String, replica: String) {
+        controls.eraseOwner(account, replica)
+        if (owner == account) {
+            localWorkoutAuthorized = false
+            workoutReady = false
+            workoutFacts.value = null
+            session = null
+            rack = null
+            sets = emptyList()
+            order = emptyList()
+            exerciseId = null
+            lastTime = null
+            pendingConnection = null
+            resumePending = false
+            acknowledgeWorkoutRequest()
+        }
+        coach.eraseOwner(account)
+    }
 
     // Called on launch and on every change of who is signed in. A re-read with the same account
     // preserves open deletion windows.

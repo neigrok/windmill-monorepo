@@ -75,6 +75,14 @@ sync workers; a finished engine transition retries only the original account’s
 Verified sign-in proposals have a separate sealed credential. The current account changes only
 after the engine accepts the decision; cancelling a proposal keeps the previous account and work.
 
+Account deletion has a separate sealed operation record, read before ordinary auth restore and
+sync startup. An unknown result keeps the exact account, proof and request instant fenced until
+session-independent result recovery proves closure. Known closure persists cleanup owed before
+Discard, removes the original replica, owner workout controls and Coach archive/photos, and clears
+only the captured credentials. Decryption or storage ambiguity fails closed. Coach owner epochs
+reject late writes after cleanup, including after a fresh verified sign-in restores the same account
+during its grace period. The anonymous installation identity and binding are retained.
+
 The application owns one SQLite engine and runtime, with separate anonymous, bound and dormant
 account replicas. Android subscribes only to gym; signed-out work never pushes. An empty account
 accepts signed-out training automatically. When both sides hold training, sign-in presents pinned
