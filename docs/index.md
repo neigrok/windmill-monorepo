@@ -99,7 +99,7 @@ Figma: Gym file, page [Android](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJR
 Code: `apps/android/gym/src/main/kotlin/works/windmill/gym/`. Components: Design System library,
 Android page. Journeys follow the iOS page and no number names two different screens across
 the phone pages; the page is the
-target ([consistency.md](design/consistency.md) 11a–11t, 12a–12o); build tasks: `androidgym_tasks/`.
+target ([consistency.md](design/consistency.md) 11a–11u, 12a–12o); build tasks: `androidgym_tasks/`.
 
 | Flow | Section | Entry → exit |
 |---|---|---|

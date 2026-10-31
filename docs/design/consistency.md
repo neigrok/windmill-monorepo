@@ -885,6 +885,14 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   drawn only for an unknown result (*Deletion unconfirmed*); Android still shows it while the
   confirmed closure waits for local cleanup, where it is no longer true. Designer to draw the
   subtitle for D4's state.
+- **11u · The log before the first pull (🚧, awaiting owner).** On an account this phone has not
+  pulled yet, the log's foot shows **Retry** over *That read failed.* (`ui/LogScreen.kt` `LogFoot`),
+  but nothing failed: the log is waiting for the first pull (task 72). Board 05.18 *Reading your
+  log* (Dark `1767:27118`, Daylight `1767:27204`, caption `1767:27286`, in section 05) draws the
+  wait: the workouts this phone holds, with no new best, record dot, weekly line or change since,
+  and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,
+  once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
+  becomes **Retry** · *That read failed.*, which no Android board draws.
 
 ### Parity rulings (owner, 2026-10-22)
 
