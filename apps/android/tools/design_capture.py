@@ -81,7 +81,7 @@ def validate_scenarios(scenarios):
         model_timing(scenario)
         if "launcher" in scenario and (type(scenario["launcher"]) is not bool or scenario["launcher"] and scenario["account"] != "empty"):
             raise ValueError("Launcher capture needs an empty account and a boolean choice.")
-        if not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]+|[a-z])|[A-Z][0-9]+)", scenario["board"]) or \
+        if not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]+[a-z]?|[a-z])|[A-Z][0-9]+)", scenario["board"]) or \
                 not re.fullmatch(r"[a-z0-9-]+", scenario["name"]) or scenario["account"] not in ("empty", "fixture"):
             raise ValueError("Recipes need a canonical board ID, a lowercase filename slug, and an empty or fixture account.")
         if "frame_delay_ms" in scenario and (type(scenario["frame_delay_ms"]) is not int or
@@ -705,7 +705,7 @@ class Device:
                     raise ValueError("Auth-code steps need a delivered local challenge and valid/wrong intent.")
                 if step["auth_code"] == "wrong":
                     code = "246810" if code != "246810" else "135791"
-                self.tap("Code field")
+                self.tap("Code")
                 self.run("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * 6))
                 self.run("shell", "-T", "sh", input=f"input text {code}\n".encode())
             elif "key" in step:

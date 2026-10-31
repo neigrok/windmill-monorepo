@@ -13,7 +13,7 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
-import works.windmill.platform.telemetry.TelemetryPolicy
+import works.windmill.platform.telemetry.EventSchemas
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountDeletionTests {
@@ -381,7 +381,7 @@ class AccountDeletionTests {
     }
 
     @Test fun deletionEventsRejectContentProofAndUnknownLabels() {
-        assertEquals(mapOf("action" to "check", "outcome" to "pending_confirmation"), TelemetryPolicy.eventProperties("account_delete",
+        assertEquals(mapOf("action" to "check", "outcome" to "pending_confirmation"), EventSchemas.platform.properties("account_delete",
             mapOf("action" to "check", "outcome" to "pending_confirmation", "email" to user.email, "proof" to request.proof,
                 "account" to user.id, "operation" to request.operationId, "state" to "private_text")))
     }

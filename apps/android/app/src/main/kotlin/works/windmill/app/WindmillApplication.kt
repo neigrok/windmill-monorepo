@@ -5,6 +5,7 @@ import works.windmill.platform.you.AccountDeletionStore
 import works.windmill.platform.you.AccountDeletionHttp
 import works.windmill.platform.you.DeletionIdentity
 import works.windmill.gym.coach.LocalCoach
+import works.windmill.gym.telemetry.GymEvents
 import works.windmill.gym.coach.onboarding.CoachOnboardingHttp
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.onboarding.CoachOnboardingStore
@@ -107,7 +108,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         val owner = (local as? LocalSession.Owned)?.user?.id
         val baseUrl = WindmillApi.resolvedBaseUrl(BuildConfig.WM_API_BASE_URL)
         if (telemetryEnabled) telemetry = AndroidTelemetry(this, baseUrl, release, environment, BuildConfig.VERSION_NAME,
-            BuildConfig.VERSION_CODE.toString(), owner, sessions::read, scope)
+            BuildConfig.VERSION_CODE.toString(), owner, sessions::read, scope, GymEvents.schemas)
         telemetry.event("app_started")
         onboardingLaunch = OnboardingLaunch(this, telemetry)
         val clock = AndroidWorkoutClock(this, telemetry = telemetry)

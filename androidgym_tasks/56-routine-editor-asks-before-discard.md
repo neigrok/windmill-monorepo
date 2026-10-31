@@ -27,7 +27,7 @@
 - "Dirty" means the draft differs from what was opened, by the editor's existing equality, so reorder-and-back counts.
 
 **Done when**
-- 02.20 and 02.17 match in Dark and Daylight. Fix `routine-targets.json`'s mislabelled `02.14 movement-unsaved`: it is 02.17.
+- 02.20 and 02.17 match in Dark and Daylight; `routine-targets.json` captures 02.17 as `movement-unsaved`.
 - Tests:
   - Back on a dirty new routine asks, and Discard leaves.
   - Keep editing keeps every field.

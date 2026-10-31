@@ -5,7 +5,7 @@
 - 08.10 a Markdown answer, full width: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-30552) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41360)
 - 08.11 an answer streaming into its bubble: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-30653) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41382)
 - 08.32 copy a message: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31101) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41499)
-- 08.33 jump to latest: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31296) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41540)
+- 08.59 jump to latest: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31296) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41540)
 - 01.6 Coach is thinking: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30742) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39416)
 - Components (Design System library, Android page):
   - `Android / Chat bubble` `337:2761`: Coach left on the card fill, lifter right on the accent; First / Middle / Last corners; Width = Full for long Markdown
@@ -34,7 +34,7 @@
 - Thinking (01.6): a Coach typing bubble with three dots replaces *reading your log…*. Delete `Ask.waiting`.
 - Streaming (08.11): the first revealed characters replace the typing bubble, and the text grows inside the same bubble. Find why the emulator shows the answer whole, and fix it (the running generation's partial text must reach `rememberRevealedText`).
 - Copy (08.32): a long press on a bubble shows a 16 % state layer on it and an M3 `DropdownMenu` under it with one item: *Copy answer* on Coach's bubble, *Copy question* on the lifter's. A plain tap does nothing. The TalkBack action carries the same words.
-- Jump to latest (08.33): an M3 `ElevatedButton` (small) *Jump to latest* with `keyboard_arrow_down`, centred 12 dp above the composer.
+- Jump to latest (08.59): an M3 `ElevatedButton` (small) *Jump to latest* with `keyboard_arrow_down`, centred 12 dp above the composer.
 - Composer (08.1):
   - *Add photo* is an icon button (`image`) outside the field.
   - The field is an M3 filled `TextField` shaped as a 28 dp pill, placeholder *Ask about your training*, no label, no indicator line.
@@ -49,7 +49,7 @@
 - The greeting (39), the photo in the composer and its caption (40).
 
 **Done when**
-- Screenshots of 08.1, 08.10, 08.11, 08.32, 08.33 and 01.6 match in Dark and Daylight on the emulator; the rig (01) adds `08.1-coach-empty-dark` / `-light`, `08.10-coach-markdown-dark` / `-light`, `08.11-coach-streaming-dark` / `-light`, `08.32-coach-copy-dark` / `-light`, `08.33-coach-jump-latest-dark` / `-light`, `01.6-coach-thinking-dark` / `-light`.
+- Screenshots of 08.1, 08.10, 08.11, 08.32, 08.59 and 01.6 match in Dark and Daylight on the emulator; the rig (01) adds `08.1-coach-empty-dark` / `-light`, `08.10-coach-markdown-dark` / `-light`, `08.11-coach-streaming-dark` / `-light`, `08.32-coach-copy-dark` / `-light`, `08.59-coach-jump-latest-dark` / `-light`, `01.6-coach-thinking-dark` / `-light`.
 - `gym_ask_started` and `gym_ask_outcome` still fire with the same properties; `gym_screen_viewed` `coach` still fires.
 - *Copy answer* / *Copy question* emit `gym_action` `{screen: coach, action: copy, outcome: ok}` (05 introduces the event). No message text in any event.
 - `coach/AskScreenTests.kt` asserts the bar holds History and the seat and no *More*. Verify fresh entry, return from History, response arrival in an older chat, draft/photo restoration, recreation and scroll with keyboard up/down; the navigation and composer follow the approved states.

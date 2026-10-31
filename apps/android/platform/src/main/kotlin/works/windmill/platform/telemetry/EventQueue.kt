@@ -37,6 +37,7 @@ class EventQueue(
     scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val retryMs: Long = 30_000,
+    private val schemas: EventSchemas = EventSchemas.platform,
 ) {
     private val lock = Any()
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -114,7 +115,7 @@ class EventQueue(
     }
 
     fun add(name: String, properties: Map<String, String>) = synchronized(lock) {
-        if (!TelemetryPolicy.eventName(name)) {
+        if (!schemas.accepts(name)) {
             failure("telemetry_event_name", IllegalArgumentException("Invalid event name"), emptyMap())
             return@synchronized
         }
@@ -123,7 +124,7 @@ class EventQueue(
             overflowReported = true
             return@synchronized
         }
-        val props = TelemetryPolicy.eventProperties(name, properties).mapValues { (key, value) ->
+        val props = schemas.properties(name, properties).mapValues { (key, value) ->
             if (key == "duration_ms") JsonPrimitive(value.toLongOrNull()?.coerceAtLeast(0) ?: 0) else JsonPrimitive(value)
         }
         val event = EventIn(UUID.randomUUID().toString(), name, now(), props)

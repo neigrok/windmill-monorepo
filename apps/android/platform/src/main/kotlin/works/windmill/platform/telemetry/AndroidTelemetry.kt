@@ -22,6 +22,7 @@ class AndroidTelemetry(
     userId: String?,
     private val credential: () -> String?,
     scope: CoroutineScope,
+    products: EventSchemas,
 ) : Telemetry {
     private val metadata = mapOf(
         "platform" to "android", "release" to release, "environment" to environment,
@@ -56,6 +57,7 @@ class AndroidTelemetry(
             },
             failure = { operation, error, properties -> capture(operation, error, properties) },
             scope = scope,
+            schemas = EventSchemas.platform + products,
         )
     }
 

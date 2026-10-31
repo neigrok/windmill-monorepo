@@ -25,7 +25,7 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
-import works.windmill.platform.telemetry.TelemetryPolicy
+import works.windmill.platform.telemetry.EventSchemas
 
 class AiInstallationTest {
     private val credential = "A".repeat(43)
@@ -64,12 +64,10 @@ class AiInstallationTest {
         assertTrue(api.bindings.isEmpty())
     }
 
-    @Test fun importAndInstallationEventsAcceptOnlyTheirFiniteLabels() {
-        assertEquals(mapOf("outcome" to "committed"), TelemetryPolicy.eventProperties("gym_coach_import",
-            mapOf("outcome" to "committed", "recordId" to "private-record", "fingerprint" to "private-fingerprint")))
-        assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_coach_import", mapOf("outcome" to credential)))
-        assertEquals(mapOf("action" to "bind", "outcome" to "refused"), TelemetryPolicy.eventProperties("ai_installation_outcome",
+    @Test fun installationEventsAcceptOnlyTheirFiniteLabels() {
+        assertEquals(mapOf("action" to "bind", "outcome" to "refused"), EventSchemas.platform.properties("ai_installation_outcome",
             mapOf("action" to "bind", "outcome" to "refused", "requestId" to "private-request")))
+        assertEquals(emptyMap<String, String>(), EventSchemas.platform.properties("ai_installation_outcome", mapOf("outcome" to credential)))
     }
 
     @Test fun aServerWithSignedOutCoachOffIsAskedOncePerDayAndVersionAndBindingWaitsQuietly() = runTest {

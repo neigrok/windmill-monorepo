@@ -144,7 +144,7 @@ class YouSheetTests {
             destinations = listOf(YouDestination("settings", "Product settings") { events += "settings" })) } }
         compose.onNodeWithText("You").assertIsDisplayed()
         compose.onNodeWithText("Sign in").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Email field").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Email").assertDoesNotExist()
         val click = compose.onNodeWithText("Product settings").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { click(); click() }
         compose.waitUntil(5_000) { !visible }
@@ -159,7 +159,7 @@ class YouSheetTests {
         val events = mutableListOf<String>()
         compose.setContent { WindmillMaterial { if (visible) YouSheet(auth,
             onDismiss = { events += "dismiss"; visible = false }, startSignIn = true) } }
-        compose.onNodeWithContentDescription("Email field").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Email").assertIsDisplayed()
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { !visible }
@@ -207,14 +207,14 @@ class YouSheetTests {
         var dismissed = 0
         compose.setContent { WindmillMaterial { if (visible) YouSheet(auth, { dismissed += 1; visible = false },
             startSignIn = true) } }
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { server.requestCount == 1 }
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Sending…").assertIsDisplayed().assertIsNotEnabled()
         compose.runOnIdle { assertTrue(visible); assertEquals(0, dismissed); release.countDown() }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Try another email.").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Email field").assertTextContains("a@example.com")
+        compose.onNodeWithContentDescription("Email").assertTextContains("a@example.com")
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { !visible }
         assertEquals(1, dismissed)
@@ -227,15 +227,15 @@ class YouSheetTests {
         server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
         val restoration = StateRestorationTester(compose)
         restoration.setContent { WindmillMaterial { YouSheet(auth, {}, startSignIn = true) } }
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Code field").performTextReplacement(" 123456 ")
+        compose.onNodeWithContentDescription("Code").performTextReplacement(" 123456 ")
         compose.onNodeWithText("Sign in").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText(MagicLink.expiredCode).fetchSemanticsNodes().isNotEmpty() }
         compose.runOnIdle { auth = AuthStore(server.url("/"), MemorySessions()) }
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ")
+        compose.onNodeWithContentDescription("Code").assertTextContains(" 123456 ")
         compose.onNodeWithText("Code sent to a@example.com.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(MagicLink.expiredCode).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign in").assertIsEnabled()

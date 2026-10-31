@@ -7,7 +7,7 @@
 **Figma:**
 - 02.6 Combined movement editor: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44962)
 - 02.11 Combined movement editor, Vary by set expanded on the same route: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29263) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45508)
-- 02.19 Regular Load unit below at 320dp/200%: [Approved frame](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960), 🚀 In production, human-approved 2026-10-28. Keep 20sp value and 16sp unit bases, side controls, native minus and pinned Done. Expansion stays while focused through valid zero; longer text retains native horizontal editing. The older full-width/buttons-below proposal is unapproved.
+- 02.25 Regular Load unit below at 320dp/200%: [Approved frame](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960), 🚀 In production, human-approved 2026-10-28. Keep 20sp value and 16sp unit bases, side controls, native minus and pinned Done. Expansion stays while focused through valid zero; longer text retains native horizontal editing. The older full-width/buttons-below proposal is unapproved.
 - Components (Design System library, Android page):
   - `Android / Number stepper` `337:2514`
   - `Android / Keyboard` `337:2403` (Number and Decimal)
@@ -44,7 +44,7 @@
 
 **Verification**
 - The composed Android gate passes gym Debug and Release separately: each has 1,429 cases, 1,412 passes and 17 explicit opt-in LiveWire skips, with no failures or errors. Platform Debug passes 140 cases, App Debug passes 48, and Debug assembles.
-- Accepted native captures cover the normal, per-set, keyboard and unsaved forms in Dark and Daylight. The approved 02.19 scope proves readable `−12.5` and valid `0` with unchanged focused bounds at 320dp/200%, whole-buffer comma-decimal replacement and duplicate-separator rejection. Native partial selection remains unestablished. The broader Target-summary overlap is postponed and excluded; no whole-form 200% acceptance is claimed.
+- Accepted native captures cover the normal, per-set, keyboard and unsaved forms in Dark and Daylight. The approved 02.25 scope proves readable `−12.5` and valid `0` with unchanged focused bounds at 320dp/200%, whole-buffer comma-decimal replacement and duplicate-separator rejection. Native partial selection remains unestablished. The broader Target-summary overlap is postponed and excluded; no whole-form 200% acceptance is claimed.
 - Local schema-10 acceptance proves all six routine/catalogue SQL tables unchanged before outer Save, then one new sync result with exact 501/zero target arrays, rest, metadata and the former-name alias through SQL and authenticated GET. Dumbbells retains raw SQL `NULL` and reads as the effective count 2. A separate staged-creation Cancel preserves the full baseline.
 - The final Save run delivers 22 bounded intake events, including five form/Save steps and one `gym_routine_saved`. Accepted partial capture runs, Cancel and final Save have separate receipts on the same frozen source/APK. Setup and observer failures are qualified rather than counted as whole-run passes. Technical save-failure reporting is covered at the deterministic adapter/store boundary; no native failure Issue was injected or claimed.
 

@@ -1,6 +1,6 @@
 # Repo references follow the renumbered Android boards
 
-**Status:** Ready (docs and recipes only). Not started. The renumber itself is done in Figma (ledger 11r).
+**Status:** Done on the task branch (docs and recipes only); not yet on main. The renumber itself is done in Figma (ledger 11r).
 
 **Context:** on 2026-10-31 the designer renumbered the Android page (`56:2`) so that no number names two different screens across the phone pages. Only the Android numbers moved:
 
