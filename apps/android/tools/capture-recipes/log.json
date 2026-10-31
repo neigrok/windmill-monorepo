@@ -89,9 +89,10 @@
     ]
   },
   {
-    "board": "05.1",
+    "board": "05.17",
     "name": "log-weight-undo",
     "account": "fixture",
+    "accessibility_timeout_ms": 30000,
     "steps": [
       {
         "tap": "The log"

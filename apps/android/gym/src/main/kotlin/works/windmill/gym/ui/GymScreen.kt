@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldColors
@@ -39,6 +40,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import works.windmill.gym.R
@@ -103,6 +105,9 @@ fun GymScreen(
     titleAlignment: TextAlign = TextAlign.Start,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
+    floatingActionButton: @Composable () -> Unit = {},
+    // Given to a screen with a floating button: Scaffold lays the transient above it, and the button never moves.
+    transient: SnackbarHostState? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val skin = LocalGymColors.current
@@ -134,6 +139,8 @@ fun GymScreen(
             )
         },
         bottomBar = bottomBar,
+        snackbarHost = { transient?.let { GymSnackbarHost(it, Modifier.testTag("Transient")) } },
+        floatingActionButton = floatingActionButton,
     ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) { content() }
     }

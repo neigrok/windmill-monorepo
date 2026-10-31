@@ -41,6 +41,16 @@ class HarnessTests {
             }
         } finally { executor.shutdownNow(); assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS)) }
     }
+    @Test fun aGestureAskingForALongerHoldIsReleasedOnlyWhenItEnds() {
+        SteppedEngine(CorpusTests.probe, 100, rules = ProbeServerRules()).use { a ->
+            val scope = ScopeRef.product("probe"); val day = RecordID("2026-10-04")
+            val held = a.engine.commit(scope, Gesture(listOf(Change.put("day", day, true, mapOf("score" to Json.of(2)))), hold = true, holdMs = 20_000))
+            assertEquals(a.clock.now() + 20_000, (held as CommitOutcome.Committed).receipt.releaseAt)
+            a.advance(Constants.HOLD_MS); assertEquals(1, a.undoOffers().size); assertTrue(a.stored(scope, "day").isEmpty())
+            a.advance(20_000 - Constants.HOLD_MS); assertTrue(a.undoOffers().isEmpty()); assertEquals(1, a.stored(scope, "day").size)
+            assertThrows(CommitFailure::class.java) { a.engine.commit(scope, Gesture(listOf(Change.put("day", day, false)), hold = true, holdMs = -1)) }
+        }
+    }
     @Test fun heldWritesTwoDevicesAndFailedEmptyCommitUseRealMemoryStore() {
         SteppedEngine(CorpusTests.probe, 100, rules = ProbeServerRules()).use { a ->
             a.device().use { b ->

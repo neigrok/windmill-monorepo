@@ -60,7 +60,10 @@ data class WithheldDelete(
 data class HeldWeightReceipt(val replica: String, val anonymous: Boolean, val gestureId: String, val localIds: List<String>, val weighIn: WeighIn)
 
 object Withheld {
+    // The shortest a way back ever lasts; the system's accessibility timeout may ask for longer.
     const val windowMs = 9_000L
+
+    fun window(recommendedMs: Long): Long = maxOf(windowMs, recommendedMs)
 
     const val undo = "Undo"
 

@@ -97,7 +97,7 @@ class TrainingStore(
     private val mintSet: () -> String = Ids::set,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
-    private val undoWindowMs: Long = Withheld.windowMs,
+    undoWindowMs: Long = Withheld.windowMs,
     private val workoutClock: WorkoutClock = WorkoutClock { val at = now(); WorkoutMoment(at, at, "local") },
     private val workoutAuthority: (String?) -> Boolean = { true },
     private val telemetry: Telemetry = Telemetry.None,
@@ -595,6 +595,9 @@ class TrainingStore(
     var withheld: List<WithheldDelete> by mutableStateOf(emptyList())
         private set
     private val clocks = mutableMapOf<String, Job>()
+    // How long a delete stays takeable. The room that shows the Undo sets it to the system's
+    // accessibility timeout; the store stamps every instant from its own clock.
+    var undoWindowMs: Long = undoWindowMs
     var deleteRefused: String? by mutableStateOf(null)
         private set
     // One room's memory of its own deletes, never a tombstone: a session read BEFORE the delete would
@@ -1786,13 +1789,14 @@ class TrainingStore(
             val seat = owner
             val replica = controls.engineReplica ?: return
             val anonymous = seat == null
+            val window = undoWindowMs
             scope.launch {
                 bodyweightWrite.withLock {
                     if (!workoutAuthorized || seat != owner || replica != training.engine.activeReplica()) return@withLock
                     try {
                         val weight = training.weighins(deletion.dateLocal, deletion.dateLocal).singleOrNull()
                             ?: return@withLock
-                        val receipt = training.holdBodyweight(deletion.dateLocal, replica, anonymous) ?: return@withLock
+                        val receipt = training.holdBodyweight(deletion.dateLocal, window, replica, anonymous) ?: return@withLock
                         if (!workoutAuthorized || seat != owner || replica != training.engine.activeReplica()) return@withLock
                         val offer = training.engine.undoOffers().firstOrNull { it.id == receipt.gestureId }
                         if (offer != null) {

@@ -1,6 +1,9 @@
 package works.windmill.gym
 
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentDialog
+import androidx.test.core.app.ApplicationProvider
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -25,7 +28,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowDialog
+import java.time.LocalDate
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.store.*
 import works.windmill.gym.ui.GymMaterial
@@ -44,10 +49,10 @@ class LogTransientTests {
     // The log draws only what the wall clock has reached, so the workouts happen in its past.
     private val past = 1_700_000_000_000L
 
-    @Test fun instrumentKeepsWeighInAboveIndependentUndoWindows() = actionAboveUndo(true, 1f)
-    @Test fun daylightAtDoubleTextKeepsWeighInAboveIndependentUndoWindows() = actionAboveUndo(false, 2f)
+    @Test fun instrumentRaisesUndoAboveAStillWeighIn() = undoAboveAStillAction(true, 1f)
+    @Test fun daylightAtDoubleTextRaisesUndoAboveAStillWeighIn() = undoAboveAStillAction(false, 2f)
 
-    private fun actionAboveUndo(dark: Boolean, fontScale: Float) {
+    private fun undoAboveAStillAction(dark: Boolean, fontScale: Float) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val room = EngineRoomFixture(tmp.newFolder(), scope).apply { now = past }
         try {
@@ -69,7 +74,8 @@ class LogTransientTests {
             val snackbar = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion), useUnmergedTree = true)
                 .getBoundsInRoot()
             val action = compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot()
-            assertTrue("Weigh in must sit above Undo: $action / $snackbar", action.bottom <= snackbar.top)
+            assertEquals("Weigh in never moves for the transient", before, action)
+            assertTrue("Undo must rise above Weigh in: $snackbar / $action", snackbar.bottom <= action.top)
             assertTrue(action.height >= 56.dp)
             compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
             compose.onNodeWithText(Bodyweight.save).assertIsDisplayed()
@@ -80,7 +86,7 @@ class LogTransientTests {
                 assertEquals(listOf(two), store.recent.map { it.id })
                 assertEquals(original, room.training.details())
             }
-            compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed()
+            assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot())
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.waitForIdle()
             compose.runOnIdle {
@@ -89,6 +95,49 @@ class LogTransientTests {
                 assertEquals(original, room.training.details())
             }
             assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot())
+        } finally {
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            scope.cancel()
+            room.close()
+        }
+    }
+
+    // A lifter who asked the system for more time to act keeps the weigh-in's Undo past nine seconds.
+    @Test fun weighInUndoLastsTheAccessibilityTimeout() {
+        val accessibility = ApplicationProvider.getApplicationContext<Context>().getSystemService(AccessibilityManager::class.java)
+        shadowOf(accessibility).setInteractiveUiTimeout(20_000)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val room = EngineRoomFixture(tmp.newFolder(), scope)
+        val day = LocalDate.now().toString()
+        try {
+            room.now = System.currentTimeMillis()
+            runBlocking {
+                room.select(null)
+                assertNull(room.store.weighIn(day, 82.4))
+            }
+            room.store.observeEngine()
+            val store = room.store
+            val weighed = store.bodyweight
+            compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
+            val at = compose.runOnIdle {
+                assertEquals(20_000L, store.undoWindowMs)
+                room.now.also { store.withhold(Deletion.Bodyweight(day)) }
+            }
+            compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(listOf(day to at + 20_000), store.withheld.map { it.subjectId to it.untilMs })
+                room.now = at + 15_000
+            }
+            compose.onNodeWithText(Withheld.undo).performClick()
+            compose.waitForIdle()
+            compose.runOnIdle {
+                assertEquals(emptyList<WithheldDelete>(), store.withheld)
+                assertEquals(weighed, store.bodyweight)
+                assertEquals(emptyList<Any>(), room.engine.undoOffers())
+            }
+            compose.onNodeWithText(Withheld.alreadyGone).assertDoesNotExist()
         } finally {
             compose.runOnIdle { showing = false }
             compose.waitForIdle()
