@@ -1,6 +1,7 @@
 import SwiftUI
 import DomainKit
 import GymDomain
+import SyncEngine
 
 // The room's two-line row, a title over one meta line, wrapped by its caller in a Button or NavigationLink. At its edges: a
 // symbol in its colour or a dot before the title, a dot after it, and trailing a fact (`iphone` before it while unsent,
@@ -86,10 +87,11 @@ struct TrashSwipe: ViewModifier {
 }
 
 // Every door that destroys something asks first: its act runs only from the question's destructive button; Cancel, or the
-// question closing any other way, leaves everything as it was. It records shown and cancel on `screen`, and closes on an
-// account change. A workout's door asks 07.5 in its words; a question that needs its title over the buttons is a dialog.
+// question closing any other way, leaves everything as it was. It records shown and cancel on `screen`, and closes when
+// `account` changes. A workout's door asks 07.5 in its words; a question that needs its title over the buttons is a dialog.
 struct DestructiveQuestion: ViewModifier {
-  let gym: GymModel
+  let telemetry: any Telemetry
+  let account: String?
   let screen: String
   let title: String
   let message: String
@@ -108,12 +110,12 @@ struct DestructiveQuestion: ViewModifier {
       .onChange(of: isPresented) { _, shown in
         if shown {
           confirmed = false
-          gym.telemetry.event("gym_action", properties: ["screen": screen, "action": "discard", "state": "shown"])
+          telemetry.event("gym_action", properties: ["screen": screen, "action": "discard", "state": "shown"])
         } else if !confirmed {
-          gym.telemetry.event("gym_action", properties: ["screen": screen, "action": "cancel", "outcome": "cancelled"])
+          telemetry.event("gym_action", properties: ["screen": screen, "action": "cancel", "outcome": "cancelled"])
         }
       }
-      .onChange(of: gym.account) { _, _ in isPresented = false }
+      .onChange(of: account) { _, _ in isPresented = false }
   }
 
   @ViewBuilder func asked(_ content: Content) -> some View {
@@ -137,8 +139,8 @@ extension View {
 
   func destructiveQuestion(_ gym: GymModel, screen: String, title: String, message: String, act: String, dialog: Bool = false,
                            isPresented: Binding<Bool>, confirm: @escaping () -> Void) -> some View {
-    modifier(DestructiveQuestion(gym: gym, screen: screen, title: title, message: message, act: act, dialog: dialog,
-                                 isPresented: isPresented, confirm: confirm))
+    modifier(DestructiveQuestion(telemetry: gym.telemetry, account: gym.account, screen: screen, title: title, message: message,
+                                 act: act, dialog: dialog, isPresented: isPresented, confirm: confirm))
   }
 
   func discardWorkoutQuestion(_ gym: GymModel, screen: String, isPresented: Binding<Bool>, sets: Int, discard: @escaping () -> Void) -> some View {

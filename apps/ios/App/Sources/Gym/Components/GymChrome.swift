@@ -147,21 +147,14 @@ struct FloatingAction: View {
     Button(action: action) {
       Group {
         if labelled {
-          Label(title, systemImage: symbol).padding(.leading, 18).padding(.trailing, 22).frame(minHeight: 52)
+          Label(title, systemImage: symbol).padding(.leading, 18).padding(.trailing, 22).frame(minHeight: RoomSpace.controlHeight)
         } else {
           Image(systemName: symbol).font(.title).frame(width: 60, height: 60).accessibilityLabel(title)
         }
-      }.font(.headline).foregroundStyle(GymPalette.accent).modifier(Glass()).contentShape(Capsule())
+      }.font(.headline).foregroundStyle(GymPalette.accent).roomGlass(in: Capsule(), interactive: true, floating: true).contentShape(Capsule())
     }.buttonStyle(.plain).accessibilityIdentifier(identifier)
       .frame(maxWidth: .infinity, alignment: .trailing)
       .padding(.horizontal, RoomSpace.inset).padding(.bottom, 12)
-  }
-
-  struct Glass: ViewModifier {
-    @ViewBuilder func body(content: Content) -> some View {
-      if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: Capsule()) }
-      else { content.background(.regularMaterial, in: Capsule()).shadow(radius: 8, y: 2) }
-    }
   }
 }
 

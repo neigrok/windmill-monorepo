@@ -46,9 +46,9 @@ struct CoachDraftsCard: View {
       VStack(spacing: 10) {
         Button { apply() } label: {
           HStack(spacing: RoomSpace.related) { if busy { ProgressView().tint(GymPalette.onAccent) }; Text("Apply") }
-        }.buttonStyle(ChangeCardButtonStyle(prominent: true)).disabled(busy || closed)
+        }.buttonStyle(RoomDecisionStyle(.prominent)).disabled(busy || closed)
           .accessibilityIdentifier("coach-save-routines")
-        Button("Reject") { coach.rejectDrafts(id) }.buttonStyle(ChangeCardButtonStyle()).disabled(busy).accessibilityIdentifier("coach-reject-routines")
+        Button("Reject") { coach.rejectDrafts(id) }.buttonStyle(RoomDecisionStyle(.quiet)).disabled(busy).accessibilityIdentifier("coach-reject-routines")
       }.padding(.top, 16)
     }.modifier(ChangeCard(stroke: GymPalette.accent)).accessibilityElement(children: .contain).accessibilityIdentifier("coach-drafts")
   }
