@@ -90,7 +90,25 @@ object RoutineRules {
     val targetWeight = NumberSpec("routine.entries.sets.weightKg", quantum = 0.01)
     val rest = NumberSpec("routine.entries.restSeconds", 15.0, 900.0, integer = true)
     val exercise = TextSpec("routine.entries.exerciseId", MeasureUnit.chars, 1, 64, false, false)
-    val rules = listOf(name, position, entries, targets, targetReps, targetWeight, rest, exercise).map(Rule::local) + Rule.local("routine.zeroTarget", Routine.type)
+    const val loadFloor = "routine.loadFloor"
+    val rules = listOf(name, position, entries, targets, targetReps, targetWeight, rest, exercise).map(Rule::local) +
+        Rule.local("routine.zeroTarget", Routine.type) + Rule.local(loadFloor, Routine.type)
+
+    // A target load meets its movement's floor wherever the save touches it: a line whose targets changed, or one
+    // whose movement changed its loading. A line the save leaves alone keeps what it held.
+    fun floored(routine: Routine, base: Routine, movements: List<RoutineMovementChange>, catalogue: Catalogue) {
+        routine.entries.forEachIndexed { index, entry ->
+            val staged = movements.firstOrNull { it.current.id == entry.exerciseId }
+            val retargeted = base.entries.firstOrNull { it.exerciseId == entry.exerciseId }?.sets != entry.sets
+            val reloaded = staged != null && (staged.base == null || staged.base.equipment != staged.current.equipment ||
+                staged.base.loadCount != staged.current.loadCount)
+            if (!retargeted && !reloaded) return@forEachIndexed
+            val movement = staged?.current ?: catalogue.find(entry.exerciseId) ?: return@forEachIndexed
+            entry.sets?.forEachIndexed { at, set ->
+                set.weightKg?.let { movement.floored(it, loadFloor, Path("entries") + index + "sets" + at + "weightKg") }
+            }
+        }
+    }
 }
 
 data class RoutineMovementChange(val base: Exercise?, val current: Exercise) {
@@ -121,6 +139,7 @@ class SaveRoutinePlan(val base: Routine, val current: Routine, val isNew: Boolea
             return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, current.id.ref, path = Refused.Path.predicted)))
         val touched = current.fields().keys.filter { isNew || current.fields()[it] != base.fields()[it] }.sorted()
         val valid = Valid(current, Routine, touched, loaded.moment)
+        RoutineRules.floored(valid.value, base, movements, loaded.catalogue)
         val changed = touched.filter { loaded.routine?.fields()?.get(it) != valid.value.fields()[it] }
         if (!isNew && changed.any { loaded.routine?.fields()?.get(it) != base.fields()[it] })
             return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.stale, current.id.ref, path = Refused.Path.predicted)))

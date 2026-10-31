@@ -36,6 +36,7 @@ nonisolated struct RoutineTargetDraft: Equatable, Sendable {
   static let outsideReps = "Whole reps, 1 to 100."
   static let outsideSets = "Sets, 1 to 20."
   static let zeroTarget = "A zero target is no target — clear the field instead."
+  static let belowFloor = "Load, 0 or more."
 
   private(set) var rows: [Row]
   private(set) var countText: String

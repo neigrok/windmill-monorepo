@@ -11,6 +11,12 @@ data class Exercise(override val id: Id<Exercise>, val name: String, val pattern
     val stepKg: Double, val aliases: List<String> = emptyList(),
     val loadCount: Int = ExerciseRules.defaultLoadCount(equipment, id.record.string)) : Writable<Exercise> {
     override fun fields(): Map<String, Json> = mapOf("name" to Json.of(name), "pattern" to Json.of(pattern), "equipment" to Json.of(equipment), "stepKg" to Json.of(stepKg))
+    val loadFloor: Double? get() = ExerciseRules.loadFloor(equipment, loadCount)
+    fun floored(weightKg: Double, rule: String, at: Path): Double {
+        val floor = loadFloor ?: return weightKg
+        if (weightKg < floor) throw Violation(rule, at, Violation.Reason.Below(floor))
+        return weightKg
+    }
     companion object : WritableType<Exercise> {
         override val type = Gym.Types.exercise
         override val scope = ScopeRef(Gym.scope)
@@ -64,6 +70,8 @@ object ExerciseRules {
         equipment == "dumbbell" && loadCount == 2 -> "dumbbell"
         else -> "other"
     }
+    // A barbell or a pair of dumbbells carries 0 or more; every other loading keeps its sign, an assisted machine's included.
+    fun loadFloor(equipment: String, loadCount: Int): Double? = if (loadingChoice(equipment, loadCount) == "other") null else 0.0
     fun defaultStepKg(equipment: String): Double = when (equipment) {
         "dumbbell" -> 2.0; "machine" -> 5.0; "kettlebell" -> 4.0; else -> 2.5
     }

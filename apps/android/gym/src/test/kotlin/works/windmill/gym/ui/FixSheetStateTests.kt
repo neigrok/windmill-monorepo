@@ -89,11 +89,12 @@ class FixSheetStateTests {
             weightKg = 60.0, reps = 8, completedAtMs = 0)
         val restorer = StateRestorationTester(compose)
         val attempts = mutableListOf<SetFix>()
+        var cancel: (() -> Unit)? = null
         restorer.setContent {
             FixSheet(set, "Bench Press", 3, "Push A", onSave = {
                 attempts += it
                 FixOutcome.Failed(WriteFailure.Refused("This workout belongs to another account."))
-            }, onDelete = {})
+            }, onDelete = {}, onEntryCancel = { cancel = it })
         }
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("1e999")
@@ -103,6 +104,8 @@ class FixSheetStateTests {
         compose.onNodeWithText(NumberEntry.notANumber).assertIsDisplayed()
         compose.onNodeWithContentDescription("Load, kg").performClick()
         compose.onNodeWithContentDescription("Reps, reps").performClick()
+        compose.onNodeWithText("1e999").assertIsDisplayed()
+        compose.runOnIdle { cancel!!() }
         compose.onNodeWithText("60").assertIsDisplayed()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
@@ -134,9 +137,10 @@ class FixSheetStateTests {
         var set by mutableStateOf(TrainingSet(id = "local_set", exerciseId = "bench-press", setNumber = 3,
             weightKg = 60.0, reps = 8, completedAtMs = 0))
         val attempts = mutableListOf<SetFix>()
+        var cancel: (() -> Unit)? = null
         compose.setContent {
             FixSheet(set, "Bench Press", 3, "Push A", draftKey = "local_set",
-                onSave = { attempts += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {})
+                onSave = { attempts += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onEntryCancel = { cancel = it })
         }
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("70")
@@ -147,6 +151,8 @@ class FixSheetStateTests {
         compose.onNodeWithText("100").assertIsDisplayed()
         compose.onNodeWithText(NumberEntry.outsideReps).assertIsDisplayed()
         compose.onNodeWithContentDescription("Load, kg").performClick()
+        compose.onNodeWithText(NumberEntry.outsideReps).assertIsDisplayed()
+        compose.runOnIdle { cancel!!() }
         compose.onNodeWithText("70").assertIsDisplayed()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
         compose.onNodeWithText("Save fix").performScrollTo().performClick()

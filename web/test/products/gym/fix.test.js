@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  deletedLine, deleteFailure, fixFailure, fixOf, fixSubtitle, isSetNoteOverCap,
+  deletedLine, deleteFailure, fixFailure, fixLoadFloorLine, fixOf, fixSubtitle, isSetNoteOverCap,
   NO_RPE_LABEL, RPE_MAX, RPE_MIN, RPE_RUNGS,
   SET_NOTE_BYTES, SET_NOTE_CAPTION, setNoteCountLabel, SET_NOTE_LABEL, setNoteRefusal, setsAfter,
   showsSetNoteCount, UNDO_MS,
@@ -129,6 +129,7 @@ test('a refused fix is spoken by its code, and the missing set is not blamed on 
     fixFailure(new GymRefusal('invalid')),
     'That fix didn’t land — the log wouldn’t take it as written.',
   );
+  assert.equal(fixFailure(new GymRefusal('load-floor', { sentence: fixLoadFloorLine(0, -12.5) })), 'Enter 0 or more, or cancel to keep −12.5');
   assert.equal(
     fixFailure(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })),
     'That fix didn’t land — this device couldn’t store it.',
@@ -159,6 +160,22 @@ test('the fix sheet shows a domain note refusal, keeps the text and saves only a
   assert.equal(note().props['aria-invalid'], false);
   await findByClass(view.tree, 'gym-fix-form')[0].props.onSubmit({ preventDefault() {} });
   assert.deepEqual(saved, [{ note: '' }]);
+});
+
+test('the fix sheet draws a refused load in the load’s own slot and keeps the typed text', async (t) => {
+  browserWith();
+  const { FixSheet } = await loadScreen('products/gym/FixSheet.jsx');
+  const saved = [];
+  const view = renderHook(t, () => FixSheet({ set: SET, movement: 'Overhead Press', session: {},
+    onSave: async (fix) => { saved.push(fix); return 'Enter 0 or more, or cancel to keep 47.5'; }, onDelete() {}, onClose() {} }));
+  const load = () => elementsOf(view.tree).find((node) => node.props?.name === 'weightKg');
+  load().props.onChange({ target: { value: '-10' } });
+  await findByClass(view.tree, 'gym-fix-form')[0].props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(saved, [{ weightKg: -10 }]);
+  assert.equal(load().props.value, '-10');
+  assert.equal(load().props['aria-invalid'], true);
+  assert.equal(load().props['aria-describedby'], 'gym-fix-refusal');
+  assert.deepEqual(findByClass(view.tree, 'gym-fix-refusal').map(textOf), ['Enter 0 or more, or cancel to keep 47.5']);
 });
 
 test('a corrected set replaces the one it corrects, in the order it already stood in', () => {

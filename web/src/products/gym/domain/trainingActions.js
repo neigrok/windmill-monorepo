@@ -103,7 +103,9 @@ export function AppendSet(value) {
       if (!SessionRules.lateSetLands(session, value.completedAt)) {
         return Decision.refuse(GymRefusals.ofRefused(new Refused('session-finished', value.id.ref, null, 'predicted')));
       }
-      if (loaded.catalogue.find(value.exerciseId) === null) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', value.id.ref, null, 'predicted')));
+      const movement = loaded.catalogue.find(value.exerciseId);
+      if (movement === null) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', value.id.ref, null, 'predicted')));
+      movement.floored(valid.value.weightKg, SetRules.loadFloor, new Path('weightKg'));
       if (loaded.sets.some((set) => set.id.equals(value.id))) return Decision.refuse(GymRefusals.ofRefused(new Refused('id-taken', value.id.ref, null, 'predicted')));
       if (SetRules.nextNumber(loaded.sets, value.sessionId, value.exerciseId) === null) {
         throw new Violation('set.setNumber', new Path('setNumber'), { kind: 'above', max: SetRules.maxNumber });
@@ -149,6 +151,7 @@ export function CorrectSet(value, original = null) {
       }
       const valid = new Valid(correction, loaded.moment, fields);
       const changed = fields.filter((field) => valid.value.fields()[field] !== old.fields()[field]);
+      if (changed.includes('weightKg')) loaded.catalogue.find(old.exerciseId)?.floored(valid.value.weightKg, SetRules.loadFloor, new Path('weightKg'));
       if (changed.length === 0) return Decision.unchanged(null);
       const plan = new Plan();
       plan.update(valid, { fields: changed });

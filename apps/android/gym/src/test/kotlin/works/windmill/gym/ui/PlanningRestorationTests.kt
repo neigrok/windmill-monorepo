@@ -40,6 +40,19 @@ class PlanningRestorationTests {
     @get:Rule val compose = createComposeRule()
     @get:Rule val tmp = TemporaryFolder()
 
+    @Test fun aLineTheEditorLeavesAloneKeepsItsLoadAndATouchedOneMeetsTheFloor() {
+        val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
+        val legacy = TargetEntry.Draft(listOf(SetTarget(8, -10.0)))
+        val opened = BuilderSheet.Target("bench-press", legacy, RoutineMovement(bench, bench))
+        assertEquals(listOf<Double?>(null, 0.0, 0.0, 0.0), listOf(
+            opened.floor(RoutineMovement(bench, bench)),
+            opened.copy(scheme = legacy.copy(rows = listOf(TargetEntry.TypedSet("6", "−10")))).floor(RoutineMovement(bench, bench)),
+            opened.floor(RoutineMovement(bench, bench.copy(equipment = "dumbbell", loadCount = 2))),
+            opened.copy(adding = true).floor(RoutineMovement(bench, bench)),
+        ))
+        assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), legacy.reading(opened.floor(RoutineMovement(bench, bench))))
+    }
+
     // Signed out: the anonymous replica's store.
     private fun store(room: EngineRoomFixture): TrainingStore {
         runBlocking { room.select(null) }
@@ -314,9 +327,9 @@ class PlanningRestorationTests {
             sets = "1", varyBySet = true,
         ))
         assertEquals(expected, builderSheetSaver.restore(saved))
-        assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), expected.scheme.reading)
+        assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), expected.scheme.reading(null))
         assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, TargetEntry.notANumber),
-            (builderSheetSaver.restore(saved) as BuilderSheet.Target).scheme.withCount("2").reading)
+            (builderSheetSaver.restore(saved) as BuilderSheet.Target).scheme.withCount("2").reading(null))
         assertNull(builderSheetSaver.restore("""{"type":"works.windmill.gym.ui.BuilderSheet.Target","exerciseId":"chin-up","rows":42,"sets":"1"}"""))
         assertNull(builderSheetSaver.restore("not json"))
         assertNull(builderSheetSaver.restore(""))

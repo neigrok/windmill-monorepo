@@ -52,6 +52,24 @@ import UIKit
     #expect(RoutineMovementDraft(exercise: unknown, base: unknown, entry: routine.current.entries.first).problem == "Choose equipment.")
   }
 
+  @Test func anAssistedTargetOnAMovementTurnedBarbellRefusesTheSave() throws {
+    let (_, gym) = fixture()
+    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: "Assisted dip", pattern: "press", equipment: "bodyweight", stepKg: 2.5)
+    gym.run(CreateExercise(exercise))
+    var routine = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Dip day",
+      entries: [RoutineEntry(exerciseId: exercise.id, sets: [SetTarget(reps: 8, weightKg: -10)])]))
+    #expect(gym.saveRoutine(&routine))
+    let edit = RoutineEditingSession(gym: gym, routine: routine.current)
+    edit.editMovement(exercise.id, gym: gym)
+    edit.editor?.equipment = "barbell"
+    #expect(edit.stageMovement(gym))
+    #expect(!edit.save(gym))
+    #expect(edit.refusal == "Load, 0 or more.")
+    #expect(gym.routines == [Routine(id: routine.id, name: "Dip day",
+      entries: [RoutineEntry(exerciseId: exercise.id, sets: [SetTarget(reps: 8, weightKg: -10)])])])
+    #expect(gym.catalogue.find(exercise.id) == exercise)
+  }
+
   @Test func namesAndMovementLimitsUseOrderedRefusals() {
     let routine = Routine(id: ID("r"))
     #expect(RoutinePlanning.problem(routine) == "Name it to save it.")

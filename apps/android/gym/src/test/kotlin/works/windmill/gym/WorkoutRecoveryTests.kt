@@ -546,7 +546,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("Set note").performTextInput("Live retained note")
             compose.onNodeWithText("Not rated").performClick()
             compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).performScrollTo().performClick()
-            for (dismissal in listOf("back", "blur", "scrim", "drag")) {
+            for (dismissal in listOf("back", "blur then back", "scrim", "drag")) {
                 val modal = compose.onNodeWithText("Fix set").fetchSemanticsNode().root
                 compose.onNode(hasText("60") and SemanticsMatcher("in the Fix dialog") { it.root == modal }).performClick()
                 compose.onNode(hasContentDescription("Load, kg total") and SemanticsMatcher("in the Fix dialog") { it.root == modal })
@@ -554,7 +554,11 @@ class WorkoutRecoveryTests {
                 compose.onNodeWithText("1e999").assertIsDisplayed()
                 when (dismissal) {
                     "back" -> compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
-                    "blur" -> compose.onNodeWithText("Set note").performClick()
+                    "blur then back" -> {
+                        compose.onNodeWithText("Live retained note").performClick()
+                        compose.onNodeWithText("1e999").assertIsDisplayed()
+                        compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
+                    }
                     "scrim" -> compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
                     else -> compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss)).performTouchInput {
                         swipe(center, center + Offset(0f, 1_200f), durationMillis = 500)

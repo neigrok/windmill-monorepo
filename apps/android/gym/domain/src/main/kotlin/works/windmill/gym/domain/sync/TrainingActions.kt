@@ -84,11 +84,13 @@ class AppendSet(val value: TrainingSet) : Action<TrainingState, Id<TrainingSet>,
     }
     companion object {
         // What the log refuses before a set is appended: a workout no late set lands in, a movement the catalogue
-        // lacks, a spent identity, or a number past the last, the sets already planned beside it counted.
+        // lacks, a load under that movement's floor, a spent identity, or a number past the last, the sets already
+        // planned beside it counted.
         fun refusal(valid: Valid<TrainingSet>, session: Session, state: TrainingState, planned: List<TrainingSet> = emptyList()): GymRefusal? {
             val value = valid.value
             if (!SessionRules.lateSetLands(session, value.completedAt)) return GymRefusal.predicted(Gym.Codes.sessionFinished, value.id.ref)
-            if (state.catalogue.find(value.exerciseId) == null) return GymRefusal.predicted(Gym.Codes.unknownExercise, value.id.ref)
+            val movement = state.catalogue.find(value.exerciseId) ?: return GymRefusal.predicted(Gym.Codes.unknownExercise, value.id.ref)
+            movement.floored(value.weightKg, SetRules.loadFloor, Path("weightKg"))
             if ((state.sets + planned).any { it.id == value.id }) return GymRefusal.of(Refused(RefusalCode.idTaken, value.id.ref, path = Refused.Path.predicted))
             val numbered = planned.count { it.sessionId == value.sessionId && it.exerciseId == value.exerciseId }
             val next = SetRules.nextNumber(state.sets, value.sessionId, value.exerciseId)
@@ -120,6 +122,7 @@ class CorrectSet(val value: TrainingSet) : Action<TrainingState, Unit, GymRefusa
         val fields = listOf("weightKg", "reps", "rpe", "note")
         val valid = Valid(value, TrainingSet, fields, loaded.moment)
         val changed = fields.filter { valid.value.fields()[it] != old.fields()[it] }
+        if ("weightKg" in changed) loaded.catalogue.find(old.exerciseId)?.floored(valid.value.weightKg, SetRules.loadFloor, Path("weightKg"))
         if (changed.isEmpty()) return Decision.Unchanged(Unit)
         val plan = Plan()
         plan.update(valid, changed)

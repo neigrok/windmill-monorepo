@@ -11,14 +11,16 @@ object NumberEntry {
     const val weightHint = "kg"
     const val repsHint = "whole reps"
 
-    data class Reading(val value: Double?, val message: String) {
+    // A load moved under the floor refuses as it is typed; the value it keeps stands, and other refusals wait for a commit.
+    data class Reading(val value: Double?, val message: String, val belowFloor: Boolean = false) {
         val isValid: Boolean get() = value != null
     }
 
-    fun normaliseSign(text: String): String = text.replace('−', '-')
+    fun belowFloor(floor: Double, keeping: Double): String =
+        "Enter ${Readout.weight(floor)} or more, or cancel to keep ${Readout.weight(keeping)}"
 
-    fun read(text: String, field: Field, keeping: Double): Reading {
-        val raw = normaliseSign(text).trim()
+    fun read(text: String, field: Field, keeping: Double, floor: Double? = null): Reading {
+        val raw = text.replace('−', '-').trim()
         if (raw.isEmpty() || raw == "-") {
             return Reading(null, "Enter a number, or cancel to keep ${Readout.weight(keeping)}")
         }
@@ -27,11 +29,19 @@ object NumberEntry {
         val value = normalised.toDoubleOrNull()
         if (value == null || !value.isFinite()) return Reading(null, notANumber)
         if (field == Field.Load) {
-            return Reading(Ladder.round(value), weightHint)
+            val load = Ladder.round(value)
+            if (floor != null && load < floor && load != keeping) return Reading(null, belowFloor(floor, keeping), belowFloor = true)
+            return Reading(load, weightHint)
         }
         if (value < 1 || value > LoggedSetLimits.maxReps || value != floor(value)) {
             return Reading(null, outsideReps)
         }
         return Reading(value, repsHint)
+    }
+
+    // The ladder never clamps; a load field with a floor stops the step at it.
+    fun bumped(load: Double, direction: Int, big: Boolean, floor: Double?): Double {
+        val next = Ladder.bump(load, direction, big)
+        return if (floor != null && next < floor) floor else next
     }
 }

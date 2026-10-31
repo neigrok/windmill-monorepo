@@ -11,35 +11,46 @@ import androidx.compose.runtime.setValue
 import works.windmill.gym.domain.NumberEntry
 import works.windmill.gym.domain.Readout
 
-internal class NumberDraft(val field: NumberEntry.Field, initial: Double) {
+internal class NumberDraft(val field: NumberEntry.Field, initial: Double, initialFloor: Double? = null) {
     var committed by mutableDoubleStateOf(initial)
         private set
-    var text by mutableStateOf(NumberEntry.normaliseSign(Readout.weight(initial)))
+    var text by mutableStateOf(Readout.weight(initial))
         private set
     var refusal by mutableStateOf<String?>(null)
         private set
     var focused by mutableStateOf(false)
         private set
+    var floor by mutableStateOf(initialFloor)
 
-    val reading: NumberEntry.Reading get() = NumberEntry.read(text, this.field, committed)
+    val reading: NumberEntry.Reading get() = NumberEntry.read(text, this.field, committed, floor)
 
-    val isEdited: Boolean get() = text != NumberEntry.normaliseSign(Readout.weight(committed))
+    val shownRefusal: String? get() = refusal ?: reading.message.takeIf { reading.belowFloor }
+
+    val isEdited: Boolean get() = text != Readout.weight(committed)
+
+    val canDecrease: Boolean get() = floor.let { it == null || standing > it }
 
     fun edit(raw: String) {
         text = raw
         refusal = null
     }
 
-    fun focus(active: Boolean) {
+    // Leaving commits what was typed, as Done does; a refusal keeps the committed value, shown again when unexplained.
+    fun focus(active: Boolean, commit: () -> NumberEditResult) {
         focused = active
-        if (!active) cancel()
+        if (!active && isEdited && commit() == NumberEditResult.Refused && refusal == null) cancel()
     }
+
+    // The value this field stands for while another field commits: its reading, else what it last committed.
+    val standing: Double get() = reading.value ?: committed
 
     fun read(): Double? {
         val result = reading
         refusal = result.message.takeUnless { result.isValid }
         return result.value
     }
+
+    fun bumped(direction: Int, big: Boolean): Double? = read()?.let { NumberEntry.bumped(it, direction, big, floor) }
 
     fun accept(value: Double): NumberEditResult {
         val changed = value != committed
@@ -54,20 +65,23 @@ internal class NumberDraft(val field: NumberEntry.Field, initial: Double) {
     }
 
     fun cancel() {
-        text = NumberEntry.normaliseSign(Readout.weight(committed))
+        text = Readout.weight(committed)
         refusal = null
     }
 }
 
 @Composable
-internal fun rememberNumberDraft(key: String, field: NumberEntry.Field, value: Double): NumberDraft {
+internal fun rememberNumberDraft(key: String, field: NumberEntry.Field, value: Double, floor: Double? = null): NumberDraft {
     val draft = rememberSaveable(key, field, saver = listSaver(
         save = { listOf(it.committed, it.text, it.refusal.orEmpty()) },
-        restore = { NumberDraft(field, it[0] as Double).apply {
+        restore = { NumberDraft(field, it[0] as Double, floor).apply {
             edit(it[1] as String)
             (it[2] as String).takeIf(String::isNotEmpty)?.let(::refuse)
         } },
-    )) { NumberDraft(field, value) }
-    SideEffect { if (draft.committed != value) draft.accept(value) }
+    )) { NumberDraft(field, value, floor) }
+    SideEffect {
+        draft.floor = floor
+        if (draft.committed != value) draft.accept(value)
+    }
     return draft
 }

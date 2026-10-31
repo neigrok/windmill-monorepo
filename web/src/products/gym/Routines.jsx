@@ -275,7 +275,7 @@ export function RoutineEditor({ id, log }) {
               place={entryPlaceLabel(target, draft.entries.length, draft.name)}
               panePlace={`Movement ${target + 1} of ${draft.entries.length}${view.data.lastTrainedAt ? ` · trained ${agoLabel(view.data.lastTrainedAt)}` : ' · never logged'}`}
               entry={draft.entries[target]}
-              equipment={movementOf(log.catalog, draft.entries[target].exerciseId)?.equipment ?? null}
+              exercise={movementOf(log.catalog, draft.entries[target].exerciseId)}
               neverLogged={saysNeverLogged(view.data, draft.entries[target])}
               onDraft={(entry) => { setTargetInvalid(entry == null); if (entry) editEntries((held) => withEntrySet(held, target, entry)); }}
               onSet={(entry) => { editEntries((held) => withEntrySet(held, target, entry)); setTargetOpen(false); }}

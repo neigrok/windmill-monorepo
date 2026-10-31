@@ -40,7 +40,7 @@ class FixSetOutcomeTests {
             room.select(null)
             val session = room.workout(finish = false)
             val set = room.store.sets.single()
-            val fix = SetFix(weightKg = -12.5, reps = 8, note = "private note", rpe = 8.5, rpeNamed = true)
+            val fix = SetFix(weightKg = 12.5, reps = 8, note = "private note", rpe = 8.5, rpeNamed = true)
             telemetry.events.clear()
             assertEquals(FixOutcome.Corrected(fix.corrected(set)), room.store.fixSet(session.id, set.id, fix, FixOrigin.Workout))
             assertEquals(listOf(fix.corrected(set)), room.store.sets)
@@ -297,9 +297,9 @@ class FixSetOutcomeTests {
             assertEquals(1, set.setNumber)
             telemetry.events.clear()
             armed = true
-            val corrected = set.copy(weightKg = -12.51, note = "  exact bytes  ")
+            val corrected = set.copy(weightKg = 12.51, note = "  exact bytes  ")
             assertEquals(FixOutcome.Corrected(corrected), room.store.fixSet(sessionId, set.id,
-                SetFix(weightKg = -12.505, note = "  exact bytes  "), FixOrigin.Workout))
+                SetFix(weightKg = 12.505, note = "  exact bytes  "), FixOrigin.Workout))
             assertNull(hookFailure?.stackTraceToString(), hookFailure)
             assertEquals(listOf(corrected), accepted)
             assertNotNull(switched)

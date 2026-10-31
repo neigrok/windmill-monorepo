@@ -998,6 +998,11 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
     A refused session (401) or a request 35 or more days old stays on D3.
   iOS sends the body-only close (`AppRuntime.swift` `deleteAccount`), so it has no clock refusal and no
   pending record; its 27e stays as drawn. If iOS adopts the recoverable close, it takes both states.
+- **12p · iOS receipt *Save to ‹routine›* and a load under 0 (needs words).** A barbell or two-dumbbell
+  target under 0 is refused by every domain (`routine.loadFloor`). iOS `WorkoutReceipt`'s *Save to
+  ‹routine›* sends the edited plan through `SaveRoutinePlan`, so such a target now reads the generic
+  *‹routine› wasn't changed. Try again.*, which a retry cannot fix; Edit sets checks only the target's
+  shape. The receipt needs its own refusal copy, or Edit sets refuses the load first.
 
 ### Coach on the client
 

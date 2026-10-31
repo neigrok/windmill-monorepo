@@ -57,6 +57,23 @@ import org.robolectric.annotation.Config
 class NumberStepperTests {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun aDisplayLoadOfTwentyOrTwentyTwoAndAHalfKeepsItsUnitInlineAndItsHeight() {
+        var value by mutableStateOf("20")
+        compose.setContent { GymMaterial { Column(Modifier.width(372.dp)) {
+            NumberStepper(value, { value = it }, "Load", "kg total", onStep = { NumberEditResult.Unchanged },
+                onCommit = { NumberEditResult.Unchanged }, size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal)
+        } } }
+        val field = compose.onNodeWithContentDescription("Load, kg total")
+        val unit = compose.onNodeWithText("kg total", useUnmergedTree = true)
+        val drawn = listOf("20", "22.5", "20").map { typed ->
+            compose.runOnIdle { value = typed }
+            field.assertTextEquals("Load", "kg total", typed)
+            val bounds = field.getBoundsInRoot()
+            bounds.height to (unit.getBoundsInRoot().left - bounds.left > 40.dp)
+        }
+        assertEquals(List(3) { drawn[0].first to true }, drawn)
+    }
+
     @Test fun newFocusStartsAfterTheValueAndAccessibilityStepsShareAcceptedFeedback() {
         val sensations = mutableListOf<HapticFeedbackType>()
         val feedback = object : HapticFeedback {
@@ -177,13 +194,13 @@ class NumberStepperTests {
         val field = compose.onNodeWithContentDescription("Load, kg total")
         field.performClick().performTextReplacement("-12.5")
         compose.runOnIdle {
-            assertEquals(listOf("-12.5"), drafts)
+            assertEquals(listOf("−12.5"), drafts)
             assertEquals(emptyList<String>(), commits)
             assertEquals(emptyList<HapticFeedbackType>(), sensations)
         }
         field.performImeAction()
         compose.runOnIdle {
-            assertEquals(listOf("-12.5"), commits)
+            assertEquals(listOf("−12.5"), commits)
             assertEquals(listOf(HapticFeedbackType.TextHandleMove), sensations)
         }
     }
@@ -489,7 +506,7 @@ class NumberStepperTests {
         }
         val field = compose.onNodeWithContentDescription("Load, kg added")
         field.performClick().performTextReplacement("-12345678901234567890.12345")
-        field.assertTextEquals("Load", "kg added", "-12345678901234567890.12345")
+        field.assertTextEquals("Load", "kg added", "−12345678901234567890.12345")
         val layouts = mutableListOf<TextLayoutResult>()
         field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertEquals(32.sp, layouts.single().layoutInput.style.fontSize)
