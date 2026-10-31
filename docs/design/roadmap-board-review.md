@@ -1,11 +1,11 @@
 # Roadmap Board design review
 
-Status: 💡 proposal, **not Ready for dev**. The [proposal](roadmap-board-proposal.md) describes the
+Status: ✅ **Ready for dev**, owner approved 2026-10-31. The [proposal](roadmap-board-proposal.md) describes the
 current design; this file holds the verdict, the rulings and decisions behind it, how each review
 finding is resolved, and what remains open.
 
-Pages: [💡 Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900)
-and [💡 Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901). Both
+Pages: [✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900)
+and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901). Both
 were revised on 2026-10-31: shared components, a pass on each page, two independent reviews, a fix
 pass against one pinned contract (rulings, strings and fixtures), and an integration pass.
 
@@ -14,9 +14,9 @@ pass against one pinned contract (rulings, strings and fixtures), and an integra
 A derived-status board is the right second view. It answers the question the graph fails on a
 phone, *what can I do right now*, and because columns follow prerequisites it cannot lie: nothing is
 dragged, no status is self-reported. What it hides is what the graph was for, depth and distance;
-the card now carries both (*Needs Read the wind · 1 to go*, *Unlocks Leave the dock*). The pages are
-ready for the owner's approval decision. Approval leaves the native control-band question open and
-the data prerequisites and ledger drift below unresolved.
+the card now carries both (*Needs Read the wind · 1 to go*, *Unlocks Leave the dock*). The owner
+approved the pages on 2026-10-31. The native control-band question stays open, and the data
+prerequisites and ledger drift below are build work.
 
 ## Owner rulings
 

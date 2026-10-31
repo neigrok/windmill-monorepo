@@ -14,7 +14,8 @@ not 98 distinct routes. Shared state families use component variants instead of 
 establishes conditional states; runtime evidence is recorded separately. The marker does not claim
 a remote deployment check, every branch exercised, bug-free behavior, or new human design approval.
 All current Roadmap flow/state boards are reconciled. 🧩 identifies reusable components and owner
-links. Existing AI Review/Apply and the separate Board view remain 💡 proposals awaiting human review.
+links. Existing AI Review/Apply remains a 💡 proposal awaiting human review; the separate Board view is
+✅ Ready for dev ([proposal](roadmap-board-proposal.md)).
 
 Web and Web Mobile are separate. Product primitives live on Components; helper-local settings and
 shortcut primitives remain beside their variants. Shared Shell/Home drawings are thin links to their

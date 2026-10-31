@@ -1,15 +1,16 @@
 # Roadmap Board proposal
 
-Status: 💡 awaiting human approval. No Board flow is Ready for dev. The production Graph and List
-canon stays on the Roadmap file's Web and Web Mobile pages. The [review](roadmap-board-review.md)
+Status: ✅ Ready for dev, owner approved 2026-10-31. The build is tracked under dogfood node
+`roadmap-board-web-build`. The production Graph and List canon stays on the Roadmap file's Web and
+Web Mobile pages until the Board ships. The [review](roadmap-board-review.md)
 holds the rulings, the findings and the limits.
 
 Drawn on two pages of the Roadmap file:
-[💡 Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) (below
-744px) and [💡 Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
+[✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) (below
+744px) and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 (744px and up). Start at the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433)
 and the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-Every board carries 💡. Desktop boards come in light and dark pairs; phone dark specimens sit in
+Every first-wave board carries ✅; the *Later · Activity overlay* sections stay 💡. Desktop boards come in light and dark pairs; phone dark specimens sit in
 their sections and in section 19.
 
 ## The idea
@@ -269,7 +270,7 @@ Web Mobile ([page](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1
 
 | Section | Entry board |
 |---|---|
-| [00 · Board proposal · awaiting review](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-902) | [Proposal direction](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1424) |
+| [00 · Board · overview](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-902) | [Proposal direction](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1424) |
 | [01 · Choose, inspect, complete](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-903) | [01.01 · Up next](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433) |
 | [02 · Create, edit, connect](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-904) | [02.01 · New step · blank](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1631) |
 | [03 · Empty, loading, recovery](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-905) | [03.01 · Empty roadmap](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2149) |

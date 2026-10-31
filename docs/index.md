@@ -35,14 +35,14 @@ remain on Proposals. Account, sign-in, appearance and shared settings belong to
 [Shell](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf); landing pages belong to
 [Marketing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81).
 
-### Board view · 💡 Proposal / awaiting human review
+### Board view · ✅ Ready for dev
 
-Separate [💡 Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) and
-[💡 Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) pages.
+Separate [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) and
+[✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) pages.
 Start at the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543)
 and the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433).
-[Proposal](design/roadmap-board-proposal.md) · [Review](design/roadmap-board-review.md). Not Ready
-for dev.
+[Proposal](design/roadmap-board-proposal.md) · [Review](design/roadmap-board-review.md). Owner
+approved 2026-10-31; the build is dogfood node `roadmap-board-web-build`.
 
 | Flow | Web | Web Mobile | Entry → exit |
 |---|---|---|---|
