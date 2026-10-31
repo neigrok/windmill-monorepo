@@ -8,6 +8,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -16,6 +17,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import java.util.concurrent.CopyOnWriteArrayList
+import java.io.File
+import javax.crypto.KeyGenerator
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,6 +36,12 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.GymRoom
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WorkoutControls
+import works.windmill.gym.coach.onboarding.*
+import works.windmill.platform.ai.*
+import works.windmill.platform.auth.KeptValues
+import works.windmill.platform.auth.SecretVault
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
@@ -50,6 +60,60 @@ class CoachHistoryTests {
         override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
     }
     @After fun close() { room?.close(); scope.cancel() }
+
+    @Test fun anonymousHistoryDoesNotOfferStopForTheApplicationOwnedOnboardingRequest() {
+        val local = LocalCoach(File(tmp.root, "anonymous-history.json"))
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, localCoach = local, telemetry = telemetry)
+        room = fixture
+        runBlocking { fixture.select(null) }
+        val origin = CoachOnboardingSeat(local.anonymousOwner(), fixture.engine.activeReplica())
+        val allowance = AiAllowance("ok", "USD", "lifetime", "anonymous", true, null, "0", "0", "0")
+        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val values = object : KeptValues {
+            val saved = mutableMapOf<String, String>()
+            override fun read(key: String) = saved[key]
+            override fun write(values: Map<String, String?>) {
+                values.forEach { (key, value) -> if (value == null) saved.remove(key) else saved[key] = value }
+            }
+        }
+        val identity = AiInstallation(values, SecretVault { key }, object : AiInstallationApi {
+            override suspend fun issue() = AiInstallationResponse(false, allowance, "A".repeat(43))
+            override suspend fun current(credential: String) = AiInstallationResponse(false, allowance)
+            override suspend fun bind(credential: String, token: String) = AiInstallationResponse(true, allowance)
+        })
+        val response = CompletableDeferred<CoachOnboardingResponse>()
+        val posted = CompletableDeferred<Unit>()
+        var posts = 0
+        val id = "11111111-1111-4111-8111-111111111111"
+        val coordinator = CoachOnboardingStore(local, identity, object : CoachOnboardingApi {
+            override suspend fun start(body: String, credential: String): CoachOnboardingResponse { posts++; posted.complete(Unit); return response.await() }
+            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
+        }, { origin }, scope, telemetry, requestId = { id })
+        val store = TrainingStore(WorkoutControls(File(tmp.root, "history-controls.json")), fixture.training, scope,
+            localCoach = local, coachOnboarding = coordinator, telemetry = telemetry)
+        runBlocking { store.connect(fixture.account()) }
+        val chat = store.coach.freshChat()
+        var showing by mutableStateOf(false)
+        compose.setContent { GymMaterial {
+            if (showing) ThreadScreen(chat, store, emptyList(), emptySet(), "History", {}, {}, {}, composerEnabled = true)
+        } }
+        compose.runOnIdle { store.coach.refreshAnonymousAccess() }
+        compose.waitUntil(5_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); store.coach.anonymousAccess == AnonymousCoachAccess.Available }
+        compose.runOnIdle { assertTrue(store.coach.submit(chat, "A retained question")) }
+        compose.waitUntil(5_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); posted.isCompleted }
+        compose.runOnIdle { showing = true }
+        compose.onNodeWithContentDescription("Stop response").assertIsNotEnabled().performClick()
+        compose.runOnIdle {
+            assertTrue(store.coach.isAsking(chat))
+            assertFalse(response.isCancelled)
+        }
+        response.complete(CoachOnboardingResponse(id, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "A retained answer"))
+        compose.waitUntil(5_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); !store.coach.isAsking(chat) }
+        compose.onNodeWithText("A retained question").assertIsDisplayed()
+        assertEquals("A retained answer", store.coach.chat(chat)!!.exchanges.single().answer!!.answer)
+        assertEquals(1, posts)
+        assertEquals(emptyList<String>(), failures.toList())
+    }
 
     private fun history(api: FakeGymRest): EngineRoomFixture {
         val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = api, telemetry = telemetry)

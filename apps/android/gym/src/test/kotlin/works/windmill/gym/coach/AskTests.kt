@@ -19,7 +19,7 @@ class AskTests {
     @Test
     fun theAllowanceIsOneLineAboveTheComposerAndTheCapReachedMomentSaysWhatToDoNext() {
         assertEquals("Ten questions a day, three back to back.", Ask.allowance)
-        assertEquals("The next question frees up in a couple of hours.", Ask.capReached)
+        assertEquals("Coach cannot take another question yet. Try again later.", Ask.capReached)
         assertEquals("an unavailable conversation has a recovery",
             "This conversation is unavailable. Start a new one.", Ask.threadFull)
     }
@@ -28,8 +28,8 @@ class AskTests {
     fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
         assertEquals("Coach", Ask.title)
         assertEquals("reads your log · helps with your routines", Ask.subtitle)
-        assertEquals("Coach reads your log, so it needs you signed in.", Ask.signedOut)
-        assertEquals("Coach isn’t part of this Windmill. Your log is still yours to read.", Ask.notHere)
+        assertEquals("Coach needs your workout log. Please sign in.", Ask.signedOut)
+        assertEquals("This Windmill does not have Coach. You can still read your log.", Ask.notHere)
         assertEquals("the apostrophe is the typographic one everywhere",
             emptyList<String>(),
             (listOf(Ask.freeDoor, Ask.interrupted, Ask.notHere, Ask.draftGone, Ask.draftInvalid, Ask.draftRetry, Ask.draftSignIn) + Ask.openers)

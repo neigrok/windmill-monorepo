@@ -153,6 +153,8 @@ class AskScreenTests {
                 onBack = null,
                 onThreads = { doors += "threads" },
                 onNotes = { doors += "notes" },
+                onConnections = { doors += "connections" },
+                onSignIn = { doors += "signIn" },
                 onReview = {}, seat = "A",
             )
         }
@@ -358,73 +360,54 @@ class AskScreenTests {
         scope.cancel()
     }
 
-    // The state says the sentence the LOG sent, not a constant of its own — and it says it once: the
-    // exchange's own refusal card is not drawn beneath it.
     @Test
-    fun theCapReachedMomentSaysTheLogsOwnSentenceAndReplacesTheComposerWithWhatToDoNext() {
+    fun theDayCapKeepsEditableRefusedInputAndSendWithAnHonestNotice() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val refused = AskExchange(
-            question = "is my week too light?",
-            trouble = "the next question frees up in a couple of hours",
-        )
+        val store = signedIn(scope).store
+        store.coach.saveDraft("new", CoachDraft("What should Thursday look like?"))
+        val refused = AskExchange("is my week too light?", trouble = "the next question frees up in a couple of hours")
         val doors = mutableListOf<String>()
-        room(signedIn(scope).store, thread = listOf(refused), cap = AskCap.Daily, doors = doors)
-
-        compose.onNodeWithText("the next question frees up in a couple of hours").assertIsDisplayed()
-        compose.onNodeWithText("is my week too light?").assertIsDisplayed()
-        compose.onNodeWithText(Threads.open).assertIsDisplayed()
-        compose.onNodeWithText("Connect own agent").assertIsDisplayed()
-        compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
-        // A10: the promise is pinned with the doors, below the moment it ran out — which reads at
-        // the end of the thread and scrolls with it.
-        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
-        compose.onNodeWithText("Try again").assertDoesNotExist()
-
-        // T3's other direction: under the DAY's ten a new conversation is the way back to a
-        // composer, so it leads and the connect door sits beneath it.
-        val askNew = compose.onNodeWithText(Threads.open).fetchSemanticsNode()
-        val connect = compose.onNodeWithText("Connect own agent").fetchSemanticsNode()
-        assertTrue("the way back to an answer leads under the daily cap",
-            askNew.positionInRoot.y < connect.positionInRoot.y)
-
-        compose.onNodeWithText(Threads.open).performClick()
-        compose.runOnIdle { assertEquals(listOf("askNew"), doors) }
+        room(store, thread = listOf(refused), cap = AskCap.Daily, doors = doors)
+        compose.onNodeWithText(Ask.capReached).assertIsDisplayed()
+        compose.onNodeWithText(refused.trouble!!).assertDoesNotExist()
+        compose.onNodeWithText(refused.question).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Question").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+        compose.onNodeWithText(Threads.open).assertDoesNotExist()
+        compose.onNodeWithText("Use your own AI agent").performClick()
+        compose.runOnIdle { assertEquals(listOf("connections"), doors) }
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.runOnIdle { assertEquals(listOf("connections", "ask:What should Thursday look like?"), doors) }
         scope.cancel()
     }
 
-    // The account's 30-day ceiling reaches the SAME state, because the connect door is the one way on
-    // that neither ceiling rations — and it must never borrow the daily bucket's sentence, which
-    // would promise a question back in a couple of hours over a thirty-day window.
-    //
-    // T3: under this ceiling a fresh conversation cannot take a question either, so the connect door
-    // leads and `Ask something new` sits BELOW it, as a way out of this conversation.
     @Test
-    fun theAccountCeilingReachesTheSameStateSaysItsOwnSentenceAndLeadsWithTheConnectDoor() {
+    fun theAccountCeilingUsesItsOwnNoticeWithoutReplacingTheComposer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will " +
-            "answer again as that window rolls on"
-        val refused = AskExchange(question = "what's stalled?", trouble = ceiling)
+        val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on"
+        val refused = AskExchange("what's stalled?", trouble = ceiling)
         val doors = mutableListOf<String>()
-        room(signedIn(scope).store, thread = listOf(refused), cap = AskCap.Ceiling, doors = doors)
-
+        room(signedIn(scope).store, listOf(refused), AskCap.Ceiling, doors)
         compose.onNodeWithText(ceiling).assertIsDisplayed()
-        // Inside the scroller: the doors stay pinned, the words scroll. What the thread keeps that
-        // way — 283.5dp at fontScale 2.0 — is measured in `LargestTypeTests`.
-        compose.onNodeWithText(ceiling).assert(hasAnyAncestor(hasScrollAction()))
         compose.onNodeWithText(Ask.capReached).assertDoesNotExist()
-        compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
-        // Ten a day is a promise about the DAY's bucket. Under the account's thirty days it is not
-        // the rule that stopped this question, and drawn on top of the sentence that says so it
-        // would read as that rule — so it is not drawn under this ceiling at all.
-        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Question").assertIsDisplayed()
+        compose.onNodeWithText("Use your own AI agent").performClick()
+        compose.runOnIdle { assertEquals(listOf("connections"), doors) }
+        compose.onNodeWithText(Threads.open).assertDoesNotExist()
+        scope.cancel()
+    }
 
-        val connect = compose.onNodeWithText("Connect own agent").fetchSemanticsNode()
-        val askNew = compose.onNodeWithText(Threads.open).fetchSemanticsNode()
-        assertTrue("the unrationed door leads; the new conversation is the way out beneath it",
-            connect.positionInRoot.y < askNew.positionInRoot.y)
-
-        compose.onNodeWithText(Threads.open).performClick()
-        compose.runOnIdle { assertEquals(listOf("askNew"), doors) }
+    @Test
+    fun onlyTheTypedAccountRefusalShowsTheApprovedFixedBubbleAndExistingSignInDoor() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val exchange = AskExchange("Make Push A harder", trouble = "Private model prose", refusalCode = "account_required")
+        val doors = mutableListOf<String>()
+        room(signedIn(scope).store, listOf(exchange), null, doors)
+        compose.onNodeWithText(exchange.question).assertIsDisplayed()
+        compose.onNodeWithText(Ask.accountRequired).assertIsDisplayed()
+        compose.onNodeWithText("Private model prose").assertDoesNotExist()
+        compose.onNodeWithText("Sign in").performClick()
+        compose.runOnIdle { assertEquals(listOf("signIn"), doors) }
         scope.cancel()
     }
 

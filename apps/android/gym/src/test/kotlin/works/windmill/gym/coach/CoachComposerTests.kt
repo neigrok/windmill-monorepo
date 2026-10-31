@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.hasAnyDescendant
@@ -72,6 +73,22 @@ class CoachComposerTests {
             rooms += room
             runBlocking { room.select("user-a") }
         }
+
+    @Test fun anonymousSendUsesItsExistingFourThousandByteBoundWithoutChangingTheBuffer() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = CoachStore({ null }, { emptySet() }, {}, { null }, LocalCoach(File(tmp.root, "anonymous.json")),
+            works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
+        val chat = store.freshChat()
+        compose.setContent { CoachComposer(store, chat, "", false, { _, _ -> error("No automatic Send") }, null, null, true) }
+        val field = compose.onNodeWithContentDescription("Question")
+        field.performTextReplacement("x".repeat(4_001))
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        assertEquals("x".repeat(4_001), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        field.performTextReplacement("x".repeat(4_000))
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        assertEquals("x".repeat(4_000), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        scope.cancel()
+    }
 
     @Test fun aDisabledLocalHistoryComposerRetainsTextAndPhotoWithoutEditingOrSending() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

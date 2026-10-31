@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
 import works.windmill.platform.design.WindmillFont
+import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,8 +78,8 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
         }
     }
     var preparing by remember(account, key) { mutableStateOf(false) }
-    fun canSend(next: CoachDraft) = Ask.sendable(next.text) ||
-        (next.photo != null && next.text.trim().toByteArray().size <= Ask.maxTurnBytes)
+    fun canSend(next: CoachDraft) = next.text.trim().toByteArray().size <=
+        (if (store.anonymous) CoachOnboardingLimits.textBytes else Ask.maxTurnBytes) && (Ask.sendable(next.text) || next.photo != null)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             preparing = true

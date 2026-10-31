@@ -3,7 +3,7 @@
 **Figma:** none. This task builds the plumbing that 39–44 draw on. The signed-out boards are 01.1, 01.4, 01.7, 01.10, 01.14, 01.15, 01.16.
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` or `backend/`)
-- Signed out, the Coach tab is a sign-in door (`GymRoom.kt:1152-1153`): `AskSignedOutStance` (`coach/AskScreen.kt:267-278`) says *Coach reads your log, so it needs you signed in.* (`coach/Ask.kt:216`) above a **Sign in** button.
+- Signed-out access is projected by task 36: available installations keep their original local chat and composer; bound or unavailable installations use the approved access stance and retain local History.
 - `platform/ai/AiInstallation.kt` seals a separate installation credential and durable binding intent. `coach/onboarding/` carries installation-authenticated requests, original-chat recovery and atomic routine import. Visible anonymous states remain the responsibility of 39–44.
 - Signed-in questions accept 8,000 UTF-8 bytes through `Ask.maxTurnBytes`. The onboarding client keeps its separate 4,000-byte limit.
 - `CoachPhotos.read` retains its signed-in 5 MiB / 4,096 px defaults and accepts the onboarding client's 1 MiB re-encoding bound.
