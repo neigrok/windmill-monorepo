@@ -44,6 +44,16 @@ class AiInstallationRequest
 
 class AiInstallationStorageFailure : IOException("Installation access could not be retained.")
 
+// The server declares anonymous AI or an allowance unavailable with a 503 and one of these codes; an AI door expects it.
+object AiAvailability {
+    val allowanceCodes = setOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted",
+        "concurrency_exhausted", "funding_required", "debt_outstanding", "unconfigured")
+    const val anonymousUnavailable = "anonymous_ai_unavailable"
+
+    fun declaredUnavailable(failure: WindmillApiException): Boolean = failure is WindmillApiException.Refused &&
+        failure.status == 503 && (failure.refusal.code == anonymousUnavailable || failure.refusal.code in allowanceCodes)
+}
+
 interface AiInstallationApi {
     suspend fun issue(): AiInstallationResponse
     suspend fun current(credential: String): AiInstallationResponse
@@ -53,7 +63,7 @@ interface AiInstallationApi {
 class AiInstallationHttp(private val baseUrl: HttpUrl, private val telemetry: Telemetry = Telemetry.None,
     private val client: OkHttpClient = OkHttpClient()) : AiInstallationApi {
     private fun api(credential: String? = null, token: String? = null) = WindmillApi(baseUrl, { token }, client, telemetry = telemetry,
-        headers = credential?.let { mapOf("X-Windmill-Installation" to it) }.orEmpty())
+        headers = credential?.let { mapOf("X-Windmill-Installation" to it) }.orEmpty(), expected = AiAvailability::declaredUnavailable)
 
     override suspend fun issue(): AiInstallationResponse =
         api().send("POST", "/v1/ai/installations", AiInstallationRequest(), operation = "ai_installation")
@@ -155,10 +165,10 @@ class AiInstallation(
 
     private suspend fun credential(): Saved {
         existing()?.let { return it }
-        if (issuanceDeferred()) throw WindmillApiException.Refused(503, Refusal(code = unavailable))
+        if (issuanceDeferred()) throw WindmillApiException.Refused(503, Refusal(code = AiAvailability.anonymousUnavailable))
         val response = try { api.issue() }
         catch (failure: WindmillApiException.Refused) {
-            if (failure.status == 503 && failure.refusal.code == unavailable) state { values.write(mapOf(deferredKey to deferral())) }
+            if (failure.status == 503 && failure.refusal.code == AiAvailability.anonymousUnavailable) state { values.write(mapOf(deferredKey to deferral())) }
             throw failure
         }
         val credential = response.credential
@@ -238,7 +248,6 @@ class AiInstallation(
         private const val key = "installation.sealed"
         private const val bindingKey = "binding.sealed"
         private const val deferredKey = "issue.deferred"
-        private const val unavailable = "anonymous_ai_unavailable"
         private val validCredential = Regex("[A-Za-z0-9_-]{43}")
 
         fun onThisDevice(context: Context, api: AiInstallationApi, telemetry: Telemetry, version: String): AiInstallation {

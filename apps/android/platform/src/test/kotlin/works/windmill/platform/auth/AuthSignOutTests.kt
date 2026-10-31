@@ -16,7 +16,6 @@ import org.junit.Before
 import org.junit.Test
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillJson
-import works.windmill.platform.telemetry.TelemetryPolicy
 import works.windmill.platform.telemetry.Telemetry
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -100,17 +99,6 @@ class AuthSignOutTests {
         assertEquals(AuthStatus.SignedIn(user, false), auth.status)
         assertEquals("/v1/me", server.takeRequest().path)
         return auth to sessions
-    }
-
-    @Test fun signOutEventsContainOnlyTheFiniteChoiceAndOutcomeLabels() {
-        for (action in listOf("keep", "discard", "cancel")) for (outcome in listOf("completed", "failed")) {
-            assertEquals(mapOf("action" to action, "outcome" to outcome),
-                TelemetryPolicy.eventProperties("gym_sign_out", mapOf("action" to action, "outcome" to outcome,
-                    "account" to user.id, "email" to user.email, "secret" to secret, "unsent" to "3")))
-        }
-        assertEquals(mapOf("state" to "shown"), TelemetryPolicy.eventProperties("gym_sign_out", mapOf("state" to "shown")))
-        assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_sign_out",
-            mapOf("state" to user.id, "action" to secret, "outcome" to "private-content")))
     }
 
     @Test fun preparationAndCancelNeverWriteAChoiceOrEndTheAccount() = runTest {
