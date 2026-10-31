@@ -1,6 +1,6 @@
 # Barbell and dumbbell loads are 0 or more on every surface; the field shows a real minus sign
 
-**Status:** 🔨 Implemented, awaiting merge. The boards flip to 🚀 after merge.
+**Status:** 🚀 On main (`70ec2dbe`), not yet in a published release. Boards 02.21 and 03.33 are 🚀 In production.
 
 **Figma:**
 - 02.21 Movement editor, load below zero: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-39774) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40098)

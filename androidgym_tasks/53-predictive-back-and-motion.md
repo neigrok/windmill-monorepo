@@ -1,6 +1,6 @@
 # Predictive back and navigation motion: pushed screens follow the gesture, sheets keep the stock preview
 
-**Status:** Implemented, awaiting merge. The boards are 00.5 and 00.6, approved 2026-10-31.
+**Status:** 🚀 On main (`70ec2dbe`), not yet in a published release. Boards 00.5 and 00.6 are 🚀 In production.
 
 **Figma:**
 - 00.5 Pushed screen, predictive back (swipe starts · mid swipe · release): [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1743-26713) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1743-27031)

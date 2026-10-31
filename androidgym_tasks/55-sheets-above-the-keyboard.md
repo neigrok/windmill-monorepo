@@ -1,6 +1,6 @@
 # Sheets stay below the status bar when the keyboard opens
 
-**Status:** Implemented, awaiting merge.
+**Status:** 🚀 On main (`70ec2dbe`), not yet in a published release.
 
 **Figma** (each draws a sheet with the keyboard up and its handle clear of the status bar):
 - 02.24 Movement editor, Load keyboard: [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1452-22388). Its caption reads "Native IME insets resize the sheet".

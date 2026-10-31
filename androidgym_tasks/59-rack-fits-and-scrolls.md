@@ -1,6 +1,6 @@
 # The rack fits its number, scrolls as one at large text, and keeps a typed value when focus moves
 
-**Status:** Implemented, awaiting merge. The boards flip to 🚀 after merge.
+**Status:** 🚀 On main (`70ec2dbe`), not yet in a published release. Boards 03.34 and 03.35 are 🚀 In production.
 
 **Figma:**
 - 03.34 Rack, the numeral fits first: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40960) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41112)

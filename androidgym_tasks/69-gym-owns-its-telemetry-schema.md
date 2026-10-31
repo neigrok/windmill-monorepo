@@ -1,6 +1,6 @@
 # Gym owns its event schema; the observability doc is complete and checked
 
-**Status:** Refactor plus docs. Implemented on its task branch; not yet on main.
+**Status:** 🚀 On main (`70ec2dbe`). Refactor plus docs.
 
 **Current implementation**
 - **Dependency rule:** `:platform` owns `EventSchema`, `LabelSchema` and `EventSchemas` (`platform/telemetry/Telemetry.kt`) and registers only its own events (`account_delete`, `ai_installation_outcome`). `:gym` registers `gym_action` (`GymActions`), its other bounded events and the `onboarding_` prefix in `gym/telemetry/GymEvents.kt`; the app hands `GymEvents.schemas` to `AndroidTelemetry`. The AI doors declare their expected 503s through `AiAvailability` instead of `:platform` naming their operations. `LayeringTests.platformSourcesHoldNoGymLabel` keeps gym labels out of `:platform`.
