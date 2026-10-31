@@ -196,6 +196,9 @@ struct SetFields: View {
       failure = "The log didn’t answer — that set wasn’t changed."; return false
     }
     if case .gone = outcome.refusal { return true }
+    if case .invalid(let violation) = outcome.refusal, violation.rule == SetRules.loadFloor {
+      failure = "Enter 0 or more, or cancel to keep \(Readout.weight(original.weightKg))"; return false
+    }
     guard outcome.refusal == nil else { failure = gym.error; return false }
     original = gym.sets.first { $0.id == original.id } ?? value
     failure = nil; return true

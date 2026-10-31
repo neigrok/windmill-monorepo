@@ -62,6 +62,28 @@ class CreateMovementTargetTests {
         } } finally { scope.cancel() }
     }
 
+    @Test fun aBarbellLoadBelowZeroWaitsAndTheBlankLoadHintLeavesOnceALoadIsTyped() {
+        val hint = "kg blank: pick it at the rack the first time; after that, last time fills it."
+        val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
+        var movement by mutableStateOf(RoutineMovement(bench, bench))
+        var scheme by mutableStateOf(TargetEntry.Draft(rows = List(3) { TargetEntry.TypedSet(reps = "8") }, sets = "3"))
+        compose.setContent { GymMaterial {
+            MovementForm(movement, scheme, "Edit movement", "Done", { movement = it }, { scheme = it }, {}, {})
+        } }
+        compose.onNodeWithText(hint).assertExists()
+        compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("-12.5")
+        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("Load", "kg total", "−12.5")
+        compose.onNodeWithText(hint).assertDoesNotExist()
+        compose.onNodeWithText("Load, 0 or more.").assertExists()
+        compose.onNodeWithText("Check Load").assertExists()
+        compose.onNodeWithText("Done").assertIsNotEnabled()
+        compose.runOnIdle { movement = movement.equipped("other") }
+        compose.onNodeWithText("Load, 0 or more.").assertDoesNotExist()
+        compose.onNodeWithText("Done").assertIsEnabled()
+        compose.onNodeWithContentDescription("Load, kg").performTextClearance()
+        compose.onNodeWithText(hint).assertExists()
+    }
+
     @Test fun perSetLoadsShareAtomicSeparatorEditingAndKeepNegativeCaretAndZero() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
@@ -79,25 +101,25 @@ class CreateMovementTargetTests {
             }
             field.performClick().performTextClearance()
             field.performTextInput("-")
-            assertEditor("-", 1)
+            assertEditor("−", 1)
             compose.onNodeWithText("Done").assertIsNotEnabled()
             field.performTextInput("12.5")
-            assertEditor("-12.5", 5)
+            assertEditor("−12.5", 5)
             for (separator in listOf(".", ",")) {
                 field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 2, false) }
                 field.performTextInput(separator)
-                assertEditor("-12.5", 2)
+                assertEditor("−12.5", 2)
             }
             for (separator in listOf(",", ".")) {
                 field.performSemanticsAction(SemanticsActions.SetSelection) { it(3, 4, false) }
                 field.performTextInput(separator)
-                assertEditor("-12${separator}5", 4)
+                assertEditor("−12${separator}5", 4)
             }
             field.performSemanticsAction(SemanticsActions.SetSelection) { it(1, 4, false) }
             field.performTextInput("3.")
-            assertEditor("-3.5", 3)
+            assertEditor("−3.5", 3)
             field.performTextReplacement("1.2,3")
-            assertEditor("-3.5", 3)
+            assertEditor("−3.5", 3)
             field.performTextReplacement("0")
             assertEditor("0", 1)
             compose.onNodeWithText("Done").assertIsEnabled().performClick()

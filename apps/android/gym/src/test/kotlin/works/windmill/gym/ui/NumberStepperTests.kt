@@ -177,13 +177,13 @@ class NumberStepperTests {
         val field = compose.onNodeWithContentDescription("Load, kg total")
         field.performClick().performTextReplacement("-12.5")
         compose.runOnIdle {
-            assertEquals(listOf("-12.5"), drafts)
+            assertEquals(listOf("−12.5"), drafts)
             assertEquals(emptyList<String>(), commits)
             assertEquals(emptyList<HapticFeedbackType>(), sensations)
         }
         field.performImeAction()
         compose.runOnIdle {
-            assertEquals(listOf("-12.5"), commits)
+            assertEquals(listOf("−12.5"), commits)
             assertEquals(listOf(HapticFeedbackType.TextHandleMove), sensations)
         }
     }
@@ -489,7 +489,7 @@ class NumberStepperTests {
         }
         val field = compose.onNodeWithContentDescription("Load, kg added")
         field.performClick().performTextReplacement("-12345678901234567890.12345")
-        field.assertTextEquals("Load", "kg added", "-12345678901234567890.12345")
+        field.assertTextEquals("Load", "kg added", "−12345678901234567890.12345")
         val layouts = mutableListOf<TextLayoutResult>()
         field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertEquals(32.sp, layouts.single().layoutInput.style.fontSize)

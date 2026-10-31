@@ -1115,16 +1115,16 @@ import SyncTesting
   @Test func failedSetCommitRetainsRackOfferAndClocksUntilRetry() throws {
     let (harness, gym) = try fixture(), workout = try begin(gym), session = try #require(workout.session)
     harness.advance(ms: 20_000)
-    workout.weightKg = -25.5; workout.reps = 8
+    workout.weightKg = 25.5; workout.reps = 8
     #expect(workout.flushRack())
     let before = WorkoutClocks(session: session, sets: workout.sets, now: Instant(ms: harness.clock.nowMs()))
     harness.failNextCommit(); workout.logSet()
-    #expect(workout.sets.isEmpty && workout.weightKg == -25.5 && workout.reps == 8)
+    #expect(workout.sets.isEmpty && workout.weightKg == 25.5 && workout.reps == 8)
     #expect(workout.offerSession == session && workout.offerSets.isEmpty)
     #expect(WorkoutClocks(session: session, sets: workout.sets, now: Instant(ms: harness.clock.nowMs())) == before)
     #expect(workout.message == "Gym could not save this change. Try again.")
     workout.logSet()
-    #expect(workout.sets.count == 1 && workout.sets[0].weightKg == -25.5 && workout.message == nil)
+    #expect(workout.sets.count == 1 && workout.sets[0].weightKg == 25.5 && workout.message == nil)
     #expect(WorkoutClocks(session: session, sets: workout.sets, now: Instant(ms: harness.clock.nowMs())).sinceSetMs == 0)
   }
 
@@ -1214,7 +1214,7 @@ import SyncTesting
       for _ in 0..<100 where engine.status.online { try await Task.sleep(for: .milliseconds(2)) }
       #expect(!engine.status.online)
       let workout = try begin(gym)
-      workout.weightKg = -20; workout.reps = 8; workout.logSet()
+      workout.weightKg = 20; workout.reps = 8; workout.logSet()
       try await Task.sleep(for: .milliseconds(2))
       workout.weightKg = 35; workout.reps = 6; workout.logSet()
       let session = try #require(workout.session), retained = workout.sets
@@ -1245,7 +1245,7 @@ import SyncTesting
               "Replay diagnostics: \(telemetry.entries.withLock { $0.map { ($0.name, $0.properties) } })")
       #expect(restored.session?.id == session.id && restored.session?.isOpen == true && restored.walk == walk)
       #expect(restored.sets.map(\.id) == retained.map(\.id))
-      #expect(restored.sets.map(\.weightKg) == [-20, 35] && restored.sets.map(\.reps) == [8, 6])
+      #expect(restored.sets.map(\.weightKg) == [20, 35] && restored.sets.map(\.reps) == [8, 6])
       #expect(restored.sets.map(\.completedAt) == retained.map(\.completedAt))
       #expect(reopened.unsentSets(reopened.workout.sets).isEmpty && restored.canLog)
       #expect(try runner.read(Gym.scope) { try $0.commands().isEmpty })

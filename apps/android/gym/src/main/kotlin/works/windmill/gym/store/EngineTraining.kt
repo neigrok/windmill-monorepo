@@ -919,6 +919,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 refusal.violation.rule == NoteRules.title.path && refusal.violation.reason == Violation.Reason.Blank -> "a note needs a title"
                 refusal.violation.rule == NoteRules.title.path && refusal.violation.reason is Violation.Reason.TooLong -> "a title runs to 60 characters"
                 refusal.violation.rule == NoteRules.body.path && refusal.violation.reason is Violation.Reason.TooLong -> "a note runs to 500 bytes"
+                refusal.violation.rule == SetRules.loadFloor || refusal.violation.rule == RoutineRules.loadFloor ->
+                    works.windmill.gym.domain.TargetEntry.belowFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
                 else -> "Check ${refusal.violation.path.text.substringAfterLast('.')}."
             }
             is GymRefusal.Stale -> "stale" to "That changed. Open it again."

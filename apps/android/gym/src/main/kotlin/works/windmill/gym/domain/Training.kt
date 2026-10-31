@@ -21,6 +21,8 @@ data class Exercise(
     val aliases: List<String> = emptyList(),
     val loadCount: Int = works.windmill.gym.domain.sync.ExerciseRules.defaultLoadCount(equipment, id),
 ) {
+    val loadFloor: Double? get() = works.windmill.gym.domain.sync.ExerciseRules.loadFloor(equipment, loadCount)
+
     companion object {
         val loadings = listOf("barbell", "dumbbell", "machine", "bodyweight")
 

@@ -1,6 +1,6 @@
 # Barbell and dumbbell loads are 0 or more on every surface; the field shows a real minus sign
 
-**Status:** ✅ Ready for dev. The owner approved 02.21 and 03.33 on 2026-10-31, including iOS and web taking the same rule. Not started.
+**Status:** 🔨 Implemented on its branch, not merged. Kotlin, Swift and web pass the shared vectors; no server validates a load bound, so the backend is unchanged. The boards flip to 🚀 after merge.
 
 **Figma:**
 - 02.21 Movement editor, load below zero: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-39774) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40098)

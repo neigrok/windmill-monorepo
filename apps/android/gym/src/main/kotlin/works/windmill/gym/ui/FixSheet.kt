@@ -105,7 +105,7 @@ fun FixSheet(
     var reps by rememberSaveable(draftKey) { mutableIntStateOf(set.reps) }
     var rpe by rememberSaveable(draftKey) { mutableStateOf(set.rpe) }
     var note by rememberSaveable(draftKey) { mutableStateOf(set.note) }
-    val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg)
+    val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg, exercise?.loadFloor)
     val count = rememberNumberDraft(draftKey, NumberEntry.Field.Reps, reps.toDouble())
     val loadFeedback = rememberNumberStepperFeedback()
     var effortOpen by rememberSaveable(draftKey) { mutableStateOf(false) }
@@ -150,18 +150,16 @@ fun FixSheet(
                 Text("$movement · Set $setNumber", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
             }
         }
+        fun commitLoad(): NumberEditResult = load.read()?.let(::acceptLoad) ?: NumberEditResult.Refused
+        fun commitReps(): NumberEditResult = count.read()?.let(::acceptReps) ?: NumberEditResult.Refused
         NumberStepper(load.text, load::edit, "Load", unit,
-            onStep = { step ->
-                load.read()?.let { acceptLoad(Ladder.bump(it, if (step == NumberStep.Increase) 1 else -1, false)) }
-                    ?: NumberEditResult.Refused
-            },
-            onCommit = { load.read()?.let(::acceptLoad) ?: NumberEditResult.Refused },
+            onStep = { step -> load.bumped(if (step == NumberStep.Increase) 1 else -1, false)?.let(::acceptLoad) ?: NumberEditResult.Refused },
+            onCommit = ::commitLoad,
             size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
-            refusal = load.refusal, enabled = !busy, feedback = loadFeedback, onFocusChange = load::focus)
+            refusal = load.shownRefusal, enabled = !busy, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
+            onFocusChange = load::focus)
         LadderRow(load.reading.value ?: load.committed, onDial = { step, big ->
-            val value = load.read()
-            if (value != null) loadFeedback.accept(
-                acceptLoad(Ladder.bump(value, if (step == NumberStep.Increase) 1 else -1, big)), step)
+            load.bumped(if (step == NumberStep.Increase) 1 else -1, big)?.let { loadFeedback.accept(acceptLoad(it), step) }
         }, enabled = !busy)
         NumberStepper(count.text, count::edit, "Reps", "reps",
             onStep = { step ->
@@ -170,7 +168,7 @@ fun FixSheet(
                         .coerceAtMost(LoggedSetLimits.maxReps).toDouble())
                 } ?: NumberEditResult.Refused
             },
-            onCommit = { count.read()?.let(::acceptReps) ?: NumberEditResult.Refused },
+            onCommit = ::commitReps,
             refusal = count.refusal, enabled = !busy, onFocusChange = count::focus,
             decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble())
         ExposedDropdownMenuBox(expanded = effortOpen, onExpandedChange = { if (!busy) effortOpen = it }) {
@@ -224,7 +222,7 @@ fun FixSheet(
         }
         Button(
             onClick = {
-                if (busy || tooLong) return@Button
+                if (busy || tooLong || load.reading.belowFloor) return@Button
                 val loadValue = load.read()
                 val repsValue = count.read()
                 if (loadValue == null || repsValue == null) {
@@ -256,7 +254,7 @@ fun FixSheet(
                     }
                 }
             },
-            enabled = !busy && !tooLong,
+            enabled = !busy && !tooLong && !load.reading.belowFloor,
             modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
             shape = RoundedCornerShape(WindmillRadius.lg),
             colors = ButtonDefaults.buttonColors(

@@ -128,12 +128,14 @@ public struct AppendSet: Action {
   }
 
   // The phone's checks before a set joins a session: the session still takes a set at that time, the catalogue knows its
-  // movement, its identity is fresh and a number is left for it. `planned` are the sets the same plan appends before it.
+  // movement, its load meets that movement's floor, its identity is fresh and a number is left for it. `planned` are the
+  // sets the same plan appends before it.
   public static func refusal(appending valid: Valid<TrainingSet>, to session: Session, state: TrainingState,
                              planned: [TrainingSet] = []) throws(Violation) -> GymRefusal? {
     let value = valid.value
     guard SessionRules.lateSetLands(session, completedAt: value.completedAt) else { return .sessionFinished(Refused(Gym.Codes.sessionFinished, subject: value.id.ref, path: .predicted)) }
-    guard state.catalogue.find(value.exerciseId) != nil else { return .unknownExercise(Refused(Gym.Codes.unknownExercise, subject: value.id.ref, path: .predicted)) }
+    guard let movement = state.catalogue.find(value.exerciseId) else { return .unknownExercise(Refused(Gym.Codes.unknownExercise, subject: value.id.ref, path: .predicted)) }
+    try movement.floored(value.weightKg, rule: SetRules.loadFloor, at: "weightKg")
     guard !(state.sets + planned).contains(where: { $0.id == value.id }) else { return .taken(value.id.ref, .predicted) }
     let numbered = planned.filter { $0.sessionId == value.sessionId && $0.exerciseId == value.exerciseId }.count
     guard let next = SetRules.nextNumber(state.sets, sessionId: value.sessionId, exerciseId: value.exerciseId), next + numbered <= SetRules.maxNumber else {
@@ -170,6 +172,7 @@ public struct CorrectSet: Action {
     }
     let valid = try Valid(correction, fields: fields, at: loaded.moment)
     let changed = fields.filter { valid.value.fields[$0] != old.fields[$0] }
+    if changed.contains("weightKg") { try loaded.catalogue.find(old.exerciseId)?.floored(valid.value.weightKg, rule: SetRules.loadFloor, at: "weightKg") }
     guard !changed.isEmpty else { return .unchanged(()) }
     var plan = Plan(); plan.update(valid, fields: changed); return .write(plan)
   }

@@ -246,6 +246,7 @@ export const SetRules = Object.freeze({
   rpe: new NumberSpec('set.rpe', { min: 1, max: 10, quantum: 0.1 }),
   note: new TextSpec('set.note', { unit: 'bytes', min: 0, max: 4000, trim: false, nfc: false }),
   maxNumber: 2_147_483_647,
+  loadFloor: 'set.loadFloor',
   /** @param {readonly TrainingSetValue[]} sets @param {Id<SessionValue>} sessionId @param {Id<ExerciseValue>} exerciseId */
   nextNumber(sets, sessionId, exerciseId) {
     const numbers = sets.filter((set) => set.sessionId.equals(sessionId) && set.exerciseId.equals(exerciseId))

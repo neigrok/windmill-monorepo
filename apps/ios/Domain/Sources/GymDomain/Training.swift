@@ -124,8 +124,9 @@ public enum SetRules {
   public static let rpe = NumberSpec("set.rpe", min: 1, max: 10, quantum: 0.1)
   public static let note = TextSpec("set.note", unit: .bytes, min: 0, max: 4000, trim: false, nfc: false)
   public static let maxNumber = 2_147_483_647
+  public static let loadFloor = "set.loadFloor"
   static let rules: [Rule] = [.local(weightKg), .local(reps), .local(rpe), .local(note),
-                              .local("set.completedAt", subject: TrainingSet.type),
+                              .local("set.completedAt", subject: TrainingSet.type), .local(loadFloor, subject: TrainingSet.type),
                               .local("set.identity", subject: TrainingSet.type), .local("set.setNumber", subject: TrainingSet.type)]
 
   public static func nextNumber(_ sets: [TrainingSet], sessionId: ID<Session>, exerciseId: ID<Exercise>) -> Int? {

@@ -56,10 +56,11 @@ internal fun MovementForm(
     busy: Boolean = false,
     refusal: String? = null,
     movementEditable: Boolean = true,
+    floor: Double? = movement.current.loadFloor,
 ) {
     val skin = LocalGymColors.current
     val problem = Program.nameProblem(movement.current.name)
-    val valid = problem == null && scheme?.reading !is TargetEntry.Reading.Refused
+    val valid = problem == null && scheme?.reading(floor) !is TargetEntry.Reading.Refused
     val input = remember {
         PlatformTextInputInterceptor { request, next ->
             next.startInputMethod(object : PlatformTextInputMethodRequest {
@@ -88,7 +89,7 @@ internal fun MovementForm(
                     MovementFields(movement.current.name, movement.current.equipment, movement.current.loadCount,
                         onName = { onMovement(movement.named(it)) }, onEquipment = { onMovement(movement.equipped(it)) },
                         enabled = !busy && movementEditable, problem = problem.takeIf { movement.current.name.isNotEmpty() })
-                    scheme?.let { RoutineTargets(it, movement, onScheme, enabled = !busy, creating = creating) }
+                    scheme?.let { RoutineTargets(it, movement, floor, onScheme, enabled = !busy, creating = creating) }
                     refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.error,
                         modifier = Modifier.semantics { error(it) }) }
                 }
@@ -109,13 +110,14 @@ internal fun MovementForm(
 private fun RoutineTargets(
     scheme: TargetEntry.Draft,
     movement: RoutineMovement,
+    floor: Double?,
     onChange: (TargetEntry.Draft) -> Unit,
     enabled: Boolean,
     creating: Boolean,
 ) {
     val skin = LocalGymColors.current
     val shown = TargetEntry.shown(scheme.rows, scheme.sets)
-    val reading = scheme.reading
+    val reading = scheme.reading(floor)
     val refused = reading as? TargetEntry.Reading.Refused
     val perSet = scheme.varyBySet && scheme.sets.isNotBlank() && refused?.field != TargetEntry.Field.Sets
     val headFault = refused?.takeIf { !perSet && (TargetEntry.inTheHead(it, shown) || it.field == TargetEntry.Field.Sets) }
@@ -127,7 +129,7 @@ private fun RoutineTargets(
     fun filled(rows: List<TargetEntry.TypedSet>) = update(scheme.copy(rows = rows + scheme.rows.drop(shown.size)))
     fun stepped(field: TargetEntry.Field, direction: Int): NumberEditResult {
         if (reading is TargetEntry.Reading.Refused) return NumberEditResult.Refused
-        val next = scheme.stepped(field, direction)
+        val next = scheme.stepped(field, direction, floor)
         if (next == scheme) return NumberEditResult.Unchanged
         update(next)
         return NumberEditResult.Changed
@@ -161,7 +163,7 @@ private fun RoutineTargets(
                 enabled && scheme.sets.isNotBlank(), decimal = true,
                 onTyped = { update(scheme.copy(rows = TargetEntry.withWeight(scheme.rows, it))) },
                 onStep = { stepped(TargetEntry.Field.Weight, it) }, reading = reading)
-            if (!creating) Text("kg blank: pick it at the rack the first time; after that, last time fills it.",
+            if (!creating && shown.all { it.weight.isBlank() }) Text("kg blank: pick it at the rack the first time; after that, last time fills it.",
                 style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
         }
         if (!creating || scheme.varyBySet) {

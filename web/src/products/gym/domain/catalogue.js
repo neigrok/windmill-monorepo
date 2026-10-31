@@ -5,7 +5,7 @@ import { EntityType, Fields, Id, compareText } from '../../../platform/domain-ki
 import { Plan } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
-import { Path } from '../../../platform/domain-kit/values.js';
+import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ExerciseRules, GymRefusals } from './gymRules.js';
 import { SeedExercises } from './seedExercises.js';
@@ -35,6 +35,15 @@ export class ExerciseValue {
 
   fields() {
     return { name: this.name, pattern: this.pattern, equipment: this.equipment, stepKg: this.stepKg };
+  }
+
+  get loadFloor() { return loadFloor(this.equipment, this.loadCount); }
+
+  /** @param {number} weightKg @param {string} rule @param {Path} path */
+  floored(weightKg, rule, path) {
+    const floor = this.loadFloor;
+    if (floor !== null && weightKg < floor) throw new Violation(rule, path, { kind: 'below', min: floor });
+    return weightKg;
   }
 }
 
@@ -106,6 +115,12 @@ export function loadingChoice(equipment, loadCount) {
   if (equipment === 'barbell') return 'barbell';
   if (equipment === 'dumbbell' && loadCount === 2) return 'dumbbell';
   return 'other';
+}
+
+// A barbell or a pair of dumbbells carries 0 or more; every other loading keeps its sign, an assisted machine's included.
+/** @param {string} equipment @param {number} loadCount @returns {number | null} */
+export function loadFloor(equipment, loadCount) {
+  return loadingChoice(equipment, loadCount) === 'other' ? null : 0;
 }
 
 /** @param {string} equipment */

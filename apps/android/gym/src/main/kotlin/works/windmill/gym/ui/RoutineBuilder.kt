@@ -136,6 +136,10 @@ internal sealed interface BuilderSheet {
         val discarding: Boolean = false,
     ) : BuilderSheet {
         val dirty: Boolean get() = movement != opening || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets
+        // The floor binds a line the save touches, as the domain does: new, retargeted, or a movement whose loading changed.
+        fun floor(of: RoutineMovement): Double? =
+            if (adding || creating || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets || of.loadingChanged)
+                of.current.loadFloor else null
     }
     @Serializable
     data object Picker : BuilderSheet
@@ -282,7 +286,7 @@ fun RoutineBuilder(
                                 if (closing || saving) return@commit
                                 val latest = sheet as? BuilderSheet.Target
                                 val edited = latest?.movement ?: movement
-                                val reading = latest?.scheme?.reading ?: open.scheme.reading
+                                val reading = (latest?.scheme ?: open.scheme).reading((latest ?: open).floor(edited))
                                 val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
                                 telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
                                     "outcome" to if (valid) "ok" else "refused"))
@@ -291,7 +295,7 @@ fun RoutineBuilder(
                                     onDraft(draft.staging(edited, reading))
                                     close()
                                 }
-                            }, creating = open.creating, busy = closing)
+                            }, creating = open.creating, busy = closing, floor = open.floor(movement))
                     }
                     BuilderSheet.Picker -> MovementPicker(
                         catalog = store.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,

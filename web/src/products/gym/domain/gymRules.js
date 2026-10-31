@@ -96,6 +96,7 @@ export const RoutineRules = Object.freeze({
   entries: new CountSpec('routine.entries', { min: 1, max: 50 }),
   exercise: new TextSpec('routine.entries.exerciseId', { unit: 'chars', min: 1, max: 64, trim: false, nfc: false }),
   targets: targetSpecs('routine.entries'),
+  loadFloor: 'routine.loadFloor',
 });
 
 // The rules every proposal's change lines obey, each proposal type under its own paths: a routine's at `proposal.*`, a
@@ -149,7 +150,7 @@ let book = null;
 
 export const GymRules = Object.freeze({
   get specs() {
-    const { targets, ...routine } = RoutineRules;
+    const { targets, loadFloor, ...routine } = RoutineRules;
     /** @param {ChangeRules} rules */
     const changeSpecs = ({ before, after, zeroTarget, ...change }) => [...Object.values(change), ...Object.values(before), ...Object.values(after)];
     return Object.freeze([...Object.values(NoteRules), WeighInRules.kg, PreferencesRules.units,
@@ -165,7 +166,7 @@ export const GymRules = Object.freeze({
       ...GymRules.specs.map((spec) => Rule.localSpec(spec)),
       Rule.localCheck(WeighInRules.day, 'weighin', ['bad-instant']),
       Rule.localCheck('coach.import', 'routine'),
-      ...['routine.order', 'routine.zeroTarget', ProposalRules.change.zeroTarget, WorkoutProposalRules.change.zeroTarget, 'set.completedAt', 'set.identity',
+      ...['routine.order', 'routine.zeroTarget', RoutineRules.loadFloor, ProposalRules.change.zeroTarget, WorkoutProposalRules.change.zeroTarget, 'set.completedAt', 'set.identity', SetRules.loadFloor,
         'set.setNumber', 'session.startedAt', 'session.finishedAt', 'session.sets', 'session.requestId', WorkoutPlanRules.absent,
         WorkoutPlanRules.duplicate, WorkoutPlanRules.operation]
         .map((name) => Rule.localCheck(name, name.split('.')[0] ?? name)),

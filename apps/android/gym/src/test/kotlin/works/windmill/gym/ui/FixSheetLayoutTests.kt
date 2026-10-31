@@ -81,7 +81,7 @@ class FixSheetLayoutTests {
         }
         val field = compose.onNodeWithContentDescription("Load, kg")
         field.performScrollTo().performClick().performTextReplacement("-499.99")
-        field.assertTextEquals("Load", "kg", "-499.99")
+        field.assertTextEquals("Load", "kg", "−499.99")
         val layouts = mutableListOf<TextLayoutResult>()
         field.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
         assertFalse(layouts.single().hasVisualOverflow)
@@ -124,7 +124,7 @@ class FixSheetLayoutTests {
         }
         for ((kind, unit) in listOf("barbell" to "kg total", "dumbbell" to "kg each", "bodyweight" to "kg added", "machine" to "kg total", "legacy-cable" to "kg")) {
             compose.runOnIdle { equipment.value = kind }
-            compose.onNodeWithContentDescription("Load, $unit").assertTextEquals("Load", unit, "-12.5")
+            compose.onNodeWithContentDescription("Load, $unit").assertTextEquals("Load", unit, "−12.5")
         }
     }
 

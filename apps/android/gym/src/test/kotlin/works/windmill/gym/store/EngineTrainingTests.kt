@@ -211,7 +211,7 @@ class EngineTrainingTests {
             val pair = room.training.catalogue().first { it.id == id }
             room.training.startSession(SessionStart("session1", room.now))
             room.training.appendSet("session1", SetWrite("set00001", id, 16.0, 8, completedAt = ++room.now))
-            room.training.appendSet("session1", SetWrite("set00002", id, -5.0, 4, completedAt = ++room.now))
+            room.training.appendSet("session1", SetWrite("set00002", id, 0.0, 4, completedAt = ++room.now))
             room.training.finishSession("session1", ++room.now)
             val history = room.training.session("session1")!!
             assertEquals(256.0, SessionSummary(history.session, history.sets, listOf(pair)).tonnageKg)

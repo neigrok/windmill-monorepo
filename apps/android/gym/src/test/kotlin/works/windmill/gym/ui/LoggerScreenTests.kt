@@ -209,7 +209,7 @@ class LoggerScreenTests {
         }
         try { logger(scope, haptics = haptic).use { room ->
             val load = compose.onNodeWithContentDescription("Load, kg total")
-            load.performClick().performTextReplacement("-12,5")
+            load.performClick().performTextReplacement("12,5")
             compose.runOnIdle {
                 assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
                 assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
@@ -217,7 +217,7 @@ class LoggerScreenTests {
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
                 val saved = room.store.sets.single()
-                assertEquals(saved.copy(weightKg = -12.5, reps = 5, exerciseId = "bench-press", setNumber = null), saved)
+                assertEquals(saved.copy(weightKg = 12.5, reps = 5, exerciseId = "bench-press", setNumber = null), saved)
                 assertEquals(emptyList<HapticFeedbackType>(), sensations)
             }
         } } finally { scope.cancel() }

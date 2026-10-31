@@ -1,5 +1,5 @@
 import { failureReason } from './errors.js';
-import { setLoadLabel } from './log.js';
+import { fmtKg, setLoadLabel } from './log.js';
 
 // The RPE band a lifter reads a set in: six to ten, by halves. The rungs are COUNTED off the band so
 // the band is the only thing this file states — and the leading seat is no rpe at all, because a set
@@ -75,7 +75,13 @@ export function deletedLine(set) {
   return `${setLoadLabel(set)} is out of the log.`;
 }
 
+// A fix under the movement's load floor keeps the stored load; the sentence names both.
+export function fixLoadFloorLine(floor, kept) {
+  return `Enter ${fmtKg(floor)} or more, or cancel to keep ${fmtKg(kept)}`;
+}
+
 export function fixFailure(error) {
+  if (error?.code === 'load-floor') return error.sentence;
   if (['unknown-record', 'record-dead'].includes(error?.code)) return 'That set isn’t in this workout any more.';
   return `That fix didn’t land — ${failureReason(error)}.`;
 }

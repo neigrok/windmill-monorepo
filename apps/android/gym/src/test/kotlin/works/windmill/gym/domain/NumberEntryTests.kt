@@ -23,6 +23,26 @@ class NumberEntryTests {
         }
     }
 
+    @Test fun aFloorRefusesALoadUnderItAsTypedAndNamesTheKeptValue() {
+        assertEquals(NumberEntry.Reading(null, "Enter 0 or more, or cancel to keep 75", belowFloor = true),
+            NumberEntry.read("−12.5", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
+        assertEquals(NumberEntry.Reading(null, "Enter 0 or more, or cancel to keep 75", belowFloor = true),
+            NumberEntry.read("-0.01", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
+        assertEquals(NumberEntry.Reading(0.0, "kg"), NumberEntry.read("-0.004", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
+        assertEquals(NumberEntry.Reading(0.0, "kg"), NumberEntry.read("0", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
+        assertEquals(NumberEntry.Reading(-12.5, "kg"), NumberEntry.read("−12.5", NumberEntry.Field.Load, keeping = 75.0, floor = null))
+        assertEquals(NumberEntry.Reading(-10.0, "kg"), NumberEntry.read("−10", NumberEntry.Field.Load, keeping = -10.0, floor = 0.0))
+        assertEquals(NumberEntry.Reading(null, "Enter 0 or more, or cancel to keep −10", belowFloor = true),
+            NumberEntry.read("−7.5", NumberEntry.Field.Load, keeping = -10.0, floor = 0.0))
+    }
+
+    @Test fun aStepStopsAtTheFloorAndAnUnflooredStepKeepsItsSign() {
+        assertEquals(listOf(0.0, 0.0, 1.0, -1.0, -5.0),
+            listOf(NumberEntry.bumped(1.0, -1, big = true, floor = 0.0), NumberEntry.bumped(0.0, -1, big = false, floor = 0.0),
+                NumberEntry.bumped(0.0, 1, big = false, floor = 0.0), NumberEntry.bumped(0.0, -1, big = false, floor = null),
+                NumberEntry.bumped(-2.5, -1, big = true, floor = null)))
+    }
+
     @Test fun loadRoundingUsesHundredthsAndHalfAwayFromZero() {
         val cases = mapOf(
             "102.505" to 102.51,

@@ -217,6 +217,7 @@ export class SaveRoutinePlan {
     const currentFields = current.fields();
     const touched = uniqueInByteOrder(Object.keys(currentFields)).filter((field) => isNew || !sameJson(currentFields[field], baseFields[field]));
     const valid = new Valid(current, loaded.moment, touched);
+    this.floor(valid.value, loaded.catalogue);
     /** @type {Record<string, Json> | undefined} */
     const storedFields = loaded.routine?.fields();
     const changed = touched.filter((field) => !sameJson(storedFields?.[field], valid.written[field]));
@@ -290,6 +291,24 @@ export class SaveRoutinePlan {
     }
     if (!sameJson(former, loaded.formerNames)) plan.device(Catalogue.formerNamesKey, former);
     return wrote ? Decision.write(plan, current.id) : Decision.unchanged(current.id);
+  }
+
+  // A target load meets its movement's floor on each line whose targets or staged movement loading this save changes.
+  /** @param {RoutineValue} routine @param {Catalogue} catalogue */
+  floor(routine, catalogue) {
+    routine.entries.forEach((entry, index) => {
+      const staged = this.movements.find((movement) => movement.current.id.equals(entry.exerciseId)) ?? null;
+      const before = this.base.entries.find((line) => line.exerciseId.equals(entry.exerciseId));
+      const retargeted = !sameJson(before?.sets?.map((set) => set.json) ?? null, entry.sets?.map((set) => set.json) ?? null);
+      const reloaded = staged !== null && (staged.base === null || staged.base.equipment !== staged.current.equipment
+        || staged.base.loadCount !== staged.current.loadCount);
+      if (!retargeted && !reloaded) return;
+      const movement = staged?.current ?? catalogue.find(entry.exerciseId);
+      if (movement === null) return;
+      entry.sets?.forEach((set, at) => {
+        if (set.weightKg !== null) movement.floored(set.weightKg, RoutineRules.loadFloor, new Path('entries').plus(index).plus('sets').plus(at).plus('weightKg'));
+      });
+    });
   }
 }
 

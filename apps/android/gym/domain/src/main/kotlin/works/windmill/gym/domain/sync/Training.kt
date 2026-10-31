@@ -74,7 +74,8 @@ object SetRules {
     val reps = NumberSpec("set.reps", 1.0, 500.0, integer = true)
     val rpe = NumberSpec("set.rpe", 1.0, 10.0, quantum = 0.1)
     val note = TextSpec("set.note", MeasureUnit.bytes, 0, 4000, trim = false, nfc = false)
-    val rules = listOf(weightKg, reps, rpe, note).map(Rule::local) + Rule.local("set.completedAt", Gym.Types.set)
+    const val loadFloor = "set.loadFloor"
+    val rules = listOf(weightKg, reps, rpe, note).map(Rule::local) + Rule.local("set.completedAt", Gym.Types.set) + Rule.local(loadFloor, Gym.Types.set)
     fun nextNumber(sets: List<TrainingSet>, sessionId: Id<Session>, exerciseId: Id<Exercise>): Int? {
         val last = sets.filter { it.sessionId == sessionId && it.exerciseId == exerciseId }.maxOfOrNull { it.setNumber ?: 0 } ?: 0
         return if (last == Int.MAX_VALUE) null else last + 1

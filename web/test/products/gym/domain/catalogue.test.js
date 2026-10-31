@@ -5,7 +5,7 @@ import test from 'node:test';
 import { GymProduct } from '../../../../../packages/api-contract/sync/reference/gym/product.js';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
-import { Catalogue, CreateExercise, EditExercise, Exercise, ExerciseName, ExerciseValue, RenameExercise } from '../../../../src/products/gym/domain/catalogue.js';
+import { Catalogue, CreateExercise, EditExercise, Exercise, ExerciseName, ExerciseValue, RenameExercise, loadFloor } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
@@ -24,6 +24,11 @@ function exercise(phone, id) {
   assert.ok(value);
   return { id: value.id.record, ...value.fields(), aliases: value.aliases };
 }
+
+test('the load floor is 0 for a barbell or a pair of dumbbells and absent for every other loading', () => {
+  assert.deepEqual([['barbell', 1], ['dumbbell', 2], ['dumbbell', 1], ['machine', 1], ['bodyweight', 1], ['cable', 1], ['kettlebell', 1], ['other', 1]]
+    .map(([equipment, count]) => loadFloor(String(equipment), Number(count))), [0, 0, null, null, null, null, null, null]);
+});
 
 test('a failed catalogue create writes nothing and retry retains its id through restart and sync', async (t) => {
   const a = await open(t);

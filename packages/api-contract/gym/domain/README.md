@@ -85,6 +85,14 @@ presentation read: it does not convert loads or volume. Its shared read cases us
 `{operation:"loadUnit", equipment?, loadCount}`. Screen formatters insert a space before this unit;
 Coach action and review presentation keeps its existing formatter.
 
+**Load floor.** `ExerciseRules.loadFloor` takes resolved `equipment` and `loadCount`: a movement whose
+loading choice is barbell or dumbbell (two dumbbells) has a floor of 0; every other loading, one
+dumbbell included, keeps its sign. `AppendSet` refuses a load under the floor with
+`set.loadFloor` (`reason` `below`, `min` 0) once the catalogue resolves the movement; `CorrectSet`
+refuses it only when the correction changes the load. `SaveRoutinePlan` refuses a target load under
+the floor with `routine.loadFloor` at `entries.<i>.sets.<j>.weightKg` on each line whose targets
+changed or whose staged movement changed its loading; a line the save leaves alone keeps its loads.
+
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 `ImportCoachRoutineBatch` takes the captured replica, full result identity, a supplied SHA-256 fingerprint of the normalized payload, a bounded device receipt key, preassigned routine identities and required custom movements. The adapter derives `rack:coachImport` plus 48 lowercase hexadecimal SHA-256 digits from the result identity; its 59-character rack suffix fits the existing device-key grammar. One Plan writes every record and that receipt together. A matching receipt returns the same identities without writes; a full result-identity or fingerprint conflict refuses. Receipt keys are separate per result so Add preserves unrelated account and anonymous receipts. Record-identity adoption rewrites the receipt's routine and movement references while retaining its fingerprint. Swift also replays, without writing, a result an earlier iOS build imported under the single `rack:coachOnboarding` key.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.

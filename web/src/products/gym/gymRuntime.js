@@ -17,19 +17,20 @@ import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
 import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg } from './domain/catalogue.js';
-import { GymRefusals } from './domain/gymRules.js';
+import { GymRefusals, RoutineRules } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
 import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue } from './domain/routines.js';
 import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal, ProposalState,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
-import { Session, SessionRules, TrainingSet } from './domain/training.js';
+import { Session, SessionRules, SetRules, TrainingSet } from './domain/training.js';
 import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
+import { fixLoadFloorLine } from './fix.js';
 import { FULL_LINE } from './notes/notes.js';
-import { NAME_IT_TO_SAVE_IT } from './routines.js';
+import { loadFloorLine, NAME_IT_TO_SAVE_IT } from './routines.js';
 import { fromDisplayUnit, weightUnit } from './units.js';
 
 const SCOPE = 'self/gym';
@@ -98,9 +99,14 @@ export function namedZone(timeZone) {
   } };
 }
 
-export function gymRefusalError(refused) {
+// `kept` is the stored load a refused fix leaves in place, where the call site knows it.
+export function gymRefusalError(refused, { kept = null } = {}) {
   if (refused.kind === 'invalid') {
     const violation = refused.violation;
+    if (violation.rule === SetRules.loadFloor && kept !== null) {
+      return new GymRefusal('load-floor', { sentence: fixLoadFloorLine(violation.reason.min, kept) });
+    }
+    if (violation.rule === RoutineRules.loadFloor) return new GymRefusal('load-floor', { sentence: loadFloorLine(violation.reason.min) });
     let sentence;
     if (violation.rule === 'weighin.day') sentence = violation.reason.custom === 'future' ? REFUSALS.future : 'could not read that date';
     if (violation.rule === 'weighin.kg') sentence = violation.reason.kind === 'notANumber' ? REFUSALS.notNumber : REFUSALS.bounds;
@@ -403,7 +409,9 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
           ? Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', id.ref, null, 'predicted')))
           : loaded.action.decide(loaded.loaded),
       });
-      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      if (outcome.kind === 'refused') {
+        throw gymRefusalError(outcome.refusal, { kept: read((reader) => reader.repository(TrainingSet).find(id, 'drawn'))?.weightKg ?? null });
+      }
       event('set-correct', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
       return read((reader) => setDocument(reader.repository(TrainingSet).find(id, 'drawn')));
     }),

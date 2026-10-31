@@ -23,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.FixOrigin
@@ -53,13 +54,43 @@ class FixSheetNumberEntryTests {
         if (restoration == null) compose.setContent(content) else restoration.setContent(content)
     }
 
+    private fun loadedSheet(saved: MutableList<SetFix>, exercise: Exercise) {
+        val set = TrainingSet("set_1", exerciseId = exercise.id, setNumber = 1, weightKg = 75.0, reps = 8, completedAtMs = 0)
+        compose.setContent { GymMaterial {
+            FixSheet(set, exercise.name, 1, null, onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {},
+                exercise = exercise)
+        } }
+    }
+
+    @Test fun aBarbellLoadBelowZeroIsRefusedWithAMinusSignAndSaveFixWaits() {
+        val saved = mutableListOf<SetFix>()
+        loadedSheet(saved, Exercise("bench-press", "Bench Press", "press", "barbell", 2.5))
+        compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("-12.5")
+        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("Load", "kg total", "−12.5")
+        compose.onNodeWithText("Enter 0 or more, or cancel to keep 75").assertExists()
+        compose.onNodeWithText("Save fix").performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("0")
+        compose.onNodeWithText("Enter 0 or more, or cancel to keep 75").assertDoesNotExist()
+        compose.onNodeWithText("Save fix").performScrollTo().assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = 0.0)), saved) }
+    }
+
+    @Test fun aBodyweightLoadBelowZeroKeepsItsSign() {
+        val saved = mutableListOf<SetFix>()
+        loadedSheet(saved, Exercise("chin-up", "Chin Up", "pull", "bodyweight", 2.5))
+        compose.onNodeWithContentDescription("Load, kg added").performClick().performTextReplacement("-12.5")
+        compose.onNodeWithText("Enter 0 or more, or cancel to keep 75").assertDoesNotExist()
+        compose.onNodeWithText("Save fix").performScrollTo().assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -12.5)), saved) }
+    }
+
     @Test fun signedCommaLoadCommitsOnDoneAndSaveContainsOnlyTheChangedFact() {
         val saved = mutableListOf<SetFix>()
         val sensations = mutableListOf<HapticFeedbackType>()
         sheet(saved, sensations)
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-102,505")
         compose.onNodeWithContentDescription("Load, kg").performImeAction()
-        compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "-102.51")
+        compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "−102.51")
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = -102.51)), saved)
@@ -130,7 +161,7 @@ class FixSheetNumberEntryTests {
         field.performImeAction()
         field.performClick().performTextReplacement("-")
         compose.runOnIdle { assertNotNull(cancel); cancel!!() }
-        field.assertTextEquals("Load", "kg", "-12.5")
+        field.assertTextEquals("Load", "kg", "−12.5")
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -12.5)), saved) }
     }
@@ -187,7 +218,7 @@ class FixSheetNumberEntryTests {
         sheet(saved, restoration = restoration)
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-12,5")
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "-12,5")
+        compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "−12,5")
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -12.5)), saved) }
     }

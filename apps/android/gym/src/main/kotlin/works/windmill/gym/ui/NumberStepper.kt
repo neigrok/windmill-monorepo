@@ -85,7 +85,9 @@ enum class NumberEditResult { Changed, Unchanged, Refused }
 
 private val numberStepperBuffer = Regex("[-+−]?(?:(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)(?:[eE][-+−]?[0-9]*)?|[.,])?")
 
-internal fun numberStepperEdit(current: TextFieldValue, next: TextFieldValue): TextFieldValue {
+// A typed hyphen becomes the minus sign U+2212, the one every load readout draws.
+internal fun numberStepperEdit(current: TextFieldValue, typed: TextFieldValue): TextFieldValue {
+    val next = if ('-' in typed.text) typed.copy(text = typed.text.replace('-', '−')) else typed
     if (next.text == current.text || numberStepperBuffer.matches(next.text.trim())) return next
     if (next.text.length < current.text.length) {
         var from = 0

@@ -11,19 +11,23 @@ import androidx.compose.runtime.setValue
 import works.windmill.gym.domain.NumberEntry
 import works.windmill.gym.domain.Readout
 
-internal class NumberDraft(val field: NumberEntry.Field, initial: Double) {
+internal class NumberDraft(val field: NumberEntry.Field, initial: Double, val floor: Double? = null) {
     var committed by mutableDoubleStateOf(initial)
         private set
-    var text by mutableStateOf(NumberEntry.normaliseSign(Readout.weight(initial)))
+    var text by mutableStateOf(Readout.weight(initial))
         private set
     var refusal by mutableStateOf<String?>(null)
         private set
     var focused by mutableStateOf(false)
         private set
 
-    val reading: NumberEntry.Reading get() = NumberEntry.read(text, this.field, committed)
+    val reading: NumberEntry.Reading get() = NumberEntry.read(text, this.field, committed, floor)
 
-    val isEdited: Boolean get() = text != NumberEntry.normaliseSign(Readout.weight(committed))
+    val shownRefusal: String? get() = refusal ?: reading.message.takeIf { reading.belowFloor }
+
+    val isEdited: Boolean get() = text != Readout.weight(committed)
+
+    val canDecrease: Boolean get() = floor == null || (reading.value ?: committed) > floor
 
     fun edit(raw: String) {
         text = raw
@@ -41,6 +45,8 @@ internal class NumberDraft(val field: NumberEntry.Field, initial: Double) {
         return result.value
     }
 
+    fun bumped(direction: Int, big: Boolean): Double? = read()?.let { NumberEntry.bumped(it, direction, big, floor) }
+
     fun accept(value: Double): NumberEditResult {
         val changed = value != committed
         committed = value
@@ -54,20 +60,20 @@ internal class NumberDraft(val field: NumberEntry.Field, initial: Double) {
     }
 
     fun cancel() {
-        text = NumberEntry.normaliseSign(Readout.weight(committed))
+        text = Readout.weight(committed)
         refusal = null
     }
 }
 
 @Composable
-internal fun rememberNumberDraft(key: String, field: NumberEntry.Field, value: Double): NumberDraft {
-    val draft = rememberSaveable(key, field, saver = listSaver(
+internal fun rememberNumberDraft(key: String, field: NumberEntry.Field, value: Double, floor: Double? = null): NumberDraft {
+    val draft = rememberSaveable(key, field, floor, saver = listSaver(
         save = { listOf(it.committed, it.text, it.refusal.orEmpty()) },
-        restore = { NumberDraft(field, it[0] as Double).apply {
+        restore = { NumberDraft(field, it[0] as Double, floor).apply {
             edit(it[1] as String)
             (it[2] as String).takeIf(String::isNotEmpty)?.let(::refuse)
         } },
-    )) { NumberDraft(field, value) }
+    )) { NumberDraft(field, value, floor) }
     SideEffect { if (draft.committed != value) draft.accept(value) }
     return draft
 }

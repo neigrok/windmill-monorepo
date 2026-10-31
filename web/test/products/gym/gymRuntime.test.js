@@ -285,6 +285,17 @@ test('training writes keep kilograms and preserve omitted versus explicitly clea
   assert.deepEqual(failures, []);
 });
 
+test('a fix under the movement’s load floor is a refusal event that names the kept load, never a failure', async (t) => {
+  const { api, engine, events, failures } = await open(t);
+  await api.importSession(trainingInput);
+  const owed = engine.device.activeReplica.entries().length;
+  await assert.rejects(api.fixSet(trainingInput.id, trainingInput.sets[0].id, { weightKg: -2.5 }),
+    { name: 'GymRefusal', code: 'load-floor', sentence: 'Enter 0 or more, or cancel to keep 60' });
+  assert.equal(engine.device.activeReplica.entries().length, owed, 'nothing is written');
+  assert.deepEqual(events, [{ operation: 'session-import', outcome: 'saved-local' }, { operation: 'set-correct', outcome: 'refused' }]);
+  assert.deepEqual(failures, []);
+});
+
 test('offline corrections retain named sets and keep confirmed serials until admission after restart', async (t) => {
   const { api, engine, reopen } = await open(t);
   const sets = [

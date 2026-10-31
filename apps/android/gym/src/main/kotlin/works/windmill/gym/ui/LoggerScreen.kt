@@ -431,9 +431,7 @@ fun LoggerScreen(
             draftKey = "${store.accountKey}:${store.session?.id}:$movement",
             modifier = Modifier.heightIn(max = rackMaxHeight),
             weightKg = weightKg,
-            unit = store.catalog.firstOrNull { it.id == movement }.let {
-                works.windmill.gym.domain.sync.Readout.loadUnit(it?.equipment, it?.loadCount ?: 1)
-            },
+            exercise = store.catalog.firstOrNull { it.id == movement },
             reps = reps,
             finishing = store.isFinishing || store.workoutFailure != null,
             failure = store.workoutFailure,
@@ -720,7 +718,7 @@ private fun Ledger(
 private fun Rack(
     draftKey: String,
     weightKg: Double,
-    unit: String,
+    exercise: works.windmill.gym.domain.Exercise?,
     reps: Int,
     finishing: Boolean,
     failure: String?,
@@ -733,7 +731,8 @@ private fun Rack(
     val skin = LocalGymColors.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg)
+    val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+    val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg, exercise?.loadFloor)
     val count = rememberNumberDraft(draftKey, NumberEntry.Field.Reps, reps.toDouble())
     val loadFeedback = rememberNumberStepperFeedback()
     val panel = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
@@ -763,9 +762,9 @@ private fun Rack(
         return save(loadValue, repsValue.toInt(), field)
     }
     fun stepLoad(step: NumberStep, big: Boolean): NumberEditResult {
-        val loadValue = load.read() ?: return NumberEditResult.Refused
+        val loadValue = load.bumped(if (step == NumberStep.Increase) 1 else -1, big) ?: return NumberEditResult.Refused
         val repsValue = count.read() ?: return NumberEditResult.Refused
-        return save(Ladder.bump(loadValue, if (step == NumberStep.Increase) 1 else -1, big), repsValue.toInt(), load)
+        return save(loadValue, repsValue.toInt(), load)
     }
     Column(modifier.fillMaxWidth().clip(panel).background(skin.surface).border(1.dp, edge, panel)
         .testTag("Numeric rack").verticalScroll(rememberScrollState())
@@ -774,7 +773,8 @@ private fun Rack(
         NumberStepper(load.text, load::edit, "Load", unit,
             onStep = { stepLoad(it, false) }, onCommit = { commit(load) },
             size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
-            refusal = load.refusal ?: failure, enabled = enabled && !finishing, feedback = loadFeedback,
+            refusal = load.shownRefusal ?: failure, enabled = enabled && !finishing, decreaseEnabled = load.canDecrease,
+            feedback = loadFeedback,
             onFocusChange = { load.focus(it); onEdit(load.focused || count.focused) })
         LadderRow(load.reading.value ?: load.committed, onDial = { step, big -> loadFeedback.accept(stepLoad(step, big), step) },
             enabled = enabled && !finishing)
