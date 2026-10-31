@@ -323,4 +323,32 @@ class CoachDeletionTests {
         assertEquals(listOf(request), LocalCoach(file).pending("alice"))
     }
 
+    @Test fun aLateMissingThreadCannotRecoverALocalRefusalAfterOwnerChangeOrDeletion() = runTest {
+        for (deleting in listOf(false, true)) {
+            val file = File(tmp.root, "missing-owner-$deleting")
+            val disk = LocalCoach(file)
+            var owner = "alice"
+            val release = CompletableDeferred<Unit>()
+            val rest = object : GymRest by FakeGymRest() {
+                override suspend fun thread(id: String, before: String?): AskThread? { release.await(); return null }
+            }
+            disk.saveChat("alice", LocalChat("thread-a", exchanges = listOf(AskExchange("Question",
+                trouble = Ask.capReached, requestId = "request-a", terminalRefusal = true)), cap = "Daily"))
+            disk.saveChat("bob", LocalChat("bob-chat"))
+            val store = CoachStore({ owner }, { emptySet() }, {}, { rest }, disk, Telemetry.None,
+                System::nanoTime, backgroundScope)
+            val reading = async { store.thread("thread-a") }
+            runCurrent()
+            if (deleting) { store.eraseOwner("alice"); disk.reopenVerifiedOwner("alice") }
+            else { owner = "bob"; store.resetThreads() }
+            val before = file.readText()
+            release.complete(Unit)
+            assertEquals(works.windmill.gym.store.GymResult.Failed(works.windmill.gym.store.WriteFailure.Refused(
+                "The account changed. Open this again.")), reading.await())
+            assertEquals(before, file.readText())
+            assertEquals(listOf("bob-chat"), LocalCoach(file).chats("bob").map { it.id })
+            if (deleting) assertEquals(emptyList<LocalChat>(), LocalCoach(file).chats("alice"))
+        }
+    }
+
 }

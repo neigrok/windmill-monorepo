@@ -985,7 +985,16 @@ class CoachStore internal constructor(
         return try {
             val read = coach.thread(id, before)
             if (!authority.active || seat != owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
-            if (read == null) return GymResult.Failed(WriteFailure.Refused(noSuchThread))
+            if (read == null) {
+                val local = chat(id)
+                if (before == null && local != null && local.history == null && local.exchanges.isNotEmpty() &&
+                    !isAsking(id) && localCoach?.pending(seat).orEmpty().none { it.thread == id } &&
+                    local.exchanges.all { it.requestId.isNotEmpty() && it.answer == null &&
+                        local.refusedRequest(it.requestId) && localCoach?.snapshot(seat, it.requestId) == null }) {
+                    allThreads.firstOrNull { it.id == id }?.let { return GymResult.Ok(it) }
+                }
+                return GymResult.Failed(WriteFailure.Refused(noSuchThread))
+            }
             if (before == null && seat != null) {
                 val prior = chat(id) ?: LocalChat(id, createdAtMs = read.createdAtMs, updatedAtMs = read.askedAtMs)
                 val turns = read.exchanges()
