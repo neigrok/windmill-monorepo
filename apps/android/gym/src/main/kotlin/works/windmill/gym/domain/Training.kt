@@ -5,8 +5,6 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import works.windmill.gym.domain.sync.GymEstimate
-import works.windmill.gym.domain.sync.EstimateScore
 
 // Wire conventions: instants are epoch-ms Longs, weights are signed kg (negative = band-assisted),
 // ids are client-minted, absent optionals are omitted rather than null, reads default rather than throw.
@@ -156,9 +154,6 @@ data class SessionSummary(
     val tonnageKg: Double? = null,
     val exercises: List<String> = emptyList(),
     val topSet: TopSet? = null,
-    val topE1rm: Double? = null,
-    // Defaults FALSE and never null: the dot is an assertion and its absence is an omission.
-    val record: Boolean = false,
     val closedItself: Boolean = false,
 ) {
     constructor(session: Session, sets: List<TrainingSet>, catalog: List<Exercise>) : this(
@@ -177,25 +172,13 @@ data class SessionSummary(
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
         topSet = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
             ?.let { TopSet(it.weightKg, it.reps) },
-        topE1rm = null,
-        record = false,
         closedItself = false,
     )
 
     val session: Session get() = Session(id, startedAtMs, finishedAtMs, routineId, plan)
-
-    companion object {
-        // Read against the account's history: its best estimate, and the dot when a session full
-        // enough to count earned a record.
-        fun of(detail: SessionDetail, history: List<SessionDetail>, catalog: List<Exercise>): SessionSummary {
-            val sets = performed(detail)
-            return SessionSummary(detail.session, detail.sets, catalog).copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull(),
-                record = sets.size >= Review.slightSets && earned(detail, history) != null)
-        }
-    }
 }
 
-@Serializable
+// The movement's last finished workout and its sets in performed order, as the shared read answers it.
 data class LastTime(
     val exerciseId: String,
     val session: Session? = null,
@@ -203,59 +186,11 @@ data class LastTime(
     val sets: List<TrainingSet> = emptyList(),
 ) {
     val isFirstTime: Boolean get() = session == null
-
-    companion object {
-        // The most recent finished session holding the movement, with its sets in performed order.
-        fun of(exerciseId: String, history: List<SessionDetail>): LastTime {
-            val last = history
-                .filter { it.session.finishedAtMs != null }
-                .sortedByDescending { it.session.startedAtMs }
-                .firstOrNull { detail ->
-                    detail.sets.any { it.exerciseId == exerciseId }
-                }
-                ?: return LastTime(exerciseId)
-            return LastTime(
-                exerciseId = exerciseId,
-                session = last.session,
-                routine = last.session.plan?.routine,
-                sets = last.sets
-                    .filter { it.exerciseId == exerciseId }
-                    .sortedBy { it.completedAtMs },
-            )
-        }
-    }
 }
 
 // SPARSE: an absent movement is `never logged`. The row is the LAST set of that movement's last-time
-// block, and `at` is that SESSION's start.
-@Serializable
-data class LastSet(
-    val exerciseId: String,
-    val weightKg: Double,
-    val reps: Int,
-    @SerialName("at") val atMs: Long,
-) {
-    companion object {
-        fun of(history: List<SessionDetail>): List<LastSet> {
-            val closed = history
-                .filter { it.session.finishedAtMs != null }
-                .sortedByDescending { it.session.startedAtMs }
-            val trained = closed
-                .flatMap { it.sets }
-                .map { it.exerciseId }
-                .distinct()
-            return trained.mapNotNull { movement ->
-                val block = closed.firstOrNull { detail ->
-                    detail.sets.any { it.exerciseId == movement }
-                } ?: return@mapNotNull null
-                val last = block.sets
-                    .filter { it.exerciseId == movement }
-                    .maxByOrNull { it.completedAtMs } ?: return@mapNotNull null
-                LastSet(movement, last.weightKg, last.reps, block.session.startedAtMs)
-            }.sortedBy { it.exerciseId }
-        }
-    }
-}
+// block, and `atMs` is that SESSION's start.
+data class LastSet(val exerciseId: String, val weightKg: Double, val reps: Int, val atMs: Long)
 
 // No `sets` is the open row and the ABSENCE is the state: the wire omits the key and never sends
 // an empty array, which the log refuses like a zero target.
@@ -291,9 +226,7 @@ data class Routine(
     )
 }
 
-@Serializable
-data class ReviewStats(val durationMs: Long, val workingSets: Int, val topE1rm: Double? = null)
-
+// The shared review's record: `previous` is the best it beat, from the workout that started at `previousAtMs`.
 @Serializable
 data class PersonalRecord(
     val kind: String,
@@ -301,10 +234,11 @@ data class PersonalRecord(
     val value: Double,
     val weightKg: Double,
     val reps: Int,
-    val previous: Double? = null,
-    @SerialName("previousAt") val previousAtMs: Long? = null,
+    val previous: Double,
+    val previousAtMs: Long,
 )
 
+// Every set of the movement on one side of a comparison: their count and bounds, and the top set the comparison stands on.
 @Serializable
 data class Effort(
     val sets: Int,
@@ -316,7 +250,7 @@ data class Effort(
 )
 
 // What the frozen plan asked of this movement: its scheme, or nothing. A line that decided at the
-// rack rides as `"planned": {}` — an open line, with no set to stand against.
+// rack rides as an open line, with no set to stand against.
 @Serializable
 data class PlannedLine(val sets: List<SetTarget> = emptyList()) {
     val isOpen: Boolean get() = sets.isEmpty()
@@ -338,96 +272,14 @@ data class AgainstMovement(
 data class Against(
     val sessionId: String,
     val routine: String? = null,
-    @SerialName("startedAt") val startedAtMs: Long,
+    val startedAtMs: Long,
     val movements: List<AgainstMovement> = emptyList(),
 )
 
+// What a receipt says beside its own sets, read by the shared review: the record the workout earned and the routine's
+// previous workout movement by movement. Nothing at all is a review with nothing to say; it is saved with the receipt.
 @Serializable
-data class Review(
-    val stats: ReviewStats,
-    val slight: Boolean = false,
-    val record: PersonalRecord? = null,
-    val against: Against? = null,
-) {
-    companion object {
-        // The server's own slight rule; duration is not in the predicate.
-        const val slightSets = 4
-
-        fun of(detail: SessionDetail): Review {
-            val count = detail.sets.size
-            val until = detail.session.finishedAtMs
-                ?: detail.sets.maxOfOrNull { it.completedAtMs }
-                ?: detail.session.startedAtMs
-            return Review(
-                stats = ReviewStats(
-                    durationMs = max(0, until - detail.session.startedAtMs),
-                    workingSets = count,
-                    topE1rm = null,
-                ),
-                slight = count < slightSets,
-            )
-        }
-
-        // Read against the account's history: the record the session earned, and the routine's
-        // previous session movement by movement, with what the frozen plan asked.
-        fun of(detail: SessionDetail, history: List<SessionDetail>): Review {
-            val sets = performed(detail)
-            val strongest = sets.filter { estimateScore(it) != null }.maxByOrNull { estimateScore(it)!! }
-            val top = strongest?.let(::estimate)
-            val base = of(detail).let { it.copy(stats = it.stats.copy(topE1rm = top)) }
-            if (base.slight) return base
-            val previous = detail.session.routineId?.let { id -> prior(detail, history).lastOrNull { it.session.routineId == id } }
-            val against = previous?.let { before -> Against(before.session.id, before.session.plan?.routine, before.session.startedAtMs,
-                sets.groupBy { it.exerciseId }.map { (id, sets) -> AgainstMovement(id, effort(sets)!!,
-                    effort(performed(before).filter { it.exerciseId == id }), detail.session.plan?.entry(id)?.let { PlannedLine(it.sets) }) }) }
-            return base.copy(record = earned(detail, history), against = against)
-        }
-    }
-}
-
-// Reviews use the shared eligibility, finite estimate and exact ranking rules.
-private fun estimate(set: TrainingSet): Double? = GymEstimate.value(set.weightKg, set.reps, set.rpe)
-private fun estimateScore(set: TrainingSet): EstimateScore? = GymEstimate.score(set.weightKg, set.reps, set.rpe)
-private fun performed(detail: SessionDetail) = detail.sets.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
-private fun prior(detail: SessionDetail, history: List<SessionDetail>) = history.filter {
-    !it.session.isOpen && it.session.startedAtMs < detail.session.startedAtMs
-}.sortedWith(compareBy({ it.session.startedAtMs }, { it.session.id }))
-private fun marks(history: List<SessionDetail>): List<Pair<TrainingSet, Long>> = history.flatMap { detail -> performed(detail).map { it to it.completedAtMs } }
-    .groupBy { it.first.exerciseId to it.first.weightKg }.values.map { values ->
-        values.sortedWith(compareByDescending<Pair<TrainingSet, Long>> { it.first.reps }.thenBy { it.second }).first()
-    }
-private fun earned(detail: SessionDetail, history: List<SessionDetail>): PersonalRecord? {
-    data class Candidate(val rank: Int, val record: PersonalRecord, val set: TrainingSet)
-    val before = marks(prior(detail, history))
-    val candidates = mutableListOf<Candidate>()
-    for ((exercise, sets) in performed(detail).groupBy { it.exerciseId }) {
-        val earlier = before.filter { it.first.exerciseId == exercise }
-        val best = sets.filter { estimateScore(it) != null }.maxByOrNull { estimateScore(it)!! }
-        val priorBest = earlier.filter { estimateScore(it.first) != null }.maxByOrNull { estimateScore(it.first)!! }
-        val now = best?.let(::estimate)
-        val previous = priorBest?.first?.let(::estimate)
-        if (best != null && priorBest != null && now != null && previous != null && GymEstimate.stated(now) > GymEstimate.stated(previous)) candidates += Candidate(0,
-            PersonalRecord("e1rm", exercise, now, best.weightKg, best.reps, previous, priorBest.second), best)
-        val heavy = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }
-            .thenBy { it.completedAtMs }.thenBy { it.id }).first()
-        val priorHeavy = earlier.maxWithOrNull(compareBy({ it.first.weightKg }, { it.first.reps }))
-        if (priorHeavy != null && heavy.weightKg > priorHeavy.first.weightKg) candidates += Candidate(1,
-            PersonalRecord("heaviest", exercise, heavy.weightKg, heavy.weightKg, heavy.reps, priorHeavy.first.weightKg, priorHeavy.second), heavy)
-        for (set in sets.groupBy { it.weightKg }.values.map { it.maxBy { set -> set.reps } }) {
-            val priorLoad = earlier.firstOrNull { it.first.weightKg == set.weightKg } ?: continue
-            if (set.reps > priorLoad.first.reps) candidates += Candidate(2,
-                PersonalRecord("reps-at-weight", exercise, set.reps.toDouble(), set.weightKg, set.reps, priorLoad.first.reps.toDouble(), priorLoad.second), set)
-        }
-    }
-    return candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { estimateScore(it.set) ?: EstimateScore.zero }
-        .thenByDescending { it.set.weightKg }.thenBy { it.set.completedAtMs }).firstOrNull()?.record
-}
-private fun effort(sets: List<TrainingSet>): Effort? {
-    val top = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps })) ?: return null
-    return Effort(sets.size, top.reps, top.weightKg,
-        minReps = sets.minOf { it.reps }, maxReps = sets.maxOf { it.reps },
-        minWeightKg = sets.minOf { it.weightKg })
-}
+data class Review(val record: PersonalRecord? = null, val against: Against? = null)
 
 // One closed session's sets of a movement.
 data class RecordDay(

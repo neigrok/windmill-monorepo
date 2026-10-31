@@ -43,8 +43,6 @@ class TrainingHistory(private val read: Reader) {
         Json.objectOf("session" to sessionDocument(it), "sets" to Json.Arr(log.sets(id).map(::setDocument)))
     } ?: Json.Null
 
-    private fun top(sets: List<TrainingSet>): TrainingSet? = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).firstOrNull()
-
     private fun tonnage(sets: List<TrainingSet>): Double? = GymVolume.of(sets, catalogue)
 
     private fun summary(value: Session): Json {
@@ -52,8 +50,8 @@ class TrainingHistory(private val read: Reader) {
         val result = sessionDocument(value).obj().toMutableMap()
         result.putAll(mapOf("setCount" to Json.of(sets.size), "workingSetCount" to Json.of(sets.size), "tonnageKg" to (tonnage(sets)?.let(Json::of) ?: Json.Null),
             "exercises" to Json.Arr(sets.mapNotNull { catalogue.find(it.exerciseId)?.name }.distinct().sortedWith(::compareBytes).map(Json::of)),
-            "record" to Json.of(sets.size >= 4 && recordFor(value) != null), "closedItself" to Json.of(if (value.closedBy != null) value.closedBy == "stale" else value.finishedAt == SessionRules.lastActivity(value, sets))))
-        top(sets)?.let { result["topSet"] = Json.objectOf("weightKg" to Json.of(it.weightKg), "reps" to Json.of(it.reps)) }
+            "record" to Json.of(sets.size >= SessionReview.slightSets && PersonalRecord.of(value, log) != null), "closedItself" to Json.of(if (value.closedBy != null) value.closedBy == "stale" else value.finishedAt == SessionRules.lastActivity(value, sets))))
+        topSet(sets)?.let { result["topSet"] = Json.objectOf("weightKg" to Json.of(it.weightKg), "reps" to Json.of(it.reps)) }
         result["topE1rm"] = log.topE1rm(value.id)?.let(Json::of) ?: Json.Null
         return Json.Obj(result.toList())
     }
@@ -75,9 +73,8 @@ class TrainingHistory(private val read: Reader) {
         })
     }
 
-    fun lastSets(): Json = Json.Arr(finished.flatMap { log.sets(it.id) }.map { it.exerciseId }.distinct().sorted().mapNotNull { id ->
-        val last = log.lastTime(id)
-        last.sets.sortedWith(compareBy<TrainingSet> { it.setNumber ?: 0 }.thenBy { it.id }).lastOrNull()?.let { Json.objectOf("exerciseId" to id.json, "weightKg" to Json.of(it.weightKg), "reps" to Json.of(it.reps), "at" to Json.of(last.session!!.startedAt.ms)) }
+    fun lastSets(): Json = Json.Arr(LastSet.all(log).map {
+        Json.objectOf("exerciseId" to it.exerciseId.json, "weightKg" to Json.of(it.weightKg), "reps" to Json.of(it.reps), "at" to Json.of(it.at.ms))
     })
 
     fun progress(): Json = log.progress.json
@@ -242,60 +239,5 @@ class TrainingHistory(private val read: Reader) {
         return Json.Obj(buildList { add("entries" to Json.Arr(entries)); entries.lastOrNull()?.let { add("latest" to it) } })
     }
 
-    private fun recordFor(value: Session): Json? {
-        if (!log.firstPullComplete) return null
-        val previous = finished.filter { it.startedAt < value.startedAt || (it.startedAt == value.startedAt && it.id < value.id) }
-        val prior = StatsProgress(log.copy(sessions = previous))
-        val current = StatsProgress(log.copy(sessions = listOf(value)))
-        data class Candidate(val rank: Int, val kind: String, val exercise: Id<Exercise>, val fact: PerformedFact, val amount: Double, val before: Double, val beforeAt: Instant) {
-            val score get() = GymEstimate.score(fact.weightKg, fact.reps, fact.rpe) ?: EstimateScore.zero
-        }
-        val candidates = mutableListOf<Candidate>()
-        for (fact in current.sessions.flatMap { it.movements }) {
-            val now = fact.estimate
-            val before = prior.movement(fact.exerciseId).best
-            val amount = now?.e1rm
-            val previousEstimate = before?.fact?.estimate?.e1rm
-            if (fact.estimatesComplete && now != null && amount != null && before != null && previousEstimate != null && GymEstimate.stated(amount) > GymEstimate.stated(previousEstimate))
-                candidates += Candidate(0, "e1rm", fact.exerciseId, now.performed, amount, previousEstimate, before.startedAt)
-            val today = log.sets(value.id).filter { it.exerciseId == fact.exerciseId }
-            val priors = previous.flatMap { session -> log.sets(session.id).filter { it.exerciseId == fact.exerciseId }.map { it to session } }
-            val heavy = priors.sortedWith(compareByDescending<Pair<TrainingSet, Session>> { it.first.weightKg }.thenByDescending { it.first.reps }.thenBy { it.second.startedAt }.thenBy { it.first.id }).firstOrNull()
-            val todayTop = top(today)
-            if (todayTop != null && heavy != null && todayTop.weightKg > heavy.first.weightKg)
-                candidates += Candidate(1, "heaviest", fact.exerciseId, PerformedFact(todayTop), todayTop.weightKg, heavy.first.weightKg, heavy.second.startedAt)
-            for (load in today.map { it.weightKg }.distinct()) {
-                val atLoad = top(today.filter { it.weightKg == load })!!
-                val earlier = priors.filter { it.first.weightKg == load }.sortedWith(compareByDescending<Pair<TrainingSet, Session>> { it.first.reps }.thenBy { it.second.startedAt }.thenBy { it.first.id }).firstOrNull()
-                if (earlier != null && atLoad.reps > earlier.first.reps)
-                    candidates += Candidate(2, "reps-at-weight", fact.exerciseId, PerformedFact(atLoad), atLoad.reps.toDouble(), earlier.first.reps.toDouble(), earlier.second.startedAt)
-            }
-        }
-        val best = candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { it.score }.thenByDescending { it.fact.weightKg }.thenBy { it.exercise }).firstOrNull() ?: return null
-        return Json.objectOf("kind" to Json.of(best.kind), "exerciseId" to best.exercise.json, "value" to Json.of(best.amount), "weightKg" to Json.of(best.fact.weightKg),
-            "reps" to Json.of(best.fact.reps), "previous" to Json.of(best.before), "previousAt" to Json.of(best.beforeAt.ms))
-    }
-
-    fun review(id: Id<Session>): Json {
-        val value = log.drawnSessions.firstOrNull { it.id == id } ?: return Json.Null
-        val facts = log.readout(id)!!
-        val stats = Json.Obj(buildList { add("durationMs" to Json.of(facts.durationMs ?: maxOf(0, SessionRules.lastActivity(value, log.sets).ms - value.startedAt.ms))); add("workingSets" to Json.of(facts.workingSetCount)); add("topE1rm" to (facts.topE1rm?.let(Json::of) ?: Json.Null)) })
-        val result = mutableMapOf("stats" to stats, "slight" to Json.of(facts.workingSetCount < 4))
-        if (facts.workingSetCount < 4) return Json.Obj(result.toList())
-        recordFor(value)?.let { result["record"] = it }
-        val previous = finished.firstOrNull { it.routineId == value.routineId && value.routineId != null && (it.startedAt < value.startedAt || (it.startedAt == value.startedAt && it.id < value.id)) }
-        if (previous != null) {
-            fun best(sets: List<TrainingSet>): Json? = top(sets)?.let { top -> Json.objectOf("weightKg" to Json.of(top.weightKg), "reps" to Json.of(top.reps), "sets" to Json.of(sets.count { it.weightKg == top.weightKg })) }
-            val held = log.sets(id)
-            result["against"] = Json.Obj(buildList {
-                add("sessionId" to previous.id.json); add("startedAt" to Json.of(previous.startedAt.ms)); previous.plan?.routine?.takeIf { it.isNotEmpty() }?.let { add("routine" to Json.of(it)) }
-                add("movements" to Json.Arr(held.map { it.exerciseId }.distinct().map { exercise -> Json.Obj(buildList {
-                    add("exerciseId" to exercise.json); add("now" to (best(held.filter { it.exerciseId == exercise }) ?: Json.Null))
-                    best(log.sets(previous.id).filter { it.exerciseId == exercise })?.let { add("before" to it) }
-                    value.plan?.entries?.firstOrNull { it.exerciseId == exercise }?.let { add("planned" to Json.Obj(if (it.sets == null) emptyList() else listOf("sets" to Json.Arr(it.sets.map { target -> target.json })))) }
-                }) }))
-            })
-        }
-        return Json.Obj(result.toList())
-    }
+    fun review(id: Id<Session>): Json = SessionReview.of(id, log)?.json ?: Json.Null
 }

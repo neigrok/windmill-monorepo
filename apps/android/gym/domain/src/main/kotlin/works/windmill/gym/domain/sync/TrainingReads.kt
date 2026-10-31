@@ -109,6 +109,19 @@ data class LastTime(val exerciseId: Id<Exercise>, val session: Session? = null,
     }
 }
 
+// The last set of each movement's last finished workout, by set number, at that workout's start. Sparse: a movement absent
+// is never logged, which holds only once the account's history has been read.
+data class LastSet(val exerciseId: Id<Exercise>, val weightKg: Double, val reps: Int, val at: Instant) {
+    companion object {
+        fun all(log: TrainingLog): List<LastSet> = log.drawnSessions.filter { !it.isOpen }.flatMap { log.sets(it.id) }.map { it.exerciseId }
+            .distinct().sorted().mapNotNull { id ->
+                val last = log.lastTime(id)
+                last.sets.sortedWith(compareBy<TrainingSet> { it.setNumber ?: 0 }.thenBy { it.id }).lastOrNull()
+                    ?.let { LastSet(id, it.weightKg, it.reps, last.session!!.startedAt) }
+            }
+    }
+}
+
 data class Prefill(val weightKg: Double = emptyBarKg, val reps: Int = emptyBarReps) {
     companion object {
         const val emptyBarKg = 20.0
@@ -282,6 +295,106 @@ class ProgressRecords(val progress: StatsProgress) {
             run.toList()
         }.filterValues { it.isNotEmpty() }
         sessions = movements.values.flatten().mapTo(mutableSetOf()) { it.point.id }
+    }
+}
+
+// The log's top set: the heaviest load, then the most reps at it.
+fun topSet(sets: List<TrainingSet>): TrainingSet? =
+    sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).firstOrNull()
+
+// The record a workout earned against every finished workout before it: a stated estimate gain ranks first, then a
+// heavier top set, then more reps at a load. Nothing before the account's first pull, when that history is not yet here.
+data class PersonalRecord(val kind: String, val exerciseId: Id<Exercise>, val value: Double, val weightKg: Double, val reps: Int,
+    val previous: Double, val previousAt: Instant) {
+    val json: Json get() = Json.objectOf("kind" to Json.of(kind), "exerciseId" to exerciseId.json, "value" to Json.of(value), "weightKg" to Json.of(weightKg),
+        "reps" to Json.of(reps), "previous" to Json.of(previous), "previousAt" to Json.of(previousAt.ms))
+
+    companion object {
+        fun of(session: Session, log: TrainingLog): PersonalRecord? {
+            if (!log.firstPullComplete) return null
+            val previous = log.drawnSessions.filter { !it.isOpen && (it.startedAt < session.startedAt || (it.startedAt == session.startedAt && it.id < session.id)) }
+            val prior = StatsProgress(log.copy(sessions = previous))
+            val current = StatsProgress(log.copy(sessions = listOf(session)))
+            data class Candidate(val rank: Int, val record: PersonalRecord, val fact: PerformedFact) {
+                val score get() = GymEstimate.score(fact.weightKg, fact.reps, fact.rpe) ?: EstimateScore.zero
+            }
+            fun candidate(rank: Int, kind: String, exercise: Id<Exercise>, fact: PerformedFact, amount: Double, before: Double, beforeAt: Instant) =
+                Candidate(rank, PersonalRecord(kind, exercise, amount, fact.weightKg, fact.reps, before, beforeAt), fact)
+            val candidates = mutableListOf<Candidate>()
+            for (fact in current.sessions.flatMap { it.movements }) {
+                val now = fact.estimate
+                val before = prior.movement(fact.exerciseId).best
+                val amount = now?.e1rm
+                val previousEstimate = before?.fact?.estimate?.e1rm
+                if (fact.estimatesComplete && now != null && amount != null && before != null && previousEstimate != null && GymEstimate.stated(amount) > GymEstimate.stated(previousEstimate))
+                    candidates += candidate(0, "e1rm", fact.exerciseId, now.performed, amount, previousEstimate, before.startedAt)
+                val today = log.sets(session.id).filter { it.exerciseId == fact.exerciseId }
+                val priors = previous.flatMap { earlier -> log.sets(earlier.id).filter { it.exerciseId == fact.exerciseId }.map { it to earlier } }
+                val heavy = priors.sortedWith(compareByDescending<Pair<TrainingSet, Session>> { it.first.weightKg }.thenByDescending { it.first.reps }.thenBy { it.second.startedAt }.thenBy { it.first.id }).firstOrNull()
+                val todayTop = topSet(today)
+                if (todayTop != null && heavy != null && todayTop.weightKg > heavy.first.weightKg)
+                    candidates += candidate(1, "heaviest", fact.exerciseId, PerformedFact(todayTop), todayTop.weightKg, heavy.first.weightKg, heavy.second.startedAt)
+                for (load in today.map { it.weightKg }.distinct()) {
+                    val atLoad = topSet(today.filter { it.weightKg == load })!!
+                    val earlier = priors.filter { it.first.weightKg == load }.sortedWith(compareByDescending<Pair<TrainingSet, Session>> { it.first.reps }.thenBy { it.second.startedAt }.thenBy { it.first.id }).firstOrNull()
+                    if (earlier != null && atLoad.reps > earlier.first.reps)
+                        candidates += candidate(2, "reps-at-weight", fact.exerciseId, PerformedFact(atLoad), atLoad.reps.toDouble(), earlier.first.reps.toDouble(), earlier.second.startedAt)
+                }
+            }
+            return candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { it.score }.thenByDescending { it.fact.weightKg }
+                .thenBy { it.record.exerciseId }).firstOrNull()?.record
+        }
+    }
+}
+
+// A workout read back: how long and how much, and once it is more than slight, the record it earned and the routine's
+// previous workout beside it movement by movement, with what the frozen plan asked.
+data class SessionReview(val durationMs: Long, val workingSets: Int, val topE1rm: Double?,
+    val record: PersonalRecord? = null, val against: Against? = null) {
+    data class Against(val previous: Session, val movements: List<Movement>)
+    data class Movement(val exerciseId: Id<Exercise>, val now: List<TrainingSet>, val before: List<TrainingSet>, val planned: RoutineEntry?)
+
+    val slight: Boolean get() = workingSets < slightSets
+
+    val json: Json get() {
+        fun effort(sets: List<TrainingSet>): Json? = topSet(sets)?.let { top ->
+            Json.objectOf("weightKg" to Json.of(top.weightKg), "reps" to Json.of(top.reps), "sets" to Json.of(sets.count { it.weightKg == top.weightKg }))
+        }
+        val stats = Json.objectOf("durationMs" to Json.of(durationMs), "workingSets" to Json.of(workingSets), "topE1rm" to (topE1rm?.let(Json::of) ?: Json.Null))
+        return Json.Obj(buildList {
+            add("stats" to stats); add("slight" to Json.of(slight))
+            record?.let { add("record" to it.json) }
+            against?.let { against -> add("against" to Json.Obj(buildList {
+                add("sessionId" to against.previous.id.json); add("startedAt" to Json.of(against.previous.startedAt.ms))
+                against.previous.plan?.routine?.takeIf { it.isNotEmpty() }?.let { add("routine" to Json.of(it)) }
+                add("movements" to Json.Arr(against.movements.map { movement -> Json.Obj(buildList {
+                    add("exerciseId" to movement.exerciseId.json); add("now" to (effort(movement.now) ?: Json.Null))
+                    effort(movement.before)?.let { add("before" to it) }
+                    movement.planned?.let { add("planned" to Json.Obj(if (it.sets == null) emptyList() else listOf("sets" to Json.Arr(it.sets.map { target -> target.json })))) }
+                }) }))
+            })) }
+        })
+    }
+
+    companion object {
+        const val slightSets = 4
+
+        fun of(id: Id<Session>, log: TrainingLog): SessionReview? {
+            val value = log.drawnSessions.firstOrNull { it.id == id } ?: return null
+            val facts = log.readout(id)!!
+            val read = SessionReview(facts.durationMs ?: maxOf(0, SessionRules.lastActivity(value, log.sets).ms - value.startedAt.ms),
+                facts.workingSetCount, facts.topE1rm)
+            if (read.slight) return read
+            val held = log.sets(id)
+            val previous = log.drawnSessions.firstOrNull { !it.isOpen && it.routineId == value.routineId && value.routineId != null &&
+                (it.startedAt < value.startedAt || (it.startedAt == value.startedAt && it.id < value.id)) }
+            return read.copy(record = PersonalRecord.of(value, log), against = previous?.let { before ->
+                Against(before, held.map { it.exerciseId }.distinct().map { exercise ->
+                    Movement(exercise, held.filter { it.exerciseId == exercise }, log.sets(before.id).filter { it.exerciseId == exercise },
+                        value.plan?.entries?.firstOrNull { it.exerciseId == exercise })
+                })
+            })
+        }
     }
 }
 

@@ -39,7 +39,6 @@ import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
-import works.windmill.gym.domain.ReviewStats
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
@@ -532,8 +531,7 @@ class TrainingStoreTests {
                 listOf(60.0, 82.5, 82.5, 82.5, 82.5), record.recentDays.single().sets.map { it.weightKg })
 
             val review = room.store.review(ended.id)
-            assertEquals(Review(stats = ReviewStats(durationMs = ended.finishedAtMs!! - ended.startedAtMs,
-                workingSets = 5, topE1rm = 96.25), slight = false), review)
+            assertEquals("a first workout beats nothing and has no routine before it", Review(), review)
 
             val detail = (room.store.sessionDetail(ended.id) as GymResult.Ok).value
             assertEquals(5, detail.sets.size)

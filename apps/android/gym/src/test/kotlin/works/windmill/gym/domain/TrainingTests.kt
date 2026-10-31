@@ -163,101 +163,23 @@ class TrainingWireTests {
     }
 
     @Test
-    fun testAFirstEverMovementComesBackNamedAndEmpty() {
-        val answer = json.decodeFromString(LastTime.serializer(), """{"exerciseId":"zercher-squat"}""")
-
-        assertTrue(answer.isFirstTime)
-        assertNull(answer.routine)
-        assertTrue(answer.sets.isEmpty())
-    }
-
-    @Test
-    fun testTheFinishScreenDecodesItsThreeFactsItsRecordAndItsComparison() {
-        val review = json.decodeFromString(Review.serializer(), """
-        { "stats": { "durationMs": 3720000, "workingSets": 16, "topE1rm": 122.5 },
-          "slight": false,
-          "record": { "kind": "e1rm", "exerciseId": "back-squat", "value": 122.5, "weightKg": 105,
-                      "reps": 5, "previous": 116.7, "previousAt": 1750723200000 },
-          "against": { "sessionId": "ses_p", "routine": "Legs", "startedAt": 1750723200000,
-            "movements": [ { "exerciseId": "back-squat",
-                             "now": { "weightKg": 105, "reps": 5, "sets": 5 },
-                             "before": { "weightKg": 102.5, "reps": 5, "sets": 5 },
-                             "planned": { "sets": [ { "reps": 5, "weightKg": 100 }, { "reps": 5, "weightKg": 100 },
-                                                    { "reps": 5, "weightKg": 100 } ] } } ] } }
-        """)
-
-        assertEquals(ReviewStats(durationMs = 3_720_000, workingSets = 16, topE1rm = 122.5), review.stats)
-        assertFalse(review.slight)
-        assertEquals("e1rm", review.record?.kind)
-        assertEquals(1_750_723_200_000L, review.record?.previousAtMs)
-        assertEquals("Legs", review.against?.routine)
-        assertEquals(Effort(sets = 5, reps = 5, weightKg = 105.0), review.against?.movements?.first()?.now)
-        assertEquals(PlannedLine(List(3) { SetTarget(reps = 5, weightKg = 100.0) }), review.against?.movements?.first()?.planned)
-    }
-
-    // The log's own bytes (TrainingApiTest gym_review_carries_the_three_facts_the_record_and_the_band
-    // and the Lower A ramp): a planned line is its scheme, an open line is `{}`, and a movement the
-    // plan never named has no `planned` at all.
-    @Test
-    fun testAPlannedLineDecodesAsTheSchemeTheLogFroze() {
-        val review = json.decodeFromString(Review.serializer(),
-            """{"against":{"movements":[{"before":{"reps":10,"sets":4,"weightKg":90.0},""" +
-            """"exerciseId":"back-squat","now":{"reps":5,"sets":4,"weightKg":105.0},""" +
-            """"planned":{"sets":[{"reps":5,"weightKg":60.0},{"reps":5,"weightKg":80.0},{"reps":3,"weightKg":90.0},""" +
-            """{"reps":1,"weightKg":100.0},{"reps":5,"weightKg":80.0}]}},""" +
-            """{"exerciseId":"face-pull","now":{"reps":15,"sets":3,"weightKg":20.0},"planned":{}},""" +
-            """{"exerciseId":"chin-up","now":{"reps":8,"sets":3,"weightKg":0.0}}],"routine":"Lower A",""" +
-            """"sessionId":"ses_22222222","startedAt":1699000000000},"slight":false,""" +
-            """"stats":{"durationMs":3720000,"topE1rm":122.5,"workingSets":4}}""")
-
-        val ramp = PlannedLine(listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0),
-                                      SetTarget(1, 100.0), SetTarget(5, 80.0)))
-        assertEquals(
-            listOf(AgainstMovement(exerciseId = "back-squat",
-                                   now = Effort(sets = 4, reps = 5, weightKg = 105.0),
-                                   before = Effort(sets = 4, reps = 10, weightKg = 90.0),
-                                   planned = ramp),
-                   AgainstMovement(exerciseId = "face-pull",
-                                   now = Effort(sets = 3, reps = 15, weightKg = 20.0),
-                                   planned = PlannedLine()),
-                   AgainstMovement(exerciseId = "chin-up",
-                                   now = Effort(sets = 3, reps = 8, weightKg = 0.0))),
-            review.against?.movements,
-        )
+    fun aPlannedLineStandsOnItsHeaviestNamedSetAndAnOpenLineOnNothing() {
+        val ramp = PlannedLine(listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)))
         assertEquals(SetTarget(1, 100.0), ramp.top)
+        assertEquals(SetTarget(8, null), PlannedLine(listOf(SetTarget(8, null), SetTarget(6, null))).top)
         assertTrue(PlannedLine().isOpen)
         assertNull(PlannedLine().top)
     }
 
+    // A receipt is saved across a process restart with its record whole, however large the load it names.
     @Test
-    fun testAnOpenRowsFrozenTargetDecodesAsAnAbsenceAndNotAsAMissingField() {
-        val review = json.decodeFromString(Review.serializer(), """
-        { "stats": { "durationMs": 3720000, "workingSets": 16 },
-          "slight": false,
-          "against": { "sessionId": "ses_p", "routine": "Heavy Thursday", "startedAt": 1750723200000,
-            "movements": [ { "exerciseId": "barbell-row",
-                             "now": { "weightKg": 60, "reps": 10, "sets": 3 },
-                             "before": { "weightKg": 57.5, "reps": 10, "sets": 3 },
-                             "planned": {} } ] } }
-        """)
-
-        assertEquals(
-            listOf(AgainstMovement(exerciseId = "barbell-row",
-                                   now = Effort(sets = 3, reps = 10, weightKg = 60.0),
-                                   before = Effort(sets = 3, reps = 10, weightKg = 57.5),
-                                   planned = PlannedLine())),
-            review.against?.movements,
-        )
-    }
-
-    @Test
-    fun testAnOrdinarySessionCarriesNoRecordAndNoComparison() {
-        val review = json.decodeFromString(Review.serializer(),
-                                           """{"stats":{"durationMs":2820000,"workingSets":14},"slight":false}""")
-
-        assertNull("a session of unloaded work has no honest one-rep estimate", review.stats.topE1rm)
-        assertNull(review.record)
-        assertNull(review.against)
+    fun aReceiptsReviewRoundTripsThroughSavedStateWithoutAnInfiniteNumber() {
+        val review = Review(PersonalRecord("heaviest", "bench-press", Double.MAX_VALUE, Double.MAX_VALUE, 8, 80.0, 1_000),
+            Against("before", "Push A", 1_000, listOf(AgainstMovement("bench-press", Effort(4, 8, Double.MAX_VALUE, minReps = 5, minWeightKg = 80.0),
+                Effort(4, 5, 80.0), PlannedLine(listOf(SetTarget(5, 80.0)))))))
+        val saved = WindmillJson.encodeToString(Review.serializer(), review)
+        assertEquals(review, WindmillJson.decodeFromString(Review.serializer(), saved))
+        assertFalse(saved.contains("Infinity") || saved.contains("NaN"))
     }
 
     @Test
@@ -288,101 +210,7 @@ class TrainingWireTests {
 
 
 
-class ReviewEstimateTests {
-    private fun detail(id: String, at: Long, weight: Double, reps: Int) = SessionDetail(
-        Session(id, startedAtMs = at, finishedAtMs = at + 60_000, routineId = "routineA"),
-        List(4) { index -> TrainingSet("$id$index", "bench-press", weightKg = weight, reps = reps, completedAtMs = at + index + 1) },
-    )
 
-    @Test
-    fun anOverflowingEstimateRetainsFiniteSetFactsAndRoundTripsWithNullEstimate() {
-        val before = detail("before", 1_000, 80.0, 5)
-        val current = detail("now", 100_000, Double.MAX_VALUE, 8)
-        val mixed = current.copy(sets = current.sets.dropLast(1) + current.sets.last().copy(weightKg = 100.0))
-        for (workout in listOf(current, mixed)) {
-            val review = Review.of(workout, listOf(before, workout))
-            assertNull(review.stats.topE1rm)
-            assertEquals("heaviest", review.record?.kind)
-            assertEquals(Double.MAX_VALUE, review.record?.value)
-            val saved = WindmillJson.encodeToString(Review.serializer(), review)
-            assertEquals(review, WindmillJson.decodeFromString(Review.serializer(), saved))
-            assertFalse(saved.contains("Infinity"))
-            assertFalse(saved.contains("NaN"))
-            assertEquals(workout.sets, WindmillJson.decodeFromString(SessionDetail.serializer(),
-                WindmillJson.encodeToString(SessionDetail.serializer(), workout)).sets)
-        }
-        val single = current.copy(sets = current.sets.map { it.copy(reps = 1) })
-        assertEquals(Double.MAX_VALUE, Review.of(single, listOf(before, single)).stats.topE1rm)
-    }
-
-    @Test
-    fun anUnavailableStrongestPriorEstimateCannotBecomeALowerFiniteRecord() {
-        val overflowing = detail("before", 1_000, Double.MAX_VALUE, 8)
-        val before = overflowing.copy(sets = overflowing.sets.dropLast(1) + overflowing.sets.last().copy(weightKg = 50.0, reps = 5))
-        val current = detail("now", 100_000, 100.0, 8)
-        val review = Review.of(current, listOf(before, current))
-        assertEquals(100.0 * (1 + 8 / 30.0), review.stats.topE1rm)
-        assertNull(review.record)
-        assertEquals(review, WindmillJson.decodeFromString(Review.serializer(),
-            WindmillJson.encodeToString(Review.serializer(), review)))
-    }
-
-    @Test
-    fun estimateRecordsRequireAStatedImprovementWhileExactBestAndHeaviestRemainValid() {
-        val before = detail("before", 1_000, 100.0, 5)
-        val tied = detail("tied", 100_000, 116.7, 1)
-        assertEquals(PersonalRecord("heaviest", "bench-press", 116.7, 116.7, 1,
-            100.0, before.sets.first().completedAtMs), Review.of(tied, listOf(before, tied)).record)
-        val improved = detail("improved", 200_000, 116.8, 1)
-        assertEquals(PersonalRecord("e1rm", "bench-press", 116.8, 116.8, 1,
-            116.7, tied.sets.first().completedAtMs), Review.of(improved, listOf(before, tied, improved)).record)
-        val sameStatedWithLessLoad = detail("same-stated", 100_000, 97.24, 6)
-        assertNull(Review.of(sameStatedWithLessLoad, listOf(before, sameStatedWithLessLoad)).record)
-    }
-
-    @Test
-    fun ordinaryEstimateRankingAndExactTiesUseTheSharedScore() {
-        val before = detail("before", 1_000, 70.0, 10)
-        val tie = detail("tie", 100_000, 80.0, 5)
-        val tied = Review.of(tie, listOf(before, tie))
-        assertEquals("heaviest", tied.record?.kind)
-        val improved = detail("improved", 200_000, 82.5, 5)
-        val record = Review.of(improved, listOf(before, tie, improved)).record
-        assertEquals(PersonalRecord("e1rm", "bench-press", 96.25, 82.5, 5,
-            93.33333333333333, before.sets.first().completedAtMs), record)
-        val excluded = improved.copy(sets = improved.sets.map { it.copy(rpe = 6.5) })
-        assertNull(Review.of(excluded, listOf(before, excluded)).stats.topE1rm)
-    }
-}
-
-class ReviewEffortTests {
-    @Test
-    fun everyPerformedSetContributesToTheComparisonCountAndBounds() {
-        val vectors = listOf(
-            listOf(75.0 to 8, 75.0 to 6, 80.0 to 8) to Effort(3, 8, 80.0, minReps = 6, maxReps = 8, minWeightKg = 75.0),
-            listOf(60.0 to 12, 80.0 to 5, 100.0 to 1) to Effort(3, 1, 100.0, minReps = 1, maxReps = 12, minWeightKg = 60.0),
-            listOf(0.0 to 8, 0.0 to 6, 0.0 to 8) to Effort(3, 8, 0.0, minReps = 6, maxReps = 8),
-            listOf(-20.0 to 8, -10.0 to 6, 0.0 to 8) to Effort(3, 8, 0.0, minReps = 6, maxReps = 8, minWeightKg = -20.0),
-        )
-        for ((performed, expected) in vectors) {
-            fun detail(id: String, at: Long, facts: List<Pair<Double, Int>>) = SessionDetail(
-                Session(id = id, startedAtMs = at, finishedAtMs = at + 60_000, routineId = "routineA"),
-                facts.mapIndexed { index, (weight, reps) ->
-                    TrainingSet(id = "$id$index", exerciseId = "bench-press", weightKg = weight, reps = reps, completedAtMs = at + index + 1)
-                } + TrainingSet(id = "$id-other", exerciseId = "row", weightKg = 0.0, reps = 1, completedAtMs = at + 10),
-            )
-            val before = detail("before", 1_000, listOf(50.0 to 5, 55.0 to 6, 60.0 to 4))
-            val current = detail("now", 100_000, performed)
-            val review = Review.of(current, listOf(before, current))
-            assertEquals(performed.toString(), listOf(
-                AgainstMovement("bench-press", expected, Effort(3, 4, 60.0, minReps = 4, maxReps = 6, minWeightKg = 50.0)),
-                AgainstMovement("row", Effort(1, 1, 0.0), Effort(1, 1, 0.0)),
-            ), review.against?.movements)
-            val saved = WindmillJson.encodeToString(Review.serializer(), review)
-            assertEquals(review, WindmillJson.decodeFromString(Review.serializer(), saved))
-        }
-    }
-}
 
 class SchemeTests {
     @Test
@@ -445,99 +273,6 @@ class SchemeTests {
     }
 }
 
-class LastSetTests {
-    private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
-                     at: Long): TrainingSet =
-        TrainingSet(id = "set_$at", exerciseId = exerciseId, weightKg = weightKg,
-                    reps = reps, completedAtMs = at)
-
-    private fun aSession(id: String, startedAt: Long, finishedAt: Long?, sets: List<TrainingSet>) =
-        SessionDetail(Session(id = id, startedAtMs = startedAt, finishedAtMs = finishedAt), sets)
-
-    @Test
-    fun testTheWireRowIsTheSessionsMarkAndSpellsItAt() {
-        val row = json.decodeFromString(LastSet.serializer(),
-                                        """{"exerciseId":"bench-press","weightKg":80,"reps":8,"at":1785600000000}""")
-        assertEquals("bench-press", row.exerciseId)
-        assertEquals(80.0, row.weightKg, 0.0)
-        assertEquals(8, row.reps)
-        assertEquals(1_785_600_000_000, row.atMs)
-    }
-
-    @Test
-    fun testTheShelfAnswersWithTheLastSetOfTheLastTimeBlock() {
-        val rows = LastSet.of(listOf(
-            aSession("ses_old", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
-                aSet("bench-press", 100.0, 1, at = 1_500))),
-            aSession("ses_new", startedAt = 5_000, finishedAt = 6_000, sets = listOf(
-                aSet("bench-press", 85.0, 5, at = 5_100),
-                aSet("bench-press", 80.0, 8, at = 5_200),
-                aSet("back-squat", 120.0, 3, at = 5_300))),
-        ))
-
-        assertEquals("keyed by movement, in join-key order", listOf("back-squat", "bench-press"),
-                     rows.map { it.exerciseId })
-        assertEquals("the row the lifter finished on, not the 100 they hit last month",
-                     LastSet("bench-press", 80.0, 8, atMs = 5_000), rows.last())
-        assertEquals(LastSet("back-squat", 120.0, 3, atMs = 5_000), rows.first())
-    }
-
-    @Test
-    fun testEveryCompletedMovementIsIncludedAndAnOpenSessionIsAbsent() {
-        val rows = LastSet.of(listOf(
-            aSession("ses_done", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
-                aSet("chin-up", 0.0, 8, at = 1_100),
-                aSet("deadlift", 140.0, 5, at = 1_200),
-                aSet("deadlift", 100.0, 8, at = 1_300))),
-            aSession("ses_live", startedAt = 9_000, finishedAt = null, sets = listOf(
-                aSet("deadlift", 200.0, 1, at = 9_100))),
-        ))
-
-        assertEquals(listOf(LastSet("chin-up", 0.0, 8, atMs = 1_000),
-            LastSet("deadlift", 100.0, 8, atMs = 1_000)), rows)
-    }
-
-    @Test
-    fun testALogWithNothingInItAnswersWithNoRowsAtAll() {
-        assertEquals(emptyList<LastSet>(), LastSet.of(emptyList()))
-    }
-
-    @Test
-    fun testLastTimeIncludesEverySetAndThePrefillDialsOffIt() {
-        val history = listOf(
-            aSession("ses_old", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
-                aSet("bench-press", 90.0, 5, at = 1_500))),
-            aSession("ses_new", startedAt = 5_000, finishedAt = 6_000, sets = listOf(
-                aSet("bench-press", 40.0, 10, at = 5_100),
-                aSet("bench-press", 100.0, 5, at = 5_200),
-                aSet("bench-press", 100.0, 3, at = 5_300),
-                aSet("bench-press", 60.0, 12, at = 5_400))),
-            aSession("ses_live", startedAt = 9_000, finishedAt = null, sets = listOf(
-                aSet("bench-press", 200.0, 1, at = 9_100))),
-        )
-
-        val last = LastTime.of("bench-press", history)
-
-        assertEquals("ses_new", last.session?.id)
-        assertEquals("every set of the last finished workout is included",
-            listOf(40.0 to 10, 100.0 to 5, 100.0 to 3, 60.0 to 12), last.sets.map { it.weightKg to it.reps })
-        assertEquals("weight from the last row of the block, reps from the first",
-            Prefill(60.0, 10), Prefill.of(emptyList(), null, last))
-        assertEquals("and the picker's line reports the same last row",
-            LastSet("bench-press", 60.0, 12, atMs = 5_000), LastSet.of(history).single())
-    }
-
-    @Test
-    fun testOneSetIsEnoughForLastTime() {
-        val last = LastTime.of("chin-up", listOf(
-            aSession("ses_done", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
-                aSet("chin-up", 0.0, 8, at = 1_100)))))
-
-        assertEquals(LastTime("chin-up", Session("ses_done", 1_000, 2_000),
-            sets = listOf(aSet("chin-up", 0.0, 8, at = 1_100))), last)
-        assertFalse(last.isFirstTime)
-    }
-}
 
 class PrefillTests {
     private fun aSet(weightKg: Double, reps: Int, at: Long): TrainingSet =
