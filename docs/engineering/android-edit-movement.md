@@ -17,16 +17,15 @@ or explanatory field footer. Web preserves Other reads and includes only positiv
 
 ## Compatibility and deployment
 
-Both source registries are schema 10 / minimum 10 and retain the additive Coach records. Explicit Other is
+Both source registries are 12 / minimum 11 and retain the additive Coach records. Explicit Other is
 accepted by the backend parser, database checks, generated schemas and all shared domains. Legacy
 records are retained without coercion. The conditional database upgrade widens the two existing
 checks once; an unchanged reapplication keeps their identities and every existing trigger.
 
-The deployment compatibility guard and Android fresh-hello delivery gate are on main. Production
-cutoff remains held until the coordinated Android/iOS replacement artifacts and their distribution
-availability are verified. Android keeps queued writes ready against a server below its registry
+The deployment compatibility guard and Android fresh-hello delivery gate are on main. Production's
+hello advertised schema 11 / minimum 11 when last verified, on 2026-10-30. Android keeps queued writes ready against a server below its registry
 minimum. Existing iOS/web selectors cannot originate Other. Any rollback after Other data exists
-must retain Other, finite unbounded loads and nullable metrics at schema 10 / minimum 10.
+must retain Other, finite unbounded loads and nullable metrics, on a schema 11 / minimum 11 or later image.
 
 ## Verification
 

@@ -54,8 +54,6 @@ class ConnectedLogTests {
         assertEquals("A static key", ConnectedLog.unnamedKey)
         assertEquals("Couldn’t read your connections.", ConnectedLog.unread)
         assertEquals("Connect to the internet to read your connections.", ConnectedLog.offline)
-        assertEquals("your AI tools", ConnectedLog.settingsUnknown)
-        assertEquals("nothing connected yet", ConnectedLog.settingsNone)
     }
 
     // Everything the brief strikes: the pitch, the price, the desk, the four apply sentences, the
@@ -65,7 +63,6 @@ class ConnectedLogTests {
         val everyLine = firstPaint + ConnectedLog.how + listOf(
             ConnectedLog.actionSignedOut, ConnectedLog.opensInBrowser, ConnectedLog.connectedHead,
             ConnectedLog.unnamedGrant, ConnectedLog.unnamedKey, ConnectedLog.unread, ConnectedLog.offline,
-            ConnectedLog.settingsUnknown, ConnectedLog.settingsNone,
         )
         val refused = listOf(
             "free", "sunday", "monday", "windmill one", "upgrade", "subscription", "trial", "premium",
@@ -127,28 +124,17 @@ class ConnectedLogTests {
             ),
             tools.map { it.meta(now) },
         )
-        assertEquals("4 tools", state.settingsMeta)
         assertEquals(ConnectedLogState.None, ConnectedLog.state(emptyList(), emptyList()))
         assertEquals("a grant that reaches no gym level is nobody connected here", ConnectedLogState.None,
             ConnectedLog.state(listOf(OAuthGrant("c3", "Codex", 1L, "roadmap:read")), emptyList()))
     }
 
     @Test
-    fun theSettingsRowPrintsTheStateAndNothingElse() {
-        assertEquals("your AI tools", ConnectedLogState.Unknown.settingsMeta)
-        assertEquals("your AI tools", ConnectedLogState.Refused.settingsMeta)
+    fun onlyAnAnswerForTheSeatCountsAsAnswered() {
         assertEquals(listOf(false, false, false, true, true), listOf(
             ConnectedLogState.Unknown, ConnectedLogState.Refused, ConnectedLogState.Offline, ConnectedLogState.None,
             ConnectedLogState.Connected(emptyList()),
         ).map { it.answered })
-        assertEquals("nothing connected yet", ConnectedLogState.None.settingsMeta)
-        assertEquals("Claude Desktop · read · write",
-            ConnectedLog.state(listOf(OAuthGrant("c1", "Claude Desktop", 1L, "gym:write gym:read")), emptyList()).settingsMeta)
-        assertEquals("Cursor · whole account",
-            ConnectedLog.state(listOf(OAuthGrant("c2", "Cursor", 1L, "")), emptyList()).settingsMeta)
-        assertEquals("2 tools",
-            ConnectedLog.state(listOf(OAuthGrant("c1", "Claude Desktop", 1L, "gym:read")),
-                listOf(McpKey("k1", "laptop", 1L))).settingsMeta)
     }
 
     @Test

@@ -13,6 +13,13 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -153,9 +160,138 @@ class AskScreenTests {
                 onBack = null,
                 onThreads = { doors += "threads" },
                 onNotes = { doors += "notes" },
+                onConnections = { doors += "connections" },
+                onSignIn = { doors += "signIn" },
                 onReview = {}, seat = "A",
             )
         }
+    }
+
+    @Test fun choicesFillTheActualComposerWithoutSendingAndPersistTheSelectedOptions() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = java.io.File(tmp.root, "choices.json")
+        val disk = LocalCoach(file)
+        val clarification = CoachClarification("choice-123", "What works for you?", listOf(
+            CoachClarification.Group("days", "Days each week", false, listOf(CoachClarification.Option("two", "2 days"), CoachClarification.Option("three", "3 days"))),
+            CoachClarification.Group("equipment", "Equipment", true, listOf(CoachClarification.Option("dumbbells", "Dumbbells"), CoachClarification.Option("bodyweight", "Bodyweight")))))
+        val raw = works.windmill.platform.net.WindmillJson.encodeToJsonElement(CoachClarification.serializer(), clarification)
+        val exchange = AskExchange("Build a routine", answer = AskAnswer("What works for you?", ReadTally(), clarification = raw), requestId = "request-123")
+        disk.saveChat("u1", LocalChat("chat-123", exchanges = listOf(exchange)), true)
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
+        runBlocking { room.select("u1") }
+        val sent = mutableListOf<String>()
+        compose.setContent { GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
+            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "chat-123") } }
+        compose.onNodeWithText("2 days").performScrollTo().performClick()
+        compose.onNodeWithText("3 days").performScrollTo().performClick()
+        compose.onNodeWithText("Bodyweight").performScrollTo().performClick()
+        compose.onNodeWithText("Dumbbells").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Question").assert(hasText("3 days. Dumbbells, Bodyweight."))
+        compose.onNodeWithText("2 days").assert(androidx.compose.ui.test.isNotSelected())
+        compose.onNodeWithText("3 days").assert(androidx.compose.ui.test.isSelected())
+        compose.onNodeWithText("Dumbbells").assert(androidx.compose.ui.test.isSelected())
+        compose.onNodeWithText("Bodyweight").assert(androidx.compose.ui.test.isSelected())
+        compose.onNodeWithText("read nothing from your log").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(emptyList<String>(), sent)
+            assertEquals(CoachDraft("3 days. Dumbbells, Bodyweight."), LocalCoach(file).draft("u1", "chat-123"))
+            assertEquals(mapOf("days" to listOf("three"), "equipment" to listOf("dumbbells", "bodyweight")), LocalCoach(file).choices("u1", "chat-123", "request-123:choice-123"))
+        }
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.runOnIdle { assertEquals(listOf("3 days. Dumbbells, Bodyweight."), sent) }
+    }
+
+    @Test fun choiceChipsGrowWithTheTextSize() {
+        val clarification = CoachClarification("choice-123", "How many days?", listOf(CoachClarification.Group("days", "Days each week", false,
+            listOf(CoachClarification.Option("d3", "3 days")))))
+        var fontScale by mutableStateOf(1f)
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                GymMaterial { CoachChoices(clarification, emptyMap(), true) { _, _ -> } }
+            }
+        }
+        val regular = compose.onNodeWithText("3 days").getBoundsInRoot()
+        compose.runOnIdle { fontScale = 2f }
+        val large = compose.onNodeWithText("3 days").getBoundsInRoot()
+        val label = compose.onNodeWithText("3 days", useUnmergedTree = true).getBoundsInRoot()
+        assertEquals(32f, regular.height.value, .5f)
+        assertTrue("the chip grows: $regular -> $large", large.height > regular.height)
+        assertTrue("the label keeps its padding: $label in $large", label.top - large.top >= 5.5.dp && large.bottom - label.bottom >= 5.5.dp)
+    }
+
+    @Test fun continuingAKeptDraftPreservesTheCurrentComposerAndRestoresAPhotoOnlyDraft() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = java.io.File(tmp.root, "held.json")
+        val disk = LocalCoach(file)
+        val phone = disk.anonymousOwner()
+        val bitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+        val bytes = java.io.ByteArrayOutputStream().also { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        bitmap.recycle()
+        val photo = CoachAttachment("photo-123", "image/png", 1, 1, bytes.size.toLong())
+        disk.saveChat(phone, LocalChat("phone-chat", setup = true), true)
+        disk.savePhoto(phone, photo.id, bytes); disk.saveDraft(phone, "phone-chat", CoachDraft(photo = photo))
+        disk.saveChat("u1", LocalChat("account-chat"), true); disk.saveDraft("u1", "account-chat", CoachDraft("Account draft"))
+        disk.adoptPhoneDraft("u1") { true }
+        val held = disk.keptDrafts("u1", "account-chat").single()
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
+        runBlocking { room.select("u1") }
+        val sent = mutableListOf<String>()
+        compose.setContent { GymMaterial { AskScreen(room.store, emptyList(), emptyList(), emptySet(), false, null,
+            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "account-chat") } }
+        compose.onNodeWithText("Draft kept on this phone").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Just typed")
+        compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Question").assert(hasText(""))
+        compose.onNodeWithContentDescription("Attached photo").assertIsDisplayed()
+        compose.onNodeWithText("Just typed").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(emptyList<String>(), sent)
+            assertEquals(held.draft, LocalCoach(file).draft("u1", "account-chat"))
+            assertEquals(listOf(held.copy(draft = CoachDraft("Just typed"))), LocalCoach(file).keptDrafts("u1", "account-chat"))
+        }
+        compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Question").assert(hasText("Just typed"))
+        compose.onNodeWithContentDescription("Attached photo").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(held), LocalCoach(file).keptDrafts("u1", "account-chat")) }
+    }
+
+    @Test fun anUnreadablePublishedSwapKeepsTheVisibleDraftAndChoicesSafeDuringRecomposition() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = java.io.File(tmp.root, "unreadable-ui.json")
+        val published = java.io.File(tmp.root, "published-ui.json")
+        var unreadable = false
+        val disk = LocalCoach(file) { target, text ->
+            works.windmill.platform.storage.AtomicDocument.write(target, text)
+            if (unreadable) { check(target.renameTo(published)); check(target.mkdir()); throw java.io.IOException("unreadable publication") }
+        }
+        val phone = disk.anonymousOwner()
+        disk.saveChat(phone, LocalChat("phone-chat"), true); disk.saveDraft(phone, "phone-chat", CoachDraft("Phone draft"))
+        val clarification = CoachClarification("choice-123", "Days?", listOf(CoachClarification.Group("days", "Days", false,
+            listOf(CoachClarification.Option("three", "3 days")))))
+        val raw = works.windmill.platform.net.WindmillJson.encodeToJsonElement(CoachClarification.serializer(), clarification)
+        val exchange = AskExchange("Question", answer = AskAnswer("Days?", ReadTally(), clarification = raw), requestId = "request-123")
+        disk.saveChat("u1", LocalChat("account-chat", exchanges = listOf(exchange)), true)
+        disk.saveDraft("u1", "account-chat", CoachDraft("Account draft")); disk.adoptPhoneDraft("u1") { true }
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
+        runBlocking { room.select("u1") }
+        var shown by mutableStateOf(true)
+        compose.setContent { if (shown) GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
+            {}, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "account-chat") } }
+        compose.runOnIdle { unreadable = true }
+        compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
+        compose.onNodeWithText("Your draft couldn’t be saved. Try again.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Question").assert(hasText("Account draft"))
+        compose.onNodeWithText("Phone draft").assertIsDisplayed()
+        compose.onNodeWithText("3 days").performScrollTo().assert(androidx.compose.ui.test.isNotSelected())
+        compose.runOnIdle {
+            assertTrue(file.isDirectory)
+            assertEquals(CoachDraft("Phone draft"), LocalCoach(published).draft("u1", "account-chat"))
+            shown = false
+        }
+        compose.waitForIdle()
+        assertTrue(file.isDirectory)
+        assertEquals(CoachDraft("Phone draft"), LocalCoach(published).draft("u1", "account-chat"))
     }
 
     @Test fun anEmptyPendingMessagePacesBothTheFirstChunkAndItsTerminalTextInsideTheBubble() {
@@ -188,6 +324,24 @@ class AskScreenTests {
         assertTrue(terminal.length > initial.length && terminal.length < whole.length && whole.startsWith(terminal))
         compose.mainClock.advanceTimeBy(2000)
         assertEquals(whole, shown())
+        scope.cancel()
+    }
+
+    @Test
+    fun anInterruptedExchangeAboveANewerOneKeepsTryAgainAndRetriesItsOwnRequest() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        val older = AskExchange("Older question", trouble = Ask.interrupted, again = true, requestId = "request-a")
+        val newer = AskExchange("Newer question", answer = AskAnswer("Newer answer", ReadTally()), requestId = "request-b")
+        val retried = mutableListOf<AskExchange>()
+        compose.setContent {
+            AskScreen(store, listOf(older, newer), emptyList(), emptySet(), false, null,
+                onAsk = {}, onRetry = { retried += it }, onAskNew = {}, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
+        }
+        compose.onNodeWithText(Ask.interrupted).assertIsDisplayed()
+        compose.onNodeWithText("Try again").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf(older), retried) }
         scope.cancel()
     }
 
@@ -232,7 +386,7 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Add photo").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").performClick()
         compose.runOnIdle { assertEquals(listOf("" to photo), sent) }
-        compose.onNodeWithText("Remove photo").performClick()
+        compose.onNodeWithContentDescription("Remove photo").performClick()
         compose.runOnIdle { assertEquals(CoachDraft(), store.coach.draft("new")) }
         scope.cancel()
     }
@@ -314,7 +468,7 @@ class AskScreenTests {
         room(signedIn(scope).store, thread = emptyList(), cap = null, doors = mutableListOf())
 
         compose.onNodeWithText(Ask.title).assertIsDisplayed()
-        compose.onNodeWithText(Ask.subtitle).assertDoesNotExist()
+        compose.onNodeWithText("reads your log · helps with your routines").assertDoesNotExist()
         compose.onNodeWithText("Ten questions a day, three back to back.").assertDoesNotExist()
         compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
         compose.onNodeWithText("There is nothing to buy here.", substring = true).assertDoesNotExist()
@@ -358,73 +512,134 @@ class AskScreenTests {
         scope.cancel()
     }
 
-    // The state says the sentence the LOG sent, not a constant of its own — and it says it once: the
-    // exchange's own refusal card is not drawn beneath it.
-    @Test
-    fun theCapReachedMomentSaysTheLogsOwnSentenceAndReplacesTheComposerWithWhatToDoNext() {
+    @Test fun allowanceKeepsTheRefusedDraftAndOnlyTheAnonymousSignInDoor() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val refused = AskExchange(
-            question = "is my week too light?",
-            trouble = "the next question frees up in a couple of hours",
-        )
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).also { rooms += it }
+        runBlocking { fixture.select(null) }
+        val store = fixture.store
+        val input = "Swap chin-ups for pulldowns"
+        store.coach.saveDraft("new", CoachDraft(input))
         val doors = mutableListOf<String>()
-        room(signedIn(scope).store, thread = listOf(refused), cap = AskCap.Daily, doors = doors)
-
-        compose.onNodeWithText("the next question frees up in a couple of hours").assertIsDisplayed()
-        compose.onNodeWithText("is my week too light?").assertIsDisplayed()
-        compose.onNodeWithText(Threads.open).assertIsDisplayed()
-        compose.onNodeWithText("Connect own agent").assertIsDisplayed()
-        compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
-        // A10: the promise is pinned with the doors, below the moment it ran out — which reads at
-        // the end of the thread and scrolls with it.
-        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
-        compose.onNodeWithText("Try again").assertDoesNotExist()
-
-        // T3's other direction: under the DAY's ten a new conversation is the way back to a
-        // composer, so it leads and the connect door sits beneath it.
-        val askNew = compose.onNodeWithText(Threads.open).fetchSemanticsNode()
-        val connect = compose.onNodeWithText("Connect own agent").fetchSemanticsNode()
-        assertTrue("the way back to an answer leads under the daily cap",
-            askNew.positionInRoot.y < connect.positionInRoot.y)
-
-        compose.onNodeWithText(Threads.open).performClick()
-        compose.runOnIdle { assertEquals(listOf("askNew"), doors) }
+        room(store, listOf(AskExchange(input, trouble = "Your AI allowance is fully used or reserved.")), AskCap.Allowance, doors)
+        compose.onNodeWithText(AskCap.Allowance.wordless + "\nSign in to continue.").assertIsDisplayed()
+        compose.onNodeWithText("Your AI allowance is fully used or reserved.").assertDoesNotExist()
+        compose.onNodeWithText("Use your own AI agent").assertDoesNotExist()
+        compose.onNodeWithText("Upgrade").assertDoesNotExist()
+        compose.onNodeWithText("Sign in").performClick()
+        assertEquals(listOf("signIn"), doors)
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Keep my edited input")
+        compose.onNodeWithContentDescription("Send").performClick()
+        assertEquals(listOf("signIn", "ask:Keep my edited input"), doors)
         scope.cancel()
     }
 
-    // The account's 30-day ceiling reaches the SAME state, because the connect door is the one way on
-    // that neither ceiling rations — and it must never borrow the daily bucket's sentence, which
-    // would promise a question back in a couple of hours over a thirty-day window.
-    //
-    // T3: under this ceiling a fresh conversation cannot take a question either, so the connect door
-    // leads and `Ask something new` sits BELOW it, as a way out of this conversation.
-    @Test
-    fun theAccountCeilingReachesTheSameStateSaysItsOwnSentenceAndLeadsWithTheConnectDoor() {
+    @Test fun aRefusedQuestionHeldInTheComposerDrawsNoDateHeaderAboveTheNotice() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will " +
-            "answer again as that window rolls on"
-        val refused = AskExchange(question = "what's stalled?", trouble = ceiling)
+        val store = signedIn(scope).store
+        store.coach.saveDraft("new", CoachDraft("Swap chin-ups for pulldowns"))
+        val asked = AskExchange("How heavy should I start squats?", answer = AskAnswer("Choose a weight you can lift 8 times.", ReadTally()),
+            requestId = "request-a", atMs = System.currentTimeMillis() - 60_000)
+        val refused = AskExchange("Swap chin-ups for pulldowns", trouble = AskCap.Allowance.wordless, requestId = "request-b",
+            atMs = System.currentTimeMillis())
+        room(store, listOf(asked, refused), AskCap.Allowance, mutableListOf())
+        compose.onNodeWithText(AskCap.Allowance.wordless).assertIsDisplayed()
+        assertEquals(1, compose.onAllNodesWithText("Today ", substring = true).fetchSemanticsNodes().size)
+        scope.cancel()
+    }
+
+    @Test fun choicesThatReadNothingFromTheLogStandWithoutASourcesRow() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        val clarification = CoachClarification("choice-123", "How many days and what equipment?", listOf(
+            CoachClarification.Group("days", "Days each week", false, listOf(CoachClarification.Option("d3", "3 days")))))
+        val raw = works.windmill.platform.net.WindmillJson.encodeToJsonElement(CoachClarification.serializer(), clarification)
+        val exchange = AskExchange("Build me a program to get stronger.", answer = AskAnswer("How many days and what equipment?", ReadTally(),
+            steps = listOf(AskStep("list_exercises"), AskStep("ask_setup_details")),
+            receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_exercises"))), clarification = raw), requestId = "request-123")
+        room(store, listOf(exchange), null, mutableListOf())
+        compose.onNodeWithText("3 days").assertIsDisplayed()
+        compose.onNodeWithText("Read nothing from your log").assertDoesNotExist()
+        scope.cancel()
+    }
+
+    @Test fun signedInAllowanceWithoutResetKeepsOnlyItsFirstSentenceAndAnEditableComposer() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        store.coach.saveDraft("new", CoachDraft("Retained input"))
         val doors = mutableListOf<String>()
-        room(signedIn(scope).store, thread = listOf(refused), cap = AskCap.Ceiling, doors = doors)
+        room(store, listOf(AskExchange("Retained input", trouble = AskCap.Allowance.wordless)), AskCap.Allowance, doors)
+        compose.onNodeWithText(AskCap.Allowance.wordless).assertIsDisplayed()
+        for (label in listOf("Sign in", "Upgrade", "Use your own AI agent", "You can use Coach again on"))
+            compose.onNodeWithText(label, substring = true).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Edited input")
+        compose.onNodeWithContentDescription("Send").performClick()
+        assertEquals(listOf("ask:Edited input"), doors)
+        scope.cancel()
+    }
 
+    @Test
+    fun theDayCapKeepsEditableRefusedInputAndSendWithAnHonestNotice() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        val refused = AskExchange("is my week too light?", trouble = "the next question frees up in a couple of hours")
+        store.coach.saveDraft("new", CoachDraft(refused.question))
+        val doors = mutableListOf<String>()
+        room(store, thread = listOf(refused), cap = AskCap.Daily, doors = doors)
+        compose.onNodeWithText(Ask.capReached).assertIsDisplayed()
+        compose.onNodeWithText(refused.trouble!!).assertDoesNotExist()
+        compose.onAllNodesWithText(refused.question).assertCountEquals(1)
+        compose.onNode(hasText(refused.question) and hasSetTextAction()).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Question").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+        compose.onNodeWithText(Threads.open).assertDoesNotExist()
+        compose.onNodeWithText("Use your own AI agent").performClick()
+        compose.runOnIdle { assertEquals(listOf("connections"), doors) }
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.runOnIdle { assertEquals(listOf("connections", "ask:is my week too light?"), doors) }
+        scope.cancel()
+    }
+
+    @Test
+    fun theSignedOutAllowanceRefusalShowsItsInputOnlyInTheComposerAsBoard0110Draws() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).also { rooms += it }
+        runBlocking { fixture.select(null) }
+        val input = "Swap chin-ups for pulldowns"
+        fixture.store.coach.saveDraft("new", CoachDraft(input))
+        room(fixture.store, thread = listOf(AskExchange(input, trouble = AskCap.Allowance.wordless, refusalCode = "subject_exhausted")),
+            cap = AskCap.Allowance, doors = mutableListOf())
+        compose.onAllNodesWithText(input).assertCountEquals(1)
+        compose.onNode(hasText(input) and hasSetTextAction()).assertIsDisplayed()
+        scope.cancel()
+    }
+
+    @Test
+    fun theAccountCeilingUsesItsOwnNoticeWithoutReplacingTheComposer() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on"
+        val refused = AskExchange("what's stalled?", trouble = ceiling)
+        val doors = mutableListOf<String>()
+        room(signedIn(scope).store, listOf(refused), AskCap.Ceiling, doors)
         compose.onNodeWithText(ceiling).assertIsDisplayed()
-        // Inside the scroller: the doors stay pinned, the words scroll. What the thread keeps that
-        // way — 283.5dp at fontScale 2.0 — is measured in `LargestTypeTests`.
-        compose.onNodeWithText(ceiling).assert(hasAnyAncestor(hasScrollAction()))
         compose.onNodeWithText(Ask.capReached).assertDoesNotExist()
-        compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
-        // Ten a day is a promise about the DAY's bucket. Under the account's thirty days it is not
-        // the rule that stopped this question, and drawn on top of the sentence that says so it
-        // would read as that rule — so it is not drawn under this ceiling at all.
-        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Question").assertIsDisplayed()
+        compose.onNodeWithText("Use your own AI agent").performClick()
+        compose.runOnIdle { assertEquals(listOf("connections"), doors) }
+        compose.onNodeWithText(Threads.open).assertDoesNotExist()
+        scope.cancel()
+    }
 
-        val connect = compose.onNodeWithText("Connect own agent").fetchSemanticsNode()
-        val askNew = compose.onNodeWithText(Threads.open).fetchSemanticsNode()
-        assertTrue("the unrationed door leads; the new conversation is the way out beneath it",
-            connect.positionInRoot.y < askNew.positionInRoot.y)
-
-        compose.onNodeWithText(Threads.open).performClick()
-        compose.runOnIdle { assertEquals(listOf("askNew"), doors) }
+    @Test
+    fun onlyTheTypedAccountRefusalShowsTheApprovedFixedBubbleAndExistingSignInDoor() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val exchange = AskExchange("Make Push A harder", trouble = "Private model prose", refusalCode = "account_required")
+        val doors = mutableListOf<String>()
+        room(signedIn(scope).store, listOf(exchange), null, doors)
+        compose.onNodeWithText(exchange.question).assertIsDisplayed()
+        compose.onNodeWithText(Ask.accountRequired).assertIsDisplayed()
+        compose.onNodeWithText("Private model prose").assertDoesNotExist()
+        compose.onNodeWithText("Sign in").performClick()
+        compose.runOnIdle { assertEquals(listOf("signIn"), doors) }
         scope.cancel()
     }
 

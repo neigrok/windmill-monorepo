@@ -66,6 +66,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -75,6 +79,7 @@ import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.AskCap
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.CoachDraft
+import works.windmill.gym.coach.onboarding.AnonymousCoachAccess
 import works.windmill.gym.coach.AskExchange
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.sharing.WorkoutSharing
@@ -103,7 +108,7 @@ import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.coach.AskAbsentStance
 import works.windmill.gym.coach.AskScreen
-import works.windmill.gym.coach.AskSignedOutStance
+import works.windmill.gym.coach.CoachAccessStance
 import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.ConnectedLogScreen
 import works.windmill.gym.ui.FinishCoach
@@ -130,7 +135,6 @@ import works.windmill.gym.ui.RoutineSheet
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.rememberGymHaptics
 import works.windmill.gym.ui.SessionScreen
-import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.coach.ThreadScreen
 import works.windmill.gym.coach.ThreadsScreen
 import works.windmill.gym.notification.WorkoutNotifications
@@ -216,7 +220,7 @@ internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::r
 // thread — the thread is hoisted into the room below so it outlives this stack. A proposal review is
 // not a destination at all: it is a sheet over whichever of these is standing.
 @Serializable
-private sealed interface Away {
+internal sealed interface Away {
     @Serializable
     data class Session(val summary: SessionSummary, val detail: SessionDetail? = null) : Away
     @Serializable
@@ -227,8 +231,6 @@ private sealed interface Away {
     data object Threads : Away
     @Serializable
     data class Thread(val threadId: String) : Away
-    @Serializable
-    data object Settings : Away
     @Serializable
     data object Connections : Away
     @Serializable
@@ -262,9 +264,14 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 //
 // The application owns the store; this room owns only navigation and transient UI state.
 
-private fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
+internal fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
     save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
-    restore = { runCatching { WindmillJson.decodeFromString(ListSerializer(Away.serializer()), it) }
+    restore = { raw -> runCatching {
+        val retained = WindmillJson.parseToJsonElement(raw).jsonArray.filterNot {
+            it.jsonObject["type"]?.jsonPrimitive?.content == "works.windmill.gym.Away.Settings"
+        }
+        WindmillJson.decodeFromJsonElement(ListSerializer(Away.serializer()), JsonArray(retained))
+    }
         .onFailure { telemetry.failure("gym.restoreNavigation", it) }.getOrDefault(emptyList()) },
 )
 
@@ -311,6 +318,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     var note by remember { mutableStateOf<String?>(null) }
     // Which tab was open exists nowhere but here, so it is saved through `tabSaver`.
     var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
+    var initialTabChosen by rememberSaveable { mutableStateOf(false) }
+    fun chooseTab(next: Tab) {
+        initialTabChosen = true
+        tab = next
+    }
     var pushedDraftOpen by remember { mutableStateOf(false) }
     // The review open over the room. NOT saved: it reads the log on the way in, and a recreation
     // mid-review lands back on the card, which decides nothing either.
@@ -328,6 +340,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val asking = store.coach.isAsking(conversationId)
     val coachUpload = store.coach.upload(conversationId)
     val cap = AskCap.entries.firstOrNull { it.name == selectedChat?.cap }
+    val anonymousCoachAccess = store.coach.anonymousAccess
+    LaunchedEffect(account.identityRevision, store.coach.accountKey, tab, away.lastOrNull()) {
+        if (account.isSignedIn || !initialTabChosen || tab == Tab.Coach || away.lastOrNull() is Away.Coach || away.lastOrNull() is Away.Thread)
+            store.coach.refreshAnonymousAccess()
+    }
     // A half-typed routine exists nowhere but in memory, so the draft is saved and the builder is
     // drawn off it.
     var building by rememberSaveable(stateSaver = remember(telemetry) { routineDraftSaver(telemetry) }) {
@@ -434,7 +451,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             is Away.Coach -> "coach"
             Away.Threads -> "threads"
             is Away.Thread -> "thread"
-            Away.Settings -> "settings"
             Away.Connections -> "connections"
             Away.Notes -> "notes"
             is Away.NoteEditor -> "note_editor"
@@ -456,7 +472,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             BackMeans.PopOnePushedScreen -> back()
             BackMeans.ReturnToTheRoutinesTab -> {
                 note = null
-                tab = Tab.Routines
+                chooseTab(Tab.Routines)
             }
         }
     }
@@ -466,7 +482,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // refused for good.
     val openDestination by rememberUpdatedState<(Away) -> Unit> { look(it) }
     val destinations = remember(shell, store) {
-        listOf(YouDestination("settings", "Gym settings") { openDestination(Away.Settings) },
+        listOf(YouDestination("notes", "Notes") { openDestination(Away.Notes) },
             YouDestination("connections", "Connected log") { openDestination(Away.Connections) })
     }
     SideEffect { shell.present(destinations) }
@@ -488,7 +504,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     LaunchedEffect(store.routinesOpenRequest) {
         if (store.routinesOpenRequest > 0) {
             note = null
-            tab = Tab.Routines
+            chooseTab(Tab.Routines)
             if (building == null && !savingRoutine && !pushedDraftOpen && reviewing == null && away.none { it is Away.NoteEditor }) {
                 away = emptyList()
                 selectedRoutineId = null
@@ -519,11 +535,41 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (standing != null) seatRead = true
         store.connect(account)
         try {
-            if (store.coach.selectedChatId == null && (tab == Tab.Coach || away.lastOrNull() is Away.Coach)) store.coach.freshChat()
             store.coach.resumeChats()
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure) }
 
+    }
+
+    LaunchedEffect(account.user?.id, account.resolved, store.accountReady) {
+        if (account.resolved && store.accountReady) account.user?.id?.let { store.coach.adoptPhoneDraft(it) }
+    }
+
+    // A phone draft moving into the account chooses its chat first; a fresh chat waits for it.
+    LaunchedEffect(store.initialGymEmpty, account.resolved, store.coach.accountKey, store.coach.adoptingDraft, tab, away, building,
+        selectedRoutineId, anonymousCoachAccess) {
+        if (!account.resolved || store.coach.adoptingDraft) return@LaunchedEffect
+        val empty = store.initialGymEmpty
+        if (empty != null && store.coach.selectedChatId == null && (tab == Tab.Coach || away.lastOrNull() is Away.Coach)) {
+            try { store.coach.freshChat(setup = empty) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { note = "Your conversation couldn’t be saved. Try again." }
+        }
+        if (initialTabChosen) return@LaunchedEffect
+        if (away.isNotEmpty() || building != null || selectedRoutineId != null) {
+            initialTabChosen = true
+            return@LaunchedEffect
+        }
+        if (empty == null) return@LaunchedEffect
+        // Login is never forced: a signed-out empty Gym opens on Coach only while this phone can ask it.
+        if (empty && store.coach.anonymous && anonymousCoachAccess == AnonymousCoachAccess.Checking) return@LaunchedEffect
+        initialTabChosen = true
+        if (!empty || store.coach.anonymous && anonymousCoachAccess != AnonymousCoachAccess.Available) return@LaunchedEffect
+        try {
+            if (store.coach.selectedChatId == null) store.coach.freshChat(setup = true)
+            tab = Tab.Coach
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { note = "Your conversation couldn’t be saved. Try again." }
     }
 
     // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
@@ -580,6 +626,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) store.coach.refreshAnonymousAccess()
             // The transient goes down with what it was offering: an Undo left standing over an act
             // that was let go would offer a way back to something that never happened.
             if (event == Lifecycle.Event.ON_STOP && store.abandonWithheld()) {
@@ -664,7 +711,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             finishStates.removeState(saved.session.id)
             finished = null
             away = emptyList()
-            tab = Tab.Log
+            chooseTab(Tab.Log)
             return@LaunchedEffect
         }
         finished = finished?.copy(session = detail.session, sets = detail.sets)
@@ -718,7 +765,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
         away = emptyList()
         receipts = emptyMap()
-        tab = Tab.Coach
+        chooseTab(Tab.Coach)
     }
 
     LaunchedEffect(queuedFinishShare, finishShareReady, account.resolved, account.user?.id,
@@ -756,7 +803,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val chat = store.coach.freshChat(FinishCoach.question, id = request)
             away = emptyList()
             receipts = emptyMap()
-            tab = Tab.Coach
+            chooseTab(Tab.Coach)
             if (!store.coach.hasRequest(chat, request) &&
                 !store.coach.submit(chat, FinishCoach.question, requestId = request, authenticatedOwner = authenticatedOwner)) {
                 note = "Your message couldn’t be saved. Try again."
@@ -799,7 +846,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         building = null
                         away = emptyList()
                         selectedRoutineId = written.value.id
-                        tab = Tab.Routines
+                        chooseTab(Tab.Routines)
                     }
                 }
             } finally {
@@ -822,7 +869,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         building = null
         selectedRoutineId = null
         away = emptyList()
-        tab = Tab.Routines
+        chooseTab(Tab.Routines)
         return true
     }
 
@@ -921,7 +968,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     onDismissRequest = {
                         finishStates.removeState(original.session.id)
                         finished = null
-                        if (ended.sets.isEmpty()) { away = emptyList(); tab = Tab.Routines }
+                        if (ended.sets.isEmpty()) { away = emptyList(); chooseTab(Tab.Routines) }
                     },
                     sheetState = finishSheet,
                     contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
@@ -941,7 +988,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onDone = {
                                 if (!closingFinish && queuedFinishShare == null) {
                                     telemetry.event("gym_action", mapOf("screen" to "finish", "action" to "done", "outcome" to "ok"))
-                                    closeFinish { if (ended.sets.isEmpty()) { away = emptyList(); tab = Tab.Routines } }
+                                    closeFinish { if (ended.sets.isEmpty()) { away = emptyList(); chooseTab(Tab.Routines) } }
                                 }
                             },
                             onDiscard = { discard(ended.session.id, "finish", SessionDetail(ended.session, ended.sets)) },
@@ -991,7 +1038,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                         }
                                         return@launch
                                     }
-                                    closeFinish { away = emptyList(); tab = Tab.Log }
+                                    closeFinish { away = emptyList(); chooseTab(Tab.Log) }
                                 } finally { discarding = false }
                             }
                         }
@@ -1020,7 +1067,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 Away.Threads -> Threads.title
                 // The noun, not the thread's title: a title is the lifter's first message verbatim.
                 is Away.Thread -> Threads.conversation
-                Away.Settings -> "Gym settings"
                 Away.Connections -> ConnectedLog.title
                 Away.Notes -> Notes.title
                 is Away.NoteEditor -> Notes.title
@@ -1076,7 +1122,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     onPick = { picked ->
                                         note = null
                                         if (picked == Tab.Coach) askSomethingNew()
-                                        else { away = emptyList(); tab = picked }
+                                        else { away = emptyList(); chooseTab(picked) }
                                     },
                                 )
                             } else {
@@ -1116,17 +1162,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             backTo = beneath,
                             onBack = { back() },
                             onDraftOpen = { pushedDraftOpen = it },
-                        )
-                        standing is Away.Settings -> SettingsScreen(
-                            store = store,
-                            isSignedIn = account.isSignedIn,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onNotes = { look(Away.Notes) },
-                            onConnectedLog = { look(Away.Connections) },
-                            accountEmail = account.user?.email,
-                            onAccount = shell.openYou,
-                            say = { note = it },
                         )
                         standing is Away.Connections -> ConnectedLogScreen(
                             store = store,
@@ -1187,6 +1222,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             say = { note = it },
                             onDraftOpen = { pushedDraftOpen = it },
                         )
+                        (standing is Away.Coach || standing == null && tab == Tab.Coach) && !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
+                            CoachAccessStance(seat = youInitial, onSignIn = shell.openSignIn,
+                                bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.allThreads.isNotEmpty(),
+                                onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
+                        (standing is Away.Coach || standing == null && tab == Tab.Coach) && askAbsent ->
+                            AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
                         standing is Away.Coach -> AskScreen(
                             store = store,
                             seat = youInitial,
@@ -1201,12 +1242,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             cap = cap,
                             onAsk = { asked -> ask(asked) },
                             onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
-                            onStop = ::stopCoach, upload = coachUpload,
-                            // Only the newest question is ever asked again: a retry further up would drop
-                            // everything asked since.
-                            onRetry = {
-                                conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
-                            },
+                            onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
+                            onSignIn = shell.openSignIn,
+                            onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
+                            onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
                             onAskNew = { askSomethingNew() },
                             seed = "",
                             onNewDraft = { askSomethingNew(it) },
@@ -1228,7 +1267,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         standing is Away.Thread -> ThreadScreen(
                             threadId = standing.threadId,
                             seat = youInitial,
-                            composerEnabled = account.isSignedIn,
+                            composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
+                            onSignIn = shell.openSignIn,
+                            onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
                             onAskNew = { askSomethingNew() },
                             store = store,
                             origin = origin,
@@ -1256,12 +1297,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onOpenRecovery = { id -> look(if (id == null) Away.OnThisPhone else Away.InspectWorkout(id)) },
                             recovery = recoveryRead,
                         ) }
-                        // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
-                        // designed stance rather than a 401.
-                        tab == Tab.Coach && !account.isSignedIn ->
-                            AskSignedOutStance(seat = youInitial, onSignIn = shell.openSignIn,
-                                onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
-                        tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial, onNotes = { look(Away.Notes) }, onConnections = { look(Away.Connections) })
                         tab == Tab.Coach -> AskScreen(
                             store = store,
                             thread = conversation,
@@ -1275,10 +1310,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             cap = cap,
                             onAsk = { asked -> ask(asked) },
                             onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
-                            onStop = ::stopCoach, upload = coachUpload,
-                            onRetry = {
-                                conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
-                            },
+                            onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
+                            onSignIn = shell.openSignIn,
+                            onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
+                            onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
                             onAskNew = { askSomethingNew() },
                             seed = "",
                             onNewDraft = { askSomethingNew(it) },

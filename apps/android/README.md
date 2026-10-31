@@ -60,7 +60,8 @@ Sign-in uses an emailed six-digit code (`door:"app"`, `POST /v1/auth/verify-code
 accepts a pasted magic link or token. There are no app links.
 
 `SessionStore` seals the credential and verified user together through `SecretVault` (AES-GCM,
-Android Keystore). The application builds one vault, and engine credentials use it too. The vault
+Android Keystore). Account and engine credentials share one vault. Installation access uses the
+same Keystore key through its own vault; its installation boundary owns failure reporting. Each vault
 loads its Keystore key once, and again after a failed seal or open. It keeps the last eight secrets
 it opened or sealed in memory, never a failure. A sealed value that a write removes, replaces or
 fails to store leaves that memory; the vault lists the last 32 such values and never keeps them
@@ -68,17 +69,28 @@ again, not even for a read already in flight. Restoring an unchanged account, or
 credential already stored, seals and writes nothing. Backup is disabled by both manifest and
 extraction rules; a Keystore failure has no plaintext fallback.
 Offline restore retains a previously bound account as unverified. Only a confirmed 401 expires
-identity. A durable sign-out fence prevents a restart between Keep and credential removal from
-signing the account back in.
+identity. Sign-out stores the exact account, Keep/Discard choice and engine completion phase in a
+sealed intent. Startup resolves that intent before ordinary auth restore, credential bootstrap or
+sync workers, and finishes an unreadable choice as Keep; a finished engine transition retries only the original account’s credential cleanup.
 Verified sign-in proposals have a separate sealed credential. The current account changes only
 after the engine accepts the decision; cancelling a proposal keeps the previous account and work.
+
+Account deletion has a separate sealed operation record, read before ordinary auth restore and
+sync startup. An unknown result keeps the exact account, proof and request instant fenced until
+session-independent result recovery proves closure. Known closure persists cleanup owed before
+Discard, removes the original replica, owner workout controls and Coach archive/photos, and clears
+only the captured credentials. Decryption or storage ambiguity fails closed. Coach owner epochs
+reject late writes after cleanup, including after a fresh verified sign-in restores the same account
+during its grace period. The anonymous installation identity and binding are retained.
 
 The application owns one SQLite engine and runtime, with separate anonymous, bound and dormant
 account replicas. Android subscribes only to gym; signed-out work never pushes. An empty account
 accepts signed-out training automatically. When both sides hold training, sign-in presents pinned
 **Add** / **Discard** counts, including refused imports retained on this phone. Work changed while
-the choice is open requires a fresh decision. Sign-out uses **Keep**, retaining unsent account work
-in its dormant replica and selecting an independent anonymous replica.
+the choice is open requires a fresh decision. Sign-out asks before ending the account. Unconfirmed
+changes offer **Keep** in the dormant account replica or **Discard** from this phone; **Cancel**
+restores the current account’s writable standing. The held question survives UI recreation, and
+local writes and ordinary sync activity remain fenced until the choice resolves.
 
 Before numbering each nonempty outgoing batch, the runtime makes a fresh authenticated hello and
 requires the server's `schema` to meet the client's registry `minVersion`. An unknown or older
@@ -164,8 +176,15 @@ existing receipt/control presentation and wording. Ordinary messages use native 
 Nunito typography; a long press opens the message's Copy action. Markdown tables keep structured
 cells and plain-text copy. The reveal stays mounted from the empty pending message through its
 terminal answer; Stop exposes all received text. Material3 decorates the existing state input, so
-selection and draft ownership remain in one place. Signed-out local History reuses the existing
-disabled composer state; its text/photo draft remains retained and no edit or Send door is enabled.
+selection and draft ownership remain in one place. An available anonymous installation can ask in its original local chat. Bound or unavailable
+installations retain History and drafts without an anonymous composer; submitted work can recover
+by GET. Typed account-required replies use the fixed Sign in state. Daily caps retain the composer
+and persist the server retry deadline; expiration never sends automatically.
+After successful owned routine and workout reads, an empty Gym initially opens Coach when Coach can
+answer: signed in, or signed out while this phone's anonymous access is available. Otherwise it opens
+Routines; an account waits for its first pull. Saved or deliberately chosen navigation wins. Setup chats retain two local
+greeting bubbles until their first accepted message, with the native photo picker and new-routine
+editor doors. Ordinary fresh chats keep the empty composer.
 Every ask declares `routineReview`, and new Coach routines
 remain drafts until **Save routine**. Review shows movements, targets, equipment and whether loads are total, per
 dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the

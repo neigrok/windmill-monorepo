@@ -93,7 +93,7 @@ class LoggerScreenTests {
             room.select("u1")
             // Unread, the account's log cannot say a movement was never trained, so the last-time read misses.
             if (!lastTimeDown) room.pull(server)
-            if (preferences != GymPreferences()) assertNull(room.store.savePreferences(preferences))
+            if (preferences != GymPreferences()) room.seedFeedback(preferences)
             if (history) {
                 val pushB = (room.store.saveRoutine(RoutineDraft(name = "Push B").adding("bench-press")) as GymResult.Ok).value
                 room.store.start(pushB.id)

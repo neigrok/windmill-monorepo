@@ -45,6 +45,37 @@ class CoachPhotosTests {
     }
 
     @Test
+    fun aLocatedPhotoLeavesWithoutItsLocationOrCamera() {
+        val file = File(tmp.root, "located.jpg")
+        val bitmap = Bitmap.createBitmap(320, 200, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff336699.toInt()) }
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        bitmap.recycle()
+        ExifInterface(file.absolutePath).apply {
+            setAttribute(ExifInterface.TAG_GPS_LATITUDE, "51/1,30/1,0/1"); setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF, "N")
+            setAttribute(ExifInterface.TAG_MAKE, "FixtureCam")
+            saveAttributes()
+        }
+        val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+        val (_, bytes) = CoachPhotos.read(resolver, Uri.fromFile(file), 1024 * 1024, 4096)
+        val out = File(tmp.root, "out.jpg").apply { writeBytes(bytes) }
+        assertNull(ExifInterface(out.absolutePath).getAttribute(ExifInterface.TAG_GPS_LATITUDE))
+        assertFalse(String(bytes, Charsets.ISO_8859_1).contains("FixtureCam"))
+    }
+
+    @Test
+    fun aLargeRotatedPhotoIsDecodedWithinThePixelBudgetBeforeItIsTurnedUpright() {
+        val file = File(tmp.root, "large.jpg")
+        val bitmap = Bitmap.createBitmap(4000, 3600, Bitmap.Config.ARGB_8888)
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+        bitmap.recycle()
+        ExifInterface(file).apply { setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString()); saveAttributes() }
+        val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+        val (photo, _) = CoachPhotos.read(resolver, Uri.fromFile(file))
+        assertEquals(1800 to 2000, photo.width to photo.height)
+        assertTrue(photo.width.toLong() * photo.height <= CoachPhotos.maxDecodedPixels)
+    }
+
+    @Test
     fun corruptInputDoesNotProduceAnAttachment() {
         val file = File(tmp.root, "invalid").apply { writeText("not a photo") }
         val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver

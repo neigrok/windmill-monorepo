@@ -119,7 +119,7 @@ class CoachOwnershipTests {
         val disk = LocalCoach(file)
         val photo = CoachAttachment("attachment-expired", "image/png", 1, 1, 3)
         val bytes = byteArrayOf(1, 2, 3)
-        val request = AskQuestion("thread-expired", "Caption", "request-expired", listOf(photo.id))
+        val request = AskQuestion("thread-expired", "Caption", "request-expired", listOf(photo.id), purpose = "conversation")
         disk.savePhoto("a", photo.id, bytes)
         disk.saveDraft("a", request.thread, CoachDraft(request.question, photo))
         val uploads = mutableListOf<String>()
@@ -157,7 +157,7 @@ class CoachOwnershipTests {
         val disk = LocalCoach(file)
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         val bytes = byteArrayOf(1, 2, 3)
-        val request = AskQuestion("thread-a", "", "request-a", listOf(photo.id))
+        val request = AskQuestion("thread-a", "", "request-a", listOf(photo.id), purpose = "conversation")
         val receipt = CoachResult("routine-created", "operation-a", "routine-a", "Upper body")
         val partial = AskGeneration("generation-a", "request-a", "", "running", "Created Upper", results = listOf(receipt),
             revision = 3, attachments = listOf(photo))
@@ -223,14 +223,14 @@ class CoachOwnershipTests {
             assertEquals(AskOutcome.Refused("The account changed. Open this again."), result.await())
             assertEquals(emptyList<AskGeneration>(), seen)
             assertNull(LocalCoach(file).snapshot("b", "request-a"))
-            assertEquals(listOf(AskQuestion("thread-a", "Question", "request-a")), LocalCoach(file).pending("a"))
+            assertEquals(listOf(AskQuestion("thread-a", "Question", "request-a", purpose = "conversation")), LocalCoach(file).pending("a"))
         }
     }
 
     @Test
     fun pendingRepliesReuseThePersistedIdentityAndOnlyCompletionClearsIt() = runTest {
         val file = File(tmp.root, "coach")
-        val request = AskQuestion("thread-a", "Please create a routine", "request-a")
+        val request = AskQuestion("thread-a", "Please create a routine", "request-a", purpose = "conversation")
         val generation = AskGeneration("generation-a", "request-a", request.question, "running")
         val seen = mutableListOf<AskQuestion>()
         val boundary = object : GymRest by FakeGymRest() {
@@ -252,7 +252,7 @@ class CoachOwnershipTests {
     @Test
     fun failedReplyPreservesCreatedRoutineAndTheOriginalRequestForRetry() = runTest {
         val file = File(tmp.root, "coach")
-        val request = AskQuestion("thread-a", "Please create a routine", "request-a")
+        val request = AskQuestion("thread-a", "Please create a routine", "request-a", purpose = "conversation")
         val result = CoachResult("routine-created", "operation-a", "routine-a", "Upper body")
         val generation = AskGeneration("generation-a", "request-a", request.question, "failed", results = listOf(result))
         val server = FakeGymRest().apply {

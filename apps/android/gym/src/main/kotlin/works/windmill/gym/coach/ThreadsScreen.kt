@@ -181,6 +181,8 @@ fun ThreadScreen(
     onOpenChat: ((String) -> Unit)? = null,
     seat: String? = null,
     composerEnabled: Boolean = true,
+    onSignIn: (() -> Unit)? = null,
+    onBuildRoutine: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val coach = store.coach
@@ -224,9 +226,13 @@ fun ThreadScreen(
     AskScreen(
         store = store, thread = conversation, conversationId = threadId,
         receipts = receipts, lookedAt = lookedAt, asking = asking, cap = cap,
-        onAsk = { ask(it) }, onPhotoAsk = { text, photo -> ask(text, photo = photo) }, onStop = { coach.stopChat(threadId) }, upload = upload,
-        onRetry = { conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) } },
+        onAsk = { ask(it) }, onPhotoAsk = { text, photo -> ask(text, photo = photo) },
+        onStop = if (coach.anonymous) null else ({ coach.stopChat(threadId) }), upload = upload,
+        onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
         onAskNew = onAskNew, seed = "", origin = origin, backTo = backTo, onBack = onBack, seat = seat, composerEnabled = composerEnabled,
+        composerVisible = !coach.anonymous || coach.anonymousAccess == works.windmill.gym.coach.onboarding.AnonymousCoachAccess.Available,
+        onSignIn = onSignIn,
+        onBuildRoutine = onBuildRoutine,
         onThreads = onThreads, onNotes = onNotes, onConnections = onConnections, onOpenRoutine = onOpenRoutine,
         onOpenWorkout = onOpenWorkout, onOpenChat = onOpenChat,
         onReview = { onReview(ThreadProposal(it.id, it.state, it.changeCount, it.routineId, it.routineName, it.createdAtMs)) },

@@ -5,12 +5,15 @@ import java.io.InterruptedIOException
 import java.net.ConnectException
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.serializer
 import okhttp3.Cookie
 import okhttp3.Call
@@ -88,7 +91,7 @@ class WindmillApi(
         properties.putAll(diagnostics.properties())
         if (error is WindmillApiException.Refused) properties["status"] = error.status.toString()
         telemetry.event("api_request_failed", properties)
-        if (TelemetryPolicy.report(error)) telemetry.failure(operation, error, properties)
+        if (TelemetryPolicy.report(error, operation)) telemetry.failure(operation, error, properties)
     }
 
     suspend fun <Reply> consume(
@@ -156,7 +159,15 @@ class WindmillApi(
                             response.use {
                                 if (!it.isSuccessful) {
                                     val refusal = runCatching { WindmillJson.decodeFromString<Refusal>(it.body?.string().orEmpty()) }.getOrDefault(Refusal())
-                                    throw WindmillApiException.Refused(it.code, refusal)
+                                    val receivedAtMs = System.currentTimeMillis()
+                                    val retryAfter = it.header("Retry-After")?.trim()?.let { header ->
+                                        if (header.isNotEmpty() && header.all { c -> c in '0'..'9' }) {
+                                            header.toLongOrNull()?.takeIf { seconds -> seconds <= (Long.MAX_VALUE - receivedAtMs) / 1000 }
+                                                ?.let { seconds -> receivedAtMs + seconds * 1000 }
+                                        } else runCatching { ZonedDateTime.parse(header, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }
+                                            .getOrNull()?.takeIf { at -> at > 0 }
+                                    }
+                                    throw WindmillApiException.Refused(it.code, refusal, retryAfter)
                                 }
                                 read(it)
                             }
@@ -221,6 +232,8 @@ data class Refusal(
     @SerialName("error") val message: String? = null,
     val detail: String? = null,
     val code: String? = null,
+    val retryAtMs: JsonElement? = null,
+    val allowance: JsonElement? = null,
 )
 
 sealed class WindmillApiException(cause: Throwable? = null) : Exception(cause) {
@@ -228,7 +241,7 @@ sealed class WindmillApiException(cause: Throwable? = null) : Exception(cause) {
     class Timeout(cause: IOException) : WindmillApiException(cause)
     class Transport(cause: IOException) : WindmillApiException(cause)
     class Unexpected(cause: Throwable) : WindmillApiException(cause)
-    data class Refused(val status: Int, val refusal: Refusal) : WindmillApiException()
+    data class Refused(val status: Int, val refusal: Refusal, val retryAfterAtMs: Long? = null) : WindmillApiException()
     data object Malformed : WindmillApiException()
 
     val isUnauthorized: Boolean

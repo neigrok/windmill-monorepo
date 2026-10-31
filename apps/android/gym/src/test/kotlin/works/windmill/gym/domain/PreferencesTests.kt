@@ -5,36 +5,15 @@ import org.junit.Test
 import works.windmill.platform.net.WindmillJson
 
 class PreferencesTests {
-    private fun encoded(document: GymPreferences) =
-        WindmillJson.encodeToString(GymPreferences.serializer(), document)
-
-    private fun decoded(json: String) =
-        WindmillJson.decodeFromString(GymPreferences.serializer(), json)
-
-    @Test
-    fun testADocumentAtItsDefaultsTravelsAsAnEmptyObject() {
-        assertEquals("{}", encoded(GymPreferences()))
-        assertEquals(GymPreferences(), decoded("{}"))
+    @Test fun defaultFeedbackHasNoFields() {
+        assertEquals("{}", WindmillJson.encodeToString(GymPreferences.serializer(), GymPreferences()))
+        assertEquals(GymPreferences(), WindmillJson.decodeFromString(GymPreferences.serializer(), "{}"))
     }
 
-    @Test
-    fun restFieldsFromOtherSurfacesAreIgnoredAndNeverStored() {
-        val document = decoded("""{"restSeconds":180,"restSound":false,"units":"lb"}""")
-        assertEquals(GymPreferences(units = Units.Pounds), document)
-        assertEquals("""{"units":"lb"}""", encoded(document))
-    }
-
-    @Test
-    fun testTheUnitIsAWordAndAnUnknownOneReadsAsKilograms() {
-        assertEquals("""{"units":"lb"}""", encoded(GymPreferences(units = Units.Pounds)))
-        assertEquals(Units.Pounds, decoded("""{"units":"lb"}""").units)
-        assertEquals(Units.Kilograms, decoded("""{"units":"stone"}""").units)
-    }
-
-    @Test
-    fun testNothingAboutEquipmentTravelsInEitherDirection() {
-        assertEquals("""{"units":"lb"}""", encoded(GymPreferences(units = Units.Pounds)))
-        val older = decoded("""{"units":"lb","barWeightKg":15,"platesKg":[25,20]}""")
-        assertEquals(GymPreferences(units = Units.Pounds), older)
+    @Test fun sharedWireUnitsRestAndEquipmentAreIgnoredByTheAndroidView() {
+        val raw = """{"units":"lb","restSeconds":180,"restSound":true,"barWeightKg":15,"platesKg":[25,20],"confirmHaptic":false,"confirmSound":true}"""
+        val expected = GymPreferences(confirmHaptic = false, confirmSound = true)
+        assertEquals(expected, WindmillJson.decodeFromString(GymPreferences.serializer(), raw))
+        assertEquals("""{"confirmHaptic":false,"confirmSound":true}""", WindmillJson.encodeToString(GymPreferences.serializer(), expected))
     }
 }

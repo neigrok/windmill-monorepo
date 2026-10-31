@@ -4,12 +4,12 @@ import java.io.IOException
 import kotlinx.serialization.Serializable
 import okhttp3.MediaType.Companion.toMediaType
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -92,9 +92,12 @@ class GymHttp(api: WindmillApi) : GymRest {
             reply
         }
 
-    override suspend fun uploadPhoto(threadId: String, photo: CoachAttachment, bytes: ByteArray, onProgress: (Float) -> Unit): CoachAttachment {
-        val caller = currentCoroutineContext()
-        val callbackContext = caller.minusKey(Job)
+    override suspend fun uploadPhoto(threadId: String, photo: CoachAttachment, bytes: ByteArray, onProgress: (Float) -> Unit): CoachAttachment = coroutineScope {
+        val caller = coroutineContext
+        val written = MutableStateFlow(0f)
+        var shown = 0f
+        fun show(progress: Float) { if (progress > shown) { shown = progress; onProgress(progress) } }
+        val publisher = launch { written.collect(::show) }
         val body = object : RequestBody() {
             override fun contentType() = photo.mediaType.toMediaType()
             override fun contentLength() = bytes.size.toLong()
@@ -104,13 +107,19 @@ class GymHttp(api: WindmillApi) : GymRest {
                     val count = minOf(16_384, bytes.size - offset)
                     sink.write(bytes, offset, count)
                     offset += count
-                    runBlocking(callbackContext) { caller.ensureActive(); onProgress(offset.toFloat() / bytes.size) }
+                    caller.ensureActive()
+                    written.value = offset.toFloat() / bytes.size
                 }
             }
         }
-        return api.consume("PUT", "/v1/gym/threads/$threadId/attachments/${photo.id}", body, operation = "gym_coach_photo_upload") {
-            WindmillJson.decodeFromString<CoachPhotoResponse>(it.body?.string().orEmpty()).attachment
-        }
+        try {
+            api.consume("PUT", "/v1/gym/threads/$threadId/attachments/${photo.id}", body, operation = "gym_coach_photo_upload") {
+                WindmillJson.decodeFromString<CoachPhotoResponse>(it.body?.string().orEmpty()).attachment
+            }.also {
+                publisher.cancelAndJoin()
+                show(written.value)
+            }
+        } finally { publisher.cancel() }
     }
 
     override suspend fun photo(threadId: String, attachmentId: String): ByteArray =
@@ -170,8 +179,8 @@ private data class McpKeysResponse(val keys: List<McpKey> = emptyList())
 // `routineReview` tells the log this build draws Coach's routine drafts with a Save, so Coach may draft one.
 @Serializable
 private data class AskRequest(val thread: String, val question: String, val requestId: String?, val attachmentIds: List<String>,
-    val stream: Boolean, val routineReview: Boolean) {
-    constructor(asked: AskQuestion, stream: Boolean) : this(asked.thread, asked.question, asked.requestId, asked.attachmentIds, stream, true)
+    val stream: Boolean, val routineReview: Boolean, val purpose: String? = null) {
+    constructor(asked: AskQuestion, stream: Boolean) : this(asked.thread, asked.question, asked.requestId, asked.attachmentIds, stream, true, asked.purpose)
 }
 
 @Serializable

@@ -3,6 +3,9 @@ package works.windmill.gym
 import android.os.Bundle
 import android.os.Parcel
 import android.os.Parcelable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import works.windmill.platform.net.WindmillJson
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assert
@@ -187,9 +190,9 @@ class FinishSheetTests {
         return compose.onAllNodesWithText(text).fetchSemanticsNodes().count { it.root == sheet }
     }
 
-    private fun askAnOpener() {
+    private fun askAQuestion() {
         compose.onNodeWithText("Coach").performClick()
-        compose.onNodeWithContentDescription("Question").performTextInput(Ask.openers.first())
+        compose.onNodeWithContentDescription("Question").performTextInput("What’s stalled?")
         compose.onNodeWithContentDescription("Send").performClick()
     }
 
@@ -335,7 +338,7 @@ class FinishSheetTests {
             show(room)
             compose.waitForIdle()
 
-            askAnOpener()
+            askAQuestion()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
             }
@@ -355,11 +358,11 @@ class FinishSheetTests {
 
             compose.onNodeWithText(FinishCoach.question).assertIsDisplayed()
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-            compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
+            compose.onAllNodesWithText("What’s stalled?").assertCountEquals(0)
             compose.onAllNodesWithText("nothing has moved in three weeks.").assertCountEquals(0)
             compose.waitUntil(10_000) { compose.runOnIdle { entered.isCompleted } }
             compose.runOnIdle {
-                assertEquals(listOf(Ask.openers.first(), "Check my last workout."),
+                assertEquals(listOf("What’s stalled?", "Check my last workout."),
                              server.asked.map { it.question })
                 assertTrue("a new conversation, not the one that stood",
                            server.asked[0].thread != server.asked[1].thread)
@@ -443,7 +446,7 @@ class FinishSheetTests {
             show(room)
             compose.waitForIdle()
 
-            askAnOpener()
+            askAQuestion()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
@@ -455,10 +458,10 @@ class FinishSheetTests {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-            compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
+            compose.onAllNodesWithText("What’s stalled?").assertCountEquals(0)
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
             compose.runOnIdle {
-                assertEquals(listOf(Ask.openers.first(), FinishCoach.question), server.asked.map { it.question })
+                assertEquals(listOf("What’s stalled?", FinishCoach.question), server.asked.map { it.question })
                 assertTrue(server.asked[0].thread != server.asked[1].thread)
             }
 
@@ -492,7 +495,7 @@ class FinishSheetTests {
             show(room)
             compose.waitForIdle()
 
-            askAnOpener()
+            askAQuestion()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(Ask.notHere).fetchSemanticsNodes().isNotEmpty()
             }
@@ -981,10 +984,17 @@ class FinishSheetTests {
 
     @Test
     fun aShareWhoseDraftWriteFailedBeforeAdmissionRecoversTheSameIdentityFromSavedState() {
-        var writes = 0
+        var failedDraftId: String? = null
         val disk = LocalCoach(File(tmp.root, "share-failure")) { file, text ->
-            writes++
-            if (writes == 2) throw IOException("fixture-local-write-failed")
+            val document = WindmillJson.parseToJsonElement(text) as JsonObject
+            val drafts = (document["drafts"] as? JsonObject)?.get("u1") as? JsonObject
+            val shareDraft = drafts?.entries?.singleOrNull {
+                ((it.value as? JsonObject)?.get("text") as? JsonPrimitive)?.content == FinishCoach.question
+            }
+            if (failedDraftId == null && shareDraft != null) {
+                failedDraftId = shareDraft.key
+                throw IOException("fixture-local-write-failed")
+            }
             AtomicDocument.write(file, text)
         }
         val failures = mutableListOf<String>()
@@ -1004,6 +1014,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) { compose.runOnIdle { failures.isNotEmpty() } }
             val request = room.store.coach.selectedChatId!!
             compose.runOnIdle {
+                assertEquals(request, failedDraftId)
                 assertEquals(listOf("gym.saveDraft"), failures)
                 assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
                 assertEquals(listOf(request), disk.chats("u1").map { it.id })

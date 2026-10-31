@@ -5,10 +5,11 @@ import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Readout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 // The conversation ID locates the history; the request ID identifies one retryable question.
 @Serializable
-data class AskQuestion(val thread: String, val question: String, val requestId: String? = null, val attachmentIds: List<String> = emptyList())
+data class AskQuestion(val thread: String, val question: String, val requestId: String? = null, val attachmentIds: List<String> = emptyList(), val purpose: String? = null)
 
 // Arrives on the DETAIL read only. `from` carries no default, and an absent `at` prints nothing.
 @Serializable
@@ -24,6 +25,7 @@ data class AskTurn(
     val requestId: String? = null,
     val attachments: List<CoachAttachment> = emptyList(),
     val routineDrafts: List<CoachRoutineDraft> = emptyList(),
+    val clarification: JsonElement? = null,
 ) {
     val fromLifter: Boolean get() = from == Ask.fromLifter
 }
@@ -140,9 +142,9 @@ data class AskThread(
                     exchanges += previous.copy(requestId = request, trouble = if (turn.status == "stopped") Ask.stopped else Ask.interrupted,
                         again = turn.status == "failed" && request.isNotEmpty(),
                         generation = AskGeneration(turn.generationId.orEmpty(), request, previous.question, turn.status,
-                            turn.text, turn.atMs, turn.receipt?.steps.orEmpty(), turn.receipt, turn.results, attachments = previous.attachments, routineDrafts = turn.routineDrafts))
+                            turn.text, turn.atMs, turn.receipt?.steps.orEmpty(), turn.receipt, turn.results, attachments = previous.attachments, routineDrafts = turn.routineDrafts, clarification = turn.clarification))
                 } else exchanges += previous.copy(requestId = turn.requestId ?: previous.requestId, answer = AskAnswer(turn.text, turn.receipt?.read ?: ReadTally(),
-                    turn.receipt?.steps.orEmpty(), turn.receipt?.proposals.orEmpty(), turn.receipt, results = turn.results, routineDrafts = turn.routineDrafts))
+                    turn.receipt?.steps.orEmpty(), turn.receipt?.proposals.orEmpty(), turn.receipt, results = turn.results, routineDrafts = turn.routineDrafts, clarification = turn.clarification))
             }
         }
         generation?.let { current ->

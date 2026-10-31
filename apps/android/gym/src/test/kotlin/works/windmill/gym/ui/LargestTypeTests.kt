@@ -135,10 +135,6 @@ class LargestTypeTests {
         return room
     }
 
-    // The cap-reached sentence reads at the END OF THE THREAD, inside the scroller, and under this
-    // ceiling only the two doors are pinned — the day's promise is not the rule that stopped the
-    // question, so it is not drawn here at all. Measured here: 283.5dp of thread left at fontScale
-    // 2.0, with the 21-word ceiling sentence scrolling as part of the conversation it ended.
     @Test
     fun theCeilingSentenceScrollsWithTheThreadAndLeavesTheConversationReadableAtFontScaleTwo() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -158,7 +154,7 @@ class LargestTypeTests {
                 }
             }
 
-            val scroller = compose.onNode(hasScrollAction()).fetchSemanticsNode()
+            val scroller = compose.onNodeWithTag("coach-thread").fetchSemanticsNode()
             val left = with(compose.density) { scroller.size.height.toDp() }
             assertTrue("the thread is $left at fontScale 2.0", left >= floor)
 

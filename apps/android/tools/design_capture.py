@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PACKAGE = "works.windmill.app"
 MODEL_FALLBACK = [{"type": "text", "text": "Your three training days are ready. Start with Push A, and keep the logged loads comfortable."}]
 SCENARIOS = [
-    {"board": "02.7", "name": "empty-routines", "account": "empty", "steps": [{"wait": "No routines yet."}]},
+    {"board": "02.7", "name": "empty-routines", "account": "empty", "steps": [{"tap": "Routines"}, {"wait": "No routines yet."}]},
     {"board": "02.1", "name": "routines", "account": "fixture", "steps": [{"tap": "Routines"}, {"wait": "Push A"}]},
     {"board": "05.1", "name": "log", "account": "fixture", "steps": [{"tap": "The log"}, {"wait": "Back Squat · new best"}]},
     {"board": "08.1", "name": "coach", "account": "fixture", "steps": [{"tap": "Coach"}, {"wait": "Question"}]},
@@ -93,12 +93,17 @@ def validate_scenarios(scenarios):
         raise ValueError("Launcher capture must be the only empty-account scenario in its batch.")
 
 
-def read_fixture(path):
+def read_fixture(path, capture_only=False):
     if path is None:
+        if capture_only:
+            raise ValueError("Capture-only needs the explicit empty-training fixture.")
         return None
     fixture = json.loads(path.read_text())
+    empty_training = capture_only and fixture == {"exercises": [], "routines": [], "history": []}
+    if capture_only and not empty_training:
+        raise ValueError("Capture-only accepts only the explicit empty-training fixture.")
     if not isinstance(fixture, dict) or not {"exercises", "routines"}.issubset(fixture) or set(fixture) - {"exercises", "routines", "history", "connections"} or \
-            not isinstance(fixture["exercises"], list) or not isinstance(fixture["routines"], list) or not fixture["routines"]:
+            not isinstance(fixture["exercises"], list) or not isinstance(fixture["routines"], list) or not fixture["routines"] and not empty_training:
         raise ValueError("Capture fixtures need exercises and nonempty routines arrays.")
     if "connections" in fixture and type(fixture["connections"]) is not bool:
         raise ValueError("Capture connections choice needs a boolean.")
@@ -113,7 +118,7 @@ def read_fixture(path):
             raise ValueError("Capture routines need a name and explicit movement entries.")
     if "history" in fixture:
         history = fixture["history"]
-        if not isinstance(history, list) or not 1 <= len(history) <= 40:
+        if not isinstance(history, list) or not empty_training and not 1 <= len(history) <= 40:
             raise ValueError("Capture history needs between 1 and 40 workouts.")
         for workout in history:
             if not isinstance(workout, dict) or not {"routine", "daysAgo", "minutesAgo", "weightKg", "reps"}.issubset(workout) or \
@@ -168,6 +173,10 @@ class Fixture:
 
     def sql(self, query):
         return command(["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1"], input=query.encode()).decode().strip()
+
+    def save_events(self, output):
+        events = self.sql("SELECT COALESCE(json_agg(json_build_object('name',name,'props',props) ORDER BY id),'[]'::json) FROM events;")
+        (output / "events.json").write_text(events + "\n")
 
     def request(self, path, body=None, token=None, headers=None):
         request_headers = {"Content-Type": "application/json", **(headers or {})}
@@ -326,7 +335,7 @@ class ModelFixture(BaseHTTPRequestHandler):
         start_delay, chunk_chars, chunk_delay = getattr(self.server, "timing", (0, None, 0))
         stop_reason = "tool_use" if any(block["type"] == "tool_use" for block in content) else "end_turn"
         response = {"id": "msg_capture", "type": "message", "role": "assistant", "model": body.get("model", "fixture"),
-                    "content": content, "stop_reason": stop_reason, "usage": {"input_tokens": 100, "output_tokens": 25}}
+                    "content": content, "stop_reason": stop_reason, "usage": {"input_tokens": 100, "output_tokens": 25, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}
         if body.get("stream"):
             events = [{"type": "message_start", "message": {**response, "content": [], "stop_reason": None}}]
             for index, block in enumerate(content):
@@ -775,6 +784,7 @@ def main():
     parser.add_argument("--emulator-port", type=int, default=5580)
     parser.add_argument("--scenarios", type=Path, help="JSON array of board/name/account/steps; each recipe is replayed after appearance switches.")
     parser.add_argument("--fixture", type=Path, help="Optional local exercises/routines JSON; replaces only this run's seeded program.")
+    parser.add_argument("--capture-only", action="store_true", help="Capture the explicit empty-training fixture; no cold-workout performance claim.")
     parser.add_argument("--fresh-mode-fixture", action="store_true", help="Seed a fresh disposable account for Light instead of retaining Dark server history.")
     parser.add_argument("--profile-seconds", type=int, default=10)
     parser.add_argument("--baseline", action="store_true", help="Record an expected over-budget baseline without passing performance acceptance.")
@@ -809,12 +819,12 @@ def main():
     scenarios = json.loads(args.scenarios.read_text()) if args.scenarios else SCENARIOS
     try:
         validate_scenarios(scenarios)
-        replacement = read_fixture(args.fixture)
+        replacement = read_fixture(args.fixture, capture_only=args.capture_only)
     except ValueError as error:
         parser.error(str(error))
     manifest = {"apiOrigin": app_origin, "source": command(["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip(),
                 "sourceDirty": bool(command(["git", "status", "--porcelain"], cwd=ROOT)),
-                "baseline": args.baseline, "captures": [], "failures": [], "authCompletions": 0}
+                "baseline": args.baseline, "captureOnly": args.capture_only, "captures": [], "failures": [], "authCompletions": 0}
     manifest_path = args.output / "capture-manifest.json"
     def save_manifest(kind, value, traceback):
         if kind is not None:
@@ -845,13 +855,17 @@ def main():
         stack.callback(mail.shutdown)
         backend_log = stack.enter_context((args.output / "backend.log").open("wb"))
         safe_env = {key: os.environ[key] for key in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TZ") if key in os.environ}
-        backend = subprocess.Popen([str(args.backend_binary.resolve())], cwd=ROOT / "backend", env={**safe_env,
+        anonymous_coach = {"AI_ALLOWANCES_ENABLED": "true", "AI_INSTALLATIONS_ENABLED": "true",
+            "AI_INSTALLATION_PROXY_MODE": "direct", "AI_INSTALLATION_IP_HMAC_KEY": secrets.token_hex(32),
+            "WINDMILL_OWNER_EMAILS": "capture@example.test", "AI_ALLOWANCE_ALERT_EMAIL": "capture@example.test"} if args.capture_only else {}
+        backend = subprocess.Popen([str(args.backend_binary.resolve())], cwd=ROOT / "backend", env={**safe_env, **anonymous_coach,
             "DATABASE_URL": database_url, "PORT": str(args.backend_port), "ANTHROPIC_API_KEY": "local-capture-only",
             "ANTHROPIC_BASE_URL": model_origin, "COACH_ANTHROPIC_BASE_URL": model_origin,
             "WINDMILL_ALLOWED_ORIGINS": "http://localhost:5173", "RESEND_BASE_URL": mail_origin,
             "RESEND_API_KEY": "local-capture-only", "RESEND_FROM": "Windmill <capture@example.test>"}, stdout=backend_log, stderr=subprocess.STDOUT)
         stack.callback(stop, backend)
         fixture = Fixture(origin, database_url)
+        stack.callback(fixture.save_events, args.output)
         for attempt in range(60):
             if backend.poll() is not None:
                 raise RuntimeError("Local backend exited; see backend.log.")
@@ -896,11 +910,16 @@ def main():
                 device.launch(launcher=any(item.get("launcher", False) for item in scenarios if item["account"] == account))
                 if account == "fixture":
                     device.sign_in(fixture.link())
-                    device.find("Push A")
+                    device.find("Hi, I’m Coach. I can help you with:" if args.capture_only else "Push A")
                 for scenario in [item for item in scenarios if item["account"] == account]:
                     completions = sum(step.get("auth_code") == "valid" for step in scenario["steps"] + scenario.get("after", []))
                     sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
-                    model.responses = json.loads(json.dumps(scenario.get("responses", [])).replace("$routine0", fixture.routines[0]))
+                    responses = json.dumps(scenario.get("responses", []))
+                    if "$routine0" in responses:
+                        if not fixture.routines:
+                            raise ValueError("The empty-training fixture has no routine placeholder.")
+                        responses = responses.replace("$routine0", fixture.routines[0])
+                    model.responses = json.loads(responses)
                     model.timing = model_timing(scenario)
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
                     device.notification_clock = scenario.get("notification_clock", False)
@@ -946,67 +965,71 @@ def main():
         device.tile_clock = False
         device.workout_clock = False
         manifest["modelCalls"] = model.calls
-        manifest["step"] = "cold-start"
-        device.tap("Routines")
-        profile = json.dumps(fixture.routines).encode()
-        device.run("shell", "-T", "run-as", PACKAGE, "dd", "of=files/design-capture-profile", "bs=1", f"count={len(profile)}", input=profile)
-        device.run("shell", "run-as", PACKAGE, "rm", "-f", "files/design-capture-ready")
-        device.run("shell", "am", "force-stop", PACKAGE)
-        started = time.monotonic()
-        launch = device.launch().decode()
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            ready = device.run("exec-out", "run-as", PACKAGE, "cat", "files/design-capture-ready", check=False).decode().strip()
-            if re.fullmatch(r"[0-9]+ [0-9]+", ready):
-                process_start, frame = map(int, ready.split())
-                manifest["coldStartToRoutinesMs"] = frame - process_start
-                break
-            time.sleep(.05)
+        if args.capture_only:
+            manifest["performanceAccepted"] = None
+            logcat = device.run("logcat", "-d", "-v", "brief", "ActivityManager:I", "AndroidRuntime:E", "*:S").decode(errors="replace")
+            (args.output / "android-runtime.log").write_text(logcat)
+            manifest["anr"] = "ANR in " + PACKAGE in logcat or "FATAL EXCEPTION" in logcat
         else:
-            raise RuntimeError("The private ready-frame probe did not finish.")
-        device.find("Push A")
-        manifest["selectorWallTimeMs"] = round((time.monotonic() - started) * 1000)
-        manifest["activityLaunch"] = {key: int(value) for key, value in re.findall(r"(TotalTime|WaitTime): (\d+)", launch)}
-        device.tap("Push A")
-        device.tap("Start workout")
-        entry_failure = None
-        try:
-            device.find("Log set")
-        except RuntimeError as error:
-            entry_failure = str(error)
-        manifest["workoutEntryFailure"] = entry_failure
-        (args.output / "capture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-        manifest["step"] = "idle-profile"
-        trace = "/data/local/tmp/windmill-design-capture.trace"
-        device.run("shell", "am", "profile", "start", "--sampling", "1000", PACKAGE, trace)
-        time.sleep(args.profile_seconds)
-        device.run("shell", "am", "profile", "stop", PACKAGE)
-        (args.output / "workout-idle.trace").write_bytes(device.profile(trace))
-        (args.output / "workout-cpu.txt").write_bytes(device.run("shell", "dumpsys", "cpuinfo"))
-        logcat = device.run("logcat", "-d", "-v", "brief", "ActivityManager:I", "AndroidRuntime:E", "*:S").decode(errors="replace")
-        (args.output / "android-runtime.log").write_text(logcat)
-        manifest["anr"] = "ANR in " + PACKAGE in logcat or "FATAL EXCEPTION" in logcat
-        (args.output / "capture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-        events = fixture.sql("SELECT COALESCE(json_agg(json_build_object('name',name,'props',props) ORDER BY id),'[]'::json) FROM events;")
-        (args.output / "events.json").write_text(events + "\n")
-        manifest["performanceAccepted"] = manifest["coldStartToRoutinesMs"] < 3000
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        if not manifest["performanceAccepted"] and not args.baseline:
-            raise RuntimeError("Cold start exceeded the 3000ms budget; see capture-manifest.json.")
-        if entry_failure:
-            raise RuntimeError(entry_failure)
+            manifest["step"] = "cold-start"
+            device.tap("Routines")
+            profile = json.dumps(fixture.routines).encode()
+            device.run("shell", "-T", "run-as", PACKAGE, "dd", "of=files/design-capture-profile", "bs=1", f"count={len(profile)}", input=profile)
+            device.run("shell", "run-as", PACKAGE, "rm", "-f", "files/design-capture-ready")
+            device.run("shell", "am", "force-stop", PACKAGE)
+            started = time.monotonic()
+            launch = device.launch().decode()
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                ready = device.run("exec-out", "run-as", PACKAGE, "cat", "files/design-capture-ready", check=False).decode().strip()
+                if re.fullmatch(r"[0-9]+ [0-9]+", ready):
+                    process_start, frame = map(int, ready.split())
+                    manifest["coldStartToRoutinesMs"] = frame - process_start
+                    break
+                time.sleep(.05)
+            else:
+                raise RuntimeError("The private ready-frame probe did not finish.")
+            device.find("Push A")
+            manifest["selectorWallTimeMs"] = round((time.monotonic() - started) * 1000)
+            manifest["activityLaunch"] = {key: int(value) for key, value in re.findall(r"(TotalTime|WaitTime): (\d+)", launch)}
+            device.tap("Push A")
+            device.tap("Start workout")
+            entry_failure = None
+            try:
+                device.find("Log set")
+            except RuntimeError as error:
+                entry_failure = str(error)
+            manifest["workoutEntryFailure"] = entry_failure
+            (args.output / "capture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+            manifest["step"] = "idle-profile"
+            trace = "/data/local/tmp/windmill-design-capture.trace"
+            device.run("shell", "am", "profile", "start", "--sampling", "1000", PACKAGE, trace)
+            time.sleep(args.profile_seconds)
+            device.run("shell", "am", "profile", "stop", PACKAGE)
+            (args.output / "workout-idle.trace").write_bytes(device.profile(trace))
+            (args.output / "workout-cpu.txt").write_bytes(device.run("shell", "dumpsys", "cpuinfo"))
+            logcat = device.run("logcat", "-d", "-v", "brief", "ActivityManager:I", "AndroidRuntime:E", "*:S").decode(errors="replace")
+            (args.output / "android-runtime.log").write_text(logcat)
+            manifest["anr"] = "ANR in " + PACKAGE in logcat or "FATAL EXCEPTION" in logcat
+            (args.output / "capture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+            manifest["performanceAccepted"] = manifest["coldStartToRoutinesMs"] < 3000
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+            if not manifest["performanceAccepted"] and not args.baseline:
+                raise RuntimeError("Cold start exceeded the 3000ms budget; see capture-manifest.json.")
+            if entry_failure:
+                raise RuntimeError(entry_failure)
+        fixture.save_events(args.output)
         if manifest["anr"]:
             raise RuntimeError("The native capture run reported an ANR or fatal exception.")
         if args.acceptance_pause_seconds:
             print(json.dumps({"acceptanceReady": True, "serial": device.serial, "localDatabase": database_url,
                               "seconds": args.acceptance_pause_seconds}), flush=True)
             time.sleep(args.acceptance_pause_seconds)
-        events = fixture.sql("SELECT COALESCE(json_agg(json_build_object('name',name,'props',props) ORDER BY id),'[]'::json) FROM events;")
-        (args.output / "events.json").write_text(events + "\n")
+        fixture.save_events(args.output)
         manifest["step"] = "complete"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
         print(json.dumps({"output": str(args.output), "captures": len(manifest["captures"]),
-                          "coldStartToRoutinesMs": manifest["coldStartToRoutinesMs"]}))
+                          "coldStartToRoutinesMs": manifest.get("coldStartToRoutinesMs")}))
 
 
 if __name__ == "__main__":

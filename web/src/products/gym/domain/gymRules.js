@@ -164,6 +164,7 @@ export const GymRules = Object.freeze({
     book = new RuleBook(registry, [Note, WeighIn, Preferences, Exercise, ExerciseName, Routine, Session, TrainingSet, Proposal, WorkoutProposal], [
       ...GymRules.specs.map((spec) => Rule.localSpec(spec)),
       Rule.localCheck(WeighInRules.day, 'weighin', ['bad-instant']),
+      Rule.localCheck('coach.import', 'routine'),
       ...['routine.order', 'routine.zeroTarget', ProposalRules.change.zeroTarget, WorkoutProposalRules.change.zeroTarget, 'set.completedAt', 'set.identity',
         'set.setNumber', 'session.startedAt', 'session.finishedAt', 'session.sets', 'session.requestId', WorkoutPlanRules.absent,
         WorkoutPlanRules.duplicate, WorkoutPlanRules.operation]

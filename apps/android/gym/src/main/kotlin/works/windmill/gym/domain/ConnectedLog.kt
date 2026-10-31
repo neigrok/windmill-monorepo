@@ -31,9 +31,6 @@ object ConnectedLog {
     const val accountWide = "whole account"
     const val apiKey = "API key"
 
-    const val settingsUnknown = "your AI tools"
-    const val settingsNone = "nothing connected yet"
-
     // Spelled off the API origin: against a split dev stack these open the API host.
     fun setupUrl(origin: String): String = "${origin.removeSuffix("/")}/#/connect"
 
@@ -126,15 +123,6 @@ sealed interface ConnectedLogState {
 
     // Whether the shell has answered for the seat: a store holding an answer does not ask again.
     val answered: Boolean get() = this is None || this is Connected
-
-    // The settings row's meta: the state and nothing else.
-    val settingsMeta: String
-        get() = when (this) {
-            Unknown, Refused, Offline -> ConnectedLog.settingsUnknown
-            None -> ConnectedLog.settingsNone
-            is Connected -> tools.singleOrNull()?.let { "${it.name} · ${it.reach.line}" }
-                ?: "${tools.size} tools"
-        }
 }
 
 // One row of `GET /v1/oauth/grants`. `lastUsedMs` rides the wire and is not decoded.

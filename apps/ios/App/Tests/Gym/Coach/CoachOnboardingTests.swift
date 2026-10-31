@@ -117,4 +117,44 @@ extension CoachTests {
     var adopted = account.saved; adopted.onboarding = [earlier, needs, refused]; #expect(account.keep(adopted, failure: "x"))
     #expect([account.offersSignIn(earlier), account.offersSignIn(needs)] == [false, false] && account.spentAllowance(refused) == nil)
   }
+
+  // Apply on an archived answer replays by its result: a retry returns the routines it made, and an answer an earlier
+  // version imported under the single receipt links its routines without making them again.
+  @Test func applyReplaysByResultAndKeepsAnswersImportedUnderTheEarlierReceipt() async throws {
+    let allowance = #""allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.01","reserved":"0","remaining":"0.04","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let routines = #""routines":[{"name":"Upper","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":90}]}]"#
+    let fresh = try onboardingRecord("onb-1", response: #"{"requestId":"onb-1","resultId":"r1","status":"completed","expiresAtMs":1900000000000,"#+routines+#","errorCode":null,"#+allowance+"}")
+    let earlier = try onboardingRecord("onb-2", response: #"{"requestId":"onb-2","resultId":"r2","status":"completed","expiresAtMs":1900000000000,"#+routines+#","errorCode":null,"#+allowance+"}")
+    let (coach, cache) = try await anonymousCoach()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let receipt: JSON = ["onb-2": ["resultId": "r2", "routines": ["routine-earlier"]]]
+    _ = try coach.gym.runner.run(WriteDeviceRow(key: ImportCoachRoutineBatch.earlierReceiptKey, value: receipt))
+    var next = coach.saved; next.onboarding = [fresh, earlier]; #expect(coach.keep(next, failure: "x"))
+    #expect(coach.saveRoutines("onb-1") == .saved)
+    #expect(coach.saveRoutines("onb-2") == .saved)
+    let drawn = try coach.gym.runner.read(Gym.scope) { try $0.repository(Routine.self).all(in: .stored) }
+    #expect(drawn.map(\.name) == ["Upper"])
+    let made = try #require(drawn.first?.id.description)
+    let made1 = CoachResult(kind: "routine-created", operationId: "r1-0", routineId: made, routineName: "Upper", movementCount: 1)
+    let linked = CoachResult(kind: "routine-created", operationId: "r2-0", routineId: "routine-earlier", routineName: "Upper", movementCount: 1)
+    let results = coach.saved.onboarding?.map(\.results)
+    #expect(results == [[made1], [linked]])
+    let replayed = try #require(coach.saved.onboarding?.first)
+    try coach.importOnboarding(replayed, owner: try #require(coach.owner))
+    let after = try coach.gym.runner.read(Gym.scope) { try $0.repository(Routine.self).all(in: .stored) }
+    #expect(after.map(\.id) == drawn.map(\.id))
+    #expect(coach.saved.onboarding?.first?.results == [made1])
+  }
+}
+
+struct WriteDeviceRow: Action {
+  let key: String
+  let value: JSON
+  var scope: ScopeRef { Gym.scope }
+  func load(_ read: Reader) throws {}
+  func decide(_ loaded: Void, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    var plan = Plan()
+    plan.device(key, value)
+    return .write(plan)
+  }
 }

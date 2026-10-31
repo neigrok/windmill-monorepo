@@ -29,6 +29,16 @@ import works.windmill.platform.net.WindmillJson
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class AndroidTelemetryTest {
+    @Test fun coachSetupKeepsBoundedActionsAndDropsDraftAndPhotoMetadata() {
+        for (action in listOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in")) {
+            val labels = mapOf("screen" to "coach", "action" to action)
+            assertEquals(labels, TelemetryPolicy.eventProperties("gym_setup_step", labels + mapOf(
+                "question" to "private", "file_name" to "private", "photo_bytes" to "100", "operation" to "private")))
+        }
+        assertEquals(mapOf("screen" to "coach"), TelemetryPolicy.eventProperties("gym_setup_step",
+            mapOf("screen" to "coach", "action" to "private-draft-text")))
+    }
+
     @Test fun routineFormAndOuterSaveKeepOnlyBoundedOutcomes() {
         val allowed = listOf("open" to "ok", "cancel" to "ok", "stage" to "ok", "stage" to "refused")
             .map { (action, outcome) -> mapOf("screen" to "movement_form", "action" to action, "outcome" to outcome) } +
@@ -119,19 +129,21 @@ class AndroidTelemetryTest {
     }
 
     @Test fun coachArchiveActionsAndDeletionDialogRejectContentAndUnboundedLabels() {
-        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest")
+        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest", "choose", "continue_draft")
         val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +
             listOf(mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed")) +
+            listOf("available", "bound", "unavailable").map { mapOf("screen" to "coach", "action" to "access", "outcome" to it) } +
             listOf("ok", "refused", "failed", "cancelled").map { mapOf("screen" to "threads", "action" to "delete", "outcome" to it) } +
             listOf(mapOf("screen" to "threads", "action" to "delete", "state" to "shown"))
         val content = mapOf("chat_id" to "private", "question" to "private", "photo" to "private",
-            "answerPreview" to "private", "operation" to "private", "status" to "private")
+            "chip_label" to "private", "draft_text" to "private", "answerPreview" to "private", "operation" to "private", "status" to "private")
         allowed.forEach { properties ->
             assertEquals(properties, TelemetryPolicy.eventProperties("gym_action", properties + content))
         }
         for (properties in listOf(
             mapOf("screen" to "coach", "action" to "private", "outcome" to "ok"),
             mapOf("screen" to "coach", "action" to "history_open", "outcome" to "private"),
+            mapOf("screen" to "coach", "action" to "access", "outcome" to "private"),
             mapOf("screen" to "threads", "action" to "delete", "state" to "private"),
             mapOf("screen" to "private", "action" to "delete", "state" to "shown"),
         )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", properties + content))

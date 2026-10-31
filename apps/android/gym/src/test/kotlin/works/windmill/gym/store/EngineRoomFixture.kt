@@ -15,6 +15,10 @@ import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.RecordID
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
 import works.windmill.sync.modelserver.*
@@ -32,7 +36,9 @@ internal class EngineRoomFixture(
     private val telemetry: Telemetry = Telemetry.None,
     private val workoutClock: WorkoutClock? = null,
     private val workoutAuthority: (String?) -> Boolean = { true },
+    private val writeAuthority: () -> Boolean = { true },
     private val localCoach: LocalCoach? = null,
+    private val coachOnboarding: works.windmill.gym.coach.onboarding.CoachOnboardingStore? = null,
     private val elapsedNanos: () -> Long = System::nanoTime,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
@@ -78,7 +84,7 @@ internal class EngineRoomFixture(
     val engine = createEngine?.invoke(snapshot, engineClock) ?: Engine.memory(SyncSchema.registry, snapshot, clock = engineClock,
         intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
-    val training = EngineTraining(engine)
+    val training = EngineTraining(engine, writeAuthority = writeAuthority)
     val controlsFile = File(directory, "control.json")
     val store = freshStore()
     // As in the application: the REST doors answer only while an account is signed in.
@@ -90,7 +96,12 @@ internal class EngineRoomFixture(
             mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
             undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
             workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-            readDispatcher = reads)
+            readDispatcher = reads, coachOnboarding = coachOnboarding)
+    }
+    suspend fun seedFeedback(document: GymPreferences) {
+        val fields = mapOf("confirmHaptic" to Json.of(document.confirmHaptic), "confirmSound" to Json.of(document.confirmSound))
+        assertTrue(engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.write(Gym.Types.prefs, RecordID("prefs"), fields)))) is CommitOutcome.Committed)
+        store.refreshEngine()
     }
     fun account(id: String? = selected) = Account("https://windmill.works",
         id?.let { User(it, "$it@example.com") }, verified = true)

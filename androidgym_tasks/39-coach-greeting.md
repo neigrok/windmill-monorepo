@@ -1,5 +1,7 @@
 # First open: Coach greets in two bubbles; an empty Gym opens on Coach
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev. 01.1 and 01.2 match natively in Dark, Daylight and 200 % text, and the coach-setup recipe captures all of them; `gym_setup_step` `shown`, `screenshot` and `build_manually` arrive at the local intake. `shown` now fires once per appearance, also across recreation (JVM test); native re-acceptance is pending.
+
 **Figma:**
 - 01.1 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-4776) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39315)
 - 01.2 signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28196) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39335)
@@ -8,10 +10,15 @@
   - `Android / Button` `210:181`: Tonal, for *Add screenshot* and *Build my own*
   - `Android / Top app bar` `342:2953`
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- The room always opens on Routines: `var tab … mutableStateOf(Tab.Routines)` (`GymRoom.kt:292`).
-- Signed out, Coach is the stance *Coach reads your log, so it needs you signed in.* + **Sign in** (`coach/AskScreen.kt:267-278`, `coach/Ask.kt:216`).
-- Signed in, an empty thread shows nothing above the composer. `Ask.openers` (*What’s stalled?*, *Which lifts are moving?*, *Is my week too light?*, `coach/Ask.kt:220`) and `Ask.subtitle` (*reads your log · helps with your routines*, :171) are defined and never drawn.
+**Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+
+`CoachSetup.kt` draws the two local greeting bubbles and tonal actions. `LocalChat.setup` retains
+setup ownership without creating a model turn; accepted exchanges hide the greeting. The composer
+and greeting use one native photo picker. `TrainingStore.initialGymEmpty` remains unread until its
+owned routine and log reads succeed, with a first pull required for an account. The room resolves
+its initial tab once and preserves saved or explicit navigation. `CoachAccessStance` retains task
+36's approved fallback when anonymous access is unavailable. The obsolete opener list and subtitle
+are removed. Focused tests pass; native visual and installed event acceptance remain pending.
 
 **Change**
 - Two Coach bubbles, written by the app (not a model turn):
@@ -32,10 +39,10 @@
 - The greeting belongs to the first-open/setup states on this page. A deliberate fresh Coach entry in an established Gym uses the approved empty-composer state in 28/37; it does not replay a previous conversation or insert the setup greeting. In the setup chat, the greeting stays until the first message is accepted, then it goes for good in that thread.
   - No goal flow, no *Just log*, no allowance indicator.
 - The account seat sits in the bar: *•* signed out, the email initial signed in (03).
-- An empty Gym opens on Coach.
+- An empty Gym opens on Coach when Coach can answer: signed in, or signed out with anonymous access available. Signed out with that access unavailable, it opens on Routines, since login is never forced.
   - "Empty" means no routines and no workouts, read once when the room opens.
   - Otherwise the room opens on Routines as today. A saved tab still wins after recreation.
-- Delete `Ask.openers`, `Ask.subtitle` and `AskSignedOutStance`. 36 owns the fallback when signed-out Coach is off.
+- `Ask.openers` and `Ask.subtitle` are absent. Task 36 owns the `CoachAccessStance` fallback when signed-out Coach is off.
 
 **Out of scope:** bubbles and composer (28), the photo caption (40), drafts (41), signed-out transport (38).
 

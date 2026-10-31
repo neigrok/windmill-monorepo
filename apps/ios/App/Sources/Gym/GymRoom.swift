@@ -51,11 +51,11 @@ struct GymRoom: View {
     })) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal))
+          root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal).modifier(HeldFoot()))
         }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
-        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.log, hidden: $0) }
+        NavigationStack(path: $logPath) { root(LogTab(gym: gym).modifier(HeldFoot())) }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.log, hidden: $0) }
       }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
         NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff, revealedProposal: $revealedProposal, coach: coach, escapeSetup: escapeSetup)) }.roomBar(.gym)
@@ -64,10 +64,9 @@ struct GymRoom: View {
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
   }
 
-  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent. Each root holds
-  // its list's end clear of the tab bar across a pop and a bounce that brings the bar back.
+  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent.
   func root(_ screen: some View) -> some View {
-    screen.modifier(HeldFoot()).toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
+    screen.toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
   }
 
   var body: some View {

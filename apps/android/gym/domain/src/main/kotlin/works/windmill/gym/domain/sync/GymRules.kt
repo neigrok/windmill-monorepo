@@ -58,6 +58,7 @@ object GymRules {
         WorkoutPlanRules.rules + WorkoutProposalRules.rules +
         GymCommand.specs.values.flatten().map(Rule::local) + listOf(
             Rule.local("routine.order", Routine.type),
+            Rule.local("coach.import", Routine.type),
             Rule.local("set.identity", TrainingSet.type),
             Rule.local("set.setNumber", TrainingSet.type),
             Rule.local("session.startedAt", Session.type),

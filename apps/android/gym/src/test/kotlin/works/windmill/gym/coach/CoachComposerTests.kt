@@ -1,6 +1,14 @@
 package works.windmill.gym.coach
 
 import works.windmill.gym.ui.*
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.core.app.ActivityOptionsCompat
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.compose.runtime.getValue
@@ -12,8 +20,10 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.hasAnyDescendant
@@ -73,6 +83,127 @@ class CoachComposerTests {
             runBlocking { room.select("user-a") }
         }
 
+    @Test fun automaticComposerSyncRecoversThePublishedSwapBeforeFlushingItsOldField() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = File(tmp.root, "uncertain-swap.json")
+        val published = File(tmp.root, "published-swap.json")
+        var unreadable = false
+        val local = LocalCoach(file) { target, text ->
+            AtomicDocument.write(target, text)
+            if (unreadable) {
+                check(target.renameTo(published)); check(target.mkdir())
+                throw IOException("unreadable publication")
+            }
+        }
+        val phone = local.anonymousOwner()
+        local.saveChat(phone, LocalChat("phone-chat"), true); local.saveDraft(phone, "phone-chat", CoachDraft("Phone draft", setup = true))
+        local.saveChat("user-a", LocalChat("account-chat"), true); local.saveDraft("user-a", "account-chat", CoachDraft("Account draft"))
+        local.adoptPhoneDraft("user-a") { true }
+        val held = local.keptDrafts("user-a", "account-chat").single()
+        val store = signedIn(scope, local).store.coach
+        var shown by mutableStateOf(true)
+        compose.setContent { if (shown) CoachComposer(store, "account-chat", "", false, { _, _ -> }, null, null, true) }
+        compose.runOnIdle {
+            unreadable = true
+            org.junit.Assert.assertThrows(IOException::class.java) { store.continueDraft("account-chat", held.id) }
+        }
+        compose.onNodeWithContentDescription("Question").performTextReplacement("A stale field")
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(file.delete()); org.junit.Assert.assertTrue(published.renameTo(file)); unreadable = false
+            store.saveDraft("unrelated-chat", CoachDraft("Trigger the ordinary draft observer"))
+        }
+        compose.onNodeWithContentDescription("Question").assert(androidx.compose.ui.test.hasText("Phone draft"))
+        compose.runOnIdle {
+            assertEquals(held.draft, LocalCoach(file).draft("user-a", "account-chat"))
+            assertEquals(listOf(held.copy(draft = CoachDraft("Account draft"))), LocalCoach(file).keptDrafts("user-a", "account-chat"))
+            shown = false
+        }
+        compose.waitForIdle()
+        assertEquals(held.draft, LocalCoach(file).draft("user-a", "account-chat"))
+    }
+
+    @Test fun pickerResultReturnsToItsLaunchingChatAndCannotCrossAnAccountChange() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val room = signedIn(scope)
+        val store = room.store.coach
+        store.freshChat(id = "first")
+        store.freshChat(id = "second")
+        var chat by mutableStateOf("first")
+        var requestCode = 0
+        val registry = object : ActivityResultRegistry() {
+            override fun <I, O> onLaunch(code: Int, contract: ActivityResultContract<I, O>, input: I, options: ActivityOptionsCompat?) {
+                requestCode = code
+            }
+        }
+        val registryOwner = object : ActivityResultRegistryOwner { override val activityResultRegistry = registry }
+        val file = File(tmp.root, "picked.png")
+        file.outputStream().use { Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
+        compose.setContent {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
+                CoachComposer(store, chat, "", false, { _, _ -> }, null, null, true)
+            }
+        }
+        compose.onNodeWithContentDescription("Add photo").performClick()
+        compose.runOnIdle { chat = "second" }
+        compose.runOnIdle { org.junit.Assert.assertTrue(registry.dispatchResult(requestCode, Uri.fromFile(file))) }
+        compose.waitUntil(10_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); store.draft("first").photo != null }
+        assertEquals(CoachDraft(), store.draft("second"))
+        compose.onNodeWithContentDescription("Add photo").performClick()
+        compose.runOnIdle { runBlocking { room.select("user-b") }; store.freshChat(id = "second") }
+        compose.runOnIdle { org.junit.Assert.assertTrue(registry.dispatchResult(requestCode, Uri.fromFile(file))) }
+        compose.waitForIdle()
+        assertEquals(CoachDraft(), store.draft("second"))
+        assertEquals(null, LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "second").photo)
+        scope.cancel()
+    }
+
+    @Test fun attachedPhotoShowsItsAccountsCaptionAndCanBeSentWithoutTextThenRemoved() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val disk = LocalCoach(File(tmp.root, "captions.json"))
+        var owner by mutableStateOf<String?>(null)
+        val store = CoachStore({ owner }, { emptySet() }, {}, { null }, disk,
+            works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
+        val chat = "caption-chat"
+        store.freshChat(id = chat)
+        var sent: Pair<String, CoachAttachment?>? = null
+        compose.setContent { CoachComposer(store, chat, "", false, { text, photo -> sent = text to photo }, null, null, true) }
+        compose.onNodeWithContentDescription("Send").assertDoesNotExist()
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        val photo = CoachAttachment("attachment-caption", "image/png", 1, 1, 3)
+        compose.runOnIdle { store.saveDraft(chat, CoachDraft(photo = photo)) }
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertIsDisplayed()
+        compose.onNodeWithText("Saved only in this chat.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        assertEquals("" to photo, sent)
+        compose.onNodeWithContentDescription("Remove photo").performClick()
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Send").assertDoesNotExist()
+        compose.runOnIdle { owner = "alice"; store.freshChat(id = chat); store.saveDraft(chat, CoachDraft("Caption", photo)) }
+        compose.onNodeWithText("Saved only in this chat.").assertIsDisplayed()
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove photo").performClick()
+        compose.onNodeWithText("Saved only in this chat.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        assertEquals(CoachDraft("Caption"), store.draft(chat))
+        scope.cancel()
+    }
+
+    @Test fun anonymousSendUsesItsExistingFourThousandByteBoundWithoutChangingTheBuffer() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = CoachStore({ null }, { emptySet() }, {}, { null }, LocalCoach(File(tmp.root, "anonymous.json")),
+            works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
+        val chat = store.freshChat()
+        compose.setContent { CoachComposer(store, chat, "", false, { _, _ -> error("No automatic Send") }, null, null, true) }
+        val field = compose.onNodeWithContentDescription("Question")
+        field.performTextReplacement("x".repeat(4_001))
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        assertEquals("x".repeat(4_001), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        field.performTextReplacement("x".repeat(4_000))
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        assertEquals("x".repeat(4_000), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        scope.cancel()
+    }
+
     @Test fun aDisabledLocalHistoryComposerRetainsTextAndPhotoWithoutEditingOrSending() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
@@ -84,7 +215,7 @@ class CoachComposerTests {
         compose.onNodeWithContentDescription("Question").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Add photo").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
-        compose.onNodeWithText("Remove photo").assertIsNotEnabled().performClick()
+        compose.onNodeWithContentDescription("Remove photo").assertIsNotEnabled().performClick()
         assertEquals(draft, store.coach.draft("thread-a"))
         assertEquals(draft, LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
         scope.cancel()
@@ -114,9 +245,9 @@ class CoachComposerTests {
         compose.runOnIdle { store.coach.saveDraft("another-thread", CoachDraft("Unrelated draft")) }
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         compose.runOnIdle { store.coach.saveDraft("thread-a", draft.copy(photo = photo)) }
-        compose.onNodeWithText("Remove photo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-        compose.onNodeWithText("Remove photo").performClick()
+        compose.onNodeWithContentDescription("Remove photo").performClick()
         assertEquals(draft, store.coach.draft("thread-a"))
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
 
@@ -150,16 +281,16 @@ class CoachComposerTests {
 
         compose.onNodeWithContentDescription("Cancel upload").performClick()
         assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithText("Remove photo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").performClick()
         compose.runOnIdle { upload = null }
         assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithText("Remove photo").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove photo").assertDoesNotExist()
         assertEquals(CoachDraft("Latest caption", photo), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
 
         compose.onNodeWithContentDescription("Stop response").performClick()
         assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithText("Remove photo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
         assertEquals(List(2) { CoachDraft("Latest caption", photo) }, sent)
         scope.cancel()
     }

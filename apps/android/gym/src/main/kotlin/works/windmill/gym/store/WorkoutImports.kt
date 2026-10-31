@@ -89,7 +89,7 @@ data class ImportDeletion(val token: String, val sessionId: String, val setId: S
 // Signed-out training prepared for an account at sign-in. Each finished workout becomes one strict
 // import and an unfinished one a start whose sets follow it; a refused workout stays on this phone,
 // inspectable and correctable, until it is kept, retried or discarded.
-class WorkoutImports(private val engine: Engine) {
+class WorkoutImports(private val engine: Engine, private val writeAuthority: () -> Boolean = { true }) {
     private data class Item(val seat: String, val kind: String, val id: String, val payload: Json, val sourceSeat: String = seat) {
         val token = Sha256.hex(Json.array(Json.of(seat), Json.of(sourceSeat), Json.of(kind), Json.of(id), payload).jcs.toByteArray())
     }
@@ -231,6 +231,7 @@ class WorkoutImports(private val engine: Engine) {
 
     private fun retain(row: SavedWorkout, finished: Boolean) {
         val result = engine.commitWithPrerequisites(scope) { context ->
+            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
             check(context.isAnonymous) { "Only training saved on this phone can be prepared for an account." }
             val key = key("engine:${context.replica}")
             val journal = journal(context, key)
@@ -313,6 +314,7 @@ class WorkoutImports(private val engine: Engine) {
         val rejected = result.first as? CommitOutcome.Refused ?: return
         val prepared = result.second ?: return
         engine.commitWithPrerequisites(scope) { context ->
+            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
             requireOpening(context, opening, allowed)
             val (key, token, originalGesture) = prepared
             val writes = originalGesture.local.map { write ->
@@ -505,6 +507,7 @@ class WorkoutImports(private val engine: Engine) {
 
     fun recoverFinishedOperation(operation: ImportOperation, opening: ImportOpening? = null, allowed: () -> Boolean = { true }): Boolean {
         val result = engine.commit(scope) { context ->
+            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
             requireOpening(context, opening, allowed)
             val saved = context.devices(journalPrefix).entries.firstOrNull { operation.token in it.value["items"]?.obj().orEmpty() }
                 ?: return@commit null to false
@@ -636,6 +639,7 @@ class WorkoutImports(private val engine: Engine) {
     }
 
     fun refuseOperation(operation: ImportOperation, code: String, opening: ImportOpening? = null, allowed: () -> Boolean = { true }) { engine.commit(scope) { context ->
+        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
         requireOpening(context, opening, allowed)
         val saved = context.devices(journalPrefix).entries.firstOrNull { operation.token in it.value["items"]?.obj().orEmpty() }
             ?: return@commit null to Unit
@@ -654,6 +658,7 @@ class WorkoutImports(private val engine: Engine) {
     }
 
     fun resolveDeletion(token: String) { engine.commit(scope) { context ->
+        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
         val itemToken = token.substringBefore(':')
         val id = token.substringAfter(':')
         val saved = context.devices(journalPrefix).entries.firstOrNull { itemToken in it.value["items"]?.obj().orEmpty() }
@@ -670,6 +675,7 @@ class WorkoutImports(private val engine: Engine) {
             it["cacheConsumed"] != Json.of(true) }.map { item -> effectiveSource(item) } } }
 
     fun retireStartSources() { engine.commit(scope) { context ->
+        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
         val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
             val before = journal["items"]?.obj().orEmpty()
             val items = before.mapValues { (_, item) ->
@@ -705,6 +711,7 @@ class WorkoutImports(private val engine: Engine) {
         if (source == null) {
             if (opening == null) return
             engine.commit<Unit>(scope) { context ->
+                if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
                 requireOpening(context, opening, allowed)
                 throw TrainingRefused("saved-workout-changed", reason("saved-workout-changed"))
             }
@@ -713,6 +720,7 @@ class WorkoutImports(private val engine: Engine) {
         if (source.session.isOpen) {
             val finish = corrected?.session?.finishedAtMs ?: checkNotNull(WorkoutFix(source.signedOut()).markFinished().finishedAt).ms
             val result = engine.commitWithPrerequisites(scope) { context ->
+                if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
                 requireOpening(context, opening, allowed)
                 val saved = context.devices(journalPrefix).entries.firstOrNull { (_, journal) -> journal["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && it["kind"] == Json.of("start") && it["state"] == Json.of("refused") } }
                     ?: return@commitWithPrerequisites null to null
@@ -741,6 +749,7 @@ class WorkoutImports(private val engine: Engine) {
 
     fun reconcileConfirmed() {
         engine.commitWithPrerequisites(scope) { context ->
+            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
             if (context.isAnonymous || !context.firstPullComplete() || context.checkpoint().cleanSeq == null) return@commitWithPrerequisites null to Unit
             val legacyRefusals = engine.refusedDeltas(context, scope, Gym.Codes.sessionFinished)
             val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
@@ -793,7 +802,10 @@ class WorkoutImports(private val engine: Engine) {
                 else if (item["kind"] == Json.of("finished") && item["state"] == Json.of("admitted")) listOfNotNull(item["resolvedGestureId"]?.str())
                 else emptyList()
             }.toSet() }
-        engine.notices("gym").notices.value.filter { !it.isDismissed && it.id in gestures.map { gesture -> "notice:$gesture/0" } }.forEach { engine.dismissNotice(it.id) }
+        engine.notices("gym").notices.value.filter { !it.isDismissed && it.id in gestures.map { gesture -> "notice:$gesture/0" } }.forEach {
+            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            engine.dismissNotice(it.id)
+        }
     }
 
     fun refusals(): List<ImportRefusal> = engine.read(scope) { reader ->
@@ -839,6 +851,7 @@ class WorkoutImports(private val engine: Engine) {
         markFinished: Boolean = false, expectedReplica: String? = null, expectedAnonymous: Boolean? = null,
         opening: ImportOpening? = null, allowed: () -> Boolean = { true }) {
         val admitted = engine.commitWithPrerequisites(scope) { context ->
+            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
             requireOpening(context, opening, allowed)
             if (expectedReplica != null && (context.replica != expectedReplica || context.isAnonymous != expectedAnonymous))
                 return@commitWithPrerequisites null to false
@@ -907,6 +920,7 @@ class WorkoutImports(private val engine: Engine) {
     }
 
     fun discardRefusal(id: String, opening: ImportOpening? = null, allowed: () -> Boolean = { true }) { engine.commit(scope) { context ->
+        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
         requireOpening(context, opening, allowed)
         val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
             val before = journal["items"]?.obj().orEmpty()
