@@ -407,7 +407,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 if (!current(seat) || !ready()) return@withLock null
                 changedEpoch = engine.device.current().meta["serverEpoch"] != epoch
                 if (changedEpoch) null else engine.nextPush(pushLimit)
-            } ?: return@withLock changedEpoch
+            } ?: run {
+                // An epoch learned during the hello needs another hello before numbering, and a pull never wakes the sender.
+                if (changedEpoch) senderWake.trySend(Unit)
+                return@withLock changedEpoch
+            }
             if (!current(seat) || !ready()) return@withLock false
             val send = engine.clock.reading()
             val job = currentCoroutineContext()[Job]

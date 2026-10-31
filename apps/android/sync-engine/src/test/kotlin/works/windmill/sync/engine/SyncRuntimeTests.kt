@@ -173,6 +173,27 @@ class SyncRuntimeTests {
         }
     }
 
+    @Test fun theFirstPullLandingDuringTheSendersHelloDoesNotStrandTheQueuedPush() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            val hello = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = hello
+            fixture.create()
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array()))))
+            until { fixture.engine.device.current().meta["serverEpoch"] == Json.of("ep-1") }
+            hello.complete(helloResponse())
+            assertEquals("the epoch learned during the hello asks for another hello before numbering",
+                "token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            until { fixture.engine.device.current().entries().map { it.state } == listOf("acked") }
+        }
+    }
+
     @Test fun aLocalEpochChangeDuringHelloRequiresAnotherHelloBeforeNumbering() = runBlocking {
         Fixture().use { fixture ->
             fixture.create()
