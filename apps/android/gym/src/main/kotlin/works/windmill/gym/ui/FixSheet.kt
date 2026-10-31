@@ -30,14 +30,12 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -68,6 +66,8 @@ import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.telemetry.LocalTelemetry
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,7 +109,6 @@ fun FixSheet(
     var note by rememberSaveable(draftKey) { mutableStateOf(set.note) }
     val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg, exercise?.loadFloor)
     val count = rememberNumberDraft(draftKey, NumberEntry.Field.Reps, reps.toDouble())
-    val loadFeedback = rememberNumberStepperFeedback()
     var effortOpen by rememberSaveable(draftKey) { mutableStateOf(false) }
     var refusal by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
     var busy by remember(draftKey) { mutableStateOf(false) }
@@ -213,27 +212,19 @@ fun FixSheet(
                     Text("$movement · Set $setNumber", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
                 }
             }
-            fun commitLoad(): NumberEditResult = load.read()?.let(::acceptLoad) ?: NumberEditResult.Refused
-            fun commitReps(): NumberEditResult = count.read()?.let(::acceptReps) ?: NumberEditResult.Refused
-            NumberStepper(load.text, load::edit, "Load", unit,
-                onStep = { step -> load.bumped(if (step == NumberStep.Increase) 1 else -1, false)?.let(::acceptLoad) ?: NumberEditResult.Refused },
-                onCommit = ::commitLoad,
-                size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
-                refusal = load.shownRefusal, enabled = !busy, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
-                onFocusChange = { load.focus(it, ::commitLoad) })
-            LadderRow(load.reading.value ?: load.committed, onDial = { step, big ->
-                load.bumped(if (step == NumberStep.Increase) 1 else -1, big)?.let { loadFeedback.accept(acceptLoad(it), step) }
-            }, enabled = !busy, decreaseEnabled = load.canDecrease)
-            NumberStepper(count.text, count::edit, "Reps", "reps",
-                onStep = { step ->
+            SetNumbers(load, count, unit,
+                stepLoad = { step, big -> load.bumped(if (step == NumberStep.Increase) 1 else -1, big)?.let(::acceptLoad) ?: NumberEditResult.Refused },
+                stepReps = { step ->
                     count.read()?.let {
                         acceptReps(Ladder.bumpReps(it.toInt(), if (step == NumberStep.Increase) 1 else -1)
                             .coerceAtMost(LoggedSetLimits.maxReps).toDouble())
                     } ?: NumberEditResult.Refused
                 },
-                onCommit = ::commitReps,
-                refusal = count.refusal, enabled = !busy, onFocusChange = { count.focus(it, ::commitReps) },
-                decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble())
+                commit = { field ->
+                    if (field === load) load.read()?.let(::acceptLoad) ?: NumberEditResult.Refused
+                    else count.read()?.let(::acceptReps) ?: NumberEditResult.Refused
+                },
+                enabled = !busy)
             ExposedDropdownMenuBox(expanded = effortOpen, onExpandedChange = { if (!busy) effortOpen = it }) {
                 TextField(value = rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
                     onValueChange = {}, readOnly = true, enabled = !busy, singleLine = true,

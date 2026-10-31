@@ -43,7 +43,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -93,18 +92,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.RoutineMovement
-import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.domain.sync.RoutineRules
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.net.WindmillJson
+import androidx.compose.runtime.setValue
 
 // Save enables when the draft is savable — named and holding at least one movement — and for an edit
 // only once something actually changed: a Save that rewrote a document with itself would move the
@@ -133,10 +132,11 @@ internal sealed interface BuilderSheet {
         val discarding: Boolean = false,
     ) : BuilderSheet {
         val dirty: Boolean get() = movement != opening || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets
-        // The floor binds a line the save touches, as the domain does: new, retargeted, or a movement whose loading changed.
-        fun floor(of: RoutineMovement): Double? =
-            if (adding || creating || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets || of.loadingChanged)
-                of.current.loadFloor else null
+        // The floor the save will hold this line to, by the domain's own rule.
+        fun floor(of: RoutineMovement): Double? = RoutineRules.targetFloor(
+            retargeted = adding || creating || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets,
+            equipment = of.current.equipment, loadCount = of.current.loadCount,
+            base = of.base?.let { it.equipment to it.loadCount })
     }
     @Serializable
     data object Picker : BuilderSheet

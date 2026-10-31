@@ -714,7 +714,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Routines list | `ui/RoutinesScreen.kt`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
   | Routine ⋮ Delete | `ui/RoutinesScreen.kt`, shared error-role menu, immediate | 02.12 `1253:29480` | verified in Dark/Daylight |
   | Editor movement | `ui/RoutineBuilder.kt`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
-  | Target set row | `ui/TargetBlock.kt:264-277`, word ground | 02.11 `1253:29263` | shared row |
+  | Target set row | `ui/MovementForm.kt`, shared row | 02.11 `1253:29263` | shared row |
   | This workout row | `ui/AssemblySheet.kt:163-195`, both directions, *Remove* on raised | 03.4 `1253:29834` | end-to-start, shared row |
   | Workout detail set | `ui/SessionScreen.kt`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
   | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
@@ -1095,8 +1095,7 @@ iOS. It and the product differ in these places.
   including an explicitly empty name for a free session.
 - **F38 · Target entry.** Web uses the ladder as its count; native entry retains Sets. Decide
   whether that difference is intentional. Android's targets are drawn as number steppers (Android
-  02.6, 02.11; 11d). Preserve `TargetBlock(scheme, onChange)` until device tests cover varied
-  reps/loads, keyboard, focus and TalkBack.
+  02.6, 02.11; 11d).
 - **4k · Leaving drafts.** iOS asks *Discard routine changes?* (Discard · Keep editing) on a
   dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`); Android Back drops a dirty new
   routine silently, while its movement editor asks (02.17). Approved Android 02.20 and the

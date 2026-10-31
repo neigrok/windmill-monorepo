@@ -14,7 +14,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,11 +30,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.ripple.RippleAlpha
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LocalRippleConfiguration
-import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,7 +42,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -57,14 +49,12 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -126,6 +116,8 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.MovementCreateOutcome
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillSpace
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 // The movement page and the rack scroll as one above a pinned Log set. All loads remain kilograms.
 private sealed class LoggerSheet {
@@ -477,10 +469,11 @@ fun LoggerScreen(
     val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
-        val back = { if (open == LoggerSheet.Picker) cancelPicker() else if (!fixBusy) cancelFixEntry?.invoke() ?: close() }
+        // The picker steps back to the workout sheet. Fix set's own handlers answer Back first: a busy save
+        // swallows it and open entry cancels it; a drag waits on the same two through the sheet state.
         WindmillSheet(
-            onDismissRequest = back,
-            onBack = back,
+            onDismissRequest = { if (open == LoggerSheet.Picker) cancelPicker() else close() },
+            onBack = if (open == LoggerSheet.Picker) ::cancelPicker else null,
             sheetState = sheetState,
             containerColor = skin.surface,
             scrimColor = skin.scrim,
@@ -808,7 +801,6 @@ private fun Rack(
     val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
     val load = entry.load
     val count = entry.count
-    val loadFeedback = rememberNumberStepperFeedback()
     val page = rememberScrollState()
     val panel = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(skin.accent, Color.Transparent), endY = 24.dp.toPx()) }
@@ -824,18 +816,9 @@ private fun Rack(
                 Column(Modifier.fillMaxWidth().clip(panel).background(skin.surface).border(1.dp, edge, panel)
                     .testTag("Numeric rack").padding(horizontal = GymLayout.gutter).padding(top = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    NumberStepper(load.text, load::edit, "Load", unit,
-                        onStep = { entry.stepLoad(it, false) }, onCommit = { entry.commit(load) },
-                        size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
-                        refusal = load.shownRefusal ?: failure, enabled = enabled && !finishing, decreaseEnabled = load.canDecrease,
-                        feedback = loadFeedback,
-                        onFocusChange = { load.focus(it) { entry.commit(load) }; onEdit(load.focused || count.focused) })
-                    LadderRow(load.reading.value ?: load.committed, onDial = { step, big -> loadFeedback.accept(entry.stepLoad(step, big), step) },
-                        enabled = enabled && !finishing, decreaseEnabled = load.canDecrease)
-                    NumberStepper(count.text, count::edit, "Reps", "reps",
-                        onStep = entry::stepReps, onCommit = { entry.commit(count) }, refusal = count.refusal, enabled = enabled && !finishing,
-                        decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble(),
-                        onFocusChange = { count.focus(it) { entry.commit(count) }; onEdit(load.focused || count.focused) })
+                    SetNumbers(load, count, unit, stepLoad = entry::stepLoad, stepReps = entry::stepReps, commit = entry::commit,
+                        enabled = enabled && !finishing, loadRefusal = load.shownRefusal ?: failure,
+                        onFocusChange = { onEdit(load.focused || count.focused) })
                 }
             }, modifier = Modifier.fillMaxWidth().testTag("Rack page").verticalScroll(page)) { measurables, limits ->
                 val rack = measurables[1].measure(limits.copy(minHeight = 0, maxHeight = Constraints.Infinity))
@@ -853,39 +836,6 @@ private fun Rack(
                 keyboard?.hide()
                 onEdit(false)
                 onLog()
-            }
-        }
-    }
-}
-
-// Four steps in one row while their labels fit, two rows of two when large text needs the room.
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, enabled: Boolean = true, decreaseEnabled: Boolean = true) {
-    val skin = LocalGymColors.current
-    val measurer = rememberTextMeasurer()
-    val labels = Ladder.labels(weightKg)
-    val style = WindmillFont.body(16, FontWeight.Bold)
-    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = skin.ink,
-        rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.12f, hoveredAlpha = 0.08f, pressedAlpha = 0.12f))) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val gap = WindmillSpace.x2
-            val widest = with(LocalDensity.current) { labels.maxOf { measurer.measure(it, style).size.width }.toDp() }
-            val perRow = if (widest + 24.dp <= (maxWidth - gap * 3) / 4) 4 else 2
-            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-                labels.withIndex().chunked(perRow).forEach { line ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        line.forEach { (index, label) ->
-                            val step = if (index < 2) NumberStep.Decrease else NumberStep.Increase
-                            FilledTonalButton(
-                                onClick = { onDial(step, index == 0 || index == 3) },
-                                enabled = enabled && (step == NumberStep.Increase || decreaseEnabled), modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                                contentPadding = PaddingValues(vertical = 10.dp), shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
-                            ) { Text(label, style = style, maxLines = 1) }
-                        }
-                    }
-                }
             }
         }
     }

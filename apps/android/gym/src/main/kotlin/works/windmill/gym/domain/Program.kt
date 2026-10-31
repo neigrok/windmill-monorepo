@@ -302,8 +302,6 @@ object TargetEntry {
 data class RoutineMovement(val base: Exercise?, val current: Exercise) {
     init { require(base == null || base.id == current.id) }
 
-    val loadingChanged: Boolean get() = base == null || current.equipment != base.equipment || current.loadCount != base.loadCount
-
     val changed: Boolean get() = base == null || current.name.trim() != base.name ||
         current.equipment != base.equipment || current.loadCount != base.loadCount
 

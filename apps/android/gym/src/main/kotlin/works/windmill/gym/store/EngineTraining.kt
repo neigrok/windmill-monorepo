@@ -1,5 +1,8 @@
 package works.windmill.gym.store
 
+import kotlinx.coroutines.CancellationException
+import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.telemetry.Telemetry
 import java.time.ZoneId
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -951,6 +954,13 @@ class TrainingDeleteUnconfirmed(cause: Exception) : Exception(cause)
 // What the replica cannot answer yet: the account's first pull, or the log's receipt for a decision,
 // has not arrived.
 data object TrainingUnanswered : Exception()
+
+// A refusal, an unanswered read, a transport answer or a cancellation is expected and its caller says so; only
+// the rest reaches Sentry, under the operation's static name.
+internal fun Telemetry.unexpected(operation: String, error: Exception) {
+    if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException) return
+    failure(operation, error)
+}
 
 @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
 internal class GymActionContext : AbstractCoroutineContextElement(Key), ActionContext, CopyableThreadContextElement<Unit> {

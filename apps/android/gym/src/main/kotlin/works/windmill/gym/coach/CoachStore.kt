@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.store.unexpected
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,8 +21,6 @@ import works.windmill.gym.domain.Ids
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.Seat
-import works.windmill.gym.store.TrainingRefused
-import works.windmill.gym.store.TrainingUnanswered
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
@@ -94,7 +93,7 @@ class CoachStore internal constructor(
                     if (owner == null && localCoach?.onboarding()?.any { record -> record.owner == anonymousOwner &&
                             (record.response?.errorCode ?: record.refusalCode) in setOf("device_bound", "installation_bound") } == true)
                         anonymousAccess = AnonymousCoachAccess.Bound
-                } catch (failure: Exception) { reportFailure("gym.restoreConversation", failure) }
+                } catch (failure: Exception) { telemetry.unexpected("gym.restoreConversation", failure) }
             }
         } }
     }
@@ -151,7 +150,7 @@ class CoachStore internal constructor(
             restoredOwners += seat
         } catch (failure: Exception) {
             restoredOwners += seat
-            reportFailure("gym.restoreConversation", failure)
+            telemetry.unexpected("gym.restoreConversation", failure)
         }
     }
 
@@ -221,7 +220,7 @@ class CoachStore internal constructor(
         admit(seat).check()
         try { localCoach?.select(seat, id) }
         catch (failure: Exception) {
-            reportFailure("gym.saveConversation", failure)
+            telemetry.unexpected("gym.saveConversation", failure)
             archiveFailure = "Your conversation couldn’t be saved. Try again."
         }
         selected[seat] = id
@@ -234,7 +233,7 @@ class CoachStore internal constructor(
             localCoach?.saveChat(seat, chat, select)
             archiveFailure = null
         } catch (failure: Exception) {
-            reportFailure("gym.saveConversation", failure)
+            telemetry.unexpected("gym.saveConversation", failure)
             archiveFailure = "Your conversation couldn’t be saved. Try again."
         }
     }
@@ -305,7 +304,7 @@ class CoachStore internal constructor(
                 if (outcome is AskOutcome.Answered && draft(seat, id) == submittedDraft)
                     saveDraft(seat, id, CoachDraft())
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { reportFailure("gym.saveConversation", failure) }
+            catch (failure: Exception) { telemetry.unexpected("gym.saveConversation", failure) }
             finally {
                 if (admissions[key] === admission) {
                     admission.retire()
@@ -344,7 +343,7 @@ class CoachStore internal constructor(
                 }
                 (outcome as? CoachOnboardingOutcome.Answered)?.let { clearAnsweredDraft(it.record) }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { reportFailure("gym.coachOnboarding", failure) }
+            catch (failure: Exception) { telemetry.unexpected("gym.coachOnboarding", failure) }
             finally { busy.remove(key); jobs.remove(key); onboardingRevision++ }
         }
         jobs[key] = job
@@ -374,7 +373,7 @@ class CoachStore internal constructor(
         val resuming = try { admit(authenticatedOwner) }
         catch (_: CancellationException) { return }
         catch (failure: Exception) {
-            reportFailure("gym.restoreConversation", failure)
+            telemetry.unexpected("gym.restoreConversation", failure)
             archiveFailure = "Your conversation couldn’t be saved. Try again."
             return
         }
@@ -385,11 +384,11 @@ class CoachStore internal constructor(
             val requestId = requireNotNull(request.requestId)
             if (chat.refusedRequest(requestId) && localCoach?.snapshot(authenticatedOwner, requestId) == null) {
                 try { resuming.write {
-                    localCoach?.pauseRequest(authenticatedOwner, chat, requestId) { reportFailure("gym.saveConversation", it) }
+                    localCoach?.pauseRequest(authenticatedOwner, chat, requestId) { telemetry.unexpected("gym.saveConversation", it) }
                 } }
                 catch (_: CancellationException) { return }
                 catch (failure: Exception) {
-                    reportFailure("gym.saveConversation", failure)
+                    telemetry.unexpected("gym.saveConversation", failure)
                     archiveFailure = "Your conversation couldn’t be saved. Try again."
                 }
                 return@forEach
@@ -418,7 +417,7 @@ class CoachStore internal constructor(
             val paused = chat.copy(exchanges = chat.exchanges.dropLast(1) + last.copy(trouble = "Upload cancelled. Retry to send this photo.", again = true))
             try { admission.write { localCoach?.pauseRequest(seat, paused, last.requestId); admission.retire() } }
             catch (failure: Exception) {
-                reportFailure("gym.saveConversation", failure)
+                telemetry.unexpected("gym.saveConversation", failure)
                 archiveFailure = "Your conversation couldn’t be saved. Try again."
                 stopping.remove(key)
                 return
@@ -449,7 +448,7 @@ class CoachStore internal constructor(
                     busy.remove(key); uploads.remove(key)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { reportFailure("gym.ask", failure) }
+            catch (failure: Exception) { telemetry.unexpected("gym.ask", failure) }
             finally { if (stopping[key] === admission) stopping.remove(key) }
         }
     }
@@ -458,7 +457,7 @@ class CoachStore internal constructor(
         try { persistRequest(admission) { localCoach?.record(seat, generation) } }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            reportFailure("gym.saveConversation", failure)
+            telemetry.unexpected("gym.saveConversation", failure)
             archiveFailure = "Your conversation couldn’t be saved. Try again."
         }
     }
@@ -467,7 +466,7 @@ class CoachStore internal constructor(
         try { persistRequest(admission) { localCoach?.clear(seat, thread, request) } }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            reportFailure("gym.saveConversation", failure)
+            telemetry.unexpected("gym.saveConversation", failure)
             archiveFailure = "Your conversation couldn’t be saved. Try again."
         }
     }
@@ -476,11 +475,6 @@ class CoachStore internal constructor(
         withContext(storageDispatcher) {
             if (admission == null) write() else admission.write(write)
         }
-    }
-
-    private fun reportFailure(operation: String, error: Exception) {
-        if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException) return
-        telemetry.failure(operation, error)
     }
 
     internal fun resetThreads() {
@@ -525,7 +519,7 @@ class CoachStore internal constructor(
     fun pendingQuestions(): List<AskQuestion> = try {
         owner?.let { localCoach?.pending(it) }.orEmpty()
     } catch (failure: Exception) {
-        reportFailure("gym.restoreConversation", failure)
+        telemetry.unexpected("gym.restoreConversation", failure)
         emptyList()
     }
 
@@ -557,7 +551,7 @@ class CoachStore internal constructor(
             val chat = archive[seat to key] ?: LocalChat(key)
             archive[seat to key] = chat.copy(updatedAtMs = System.currentTimeMillis())
             unsavedDrafts.remove(seat to key)
-        } catch (failure: Exception) { unsavedDrafts += seat to key; reportFailure("gym.saveDraft", failure); throw failure }
+        } catch (failure: Exception) { unsavedDrafts += seat to key; telemetry.unexpected("gym.saveDraft", failure); throw failure }
     }
 
     fun keptDrafts(key: String): List<KeptCoachDraft> {
@@ -588,7 +582,7 @@ class CoachStore internal constructor(
                     if (recovery != null) return@withAuthority null to recovery
                     val source = disk.selected(anonymousOwner) ?: return@withAuthority null to null
                     if (anonymousOwner to source in unsaved) return@withAuthority null to null
-                    disk.adoptPhoneDraft(account, publishedFailure = { reportFailure("gym.adoptCoachDraft", it) }) {
+                    disk.adoptPhoneDraft(account, publishedFailure = { telemetry.unexpected("gym.adoptCoachDraft", it) }) {
                         disk.current(authority) && owner == account && ownerRevision == revision
                     } to null
                 }
@@ -603,7 +597,7 @@ class CoachStore internal constructor(
             if (current == null) selected.remove(account) else selected[account] = current
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            reportFailure("gym.adoptCoachDraft", failure)
+            telemetry.unexpected("gym.adoptCoachDraft", failure)
             if (owner == account) archiveFailure = "Your draft couldn’t be saved. Try again."
         } finally { adoptingDraft = false }
     }
@@ -635,9 +629,9 @@ class CoachStore internal constructor(
         val selected = expected.choosing(choices(key, requestId, expected.id), group, option) ?: return false
         val next = draft(key).copy(text = expected.text(selected))
         try { localCoach?.saveChoice(seat, key, "$requestId:${expected.id}", selected, next) {
-            reportFailure("gym.saveDraft", it)
+            telemetry.unexpected("gym.saveDraft", it)
         } ?: return false }
-        catch (failure: Exception) { reportFailure("gym.saveDraft", failure); throw failure }
+        catch (failure: Exception) { telemetry.unexpected("gym.saveDraft", failure); throw failure }
         publishDraft(seat, key)
         telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "choose", "outcome" to "ok"))
         return true
@@ -647,8 +641,8 @@ class CoachStore internal constructor(
         val seat = archiveOwner
         if (!draftChangeReady(key)) return false
         if (isAsking(key) || !draftSaved(key)) return false
-        try { if (localCoach?.continueDraft(seat, key, heldId) { reportFailure("gym.saveDraft", it) } != true) return false }
-        catch (failure: Exception) { reportFailure("gym.saveDraft", failure); throw failure }
+        try { if (localCoach?.continueDraft(seat, key, heldId) { telemetry.unexpected("gym.saveDraft", it) } != true) return false }
+        catch (failure: Exception) { telemetry.unexpected("gym.saveDraft", failure); throw failure }
         publishDraft(seat, key)
         telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "continue_draft", "outcome" to "ok"))
         return true
@@ -671,7 +665,7 @@ class CoachStore internal constructor(
         if (current.photo == null) return
         val next = current.copy(photo = null)
         try { localCoach?.saveDraft(seat, key, next) }
-        catch (failure: Exception) { reportFailure("gym.saveDraft", failure); throw failure }
+        catch (failure: Exception) { telemetry.unexpected("gym.saveDraft", failure); throw failure }
         drafts[seat to key] = next
         unsavedDrafts.remove(seat to key)
         draftVersion++
@@ -697,14 +691,14 @@ class CoachStore internal constructor(
         scope.async {
             val prepared = try { prepare() }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { reportFailure(prepareOperation, failure); throw failure }
+            catch (failure: Exception) { telemetry.unexpected(prepareOperation, failure); throw failure }
             if (!disk.current(authority) || (chatVersions[origin] ?: 0) != version || archive[origin] == null) return@async
             val (photo, bytes) = prepared
             val attached = try { withContext(storageDispatcher) { disk.withAuthority(authority) { disk.attachPhoto(seat, key, photo, bytes) } } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
-                if (failure is CoachDraftWriteFailure) reportFailure("gym.saveDraft", failure.cause as Exception)
-                else reportFailure("gym.savePhoto", failure)
+                if (failure is CoachDraftWriteFailure) telemetry.unexpected("gym.saveDraft", failure.cause as Exception)
+                else telemetry.unexpected("gym.savePhoto", failure)
                 throw failure
             }
             if (!attached) return@async
@@ -775,7 +769,7 @@ class CoachStore internal constructor(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    reportFailure("gym.coachRoutineConfirm", failure)
+                    telemetry.unexpected("gym.coachRoutineConfirm", failure)
                     val refused = failure is WindmillApiException.Refused && failure.status in 400..499
                     telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to if (refused) "refused" else "failed"))
                     return@withLock DraftOutcome.of(failure)
@@ -787,7 +781,7 @@ class CoachStore internal constructor(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    reportFailure("gym.coachRoutineConfirm", failure)
+                    telemetry.unexpected("gym.coachRoutineConfirm", failure)
                 }
                 if (!authority.active || seat != owner) return@withLock DraftOutcome.Failed(accountChanged)
                 confirmations = confirmations + ((seat to requestId) to reply)
@@ -911,7 +905,7 @@ class CoachStore internal constructor(
         } catch (refusing: Exception) {
             try {
                 requestAdmission.check()
-                reportFailure("gym.ask", refusing)
+                telemetry.unexpected("gym.ask", refusing)
                 if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
                 val authoritative = try { coach.thread(threadId)?.generation?.takeIf { it.requestId == requestId } }
                 catch (interrupted: CancellationException) { throw interrupted }
@@ -948,11 +942,11 @@ class CoachStore internal constructor(
                             absent = outcome is AskOutcome.Absent)
                         archive[seat to threadId] = settled
                         persistRequest(requestAdmission) {
-                            localCoach?.pauseRequest(seat, settled, requestId) { reportFailure("gym.saveConversation", it) }
+                            localCoach?.pauseRequest(seat, settled, requestId) { telemetry.unexpected("gym.saveConversation", it) }
                         }
                     } catch (interrupted: CancellationException) { throw interrupted }
                     catch (failure: Exception) {
-                        reportFailure("gym.saveConversation", failure)
+                        telemetry.unexpected("gym.saveConversation", failure)
                         archiveFailure = "Your conversation couldn’t be saved. Try again."
                     }
                     requestAdmission.check()
@@ -988,7 +982,7 @@ class CoachStore internal constructor(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
-                reportFailure("gym.readThreads", refusing)
+                telemetry.unexpected("gym.readThreads", refusing)
                 if (!authority.active || seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
                 GymResult.Failed(WriteFailure(refusing))
             }
@@ -1039,7 +1033,7 @@ class CoachStore internal constructor(
             if (seat != null && !isAsking(id) && read.generation?.status in listOf("completed", "stopped")) {
                 try { authority.write { localCoach?.clear(seat, id, requireNotNull(read.generation).requestId) } }
                 catch (failure: Exception) {
-                    reportFailure("gym.saveConversation", failure)
+                    telemetry.unexpected("gym.saveConversation", failure)
                     archiveFailure = "Your conversation couldn’t be saved. Try again."
                 }
             }
@@ -1047,7 +1041,7 @@ class CoachStore internal constructor(
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
-            reportFailure("gym.thread", refusing)
+            telemetry.unexpected("gym.thread", refusing)
             if (!authority.active || seat != owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
             GymResult.Failed(WriteFailure(refusing))
         }
@@ -1118,7 +1112,7 @@ class CoachStore internal constructor(
                 GymResult.Ok(Unit)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
-                reportFailure("gym.deleteThread", failure)
+                telemetry.unexpected("gym.deleteThread", failure)
                 GymResult.Failed(WriteFailure(failure))
             }
         }

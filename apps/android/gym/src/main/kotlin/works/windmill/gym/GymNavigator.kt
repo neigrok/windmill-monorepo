@@ -20,7 +20,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,7 +28,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -46,13 +44,22 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import works.windmill.gym.coach.Ask
+import works.windmill.gym.coach.Threads
+import works.windmill.gym.domain.Bodyweight
+import works.windmill.gym.domain.ConnectedLog
+import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.Notes
+import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.platform.design.NavigationMotion
 import works.windmill.platform.design.animationsOn
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 internal enum class Tab(val title: String) {
     Routines("Routines"),
@@ -98,8 +105,9 @@ internal sealed interface Away {
     data class InspectWorkout(val id: String) : Away
 }
 
-// Which screen an entry is, regardless of what it carries: a session whose detail arrives later is
-// still the same screen.
+// What an entry says about itself, whatever it carries: which screen it is (a session whose detail arrives later is
+// still the same screen), the `gym_screen_viewed` label, and the way-back line a screen above it shows. Names are read
+// off the catalogue, so a rename moves the way back too.
 internal val Away.key: String
     get() = when (this) {
         is Away.Session -> "session:${summary.id}"
@@ -114,6 +122,34 @@ internal val Away.key: String
         Away.OnThisPhone -> "on-this-phone"
         is Away.InspectWorkout -> "inspect:$id"
     }
+
+internal val Away.screen: String
+    get() = when (this) {
+        is Away.Session -> "session"
+        is Away.Movement -> "movement"
+        is Away.Coach -> "coach"
+        Away.Threads -> "threads"
+        is Away.Thread -> "thread"
+        Away.Connections -> "connections"
+        Away.Notes -> "notes"
+        is Away.NoteEditor -> "note_editor"
+        Away.Bodyweight -> "bodyweight"
+        Away.OnThisPhone -> "on_this_phone"
+        is Away.InspectWorkout -> "workout_inspect"
+    }
+
+internal fun Away.wayBack(catalog: List<Exercise>): String = when (this) {
+    is Away.Session -> summary.plan?.routine ?: Readout.noRoutine
+    is Away.Movement -> Readout.movement(exerciseId, catalog)
+    is Away.Coach -> Ask.title
+    Away.Threads -> Threads.title
+    // The noun, not the thread's title: a title is the lifter's first message verbatim.
+    is Away.Thread -> Threads.conversation
+    Away.Connections -> ConnectedLog.title
+    Away.Notes, is Away.NoteEditor -> Notes.title
+    Away.Bodyweight -> Bodyweight.title
+    Away.OnThisPhone, is Away.InspectWorkout -> "On this phone"
+}
 
 internal fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
     save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
@@ -184,12 +220,13 @@ internal data class Standing(val tab: Tab, val away: List<Away>, val building: B
             else -> BackMeans.LeaveTheApp
         }
 
+    // What stands is what a back would leave.
     val frame: Frame
-        get() = when {
-            logger && !building && away.isEmpty() -> Frame.Workout(tab)
-            building -> Frame.Draft(tab)
-            away.isNotEmpty() -> Frame.Pushed(tab, away.last(), away.size, away.getOrNull(away.size - 2))
-            else -> Frame.Root(tab)
+        get() = when (means) {
+            BackMeans.HideTheWorkout -> Frame.Workout(tab)
+            BackMeans.LeaveTheDraft -> Frame.Draft(tab)
+            BackMeans.PopOnePushedScreen -> Frame.Pushed(tab, away.last(), away.size, away.getOrNull(away.size - 2))
+            BackMeans.ReturnToTheRoutinesTab, BackMeans.LeaveTheApp -> Frame.Root(tab)
         }
 
     // Where a back leaves the room; null when back is the platform's.

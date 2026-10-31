@@ -39,7 +39,7 @@ class ObservabilityDocTests {
     @Test fun everyFailureOperationHasARowAndEveryRowIsStillReported() {
         val rows = table("Operation").map { named(it[0]) }
         val reported = literals(
-            """\b(?:failure|reportFailure|capture|tried|withKey)\(\s*"([^"]+)"""",
+            """\b(?:failure|reportFailure|unexpected|capture|tried|withKey)\(\s*"([^"]+)"""",
             """\breport\(\s*\w+,\s*"([^"]+)"""",
             """\boperation(?:: String)?\s*=\s*"([^"]+)"""",
         )

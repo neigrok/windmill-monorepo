@@ -29,14 +29,12 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -50,7 +48,6 @@ import kotlin.coroutines.EmptyCoroutineContext
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.annotation.DrawableRes
@@ -58,7 +55,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -71,22 +67,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.AskCap
 import works.windmill.gym.coach.CoachAttachment
-import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.onboarding.AnonymousCoachAccess
-import works.windmill.gym.coach.AskExchange
-import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.sharing.WorkoutSharing
 import works.windmill.gym.sharing.WorkoutShareActions
-import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
-import works.windmill.gym.domain.Note
-import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.coach.Threads
-import works.windmill.gym.coach.AskOutcome
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.Seat
 import works.windmill.gym.store.FinishReceipts
@@ -96,8 +84,6 @@ import works.windmill.gym.store.WriteFailure
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.LocalGymEngineSession
-import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.coach.AskAbsentStance
 import works.windmill.gym.coach.AskScreen
@@ -144,8 +130,8 @@ import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
-import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSpace
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 // Gym's one seam into the superapp.
 class GymModule(private val store: TrainingStore, private val notifications: WorkoutNotifications? = null) : ProductModule {
@@ -350,19 +336,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         finished != null -> "finish"
         building != null -> "routine_editor"
         selectedRoutineId != null -> "routine"
-        navigator.away.isNotEmpty() -> when (navigator.away.last()) {
-            is Away.Session -> "session"
-            is Away.Movement -> "movement"
-            is Away.Coach -> "coach"
-            Away.Threads -> "threads"
-            is Away.Thread -> "thread"
-            Away.Connections -> "connections"
-            Away.Notes -> "notes"
-            is Away.NoteEditor -> "note_editor"
-            Away.Bodyweight -> "bodyweight"
-            Away.OnThisPhone -> "on_this_phone"
-            is Away.InspectWorkout -> "workout_inspect"
-        }
+        navigator.away.isNotEmpty() -> navigator.away.last().screen
         loggerShown -> "workout"
         else -> navigator.tab.name.lowercase()
     }
@@ -965,22 +939,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val fixRead = store.recoveryDraft?.read
             if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(store, currentOwner = { fixRead.belongsTo(currentAccount) })
 
-            // What a way back leads to. Names are read off the store, so a rename moves this row too.
-            fun wayBack(under: Away?, tab: Tab): String = when (under) {
-                is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
-                is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
-                is Away.Coach -> Ask.title
-                Away.Threads -> Threads.title
-                // The noun, not the thread's title: a title is the lifter's first message verbatim.
-                is Away.Thread -> Threads.conversation
-                Away.Connections -> ConnectedLog.title
-                Away.Notes -> Notes.title
-                is Away.NoteEditor -> Notes.title
-                Away.Bodyweight -> Bodyweight.title
-                Away.OnThisPhone -> "On this phone"
-                is Away.InspectWorkout -> "On this phone"
-                null -> if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
-            }
 
             @Composable
             fun CoachStance(otherwise: @Composable () -> Unit) = when {
@@ -1051,7 +1009,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
             @Composable
             fun PushedScreen(frame: Frame.Pushed) {
-                val backTo = wayBack(frame.under, frame.tab)
+                // Beneath the stack is the tab, or the logger when it stands.
+                val backTo = frame.under?.wayBack(store.catalog)
+                    ?: if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else frame.tab.title
                 when (val standing = frame.away) {
                     is Away.Movement -> RecordScreen(
                         exerciseId = standing.exerciseId,

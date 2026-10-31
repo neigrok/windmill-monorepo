@@ -94,18 +94,23 @@ object RoutineRules {
     val rules = listOf(name, position, entries, targets, targetReps, targetWeight, rest, exercise).map(Rule::local) +
         Rule.local("routine.zeroTarget", Routine.type) + Rule.local(loadFloor, Routine.type)
 
-    // A target load meets its movement's floor wherever the save touches it: a line whose targets changed, or one
-    // whose movement changed its loading. A line the save leaves alone keeps what it held.
+    // The floor a save holds a line's target loads to: its movement's wherever the save touches the line, by changing
+    // its targets or the movement's loading (a new movement counts as one). A line the save leaves alone keeps what it held.
+    fun targetFloor(retargeted: Boolean, equipment: String, loadCount: Int, base: Pair<String, Int>?): Double? {
+        val reloaded = base == null || base != (equipment to loadCount)
+        return if (retargeted || reloaded) ExerciseRules.loadFloor(equipment, loadCount) else null
+    }
+
     fun floored(routine: Routine, base: Routine, movements: List<RoutineMovementChange>, catalogue: Catalogue) {
         routine.entries.forEachIndexed { index, entry ->
             val staged = movements.firstOrNull { it.current.id == entry.exerciseId }
-            val retargeted = base.entries.firstOrNull { it.exerciseId == entry.exerciseId }?.sets != entry.sets
-            val reloaded = staged != null && (staged.base == null || staged.base.equipment != staged.current.equipment ||
-                staged.base.loadCount != staged.current.loadCount)
-            if (!retargeted && !reloaded) return@forEachIndexed
             val movement = staged?.current ?: catalogue.find(entry.exerciseId) ?: return@forEachIndexed
+            val loading = if (staged == null) movement.equipment to movement.loadCount else staged.base?.let { it.equipment to it.loadCount }
+            val retargeted = base.entries.firstOrNull { it.exerciseId == entry.exerciseId }?.sets != entry.sets
+            val floor = targetFloor(retargeted, movement.equipment, movement.loadCount, loading) ?: return@forEachIndexed
             entry.sets?.forEachIndexed { at, set ->
-                set.weightKg?.let { movement.floored(it, loadFloor, Path("entries") + index + "sets" + at + "weightKg") }
+                val weightKg = set.weightKg ?: return@forEachIndexed
+                if (weightKg < floor) throw Violation(loadFloor, Path("entries") + index + "sets" + at + "weightKg", Violation.Reason.Below(floor))
             }
         }
     }

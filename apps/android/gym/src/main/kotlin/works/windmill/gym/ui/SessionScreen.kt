@@ -32,7 +32,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,14 +40,10 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import works.windmill.platform.net.WindmillJson
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -73,8 +68,8 @@ import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 // The frozen plan beside these rows is a snapshot and is the ONLY source for what the plan said.
 object Performed {
@@ -315,10 +310,10 @@ fun SessionScreen(
         movement.rows.firstOrNull { it.id == fixing }?.let { movement.movement to it }
     }
     if (open != null) {
-        val back = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }
+        // Back reaches Fix set's own handlers first: a busy save swallows it and open entry cancels it. A drag
+        // waits on the same two through the sheet state.
         WindmillSheet(
-            onDismissRequest = back,
-            onBack = back,
+            onDismissRequest = { close() },
             sheetState = sheetState,
             containerColor = skin.surface,
             scrimColor = skin.scrim,

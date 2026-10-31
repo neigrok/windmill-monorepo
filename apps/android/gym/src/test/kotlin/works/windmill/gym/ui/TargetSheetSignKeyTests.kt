@@ -50,7 +50,7 @@ class TargetSheetSignKeyTests {
     }
 
     private fun noSignKey() {
-        compose.onAllNodesWithContentDescription(bandAssistedSignDescription).assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Flip the sign — band-assisted").assertCountEquals(0)
         compose.onAllNodesWithText("±").assertCountEquals(0)
     }
 

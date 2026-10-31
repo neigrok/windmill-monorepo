@@ -55,15 +55,12 @@ import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.net.GymRest
@@ -118,8 +115,7 @@ class TrainingStore(
 
     // A refusal is an answer the screen says, never a failure to report.
     private fun reportFailure(operation: String, error: Exception) {
-        if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException || error is TrainingReadChanged) return
-        telemetry.failure(operation, error)
+        if (error !is TrainingReadChanged) telemetry.unexpected(operation, error)
     }
 
     private class TrainingReadChanged : Exception()

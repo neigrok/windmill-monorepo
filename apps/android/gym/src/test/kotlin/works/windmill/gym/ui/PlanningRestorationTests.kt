@@ -257,7 +257,7 @@ class PlanningRestorationTests {
             compose.onNodeWithText("Chin Up").performClick()
             uniformTargets()
             compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("")
-            compose.onAllNodesWithContentDescription(bandAssistedSignDescription).assertCountEquals(0)
+            compose.onAllNodesWithContentDescription("Flip the sign — band-assisted").assertCountEquals(0)
             compose.onNodeWithContentDescription("Load, kg added").assertIsNotEnabled()
             restorer.emulateSavedInstanceStateRestore()
             hideSearchIme()
