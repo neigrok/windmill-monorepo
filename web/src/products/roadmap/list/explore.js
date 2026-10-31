@@ -1,8 +1,9 @@
-import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
-import { unlocksOf } from '../ui/nextUpPlan.js';
+import { DEFAULT_NODE_COLOR } from '../theme.js';
+
+export { kindOptions } from '../model/Legend.js';
+export { gateOf } from '../model/UnlockRules.js';
 
 const SNIPPET_PAD = 40; // characters kept either side of a description hit
-const LINE_CAP = 6;     // hops — a breadcrumb longer than a phone width stops being an answer
 
 // A section survives when its head or one of its rows match; it keeps its head either way. `matches`
 // counts exactly what the body will render, the root included, so zero IS the empty state.
@@ -50,78 +51,4 @@ export function filterOutline(outline, nodesById, { query = '', kind = null, rev
     });
   }
   return { root: rootHit ? { id: outline.rootId, snippet: rootHit.snippet } : null, sections, matches };
-}
-
-// Hue is the filter key because hue is what a node stores: two legend kinds sharing one hue are one chip.
-export function kindOptions(tree, legend = []) {
-  const worn = new Set(tree.nodes.map((node) => node.color ?? DEFAULT_NODE_COLOR));
-  if (worn.size < 2) return [];
-  const named = new Map();
-  for (const kind of legend ?? []) if (!named.has(kind.hue)) named.set(kind.hue, kind);
-  const hues = [
-    ...(legend ?? []).map((kind) => kind.hue).filter((hue) => worn.has(hue)),
-    ...NODE_COLOR_NAMES.filter((hue) => worn.has(hue) && !named.has(hue)),
-  ];
-  return [...new Set(hues)].map((hue) => ({
-    id: named.get(hue)?.id ?? hue,
-    hue,
-    label: named.get(hue)?.label || `${hue[0].toUpperCase()}${hue.slice(1)}`,
-  }));
-}
-
-// `clipped` says the six-hop cap dropped the far end; the near hops are the kept ones.
-export function gateOf(tree, states, id) {
-  const step = tree.nodesById.get(id);
-  if (!step) return { blockedBy: 0, frontier: [], longestChain: 0, line: null, clipped: false };
-  const unmet = (node) => {
-    const owing = new Map(); // by id — a prerequisite listed twice still gates once
-    for (const parent of tree.parentsOf(node.id)) {
-      if (states.get(parent.id) !== 'complete') owing.set(parent.id, parent);
-    }
-    return [...owing.values()];
-  };
-
-  const owed = new Map();
-  const pending = unmet(step);
-  while (pending.length > 0) {
-    const node = pending.pop();
-    if (owed.has(node.id)) continue;
-    owed.set(node.id, node);
-    pending.push(...unmet(node));
-  }
-
-  const frontier = [...owed.values()]
-    .filter((node) => unmet(node).length === 0)
-    .map((node) => ({ node, unlocks: unlocksOf(tree, states, node.id) }))
-    .sort((a, b) => b.unlocks - a.unlocks || (a.node.id < b.node.id ? -1 : 1))
-    .map((entry) => entry.node);
-
-  // A cycle never peels, so a round that removes nothing ends the walk instead of hanging.
-  const peeled = new Set(frontier.map((node) => node.id));
-  let longestChain = peeled.size > 0 ? 1 : 0;
-  while (peeled.size < owed.size) {
-    const layer = [...owed.values()].filter((node) => !peeled.has(node.id) && unmet(node).every((parent) => peeled.has(parent.id)));
-    if (layer.length === 0) break;
-    for (const node of layer) peeled.add(node.id);
-    longestChain += 1;
-  }
-
-  const walk = [step];
-  const walked = new Set([step.id]);
-  let above = unmet(step);
-  while (above.length === 1 && !walked.has(above[0].id)) {
-    walked.add(above[0].id);
-    walk.push(above[0]);
-    above = unmet(above[0]);
-  }
-
-  // A line is proven by running out of blockers AND covering the whole owed set.
-  const straight = above.length === 0 && owed.size > 0 && walk.length - 1 === owed.size;
-  return {
-    blockedBy: owed.size,
-    frontier,
-    longestChain,
-    line: straight ? walk.slice(0, LINE_CAP).reverse() : null,
-    clipped: straight && walk.length > LINE_CAP,
-  };
 }

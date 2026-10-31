@@ -25,6 +25,7 @@ owner view reframes as chrome measurements arrive until the reader moves the cam
 | Area | Responsibility |
 |---|---|
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. |
+| `board/` | The Board's derived columns, card reasons, orders, narrowing and every Board string. |
 | `layout/` | Deterministic layout engines behind `index.js`. |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |
@@ -44,8 +45,9 @@ best-effort projection when replicated state contains cycles. `TrunkTree` choose
 parent per node for layout: same-kind parents first, then depth and id; siblings retain their
 fractional order and creation-stamp order.
 
-`UnlockRules.derive` is the authority for locked, available and complete states. An edge inherits
-its source node's state. Legend order lives in the lattice and is written by `ReorderKinds`;
+`UnlockRules.derive` is the authority for locked, available and complete states; the same file
+answers what a step still owes (`owedStepsOf`, `gateOf`) and what completing it opens (`unlocksOf`).
+An edge inherits its source node's state. Legend order lives in the lattice and is written by `ReorderKinds`;
 `Legend`'s array operations also serve import drafts. Genesis kinds and stamps come from
 `packages/api-contract/genesis.js`, checked by `vite.config.js`.
 

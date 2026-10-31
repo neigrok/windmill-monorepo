@@ -82,6 +82,23 @@ export class SkillTree {
     return ordered;
   }
 
+  descendantsOf(id) {
+    this.nodeOrThrow(id);
+    const seen = new Set();
+    const ordered = [];
+    const queue = [...this.childrenIndex.get(id)];
+
+    while (queue.length > 0) {
+      const child = queue.shift();
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      ordered.push(child);
+      queue.push(...this.childrenIndex.get(child.id));
+    }
+
+    return ordered;
+  }
+
   topoOrder() {
     return this.orderedIds;
   }
