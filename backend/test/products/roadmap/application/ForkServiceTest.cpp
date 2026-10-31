@@ -18,8 +18,9 @@ struct Harness {
   FakeOpLog ops;
   FakeBus bus;
   FakeTokens tokens;
+  FakeClock clock;
   RoomRegistry rooms{trees, ops, bus};
-  ForkService service{rooms, trees, tokens};
+  ForkService service{rooms, trees, tokens, clock};
 
   void seedSource(const char* id, const char* title) {
     seedSource(id, title, uid("owner"), Visibility::unlisted);
@@ -73,6 +74,23 @@ TEST(fork_clears_the_source_status_seeds) {
     if (node.status.has_value() && *node.status == "complete") sourceSeedSurvives = true;
   }
   CHECK(sourceSeedSurvives);
+}
+
+TEST(fork_adds_its_steps_at_the_moment_of_the_fork_and_leaves_the_source_stamps_alone) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.clock.now = 1'800'000'000'000;
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+
+  const std::vector<NodeStateEntry>& forked = h.trees.byId["t_d1"].state.nodes;
+  REQUIRE_EQ(forked.size(), 2u);
+  CHECK_EQ(forked[0].id, nid("leaf"));
+  CHECK_EQ(forked[0].createdAt, (Hlc{1'800'000'000'000, 0, "srv"}));  // tied with root at the seed, first by id
+  CHECK_EQ(forked[1].id, nid("root"));
+  CHECK_EQ(forked[1].createdAt, (Hlc{1'800'000'000'000, 1, "srv"}));
+  for (const NodeStateEntry& node : h.trees.byId["t_src"].state.nodes) CHECK_EQ(node.createdAt, (Hlc{1, 0, "seed"}));
 }
 
 TEST(fork_honours_a_requested_id_and_title) {

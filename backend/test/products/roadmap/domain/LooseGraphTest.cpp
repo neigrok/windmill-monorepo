@@ -322,3 +322,29 @@ TEST(edges_touching_names_the_present_edges_on_either_side_of_the_nodes) {
   CHECK_EQ(g.edgesTouching({nid("ghost")}), std::vector<Edge>{});
   CHECK_EQ(g.edgesTouching({}), std::vector<Edge>{});
 }
+
+TEST(a_fork_adds_every_present_node_afresh_in_creation_order_and_starts_unlit) {
+  LooseGraph g;
+  g.createNode(nid("late"), "Late", "x", NodeColor::sky, std::nullopt, at(30), std::string("complete"));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(10));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(10));
+  g.createNode(nid("gone"), "Gone", "x", NodeColor::sky, std::nullopt, at(5));
+  g.deleteNode(nid("gone"), at(20));
+  g.addEdge(nid("a"), nid("late"), at(40));
+
+  GraphState forked = g.forkState(Hlc{100, 7, "srv"});
+
+  GraphState expected = g.exportState();
+  for (NodeStateEntry& node : expected.nodes) {
+    node.status = std::nullopt;
+    node.statusAt = Hlc{};
+  }
+  expected.nodes[0].createdAt = Hlc{100, 7, "srv"};  // a: tied with b at 10, first by id
+  expected.nodes[1].createdAt = Hlc{100, 8, "srv"};  // b
+  expected.nodes[3].createdAt = Hlc{100, 9, "srv"};  // late
+  CHECK(forked == expected);
+  CHECK_EQ(forked.nodes[2].createdAt, at(5));  // gone: a tombstone keeps its stamps, and stays gone
+  CHECK_EQ(forked.nodes[2].deletedAt, at(20));
+  CHECK_FALSE(LooseGraph(forked).hasNode(nid("gone")));
+  CHECK_EQ(forked.edges[0].addedAt, at(40));
+}

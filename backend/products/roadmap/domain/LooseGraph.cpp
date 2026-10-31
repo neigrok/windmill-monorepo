@@ -1,7 +1,9 @@
 #include "products/roadmap/domain/LooseGraph.h"
 
+#include <algorithm>
 #include <deque>
 #include <set>
+#include <tuple>
 
 namespace wm {
 
@@ -321,6 +323,25 @@ GraphState LooseGraph::exportState() const {
   for (const auto& [id, record] : nodes_) state.nodes.push_back(entryOf(id, record));
   for (const auto& [edge, element] : edges_) {
     state.edges.push_back(EdgeStateEntry{edge, element.addedAt, element.removedAt});
+  }
+  return state;
+}
+
+GraphState LooseGraph::forkState(const Hlc& plantedAt) const {
+  GraphState state = exportState();
+  std::vector<NodeStateEntry*> present;
+  for (NodeStateEntry& node : state.nodes) {
+    node.status = std::nullopt;
+    node.statusAt = Hlc{};
+    if (nodes_.at(node.id).life.present()) present.push_back(&node);
+  }
+  std::sort(present.begin(), present.end(), [](const NodeStateEntry* a, const NodeStateEntry* b) {
+    return std::tie(a->createdAt, a->id) < std::tie(b->createdAt, b->id);
+  });
+  Hlc at = plantedAt;
+  for (NodeStateEntry* node : present) {
+    node->createdAt = at;
+    ++at.counter;
   }
   return state;
 }

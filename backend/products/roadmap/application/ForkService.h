@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/roadmap/application/RoomRegistry.h"
+#include "platform/ports/Clock.h"
 #include "platform/ports/TokenGenerator.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
@@ -11,10 +12,11 @@
 namespace wm {
 
 // Copies the source's live authoritative state (socket edits folded in, not just the last snapshot)
-// into a fresh tree owned by the caller.
+// into a fresh tree owned by the caller. The fork starts unlit, and its steps are added to it at the
+// moment of the fork.
 class ForkService {
 public:
-  ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens);
+  ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens, Clock& clock);
 
   enum class Outcome { forked, noSource, conflict };
   struct Result {
@@ -37,6 +39,7 @@ private:
   RoomRegistry& registry_;
   TreeRepository& trees_;
   TokenGenerator& tokens_;
+  Clock& clock_;
 };
 
 }

@@ -2,6 +2,8 @@
 
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Access.h"
+#include "products/roadmap/domain/Legend.h"
+#include "products/roadmap/domain/LooseGraph.h"
 
 #include <mutex>
 #include <optional>
@@ -9,13 +11,12 @@
 
 namespace wm {
 
-ForkService::ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens)
-    : registry_(registry), trees_(trees), tokens_(tokens) {}
+ForkService::ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens, Clock& clock)
+    : registry_(registry), trees_(trees), tokens_(tokens), clock_(clock) {}
 
 ForkService::Result ForkService::fork(const TreeId& source, const std::string& requestedId,
                                       const std::string& requestedTitle, const UserId& owner) {
   // Copy the source's *current* authoritative state (live edits folded in), not just its last snapshot.
-  TreeData data;
   GraphState state;
   LegendState legend;
   std::string title;
@@ -29,21 +30,16 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
         return {Outcome::noSource, {}};
       TreeRoom* room = registry_.open(source);
       if (!room) return {Outcome::noSource, {}};
-      data = room->snapshot();
-      state = room->exportState();
+      // A stamp from the source's own clock dominates everything the source holds, so each step's
+      // fresh addition outranks any removal its record carries.
+      const Hlc plantedAt = room->nextStamp(clock_.nowMs());
+      state = LooseGraph(room->exportState()).forkState(plantedAt);
       legend = room->exportLegend();
       title = room->title().value;
     } catch (const std::exception&) {
       return {Outcome::noSource, {}};
     }
   }
-
-  // A fork starts unlit: authoring status seeds don't travel — progress is the forker's own to earn.
-  for (NodeStateEntry& node : state.nodes) {
-    node.status = std::nullopt;
-    node.statusAt = Hlc{};
-  }
-  for (NodeSpec& node : data.nodes) node.status = std::nullopt;
 
   const TreeId newId{requestedId.empty() ? "t_" + tokens_.mint().digest.substr(0, 16) : requestedId};
   const std::string forkTitle = requestedTitle.empty() ? title : requestedTitle;
@@ -58,8 +54,8 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     }
   }
 
-  data.id = newId;
-  data.title = forkTitle;
+  TreeData data = LooseGraph(state).toTreeData(newId, forkTitle);
+  data.kinds = Legend(legend).kinds();
   return {Outcome::forked, std::move(data)};
 }
 
