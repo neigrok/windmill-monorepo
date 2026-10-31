@@ -50,7 +50,7 @@ class SignInDoorSkinTests {
             }
         }
 
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("person@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("person@example.com")
         val label = compose.onNode(hasText("Send code"), useUnmergedTree = true)
         fun ink(): Color {
             val layouts = mutableListOf<TextLayoutResult>()
@@ -121,10 +121,10 @@ class SignInDoorSkinTests {
                     GymMaterial { SignInDoor(auth) }
                 }
             }
-            compose.onNodeWithContentDescription("Email field").performTextReplacement("person@example.com")
+            compose.onNodeWithContentDescription("Email").performTextReplacement("person@example.com")
             compose.onNodeWithText("Send code").performClick()
             compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithContentDescription("Code field").performTextReplacement("123456")
+            compose.onNodeWithContentDescription("Code").performTextReplacement("123456")
             compose.onNodeWithText("Sign in").performClick()
             val refusal = "That code didn't work. Check the digits, or send a fresh one."
             compose.waitUntil(5_000) { compose.onAllNodesWithText(refusal).fetchSemanticsNodes().isNotEmpty() }
@@ -133,7 +133,7 @@ class SignInDoorSkinTests {
                 val layouts = mutableListOf<TextLayoutResult>()
                 compose.onNodeWithText(refusal).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
                 assertEquals(expected, layouts.single().layoutInput.style.color)
-                compose.onNodeWithContentDescription("Code field").assertTextContains("123456")
+                compose.onNodeWithContentDescription("Code").assertTextContains("123456")
             }
         }
     }

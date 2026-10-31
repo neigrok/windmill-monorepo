@@ -1,13 +1,14 @@
 # Sign-in: a digit keyboard for the code, autofill for email and code
 
-**Status:** ✅ Conformance to the approved Shell board; behaviour only, with nothing visual changing. Not started.
+**Status:** ✅ Conformance to the approved Shell board; behaviour only, with nothing visual changing. Implemented on its task branch; not yet on main or in a release.
 
 **Figma:** Shell 15b Sign in, code focused: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4237) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-792). The caption reads "Code takes the number keyboard".
 
-**Current implementation** (the sign-in fields from task 27)
-- The 6-digit code field opens the full phone pad (− , . space). The rig's `15b-sign-in-code-focused` capture shows it.
-- Neither field carries an autofill hint.
-- The email field already uses `TYPE_TEXT_VARIATION_EMAIL_ADDRESS`.
+**Current implementation** (`platform/auth/SignInDoor.kt`)
+- The code field opens the digit keyboard (`KeyboardType.NumberPassword`, input type `0x12`); the rig's `15b-sign-in-code-focused` capture shows the 0–9 pad. The keyboard enters digits only; the field still takes a pasted email link, which the board's *You can also paste the email link.* promises.
+- The email field carries `ContentType.EmailAddress` (`emailAddress`); the code field carries `smsOTPCode` and `emailOTPCode`.
+- TalkBack names the fields "Email" and "Code"; the capture recipes tap those labels.
+- `SignInDoorTests.emailAndCodeOfferAutofillAndTheCodeOpensTheDigitKeyboard` asserts the hints and the platform input types.
 
 **Change**
 - **Code field:** a digits-only keyboard (`KeyboardType.NumberPassword`, or `Number` with no separators) that accepts digits only.

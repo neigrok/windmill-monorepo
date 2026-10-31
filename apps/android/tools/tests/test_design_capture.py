@@ -774,7 +774,7 @@ class DesignCaptureTests(unittest.TestCase):
         device.steps([{"auth_code": "wrong"}, {"auth_code": "valid"}])
         expected = []
         for code in ("135791", "246810"):
-            expected.extend([("tap", "Code field"),
+            expected.extend([("tap", "Code"),
                 (("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * 6)), {}),
                 (("shell", "-T", "sh"), {"input": f"input text {code}\n".encode()})])
         self.assertEqual(expected, calls)

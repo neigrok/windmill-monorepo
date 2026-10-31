@@ -44,7 +44,7 @@ class SignInDoorLayoutTests {
                 WindmillMaterial { Box(Modifier.height(340.dp)) { SignInDoor(auth) } }
             }
         }
-        compose.onNodeWithContentDescription("Email field").performScrollTo().performTextReplacement("a-very-long-address@example.com")
+        compose.onNodeWithContentDescription("Email").performScrollTo().performTextReplacement("a-very-long-address@example.com")
         val send = compose.onNodeWithText("Send code").assertIsDisplayed().assertIsEnabled()
         assertTrue(send.getBoundsInRoot().height >= 56.dp)
         val layouts = mutableListOf<TextLayoutResult>()
@@ -55,7 +55,7 @@ class SignInDoorLayoutTests {
         send.performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Code field").performScrollTo().performTextReplacement("246810")
+        compose.onNodeWithContentDescription("Code").performScrollTo().performTextReplacement("246810")
         compose.onNodeWithText("Sign in").performClick()
         val refusal = "That code didn't work. Check the digits, or send a fresh one."
         compose.waitUntil(5_000) { compose.onAllNodesWithText(refusal).fetchSemanticsNodes().isNotEmpty() }
@@ -66,7 +66,7 @@ class SignInDoorLayoutTests {
         assertEquals(refusal.length, refusalLayouts.single().getLineEnd(refusalLayouts.single().lineCount - 1))
         compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Change email").assertIsDisplayed().performClick()
-        compose.onNodeWithContentDescription("Email field").performScrollTo().assertTextContains("a-very-long-address@example.com")
+        compose.onNodeWithContentDescription("Email").performScrollTo().assertTextContains("a-very-long-address@example.com")
         compose.onNodeWithText("Send code").assertIsDisplayed()
     }
 }

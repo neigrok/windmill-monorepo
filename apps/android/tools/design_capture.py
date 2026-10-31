@@ -705,7 +705,7 @@ class Device:
                     raise ValueError("Auth-code steps need a delivered local challenge and valid/wrong intent.")
                 if step["auth_code"] == "wrong":
                     code = "246810" if code != "246810" else "135791"
-                self.tap("Code field")
+                self.tap("Code")
                 self.run("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * 6))
                 self.run("shell", "-T", "sh", input=f"input text {code}\n".encode())
             elif "key" in step:

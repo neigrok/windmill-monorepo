@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
@@ -142,11 +143,11 @@ fun SignInDoor(
                 style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = palette.ink)
             if (sentTo == null) {
                 Text("New here? The same door creates your account.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.inkDim)
-                DoorField("Email", "you@example.com", email, KeyboardType.Email, pending == null && !auth.handoffPending && !completed, refusal) { email = it; refusal = null }
+                DoorField("Email", "you@example.com", email, KeyboardType.Email, ContentType.EmailAddress, pending == null && !auth.handoffPending && !completed, refusal) { email = it; refusal = null }
             } else {
                 Text("Code sent to $sentTo.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.ink)
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DoorField("Code", "6-digit code", typed, KeyboardType.Number, pending == null && !auth.handoffPending && !completed, refusal) { typed = it; refusal = null }
+                    DoorField("Code", "6-digit code", typed, KeyboardType.NumberPassword, OneTimeCode, pending == null && !auth.handoffPending && !completed, refusal) { typed = it; refusal = null }
                     Text(refusal ?: "Works once. Expires in 15 minutes.",
                         style = WindmillFont.body(14).copy(lineHeight = 20.sp),
                         color = if (refusal == null) palette.inkDim else MaterialTheme.colorScheme.error,
@@ -177,8 +178,10 @@ fun SignInDoor(
     }
 }
 
+private val OneTimeCode = ContentType.SmsOtpCode + ContentType("emailOTPCode")
+
 @Composable
-private fun DoorField(label: String, placeholder: String, value: String, keyboard: KeyboardType,
+private fun DoorField(label: String, placeholder: String, value: String, keyboard: KeyboardType, autofill: ContentType,
     enabled: Boolean, refusal: String?, onChange: (String) -> Unit) {
     val palette = LocalWindmillPalette.current
     OutlinedTextField(value, onValueChange = onChange, enabled = enabled, singleLine = true,
@@ -190,5 +193,9 @@ private fun DoorField(label: String, placeholder: String, value: String, keyboar
         },
         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = palette.accent, cursorColor = palette.accent,
             focusedTextColor = palette.ink, unfocusedTextColor = palette.ink),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = "$label field"; refusal?.let { error(it) } })
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
+            contentDescription = label
+            contentType = autofill
+            refusal?.let { error(it) }
+        })
 }
