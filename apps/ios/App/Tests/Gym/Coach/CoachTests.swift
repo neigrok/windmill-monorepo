@@ -676,7 +676,7 @@ import SyncTesting
     let retries = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" && $0.properties["action"] == "retry" }.map(\.properties) } }
     gym.coachResendDecision(try #require(gym.proposals.first).id)
     try await settle { !retries().isEmpty }
-    #expect(retries() == [["screen": "coach", "action": "retry", "outcome": outcome]])
+    #expect(retries() == [["screen": "coach", "target": "routine", "action": "retry", "outcome": outcome]])
   }
   // A move reads its places against the routine while the proposal waits; once applied the routine holds the new order, so
   // the applied card keeps the blocks the phone read while it waited.
@@ -725,7 +725,7 @@ import SyncTesting
     let revision = try #require(gym.proposals.first { $0.id == ID("card-proposal") })
     let card = ProposalCard(gym: gym, id: revision.id.record.string!)
     #expect(gym.coachDiff(revision).blocks.map { block in
-      ([block.kind.rawValue, card.title(block) ?? "-"] + block.fields.map { "\($0.label) \($0.before ?? "-") → \($0.after ?? "-")" }).joined(separator: " | ")
+      ([block.kind.rawValue, gym.coachTitle(block) ?? "-"] + block.fields.map { "\($0.label) \($0.before ?? "-") → \($0.after ?? "-")" }).joined(separator: " | ")
     } == ["renamed | - | Name Push A → Push A2",
           "changed | Squat | Sets 1 → 1 | Reps 5 → 3 | Load 80 kg → 90 kg | Rest 90 s → 2 min",
           "changed | Row | Set 1 8 × 60 kg → 8 × 60 kg | Set 2 8 × 60 kg → 6 × 65 kg | Rest Default → 90 s",
@@ -762,7 +762,7 @@ import SyncTesting
     h.sync(); gym.refresh()
     #expect(gym.proposals.first?.state == "applied")
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) }
-            == ["stalled", "failed", "stalled", "decided"].map { ["screen": "coach", "action": "apply", "outcome": $0] })
+            == ["stalled", "failed", "stalled", "decided"].map { ["screen": "coach", "target": "routine", "action": "apply", "outcome": $0] })
   }
   // An Apply the log refused leaves the card on the lifter again: one line over its buttons says nothing was applied, and
   // Apply reads Try again, which decides afresh.
@@ -875,7 +875,7 @@ import SyncTesting
     defer { window.isHidden = true; window.rootViewController = nil }
     let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
     #expect(card.decision(stalled: false) == .init(title: "Removing…", retries: false, applies: false, rejects: false))
-    try await settle { outcomes().contains(["screen": "coach", "action": "apply", "outcome": "stalled"]) }
+    try await settle { outcomes().contains(["screen": "coach", "target": "routine", "action": "apply", "outcome": "stalled"]) }
     #expect(card.decision(stalled: gym.coachDecisionStalled(proposal.id)) == .init(title: "Try again", retries: true, applies: true, rejects: false))
     #expect(card.failure == nil, "A wait the log answered with a failure, online, states no cause")
     transport.failure.withLock { $0 = nil }
@@ -883,8 +883,8 @@ import SyncTesting
     try await settle { gym.refresh(); return !card.pending && outcomes().count == 3 }
     #expect(gym.proposals.first?.state == "applied" && gym.routines.isEmpty)
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().isEmpty })
-    #expect(outcomes().first == ["screen": "coach", "action": "apply", "outcome": "stalled"])
-    #expect(Set(outcomes().dropFirst()) == [["screen": "coach", "action": "retry", "outcome": "ok"], ["screen": "coach", "action": "apply", "outcome": "decided"]])
+    #expect(outcomes().first == ["screen": "coach", "target": "routine", "action": "apply", "outcome": "stalled"])
+    #expect(Set(outcomes().dropFirst()) == [["screen": "coach", "target": "routine", "action": "retry", "outcome": "ok"], ["screen": "coach", "target": "routine", "action": "apply", "outcome": "decided"]])
   }
   @Test(arguments: [true, false])
   func aDecisionIsRecordedWhenTheLogsAnswerArrivesNotWhenItsPushEnds(apply: Bool) async throws {
@@ -908,8 +908,153 @@ import SyncTesting
     #expect(gym.coachDecideProposal(proposal, apply: apply))
     try await settle { gym.refresh(); return gym.proposals.first?.state == (apply ? "applied" : "dismissed") && !outcomes().isEmpty }
     try await Task.sleep(for: .milliseconds(300)); gym.refresh()
-    #expect(outcomes() == [["screen": "coach", "action": apply ? "apply" : "reject", "outcome": "decided"]])
+    #expect(outcomes() == [["screen": "coach", "target": "routine", "action": apply ? "apply" : "reject", "outcome": "decided"]])
   }
+  // A change to this workout rewrites the running plan and no routine, its outcome recorded once the log answers; a later
+  // change goes out of date once a set lands on a movement it changes, and its card names the movement.
+  @Test func aWorkoutProposalRewritesTheRunningPlanAndNoRoutine() async throws {
+    let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder()
+    let runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
+    let owner = transport.model.identity(email: "workout-proposal-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    defer { gym.stop() }
+    let bench = RoutineEntry(exerciseId: ID("dumbbell-bench-press"), sets: [SetTarget(reps: 8, weightKg: 16)], restSeconds: 120)
+    let row = RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 10, weightKg: 50)])
+    var routine = Draft(new: Routine(id: ID("upper-routine"), name: "Upper A", entries: [bench, row]))
+    #expect(saved(gym.save(&routine)))
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    let session = gym.runner.mint(Session.self)
+    #expect(gym.run(StartSession(id: session, routineId: routine.id))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.openSession?.plan != nil && gym.openSession?.routineRevision != nil }
+    let lighter = [bench, RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 12, weightKg: 40)], restSeconds: 120)]
+    #expect(gym.run(ProposeWorkout(id: ID("lighter-row-change"), sessionId: session, entries: lighter, summary: ""))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.workoutProposals.first?.baseRevision == 1 }
+    let proposal = try #require(gym.workoutProposals.first)
+    #expect(gym.coachWorkoutProposalStance(proposal) == .open && gym.coachWorkoutChangeCount(proposal) == 1)
+    let diff = gym.coachWorkoutDiff(proposal)
+    #expect(diff.blocks.map(\.kind) == [.changed] && diff.unchanged == 1)
+    #expect(diff.blocks.first?.fields == [ProposalDiff.Field("Sets", before: "1", after: "1"), ProposalDiff.Field("Reps", before: "10", after: "12"), ProposalDiff.Field("Load", before: "50 kg", after: "40 kg"),
+                                          ProposalDiff.Field("Rest", before: "Default", after: "2 min")])
+    let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
+    #expect(gym.coachDecideWorkoutProposal(proposal, apply: true))
+    #expect(gym.openSession?.plan?.entries == lighter, "Apply rewrites the running plan at once")
+    try await settle { gym.refresh(); return !outcomes().isEmpty }
+    #expect(outcomes() == [["screen": "coach", "target": "workout", "action": "apply", "outcome": "decided"]])
+    #expect(gym.workoutProposals.first.map(gym.coachWorkoutProposalStance) == .applied)
+    #expect(gym.openSession?.plan?.entries == lighter && gym.openSession?.planRevision == 2)
+    #expect(gym.routines.first?.entries == [bench, row], "No routine changes")
+    let again = [bench, RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 12, weightKg: 35)], restSeconds: 120)]
+    #expect(gym.run(ProposeWorkout(id: ID("lighter-again"), sessionId: session, entries: again, summary: ""))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.workoutProposals.first { $0.id == ID("lighter-again") }?.baseRevision == 2 }
+    #expect(gym.run(AppendSet(TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: session, exerciseId: ID("seated-cable-row"), weightKg: 40, reps: 12,
+                                          completedAt: gym.dates.moment.now)))?.receipt != nil)
+    gym.refresh()
+    let stale = try #require(gym.workoutProposals.first { $0.id == ID("lighter-again") })
+    #expect(gym.coachWorkoutProposalStance(stale) == .outOfDate(.workoutMoved(ID("seated-cable-row"))))
+    #expect(CoachCopy.outOfDateReason(.workoutMoved(ID("seated-cable-row")), routine: "Upper A", catalogue: gym.catalogue)
+            == "You logged Seated Cable Row since this suggestion. Nothing was applied.")
+    #expect(!gym.coachDecideWorkoutProposal(stale, apply: true) && gym.openSession?.plan?.entries == lighter)
+    #expect(gym.message(.proposalSuperseded(Refused(Gym.Codes.proposalSuperseded, subject: stale.id.ref, detail: ["reason": .string("workout-moved")], path: .notice)))
+            == "You logged Seated Cable Row since this suggestion. Nothing was applied.")
+  }
+
+  // A workout decision queued on one replica waits there for the log's answer: a read of another replica between, as an
+  // account switch makes, neither records it nor forgets it.
+  @Test func aQueuedWorkoutDecisionOutlivesAReadOfAnotherReplica() async throws {
+    let connectivity = SwitchedConnectivity(), transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder()
+    let runtime = try WorkoutStateTests.faultRuntime(transport, connectivity: connectivity, drivesLoops: true)
+    let owner = transport.model.identity(email: "workout-queued-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    defer { gym.stop() }
+    let row = RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 10, weightKg: 50)])
+    var routine = Draft(new: Routine(id: ID("queued-routine"), name: "Upper A", entries: [row]))
+    #expect(saved(gym.save(&routine)))
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    let session = gym.runner.mint(Session.self)
+    #expect(gym.run(StartSession(id: session, routineId: routine.id))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.openSession?.plan != nil && gym.openSession?.routineRevision != nil }
+    let lighter = [RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 12, weightKg: 40)])]
+    #expect(gym.run(ProposeWorkout(id: ID("queued-change"), sessionId: session, entries: lighter, summary: ""))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.workoutProposals.first?.baseRevision == 1 }
+    connectivity.set(online: false)
+    try await settle { runtime.engine.status.online == false }
+    let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
+    #expect(gym.coachDecideWorkoutProposal(try #require(gym.workoutProposals.first), apply: true))
+    gym.updateCoachProposals(CoachProposalsRead(replica: "another-replica", receipts: [], proposals: [], queued: [], outOfDate: [:],
+                                                workoutProposals: [], workoutQueued: [], workoutOutOfDate: [:]))
+    #expect(outcomes().isEmpty)
+    connectivity.set(online: true)
+    try await settle { runtime.engine.foreground(); gym.refresh(); return !outcomes().isEmpty }
+    #expect(outcomes() == [["screen": "coach", "target": "workout", "action": "apply", "outcome": "decided"]])
+    #expect(gym.openSession?.plan?.entries == lighter)
+  }
+
+  // An Apply the log refuses as out of date says the refusal's own reason, in its card's sentence.
+  @Test func aRefusedApplySaysWhyTheProposalIsOutOfDate() throws {
+    let gym = GymModel(runner: Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000)).runner)
+    let said = { (reason: String) in
+      gym.message(.proposalSuperseded(Refused(Gym.Codes.proposalSuperseded, subject: ID<WorkoutProposal>("unseen").ref, detail: ["reason": .string(reason)], path: .notice)))
+    }
+    #expect(["replaced", "workout-changed", "workout-finished", "workout-moved", "routine-changed", "unheard-of"].map(said) == [
+      "A newer suggestion replaced this one. Nothing was applied.", "This workout changed after this suggestion. Nothing was applied.",
+      "This workout has finished. Nothing was applied.", "This workout changed after this suggestion. Nothing was applied.",
+      "The routine changed after this suggestion. Nothing was applied.", "This suggestion is out of date. Nothing was applied.",
+    ])
+  }
+
+  // The lifter edits the plan offline, then applies a change Coach made before the edit: the card reads out of date at
+  // once, the Apply is refused on the phone, and the room says the workout changed; the log keeps the lifter's edit.
+  @Test func anApplyOverTheLiftersOwnUnsentEditIsRefusedForTheWorkoutChanging() async throws {
+    let connectivity = SwitchedConnectivity(), transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder()
+    let runtime = try WorkoutStateTests.faultRuntime(transport, connectivity: connectivity, drivesLoops: true)
+    let owner = transport.model.identity(email: "workout-edited-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    defer { gym.stop() }
+    let bench = RoutineEntry(exerciseId: ID("dumbbell-bench-press"), sets: [SetTarget(reps: 8, weightKg: 16)], restSeconds: 120)
+    let row = RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 10, weightKg: 50)])
+    var routine = Draft(new: Routine(id: ID("edited-routine"), name: "Upper A", entries: [bench, row]))
+    #expect(saved(gym.save(&routine)))
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    let session = gym.runner.mint(Session.self)
+    #expect(gym.run(StartSession(id: session, routineId: routine.id))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.openSession?.plan != nil && gym.openSession?.routineRevision != nil }
+    let lighter = [bench, RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 12, weightKg: 40)], restSeconds: 120)]
+    #expect(gym.run(ProposeWorkout(id: ID("before-the-edit"), sessionId: session, entries: lighter, summary: ""))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.workoutProposals.first?.baseRevision == 1 }
+    connectivity.set(online: false)
+    try await settle { runtime.engine.status.online == false }
+    let edited = [RoutineEntry(exerciseId: ID("dumbbell-bench-press"), sets: [SetTarget(reps: 6, weightKg: 20)], restSeconds: 120), row]
+    #expect(gym.run(ReviseWorkoutPlan(sessionId: session, base: gym.openSession?.plan, operations: [.retarget(index: 0, set: 0, target: SetTarget(reps: 6, weightKg: 20))]))?.refusal == nil)
+    gym.refresh()
+    let proposal = try #require(gym.workoutProposals.first)
+    #expect(gym.coachWorkoutProposalStance(proposal) == .outOfDate(.workoutChanged))
+    #expect(!gym.coachDecideWorkoutProposal(proposal, apply: true))
+    #expect(gym.error == "This workout changed after this suggestion. Nothing was applied.")
+    #expect(gym.openSession?.plan?.entries == edited)
+    connectivity.set(online: true)
+    try await settle { runtime.engine.foreground(); gym.refresh(); return gym.openSession?.planRevision == 2 }
+    #expect(gym.openSession?.plan?.entries == edited)
+    #expect(gym.workoutProposals.first.map(gym.coachWorkoutProposalStance) == .outOfDate(.workoutChanged))
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) }
+            == [["screen": "coach", "target": "workout", "action": "apply", "outcome": "failed"]])
+  }
+
   @Test(arguments: [false, true])
   func retryRecordsWhetherTheLogTookTheDecision(offline: Bool) async throws {
     let connectivity = SwitchedConnectivity(), transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder()
@@ -940,7 +1085,7 @@ import SyncTesting
     gym.coachResendDecision(proposal.id)
     try await settle { !retries().isEmpty }
     try await Task.sleep(for: .milliseconds(200))
-    #expect(retries() == [["screen": "coach", "action": "retry", "outcome": offline ? "offline" : "failed"]])
+    #expect(retries() == [["screen": "coach", "target": "routine", "action": "retry", "outcome": offline ? "offline" : "failed"]])
     #expect(gym.coachProposalAwaitingReceipt(proposal.id))
   }
   @Test func anUnreadableQueueReportsOnceAndCountsAsWaiting() throws {
@@ -950,7 +1095,7 @@ import SyncTesting
     #expect(gym.coachProposalAwaitingReceipt(ID("unreadable-proposal")) && gym.coachProposalAwaitingReceipt(ID("unreadable-proposal")))
     #expect(gym.coachQueuedDecision(ID("unreadable-proposal")) == .unreadable && gym.coachDecisionStalled(ID("unreadable-proposal")))
     #expect(telemetry.entries.withLock { $0.filter { ["client_error", "gym_proposal_outcome"].contains($0.name) }.map { [$0.name: $0.properties] } } == [
-      ["client_error": ["operation": "gym_read", "failure_kind": "unexpected"]], ["gym_proposal_outcome": ["screen": "coach", "outcome": "stalled"]]
+      ["client_error": ["operation": "gym_read", "failure_kind": "unexpected"]], ["gym_proposal_outcome": ["screen": "coach", "target": "routine", "outcome": "stalled"]]
     ])
     gym.proposals = [Proposal(id: ID("unreadable-proposal"), routineId: ID("unreadable-routine"), intent: "revise", proposedName: "Push A", summary: "", changes: [])]
     #expect(ProposalCard(gym: gym, id: "unreadable-proposal").decision(stalled: false).title == "Sending…")

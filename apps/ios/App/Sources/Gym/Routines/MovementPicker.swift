@@ -119,10 +119,17 @@ extension GymModel {
 
 struct MovementPicker: View {
   // Where the picker opens decides its title, what a row does and what a created movement joins.
-  enum Purpose {
-    case routine, workout
+  // A swap names the movement whose place the chosen one takes (03.31).
+  enum Purpose: Equatable {
+    case routine, workout, swap(String)
 
-    var title: String { self == .routine ? "Add movement" : "Next movement" }
+    var title: String {
+      switch self {
+      case .routine: "Add movement"
+      case .workout: "Next movement"
+      case .swap(let movement): "Swap \(movement)"
+      }
+    }
     var screen: String { self == .routine ? "routine_movement" : "movement" }
   }
 

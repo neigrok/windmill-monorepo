@@ -346,16 +346,20 @@ nonisolated struct TurnInterrupted: Error {
     }
   }
 
-  // Coach §4.1 steps 3 to 5: the four context reads, recorded on the Coach message and within their byte bound together,
-  // the newest completed turns and the model copies of the current and previous pictures.
+  // Coach §4.1 steps 3 to 5: the four context reads and, while a workout is open, `get_session` of it, recorded on the
+  // Coach message and within their byte bound together; the newest completed turns and the model copies of the current
+  // and previous pictures.
   func prepare(_ running: Running, question: String, picture: CoachPictureRow?, tally: inout CoachTurnTally) throws -> TurnOpenRequest {
+    let open = try runner.read(Gym.scope) { try TrainingLog($0).open?.id }
+    var reads: [(name: String, input: JSON)] = CoachTurnBounds.contextReads.map { ($0, [:]) }
+    if let open { reads.append(("get_session", ["sessionId": open.json])) }
     var context: [TurnOpenRequest.ContextRead] = []
     var bytes = 0
-    for name in CoachTurnBounds.contextReads {
-      let request = AbilityRequest(callId: "context-" + name, name: name, input: [:])
+    for (name, input) in reads {
+      let request = AbilityRequest(callId: "context-" + name, name: name, input: input)
       guard case .result(let jcs, _) = try run(request, running, tally: &tally), bytes + jcs.count <= CoachTurnBounds.contextReadBytes else { continue }
       bytes += jcs.count
-      context.append(TurnOpenRequest.ContextRead(name: name, input: [:], result: try JSON(parsing: jcs)))
+      context.append(TurnOpenRequest.ContextRead(name: name, input: input, result: try JSON(parsing: jcs)))
     }
     let messages = try runner.read(Gym.scope) { try $0.repository(CoachMessage.self).children(of: running.turn.thread, via: "threadId", in: .drawn) }
     let rows = try runner.read(Gym.scope) { read in

@@ -16,6 +16,7 @@ const COACH_REGISTERS = ['replica', 'state', 'truncated', 'receipt', 'calls'];
 const FINAL_REGISTERS = ['state', 'text', 'receipt', 'calls'];
 const DAY_MS = 86_400_000;
 const MAX_SET_NUMBER = 2_147_483_647;
+const MAX_REVISION = 2_147_483_647;
 
 function valueOf(record, field) {
   return record?.f?.[field]?.[0];
@@ -53,6 +54,11 @@ function isStale(ctx, session) {
   return ctx.serverNow - lastActivity(ctx, session) >= STALE_MS;
 }
 
+// A session that takes no plan revision: finished, or open 4 h or more past its last activity.
+function isClosed(ctx, session) {
+  return isSet(valueOf(session, 'finishedAt')) || isStale(ctx, session);
+}
+
 // A.2 `gym.closeStale`: the open session whose last activity is 4 h or more before serverNow closes at it.
 function staleClose(ctx) {
   const open = ctx.rowsOf('session').find(isOpen);
@@ -65,6 +71,16 @@ function planOf(routine) {
   return { routine: valueOf(routine, 'name'), entries: valueOf(routine, 'entries') };
 }
 
+// The session registers a start or an import takes from the routine it names: its id, the plan and the
+// routine revision the plan froze at. A routine the owner cannot read leaves the session with neither.
+function routineFields(ctx, routineId) {
+  const routine = ctx.stored('routine', routineId);
+  if (routine === undefined || !isAlive(routine)) return { routineId: [null, null], plan: [null, null] };
+  const f = { routineId: [routineId, null], plan: [planOf(routine), null], historyRoutineId: [routineId, null] };
+  if (isSet(valueOf(routine, 'revision'))) f.routineRevision = [valueOf(routine, 'revision'), null];
+  return f;
+}
+
 function utcDay(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
@@ -74,6 +90,8 @@ function spanOf(startedAt, finishedAt) {
   return [startedAt, Math.max(finishedAt ?? startedAt, startedAt + 1)];
 }
 
+// A.2's diff of a proposed document against its base: each proposed line matched to the first unmatched
+// base line of its movement, then the base lines left unmatched.
 function proposalChanges(base, proposed) {
   const matched = new Set();
   const side = ({ exerciseId, ...targets }) => targets;
@@ -89,6 +107,56 @@ function proposalChanges(base, proposed) {
     if (!matched.has(i)) changes.push({ kind: 'removed', exerciseId: entry.exerciseId, before: side(entry) });
   });
   return changes;
+}
+
+// The document a diff proposes: every line but the removed ones, in order.
+function documentOf(changes) {
+  return changes.filter((change) => change.kind !== 'removed').map((change) => ({ exerciseId: change.exerciseId, ...change.after }));
+}
+
+// R118's apply count of a diff: every line not kept, and one more when the kept and retargeted lines,
+// matched to their base lines in proposed order, take a base line before one already visited.
+function changeCountOf(base, changes) {
+  const count = changes.filter((change) => change.kind !== 'kept').length;
+  const matched = new Set();
+  let highest = -1;
+  for (const change of changes) {
+    if (change.kind === 'added' || change.kind === 'removed') continue;
+    const i = base.findIndex((entry, at) => !matched.has(at) && entry.exerciseId === change.exerciseId);
+    matched.add(i);
+    if (i < highest) return count + 1;
+    highest = i;
+  }
+  return count;
+}
+
+// The movements of a session holding an alive set, among the rows given.
+function loggedMovements(sets, sessionId) {
+  return new Set(sets.filter((set) => isAlive(set) && valueOf(set, 'sessionId') === sessionId).map((set) => valueOf(set, 'exerciseId')));
+}
+
+// A.2's logged-movement rule: the first logged movement, in the order the two plans name movements, whose
+// entries differ between them. A movement with a logged set keeps its plan.
+function changedLoggedMovement(before, after, logged) {
+  const entriesOf = (entries, exerciseId) => entries.filter((entry) => entry.exerciseId === exerciseId);
+  return [...before, ...after].map((entry) => entry.exerciseId)
+    .find((exerciseId) => logged.has(exerciseId) && !sameJson(entriesOf(before, exerciseId), entriesOf(after, exerciseId)));
+}
+
+// A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known
+// movements, and no second entry of a movement the plan held once or not at all.
+function checkPlanShape(ctx, { before, after, current }) {
+  if (after.some((entry) => entry.sets !== undefined && entry.sets.length === 0)) throw new Refusal('invalid');
+  if (after.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
+  const count = (entries, exerciseId) => entries.filter((entry) => entry.exerciseId === exerciseId).length;
+  if (after.some((entry) => count(after, entry.exerciseId) > Math.max(count(before, entry.exerciseId), 1))) throw new Refusal('invalid');
+}
+
+// A.2's logged-movement rule over the intent's joined sets: a net plan change, whatever wrote it, and a
+// workout proposal's document keep every logged movement's entries.
+function checkLoggedKept({ before, after, sessionId, rowsOf }) {
+  const logged = changedLoggedMovement(before, after, loggedMovements(rowsOf('set'), sessionId));
+  if (logged !== undefined) throw new Refusal('plan-logged', { exerciseId: logged });
 }
 
 export class GymProduct {
@@ -111,6 +179,8 @@ export class GymProduct {
         return Object.hasOwn(book(ctx, 'corrections'), cmd.args.requestId);
       case 'gym.applyProposal':
         return Object.hasOwn(book(ctx, 'proposalApplies'), cmd.args.proposalId);
+      case 'gym.applyWorkoutProposal':
+        return Object.hasOwn(book(ctx, 'workoutProposalApplies'), cmd.args.proposalId);
       default:
         return false;
     }
@@ -130,6 +200,10 @@ export class GymProduct {
         return this.applyProposal(ctx, cmd.args);
       case 'gym.dismissProposal':
         return this.dismissProposal(ctx, cmd.args);
+      case 'gym.applyWorkoutProposal':
+        return this.applyWorkoutProposal(ctx, cmd.args);
+      case 'gym.dismissWorkoutProposal':
+        return this.dismissWorkoutProposal(ctx, cmd.args);
       case 'gym.closeStale':
         return { deltas: staleClose(ctx), write: [] };
       default:
@@ -157,14 +231,7 @@ export class GymProduct {
       setOwn(starts, args.id, open.id);
       return { deltas, write: [{ t: 'session', id: open.id, from: args.id, born: open.born }] };
     }
-    const f = { startedAt: [args.startedAt, null] };
-    if (args.routineId !== undefined) {
-      const routine = ctx.stored('routine', args.routineId);
-      const readable = routine !== undefined && isAlive(routine);
-      f.routineId = [readable ? args.routineId : null, null];
-      f.plan = [readable ? planOf(routine) : null, null];
-      if (readable) f.historyRoutineId = [args.routineId, null];
-    }
+    const f = { startedAt: [args.startedAt, null], ...(args.routineId !== undefined ? routineFields(ctx, args.routineId) : {}) };
     setOwn(starts, args.id, args.id);
     const written = Object.fromEntries(Object.keys(f).map((name) => [name, null]));
     return {
@@ -218,14 +285,10 @@ export class GymProduct {
     if (args.sets.some((set) => set.completedAt < args.startedAt || set.completedAt > args.finishedAt)) throw new Refusal('bad-instant');
     const crossed = this.crossing(ctx, args.id, args.startedAt, args.finishedAt);
     if (crossed) throw new Refusal('session-overlap', { sessionId: crossed.id });
-    const f = { startedAt: [args.startedAt, null], finishedAt: [args.finishedAt, null], closedBy: ['finish', null] };
-    if (args.routineId !== undefined) {
-      const routine = ctx.stored('routine', args.routineId);
-      const readable = routine !== undefined && isAlive(routine);
-      f.routineId = [readable ? args.routineId : null, null];
-      f.plan = [readable ? planOf(routine) : null, null];
-      if (readable) f.historyRoutineId = [args.routineId, null];
-    }
+    const f = {
+      startedAt: [args.startedAt, null], finishedAt: [args.finishedAt, null], closedBy: ['finish', null],
+      ...(args.routineId !== undefined ? routineFields(ctx, args.routineId) : {}),
+    };
     setOwn(imports, args.id, structuredClone(args));
     const setDeltas = args.sets.map((set) => ({ t: 'set', id: set.id, life: ['alive', null], born: null, f: this.setFields(args.id, set) }));
     return {
@@ -340,17 +403,17 @@ export class GymProduct {
     return 'superseded';
   }
 
-  settleable(ctx, proposalId) {
-    const state = ctx.idState('proposal', proposalId);
+  settleable(ctx, t, proposalId) {
+    const state = ctx.idState(t, proposalId);
     if (state.state === 'none' || state.state === 'foreign') throw new Refusal('unknown-record');
     if (state.state === 'dead') throw new Refusal('record-dead');
-    return ctx.stored('proposal', proposalId);
+    return ctx.stored(t, proposalId);
   }
 
   applyProposal(ctx, { proposalId }) {
     const receipts = book(ctx, 'proposalApplies');
     if (Object.hasOwn(receipts, proposalId)) return { deltas: [], write: [] };
-    const proposal = this.settleable(ctx, proposalId);
+    const proposal = this.settleable(ctx, 'proposal', proposalId);
     const state = stateOf(proposal);
     if (state === 'applied') {
       setOwn(receipts, proposalId, true);
@@ -366,9 +429,7 @@ export class GymProduct {
     if (valueOf(proposal, 'intent') === 'remove') {
       return { deltas: [settle, { t: 'routine', id: routineId, born: routine.born, life: ['dead', null] }], write: [] };
     }
-    const entries = valueOf(proposal, 'changes')
-      .filter((change) => change.kind !== 'removed')
-      .map((change) => ({ exerciseId: change.exerciseId, ...change.after }));
+    const entries = documentOf(valueOf(proposal, 'changes'));
     return {
       deltas: [settle, { t: 'routine', id: routineId, born: routine.born, f: { name: [valueOf(proposal, 'proposedName'), null], entries: [entries, null] } }],
       write: [
@@ -379,21 +440,71 @@ export class GymProduct {
   }
 
   dismissProposal(ctx, { proposalId }) {
-    const proposal = this.settleable(ctx, proposalId);
+    return this.dismiss(ctx, 'proposal', this.settleable(ctx, 'proposal', proposalId), (proposal) => this.supersededReason(ctx, proposal));
+  }
+
+  // A dismissal of either kind of proposal: dismissed is done, applied is settled, superseded names its reason.
+  dismiss(ctx, t, proposal, reasonOf) {
     const state = stateOf(proposal);
     if (state === 'dismissed') return { deltas: [], write: [] };
     if (state === 'applied') throw new Refusal('proposal-settled', { state });
-    if (state === 'superseded') throw new Refusal('proposal-superseded', { reason: this.supersededReason(ctx, proposal) });
+    if (state === 'superseded') throw new Refusal('proposal-superseded', { reason: reasonOf(proposal) });
     return {
-      deltas: [{ t: 'proposal', id: proposalId, born: proposal.born, f: { state: ['dismissed', null], settledAt: [ctx.serverNow, null] } }],
-      write: [{ t: 'proposal', id: proposalId, f: { state: null, settledAt: null } }],
+      deltas: [{ t, id: proposal.id, born: proposal.born, f: { state: ['dismissed', null], settledAt: [ctx.serverNow, null] } }],
+      write: [{ t, id: proposal.id, f: { state: null, settledAt: null } }],
     };
+  }
+
+  // Why a workout proposal cannot apply, in this order: a newer proposal replaced it; its workout finished;
+  // the workout's plan moved past its base; a movement it changes has been logged since. Undefined: it applies.
+  workoutReason(ctx, proposal) {
+    if (isSet(valueOf(proposal, 'supersededBy'))) return 'replaced';
+    const session = ctx.stored('session', valueOf(proposal, 'sessionId'));
+    if (isClosed(ctx, session)) return 'workout-finished';
+    if (stateOf(proposal) === 'superseded' || (valueOf(session, 'planRevision') ?? 1) !== valueOf(proposal, 'baseRevision')) return 'workout-changed';
+    const logged = loggedMovements(ctx.rowsOf('set'), session.id);
+    if (changedLoggedMovement(valueOf(session, 'plan').entries ?? [], documentOf(valueOf(proposal, 'changes')), logged) !== undefined) return 'workout-moved';
+    return undefined;
+  }
+
+  applyWorkoutProposal(ctx, { proposalId }) {
+    const receipts = book(ctx, 'workoutProposalApplies');
+    if (Object.hasOwn(receipts, proposalId)) return { deltas: [], write: [] };
+    const proposal = this.settleable(ctx, 'workoutProposal', proposalId);
+    const state = stateOf(proposal);
+    if (state === 'applied') {
+      setOwn(receipts, proposalId, true);
+      return { deltas: [], write: [] };
+    }
+    if (state === 'dismissed') throw new Refusal('proposal-settled', { state });
+    const reason = this.workoutReason(ctx, proposal);
+    if (reason !== undefined) throw new Refusal('proposal-superseded', { reason });
+    const session = ctx.stored('session', valueOf(proposal, 'sessionId'));
+    const plan = { routine: valueOf(session, 'plan').routine, entries: documentOf(valueOf(proposal, 'changes')) };
+    setOwn(receipts, proposalId, true);
+    return {
+      deltas: [
+        { t: 'workoutProposal', id: proposalId, born: proposal.born, f: { state: ['applied', null], settledAt: [ctx.serverNow, null] } },
+        { t: 'session', id: session.id, born: session.born, f: { plan: [plan, null] } },
+      ],
+      write: [
+        { t: 'workoutProposal', id: proposalId, f: { state: null, settledAt: null } },
+        { t: 'session', id: session.id, f: { plan: null } },
+      ],
+    };
+  }
+
+  dismissWorkoutProposal(ctx, { proposalId }) {
+    return this.dismiss(ctx, 'workoutProposal', this.settleable(ctx, 'workoutProposal', proposalId), (proposal) => this.workoutReason(ctx, proposal));
   }
 
   // Product rules on the joined records, record by record in intent order; the deltas they append are
   // the rules' server writes and the consequences of a death (§2.2).
   check(ctx, records) {
-    const metadata = { routine: ['revision', 'createdEntries'], proposal: ['baseRevision', 'baseName', 'changeCount'], note: ['updatedAt'] };
+    const metadata = {
+      routine: ['revision', 'createdEntries'], proposal: ['baseRevision', 'baseName', 'changeCount'], note: ['updatedAt'],
+      session: ['planRevision', 'routineRevision'], workoutProposal: ['baseRevision', 'changeCount'],
+    };
     for (const delta of ctx.deltas) {
       if (delta.t === 'routineCreation' || (metadata[delta.t] ?? []).some((field) => Object.hasOwn(delta.f ?? {}, field))) throw new Refusal('invalid');
     }
@@ -406,7 +517,8 @@ export class GymProduct {
       return [...rows.values()];
     };
     const appended = [];
-    const futureProposals = new Set(records.filter((record) => record.after.t === 'proposal' && created(record)).map((record) => record.after.id));
+    const proposals = ['proposal', 'workoutProposal'];
+    const futureProposals = new Set(records.filter((record) => proposals.includes(record.after.t) && created(record)).map((record) => record.after.id));
     const numbered = [];
     const append = (delta) => {
       appended.push(delta);
@@ -425,7 +537,7 @@ export class GymProduct {
       append({ t: 'routine', id: record.after.id, born: record.after.born, f });
     }
     for (const record of records) {
-      if (record.after.t === 'proposal') futureProposals.delete(record.after.id);
+      if (proposals.includes(record.after.t)) futureProposals.delete(record.after.id);
       const rule = RULES[record.type.type];
       if (rule) rule(ctx, record, { current, rowsOf, append, futureProposals, numbered, product: this });
     }
@@ -495,16 +607,44 @@ const RULES = {
     }
   },
 
-  session(ctx, record, { rowsOf, append }) {
+  // A session's death kills its sets and workout proposals; a plan write is held to the plan revision rules,
+  // and a net plan change, a delta's or an apply's, keeps its logged movements, moves planRevision and
+  // supersedes the workout's pending proposals, every door's.
+  session(ctx, record, { current, rowsOf, append }) {
     if (created(record)) {
       if (record.createdBy.some((source) => source !== 'command')) throw new Refusal('invalid');
       return;
     }
-    if (!died(record)) return;
-    const original = record.original;
-    if (!isSet(valueOf(original, 'finishedAt')) && !isStale({ ...ctx, rowsOf }, original)) throw new Refusal('session-open');
-    for (const set of rowsOf('set')) {
-      if (isAlive(set) && valueOf(set, 'sessionId') === original.id) append({ t: 'set', id: set.id, born: set.born, life: ['dead', null] });
+    const { original, after } = record;
+    if (died(record)) {
+      if (!isSet(valueOf(original, 'finishedAt')) && !isStale({ ...ctx, rowsOf }, original)) throw new Refusal('session-open');
+      for (const set of rowsOf('set')) {
+        if (isAlive(set) && valueOf(set, 'sessionId') === original.id) append({ t: 'set', id: set.id, born: set.born, life: ['dead', null] });
+      }
+      for (const proposal of rowsOf('workoutProposal')) {
+        if (isAlive(proposal) && valueOf(proposal, 'sessionId') === original.id) append({ t: 'workoutProposal', id: proposal.id, born: proposal.born, life: ['dead', null] });
+      }
+      return;
+    }
+    if (!isAlive(after)) return;
+    const written = ctx.deltas.some((delta) => delta.t === 'session' && delta.id === after.id && Object.hasOwn(delta.f ?? {}, 'plan'));
+    if (written) {
+      if (ctx.origin === 'replica' && !ctx.guards.some((guard) => guard.t === 'session' && guard.id === after.id && guard.field === 'plan'
+        && guard.stamp === (original.f?.plan?.[1] ?? null))) throw new Refusal('invalid');
+      const before = valueOf(original, 'plan');
+      const plan = valueOf(after, 'plan');
+      if (!isSet(before) || !isSet(plan) || !sameJson(plan.routine, before.routine)) throw new Refusal('invalid');
+      if (isClosed({ ...ctx, rowsOf }, original)) throw new Refusal('session-finished');
+      checkPlanShape(ctx, { before: before.entries ?? [], after: plan.entries, current });
+    }
+    if (sameJson(valueOf(original, 'plan') ?? null, valueOf(after, 'plan') ?? null)) return;
+    checkLoggedKept({ before: valueOf(original, 'plan')?.entries ?? [], after: valueOf(after, 'plan')?.entries ?? [], sessionId: after.id, rowsOf });
+    const revision = (valueOf(original, 'planRevision') ?? 1) + 1;
+    if (revision > MAX_REVISION) throw new Refusal('invalid');
+    append({ t: 'session', id: after.id, born: after.born, f: { planRevision: [revision, null] } });
+    for (const proposal of rowsOf('workoutProposal')) {
+      if (!isAlive(proposal) || valueOf(proposal, 'sessionId') !== after.id || stateOf(proposal) !== 'pending') continue;
+      append({ t: 'workoutProposal', id: proposal.id, born: proposal.born, f: { state: ['superseded', null], settledAt: [ctx.serverNow, null] } });
     }
   },
 
@@ -579,15 +719,15 @@ const RULES = {
     }
   },
 
-  // A conversation (gym Coach §9.1): its death kills its messages and unlinks the proposals naming it.
+  // A conversation (gym Coach §9.1): its death kills its messages and unlinks the proposals of both kinds naming it.
   thread(ctx, record, { rowsOf, append }) {
     if (created(record) && !isSet(valueOf(record.after, 'title'))) throw new Refusal('invalid');
     if (!died(record)) return;
     for (const message of rowsOf('message')) {
       if (isAlive(message) && valueOf(message, 'threadId') === record.after.id) append({ t: 'message', id: message.id, born: message.born, life: ['dead', null] });
     }
-    for (const proposal of rowsOf('proposal')) {
-      if (isAlive(proposal) && valueOf(proposal, 'threadId') === record.after.id) append({ t: 'proposal', id: proposal.id, born: proposal.born, f: { threadId: [null, null] } });
+    for (const proposal of [...rowsOf('proposal'), ...rowsOf('workoutProposal')]) {
+      if (isAlive(proposal) && valueOf(proposal, 'threadId') === record.after.id) append({ t: proposal.t, id: proposal.id, born: proposal.born, f: { threadId: [null, null] } });
     }
   },
 
@@ -623,24 +763,14 @@ const RULES = {
       }
     }
     const changes = valueOf(after, 'changes');
-    const proposed = changes.filter((change) => change.kind !== 'removed').map((change) => ({ exerciseId: change.exerciseId, ...change.after }));
+    const proposed = documentOf(changes);
     const removing = valueOf(after, 'intent') === 'remove';
     if ((removing ? proposed.length !== 0 : proposed.length === 0 || proposed.length > 50
       || /^\s*$/.test(valueOf(after, 'proposedName') ?? '') || proposed.some((entry) => entry.sets !== undefined && entry.sets.length === 0))
       || !sameJson(changes, proposalChanges(valueOf(routine, 'entries'), proposed))) throw new Refusal('invalid');
     if (proposed.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
-    const base = valueOf(routine, 'entries');
     const name = valueOf(routine, 'name');
-    let count = changes.filter((change) => change.kind !== 'kept').length + (name === valueOf(after, 'proposedName') ? 0 : 1);
-    const matched = new Set();
-    let highest = -1;
-    for (const change of changes) {
-      if (change.kind === 'added' || change.kind === 'removed') continue;
-      const i = base.findIndex((entry, at) => !matched.has(at) && entry.exerciseId === change.exerciseId);
-      matched.add(i);
-      if (i < highest) { count += 1; break; }
-      highest = i;
-    }
+    const count = changeCountOf(valueOf(routine, 'entries'), changes) + (name === valueOf(after, 'proposedName') ? 0 : 1);
     append({ t: 'proposal', id: after.id, born: after.born, f: {
       baseRevision: [valueOf(routine, 'revision'), null], baseName: [name, null], changeCount: [count, null],
     } });
@@ -648,6 +778,39 @@ const RULES = {
       if (other.id === after.id || futureProposals.has(other.id) || !isAlive(other) || stateOf(other) !== 'pending' || valueOf(other, 'routineId') !== routineId) continue;
       if (valueOf(other, 'door') !== valueOf(after, 'door') || (valueOf(other, 'connection') ?? '') !== (valueOf(after, 'connection') ?? '')) continue;
       append({ t: 'proposal', id: other.id, born: other.born, f: { state: ['superseded', null], supersededBy: [after.id, null], settledAt: [ctx.serverNow, null] } });
+    }
+  },
+
+  // A change to the open workout's plan an agent proposes (gym Coach §5 G-4): the whole plan, diffed against
+  // the plan as it stands and held to the rules a lifter's own plan write is.
+  workoutProposal(ctx, record, { current, rowsOf, append, futureProposals }) {
+    const { after } = record;
+    if (!created(record)) return;
+    const sessionId = valueOf(after, 'sessionId');
+    const session = current('session', sessionId);
+    if (ctx.origin === 'replica') {
+      const empty = (field) => (valueOf(after, field) ?? '') === '';
+      if (valueOf(after, 'door') !== 'ask' || !empty('connection') || !empty('agent')) throw new Refusal('invalid');
+      if (!ctx.guards.some((guard) => guard.t === 'session' && guard.id === sessionId && guard.field === 'plan'
+        && guard.stamp === (session?.f?.plan?.[1] ?? null))) throw new Refusal('invalid');
+    }
+    if (session === undefined || !isAlive(session)) throw new Refusal('unknown-record');
+    const plan = valueOf(session, 'plan');
+    if (!isSet(plan)) throw new Refusal('invalid');
+    if (isClosed({ ...ctx, rowsOf }, session)) throw new Refusal('session-finished');
+    const base = plan.entries ?? [];
+    const changes = valueOf(after, 'changes');
+    const proposed = documentOf(changes);
+    if (proposed.length > 50 || !sameJson(changes, proposalChanges(base, proposed))) throw new Refusal('invalid');
+    checkPlanShape(ctx, { before: base, after: proposed, current });
+    checkLoggedKept({ before: base, after: proposed, sessionId, rowsOf });
+    append({ t: 'workoutProposal', id: after.id, born: after.born, f: {
+      baseRevision: [valueOf(session, 'planRevision') ?? 1, null], changeCount: [changeCountOf(base, changes), null],
+    } });
+    for (const other of rowsOf('workoutProposal')) {
+      if (other.id === after.id || futureProposals.has(other.id) || !isAlive(other) || stateOf(other) !== 'pending' || valueOf(other, 'sessionId') !== sessionId) continue;
+      if (valueOf(other, 'door') !== valueOf(after, 'door') || (valueOf(other, 'connection') ?? '') !== (valueOf(after, 'connection') ?? '')) continue;
+      append({ t: 'workoutProposal', id: other.id, born: other.born, f: { state: ['superseded', null], supersededBy: [after.id, null], settledAt: [ctx.serverNow, null] } });
     }
   },
 };

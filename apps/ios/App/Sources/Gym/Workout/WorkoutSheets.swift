@@ -109,3 +109,25 @@ struct WorkoutMovementPicker: View {
       }
   }
 }
+
+// Swap {movement} (03.31): the chosen movement takes the old one's place and planned sets in this workout's plan.
+struct WorkoutSwapPicker: View {
+  let gym: GymModel
+  let workout: WorkoutState
+  let exerciseId: ID<Exercise>
+  @Environment(\.dismiss) private var dismiss
+  var body: some View {
+    NavigationStack {
+      MovementPicker(gym: gym, purpose: .swap(gym.catalogue.find(exerciseId)?.name ?? "Movement"), selected: Set(workout.walk.order),
+                     onSelect: { entry in
+                       if workout.swap(exerciseId, to: entry.exerciseId, against: workout.session?.plan) { dismiss() }
+                     })
+        .navigationBarTitleDisplayMode(.inline)
+    }.modifier(GymPage()).presentationDetents([.large])
+      .onChange(of: workout.ledger(exerciseId).sets.isEmpty) { _, nothingLogged in
+        guard !nothingLogged else { return }
+        workout.message = WorkoutState.loggedNow(gym.catalogue.find(exerciseId)?.name ?? "Movement")
+        dismiss()
+      }
+  }
+}

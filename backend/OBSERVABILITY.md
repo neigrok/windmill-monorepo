@@ -49,7 +49,9 @@ each answers 410 `client-update-required` before authentication with nothing beh
 WARN completion with outcome `client-update-required`, without an Issue, and the rate limiter skips
 it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
 dispatch by their access declarations. Sync admission instruments every intent and catalog command;
-it validates labels against its sealed registry. `Heartbeat` and `MailSweep` cover scheduled work
+it validates labels against its sealed registry, and a product refusal code (gym's `plan-logged` and `session-finished`
+on a workout plan write, `proposal-superseded` on a workout proposal out of date) completes at WARN under that
+code with no Issue; the movement and the reason stay in the result detail, off the log. `Heartbeat` and `MailSweep` cover scheduled work
 and mail slots. Standalone stdio MCP writes its structured logs to stderr and keeps protocol stdout
 untouched. Every composition root stops its heartbeat, worker and vendor producers before draining logs and
 envelopes. `ObservabilityLifetime` preserves producer dependencies, stops producers in reverse order,
@@ -135,8 +137,8 @@ The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
 standalone transport duplicates leaves 89 production HTTP operations. MCP has 37 write declarations
 (roadmap 23, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
-(ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have nine production commands
-(gym 7, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
+(ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have eleven production commands
+(gym 9, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (26 background
 operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh,
 signup fork and the erasure of an account a sign-in finds past its grace. The roadmap socket has two write frame kinds plus rate refusal.
@@ -300,6 +302,8 @@ listed separately because their only server writes are authentication refresh or
 | `gym` registry command `gym.finish` | `sync.command.gym.finish` | completion; command result | unexpected |
 | `gym` registry command `gym.applyProposal` | `sync.command.gym.applyProposal` | completion; command result | unexpected |
 | `gym` registry command `gym.dismissProposal` | `sync.command.gym.dismissProposal` | completion; command result | unexpected |
+| `gym` registry command `gym.applyWorkoutProposal` | `sync.command.gym.applyWorkoutProposal` | completion; command result, `proposal-settled` or `proposal-superseded` | unexpected |
+| `gym` registry command `gym.dismissWorkoutProposal` | `sync.command.gym.dismissWorkoutProposal` | completion; command result, `proposal-settled` or `proposal-superseded` | unexpected |
 | `gym` registry command `gym.closeStale` | `sync.command.gym.closeStale` | completion; command result | unexpected |
 | `journal` registry command `journal.savePage` | `sync.command.journal.savePage` | completion; command result | unexpected |
 | `journal` registry command `journal.claimPage` | `sync.command.journal.claimPage` | completion; command result | unexpected |
@@ -307,9 +311,9 @@ listed separately because their only server writes are authentication refresh or
 | `probe` registry command `probe.end` | `sync.command.probe.end` | completion; command result | unexpected |
 | `probe` registry command `probe.copy` | `sync.command.probe.copy` | completion; command result | unexpected |
 | `probe` registry command `probe.tick` | `sync.command.probe.tick` | completion; command result | unexpected |
-| `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 10 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
+| `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 13 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
 | `Admission::commitAndPublish` committed change publication | `sync.publish` | completion; bounded refusal or result | unexpected |
-| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout) | `gym.server_call` | completion; actual call result and expected training refusal | unexpected |
+| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout; `proposeWorkout`, which only the ability corpus calls, included) | `gym.server_call` | completion; actual call result, expected training refusal, and `proposeWorkout`'s refusal before admitting (`unknown-record`, `no-plan`, `id-reused`, `no-change`, `id-taken`) | unexpected |
 | `ServerCall::admit` / `admitBuilt` invalid dedupe id | `sync.server_call.admit` | completion; bounded refusal or result | log only |
 | `ServerCall::finish` dedupe metadata write | `sync.server_call.finish` | completion; bounded refusal or result | unexpected |
 | `Admission::storedAnswer` / `callAnswer` call digest disagreement | `sync.call.digest` | completion; expected digest conflict | log only |

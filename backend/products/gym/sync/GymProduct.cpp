@@ -17,7 +17,7 @@ namespace {
 GymFacts load(GymState& state, SyncTxn& txn, const ScopeKey& scope, SyncReader& read, const Registry& registry) {
   GymFacts facts;
   facts.books = state.load(txn, scope);
-  for (const char* type : {"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal", "thread", "message"}) {
+  for (const char* type : {"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal", "workoutProposal", "thread", "message"}) {
     if (!registry.type(type)) continue;
     for (Row& row : read.scan(type)) facts.rows.push_back(std::move(row));
   }
@@ -47,6 +47,7 @@ public:
     if (name_ == "gym.importSession") return books["imports"].isMember(ctx.args["id"].asString()) || books["importHashes"].isMember(ctx.args["id"].asString());
     if (name_ == "gym.correctSession") return books["corrections"].isMember(ctx.args["requestId"].asString());
     if (name_ == "gym.applyProposal") return books["proposalApplies"].isMember(ctx.args["proposalId"].asString());
+    if (name_ == "gym.applyWorkoutProposal") return books["workoutProposalApplies"].isMember(ctx.args["proposalId"].asString());
     return false;
   }
 
@@ -57,7 +58,8 @@ public:
       facts.locked.insert_or_assign({type, id.asString()}, ctx.read.lock(type, RecordId(id)));
     };
     for (const char* id : {"id", "sessionId"}) if (ctx.args.isMember(id)) lock("session", ctx.args[id]);
-    if (ctx.args.isMember("proposalId")) lock("proposal", ctx.args["proposalId"]);
+    const bool workout = name_ == "gym.applyWorkoutProposal" || name_ == "gym.dismissWorkoutProposal";
+    if (ctx.args.isMember("proposalId")) lock(workout ? "workoutProposal" : "proposal", ctx.args["proposalId"]);
     if (ctx.args.isMember("routineId")) lock("routine", ctx.args["routineId"]);
     if (name_ == "gym.start") {
       const Json::Value resolved = facts.books["starts"][ctx.args["id"].asString()];
@@ -75,7 +77,8 @@ private:
 };
 
 GymProduct::GymProduct(GymState& state) : rules_(std::make_unique<Rules>(state)) {
-  for (const char* name : {"gym.start", "gym.importSession", "gym.correctSession", "gym.finish", "gym.applyProposal", "gym.dismissProposal", "gym.closeStale"}) commands_.push_back(std::make_unique<Command>(state, name));
+  for (const char* name : {"gym.start", "gym.importSession", "gym.correctSession", "gym.finish", "gym.applyProposal", "gym.dismissProposal",
+                           "gym.applyWorkoutProposal", "gym.dismissWorkoutProposal", "gym.closeStale"}) commands_.push_back(std::make_unique<Command>(state, name));
 }
 
 GymProduct::~GymProduct() = default;

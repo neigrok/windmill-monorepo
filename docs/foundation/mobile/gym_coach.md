@@ -14,6 +14,14 @@ separate, narrower route: one installation-authenticated request produces a boun
 document for atomic local import. No client sends it new requests; iOS draws the onboarding answers
 earlier versions kept and imports the routines they drafted. Its installation identity follows §8.
 
+Catalog version 2 adds `propose_workout_change`, the Coach's door to the open workout: the catalog
+declares it and its corpus holds the calls (§3.5), and engine A.2 binds its `workoutProposal`
+records. The server serves catalog/1 and catalog/2 side by side. The ability is the phone Coach's
+alone: no surface draws a card for a connected agent's workout proposal, so MCP does not offer it, and
+the server executor runs it only to write its corpus expectations. iOS speaks catalog/2: Coach
+answers during a workout, reads the open workout (§4.1), and its replica executor runs
+`propose_workout_change`, whose card the lifter applies to the running plan or rejects.
+
 **Adoption:**
 
 | Surface | Signed out | Signed in |
@@ -50,7 +58,7 @@ agent rule.
 
 **D-2 Catalog.** The set of abilities, declared once in `packages/api-contract/gym/catalog.json`.
 The server's tool declarations (`gymToolCatalog()`), which give the model tool list and the MCP tool
-list, are written in C++ and pinned to it by test: each tool's name, description and input schema
+list (every tool but the phone Coach's `propose_workout_change`), are written in C++ and pinned to it by test: each tool's name, description and input schema
 byte-equal as JCS, and its class and agent rule against the tool's access level
 (`CatalogContractTest.cpp`). An ability the server declares no tool for is marked
 `"declared": false`. The Swift catalog, phrases included, is generated from it (`GymCatalogGen`)
@@ -58,6 +66,11 @@ and pinned to the checked-in file by test (`GymCatalogGenTests`). Appendix C lis
 
 **D-3 Catalog version.** `catalog/N`. It increments when an ability's name, input, result, class,
 agent rule or rule changes. Model-facing descriptions and phrases change without an increment.
+`catalog.json` declares the newest version; an ability that a version added carries `since` naming
+it, so catalog/N is every ability whose `since` is absent or at most N. The server serves the
+versions side by side: a turn opened with catalog/1 is offered and gated by catalog/1's abilities
+and rules, a catalog/2 turn by catalog/2's, until §6.2 retires the older. catalog/2 adds
+`propose_workout_change` and its gate rule (§5 G-4); its other abilities are catalog/1's.
 
 **D-4 Door.** A way to reach an ability.
 
@@ -185,11 +198,11 @@ executor, and the Kotlin and Swift replica executors. CI compares the SHA-256 of
 The corpus MUST include ties, empty pages, a 10,000-set history, fractional loads, and text with
 emoji and combining marks.
 
-The corpora hold `abilities/` (17 files), `rules/bodyweight.json` and `turns/`; no case holds a
-10,000-set history yet. The server executor writes the `abilities/` expectations and claims every
-case (`AbilitiesCorpusTest.cpp`); it also claims the `GymEstimate` and training-read cases of
+The corpora hold `abilities/` (18 files), `rules/bodyweight.json` and `turns/`; no case holds a
+10,000-set history yet. The server executor writes the `abilities/` expectations, catalog/2's
+`propose_workout_change.json` included, and claims every case (`AbilitiesCorpusTest.cpp`); it also claims the `GymEstimate` and training-read cases of
 `domain/training-reads.json`, apart from the cases its test lists as other rules. The Swift replica
-executor claims every `abilities/` case; the share cases, which run on the server executor (§4.3),
+executor claims every case of the `abilities/` files, catalog/2's `propose_workout_change.json` included; the share cases, which run on the server executor (§4.3),
 it checks as refused on the phone. The Swift, Kotlin and web domain suites claim
 `rules/bodyweight.json`. The Kotlin suite marks `abilities/` and `turns/` not applicable, since
 Android runs no replica executor. The server loop and the iOS turn driver replay `turns/`.
@@ -210,8 +223,9 @@ Android runs no replica executor. The server loop and the iOS turn driver replay
    `running`, with id `turnId` and `replica` set to the id of the replica the commit writes to, which
    the engine gives the commit (engine §7.12), and the device row `runningTurn := turnId` (engine §2.5
    `DeviceRow`), cleared with the terminal state.
-3. **Context.** Run `list_sessions` (first page, which an open workout heads), `list_notes`,
-   `list_exercises` and `list_routines` through the executor, together within `CONTEXT_READ_BYTES`. Record them as
+3. **Context.** Run `list_sessions` (first page), `list_notes`, `list_exercises` and
+   `list_routines` through the executor, and, while a workout is open, `get_session` of it, together
+   within `CONTEXT_READ_BYTES`. Record them as
    ability calls on the Coach message. They count toward the read receipt.
 4. **History.** Take the text of the newest completed turns of the conversation: at most
    `CONTEXT_TURNS` turns and `CONTEXT_BYTES` bytes.
@@ -309,7 +323,10 @@ and the model continues.
 - **G-2 Seat.** The ability's `seats` admits the turn's seat.
 - **G-3 Shape.** The input validates against the ability's schema at every depth. Tools are sent to
   the vendor in strict mode.
-- **G-4 One proposal.** At most one `proposes` call succeeds per turn.
+- **G-4 One proposal per target.** At most one `proposes` call succeeds per turn for each target
+  kind: one for a routine (`propose_routine_change` or `propose_routine_removal`) and one for the open
+  workout (`propose_workout_change`). One answer may carry one of each; the lifter decides them
+  apart. A catalog/1 turn has the routine kind alone.
 - **G-5 One note.** At most one `save_note` call succeeds per turn.
 - **G-6 Volume.** At most `MAX_ABILITY_CALLS` calls and `MAX_ADDS` `add` calls per turn. Further
   calls are refused `coach-turn-volume`.
@@ -355,7 +372,7 @@ account is refused `device_bound` and signs in instead.
 ### §6.2 Open
 
 ```json
-{ "catalog": "catalog/1",
+{ "catalog": "catalog/2",
   "turnId": "tn_…",
   "question": "…",
   "pictures": [{ "id": "…", "mediaType": "image/jpeg", "data": "<base64>" }],
@@ -367,7 +384,8 @@ Admission, in order:
 1. **Catalog.** A version retired more than `CATALOG_RETIRE_DAYS` after its successor shipped is
    refused `coach-update-required`.
 2. **Shape.** The body is within `OPEN_BODY_BYTES`; the limits of §4.1 hold; `context` names only
-   the four context reads, within `CONTEXT_READ_BYTES`. Otherwise `coach-bad-request`.
+   the context reads of §4.1 step 3 (`get_session` only in a catalog/2 turn, of the open workout),
+   within `CONTEXT_READ_BYTES`. Otherwise `coach-bad-request`.
 3. **Identity.** An unseen `turnId` opens a turn. A seen `turnId` with the same body digest
    resumes it. A seen `turnId` with another digest is refused `coach-turn-conflict`.
 4. **Allowance.** Each vendor round reserves USD against the verified principal (§7.1).
@@ -604,7 +622,7 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
 - The read receipt counts what the executor returned to the model in the turn, context reads
   included, by identity, under the read receipt's four rules
   ([brand foundations](../../design/brand-foundations.md), Gym).
-- `results` lists the ids of records the turn created. A proposal minted in the turn carries
+- `results` lists the ids of records the turn created. A proposal of either kind minted in the turn carries
   `threadId`.
 - A receipt stores ids only. The room reads names and serials from the records when it draws.
 - The receipt and the step line derive from `calls`, never from the model's text.
@@ -647,7 +665,7 @@ event per ability call it ran: the catalog name and the outcome (`ok` or the ref
 carries text, pictures, results or ids. iOS sends both
 ([IOS_OBSERVABILITY.md](../../IOS_OBSERVABILITY.md)): `coach_turn` with its ability calls,
 refusals and answer bytes as counts, and a `coach_ability` for every call its executor ran, the
-four context reads included. Android sends neither. The server logs its own side of a turn
+context reads included: the four list reads and, while a workout is open, its `get_session`. Android sends neither. The server logs its own side of a turn
 (`coach_turn` and `coach_batch` lines, `backend/OBSERVABILITY.md`), the calls a phone refused
 counted by code.
 
@@ -661,7 +679,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 - the active replica's id, given to a commit, and the `activeReplicaChanged` event that announces
   every change of it (engine §7.12);
 - a device row `runningTurn` in `device/gym`;
-- `proposal` records mintable by a replica, with `changes` computed by the shared diff rule and
+- `proposal` and `workoutProposal` records mintable by a replica, with `changes` computed by the shared diff rule and
   re-checked by the server on admission;
 - `thread` and `message` as full records with the fields and merge rule of §9.1, `localOnly`
   pictures held in `picture:<id>` device rows, and a proposal's `threadId` a `ref<thread>` its
@@ -715,8 +733,9 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 - **B-1 Agent rules for the log.** Appendix C marks these abilities `withheld` until canon sets
   them. Coach never logs, fixes or deletes a set, finishes or discards a workout, or writes a
   bodyweight ([brand foundations](../../design/brand-foundations.md), Gym); MCP runs `start_session`, `log_set`, `log_sets`, `finish_session`,
-  `discard_session` and `import_session`. Proposals exist only for routines, so `proposes`
-  elsewhere needs a review drawn in canon.
+  `discard_session` and `import_session`. Proposals exist for routines and for the open workout,
+  whose review the Gym file's Coach boards draw (08.55–08.57); `proposes` elsewhere needs a review
+  drawn in canon.
 - **B-2 The model per seat.** Decided: an `anon` turn runs on Sonnet 5 under the anonymous
   onboarding effort and 2,000-token output ceiling, so a round of the full catalog fits the
   $0.05 lifetime allowance; a `bound` turn runs on the Coach model (Opus 5) under
@@ -755,6 +774,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `share_log` | add | runs | bound | Share log |
 | `propose_routine_change` | change | proposes | any | routine editor |
 | `propose_routine_removal` | remove | proposes | any | routine delete |
+| `propose_workout_change` (catalog/2) | change | proposes | any | This workout, Edit sets |
 | `revoke_share` | remove | runs | bound | Share |
 | `start_session` | add | withheld (B-1) | any | Start workout |
 | `log_set` | add | withheld (B-1) | any | logger |

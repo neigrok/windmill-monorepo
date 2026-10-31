@@ -144,6 +144,64 @@ import XCTest
     conversation.tap()
     XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 5))
   }
+  // During a workout: Coach's change to this workout applies to the running plan, which the rack then shows; a later
+  // change goes out of date once a set is logged on the movement it changes, and its card says why with no buttons.
+  func testAWorkoutProposalChangesTheRunningPlanAndGoesOutOfDateOnALoggedSet() {
+    let app = launch(arguments: ["-coach-board", "workout"])
+    openTab("Routines", app)
+    let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Upper A")).firstMatch
+    XCTAssertTrue(routine.waitForExistence(timeout: 10)); routine.tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10)); app.buttons["routine-start"].tap()
+    let log = app.buttons["workout-log"], coach = app.buttons["workout-coach"]
+    XCTAssertTrue(log.waitForExistence(timeout: 10)); log.tap()
+    func askOverTheWorkout(_ question: String) -> XCUIElement {
+      XCTAssertTrue(coach.wait(for: \.isHittable, toEqual: true, timeout: 10)); coach.tap()
+      let field = app.descendants(matching: .any)["coach-question"]
+      XCTAssertTrue(field.waitForExistence(timeout: 10)); field.tap(); field.typeText(question)
+      app.buttons["coach-send"].tap()
+      let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
+      XCTAssertTrue(header.waitForExistence(timeout: 15))
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
+      return header
+    }
+    func closeCoach() {
+      app.buttons["coach-close"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForNonExistence(timeout: 5))
+    }
+    func page(to movement: String) {
+      for _ in 0..<4 where !app.movementHeader(movement).exists {
+        app.descendants(matching: .any)["workout-current-set"].swipeLeft(); RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+      }
+      XCTAssertTrue(app.movementHeader(movement).waitForExistence(timeout: 5))
+    }
+    let lighter = askOverTheWorkout("Shoulder feels off on bench. What should I change today?")
+    XCTAssertTrue(lighter.label.hasPrefix("Changes to this workout"), lighter.label)
+    let apply = app.buttons["coach-apply-workout-proposal"]
+    for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+    apply.tap()
+    XCTAssertTrue(lighter.waitForValue("Applied", timeout: 10))
+    XCTAssertTrue(lighter.label.hasPrefix("Applied · this workout"), lighter.label)
+    XCTAssertFalse(apply.exists || app.buttons["coach-reject-workout-proposal"].exists)
+    closeCoach()
+    page(to: "Seated Cable Row")
+    XCTAssertTrue(app.buttons["workout-reps"].waitForLabel("12 reps", timeout: 5), "The rack takes the applied plan's target")
+    XCTAssertTrue(app.buttons["workout-weight"].label.contains("40"), app.buttons["workout-weight"].label)
+    let belt = askOverTheWorkout("And the pull-ups?")
+    XCTAssertTrue(belt.label.hasPrefix("Changes to this workout"), belt.label)
+    closeCoach()
+    page(to: "Pull Up")
+    log.tap()
+    XCTAssertTrue(coach.wait(for: \.isHittable, toEqual: true, timeout: 10)); coach.tap()
+    XCTAssertTrue(app.buttons["coach-history"].waitForExistence(timeout: 10)); app.buttons["coach-history"].tap()
+    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "And the pull-ups?")).firstMatch
+    XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.tap()
+    let stale = app.descendants(matching: .any)["coach-workout-proposal-header"]
+    XCTAssertTrue(stale.waitForValue("Out of date", timeout: 10))
+    XCTAssertEqual(app.staticTexts["coach-workout-proposal-out-of-date"].label, "You logged Pull Up since this suggestion. Nothing was applied.")
+    XCTAssertFalse(app.buttons["coach-apply-workout-proposal"].exists || app.buttons["coach-reject-workout-proposal"].exists)
+  }
+
   func testFreshCanvasKeepsThePendingAnswerAndDraftInHistory() {
     let app = launch(arguments: ["-coach-streaming"])
     let question = app.descendants(matching: .any)["coach-question"]

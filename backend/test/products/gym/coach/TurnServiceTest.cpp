@@ -338,6 +338,19 @@ TEST(coach_turn_open_refuses_an_anonymous_seat_without_installations_and_a_retir
   CHECK_EQ(retired.code, std::string("coach-update-required"));
   const TurnOpenRead unknown = readTurnOpen(parse(R"({"catalog":"v1","turnId":"tn_retired_000001","question":"Hi"})"));
   CHECK_EQ(unknown.code, std::string("coach-bad-request"));
+  CHECK_EQ(readTurnOpen(parse(R"({"catalog":"catalog/3","turnId":"tn_retired_000001","question":"Hi"})")).code,
+           std::string("coach-update-required"));
+  // Both served versions open, each naming itself; only catalog/2 reads the open workout into its context.
+  const char* workout = R"({"name":"get_session","input":{"sessionId":"ses_00000001"},"result":{}})";
+  const TurnOpenRead first = readTurnOpen(parse(R"({"catalog":"catalog/1","turnId":"tn_ok_0000001","question":"Hi"})"));
+  const TurnOpenRead second = readTurnOpen(parse(std::string(R"({"catalog":"catalog/2","turnId":"tn_ok_0000001","question":"Hi","context":[)") + workout + "]}"));
+  REQUIRE(first.open);
+  REQUIRE(second.open);
+  CHECK_EQ(first.open->catalog, 1);
+  CHECK_EQ(second.open->catalog, 2);
+  CHECK_EQ(second.open->context.size(), std::size_t(1));
+  CHECK_EQ(readTurnOpen(parse(std::string(R"({"catalog":"catalog/1","turnId":"tn_ok_0000001","question":"Hi","context":[)") + workout + "]}")).code,
+           std::string("coach-bad-request"));
   for (const char* body : {R"({"catalog":"catalog/1","turnId":"short","question":"Hi"})",
                            R"({"catalog":"catalog/1","turnId":"tn_ok_0000001","question":""})",
                            R"({"catalog":"catalog/1","turnId":"tn_ok_0000001","question":"Hi","context":[{"name":"get_stats","input":{},"result":{}}]})",
@@ -511,13 +524,13 @@ TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
 }
 
 // B-2: an anonymous turn runs on the onboarding model, and its first round — the full prompt and
-// catalog — is admitted by the real estimator and budget under the default $0.05 lifetime
-// allowance; a bound turn keeps the Coach model.
+// catalog/2 — is admitted by the real estimator and budget under the default $0.05 lifetime
+// allowance; a bound turn keeps the Coach model, and a catalog/1 turn is offered catalog/1.
 TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lifetime_allowance) {
   Harness h;
   h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Hi."}]}])");
   const TurnPrincipal anon = h.anon();
-  const TurnAdmission admission = h.service->open(anon, openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_model_0001","question":"What should I train today?","history":[],"context":[{"name":"list_notes","input":{},"result":{"notes":[]}},{"name":"list_sessions","input":{},"result":{"sessions":[]}}],"pictures":[]})")));
+  const TurnAdmission admission = h.service->open(anon, openOf(parse(R"({"catalog":"catalog/2","turnId":"tn_anon_model_0001","question":"What should I train today?","history":[],"context":[{"name":"list_notes","input":{},"result":{"notes":[]}},{"name":"list_sessions","input":{},"result":{"sessions":[]}}],"pictures":[]})")));
   REQUIRE(admission.turn);
   auto recorder = std::make_shared<Recorder>();
   admission.turn->attach(recorder, false);
@@ -560,7 +573,7 @@ TEST(coach_turn_bound_seat_runs_on_the_coach_model_under_the_configured_ceiling)
   CHECK_EQ(h.model->requests[0]["model"].asString(), std::string("claude-opus-5"));
   CHECK_EQ(h.model->requests[0]["output_config"]["effort"].asString(), std::string("medium"));
   CHECK_EQ(h.model->requests[0]["max_tokens"].asInt(), 2000);
-  CHECK_EQ(h.model->requests[0]["tools"].size(), gymAbilityCatalog().offered(Seat::bound).size());
+  CHECK_EQ(h.model->requests[0]["tools"].size(), gymAbilityCatalog().at(1).offered(Seat::bound).size());
   h.service->stop();
 }
 

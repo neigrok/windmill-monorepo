@@ -208,7 +208,7 @@ and Android disagree.
   (`--accent-terracotta-500`). Figma Theme roles `ios/gym/accent`, `ios/gym/accent-soft`,
   `ios/shell/brand` and `ios/shell/danger` use the iOS values.
 - **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
-  the Gym boards state none. The sync registry (v11) and the shared gym vectors carry no set kind:
+  the Gym boards state none. The sync registry (v12) and the shared gym vectors carry no set kind:
   every logged set counts, and no surface carries one. Copy: every surface labels a workout's count
   *Sets* / *N sets* (finish receipts, workout detail, Coach's read card and sources, the web review tile
   and landing). The Gym boards say the same (mirrored 2026-10-29): iOS tiles 05.3 `1185:5019`
@@ -477,12 +477,15 @@ and Android disagree.
   [workout-in-flight.md](ios/workout-in-flight.md) and the build tasks are `iosgym_tasks/60`–`69`.
   Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build draws the rest
   target (03.20–03.22), the typed load and the one reps wheel (03.23–03.25), Coach during a workout
-  (08.54) with routine proposals applied for next time (08.56's routine card), and the rest target
+  (08.54), both proposal cards (08.55–08.57: a change to this workout applies to the running plan, a
+  routine change applies for next time), the in-flight plan edits (03.26–03.32), and the rest target
   outside the app on the expanded Island (04.6) and the compact Lock Screen card (04.7, task 69),
-  neither of which says what is unsent. It differs from the editable plan's boards: the plan stays
-  frozen, so the movement menus, Edit sets, Swap movement, the receipt's plan card and Coach's
-  workout cards (03.26–03.32, 08.55–08.57's workout cards; tasks 63–66 and 68) are not built yet.
-  04.3's expanded presentation draws a moving rest bar the build does not carry; 04.6 is what it draws.
+  neither of which says what is unsent. 04.3's expanded presentation draws a moving rest bar the build
+  does not carry; 04.6 is what it draws. Where 03.32 and the build differ, for the designer to settle:
+  the receipt's PLAN CHANGES card speaks the proposal card's diff language, so a changed set reads
+  *Set 1 · 8 × 10 kg → 8 × 12.5 kg* and every set line of a changed movement stands (03.32 draws
+  *10 × 8 → 12.5 × 8* and the changed set alone); and a reorder an applied Coach change made counts in
+  *‹n› changes* but draws no Moved block, since the plan's diff carries no order lines.
   Android and web still refuse Coach while a workout is open (Android Ask, server Ask
   `ask-session-open`); only iOS answers during one.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board

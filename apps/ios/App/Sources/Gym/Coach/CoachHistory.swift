@@ -48,6 +48,11 @@ struct CoachHistoryScreen: View {
       let title = CoachCopy.proposalTitle(routine: proposal.baseName ?? gym.coachRoutine(proposal)?.name, changes: gym.coachChangeCount(proposal), removal: removal)
       return ([title] + [settled].compactMap { $0 }).joined(separator: " · ")
     }
+    if let id = writes.workoutProposals.last, let proposal = gym.workoutProposals.first(where: { $0.id.description == id }) {
+      let settled = gym.outOfDateWorkoutProposals[proposal.id] != nil ? CoachCopy.outOfDate : CoachCopy.settled(proposal.state, removal: false)
+      let title = CoachCopy.proposalTitle(routine: "This workout", changes: gym.coachWorkoutChangeCount(proposal), removal: false)
+      return ([title] + [settled].compactMap { $0 }).joined(separator: " · ")
+    }
     if !writes.routines.isEmpty { return "Created " + GymCount.of(writes.routines.count, "routine") }
     return nil
   }

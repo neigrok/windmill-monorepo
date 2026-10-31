@@ -72,6 +72,29 @@ TEST(gym_turn_gate_holds_one_proposal_and_one_note_until_a_failed_result_frees_t
   CHECK_EQ(gate.admit("save_note", note, false).code, std::string("one-note"));
 }
 
+// G-4 holds one slot per target kind: a routine proposal and a workout proposal both land in one answer, and a
+// catalog/1 turn has no workout proposal to offer.
+TEST(gym_turn_gate_holds_one_proposal_per_target_kind) {
+  const Json::Value workout = parse(R"({"id":"prop_w","sessionId":"ses_00000001","entries":[{"exerciseId":"bench-press"}]})");
+  TurnGate gate(gymAbilityCatalog(), Seat::anon, "tn_gate_0000005");
+  const GateVerdict routine = gate.admit("propose_routine_removal", parse(R"({"id":"prop_r","routineId":"rt_00000001"})"), false);
+  const GateVerdict change = gate.admit("propose_workout_change", workout, false);
+  REQUIRE(routine.admitted);
+  REQUIRE(change.admitted);
+  CHECK_EQ(change.input["id"].asString(), std::string("tn_gate_0000005-2"));
+  CHECK_EQ(gate.admit("propose_routine_change", parse(R"({"id":"prop_a","routineId":"rt_00000001","entries":[{"exerciseId":"dip"}]})"), false).code,
+           std::string("one-proposal"));
+  const GateVerdict second = gate.admit("propose_workout_change", workout, false);
+  CHECK_EQ(second.code, std::string("one-proposal"));
+  CHECK_EQ(second.message, std::string("propose_workout_change: you already wrote a workout proposal this turn; fold both into one document."));
+  gate.settle(*change.ability, false);
+  CHECK(gate.admit("propose_workout_change", workout, false).admitted);
+
+  const AbilityCatalog first = gymAbilityCatalog().at(1);
+  TurnGate older(first, Seat::anon, "tn_gate_0000006");
+  CHECK_EQ(older.admit("propose_workout_change", workout, false).code, std::string("not-offered"));
+}
+
 TEST(gym_turn_gate_bounds_adds_at_six_and_calls_at_twelve) {
   TurnGate adds(gymAbilityCatalog(), Seat::bound, "tn_gate_0000004");
   for (int number = 0; number < 6; ++number) CHECK(adds.admit("create_routine", routine("rt", number), false).admitted);

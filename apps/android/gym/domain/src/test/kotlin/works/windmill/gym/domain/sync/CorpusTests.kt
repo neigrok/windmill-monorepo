@@ -22,7 +22,8 @@ class CorpusTests {
     val paths = listOf("gym/domain/rules.json", "gym/domain/values.json", "gym/domain/notes-actions.json",
         "gym/domain/bodyweight-actions.json", "gym/domain/routines-actions.json", "gym/domain/catalogue-actions.json",
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
-        "gym/domain/recovery-actions.json", "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
+        "gym/domain/recovery-actions.json", "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json",
+        "gym/domain/workout-plan-actions.json", "gym/domain/workout-proposals-actions.json")
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
@@ -96,6 +97,8 @@ class CorpusTests {
             "gym/domain/recovery-actions.json" -> recovery(vector, input!!)
             "gym/domain/training-reads.json" -> corpus.read(vector, Session.scope) { trainingReadsForm(vector, it) }
             "gym/domain/units.json" -> unitsForm(vector.input)
+            "gym/domain/workout-plan-actions.json" -> workoutPlan(vector, input!!)
+            "gym/domain/workout-proposals-actions.json" -> workoutProposals(vector, input!!)
             else -> error("unclaimed gym file ${vector.file}")
         }
     }
@@ -121,17 +124,19 @@ class CorpusTests {
                 val target = entry.sets!!.first().copy(weightKg = weight)
                 checked(value.copy(entries = listOf(entry.copy(sets = listOf(target) + entry.sets.drop(1))) + value.entries.drop(1)), Routine)
             }
-            "proposal" -> {
-                val value = Proposal.fromForm(input)
-                val change = value.changes.first()
-                val side = when (path) {
-                    "changes.0.before.sets.0.weightKg" -> change.before!!
-                    "changes.0.after.sets.0.weightKg" -> change.after!!
-                    else -> error("unknown proposal numeric override")
+            "proposal", "workoutProposal" -> {
+                fun overridden(changes: List<RoutineChange>): List<RoutineChange> {
+                    val change = changes.first()
+                    val side = when (path) {
+                        "changes.0.before.sets.0.weightKg" -> change.before!!
+                        "changes.0.after.sets.0.weightKg" -> change.after!!
+                        else -> error("unknown proposal numeric override")
+                    }
+                    val changed = side.copy(sets = listOf(side.sets!!.first().copy(weightKg = weight)) + side.sets.drop(1))
+                    return listOf(if (path.contains(".before.")) change.copy(before = changed) else change.copy(after = changed)) + changes.drop(1)
                 }
-                val changed = side.copy(sets = listOf(side.sets!!.first().copy(weightKg = weight)) + side.sets.drop(1))
-                val next = if (path.contains(".before.")) change.copy(before = changed) else change.copy(after = changed)
-                checked(value.copy(changes = listOf(next) + value.changes.drop(1)), Proposal)
+                if (input.member("entity").str() == "proposal") Proposal.fromForm(input).let { checked(it.copy(changes = overridden(it.changes)), Proposal) }
+                else WorkoutProposal.fromForm(input).let { checked(it.copy(changes = overridden(it.changes)), WorkoutProposal) }
             }
             else -> error("unknown numeric override entity")
         }
@@ -312,6 +317,54 @@ class CorpusTests {
         }
     }
 
+    fun workoutPlan(vector: Vector, input: Json): Json {
+        val f = Fields(input)
+        if (vector.input["read"] != null) return corpus.read(vector, Session.scope) { read ->
+            when (vector.input.member("read").str()) {
+                "PlanChanges" -> PlanChanges.of(read, f.ref("sessionId", Session)).let { card ->
+                    Json.objectOf("changes" to Json.Arr(card.changes.map { it.json }), "changeCount" to Json.of(card.changeCount), "offer" to Json.of(card.offer.name))
+                }
+                else -> trainingReadsForm(vector, read)
+            }
+        }
+        return when (vector.input.member("action").str()) {
+            "ReviseWorkoutPlan" -> corpus.decision(ReviseWorkoutPlan(f.ref("sessionId", Session), PlanSnapshot.decode(input["base"]),
+                input.member("operations").arr().map(::planOperation)), vector, { Json.Null }, ::refusalForm)
+            else -> error("unclaimed workout plan action")
+        }
+    }
+
+    fun planOperation(json: Json): PlanOperation {
+        val f = Fields(json)
+        return when (f.string("op")) {
+            "retarget" -> PlanOperation.Retarget(f.int("index"), f.int("set"), f.value("target", SetTarget))
+            "add_set" -> PlanOperation.AddSet(f.int("index"))
+            "remove_set" -> PlanOperation.RemoveSet(f.int("index"), f.int("set"))
+            "swap" -> PlanOperation.Swap(f.int("index"), f.ref("exerciseId", Exercise))
+            "add_movement" -> PlanOperation.AddMovement(f.ref("exerciseId", Exercise))
+            "remove_movement" -> PlanOperation.RemoveMovement(f.int("index"))
+            "set_rest" -> PlanOperation.SetRest(f.int("index"), f.optionalInt("restSeconds"))
+            else -> error("unknown plan operation")
+        }
+    }
+
+    fun workoutProposals(vector: Vector, input: Json): Json {
+        val f = Fields(input)
+        if (vector.input["read"] != null) return corpus.read(vector, WorkoutProposal.scope) { read ->
+            when (vector.input.member("read").str()) {
+                "WorkoutOutOfDate" -> Json.objectOf("outOfDate" to (WorkoutProposalState(read, f.ref("id", WorkoutProposal)).outOfDate?.json ?: Json.Null))
+                else -> error("unclaimed workout proposal read")
+            }
+        }
+        return when (vector.input.member("action").str()) {
+            "ProposeWorkout" -> corpus.decision(ProposeWorkout(f.ref("id", WorkoutProposal), f.ref("sessionId", Session), f.list("entries", RoutineEntry),
+                f.string("summary", "")), vector, { it.json }, ::refusalForm)
+            "ApplyWorkoutProposal" -> corpus.decision(ApplyWorkoutProposal(f.ref("id", WorkoutProposal)), vector, { Json.Null }, ::refusalForm)
+            "DismissWorkoutProposal" -> corpus.decision(DismissWorkoutProposal(f.ref("id", WorkoutProposal)), vector, { Json.Null }, ::refusalForm)
+            else -> error("unclaimed workout proposal action")
+        }
+    }
+
     fun recovery(vector: Vector, input: Json): Json {
         val f = Fields(input)
         if (vector.input["read"] != null) return corpus.read(vector, Session.scope) { read ->
@@ -385,6 +438,7 @@ fun refusalForm(value: GymRefusal): Json = when (value) {
     is GymRefusal.BadInstant -> Json.objectOf("badInstant" to value.refused.form)
     is GymRefusal.ProposalSettled -> Json.objectOf("proposalSettled" to value.refused.form)
     is GymRefusal.ProposalSuperseded -> Json.objectOf("proposalSuperseded" to value.refused.form)
+    is GymRefusal.PlanLogged -> Json.objectOf("planLogged" to value.refused.form)
 }
 
 fun bodyweightForm(value: Bodyweight, input: Json?): Json {

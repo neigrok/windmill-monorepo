@@ -106,7 +106,7 @@ import SyncTesting
     #expect(opened.headers["X-Windmill-Installation"] == (seat == "anon" ? String(repeating: "a", count: 43) : nil))
     #expect((opened.headers["Authorization"]?.hasPrefix("Bearer ") ?? false) == (seat == "bound"))
     let body = try #require(opened.body)
-    #expect(try body.member("catalog").asString() == "catalog/1")
+    #expect(try body.member("catalog").asString() == "catalog/2")
     #expect(try body.member("question").asString() == question)
     #expect(try body.member("turnId").asString() == answer.id.description)
     let sentHistory = try body.member("history"), expectedHistory = try open.member("history")
@@ -256,8 +256,8 @@ import SyncTesting
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["offline"])
   }
 
-  // A refusal before the stream withdraws the turn: the question returns to the field, and no message or picture row stays.
-  // Coach answers during a workout, and the open workout is the first session its context reads.
+  // Coach answers during a workout: the open workout is the first session its context reads, and the turn reads the
+  // workout itself after the four list reads (Coach §4.1 step 3), each recorded on the Coach message.
   @Test func aSendDuringAWorkoutReadsTheOpenWorkout() async throws {
     let phone = try await phone(seat: "anon")
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
@@ -270,10 +270,23 @@ import SyncTesting
     let sessions = try #require(try body.member("context").asArray().first { try $0.member("name").asString() == "list_sessions" })
     let open = try sessions.member("result").member("sessions").asArray().first
     #expect(try open?.member("id").asString() == session.record.string && (try? open?.member("finishedAt")) == nil)
-    #expect(try messages(phone).last { $0.role == .coach }.map { [$0.text, $0.state.rawValue] } == ["Keep going.", "completed"])
+    let reads: [String] = CoachTurnBounds.contextReads + ["get_session"]
+    let context = try body.member("context").asArray()
+    let sent: [String] = try context.map { try $0.member("name").asString() }
+    #expect(sent == reads)
+    let workout = try #require(context.last)
+    #expect(try workout.member("input") == ["sessionId": session.json])
+    #expect(try workout.member("result").member("session").member("id").asString() == session.record.string)
+    let answer = try #require(try messages(phone).last { $0.role == .coach })
+    #expect([answer.text, answer.state.rawValue] == ["Keep going.", "completed"])
+    let recorded: [String] = answer.calls.map(\.name)
+    #expect(recorded == reads && answer.calls.allSatisfy { $0.outcome == .ok })
+    let reported: [String] = phone.telemetry.entries.withLock { $0.filter { $0.name == "coach_ability" }.map { $0.properties["name"] ?? "" } }
+    #expect(reported == reads)
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["answered"])
   }
 
+  // A refusal before the stream withdraws the turn: the question returns to the field, and no message or picture row stays.
   @Test func aRefusalBeforeTheStreamWithdrawsTheTurn() async throws {
     let phone = try await phone(seat: "anon")
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
