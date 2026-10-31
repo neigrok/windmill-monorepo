@@ -27,9 +27,10 @@ class RecordStateTests {
         val now = 1_790_424_000_000L
         var complete by mutableStateOf(false)
         compose.setContent {
-            val fact = PerformedFact("set", if (complete) 60.0 else Double.MAX_VALUE, if (complete) 11 else 2)
-            val progress = MovementProgress("bench-press", listOf(MovementProgress.Session("session", now - 1_000,
-                MovementSessionFact("bench-press", 1, fact, estimatesComplete = complete))))
+            val set = TrainingSet("set", "bench-press", weightKg = if (complete) 60.0 else Double.MAX_VALUE, reps = if (complete) 11 else 2,
+                completedAtMs = now - 1_000)
+            val progress = StatsProgress.of(listOf(SessionDetail(Session("session", now - 1_000, now - 999), listOf(set))), now)
+                .movement("bench-press")
             GymMaterial { StrengthChart(progress, now, java.time.ZoneOffset.UTC, null) }
         }
         compose.onNodeWithText("Estimated strength").assertExists()

@@ -110,7 +110,8 @@ public struct TrainingHistory {
   public func lastSets() -> JSON {
     .array(Set(finished.flatMap { log.sets(session: $0.id) }.map(\.exerciseId)).sorted().compactMap { id in
       let last = log.lastTime(for: id)
-      return last.sets.sorted(by: Self.serialOrder).last.map { ["exerciseId": id.json, "weightKg": .of($0.weightKg), "reps": JSON($0.reps), "at": .of(last.session!.startedAt)] }
+      // Logged order: a set number is the server's serial and absent until it answers.
+      return last.sets.max(by: { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }).map { ["exerciseId": id.json, "weightKg": .of($0.weightKg), "reps": JSON($0.reps), "at": .of(last.session!.startedAt)] }
     })
   }
 

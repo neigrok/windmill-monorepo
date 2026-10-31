@@ -8,9 +8,10 @@ import works.windmill.gym.domain.*
 class ProgressReadoutTests {
     @Test
     fun recordAndCardUseSameExactPointIdentityAndAbovePlotReading() {
-        val point = MovementProgress.Session("ses_exact", 1000L, MovementSessionFact("bench", 3,
-            PerformedFact("heavy", 100.0, 12), EstimatedFact("best", 80.0, 8, 9.0, 80.0 * (1 + 8 / 30.0))))
-        val progress = MovementProgress("bench", listOf(point))
+        val progress = StatsProgress.of(listOf(SessionDetail(Session("ses_exact", 1000L, 1001L), listOf(
+            TrainingSet("heavy", "bench", weightKg = 100.0, reps = 12, completedAtMs = 1000L),
+            TrainingSet("best", "bench", weightKg = 80.0, reps = 8, rpe = 9.0, completedAtMs = 1000L)))), 2000L).movement("bench")
+        val point = progress.estimates.single()
         val series = progressSeries(progress, 2000L, ZoneId.of("UTC"), all = true)
         assertEquals(listOf(DatedPoint("ses_exact", 1000L, 80.0 * (1 + 8 / 30.0),
             "101.3 kg est · today · 80 × 8")), series.points)

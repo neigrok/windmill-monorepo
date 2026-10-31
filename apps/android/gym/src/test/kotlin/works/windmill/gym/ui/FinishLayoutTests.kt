@@ -78,7 +78,7 @@ class FinishLayoutTests {
         val sets = List(9) { index -> TrainingSet("set_$index", "move_${index / 3}",
             weightKg = listOf(60.0, 30.0, 18.0)[index / 3], reps = if (index < 6) 8 else 10, completedAtMs = 2_000L + index) }
         val catalog = List(3) { Exercise("move_$it", if (it == 0) name else "Movement $it") }
-        val review = Review(ReviewStats(600_000, 9), against = Against("past", "Push A", 0,
+        val review = Review(against = Against("past", "Push A", 0,
             listOf(AgainstMovement("move_0", Effort(3, 8, 60.0), before = Effort(3, 8, 57.5),
                 planned = PlannedLine(List(3) { SetTarget(8, 60.0) })))))
         val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 601_000), sets, review)
