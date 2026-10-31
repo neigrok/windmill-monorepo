@@ -109,14 +109,15 @@ data class LastTime(val exerciseId: Id<Exercise>, val session: Session? = null,
     }
 }
 
-// The last set of each movement's last finished workout, by set number, at that workout's start. Sparse: a movement absent
-// is never logged, which holds only once the account's history has been read.
+// The last set of each movement's last finished workout in logged order, at that workout's start. A set number is the
+// server's serial and absent until it answers, so it never orders the sets. Sparse: a movement absent is never logged,
+// which holds only once the account's history has been read.
 data class LastSet(val exerciseId: Id<Exercise>, val weightKg: Double, val reps: Int, val at: Instant) {
     companion object {
         fun all(log: TrainingLog): List<LastSet> = log.drawnSessions.filter { !it.isOpen }.flatMap { log.sets(it.id) }.map { it.exerciseId }
             .distinct().sorted().mapNotNull { id ->
                 val last = log.lastTime(id)
-                last.sets.sortedWith(compareBy<TrainingSet> { it.setNumber ?: 0 }.thenBy { it.id }).lastOrNull()
+                last.sets.maxWithOrNull(compareBy<TrainingSet> { it.completedAt }.thenBy { it.id })
                     ?.let { LastSet(id, it.weightKg, it.reps, last.session!!.startedAt) }
             }
     }

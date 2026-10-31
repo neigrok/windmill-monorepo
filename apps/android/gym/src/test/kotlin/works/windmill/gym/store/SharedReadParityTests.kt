@@ -14,6 +14,7 @@ import works.windmill.gym.domain.Against
 import works.windmill.gym.domain.AgainstMovement
 import works.windmill.gym.domain.Effort
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.MovementProgress
 import works.windmill.gym.domain.PersonalRecord
 import works.windmill.gym.domain.MovementRecord
@@ -100,6 +101,17 @@ class SharedReadParityTests {
             AgainstMovement("bench-press", Effort(3, 8, 80.0, minReps = 6, maxReps = 8, minWeightKg = 75.0),
                 Effort(3, 4, 60.0, minReps = 4, maxReps = 6, minWeightKg = 50.0)),
             AgainstMovement("row", Effort(1, 1, 0.0), Effort(1, 1, 0.0))))), EngineTraining(engine).review("now"))
+    }
+
+    // No set here carries a server number, as on a signed-out phone: the picker's last set is the last one logged.
+    @Test fun thePickersLastSetIsTheLastOneLoggedWhileNoSetIsNumbered() = withEngine(signedIn = false) { engine ->
+        val start = 1_799_000_000_000L
+        seed(engine, listOf(row(Gym.Types.session, "w1", "startedAt" to Json.of(start), "finishedAt" to Json.of(start + 3_600_000),
+            "closedBy" to Json.of("finish"))) + listOf("set_zz" to (100.0 to 5), "set_mm" to (90.0 to 5), "set_aa" to (80.0 to 8)).mapIndexed { index, (id, set) ->
+            row(Gym.Types.set, id, "sessionId" to Json.of("w1"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(set.first),
+                "reps" to Json.of(set.second), "note" to Json.of(""), "completedAt" to Json.of(start + 60_000L * (index + 1)))
+        })
+        assertEquals(listOf(LastSet("bench-press", 80.0, 8, start)), EngineTraining(engine).lastSets())
     }
 
     private fun sharedCases(method: String): List<Json> {
