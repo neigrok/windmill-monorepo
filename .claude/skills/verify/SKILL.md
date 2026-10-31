@@ -322,7 +322,7 @@ headers, _ = call(minted['token'], '/mcp', {'jsonrpc': '2.0', 'id': 1, 'method':
 workout, lifted, started = 'ses_ios_conflict_' + secrets.token_hex(6), 'set_ios_conflict_' + secrets.token_hex(6), now - 60000
 for tool, arguments in (('gym_start_session', {'id': workout, 'startedAt': started}),
         ('gym_log_set', {'sessionId': workout, 'id': lifted, 'exerciseId': 'barbell-row', 'weightKg': 35, 'reps': 11,
-                         'kind': 'working', 'completedAt': started + 1000})):
+                         'completedAt': started + 1000})):
     _, reply = call(minted['token'], '/mcp', {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
                                               'params': {'name': tool, 'arguments': arguments}}, headers['Mcp-Session-Id'])
     assert not reply['result'].get('isError'), reply
