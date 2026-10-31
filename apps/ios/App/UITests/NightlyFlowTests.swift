@@ -263,7 +263,7 @@ import XCTest
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     let parked = editor.screenshot().pngRepresentation
     app.buttons["room-menu"].tap()
-    app.buttons["room-journal"].tap()
+    app.roomItem("Journal").tap()
     XCTAssertEqual(editor.screenshot().pngRepresentation, parked)
     app.buttons["write-today"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
