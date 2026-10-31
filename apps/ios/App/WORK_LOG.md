@@ -303,3 +303,26 @@ Dogfood follow-up `ios-workout-load-wheel-responsiveness`: profile edited-set Sa
 dismissal in a signed Release build on a physical device, repeating open/save/close cycles. Compare main-thread duration and traces with the baseline
 before selecting a fix. Current sampled stacks show framework rendering/teardown and no changed flow
 function; release-device performance remains unmeasured.
+
+Every button role a room draws lives in `Theme/RoomControls.swift`: the primary (`RoomPrimaryStyle`), the
+secondary, the glass seat and a card's decision (`RoomDecisionStyle`, prominent or quiet, a
+destructive quiet one in system red). `RoomGlass` is the one Liquid Glass surface, the regular material before
+iOS 26, under the seat, the floating act and the transient band. `GymTransient.Band` resolves the band's words
+and its one control from plain values, and `GymModel.dismissError(_:)` clears the error a band showed.
+`DestructiveQuestion` takes only telemetry and the account. `RoomSpace` names the 52 pt control height and the
+22 and 24 pt radii Coach's cards and the weigh-in keep apart from `cardRadius`; that drift, the drawn card
+decisions and the weigh-in's own rows wait on Figma in `docs/design/consistency.md`.
+
+The refactor draws the same pixels. Throwaway captures before and after it, in Dark and Daylight on iPhone Air
+(iOS 27.0) and iPhone 17 Pro (iOS 26.5), compare the Coach greeting, Routines with its floating plus, the routine
+sheet's reach-band Start (on `2e36dd27`), The log, the weigh-in sheet, the discard alert, the rack, the receipt,
+the transient band at default and AX3 sizes, the welcome and the first onboarding page. With the status bar and
+the home indicator masked every pair is identical, except for differences of at most two levels on Liquid Glass
+that two runs of the same build also show, and the iOS 26.5 Daylight receipt, whose sheet differs by up to 13
+levels between any two runs, the same build's included. Coach's cards were not reachable: the signed-in capture
+helpers fail before Coach opens. Their decision style renders byte-identical to the previous one in an
+`ImageRenderer` check, light and dark, enabled and disabled. iOS 18's material branch has no simulator here and
+is unverified.
+
+Gym's read failure, "Gym could not be read from this phone. Try again.", is written three times in
+`GymModel.swift` and once in the band's resolver; one named constant would keep them together.

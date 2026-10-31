@@ -248,9 +248,9 @@ struct WeighInSheet: View {
           .accessibilityLabel("Weight in kilograms").accessibilityIdentifier("gym-weigh-in-weight")
           .onSubmit { save() }
         Text("kg").foregroundStyle(GymPalette.inkDim)
-      }.padding(.horizontal, RoomSpace.inset).frame(minHeight: 52)
-        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 24))
-        .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(weightFocused ? GymPalette.accent : .clear, lineWidth: 1.5) }
+      }.padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight)
+        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.weighInRadius))
+        .overlay { RoundedRectangle(cornerRadius: RoomSpace.weighInRadius).strokeBorder(weightFocused ? GymPalette.accent : .clear, lineWidth: 1.5) }
       if let refusal {
         Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm)
           .padding(.horizontal, RoomSpace.inset).fixedSize(horizontal: false, vertical: true)
@@ -260,7 +260,7 @@ struct WeighInSheet: View {
     Group {
       if let entry {
         LabeledContent("Date", value: gym.dates.subtitle(entry.day))
-          .padding(.horizontal, RoomSpace.inset).frame(minHeight: 52)
+          .padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight)
           .accessibilityIdentifier("gym-weigh-in-fixed-date")
       } else {
         Button {
@@ -272,18 +272,18 @@ struct WeighInSheet: View {
             Text(gym.dates.day(LogPresentation.day(date)))
               .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
               .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 8))
-          }.padding(.horizontal, RoomSpace.inset).frame(minHeight: 52).contentShape(Rectangle())
+          }.padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight).contentShape(Rectangle())
         }.buttonStyle(.plain).foregroundStyle(GymPalette.ink)
           .accessibilityLabel("Date").accessibilityValue(gym.dates.day(LogPresentation.day(date)))
           .accessibilityIdentifier("gym-weigh-in-date")
       }
-    }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: 24))
+    }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.weighInRadius))
     if let entry {
       Button("Delete weigh-in", role: .destructive) {
         if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
         else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
-      }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, RoomSpace.inset).frame(minHeight: 52)
-        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 24))
+      }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight)
+        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.weighInRadius))
         .accessibilityIdentifier("gym-weigh-in-delete")
     }
   }

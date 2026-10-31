@@ -335,6 +335,12 @@ final class GymModel {
     } catch { self.error = "Gym could not dismiss this message. Try again."; report("gym_action", error) }
   }
 
+  // A band dismisses the error it showed; a newer one stays.
+  func dismissError(_ shown: String) {
+    guard error == shown else { return }
+    error = nil; refusal = nil
+  }
+
   func background() {
     workout.flushRack()
     rest.cancel()

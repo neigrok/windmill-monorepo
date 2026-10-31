@@ -1,5 +1,8 @@
 import SwiftUI
 
+// Every role a room's button takes: the screen's primary, a secondary, a glass seat and a card's decision.
+
+// The one primary of a screen.
 struct RoomPrimaryStyle: ViewModifier {
   let room: RoomColors
   @Environment(\.isEnabled) private var enabled
@@ -27,13 +30,41 @@ struct RoomSeatStyle: ButtonStyle {
   var diameter = RoomSpace.minimumTarget
 
   func makeBody(configuration: Configuration) -> some View {
-    seat(configuration.label.frame(width: diameter, height: diameter))
+    configuration.label.frame(width: diameter, height: diameter).roomGlass(in: Circle(), interactive: true)
       .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
   }
+}
 
-  @ViewBuilder private func seat<V: View>(_ content: V) -> some View {
-    if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: Circle()) }
-    else { content.background(.regularMaterial, in: Circle()) }
+// A card's decision, the full width: prominent on the accent, or quiet on the canvas, where a destructive button takes
+// system red for its label. It is drawn by hand where every other primary is the system's prominent glass
+// (docs/design/consistency.md, Coach card decisions); Coach's cards are its one home, so it draws in the gym's colours.
+struct RoomDecisionStyle: ButtonStyle {
+  enum Emphasis { case prominent, quiet }
+  let emphasis: Emphasis
+  @Environment(\.isEnabled) private var enabled
+
+  init(_ emphasis: Emphasis) { self.emphasis = emphasis }
+
+  func makeBody(configuration: Configuration) -> some View {
+    let prominent = emphasis == .prominent
+    let label = prominent ? GymPalette.onAccent : configuration.role == .destructive ? GymPalette.destructive : GymPalette.ink
+    configuration.label.font(.headline).foregroundStyle(label)
+      .frame(maxWidth: .infinity, minHeight: RoomSpace.controlHeight).padding(.horizontal, RoomSpace.inset)
+      .background(prominent ? GymPalette.accent : GymPalette.canvas, in: Capsule())
+      .opacity(enabled ? 1 : 0.5).scaleEffect(configuration.isPressed ? 0.98 : 1).contentShape(Capsule())
+  }
+}
+
+// Liquid Glass on iOS 26; before it the regular material, with the system shadow under a surface that floats over a list.
+struct RoomGlass<Surface: Shape>: ViewModifier {
+  let shape: Surface
+  var interactive = false
+  var floating = false
+
+  @ViewBuilder func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) { content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape) }
+    else if floating { content.background(.regularMaterial, in: shape).shadow(radius: 8, y: 2) }
+    else { content.background(.regularMaterial, in: shape) }
   }
 }
 
@@ -79,20 +110,21 @@ struct ReachBand<Band: View>: ViewModifier {
   let band: Band
   @State private var beneath = false
 
-  @ViewBuilder func body(content: Content) -> some View {
+  func body(content: Content) -> some View {
+    barred(content.onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.visibleRect.maxY - $0.contentInsets.bottom + 1 } action: { beneath = $1 })
+  }
+
+  @ViewBuilder func barred(_ content: some View) -> some View {
     if #available(iOS 26.0, *) {
       content.scrollEdgeEffectStyle(onSurface ? .hard : .automatic, for: .bottom)
-        .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.visibleRect.maxY - $0.contentInsets.bottom + 1 } action: { beneath = $1 }
         .safeAreaBar(edge: .bottom, spacing: spacing) {
           band.background { if onSurface && beneath { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) } }
         }
     }
     else {
-      content
-        .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.visibleRect.maxY - $0.contentInsets.bottom + 1 } action: { beneath = $1 }
-        .safeAreaInset(edge: .bottom, spacing: spacing) {
-          band.background { if beneath { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) } }
-        }
+      content.safeAreaInset(edge: .bottom, spacing: spacing) {
+        band.background { if beneath { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) } }
+      }
     }
   }
 }
@@ -151,6 +183,9 @@ struct RoomTitle: ViewModifier {
 
 extension View {
   func roomTitle(_ title: String, subtitle: String?) -> some View { modifier(RoomTitle(title: title, subtitle: subtitle)) }
+  func roomGlass(in shape: some Shape, interactive: Bool = false, floating: Bool = false) -> some View {
+    modifier(RoomGlass(shape: shape, interactive: interactive, floating: floating))
+  }
   func reachBand(spacing: CGFloat? = nil, onSurface: Bool = false, @ViewBuilder _ band: () -> some View) -> some View {
     modifier(ReachBand(spacing: spacing, onSurface: onSurface, band: band()))
   }

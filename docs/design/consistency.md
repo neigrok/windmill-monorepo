@@ -494,6 +494,24 @@ and Android disagree.
   from the lifter's state and never from capability copy — *Build me a routine* with no routines,
   *How did today go?* after a workout today. A tap fills the composer without sending, and the
   capsule leaves with the first message. It waits on the owner and is not drawn.
+- **iOS card radii (build drift, needs a Figma decision).** One card role is drawn at three radii, named in
+  `RoomSpace` (`Theme/TypeScale.swift`): `cardRadius` 16 pt for the room's cards (the transient band, workout
+  ledger and fact tiles, Journal echoes), `coachCardRadius` 22 pt continuous for Coach's conversation cards
+  (`ChangeCard`), and `weighInRadius` 24 pt for the weigh-in sheet's weight, date and Delete weigh-in cards
+  (`Gym/Log/BodyweightScreen.swift`); the share sheet's preview card is 12 pt (`SessionShareSheet.swift`). For the
+  designer: one radius for the card role, or a named role for each that differs. The build changes after the drawing.
+- **Coach card decisions are hand-drawn (build drift, needs a Figma decision).** Apply, Reject and Sign in on Coach's
+  cards (`RoomDecisionStyle` in `Theme/RoomControls.swift`) are full-width 52 pt capsules drawn by hand: the accent
+  with an on-accent label, or the canvas with an ink label (system red on a destructive button), at 50 % while
+  disabled and 98 % while pressed, the same on iOS 18 and iOS 26. Every other primary (`RoomPrimaryStyle`: the
+  routine sheet's Start, the rack's Log set, the receipt's Done) is the system's prominent glass on iOS 26 and the
+  bordered prominent button on iOS 18. For the
+  designer: whether card decisions take the system's prominent and plain glass, or stay a drawn card-decision component.
+- **The weigh-in builds its own form rows (build drift, needs a Figma decision).** The weigh-in sheet
+  (`BodyweightScreen.swift`, `fields`) draws its weight field, date row and Delete weigh-in as separate 52 pt
+  rows on 24 pt card shapes in a scroll view, with its own accent focus stroke, where Fix set, Fix workout, the
+  rename sheet and the movement picker use a native grouped `Form`. For the designer: whether the weigh-in becomes
+  a native grouped form (with the content-sized sheet and graphical calendar of 10y) or keeps its drawn rows.
 
 ## Onboarding
 

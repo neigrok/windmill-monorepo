@@ -106,10 +106,10 @@ struct OnboardingScreen: View {
             Button("Skip") {
               exit(skipped: true)
             }.font(ShellType.action).foregroundStyle(ShellPalette.ink).buttonStyle(.plain)
-              .padding(.horizontal, 16).frame(minHeight: 52)
+              .padding(.horizontal, 16).frame(minHeight: RoomSpace.controlHeight)
               .accessibilityIdentifier("onboarding-exit").accessibilitySortPriority(80)
           }
-        }.frame(minHeight: 52).padding(.horizontal, 24).padding(.top, 4)
+        }.frame(minHeight: RoomSpace.controlHeight).padding(.horizontal, 24).padding(.top, 4)
         VStack(spacing: 0) {
           TabView(selection: $page) {
             ForEach(OnboardingPage.allCases, id: \.self) { item in
