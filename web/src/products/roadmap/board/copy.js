@@ -32,7 +32,9 @@ export const LAPSED_SESSION = 'Signed out — saved on this device';
 // Full numbers with thousands separators; `compact` abbreviates from 1,000 for the phone's segments and progress figure.
 export function formatCount(count, { compact = false } = {}) {
   if (!compact || count < 1000) return count.toLocaleString('en-US');
-  return `${Number((count / 1000).toFixed(1))}k`;
+  const thousands = Number((count / 1000).toFixed(1));
+  if (thousands < 1000) return `${thousands}k`;
+  return `${Number((count / 1_000_000).toFixed(1))}m`;
 }
 
 export function stepCount(count) {

@@ -6,9 +6,11 @@ import {
   UnlockRules,
   unmetPrerequisitesOf,
   owedStepsOf,
+  owedCounts,
   unlocksOf,
   gateOf,
 } from '../../../../src/products/roadmap/model/UnlockRules.js';
+import { largeRoadmap } from '../fixtures/largeRoadmap.js';
 
 function tree(nodes) {
   return new SkillTree({ id: 't', title: 'T', nodes });
@@ -40,6 +42,30 @@ test('owedStepsOf — every unfinished step in the prerequisite closure, an up-n
 
   assert.deepEqual(owedStepsOf(t, states, 'target').map((step) => step.id).sort(), ['a', 'b', 'side']);
   assert.deepEqual(owedStepsOf(t, states, 'a'), []);
+});
+
+test('owedCounts — one pass gives every unfinished step the count owedStepsOf walks, on chain, deep and lattice roadmaps', () => {
+  const chain = tree(Array.from({ length: 300 }, (_, index) => node(`n${index}`, index === 0 ? [] : [`n${index - 1}`])));
+  const deep = new SkillTree(largeRoadmap(300, 'deep'));
+  const lattice = tree(Array.from({ length: 300 }, (_, index) => node(`n${index}`, [...new Set([
+    ...(index > 0 ? [`n${index - 1}`] : []),
+    ...(index > 2 ? [`n${Math.floor(index / 2)}`] : []),
+    ...(index > 7 ? [`n${index - 7}`] : []),
+  ])])));
+
+  for (const roadmap of [chain, deep, lattice]) {
+    const completed = new Set(roadmap.topoOrder().filter((id, index) => index < 120 || (index < 200 && index % 17 === 0)));
+    const states = UnlockRules.derive(roadmap, { completed, completedAt: {} });
+    const counts = owedCounts(roadmap, states);
+    const unfinished = roadmap.nodes.filter((step) => states.get(step.id) !== 'complete');
+
+    assert.deepEqual(
+      new Map(unfinished.map((step) => [step.id, counts.get(step.id)])),
+      new Map(unfinished.map((step) => [step.id, owedStepsOf(roadmap, states, step.id).length])),
+    );
+    assert.equal(counts.size, unfinished.length);
+    assert.ok(unfinished.some((step) => counts.get(step.id) > 32), 'a fixture owes past one bitset word');
+  }
 });
 
 test('unlocksOf — the children this completion alone opens, in authored order', () => {

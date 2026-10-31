@@ -1,17 +1,15 @@
 // Three derived columns; filter, search and branch narrow the cards, never the states or progress.
 
 import { DEFAULT_NODE_COLOR } from '../theme.js';
-import { GENESIS_STAMP } from '../model/Legend.js';
-import { UnlockRules, unmetPrerequisitesOf, owedStepsOf, unlocksOf } from '../model/UnlockRules.js';
+import { UnlockRules, unmetPrerequisitesOf, owedCounts, unlocksOf } from '../model/UnlockRules.js';
 
 export const BOARD_SORTS = ['roadmap', 'newest', 'oldest'];
 export const DONE_RECENT_LIMIT = 12;
 
 const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete: 'done' };
-const GENESIS_MS = Number(GENESIS_STAMP.slice(0, GENESIS_STAMP.indexOf(':')));
 
 class BoardCard {
-  constructor(tree, states, step) {
+  constructor(tree, states, owed, step) {
     const state = states.get(step.id);
     const opens = state === 'complete' ? [] : unlocksOf(tree, states, step.id);
     const unmet = state === 'locked' ? unmetPrerequisitesOf(tree, states, step.id) : [];
@@ -20,7 +18,7 @@ class BoardCard {
     this.column = COLUMN_OF_STATE[state];
     this.unlockCount = opens.length;
     this.needs = state === 'locked'
-      ? { need: unmet[0], extra: unmet.length - 1, toGo: owedStepsOf(tree, states, step.id).length }
+      ? { need: unmet[0], extra: unmet.length - 1, toGo: owed.get(step.id) }
       : null;
     this.unlocks = state === 'available' && opens.length > 0
       ? { first: opens[0], extra: opens.length - 1 }
@@ -28,6 +26,7 @@ class BoardCard {
   }
 
   get id() { return this.step.id; }
+  get toGo() { return this.needs?.toGo ?? 0; }
 }
 
 class BoardColumn {
@@ -39,45 +38,13 @@ class BoardColumn {
   get count() { return this.cards.length; }
 }
 
-// A tie returns 0 and the sort is stable, so ties keep the projection's authored order.
-class BoardOrder {
-  constructor(tree, progress, sort) {
-    this.sort = sort;
-    this.depths = tree.ranks();
-    this.completedAt = progress.completedAt ?? {};
-  }
-
-  comparatorFor(column) {
-    if (this.sort !== 'roadmap') return (a, b) => this.byCreated(a, b);
-    if (column === 'locked') return (a, b) => a.needs.toGo - b.needs.toGo || b.unlockCount - a.unlockCount;
-    if (column === 'upNext') return (a, b) => this.depths.get(a.id) - this.depths.get(b.id) || b.unlockCount - a.unlockCount;
-    return (a, b) => this.knownFirst(this.completedAt[a.id] ?? null, this.completedAt[b.id] ?? null, (atA, atB) => atB - atA);
-  }
-
-  byCreated(a, b) {
-    const oldestFirst = (stampA, stampB) => stampA.ms - stampB.ms || stampA.counter - stampB.counter;
-    const compare = this.sort === 'newest' ? (stampA, stampB) => oldestFirst(stampB, stampA) : oldestFirst;
-    return this.knownFirst(this.createdAt(a), this.createdAt(b), compare);
-  }
-
-  // A seeded step carries the genesis stamp, which is no date at all.
-  createdAt(card) {
-    const stamp = card.step.createdAt;
-    return stamp && stamp.ms > GENESIS_MS ? stamp : null;
-  }
-
-  knownFirst(valueA, valueB, compare) {
-    if (valueA === null || valueB === null) return (valueA === null) - (valueB === null);
-    return compare(valueA, valueB);
-  }
-}
-
+// Comparators return 0 on a tie and the sort is stable, so ties keep the projection's authored order.
 export class Board {
   constructor(tree, progress, { sort = 'roadmap', kinds = [], query = '', branch = null } = {}) {
     if (!BOARD_SORTS.includes(sort)) throw new Error(`Unknown board sort "${sort}"`);
 
     this.states = UnlockRules.derive(tree, progress);
-    this.progress = {
+    this.overall = {
       done: tree.nodes.filter((step) => this.states.get(step.id) === 'complete').length,
       total: tree.nodes.length,
     };
@@ -95,14 +62,20 @@ export class Board {
       && (needle === ''
         || (step.label ?? '').toLowerCase().includes(needle)
         || (step.description ?? '').toLowerCase().includes(needle)));
-    const cards = shown.map((step) => new BoardCard(tree, this.states, step));
+    const owed = owedCounts(tree, this.states);
+    const cards = shown.map((step) => new BoardCard(tree, this.states, owed, step));
+    const inColumn = (name) => cards.filter((card) => card.column === name);
 
-    const order = new BoardOrder(tree, progress, sort);
-    const sorted = (name) => cards.filter((card) => card.column === name).sort(order.comparatorFor(name));
+    const completedAt = progress.completedAt ?? {};
+    const byRoadmap = (a, b) => a.toGo - b.toGo || b.unlockCount - a.unlockCount;
+    const byCreated = (a, b) => unknownLast(a.step.createdMs ?? null, b.step.createdMs ?? null,
+      (msA, msB) => (sort === 'newest' ? msB - msA : msA - msB));
+    const byNewestCompletion = (a, b) => unknownLast(completedAt[a.id] ?? null, completedAt[b.id] ?? null, (atA, atB) => atB - atA);
+    const unfinishedOrder = sort === 'roadmap' ? byRoadmap : byCreated;
 
-    this.locked = new BoardColumn('locked', sorted('locked'));
-    this.upNext = new BoardColumn('upNext', sorted('upNext'));
-    this.done = new BoardColumn('done', sorted('done'));
+    this.locked = new BoardColumn('locked', inColumn('locked').sort(unfinishedOrder));
+    this.upNext = new BoardColumn('upNext', inColumn('upNext').sort(unfinishedOrder));
+    this.done = new BoardColumn('done', inColumn('done').sort(byNewestCompletion));
   }
 
   get columns() { return [this.locked, this.upNext, this.done]; }
@@ -111,7 +84,7 @@ export class Board {
     return COLUMN_OF_STATE[this.states.get(id)] ?? null;
   }
 
-  // Above twelve the Done column folds to its first twelve and a Show all row for the rest.
+  // Above twelve the Done column folds to its twelve newest completions and a Show all row.
   recentDone() {
     return {
       cards: this.done.cards.slice(0, DONE_RECENT_LIMIT),
@@ -119,4 +92,9 @@ export class Board {
       folded: this.done.count > DONE_RECENT_LIMIT,
     };
   }
+}
+
+function unknownLast(valueA, valueB, compare) {
+  if (valueA === null || valueB === null) return (valueA === null) - (valueB === null);
+  return compare(valueA, valueB);
 }

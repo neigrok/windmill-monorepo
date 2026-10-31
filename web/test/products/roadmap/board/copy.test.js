@@ -58,8 +58,8 @@ test('copy — one word per state, one title per column, one label per sort', ()
 
 test('copy — counts are full with separators, and compact from 1,000 only when asked', () => {
   assert.deepEqual([0, 999, 1000, 3200, 12345].map((count) => formatCount(count)), ['0', '999', '1,000', '3,200', '12,345']);
-  assert.deepEqual([999, 1000, 1770, 1800, 3200, 12345].map((count) => formatCount(count, { compact: true })), [
-    '999', '1k', '1.8k', '1.8k', '3.2k', '12.3k',
+  assert.deepEqual([999, 1000, 1770, 1800, 3200, 12345, 999_949, 999_950, 1_250_000].map((count) => formatCount(count, { compact: true })), [
+    '999', '1k', '1.8k', '1.8k', '3.2k', '12.3k', '999.9k', '1m', '1.3m',
   ]);
   assert.deepEqual([0, 1, 2, 3200].map(stepCount), ['0 steps', '1 step', '2 steps', '3,200 steps']);
 });
