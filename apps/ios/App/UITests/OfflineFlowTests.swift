@@ -117,7 +117,7 @@ import XCTest
     let menu = app.buttons["room-menu"]
     ready(menu)
     menu.tap()
-    let item = app.buttons["room-\(room.lowercased())"]
+    let item = app.roomItem(room)
     ready(item)
     item.tap()
     XCTAssertTrue(menu.wait(for: \.label, toEqual: room, timeout: 3))

@@ -303,3 +303,10 @@ Dogfood follow-up `ios-workout-load-wheel-responsiveness`: profile edited-set Sa
 dismissal in a signed Release build on a physical device, repeating open/save/close cycles. Compare main-thread duration and traces with the baseline
 before selecting a fix. Current sampled stacks show framework rendering/teardown and no changed flow
 function; release-device performance remains unmeasured.
+
+Built with the iOS 27 SDK, the room menu's inline picker rows reach XCTest without their `room-…`
+identifiers, labelled only by their room's title, so every UI test that switched rooms by identifier
+stopped at the open menu. UI tests find a room through `XCUIApplication.roomItem(_:)`, which takes the
+identifier or the title. `GymIntegrationFlowTests.testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit`
+holds the routine summary's Start to at least 85% of the window's width, and `PalettesTests` holds the
+palettes to exactly the theme catalog's colours, each carried by the app's bundle.

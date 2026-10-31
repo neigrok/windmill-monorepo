@@ -51,7 +51,7 @@ import XCTest
                            "-AppleLanguages", "(en)", "-coach-fixture", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
     app.launch()
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10)); app.buttons["room-menu"].tap()
-    XCTAssertTrue(app.buttons["room-gym"].waitForExistence(timeout: 5)); app.buttons["room-gym"].tap()
+    XCTAssertTrue(app.roomItem("Gym").waitForExistence(timeout: 5)); app.roomItem("Gym").tap()
     openTab("Coach", app)
     let composer = app.descendants(matching: .any)["coach-question"]
     XCTAssertTrue(composer.waitForExistence(timeout: 15)); composer.tap(); composer.typeText("Is Push A still doing anything?")
