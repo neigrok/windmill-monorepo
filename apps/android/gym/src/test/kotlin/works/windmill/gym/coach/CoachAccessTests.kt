@@ -52,6 +52,20 @@ class CoachAccessTests {
         compose.runOnIdle { assertEquals(1, history) }
     }
 
+    @Test fun allowanceNoticeUsesTheActualResetInTheCurrentLocaleAndZoneOnlyWhenPresent() {
+        val at = Instant.parse("2026-11-01T00:00:00Z").toEpochMilli()
+        assertEquals("You have used all of your AI allowance.\nSign in to continue.",
+            coachAllowanceNotice(true, at, Locale.UK, ZoneId.of("UTC")))
+        assertEquals(AskCap.Allowance.wordless, coachAllowanceNotice(false, null, Locale.UK, ZoneId.of("UTC")))
+        assertEquals(AskCap.Allowance.wordless, coachAllowanceNotice(false, 0, Locale.UK, ZoneId.of("UTC")))
+        assertEquals("You have used all of your AI allowance.\nYou can use Coach again on 1 Nov 2026, 00:00.",
+            coachAllowanceNotice(false, at, Locale.UK, ZoneId.of("UTC")))
+        assertEquals("You have used all of your AI allowance.\nYou can use Coach again on 31 Oct 2026, 20:00.",
+            coachAllowanceNotice(false, at, Locale.UK, ZoneId.of("America/New_York")))
+        assertNotEquals(coachAllowanceNotice(false, at, Locale.UK, ZoneId.of("UTC")),
+            coachAllowanceNotice(false, at, Locale.FRANCE, ZoneId.of("UTC")))
+    }
+
     @Test fun persistedDeadlineIsRecomputedForTheClockLocaleAndZoneWithoutInventedTiming() {
         val deadline = Instant.parse("2026-10-29T09:00:00Z").toEpochMilli()
         val utc = ZoneId.of("UTC")

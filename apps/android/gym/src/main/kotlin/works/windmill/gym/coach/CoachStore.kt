@@ -30,6 +30,7 @@ import works.windmill.gym.coach.onboarding.CoachOnboardingStore
 import works.windmill.gym.coach.onboarding.CoachOnboardingOutcome
 import works.windmill.gym.coach.onboarding.CoachOnboardingImage
 import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.util.Base64
@@ -139,13 +140,18 @@ class CoachStore internal constructor(
                 trouble = when {
                     response?.status == "completed" || pending -> null
                     code == "account_required" -> Ask.accountRequired
+                    code == "subject_exhausted" -> AskCap.Allowance.wordless
+                    code in setOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required") ->
+                        response?.message?.takeIf { it.isNotBlank() } ?: record.refusalMessage ?: "Coach couldn’t take that one"
                     code != null || response?.status == "expired" -> "Coach couldn’t take that one"
                     else -> Ask.interrupted
                 },
                 again = response == null && !pending && code == null,
                 requestId = record.requestId, atMs = record.createdAtMs, refusalCode = code, attachments = listOfNotNull(record.attachment))
         }
-        return chat.copy(exchanges = exchanges.sortedBy { it.atMs })
+        val ordered = exchanges.sortedBy { it.atMs }
+        return chat.copy(exchanges = ordered,
+            cap = AskCap.Allowance.name.takeIf { ordered.lastOrNull()?.refusalCode == "subject_exhausted" })
     }
 
     val selectedChatId: String?
@@ -928,6 +934,9 @@ sealed interface AskOutcome {
             return when {
                 refused.status == 404 -> Absent
                 refused.status >= 500 -> Failed(said ?: noAnswer, generation)
+                refused.status == 429 && refused.refusal.code == "subject_exhausted" -> Capped(AskCap.Allowance.wordless, AskCap.Allowance, generation,
+                    ((refused.refusal.allowance as? JsonObject)?.get("resetsAtMs") as? JsonPrimitive)
+                        ?.takeUnless { it.isString }?.longOrNull?.takeIf { it > 0 })
                 refused.refusal.code == "ask-daily-limit" -> Capped(AskCap.Daily.wordless, AskCap.Daily, generation,
                     (refused.refusal.retryAtMs as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull?.takeIf { it > 0 }
                         ?: refused.retryAfterAtMs?.takeIf { it > 0 })

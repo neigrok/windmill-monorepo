@@ -233,6 +233,7 @@ data class Refusal(
     val detail: String? = null,
     val code: String? = null,
     val retryAtMs: JsonElement? = null,
+    val allowance: JsonElement? = null,
 )
 
 sealed class WindmillApiException(cause: Throwable? = null) : Exception(cause) {

@@ -195,7 +195,7 @@ class CoachOnboardingStore(
                     telemetry.failure("gym.coachOnboarding", WindmillApiException.Malformed)
                     throw WindmillApiException.Malformed
                 }
-                record = record.copy(response = response, refusalCode = null)
+                record = record.copy(response = response, refusalCode = null, refusalMessage = null)
                 keep(record)
                 if (response.terminal) {
                     if (response.status == "completed") {
@@ -224,7 +224,8 @@ class CoachOnboardingStore(
             try {
                 if (code == "device_bound" || code == "installation_bound") installation.markBound()
                 if (code == "invalid_installation") installation.markInvalid()
-                record = (local.onboarding(record.owner, record.requestId) ?: record).copy(refusalCode = code)
+                record = (local.onboarding(record.owner, record.requestId) ?: record).copy(refusalCode = code,
+                    refusalMessage = failure.refusal.message?.takeIf { code in allowanceCodes && it.isNotBlank() })
                 keep(record)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
@@ -255,7 +256,7 @@ class CoachOnboardingStore(
         if (seat() != origin) throw WindmillApiException.Refused(409, works.windmill.platform.net.Refusal(code = "seat_changed"))
         val credential = installation.forAnonymousSend()
         if (seat() != origin) throw WindmillApiException.Refused(409, works.windmill.platform.net.Refusal(code = "seat_changed"))
-        keep(record.copy(submitted = true, refusalCode = null))
+        keep(record.copy(submitted = true, refusalCode = null, refusalMessage = null))
         return api.start(record.body, credential)
     }
 

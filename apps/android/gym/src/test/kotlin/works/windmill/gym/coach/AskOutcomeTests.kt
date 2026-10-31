@@ -13,6 +13,22 @@ class AskOutcomeTests {
     private fun refused(status: Int, code: String? = null, message: String? = null) =
         AskOutcome.refusing(WindmillApiException.Refused(status, Refusal(message, code = code)), null)
 
+    @Test fun allowanceCapSurvivesMissingOrMalformedTimingAndUsesOnlyItsOwn429Code() {
+        for (value in listOf("null", "{}", "[]", "true", "{\"resetsAtMs\":null}", "{\"resetsAtMs\":\"1800000000000\"}",
+            "{\"resetsAtMs\":-1}", "{\"resetsAtMs\":1.5}", "{\"resetsAtMs\":true}", "{\"resetsAtMs\":{}}")) {
+            val wire = "{\"code\":\"subject_exhausted\",\"allowance\":" + value + "}"
+            val refusal = works.windmill.platform.net.WindmillJson.decodeFromString(Refusal.serializer(), wire)
+            assertEquals(AskOutcome.Capped(AskCap.Allowance.wordless, AskCap.Allowance),
+                AskOutcome.refusing(WindmillApiException.Refused(429, refusal), null))
+        }
+        val cap = AskOutcome.refusing(WindmillApiException.Refused(429, Refusal(code = "subject_exhausted",
+            allowance = JsonObject(mapOf("resetsAtMs" to JsonPrimitive(1_800_000_000_123L))))), null)
+        assertEquals(AskOutcome.Capped(AskCap.Allowance.wordless, AskCap.Allowance, retryAtMs = 1_800_000_000_123L), cap)
+        for (code in listOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required"))
+            assertEquals(AskOutcome.Refused("Server sentence"), refused(429, code, "Server sentence"))
+        assertEquals(AskOutcome.Refused("Server sentence"), refused(403, "subject_exhausted", "Server sentence"))
+    }
+
     @Test
     fun capsKeepDistinctNoticesAndMissingDailyTimingDoesNotInventAWait() {
         assertEquals(

@@ -360,6 +360,42 @@ class AskScreenTests {
         scope.cancel()
     }
 
+    @Test fun allowanceKeepsTheRefusedDraftAndOnlyTheAnonymousSignInDoor() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).also { rooms += it }
+        runBlocking { fixture.select(null) }
+        val store = fixture.store
+        val input = "Swap chin-ups for pulldowns"
+        store.coach.saveDraft("new", CoachDraft(input))
+        val doors = mutableListOf<String>()
+        room(store, listOf(AskExchange(input, trouble = "Your AI allowance is fully used or reserved.")), AskCap.Allowance, doors)
+        compose.onNodeWithText(AskCap.Allowance.wordless + "\nSign in to continue.").assertIsDisplayed()
+        compose.onNodeWithText("Your AI allowance is fully used or reserved.").assertDoesNotExist()
+        compose.onNodeWithText("Use your own AI agent").assertDoesNotExist()
+        compose.onNodeWithText("Upgrade").assertDoesNotExist()
+        compose.onNodeWithText("Sign in").performClick()
+        assertEquals(listOf("signIn"), doors)
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Keep my edited input")
+        compose.onNodeWithContentDescription("Send").performClick()
+        assertEquals(listOf("signIn", "ask:Keep my edited input"), doors)
+        scope.cancel()
+    }
+
+    @Test fun signedInAllowanceWithoutResetKeepsOnlyItsFirstSentenceAndAnEditableComposer() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        store.coach.saveDraft("new", CoachDraft("Retained input"))
+        val doors = mutableListOf<String>()
+        room(store, listOf(AskExchange("Retained input", trouble = AskCap.Allowance.wordless)), AskCap.Allowance, doors)
+        compose.onNodeWithText(AskCap.Allowance.wordless).assertIsDisplayed()
+        for (label in listOf("Sign in", "Upgrade", "Use your own AI agent", "You can use Coach again on"))
+            compose.onNodeWithText(label, substring = true).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Edited input")
+        compose.onNodeWithContentDescription("Send").performClick()
+        assertEquals(listOf("ask:Edited input"), doors)
+        scope.cancel()
+    }
+
     @Test
     fun theDayCapKeepsEditableRefusedInputAndSendWithAnHonestNotice() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
