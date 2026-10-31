@@ -142,7 +142,9 @@ versions kept and the acceptance marks live in an account- or replica-scoped Coa
 backups. Deliberately entering the Coach tab opens a fresh canvas; History lists every conversation
 and draft. A fresh draft shows Answer in progress and View chat while a turn runs on another
 conversation. The archive applies adoption or deletion to all conversations for the captured owner.
-Coach keeps the full tab bar while scrolling; the composer has no backing panel.
+Coach keeps the full tab bar while scrolling; the composer has no backing panel. Programmatic end
+scrolling targets the content’s bottom edge, including its existing padding. Returning from a pushed
+screen restores that edge only when the conversation was at its end; finger scrolling cancels the hold.
 Signed in or out, `create_routine` lands on the replica under the turn and is drawn as one receipt per
 routine created. The drafts card (*3 NEW ROUTINES*, each routine a heading that opens in place to its
 movements as added blocks, then **Apply** and **Reject**) stands only under an archived signed-out
