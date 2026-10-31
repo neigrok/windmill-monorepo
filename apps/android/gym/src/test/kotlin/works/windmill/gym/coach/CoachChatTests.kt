@@ -114,7 +114,7 @@ class CoachChatTests {
         val first = store.freshChat()
         assertTrue(store.submit(first, "First question", requestId = "request-a"))
         runCurrent()
-        assertEquals(AskQuestion(first, "First question", "request-a"), started.await())
+        assertEquals(AskQuestion(first, "First question", "request-a", purpose = "conversation"), started.await())
         val second = store.freshChat()
         store.saveDraft(second, CoachDraft("Second draft"))
         assertEquals(first, store.pendingChat(second)?.id)

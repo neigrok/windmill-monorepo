@@ -160,15 +160,16 @@ class AccountRouteTests {
         val store = room(tmp.newFolder(), scope, signedIn = false).store
         lateinit var shell: ShellActions
         compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
+        compose.onNode(hasText("Coach") and hasClickAction()).assertIsSelected()
         compose.onNodeWithContentDescription("Your account").performClick()
         compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithText("You").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Back to Routines").performClick()
+        compose.onNodeWithContentDescription("Back to Coach").performClick()
         compose.onNodeWithContentDescription("Your account").performClick()
         assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
         compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
-        compose.onNodeWithText("Sign in").assertIsDisplayed()
+        compose.onNode(hasText("Sign in") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         scope.cancel()
     }
 

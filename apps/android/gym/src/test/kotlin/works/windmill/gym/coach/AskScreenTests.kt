@@ -342,7 +342,7 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Add photo").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").performClick()
         compose.runOnIdle { assertEquals(listOf("" to photo), sent) }
-        compose.onNodeWithText("Remove photo").performClick()
+        compose.onNodeWithContentDescription("Remove photo").performClick()
         compose.runOnIdle { assertEquals(CoachDraft(), store.coach.draft("new")) }
         scope.cancel()
     }
