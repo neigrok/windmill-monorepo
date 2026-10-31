@@ -75,7 +75,8 @@ refusal codes is a defect.
    Android swipe row declares a custom accessibility action unless a real control offers the same
    act; a long-press menu has equivalent accessible actions.
 2. **A destructive gesture follows its surface and resource.** Phone weigh-in deletion is held
-   for nine seconds with Undo; the other phone rows commit immediately where their approved flow
+   for nine seconds with Undo (on Android, the system's accessibility timeout and never less than
+   nine seconds, 05.17); the other phone rows commit immediately where their approved flow
    specifies it. Workout discard and conversation deletion ask once. On iOS the affordance is the
    native trash circle; a full swipe never deletes. On Android it is the Material swipe-to-dismiss
    row: an error-red ground with a trash icon, dismissed on release past the threshold. Dismissing

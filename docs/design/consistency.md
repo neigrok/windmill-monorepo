@@ -80,7 +80,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     account?* / *This phone has 3 workouts from before you signed in. Your account already has
     training. Add them, or discard them from this phone.* / *Cancel sign-in* · *Discard* · *Add*, and
     its confirm *Discard 3 workouts?* / *They are deleted from this phone. You can’t undo this.* (Shell
-    iOS 23d `2:2940`, 23f `49:4140`; Gym Android 07.4 `1254:33533`, 07.5 `1254:33632`); the nouns follow
+    iOS 23d `2:2940`, 23f `49:4140`; Gym Android 07.11 `1254:33533`, 07.12 `1254:33632`); the nouns follow
     what the phone holds (12n). iOS asks in these words (`AdoptionQuestion.swift`); Android words it
     differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
     signed-out work *moves to the account on sign-in* with no question.
@@ -216,7 +216,7 @@ and Android disagree.
   `1283:38902`, 07.5 `1283:38851` `1283:38949`, the 02.13 History rows `1283:42197`–`1283:42264`,
   the 00.2 log row `1057:357` and Coach's read card `I1172:3646;138:1244` `I1172:3716;138:1244`;
   Android 03.7 `1254:32396` `1254:34576`, 03.8 `1254:32481` `1254:34638`, 03.14 `1283:41944`
-  `1283:42013`, 03.15 `1283:42310` `1283:42386`, 03.16 `1449:32871` `1449:33786`, 07.2 `1284:16844`
+  `1283:42013`, 03.15 `1283:42310` `1283:42386`, 03.37 `1449:32871` `1449:33786`, 07.2 `1284:16844`
   `1285:17001`, 07.8 `1284:17222` `1285:17108`, Coach's read card `1253:28726` `1254:41271`, and
   every *N sets · duration* / *N sets · N movements* line across 02.13, 03, 05, 06 and 07 (124 text
   nodes in all).
@@ -669,12 +669,13 @@ skipped sets and substituted movements.
 ### Android against the drawings
 
 The Gym file's [Android page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=56-2) is
-the target, numbered like the iOS page and indexed in [the flow index](../index.md). Paths below are
+the target, numbered in the iOS page's journeys and indexed in [the flow index](../index.md). Paths below are
 under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` or
 `app/`. Build tasks: `androidgym_tasks/`.
 
-- **11a · The page is the target.** Journeys 00–09 carry the iOS numbers; Android-only boards
-  take the next free number in their journey. The six revised Coach, Log, Weigh-in, Workout, Finish
+- **11a · The page is the target.** Journeys 00–09 follow the iOS page, and no number names two
+  different screens across the phone pages: a board drawn for both phones carries the iOS number,
+  and an Android-only board takes a number free on both pages. The six revised Coach, Log, Weigh-in, Workout, Finish
   and Routine editor flows were human-approved on 2026-10-25: 92 frames and 46 captions are
   **✅ Ready for dev**. Their current links and task scope are in `androidgym_tasks/README.md`.
   Other Gym and Shell boards retain their individual delivery status. Sign-in, email code and You
@@ -698,9 +699,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Workout detail set | `ui/SessionScreen.kt`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
   | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
   | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable nine-second hold | 06.2 `1254:32141`, 06.3 `1254:32246` | shared swipe, nine-second held delete and Undo |
+  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable nine-second hold | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, nine-second held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
-  | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.34 `1254:31663` | *Delete this conversation?* |
+  | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
 
   The refusal notice's swipe (`ui/RefusalBanner.kt:52-89`) dismisses a notice, not a record, and
   keeps its *Dismiss*.
@@ -751,7 +752,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   and the answer unbubbled prose (`coach/CoachAnswer.kt:58-65,236-311`), with no timestamps or
   grouping; waiting is the text *reading your log…* and, with the server polled at 1 Hz, the
   answer lands whole. Boards 08.1 `1252:27790`, 08.10 `1254:30552`, 08.11 `1254:30653`, 08.32
-  `1254:31101`, 08.33 `1254:31296`, 01.6 `1253:30742`.
+  `1254:31101`, 08.59 `1254:31296`, 01.6 `1253:30742`.
 - **11h · Coach-led setup on Android.** Journey 01 draws the iOS setup in Material form: the greeting
   with its anchors (01.1 `1252:4776`, 01.2 `1253:28196`), photos (01.4, 01.5), drafts decided on
   their card (01.7, 01.14, 01.15), receipts (01.8, 01.16), allowance used (01.10–01.12) and the
@@ -813,7 +814,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | `android-gym-mcp-proposal-row-design` | 17, 29 | A proposal with no conversation; retain its existing review route until the replacement is approved. |
   | `android-coach-uncertain-apply-design` · deferred, unapproved | 34 | Excluded from this release with Coach action-presentation changes; the proposed awaiting-receipt states are not approved. |
   | `android-coach-partial-drafts-design` · deferred, unapproved | 41, 42 | Excluded from this release with Coach action-presentation changes; the proposed mixed-result cards are not approved. |
-  | `android-coach-bound-installation-design` · access approved | 36, 38 | 08.6b Dark `1489:49152` / Daylight `1489:49306` are human-approved 2026-10-28 and Ready on the Android design page. History and Sign in remain available; anonymous Send is absent. The separate B.2 recovery card is unapproved. |
+  | `android-coach-bound-installation-design` · access approved | 36, 38 | 08.58b Dark `1489:49152` / Daylight `1489:49306` are human-approved 2026-10-28 and Ready on the Android design page. History and Sign in remain available; anonymous Send is absent. The separate B.2 recovery card is unapproved. |
   | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25; Android integration remains task 48. |
   | `account-delete-reconciliation` · resolved | 48 | Backend account-scoped closure receipts and session-independent recovery are deployed in `ac1e0c75`; Android integration and acceptance remain task 48. |
 
@@ -824,8 +825,45 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   while approved [02.4 Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44782)
   leaves the editor toolbar visible. Task 02 aligns the field accent and picker surface only;
   task 18 owns the remaining editor/picker geometry, and task 03 owns the toolbar.
+- **11r · Android board numbers (renumbered 2026-10-31).** No number names two different screens
+  across the phone pages. These Android boards moved to numbers free on both pages:
 
-- **11r · You after a confirmed closure (designer).** D5's caption names the row *Finish deletion*
+  | Old | New | Board |
+  |---|---|---|
+  | 02.14 · 02.15 · 02.18 · 02.19 | 02.22 · 02.23 · 02.24 · 02.25 | Add movement and targets · Movement editor keyboard · Load keyboard · Load unit below |
+  | 03.16–03.23 | 03.37–03.44 | Finish options · Add movement · Create movement · Added Dumbbell Shrug · Added Hammer Curl · Long name · Single movement · Swipe movement |
+  | 06.3 · 06.4 · 06.5 | 06.9 · 06.10 · 06.11 | Correct a weigh-in · Native date picker · Date selected |
+  | 07.4 · 07.5 | 07.11 · 07.12 | Sign-in decision · Discard 3 workouts? |
+  | 08.6 · 08.6b · 08.33–08.36 | 08.58 · 08.58b · 08.59–08.62 | No seat · Signed out, earlier chats retained · Scroll · Delete a conversation · Another reply pending · Draft restored |
+
+  The build side still uses the old numbers: `androidgym_tasks/` (README, 18, 19, 24, 25, 28,
+  36, 37, 38), the capture recipes (`bodyweight.json`, `coach-history.json`,
+  `on-this-phone.json`, `routine-targets.json`) and `docs/engineering/android-implementation.md`,
+  `android-task-readiness.md`. `routine-targets.json` also names the movement editor's discard
+  dialog 02.14 although its board is 02.17. Flows drawn on both phones under different numbers
+  remain (Android 02.9 and iOS 02.14 *Create movement*; Android 03.38 and iOS 03.16 *Add movement*).
+- **11s · Android review boards, ✅ Ready for dev (owner approved 2026-10-31).** Drawn from the
+  native emulator review; implementation pending.
+
+  | Gap | Build today | Board (Dark · Daylight) |
+  |---|---|---|
+  | In-app predictive back and navigation motion | One root `BackHandler` (`GymRoom.kt`); `WindmillSheetBack` overrides `ModalBottomSheet`'s own predictive back; pushes, pops and tab switches cut | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
+  | Nav labels at 320dp/200% | *Routines* and *The log* clip (see *Narrow tab label*) | 00.7 `1745:27419` · `1745:27475` |
+  | Dirty routine draft on Back (4k) | Back drops a new draft with no question | 02.20 `1742:39519` · `1742:39682` |
+  | Movement editor discard wording | The dialog's dismiss says *Cancel* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
+  | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
+  | Rack height and planned rows | *22.5 kg total* moves the unit below (O rule) and grows the rack about 80px; planned rows read *last kg total × max* | 03.34 `1742:40960` · `1742:41112` |
+  | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
+  | Receipt at 320dp/200% | Facts and *Performed* fall off-screen; the sheet does not grow | 03.36 `1742:41620` · `1742:41702` |
+  | Weigh-in Undo | *Weigh in* moves above the snackbar and drops under the finger when the fixed nine-second window ends | 05.17 `1742:41789` · `1742:41887`; 05.16 stays as the production picture until 05.17 ships |
+
+  Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
+  Dumbbells, and iOS planned rows read *last × max* (`Readout.setTarget`). 03.34 adds a fit-first
+  step to the O rule for the rack. 02.20 draws the routine Name field in the outlined
+  floating-label idiom the movement sheet uses; 02.3, 02.5 and the other editor boards still draw a
+  label above the field.
+
+- **11t · You after a confirmed closure (designer).** D5's caption names the row *Finish deletion*
   once closure is confirmed, and Android builds that label (task 48). The subtitle under *You* is
   drawn only for an unknown result (*Deletion unconfirmed*); Android still shows it while the
   confirmed closure waits for local cleanup, where it is no longer true. Designer to draw the
@@ -884,7 +922,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   with *Use your own AI agent*, and a nonnumeric fallback when timing is absent; *This Windmill
   does not have Coach. You can still read your log.* with no doors;
   *No conversations*; *New chat*; *Copy question* / *Copy answer*; no ⋮ More on Coach (Android 08.5
-  `1253:28654`, 08.7 `1253:28776`, 08.8 `1253:28820`, 08.26 `1254:37761`, 08.32 `1254:31101`, 08.34
+  `1253:28654`, 08.7 `1253:28776`, 08.8 `1253:28820`, 08.26 `1254:37761`, 08.32 `1254:31101`, 08.60
   `1254:31663`). Android's access and cap rendering lives in `coach/CoachAccess.kt`.
   It prefers actual `retryAtMs`, resolves fallback `Retry-After` on receipt, persists the deadline
   with the exchange and recomputes for clock/locale/timezone changes. Native task 36 acceptance
@@ -921,6 +959,27 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
   iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
   never reaches a room the question did not name; designer to rule.
+- **12o · Delete account: two proven no-close states, proposed for Android (🚧, awaiting owner).**
+  Android's recoverable close (`backend/AUTH.md`, Recoverable deletion) can be refused for a wrong
+  phone clock, and approved 27e then says *Check your connection*, which is false; approved D3 is a
+  dead end when the close never reached the server: the account is live, but the phone keeps its
+  pending record, fences every gym write and offers only *Check deletion*. Two boards, Shell Android:
+  - **27h Couldn’t delete — date and time** (Dark `139:2733`, Daylight `139:2786`, beside 27g in
+    `33:1568`): error line *Your account wasn’t deleted. This phone’s date and time look wrong. Fix
+    them, then try again.*, an inline *Date & time* text button (Android date settings), **Try again**,
+    **Cancel**. Condition: a send of the operation answers 409 `clock-ahead`, or 404 `unavailable`
+    while the session is still accepted and the phone's monotonic clock puts that send under 5 minutes
+    after the operation's stamp. Either proves the operation changed nothing.
+  - **D6 Not deleted** (Dark `139:2867`, Daylight `139:2896`, in section D `116:754`): *Your account
+    wasn’t deleted* / *The request didn’t reach Windmill in time, so nothing changed. Your account
+    works as before.* / **Try again** (opens 27a; a new confirm mints a new operation) · **Back to
+    You**. Condition: the receipt read answers `unavailable` and the identical close, sent with the
+    phone's still-accepted session, answers 404 `unavailable` (past the 5-minute window by the
+    server's clock, no receipt). A close revokes every session, so the accepted session proves no
+    closure. On that proof the phone clears the pending record and releases the fence before drawing.
+    A refused session (401) or a request 35 or more days old stays on D3.
+  iOS sends the body-only close (`AppRuntime.swift` `deleteAccount`), so it has no clock refusal and no
+  pending record; its 27e stays as drawn. If iOS adopts the recoverable close, it takes both states.
 
 ### Coach on the client
 
@@ -952,7 +1011,7 @@ iOS. It and the product differ in these places.
   [waiting/local saving](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5070)
   and [bound pending-result recovery](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49219).
   These recovery cards remain unapproved; local-save cards A2.3/A2.4 are postponed with tasks 41/42.
-  The access-only 08.6b pair is human-approved 2026-10-28 and moved to the Android design page:
+  The access-only Android 08.58b pair is human-approved 2026-10-28 and on the Android design page:
   [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) /
   [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306).
   Anonymous waiting and local saving are distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
@@ -1010,8 +1069,10 @@ iOS. It and the product differ in these places.
   whether that difference is intentional. Android's targets are drawn as number steppers (Android
   02.6, 02.11; 11d). Preserve `TargetBlock(scheme, onChange)` until device tests cover varied
   reps/loads, keyboard, focus and TalkBack.
-- **4k · Leaving drafts.** Reconcile the unsaved-routine exit policy across web and Android.
-  Cover native Back, Cancel, navigation away and restored drafts before choosing confirmation rules.
+- **4k · Leaving drafts.** iOS asks *Discard routine changes?* (Discard · Keep editing) on a
+  dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`); Android Back drops a dirty new
+  routine silently, while its movement editor asks (02.17). Approved Android 02.20 and the
+  revised 02.17 (✅, 11s) follow the iOS rule and words. Web and restored drafts remain open.
 - **4u · Delete scope.** Define whether a held session deletion also filters movement ranking,
   records and finish reads elsewhere in the room. Undo visibility and stored-count validation are
   already separate concerns (`guidelines/system-architecture.md` §3, the window rule).

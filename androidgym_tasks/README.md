@@ -1,6 +1,6 @@
 # Android gym tasks
 
-These 52 tasks describe the Android implementation backlog. Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
+These 72 tasks describe the Android implementation backlog. Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
 
 The six revised Gym flows were approved on **2026-10-25**. Each task records its current implementation and design status. Approval covers the linked revisions, including the headerless Workout and retained weigh-in Undo; it does not approve every other Gym or Shell board in this backlog.
 
@@ -19,9 +19,9 @@ Implement one commit per numbered task. Ship batches to main after adversarial r
 
 ## Current release scope
 
-**33 of the 42 active tasks are on main.** Tasks **36, 38–40, 43 and 46–49** are on draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), awaiting native captures and local-stack acceptance; their boards stay ✅ Ready for dev until it merges. Tasks 19, 25 and 50 are shipped and their frames are 🚀 In production on the canonical Android page (`56:2`).
+**All 42 tasks of the original active scope are on main.** Tasks **36, 38–40, 43 and 46–49** landed with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`) after native and local-stack acceptance; its last fix pass awaits native re-acceptance in the release. Their boards turn 🚀 In production when the release that carries them is published. Tasks 19, 25 and 50 are shipped and their frames are 🚀 In production on the canonical Android page (`56:2`).
 
-At the user's request, tasks **29–35, 41–42 and 44 are postponed from this release**. Preserve the existing Coach action appearance: proposal/change cards, Apply/Reject controls, diff blocks and action/save receipts. Keep their existing review routes and outcome wording. The 52 task identities remain unchanged; 42 numbered tasks remain in the active release scope.
+At the user's request, tasks **29–35, 41–42 and 44 are postponed from this release**. Preserve the existing Coach action appearance: proposal/change cards, Apply/Reject controls, diff blocks and action/save receipts. Keep their existing review routes and outcome wording. The task identities remain unchanged; 42 numbered tasks made up that release scope.
 
 Task 28's general bubbles, composer and chrome and task 37's History/chat lifecycle remain active. Task 37 does not wait for task 30's postponed outcome-word changes, and retains tool-write receipt content in its current presentation while task 35 waits. Task 17 keeps the existing proposal review route while task 29 waits. Task 49 remains active: its choices populate chat input and its kept draft is composer text, not a tool-action output.
 
@@ -53,6 +53,18 @@ Other, implicit 1/2/1, no count selector or Name/Equipment hints. Their existing
 composition remains; those Figma frames use the approved shared control from canonical section
 [1548:7642](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642).
 Unchanged and name-only edits preserve all legacy equipment/count values.
+
+## Native wave (tasks 53–72)
+
+The 2026-10-31 review of the Android app (native experience on the emulator, code quality, and the Codex backlog) produced tasks 53–72. The owner approved their new boards on 2026-10-31: 00.5, 00.6, 00.7, 02.20, the 02.17 revision, 02.21, 03.33–03.36 and 05.17, all ✅ Ready for dev on the Android page. Task 65's boards 27h and D6 are 🚧 and wait for the owner. Tasks 55, 62, 63 and 64 conform to boards that were already approved; 66–71 change no visuals. The designer renumbered the Android page the same day so that no number names two screens across the phone pages; task 66 carries the map into the repo.
+
+| Stage | Tasks |
+|---|---|
+| A | [53](53-predictive-back-and-motion.md), [55](55-sheets-above-the-keyboard.md), [57](57-load-zero-or-more.md), [59](59-rack-fits-and-scrolls.md), [63](63-sign-in-code-keyboard.md), [66](66-board-renumber-references.md), [69](69-gym-owns-its-telemetry-schema.md), [70](70-sweep.md) |
+| B | [54](54-nav-labels-and-top-bar.md), [56](56-routine-editor-asks-before-discard.md), [58](58-planned-rows-offered-load.md), [60](60-receipt-at-large-text.md), [61](61-undo-above-a-still-fab.md), [62](62-native-buttons-and-icons.md), [64](64-accessibility-pass.md), [71](71-one-gym-domain.md), [72](72-honest-reads-before-first-pull.md) |
+| C | [67](67-theme-roles.md), [68](68-split-the-store-and-the-room.md), [65](65-delete-account-clock-and-not-deleted.md) once its boards are approved |
+
+Stage A tasks touch disjoint areas and can run in parallel. 56 uses 53's back guard; 68 follows 53 so the room is not rewritten twice; 67 and 68 are wide refactors best done when the visual tasks have landed.
 
 ## Execution order
 
@@ -127,5 +139,25 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [50](50-routine-history-yours.md) — The routine editor's History, and *· yours* on a movement the lifter made
 - [51](51-connected-log-notes-signed-out.md) — Connected log follows iOS, names ChatGPT or Claude and says it saves notes; Notes signed out
 - [52](52-onboarding-gym-glimpse.md) — Onboarding Gym glimpse uses the approved compact headerless rack
+- [53](53-predictive-back-and-motion.md) — Predictive back and navigation motion: pushed screens follow the gesture, sheets keep the stock preview
+- [54](54-nav-labels-and-top-bar.md) — Navigation labels stay whole at large text; the top app bar tints on scroll
+- [55](55-sheets-above-the-keyboard.md) — Sheets stay below the status bar when the keyboard opens
+- [56](56-routine-editor-asks-before-discard.md) — The routine editor asks before Back discards unsaved changes; Keep editing on both discard questions
+- [57](57-load-zero-or-more.md) — Barbell and dumbbell loads are 0 or more on every surface; the field shows a real minus sign
+- [58](58-planned-rows-offered-load.md) — Planned rows show the load the rack will offer, never the word "last"
+- [59](59-rack-fits-and-scrolls.md) — The rack fits its number, scrolls as one at large text, and keeps a typed value when focus moves
+- [60](60-receipt-at-large-text.md) — The Finish receipt opens full height at large text and never hides Performed
+- [61](61-undo-above-a-still-fab.md) — Undo rises above a Weigh-in button that never moves, for the system's accessibility timeout
+- [62](62-native-buttons-and-icons.md) — Real Material buttons, a real disabled Log set, icons instead of text chevrons
+- [63](63-sign-in-code-keyboard.md) — Sign-in: a digit keyboard for the code, autofill for email and code
+- [64](64-accessibility-pass.md) — Accessibility pass: status lines announced, 48 dp targets, labels said once
+- [65](65-delete-account-clock-and-not-deleted.md) — **Pending owner approval.** Delete account: the wrong-clock refusal (27h) and a way out when nothing was deleted (D6)
+- [66](66-board-renumber-references.md) — Repo references follow the renumbered Android boards
+- [67](67-theme-roles.md) — Type and colour come from the theme's roles
+- [68](68-split-the-store-and-the-room.md) — Split TrainingStore into feature stores; screens take state and events
+- [69](69-gym-owns-its-telemetry-schema.md) — Gym owns its event schema; the observability doc is complete and checked
+- [70](70-sweep.md) — Sweep: deprecated APIs, dead code, warnings and the last known flake
+- [71](71-one-gym-domain.md) — One gym domain: the last app-side rules move into :gym:domain; the presentation package says what it is
+- [72](72-honest-reads-before-first-pull.md) — Before the first pull, nothing counts or claims from partial history
 
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.
