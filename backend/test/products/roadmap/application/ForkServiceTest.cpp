@@ -3,11 +3,16 @@
 #include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/LooseGraph.h"
+#include "platform/application/WriteObservation.h"
+#include "platform/ports/FailureReporter.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <memory>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -133,6 +138,21 @@ TEST(fork_reports_a_missing_source) {
   CHECK(h.trees.byId.empty());
 }
 
+TEST(fork_lets_an_infrastructure_failure_through_instead_of_calling_the_source_missing) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.trees.latticeLoadsFail = true;
+
+  bool threw = false;
+  try {
+    h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  CHECK(threw);
+  CHECK(h.trees.forkedFrom.empty());
+}
+
 TEST(fork_of_a_private_source_you_dont_own_is_a_missing_source) {
   Harness h;
   h.seedSource("t_priv", "Someone's private plan", uid("owner"), Visibility::private_);
@@ -239,4 +259,30 @@ TEST(the_signup_seam_leaves_an_unreadable_source_undescribed) {
   Harness h;
   ForkSignup signup{h.service};
   CHECK_FALSE(signup.describe("t_ghost").has_value());
+}
+
+TEST(the_signup_seam_reports_a_failed_fork_as_an_issue_and_a_missing_source_as_none) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> operations;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string&, const std::string&, const std::string&,
+                     const std::string&, const std::string&) override {
+      operations.push_back(operation);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  ForkSignup signup{h.service};
+
+  CHECK_FALSE(signup.plant("t_ghost", uid("me")).has_value());
+  CHECK_EQ(reporter.failures->operations, std::vector<std::string>{});
+
+  h.trees.latticeLoadsFail = true;
+  CHECK_FALSE(signup.plant("t_src", uid("me")).has_value());
+  CHECK_EQ(reporter.failures->operations, std::vector<std::string>{"roadmap.signup.fork"});
 }

@@ -119,7 +119,7 @@ codes rather than error sentences.
 Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this tree.
 Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A
 genesis seed reads `null`, unknown. A restore re-adds the step with a fresh stamp, so its
-`createdMs` moves; keeping the first addition needs a first-add register on the wire.
+`createdMs` becomes the time of the restore.
 
 `SyncStore` saves `{frame, progress, lastSeq}` in one IndexedDB record with transactional read-join-put.
 Coverage is rebuilt on subscribe. Saves are queued before sending, but not awaited; transaction

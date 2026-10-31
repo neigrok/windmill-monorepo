@@ -22,23 +22,19 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   std::string title;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(source));
-    try {
-      // Gated on the stored access row BEFORE a room is built. An absent source, one the forker can't
-      // read, and an infrastructure failure are indistinguishable: noSource → 404.
-      const std::optional<TreeAccess> access = registry_.accessOf(source);
-      if (!access || !canRead(std::optional<UserId>(owner), access->owner, access->visibility))
-        return {Outcome::noSource, {}};
-      TreeRoom* room = registry_.open(source);
-      if (!room) return {Outcome::noSource, {}};
-      // A stamp from the source's own clock dominates everything the source holds, so each step's
-      // fresh addition outranks any removal its record carries.
-      const Hlc plantedAt = room->nextStamp(clock_.nowMs());
-      state = LooseGraph(room->exportState()).forkState(plantedAt);
-      legend = room->exportLegend();
-      title = room->title().value;
-    } catch (const std::exception&) {
+    // Gated on the stored access row BEFORE a room is built. An absent source and one the forker
+    // can't read are indistinguishable: noSource → 404.
+    const std::optional<TreeAccess> access = registry_.accessOf(source);
+    if (!access || !canRead(std::optional<UserId>(owner), access->owner, access->visibility))
       return {Outcome::noSource, {}};
-    }
+    TreeRoom* room = registry_.open(source);
+    if (!room) return {Outcome::noSource, {}};
+    // A stamp from the source's own clock dominates everything the source holds, so each step's
+    // fresh addition outranks any removal its record carries.
+    const Hlc plantedAt = room->nextStamp(clock_.nowMs());
+    state = LooseGraph(room->exportState()).forkState(plantedAt);
+    legend = room->exportLegend();
+    title = room->title().value;
   }
 
   const TreeId newId{requestedId.empty() ? "t_" + tokens_.mint().digest.substr(0, 16) : requestedId};

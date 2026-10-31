@@ -362,15 +362,3 @@ test('Created: renaming, describing, recolouring, reordering, rewiring and delet
     knots: Date.UTC(2026, 9, 21, 9),
   });
 });
-
-// Life is one add-biased register: bringing a tombstone back needs an add stamp past its removal,
-// and that stamp replaces the first one on every replica. Keeping the first addition needs a
-// first-add register on the wire.
-test('Created: restoring a deleted step keeps its first addition time', { todo: 'needs a first-add register on the wire' }, () => {
-  const { play, created } = timedTree();
-  play(Date.UTC(2026, 9, 20, 9), { kind: 'CreateNode', id: 'knots', label: 'Knots' });
-  play(Date.UTC(2026, 9, 21, 9), { kind: 'DeleteNode', id: 'knots' });
-  play(Date.UTC(2026, 9, 22, 9), { kind: 'ResurrectNode', id: 'knots' });
-
-  assert.deepStrictEqual(created(), { knots: Date.UTC(2026, 9, 20, 9) });
-});
