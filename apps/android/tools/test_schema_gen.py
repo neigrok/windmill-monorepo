@@ -11,7 +11,7 @@ import schema_gen as gen
 
 class SchemaGeneratorTests(unittest.TestCase):
     def setUp(self):
-        self.scratch = tempfile.TemporaryDirectory(dir=gen.ANDROID / "build")
+        self.scratch = tempfile.TemporaryDirectory()
         self.addCleanup(self.scratch.cleanup)
         self.output = Path(self.scratch.name) / "generated"
 

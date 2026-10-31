@@ -10,7 +10,15 @@ internal fun Json.fields(key: String): Map<String, Json> = get(key)?.obj() ?: em
 internal fun Json.flag(key: String): Boolean = get(key)?.bool() ?: false
 internal val Json.recordKey: RecordKey get() = RecordKey(member("t").str(), RecordID(member("id")))
 
+// Every view reads the deltas of every entry, so an entry decodes its intent and predictions once:
+// Json is immutable, and a value is decoded again only when the entry holds a different instance.
 internal class Entry(var json: Json) {
+    private class Decoded<T>(val source: Json, val value: T)
+    private var decodedIntent: Decoded<Intent>? = null
+    private var decodedPredict: Decoded<List<Delta>>? = null
+    private var decodedDeltas: Decoded<List<Delta>>? = null
+    private fun <T> Decoded<T>?.of(source: Json, decode: (Json) -> T): Decoded<T> =
+        this?.takeIf { it.source === source } ?: Decoded(source, decode(source))
     val id get() = json.member("localId").str()
     val gestureId get() = json.member("gestureId").str()
     val scope get() = ScopeRef(json.member("scope"))
@@ -20,13 +28,15 @@ internal class Entry(var json: Json) {
         get() = json.member("state").str()
         set(value) { json = json.with("state" to Json.of(value)) }
     var intent: Intent
-        get() = Intent(json.member("intent"))
+        get() = decodedIntent.of(json.member("intent"), ::Intent).also { decodedIntent = it }.value
         set(value) { json = json.with("intent" to value.json) }
     var predict: List<Delta>
-        get() = json.items("predict").map(::Delta)
+        get() = json["predict"]?.let { source -> decodedPredict.of(source) { it.arr().map(::Delta) }.also { decodedPredict = it }.value }.orEmpty()
         set(value) { json = json.with("predict" to value.takeIf { it.isNotEmpty() }?.let { Json.Arr(it.map(Delta::json)) }) }
-    val deltas get() = intent.deltas + predict
+    val deltas: List<Delta> get() = decodedDeltas.of(json) { intent.deltas + predict }.also { decodedDeltas = it }.value
 }
+
+internal data class OutboxDelta(val entry: Entry, val delta: Delta)
 
 internal class ReplicaState(input: Json) {
     var meta = input.member("meta")

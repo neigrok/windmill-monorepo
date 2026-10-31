@@ -198,8 +198,6 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         return accepted?.ui() ?: throw TrainingRefused("account-changed", "The account changed. Open this again.")
     }
     suspend fun startSession(start: SessionStart, requireRoutine: Boolean = false): Session {
-        val open = read { TrainingLog(it).open }
-        if (open != null && open.id.text != start.id) throw TrainingRefused("session-already-open", "A workout is already open. Finish it first.")
         val action = StartSession(Id(start.id, EngineSession), start.routineId?.let { Id(it, EngineRoutine) }, Instant(start.startedAt))
         val id = try {
             apply(object : Action<StartSession.Loaded, Id<EngineSession>, GymRefusal> {
@@ -207,15 +205,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 override val refusals = action.refusals
                 override fun load(read: Reader) = action.load(read)
                 override fun decide(loaded: StartSession.Loaded, ids: IDSource): Decision<Id<EngineSession>, GymRefusal> {
-                    if (requireRoutine && !loaded.prior) {
-                        val open = loaded.state.drawn.firstOrNull {
-                            it.id != action.id && SessionRules.drawn(it, loaded.state.drawnSets, loaded.state.moment.now).isOpen
-                        }
-                        if (open != null) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, open.id.ref))
-                        if (loaded.routine == null) {
-                            return Decision.Refuse(GymRefusal.Gone(requireNotNull(action.routineId).ref, Refused.Path.predicted))
-                        }
-                    }
+                    val state = loaded.state
+                    val open = TrainingLog(state.drawn, state.drawnSets, state.catalogue, state.moment).open
+                    if (open != null && open.id != action.id) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, open.id.ref))
+                    if (requireRoutine && !loaded.prior && loaded.routine == null)
+                        return Decision.Refuse(GymRefusal.Gone(requireNotNull(action.routineId).ref, Refused.Path.predicted))
                     val decision = action.decide(loaded, ids)
                     if (decision !is Decision.Write) return decision
                     val command = requireNotNull(decision.plan.command)
@@ -231,7 +225,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             if (refused.code != Gym.Codes.sessionOpen) throw refused
             throw TrainingRefused("session-already-open", "A workout is already open. Finish it first.")
         }
-        return session(id.text)?.session ?: error("The engine does not hold the record it just wrote.")
+        return writtenSession(id.text) ?: error("The engine does not hold the record it just wrote.")
     }
     suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
         val value = engineSet(sessionId, write)
@@ -298,8 +292,16 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         reconcileImports()
         if (imports.hasUnsubmittedSets(sessionId)) throw TrainingUnanswered
         apply(FinishSession(Id(sessionId, EngineSession), Instant(finishedAtMs)))
-        return session(sessionId)?.session ?: throw missing("That workout is no longer on the log.")
+        return writtenSession(sessionId) ?: throw missing("That workout is no longer on the log.")
     }
+    // The workout a write just recorded, read by its id and its own sets; the history is read only
+    // when the log draws no such workout and a retained import may answer for it.
+    private fun writtenSession(id: String): Session? = read { reader ->
+        val identity = Id(id, EngineSession)
+        reader.repository(EngineSession).find(identity, ViewMode.drawn)?.let { session ->
+            SessionRules.drawn(session, reader.repository(EngineSet).children(identity, "sessionId", ViewMode.drawn), reader.moment.now).ui()
+        }
+    } ?: session(id)?.session
     suspend fun discardSession(sessionId: String, expectedReplica: String = engine.activeReplica(),
         expectedAnonymous: Boolean = anonymous) {
         remove(DiscardSession(Id(sessionId, EngineSession)), expectedReplica, expectedAnonymous, release = true)

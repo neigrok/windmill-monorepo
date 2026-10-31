@@ -576,6 +576,29 @@ class EngineTrainingTests {
             assertEquals(before, engine.snapshot())
         }
     }
+    @Test fun eachWorkoutWriteReturnsTheWorkoutAsTheHistoryDrawsIt() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val draft = RoutineDraft(name = "Pull", creationId = "routine_drawn").adding("bench-press")
+                .capturingMovements(room.store.catalog)
+            assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
+            val plan = PlanSnapshot(room.training.routine("routine_drawn")!!)
+            val start = room.now
+            val started = room.training.startSession(SessionStart("drawn_1", start, routineId = "routine_drawn"))
+            assertEquals(Session("drawn_1", start, null, "routine_drawn", plan), started)
+            assertEquals(room.training.session("drawn_1")!!.session, started)
+            room.training.appendSet("drawn_1", SetWrite("drawn_1_set", "bench-press", 40.0, 8, start + 10))
+            room.now = start + 10 + works.windmill.gym.domain.sync.SessionRules.staleAfterMs + 1_000
+            val redelivered = room.training.startSession(SessionStart("drawn_1", start, routineId = "routine_drawn"))
+            assertEquals("a redelivered start returns the workout as it closed itself at its last set",
+                Session("drawn_1", start, start + 10, "routine_drawn", plan), redelivered)
+            assertEquals(room.training.session("drawn_1")!!.session, redelivered)
+            val finished = room.training.finishSession("drawn_1", room.now)
+            assertEquals("the lifter's finish replaces the close the log drew",
+                Session("drawn_1", start, room.now, "routine_drawn", plan), finished)
+            assertEquals(room.training.session("drawn_1")!!.session, finished)
+        }
+    }
     @Test fun cursorUsesBothHalvesAndEverySetCountsTowardProgress() = runBlocking {
         engine().use { engine ->
             val gym = EngineTraining(engine)

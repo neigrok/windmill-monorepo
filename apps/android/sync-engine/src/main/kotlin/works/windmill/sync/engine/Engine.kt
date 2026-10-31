@@ -116,10 +116,12 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         device = device.copy()
         writing = true
         var durable = false
+        var deviceChanged = false
         try {
             val result = store.transaction { body(device.current()).also {
                 val next = device.json()
-                if (next != before.json()) store.metadata(next)
+                deviceChanged = next != before.json()
+                if (deviceChanged) store.metadata(next)
             } }
             durable = true
             crashCountdown?.let { left ->
@@ -134,7 +136,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             val oldCursors = before.replicas.firstOrNull { it.id == before.active }?.cursors.orEmpty()
             val newCursors = device.current().cursors
             val cursorScopes = (oldCursors.keys + newCursors.keys).filter { oldCursors[it] != newCursors[it] }.map(::ScopeRef).toSet()
-            val changed = before.json() != device.json() || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes
+            val changed = deviceChanged || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes
             if (changed) {
                 version++
                 changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.toSet() + changedRows,
@@ -249,35 +251,39 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }.catch { failure ->
         if (failure !is CommitFailure || failure.kind != CommitFailure.Kind.notWritable || lock.withLock { !closed }) throw failure
     }
-    internal fun view(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet()): Record? {
+    // The outbox deltas a scope's records draw, by record, in commit order: a view over many records
+    // indexes the outbox once instead of walking it for each record.
+    internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef): Map<RecordKey, List<OutboxDelta>> =
+        replica.entries().filter { it.scope == scope }.flatMap { entry -> entry.deltas.map { OutboxDelta(entry, it) } }.groupBy { it.delta.key }
+    internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef, key: RecordKey): List<OutboxDelta> =
+        replica.entries().filter { it.scope == scope }.flatMap { entry -> entry.deltas.filter { it.key == key }.map { OutboxDelta(entry, it) } }
+    internal fun view(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet(),
+        outbox: List<OutboxDelta> = outboxDeltas(replica, scope, key)): Record? {
         val row = store.row(replica.id, scope, key)
         var lattice = row?.lattice ?: Lattice()
         val texts = row?.texts?.mapValues { TextValueState(it.value.text, it.value.merged, false) }?.toMutableMap() ?: mutableMapOf()
         val serials = row?.serials?.toMutableMap() ?: mutableMapOf()
         var exists = row != null
         var pending = false; var held = false
-        for (entry in replica.entries()) {
-            if (entry.scope != scope) continue
-            for (delta in entry.deltas) {
-                if (delta.key != key || delta in gone) continue
-                held = held || entry.state == "held"
-                if (entry.state == "held" && mode == ViewMode.stored) continue
-                exists = true; pending = true
-                lattice = Join.record(registry.type(key.type), lattice, delta.lattice)
-                for ((name, text) in delta.texts) texts[name] = TextValueState(text.text, false, true)
-                serials.putAll(delta.serials)
-            }
+        for ((entry, delta) in outbox) {
+            if (delta in gone) continue
+            held = held || entry.state == "held"
+            if (entry.state == "held" && mode == ViewMode.stored) continue
+            exists = true; pending = true
+            lattice = Join.record(registry.type(key.type), lattice, delta.lattice)
+            for ((name, text) in delta.texts) texts[name] = TextValueState(text.text, false, true)
+            serials.putAll(delta.serials)
         }
         if (!exists) return null
         return Record(key.type, key.id, lattice.life, lattice.born, lattice.fields.mapValues { it.value.value },
             texts.mapValues { TextValue(it.value.text, it.value.merged, it.value.pending) }, serials, row?.rc, row?.ru,
             isVisible(registry.type(key.type), lattice, texts), pending, held)
     }
-    internal fun latticeView(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet()): Lattice? {
+    internal fun latticeView(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet(),
+        outbox: List<OutboxDelta> = outboxDeltas(replica, scope, key)): Lattice? {
         var lattice = store.row(replica.id, scope, key)?.lattice
-        for (entry in replica.entries()) if (entry.scope == scope && (mode == ViewMode.drawn || entry.state != "held")) {
-            for (delta in entry.deltas) if (delta.key == key && delta !in gone) lattice = Join.record(registry.type(key.type), lattice ?: Lattice(), delta.lattice)
-        }
+        for ((entry, delta) in outbox) if ((mode == ViewMode.drawn || entry.state != "held") && delta !in gone)
+            lattice = Join.record(registry.type(key.type), lattice ?: Lattice(), delta.lattice)
         return lattice
     }
     internal fun keys(replica: ReplicaState, scope: ScopeRef, type: String, field: String? = null, id: RecordID? = null): Set<RecordKey> {
@@ -308,7 +314,8 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         fun list(type: String, mode: ViewMode, field: String? = null, id: RecordID? = null): List<Record> = checked {
             lives(type)
             if (field != null && registry.type(type)?.fields?.get(field)?.ref == null) throw CommitFailure.malformed("reference-field")
-            keys(replicaState, scope, type, field, id).sorted().mapNotNull { view(replicaState, scope, it, mode) }
+            val outbox = outboxDeltas(replicaState, scope)
+            keys(replicaState, scope, type, field, id).sorted().mapNotNull { view(replicaState, scope, it, mode, outbox = outbox[it].orEmpty()) }
                 .filter { it.isVisible && (field == null || it.values[field] == id?.json) }
         }
         override fun confirmed(type: String, id: RecordID): Record? = checked {
@@ -354,9 +361,10 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         ensureOpen()
         val replica = device.current()
         val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().filter { it.scope == scope }.flatMap { it.deltas }.map { it.key }
+        val outbox = outboxDeltas(replica, scope)
         val records = allKeys.sorted().mapNotNull { key ->
-            val record = view(replica, scope, key, mode) ?: return@mapNotNull null
-            val lattice = latticeView(replica, scope, key, mode) ?: Lattice()
+            val record = view(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: return@mapNotNull null
+            val lattice = latticeView(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: Lattice()
             Json.Obj(buildList {
                 add("t" to Json.of(key.type)); add("id" to key.id.json); addAll(lattice.json.obj().toList())
                 if (record.texts.isNotEmpty()) add("x" to Json.Obj(record.texts.map { it.key to Json.of(it.value.text) }))

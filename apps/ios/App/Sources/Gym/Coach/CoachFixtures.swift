@@ -613,7 +613,8 @@ nonisolated struct CoachBoard {
       turns: [Turn(question: shoulder, answer: "Bench stays as logged. One change for today, one for next time.", proposals: ["board-proposal"], workout: lighterRow)]),
     "summary": CoachBoard(
       routines: change.routines + [(id: "board-lower", name: "Lower A", entries: [entry("back-squat", 1, 5, 80), entry("romanian-deadlift", 3, 8, 82.5),
-                                                                                   entry("landmine-squat", 3, 10, 140), entry("standing-calf-raise", 3, 12, 45)])],
+                                                                                   entry("landmine-squat", 3, 10, 140), entry("standing-calf-raise", 3, 12, 45),
+                                                                                   entry("hip-thrust", 3, 10, 100)])],
       proposals: change.proposals, turns: change.turns),
     "routine-changed": { var board = change; board.editedAfter = (id: "board-routine", entries: [entry("bench-press", 5, 5, 85)] + pushA.dropFirst()); return board }(),
     "bench": one("Is Push A still doing anything?", "Try 3 sets of 3 at 90 kg for a heavier top set.",

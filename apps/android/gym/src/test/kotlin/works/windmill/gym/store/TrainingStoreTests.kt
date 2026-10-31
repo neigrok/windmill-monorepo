@@ -23,6 +23,7 @@ import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Instant
 import works.windmill.domain.kit.Outcome
 import works.windmill.gym.coach.AskAnswer
 import works.windmill.gym.coach.AskCap
@@ -51,6 +52,8 @@ import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.coach.ThreadOutcome
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.sync.ImportSession
+import works.windmill.gym.domain.sync.ImportedSet
 import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.platform.net.Refusal
@@ -63,6 +66,8 @@ import works.windmill.gym.domain.sync.Proposal as EngineProposal
 import works.windmill.gym.domain.sync.Routine as EngineRoutine
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
+import works.windmill.gym.domain.sync.Session as EngineSession
+import works.windmill.gym.domain.sync.TrainingSet as EngineSet
 
 private fun refusal(status: Int, code: String? = null, message: String) =
     WindmillApiException.Refused(status, Refusal(message = message, code = code))
@@ -1069,13 +1074,13 @@ class TrainingStoreTests {
     fun testARowWalkedDownToWithLoadOlderFollowsItsOwnCorrection() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(EngineRoomFixture.server())
+            val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
             repeat(60) { index ->
                 val id = "session${index.toString().padStart(3, '0')}"
                 val startedAt = room.now - 100_000 + index * 1_000L
-                room.training.startSession(SessionStart(id, startedAt))
-                room.training.appendSet(id, SetWrite("set${index.toString().padStart(5, '0')}", "bench-press", 100.0, 5,
-                    startedAt + 100))
-                room.training.finishSession(id, startedAt + 500)
+                val set = ImportedSet(Id("set${index.toString().padStart(5, '0')}", EngineSet), Id("bench-press", EngineExercise),
+                    100.0, 5, Instant(startedAt + 100))
+                assertTrue(runner.run(ImportSession(Id(id, EngineSession), Instant(startedAt), Instant(startedAt + 500), listOf(set))) is Outcome.Committed)
             }
             room.store.connect(room.account())
             room.store.loadOlder()
