@@ -11,7 +11,10 @@ the system may dismiss that confirmation outside its popover on iOS 26. Tests co
 as well as committed deletion. The app has no Undo band or delayed removal task.
 
 Routine summaries are sheets with Close, Edit and Start. Starting waits for dismissal before
-opening the workout. Workout pages use the native pager and page control. The compact ledger
+opening the workout. Start stands on the sheet's system bottom bar. On iOS 26 a bar re-dresses
+`.glassProminent` as its own compact item, ignoring the label's width, and hiding the item's shared
+background removes its fill too, so a primary that spans a bar draws its tinted glass itself
+(`RoomPrimaryStyle(onBar:)`). Workout pages use the native pager and page control. The compact ledger
 contains the saved sets and preserves access to earlier rows without a duplicate statistics strip.
 
 Coach history invalidates reads at both the start and completion of deletion, so a concurrent
