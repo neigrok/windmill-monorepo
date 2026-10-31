@@ -820,6 +820,31 @@ class SyncRuntimeTests {
         }
     }
 
+    @Test fun aPullStepAlreadyUnderWayWhenTheAppLeavesSendsNoRequest() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.runtime.enter()
+            withTimeout(2_000) { fixture.transport.opened.await() }
+            until { fixture.transport.pulling.get() > 0 }
+            val inside = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            fixture.clock.beforeReading = {
+                if (Thread.currentThread().name.startsWith("held-puller") && !inside.isCompleted) { inside.complete(Unit); release.await() }
+            }
+            @Suppress("UNCHECKED_CAST")
+            (SyncRuntime::class.java.getDeclaredField("pullWanted").apply { isAccessible = true }.get(fixture.runtime) as MutableSet<ScopeRef>).add(product)
+            newSingleThreadContext("held-puller").use { held ->
+                val step = async(held) { fixture.runtime.pullerStep() }
+                withTimeout(2_000) { inside.await() }
+                val pulls = fixture.transport.pulling.get()
+                fixture.runtime.leave()
+                release.countDown()
+                withTimeout(2_000) { step.await() }
+                assertEquals("a step that passed its foreground check before the leave sends nothing after it",
+                    pulls, fixture.transport.pulling.get())
+            }
+        }
+    }
+
     @Test fun anonymousReplicaPullsItsExplicitReadableTreeWithoutCredentialsOrLive() = runBlocking {
         Fixture(bound = false).use { fixture ->
             val tree = ScopeRef.tree("b_00000001")
