@@ -1,8 +1,5 @@
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 
-export { kindOptions } from '../model/Legend.js';
-export { gateOf } from '../model/UnlockRules.js';
-
 const SNIPPET_PAD = 40; // characters kept either side of a description hit
 
 // A section survives when its head or one of its rows match; it keeps its head either way. `matches`

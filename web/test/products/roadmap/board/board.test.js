@@ -5,28 +5,24 @@ import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { Board, BOARD_SORTS, DONE_RECENT_LIMIT } from '../../../../src/products/roadmap/board/Board.js';
 
-function stamp(iso) {
-  return { ms: Date.parse(iso), counter: 0, actor: 'device' };
-}
-
 function learnToSail(extra = []) {
-  const imported = stamp('2026-10-20T09:00:00Z');
+  const imported = Date.parse('2026-10-20T09:00:00Z');
   return new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
-    { id: 'course', label: 'Choose a sailing course', prerequisites: [], color: 'terracotta', createdAt: imported,
+    { id: 'course', label: 'Choose a sailing course', prerequisites: [], color: 'terracotta', createdMs: imported,
       description: 'Book a beginner course with time on the water.' },
-    { id: 'parts', label: 'Name the boat parts', prerequisites: ['course'], color: 'sky', createdAt: imported,
+    { id: 'parts', label: 'Name the boat parts', prerequisites: ['course'], color: 'sky', createdMs: imported,
       description: 'Identify the mast, boom, hull and rudder.' },
-    { id: 'rig', label: 'Rig the boat', prerequisites: ['parts'], color: 'terracotta', createdAt: imported,
+    { id: 'rig', label: 'Rig the boat', prerequisites: ['parts'], color: 'terracotta', createdMs: imported,
       description: 'Set the sails and check the boat before launch.' },
-    { id: 'bowline', label: 'Tie a bowline', prerequisites: ['parts'], color: 'olive', createdAt: stamp('2026-10-22T10:00:00Z'),
+    { id: 'bowline', label: 'Tie a bowline', prerequisites: ['parts'], color: 'olive', createdMs: Date.parse('2026-10-22T10:00:00Z'),
       description: 'Tie a secure loop that is easy to undo.' },
-    { id: 'wind', label: 'Read the wind', prerequisites: ['parts'], color: 'sky', createdAt: stamp('2026-10-21T10:00:00Z'),
+    { id: 'wind', label: 'Read the wind', prerequisites: ['parts'], color: 'sky', createdMs: Date.parse('2026-10-21T10:00:00Z'),
       description: 'Learn to spot shifts in wind direction.' },
-    { id: 'dock', label: 'Leave the dock', prerequisites: ['rig', 'wind'], color: 'terracotta', createdAt: imported,
+    { id: 'dock', label: 'Leave the dock', prerequisites: ['rig', 'wind'], color: 'terracotta', createdMs: imported,
       description: 'Cast off safely and steer clear of the dock.' },
-    { id: 'triangle', label: 'Sail a triangle', prerequisites: ['dock'], color: 'olive', createdAt: imported,
+    { id: 'triangle', label: 'Sail a triangle', prerequisites: ['dock'], color: 'olive', createdMs: imported,
       description: 'Practise reaching, tacking and returning to start.' },
-    { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold', createdAt: imported,
+    { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold', createdMs: imported,
       description: 'Plan and sail a short route on your own.' },
     ...extra,
   ] });
@@ -47,7 +43,7 @@ function render(board) {
       `${column.name} ${column.count}`,
       ...column.cards.map((card) => `  ${card.step.label}${reason(card)}`),
     ]),
-    `progress ${board.progress.done}/${board.progress.total}`,
+    `progress ${board.overall.done}/${board.overall.total}`,
   ].join('\n');
 }
 
@@ -101,8 +97,8 @@ test('Board — completing Read the wind moves Leave the dock up next and shorte
     '  Sail a triangle · needs Leave the dock +0 · 1 to go',
     '  Sail solo · needs Sail a triangle +1 · 3 to go',
     'upNext 2',
-    '  Tie a bowline',
     '  Leave the dock · unlocks Sail a triangle +0',
+    '  Tie a bowline',
     'done 4',
     '  Read the wind',
     '  Rig the boat',
@@ -143,7 +139,7 @@ test('Board — a new step behind Read the wind arrives locked, one to go, and g
     ['Sail a triangle', 'Leave the dock', 0, 2],
     ['Sail solo', 'Sail a triangle', 1, 4],
   ]);
-  assert.deepEqual(board.progress, { done: 3, total: 9 });
+  assert.deepEqual(board.overall, { done: 3, total: 9 });
   assert.equal(board.columnOf('reef'), 'locked');
 });
 
@@ -174,17 +170,17 @@ test('Board — roadmap order breaks a distance tie by most unlocks, then keeps 
   ].join('\n'));
 });
 
-test('Board — up next reads nearest the roots first, whatever it unlocks', () => {
+test('Board — up next has nothing to go, so it reads most unlocks first, however deep the step sits', () => {
   const tree = new SkillTree({ id: 't', title: 'T', nodes: [
     { id: 'r', label: 'Root', prerequisites: [] },
     { id: 'a', label: 'A', prerequisites: ['r'] },
-    { id: 'far', label: 'Far', prerequisites: ['a'] },
     { id: 'near', label: 'Near', prerequisites: ['r'] },
+    { id: 'far', label: 'Far', prerequisites: ['a'] },
     { id: 'z', label: 'Z', prerequisites: ['far'] },
   ] });
   const board = new Board(tree, { completed: new Set(['r', 'a']), completedAt: { r: 1, a: 2 } });
 
-  assert.deepEqual(board.upNext.cards.map((card) => [card.id, card.unlockCount]), [['near', 0], ['far', 1]]);
+  assert.deepEqual(board.upNext.cards.map((card) => [card.id, card.unlockCount]), [['far', 1], ['near', 0]]);
 });
 
 test('Board — the kind filter is an OR across hues and narrows every column, never progress', () => {
@@ -311,6 +307,21 @@ test('Board — Done folds above twelve to the twelve newest completions, and a 
   });
 });
 
+test('Board — under Created, Done still folds to its twelve newest completions', () => {
+  const nodes = Array.from({ length: 13 }, (_, index) => ({
+    id: `s${index}`, label: `Step ${index}`, prerequisites: [], createdMs: 10_000 + index,
+  }));
+  const tree = new SkillTree({ id: 't', title: 'T', nodes });
+  const completedAt = Object.fromEntries(nodes.map((node, index) => [node.id, 1000 + index]));
+  const recent = new Board(tree, { completed: new Set(nodes.map((node) => node.id)), completedAt }, { sort: 'oldest' }).recentDone();
+
+  assert.deepEqual({ ids: recent.cards.map((card) => card.id), total: recent.total, folded: recent.folded }, {
+    ids: ['s12', 's11', 's10', 's9', 's8', 's7', 's6', 's5', 's4', 's3', 's2', 's1'],
+    total: 13,
+    folded: true,
+  });
+});
+
 test('Board — exactly twelve done steps do not fold', () => {
   const nodes = Array.from({ length: 12 }, (_, index) => ({ id: `s${index}`, label: `Step ${index}`, prerequisites: [] }));
   const tree = new SkillTree({ id: 't', title: 'T', nodes });
@@ -319,7 +330,7 @@ test('Board — exactly twelve done steps do not fold', () => {
   assert.deepEqual({ count: recent.cards.length, total: recent.total, folded: recent.folded }, { count: 12, total: 12, folded: false });
 });
 
-test('Board — Created sorts inside each column, newest or oldest, ties in authored order', () => {
+test('Board — Created sorts Locked and Up next, newest or oldest, ties in authored order; Done stays newest completed', () => {
   const tree = learnToSail();
 
   assert.equal(render(new Board(tree, initialProgress(), { sort: 'newest' })), [
@@ -331,27 +342,28 @@ test('Board — Created sorts inside each column, newest or oldest, ties in auth
     '  Tie a bowline',
     '  Read the wind · unlocks Leave the dock +0',
     'done 3',
-    '  Choose a sailing course',
-    '  Name the boat parts',
     '  Rig the boat',
+    '  Name the boat parts',
+    '  Choose a sailing course',
     'progress 3/8',
   ].join('\n'));
   assert.deepEqual(new Board(tree, initialProgress(), { sort: 'oldest' }).upNext.cards.map((card) => card.id), ['wind', 'bowline']);
   assert.deepEqual(BOARD_SORTS, ['roadmap', 'newest', 'oldest']);
 });
 
-test('Board — an unknown creation date sorts last in both directions; the genesis stamp is no date', () => {
+test('Board — an unknown creation date sorts last in both directions, ties in authored order', () => {
   const tree = new SkillTree({ id: 't', title: 'T', nodes: [
     { id: 'undated', label: 'Undated', prerequisites: [] },
-    { id: 'seeded', label: 'Seeded', prerequisites: [], createdAt: { ms: 1, counter: 0, actor: 'genesis' } },
-    { id: 'old', label: 'Old', prerequisites: [], createdAt: { ms: 5000, counter: 0, actor: 'a' } },
-    { id: 'later', label: 'Later', prerequisites: [], createdAt: { ms: 5000, counter: 1, actor: 'a' } },
-    { id: 'new', label: 'New', prerequisites: [], createdAt: { ms: 9000, counter: 0, actor: 'a' } },
+    { id: 'unknown', label: 'Unknown', prerequisites: [], createdMs: null },
+    { id: 'old', label: 'Old', prerequisites: [], createdMs: 5000 },
+    { id: 'later', label: 'Later', prerequisites: [], createdMs: 7000 },
+    { id: 'twin', label: 'Twin', prerequisites: [], createdMs: 7000 },
+    { id: 'new', label: 'New', prerequisites: [], createdMs: 9000 },
   ] });
   const none = { completed: new Set(), completedAt: {} };
 
-  assert.deepEqual(new Board(tree, none, { sort: 'newest' }).upNext.cards.map((card) => card.id), ['new', 'later', 'old', 'undated', 'seeded']);
-  assert.deepEqual(new Board(tree, none, { sort: 'oldest' }).upNext.cards.map((card) => card.id), ['old', 'later', 'new', 'undated', 'seeded']);
+  assert.deepEqual(new Board(tree, none, { sort: 'newest' }).upNext.cards.map((card) => card.id), ['new', 'later', 'twin', 'old', 'undated', 'unknown']);
+  assert.deepEqual(new Board(tree, none, { sort: 'oldest' }).upNext.cards.map((card) => card.id), ['old', 'later', 'twin', 'new', 'undated', 'unknown']);
 });
 
 test('Board — an unknown sort is refused, and columnOf reads the whole roadmap whatever is shown', () => {

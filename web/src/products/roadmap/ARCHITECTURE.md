@@ -46,8 +46,9 @@ parent per node for layout: same-kind parents first, then depth and id; siblings
 fractional order and creation-stamp order.
 
 `UnlockRules.derive` is the authority for locked, available and complete states; the same file
-answers what a step still owes (`owedStepsOf`, `gateOf`) and what completing it opens (`unlocksOf`).
-An edge inherits its source node's state. Legend order lives in the lattice and is written by `ReorderKinds`;
+answers what a step still owes (`owedStepsOf` and `gateOf` for one step, `owedCounts` for every
+step in one pass) and what completing it opens (`unlocksOf`). An edge inherits its source node's
+state. Legend order lives in the lattice and is written by `ReorderKinds`;
 `Legend`'s array operations also serve import drafts. Genesis kinds and stamps come from
 `packages/api-contract/genesis.js`, checked by `vite.config.js`.
 

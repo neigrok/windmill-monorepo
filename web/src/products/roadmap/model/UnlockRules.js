@@ -42,6 +42,35 @@ export function owedStepsOf(tree, states, id) {
   return [...owed.values()];
 }
 
+// owedStepsOf's count for every unfinished step in one topological pass: a step owes its unmet
+// parents and everything they owe, held as one bitset row over the unfinished steps.
+export function owedCounts(tree, states) {
+  const open = tree.topoOrder().filter((id) => states.get(id) !== 'complete');
+  const slotOf = new Map(open.map((id, slot) => [id, slot]));
+  const words = Math.ceil(open.length / 32);
+  const owed = new Uint32Array(open.length * words);
+  const counts = new Map();
+
+  for (const id of open) {
+    const row = slotOf.get(id) * words;
+    for (const parent of unmetPrerequisitesOf(tree, states, id)) {
+      const parentSlot = slotOf.get(parent.id);
+      for (let word = 0; word < words; word++) owed[row + word] |= owed[parentSlot * words + word];
+      owed[row + (parentSlot >>> 5)] |= 1 << (parentSlot & 31);
+    }
+    let count = 0;
+    for (let word = 0; word < words; word++) {
+      let bits = owed[row + word];
+      bits -= (bits >>> 1) & 0x55555555;
+      bits = (bits & 0x33333333) + ((bits >>> 2) & 0x33333333);
+      count += Math.imul((bits + (bits >>> 4)) & 0x0f0f0f0f, 0x01010101) >>> 24;
+    }
+    counts.set(id, count);
+  }
+
+  return counts;
+}
+
 // The children THIS completion ALONE would open: not done, every other prerequisite already done.
 export function unlocksOf(tree, states, id) {
   return tree.childrenOf(id).filter((child) =>
