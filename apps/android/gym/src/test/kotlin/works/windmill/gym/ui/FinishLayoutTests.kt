@@ -12,7 +12,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -108,4 +110,73 @@ class FinishLayoutTests {
         compose.onNodeWithText(FinishCoach.action).assertIsDisplayed()
     }
 
+    @Test
+    fun atLargeTextTheReceiptOpensFullHeightWrapsTheFactsTwoToARowAndScrollsToPerformed() {
+        val sets = List(5) { TrainingSet("set_$it", "bench-press", weightKg = 80.0, reps = 6, completedAtMs = 2_000L + it) }
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 3_121_000, plan = PlanSnapshot("Push A")),
+            sets, null, suggestsKeep = true)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                GymMaterial {
+                    Box(Modifier.height(592.dp).testTag("Sheet")) {
+                        FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell")),
+                            onShareWithCoach = {}, onKeep = {})
+                    }
+                }
+            }
+        }
+        val sheet = compose.onNodeWithTag("Sheet").fetchSemanticsNode().boundsInRoot
+        val receipt = compose.onNodeWithTag("Finish receipt").fetchSemanticsNode().boundsInRoot
+        assertEquals(sheet.height, receipt.height, 0.5f)
+
+        val duration = compose.onNodeWithText("Duration").fetchSemanticsNode().boundsInRoot
+        val count = compose.onNodeWithText("Sets").fetchSemanticsNode().boundsInRoot
+        val volume = compose.onNodeWithText("Volume").fetchSemanticsNode().boundsInRoot
+        assertEquals(duration.top, count.top, 0.5f)
+        assertTrue(count.left >= duration.right - 0.5f)
+        assertTrue(volume.top > duration.bottom)
+        assertEquals(duration.left, volume.left, 0.5f)
+        val total = compose.onNodeWithText("2,400 kg").fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        total.config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+        assertEquals(1, layouts.single().lineCount)
+        assertFalse(layouts.single().hasVisualOverflow)
+
+        val band = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().boundsInRoot.top
+        for (text in listOf("Performed", "Bench Press", "5 × 6 · 80 kg total")) {
+            val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("$text ends at ${node.bottom}, under the band at $band", node.bottom <= band + 0.5f)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w412dp-h915dp-xhdpi")
+    fun signedOutAtNormalTextEveryFactAndPerformedStandAboveThePinnedActions() {
+        val catalog = listOf(Exercise("bench-press", "Bench Press", "press", "barbell"),
+            Exercise("overhead-press", "Overhead Press", "press", "barbell"),
+            Exercise("incline-press", "Incline Dumbbell Press", "press", "dumbbell", loadCount = 2))
+        val full = List(3) { TrainingSet("bench_$it", "bench-press", weightKg = 75.0 + it * 2.5, reps = 6 + it, completedAtMs = 2_000L + it) } +
+            TrainingSet("ohp", "overhead-press", weightKg = 47.5, reps = 6, completedAtMs = 3_000) +
+            TrainingSet("incline", "incline-press", weightKg = 24.0, reps = 10, completedAtMs = 4_000)
+        val slight = full.drop(2)
+        val workout = mutableStateOf(full)
+        compose.setContent {
+            GymMaterial {
+                Box(Modifier.height(839.dp)) {
+                    FinishScreen(FinishedSession(Session("first", startedAtMs = 1_000, finishedAtMs = 3_121_000, plan = PlanSnapshot("Push A")),
+                        workout.value, null, suggestsKeep = true), catalog, onShareWithCoach = {}, onKeep = {})
+                }
+            }
+        }
+        for (sets in listOf(full, slight)) {
+            compose.runOnIdle { workout.value = sets }
+            compose.onNodeWithText(if (sets == full) "Well done." else "Ended early.").assertIsDisplayed()
+            val band = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().boundsInRoot.top
+            for (text in listOf("Duration", "Sets", "Volume", "Only on this phone · Keep it", "Performed", "Bench Press", "Overhead Press",
+                                "Incline Dumbbell Press", "1 × 10 · 24 kg each")) {
+                val node = compose.onNodeWithText(text).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                assertTrue("$text ends at ${node.bottom}, under the band at $band", node.bottom <= band + 0.5f)
+            }
+        }
+    }
 }

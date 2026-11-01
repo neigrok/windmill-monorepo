@@ -27,6 +27,93 @@
         "tap": "Bench Press"
       },
       {
+        "wait": "Add"
+      },
+      {
+        "tap": "Add"
+      },
+      {
+        "tap": "Add movement"
+      },
+      {
+        "tap": "Bench"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "Overhead"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "wait": "Add"
+      },
+      {
+        "tap": "Add"
+      },
+      {
+        "tap": "Add movement"
+      },
+      {
+        "tap": "Overhead"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "Incline"
+      },
+      {
+        "tap": "Incline Dumbbell Press"
+      },
+      {
+        "wait": "Add"
+      },
+      {
+        "tap": "Add"
+      },
+      {
         "tap": "Save"
       },
       {
@@ -48,6 +135,27 @@
         "tap": "Log set"
       },
       {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "tap": "Incline Dumbbell Press"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
         "tap": "Log set"
       },
       {
@@ -55,6 +163,9 @@
       },
       {
         "wait": "Only on this phone \u00b7 Keep it"
+      },
+      {
+        "wait": "Incline Dumbbell Press"
       },
       {
         "wait": "Done"
