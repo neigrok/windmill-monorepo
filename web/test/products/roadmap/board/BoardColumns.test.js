@@ -343,6 +343,39 @@ test('Chromium: on a tablet the arrow keys cross into the rail’s Show and back
   }
 });
 
+test('Chromium: at 744 the rail stacks its heading, so Locked stands whole over its compact count on the card surface', async () => {
+  await ready;
+  const errors = [];
+  const nodes = coastalNodes();
+  const page = await openBoardPage({ viewport: { width: 744, height: 960 }, band: 'tablet', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
+  try {
+    await page.getByRole('button', { name: 'Show Done' }).click();
+    const heading = await page.locator('.st-board-columns-rail').evaluate((rail) => {
+      const title = rail.querySelector('.st-board-columns-title');
+      const count = rail.querySelector('.st-board-columns-count');
+      const titleBox = title.getBoundingClientRect();
+      const countBox = count.getBoundingClientRect();
+      const show = rail.querySelector('.st-board-columns-show').getBoundingClientRect();
+      const fill = (element) => getComputedStyle(element).backgroundColor;
+      const probe = document.createElement('i');
+      probe.style.backgroundColor = 'var(--surface-card)';
+      rail.append(probe);
+      const card = fill(probe);
+      probe.remove();
+      return {
+        rail: Math.round(rail.getBoundingClientRect().width),
+        title: `${title.textContent} · ${title.scrollWidth <= title.clientWidth ? 'whole' : 'clipped'} · ${Math.round(titleBox.height)}px row`,
+        count: `${count.textContent} · ${countBox.top >= titleBox.bottom - 0.5 ? 'under the title' : 'beside it'} · ${fill(count) === card ? 'card fill' : 'other fill'}`,
+        show: `${Math.round(show.height)}px · ${Math.round(show.width) === Math.round(rail.clientWidth - 16) ? 'full width' : 'narrower'}`,
+      };
+    });
+    assert.deepEqual(heading, { rail: 136, title: 'Locked · whole · 44px row', count: '1.8k · under the title · card fill', show: '44px · full width' });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
 test('Chromium: a step that just became up next wakes and settles; the Board’s first paint wakes nothing', async () => {
   await ready;
   const errors = [];

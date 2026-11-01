@@ -112,6 +112,21 @@
   border-radius: var(--radius-lg);
   background: var(--st-board-column-ground);
 }
+/* The rail's heading stacks: the title keeps the 44px row the full columns' titles stand in, the count chip sits under it
+   on the card surface, one step off the sunken rail. */
+.st-board-columns-rail .st-board-columns-heading {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  height: auto;
+}
+.st-board-columns-rail .st-board-columns-title {
+  max-width: 100%;
+  line-height: 44px;
+}
+.st-board-columns-rail .st-board-columns-count {
+  background: var(--surface-card);
+}
 .st-board-columns-deck {
   display: flex;
   flex-direction: column;
