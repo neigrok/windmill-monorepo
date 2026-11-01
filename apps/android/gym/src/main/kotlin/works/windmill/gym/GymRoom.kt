@@ -1,6 +1,7 @@
 package works.windmill.gym
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.Context
 import android.view.accessibility.AccessibilityManager
 import android.view.WindowManager
@@ -63,9 +64,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -771,7 +772,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val origin = account.origin
             val sharing = remember(origin) { WorkoutShareActions(origin, store::share, store::revokeShare) }
             val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
-            val clipboard = LocalClipboardManager.current
+            val clipboard = LocalClipboard.current
             val logShareScope = key(account.identityRevision, store) { rememberCoroutineScope() }
 
             // The log row's long press. The card inside the session mints the same link and says more about
@@ -791,7 +792,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     when (minted) {
                         is GymResult.Ok -> {
                             try {
-                                clipboard.setText(AnnotatedString(WorkoutSharing.link(minted.value, origin)))
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", WorkoutSharing.link(minted.value, origin))))
                             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                             catch (failure: Exception) {
                                 telemetry.failure("gym.share", failure)

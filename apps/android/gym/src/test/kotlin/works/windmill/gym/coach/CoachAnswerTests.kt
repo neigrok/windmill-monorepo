@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
@@ -80,13 +80,13 @@ class CoachAnswerTests {
 
     @Test
     fun aSecondParagraphCopyMenuAndExpandedReceiptSurviveReplacementByOneParagraph() {
-        lateinit var clipboard: ClipboardManager
+        lateinit var clipboard: Clipboard
         val initial = "First paragraph.\n\nCafé\n東京"
         val final = "Café\n東京 — 🏋🏽‍♀️ é\nFinal words."
         val text = androidx.compose.runtime.mutableStateOf(initial)
         val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes"), AskStep("save_note")))
         compose.setContent { GymMaterial {
-            clipboard = LocalClipboardManager.current
+            clipboard = LocalClipboard.current
             CoachAnswer(text.value, receipt, emptyList(), 0)
         } }
         compose.onNodeWithText("Read nothing from your log").performClick()
@@ -94,7 +94,7 @@ class CoachAnswerTests {
         compose.onNodeWithText("Café\n東京").performTouchInput { longClick() }
         compose.runOnIdle { text.value = final }
         compose.onNodeWithText("Copy answer").assertIsDisplayed().performClick()
-        compose.runOnIdle { assertEquals(final, clipboard.getText()?.text) }
+        compose.runOnIdle { assertEquals(final, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
         compose.onNodeWithText("Read your notes").assertIsDisplayed()
         compose.onNodeWithText("Saved a note").assertIsDisplayed()
         compose.onNodeWithText("What Coach read").assertDoesNotExist()
@@ -102,16 +102,16 @@ class CoachAnswerTests {
 
     @Test
     fun bothSpeakersCopyExactMultilineTextThroughLongPressAndAccessibleActions() {
-        lateinit var clipboard: ClipboardManager
+        lateinit var clipboard: Clipboard
         val question = "My question.\nSecond line with 2 × 5."
         val answer = "First paragraph.\n\nSecond paragraph — exact text."
         compose.setContent { GymMaterial {
-            clipboard = LocalClipboardManager.current
+            clipboard = LocalClipboard.current
             Column { CoachQuestion(question); CoachAnswer(answer, null, emptyList(), 0) }
         } }
         compose.onNodeWithText(question).performTouchInput { longClick() }
         compose.onNodeWithText("Copy question").performClick()
-        compose.runOnIdle { assertEquals(question, clipboard.getText()?.text) }
+        compose.runOnIdle { assertEquals(question, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
         val message = compose.onNodeWithText("First paragraph.")
         compose.onNodeWithText("Second paragraph — exact text.").assertIsDisplayed()
         val actions = message.fetchSemanticsNode().config[SemanticsActions.CustomActions]
@@ -119,18 +119,18 @@ class CoachAnswerTests {
             assertEquals(listOf("Copy answer"), actions.map { it.label })
             actions.single().action()
         }
-        compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
+        compose.runOnIdle { assertEquals(answer, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
         compose.onNodeWithText("First paragraph.").performTouchInput { longClick() }
         compose.onNodeWithText("Copy answer").performClick()
-        compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
+        compose.runOnIdle { assertEquals(answer, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
     }
 
     @Test
     fun markdownRendersAsStyledBlocksAndCopiesAsPlainText() {
-        lateinit var clipboard: ClipboardManager
+        lateinit var clipboard: Clipboard
         val answer = "## Your week\n\n**Bold** start\n\n- Squat\n- Bench\n- Row\n\n1. Warm up\n2. Work"
         compose.setContent { GymMaterial {
-            clipboard = LocalClipboardManager.current
+            clipboard = LocalClipboard.current
             CoachAnswer(answer, null, emptyList(), 0)
         } }
         val bold = compose.onNodeWithText("Bold start").fetchSemanticsNode().config[SemanticsProperties.Text].single { it.text == "Bold start" }
@@ -147,7 +147,7 @@ class CoachAnswerTests {
         compose.onNodeWithText("Bold start").performTouchInput { longClick() }
         compose.onNodeWithText("Copy answer").performClick()
         compose.runOnIdle {
-            assertEquals("Your week\n\nBold start\n\n- Squat\n- Bench\n- Row\n\n1. Warm up\n2. Work", clipboard.getText()?.text)
+            assertEquals("Your week\n\nBold start\n\n- Squat\n- Bench\n- Row\n\n1. Warm up\n2. Work", clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString())
         }
     }
 

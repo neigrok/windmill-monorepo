@@ -8,8 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
@@ -436,12 +436,12 @@ class AskScreenTests {
 
     @Test
     fun partialToCompletedKeepsTheOpenMenuAndCopiesAllReceivedTextBeforeRevealFinishes() {
-        lateinit var clipboard: ClipboardManager
+        lateinit var clipboard: Clipboard
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "Partial café", revision = 1))
         compose.setContent {
-            clipboard = LocalClipboardManager.current
+            clipboard = LocalClipboard.current
             AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
@@ -460,7 +460,7 @@ class AskScreenTests {
             .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle {
             assertTrue(copy())
-            assertEquals(whole, clipboard.getText()?.text)
+            assertEquals(whole, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString())
         }
         compose.mainClock.autoAdvance = true
         scope.cancel()

@@ -5,15 +5,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.AnnotatedString
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Locale
@@ -35,7 +35,7 @@ class CoachBubbleTests {
     @get:Rule val compose = createComposeRule()
 
     @Test fun aPlainTapDoesNothingAndBothCopyDoorsEmitOnlyTheBoundedResult() {
-        lateinit var clipboard: ClipboardManager
+        lateinit var clipboard: Clipboard
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
@@ -44,7 +44,7 @@ class CoachBubbleTests {
         val question = "My private question.\nCafé 東京"
         val answer = "First paragraph.\n\nSecond paragraph 🏋🏽‍♀️"
         compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
-            clipboard = LocalClipboardManager.current
+            clipboard = LocalClipboard.current
             Column { CoachQuestion(question); CoachAnswer(answer, null, emptyList(), 0) }
         } } }
         compose.onNodeWithText(question).performClick()
@@ -52,35 +52,36 @@ class CoachBubbleTests {
         compose.runOnIdle { assertEquals(emptyList<Any>(), events) }
         compose.onNodeWithText(question).performTouchInput { longClick() }
         compose.onNodeWithText("Copy question").assertIsDisplayed().performClick()
-        compose.runOnIdle { assertEquals(question, clipboard.getText()?.text) }
+        compose.runOnIdle { assertEquals(question, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
         val actions = compose.onNodeWithText("First paragraph.").fetchSemanticsNode().config[SemanticsActions.CustomActions]
         compose.runOnIdle {
             assertEquals(listOf("Copy answer"), actions.map { it.label })
             assertTrue(actions.single().action())
-            assertEquals(answer, clipboard.getText()?.text)
+            assertEquals(answer, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString())
             assertEquals(List(2) { "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok") }, events)
         }
     }
 
     @Test fun aFailedClipboardWriteKeepsCopyAvailableAndReportsOneContentFreeBoundary() {
         var refused = true
-        var copied: AnnotatedString? = null
+        var copied: String? = null
         val failures = mutableListOf<Pair<String, Map<String, String>>>()
         val events = mutableListOf<Pair<String, Map<String, String>>>()
-        val clipboard = object : ClipboardManager {
-            override fun getText(): AnnotatedString? = copied
-            override fun setText(annotatedString: AnnotatedString) {
-                if (refused) throw IllegalStateException("private clipboard content")
-                copied = annotatedString
-            }
-        }
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation to properties }
         }
-        compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry, LocalClipboardManager provides clipboard) {
-            CoachAnswer("Exact fixture answer", null, emptyList(), 0)
-        } } }
+        compose.setContent {
+            val clipboard = object : Clipboard by LocalClipboard.current {
+                override suspend fun setClipEntry(clipEntry: ClipEntry?) {
+                    if (refused) throw IllegalStateException("private clipboard content")
+                    copied = clipEntry?.clipData?.getItemAt(0)?.text?.toString()
+                }
+            }
+            GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry, LocalClipboard provides clipboard) {
+                CoachAnswer("Exact fixture answer", null, emptyList(), 0)
+            } }
+        }
         compose.onNodeWithText("Exact fixture answer").performTouchInput { longClick() }
         compose.onNodeWithText("Copy answer").performClick().assertIsDisplayed()
         compose.runOnIdle {
@@ -90,7 +91,7 @@ class CoachBubbleTests {
         }
         compose.onNodeWithText("Copy answer").performClick().assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals(AnnotatedString("Exact fixture answer"), copied)
+            assertEquals("Exact fixture answer", copied)
             assertEquals(listOf(
                 "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed"),
                 "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok"),

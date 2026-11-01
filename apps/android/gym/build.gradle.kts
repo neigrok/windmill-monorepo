@@ -44,6 +44,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     // BackHandler — the room decides what the system back gesture means on its own screens.
     implementation(libs.androidx.activity.compose)
+    // Photo orientation for Coach: the framework ExifInterface misreads some streams on API 26–28.
+    implementation(libs.androidx.exifinterface)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

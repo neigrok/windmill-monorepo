@@ -4,11 +4,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -65,15 +65,15 @@ class LogShareTests {
             room.store.observeEngine()
             compose.setContent {
                 if (showing) {
-                    val systemClipboard = LocalClipboardManager.current
-                    val clipboard = object : ClipboardManager by systemClipboard {
-                        override fun setText(annotatedString: AnnotatedString) {
+                    val systemClipboard = LocalClipboard.current
+                    val clipboard = object : Clipboard by systemClipboard {
+                        override suspend fun setClipEntry(clipEntry: ClipEntry?) {
                             copies++
                             if (failClipboard) throw IllegalStateException("private clipboard content")
-                            systemClipboard.setText(annotatedString)
+                            systemClipboard.setClipEntry(clipEntry)
                         }
                     }
-                    CompositionLocalProvider(LocalClipboardManager provides clipboard, LocalTelemetry provides telemetry) {
+                    CompositionLocalProvider(LocalClipboard provides clipboard, LocalTelemetry provides telemetry) {
                         GymMaterial { GymRoom(room.account(), room.store) }
                     }
                 }
@@ -138,11 +138,10 @@ class LogShareTests {
             presented = room.account("A")
             compose.setContent {
                 if (showing) {
-                    val systemClipboard = LocalClipboardManager.current
-                    val clipboard = object : ClipboardManager by systemClipboard {
-                        override fun setText(annotatedString: AnnotatedString) { copies++ }
+                    val clipboard = object : Clipboard by LocalClipboard.current {
+                        override suspend fun setClipEntry(clipEntry: ClipEntry?) { copies++ }
                     }
-                    CompositionLocalProvider(LocalClipboardManager provides clipboard, LocalTelemetry provides telemetry) {
+                    CompositionLocalProvider(LocalClipboard provides clipboard, LocalTelemetry provides telemetry) {
                         GymMaterial { GymRoom(presented!!, room.store) }
                     }
                 }
