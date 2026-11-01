@@ -1,6 +1,6 @@
 # The load floor holds on Coach Apply and on the server
 
-**Status:** 🔨 Built on branch `qw-73-74`, awaiting review, e2e and the production deploy. Domain and backend; nothing visual changes.
+**Status:** 🚀 On main and deployed to production (`5ce7b451`); verified on the local stack. Phones carry it from the next Android release after 0.14.1. Domain and backend; nothing visual changes.
 
 **Context:** since task 57, the phones refuse a barbell or dumbbell load below 0 in set entry and in the routine editor. A Coach or MCP proposal can still land a −10 kg barbell target, because neither Apply nor the server checks the floor. No door may accept what a phone refuses.
 

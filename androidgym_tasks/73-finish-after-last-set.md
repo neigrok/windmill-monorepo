@@ -1,6 +1,6 @@
 # A finish never lands before the last set
 
-**Status:** 🔨 Built on branch `qw-73-74`, awaiting review, e2e and the production deploy. A shared domain rule; nothing visual changes.
+**Status:** 🚀 On main and deployed to production (`5ce7b451`); verified on the local stack. Phones carry it from the next Android release after 0.14.1. A shared domain rule; nothing visual changes.
 
 **Context:** after the device clock steps backwards, a workout can finish before its own last set. The receipt then shows the wrong duration, and a later correction is refused as `bad-instant`. Every surface runs the same `FinishSession`, so the fix is one rule with one vector.
 
