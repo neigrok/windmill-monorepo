@@ -244,3 +244,23 @@ test('legacy progress aliases serialize and replay as none, including the offlin
   assert.throws(() => copy.mark('old-active', 'active', parseHlc('900:0:r_a'), 900), /unknown progress status/);
   assert.throws(() => copy.mark('old-inProgress', 'inProgress', parseHlc('950:0:r_a'), 950), /unknown progress status/);
 });
+
+test('an Undo of Reset is a fresh mark: the step completes at the Undo’s time and heads Done', async () => {
+  const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
+  const { Board } = await import('../../../../src/products/roadmap/board/Board.js');
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
+    { id: 'course', label: 'Choose a sailing course', prerequisites: [] },
+    { id: 'parts', label: 'Name the boat parts', prerequisites: ['course'] },
+    { id: 'rig', label: 'Rig the boat', prerequisites: ['parts'] },
+  ] });
+  const lattice = new ProgressLattice();
+  lattice.mark('course', 'complete', stamp(100), 100);
+  lattice.mark('parts', 'complete', stamp(200), 200);
+  lattice.mark('rig', 'complete', stamp(300), 300);
+  const doneOrder = () => new Board(tree, lattice.overlay()).done.cards.map((card) => card.id);
+  assert.deepEqual(doneOrder(), ['rig', 'parts', 'course']);
+
+  lattice.mark('parts', 'none', stamp(400), 400);
+  lattice.mark('parts', 'complete', stamp(500), 500);
+  assert.deepEqual([doneOrder(), lattice.overlay().completedAt.parts], [['parts', 'rig', 'course'], 500]);
+});

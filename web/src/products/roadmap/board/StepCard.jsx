@@ -1,4 +1,4 @@
-// One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card selects its step.
+// One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card opens its step.
 
 import React from 'react';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';

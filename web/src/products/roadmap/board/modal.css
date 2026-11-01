@@ -1,0 +1,52 @@
+/* The step modal from 744px (03.01–03.10, 05.06): 760 by 800 at most, 24px in from the window's edges below that. */
+
+.st-board-step-scrim {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: var(--surface-overlay);
+}
+
+.st-board-step-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(760px, 100%);
+  height: min(800px, 100%);
+  box-sizing: border-box;
+  padding: 20px;
+  border-radius: var(--radius-2xl);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.st-board-step-modal-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.st-board-step-modal-content {
+  flex: 1;
+  min-height: 0;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.st-board-step-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-default);
+}
+
+.st-board-step-modal .st-board-step-status-label {
+  flex: none;
+}

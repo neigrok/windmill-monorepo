@@ -1,4 +1,4 @@
-// The Board is one tab stop with roving focus; Enter is the focused stop's own button, so on a card it selects the step.
+// The Board is one tab stop with roving focus; Enter is the focused stop's own button, so on a card it opens the step.
 // A stop is { column, id }: a step id, SHOW_ALL for the row ending a folded Done, or RAIL for a tablet rail's Show.
 
 import { useEffect, useRef, useState } from 'react';

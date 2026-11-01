@@ -1,0 +1,671 @@
+/* The Board's find, filter, sort and branch controls. Measures from 07.01–07.06 and 11.01 (desktop) and 03.02, 03.06,
+   05.01–05.05, 09.03 and 14.01 (phone). Kind hues arrive as custom properties set inline from theme.js. */
+
+/* ---- Find a step: from 744px a 44px pill with the / keycap; on the phone the band's field. ---- */
+.st-board-find {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 44px;
+  background: var(--surface-card);
+  color: var(--text-secondary);
+}
+.st-board-find--wide {
+  gap: var(--space-2);
+  width: 240px;
+  padding: 0 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+}
+.st-board-find--wide.is-typed {
+  padding-right: 0;
+}
+.st-board-find--wide.is-typed,
+.st-board-find--wide:focus-within {
+  border: 1.5px solid var(--field-focus-edge);
+}
+.st-board-find-glyph {
+  flex-shrink: 0;
+}
+.st-board-find-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.st-board-find-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+.st-board-find-input::-webkit-search-cancel-button {
+  display: none;
+}
+.st-board-find-clear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-find-clear:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -4px;
+}
+.st-board-keycap {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+/* The identity row's field stands at its far end, past the switch. */
+.st-board-identity .st-board-find {
+  margin-left: auto;
+}
+
+.st-board-find--phone {
+  flex: 1;
+  min-width: 0;
+  padding-left: 40px;
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+.st-board-find--phone:focus-within {
+  border-color: var(--field-focus-edge);
+}
+.st-board-find--phone .st-board-find-glyph {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.st-board-find--phone .st-board-find-input::placeholder {
+  color: var(--text-primary);
+}
+
+/* ---- The strip from 744px: the branch scope, the kind swatches, then the sort at the far end. ---- */
+.st-board-strip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+}
+.st-board-strip .st-board-sort {
+  margin-left: auto;
+}
+
+/* ---- Kind swatch: a 34px chip in a 44px target; on wears the kind's ring, primary ink and the check. ---- */
+.st-board-swatches {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.st-board-swatches::-webkit-scrollbar {
+  display: none;
+}
+.st-board-swatch {
+  --st-board-swatch-ring: var(--border-strong);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-swatch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+}
+.st-board-swatch.is-on .st-board-swatch-chip {
+  padding: 0 11px;
+  border: 2px solid var(--st-board-swatch-ring);
+  color: var(--text-primary);
+}
+.st-board-swatch-dot {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--st-board-swatch-ring);
+  border-radius: var(--radius-full);
+  background: var(--st-board-swatch-dot);
+}
+.st-board-swatch-label {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.st-board-swatch-check {
+  flex-shrink: 0;
+}
+.st-board-swatch:focus-visible {
+  outline: none;
+}
+.st-board-swatch:focus-visible .st-board-swatch-chip {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ---- Sort: the button names the order in force; the menu opens under it, flush with its right edge. ---- */
+.st-board-sort {
+  position: relative;
+  flex-shrink: 0;
+}
+.st-board-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-sort-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+@media (hover: hover) {
+  .st-board-sort-button:hover {
+    background: var(--surface-hover);
+  }
+}
+.st-board-sort-button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.st-board-sort-popover {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  right: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 300px;
+  padding: var(--space-3) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  background: var(--surface-card);
+  box-shadow: 0 12px 16px rgb(var(--shadow-ink) / 0.12);
+}
+.st-board-sort-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.st-board-sort-options > [role="group"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.st-board-sort-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-sort-option[aria-checked="true"] {
+  background: var(--surface-hover);
+}
+@media (hover: hover) {
+  .st-board-sort-option:hover {
+    background: var(--surface-hover);
+  }
+}
+.st-board-sort-option:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+.st-board-sort-option-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-board-sort-option-label {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--text-primary);
+}
+.st-board-sort-option[aria-checked="true"] .st-board-sort-option-label {
+  font-weight: 700;
+}
+.st-board-sort-option-detail {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+.st-board-sort-check {
+  flex-shrink: 0;
+  color: var(--text-primary);
+}
+.st-board-sort-group {
+  padding: var(--space-2) var(--space-3) 2px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+
+/* ---- Branch scope: the anchor's title on the sunken ground, × at its end; 320px from 744px, the full width on the phone. ---- */
+.st-board-branch {
+  flex: 0 0 320px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  height: 44px;
+  padding-left: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}
+.st-board-branch-anchor {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-branch-glyph {
+  flex-shrink: 0;
+}
+.st-board-branch-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.st-board-branch-kicker {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+.st-board-branch-step {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+}
+.st-board-branch-clear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-branch-anchor:focus-visible,
+.st-board-branch-clear:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ---- An emptied column from 744px: the message under its heading and the way out as a text button. ---- */
+.st-board-column-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--space-2);
+}
+.st-board-column-empty-title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+.st-board-column-empty-action {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-brand);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-column-empty-action:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ---- An emptied pane on the phone: the glyph, the message and the way out, centred, its title giving way. ---- */
+.st-board-pane-empty {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-2) 0;
+  text-align: center;
+}
+.st-board-phone-pane:has(> .st-board-pane-empty) > .st-board-phone-heading {
+  display: none;
+}
+.st-board-pane-empty-glyph {
+  flex-shrink: 0;
+}
+.st-board-pane-empty-glyph--filter {
+  color: var(--text-secondary);
+}
+.st-board-pane-empty-glyph--search {
+  color: var(--text-tertiary);
+}
+.st-board-pane-empty-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--text-primary);
+}
+
+/* ---- Over the phone's panes: the branch scope, then the removable chips. ---- */
+.st-board-active {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+.st-board-active .st-board-branch {
+  flex: none;
+  width: 100%;
+}
+.st-board-active-chips {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+}
+.st-board-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-chip-surface {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--color-brand-soft);
+}
+.st-board-chip-label {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: normal;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.st-board-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-primary);
+}
+.st-board-chip:focus-visible {
+  outline: none;
+}
+.st-board-chip:focus-visible .st-board-chip-surface {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ---- The phone band's tools: Sort beside the tabs, Find a step and Filter on the row under them. ---- */
+.st-board-phone-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.st-board-phone-row > .st-board-phone-segments {
+  flex: 1;
+  min-width: 0;
+}
+.st-board-phone-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.st-board-tool {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-tool--filter {
+  border-radius: var(--radius-lg);
+}
+.st-board-tool--filter.is-on {
+  background: var(--surface-sunken);
+}
+.st-board-tool-dot {
+  position: absolute;
+  left: 31px;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--st-board-tool-dot, var(--color-brand));
+}
+.st-board-tool:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ---- A bottom sheet over the Board: the scrim, then the sheet on the card surface. ---- */
+.st-board-sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.st-board-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-overlay);
+}
+.st-board-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  max-height: 85%;
+  overflow-y: auto;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--surface-card);
+}
+.st-board-sheet-grabber {
+  flex-shrink: 0;
+  align-self: center;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.st-board-sheet-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.st-board-sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-primary);
+}
+.st-board-sheet-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-sheet-close:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+
+/* The sort sheet: the menu's own title row, × level with it. */
+.st-board-sheet--sort {
+  padding: var(--space-2) var(--space-2) calc(28px + env(safe-area-inset-bottom, 0px));
+}
+.st-board-sheet--sort .st-board-sheet-grabber {
+  margin-bottom: var(--space-1);
+}
+.st-board-sheet--sort .st-board-sheet-heading {
+  margin-bottom: calc(-1 * var(--space-2));
+  padding: 0 var(--space-2) 0 var(--space-5);
+}
+.st-board-sheet--sort .st-board-sheet-title {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 24px;
+}
+.st-board-sheet--sort .st-board-sort-options {
+  padding: 0 var(--space-2);
+}
+
+/* The filter sheet: Filter by kind with ×, the swatches, then Clear filters. */
+.st-board-sheet--filter {
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+}
+.st-board-sheet--filter .st-board-sheet-grabber {
+  margin-bottom: var(--space-1);
+}
+.st-board-sheet--filter .st-board-sheet-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 28px;
+}
+.st-board-sheet--filter .st-board-swatches {
+  flex-wrap: wrap;
+  overflow: visible;
+}
