@@ -510,9 +510,10 @@ doors decide before admitting, and `sync/GymRules` for what admission decides fo
   `gym.closeStale` writes it: `finishedAt` at that last activity, `closedBy` `stale`.
 - `canFinishAt` — a workout cannot end at zero, past what the store can hold, before it began, or before
   its last activity (`lastActivityAt`: its latest set's `completedAt`, else its start), and `GymDoor::finish`
-  refuses such a finish `bad-instant`. `gym.finish` refuses a finish at zero or before the start `bad-instant`
-  and lands any other at the later of its `finishedAt` and the last alive set, since the engine clamps a future
-  `finishedAt` to server time while a set keeps the time its device stamped.
+  refuses such a finish `bad-instant`. `gym.finish` lands a finish at the later of its `finishedAt` and the last
+  activity (the last alive set, else the start), since the engine clamps a future `finishedAt` to server time
+  while a set or a start keeps the time its device stamped; it refuses `bad-instant` only a landing at zero or
+  before the start.
 - `canStartAt` — a device's clock is the truth about the past, never the future: a start more than
   `kMaxClockAheadMs` (5 min) past the server's now is refused, naming the gap. `GymDoor::start` holds
   **only a start that would CREATE** to it; replays and joins create nothing. Without it a session
@@ -608,7 +609,8 @@ back through the repositories after the commit. Every call is one `gym.server_ca
 door `server-origin`: the engine result's outcome (`ok` also when the builder answered without
 admitting, the engine's or gym's refusal code otherwise), `invalid` for malformed input, or
 `gym-engine-busy`. A builder that refuses before admitting names its refusal instead: `append`, `appendSets`
-and an entered `importSession` complete `load-floor` for a set below its movement's load floor; `finish` completes
+and an entered `importSession` complete `load-floor` for a set below its movement's load floor, and `append`
+`clock-ahead` for a set completed past the five-minute skew; `finish` completes
 `unknown-record` or `bad-instant`; `createRoutine` `id-taken`, `unknown-exercise` or `load-floor`; `propose`
 and `proposeRemoval` `unknown-record`, `no-change`, `id-taken`, `id-reused`, `unknown-exercise` or
 `load-floor`; `proposeWorkout` `unknown-record`, `no-plan`, `id-reused`, `no-change`, `id-taken` or
@@ -627,12 +629,13 @@ and `proposeRemoval` `unknown-record`, `no-change`, `id-taken`, `id-reused`, `un
   names against the seeds and the account's own movements (`unknown-exercise`). Otherwise a set could
   name another account's private movement, and the log and the workout share would print that
   account's private name.
-- **The load floor holds on targets.** A barbell or a pair of dumbbells takes 0 kg or more; a single
-  dumbbell, a machine and bodyweight work keep their sign, a negative load being assistance. Admission
-  refuses `invalid` a routine create or entries change, a proposal create, a workout proposal create and
-  `gym.applyWorkoutProposal` whose entry sets a scheme below that floor; a scheme no `before` entry of
-  the movement held is the one judged, so a scheme the write keeps keeps what it held. Equipment and
-  load count resolve through the account's `exerciseName`, then the movement, then the seed. The doors
+- **The load floor holds on targets.** A barbell or dumbbells counted as a pair take 0 kg or more; every
+  other loading (one dumbbell, a machine, a cable, a kettlebell, bodyweight, other) keeps its sign, a
+  negative load being assistance. Admission refuses `invalid` a routine create or entries change, a
+  proposal create, a workout proposal create and `gym.applyWorkoutProposal` whose entry sets a scheme
+  below that floor; only an entry whose sets no `before` entry of the movement held is judged, so a scheme
+  the write keeps keeps what it held. Equipment resolves through the account's `exerciseName`, then the
+  movement, then the seed; the load count through the `exerciseName`, then the seed, else a pair. The doors
   refuse the same target before admitting (`belowFloor`, from the domain's `firstBelowFloor` over the
   write's change lines and the caller's catalog). A new set an agent logs or enters takes the same floor
   at the set doors (`append`, `appendSets`, and `importSession` from `import_session`, whose origin is
@@ -975,7 +978,7 @@ between a door's read and its admission reaches the engine's own refusal.
 | Door · callers | Read under the lock, answered without admitting | Engine refusal → outcome |
 |---|---|---|
 | `start` · `start_session` | after its own `closeStale`: the caller's session under the id, or the one the caller's start receipt names → `gym.start`, which replays the receipt; else, with a session open: `joinOpenSession: false` → `alreadyOpen`, a malformed id or a receipt of the caller's whose workout is gone → the open session; else `gym.start` joins it, the id reserved as spent when no receipt holds it. With none open: any receipt under the id → `idTaken`; `startedAt` more than 5 min past the server's now → `clockAhead` with the gap; a routine the caller cannot read → `unknownRoutine`; else `gym.start` creates | `session-open` → `alreadyOpen`; `id-taken`, `id-spent` → `idTaken`; `ok` → the session its write map names |
-| `append` · `log_set` | the session absent, another account's or discarded → `notFound`; a standing set under the id in this session → that set, in another → `idTaken`; a set receipt under the id, the caller's → `deleted`, another's → `idTaken`; a deleted `gym_set_revisions` row of the caller's → `deleted`; a finished session the set cannot continue (`lateSetLands`) → `finished`; a movement the caller cannot see → `unknownExercise`; a load, at the cent grid, below the movement's load floor → `belowFloor`, naming the movement; else a `set` create, its load and rpe at the columns' precision | `id-taken` → `idTaken`; `id-spent`, `record-dead` → `deleted`; `unknown-record`, `parent-dead` → `notFound`; `session-finished` → `finished`; `unknown-exercise` → `unknownExercise` |
+| `append` · `log_set` | the session absent, another account's or discarded → `notFound`; a standing set under the id in this session → that set, in another → `idTaken`; a set receipt under the id, the caller's → `deleted`, another's → `idTaken`; a deleted `gym_set_revisions` row of the caller's → `deleted`; a finished session the set cannot continue (`lateSetLands`) → `finished`; a `completedAt` more than 5 min past the server's now → `clockAhead` with the gap; a movement the caller cannot see → `unknownExercise`; a load, at the cent grid, below the movement's load floor → `belowFloor`, naming the movement; else a `set` create, its load and rpe at the columns' precision | `id-taken` → `idTaken`; `id-spent`, `record-dead` → `deleted`; `unknown-record`, `parent-dead` → `notFound`; `session-finished` → `finished`; `unknown-exercise` → `unknownExercise` |
 | `appendSets` · `log_sets` | `SetBatch` before the call (1–200 sets, unique ids, no `completedAt` in the future, two decimals of load and one of rpe); under the lock the session absent → `notFound`, a set before the session's start → the batch's sentence; per set in id order its receipt, another owner's or another hash → `payloadConflict`, this hash → replayed; per new set a deleted `gym_set_revisions` row → `deleted`, a finished session it cannot continue → `finished`, a movement the caller cannot see → `unknownExercise`, a load below the movement's load floor → `belowFloor`; every new set in one intent, and none → the replay | `append`'s mapping, plus `payload-conflict` → `payloadConflict`, the refused set named by the engine's `detail.id` |
 | `importSession` · `import_session`, `POST /v1/gym/sessions/import` | before the call: a finish at or after the start and not in the future, `SetBatch` (0–200 sets) inside that interval, then `closeStale`; under the lock the session receipt under the id, the caller's with this import's hash → the replay (`sessionDeleted` once discarded), else `payloadConflict`; a routine the caller cannot read → `unknownRoutine`; per set in id order a set receipt, the caller's with this hash → `idTaken`, else `payloadConflict`; per set a deleted `gym_set_revisions` row → `deleted`, a movement the caller cannot see → `unknownExercise`, and for an `entered` import a load below the movement's load floor → `belowFloor`; else `gym.importSession` | `session-overlap` → `overlap` with the crossing session; `payload-conflict` → `payloadConflict`; `id-taken` → `idTaken`; `unknown-exercise` → `unknownExercise` |
 | `finish` · `finish_session` | the session absent or another account's → `notFound`; `canFinishAt` false over its sets → `badInstant`; else `gym.finish` | `unknown-record`, `record-dead` → `notFound`; `bad-instant` → `badInstant`; `ok` → the session as it now stands |

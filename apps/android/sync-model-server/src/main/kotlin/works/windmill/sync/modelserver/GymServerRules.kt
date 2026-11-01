@@ -109,12 +109,12 @@ class GymServerRules : ServerRules {
     }
     private fun finish(cmd: CheckedCommand, c: RuleContext): CommandOutcome {
         val session = alive(key("session", cmd.string("sessionId")), c); val finished = cmd.args.getValue("finishedAt").long()
-        if (finished <= 0 || finished < value(session, "startedAt")!!.long()) throw Refusal("bad-instant")
+        // A finish lands no earlier than the last activity, the last alive set or else the start: a clamped future finishedAt
+        // reads serverNow, which a set stamped, or a start named, by a clock ahead of the server can outrun.
+        val landing = maxOf(finished, lastActivity(session, c.storedRecords("set")))
+        if (landing <= 0 || landing < value(session, "startedAt")!!.long()) throw Refusal("bad-instant")
         val stored = value(session, "finishedAt")?.orNull()?.long()
         if (stored != null && value(session, "closedBy") != Json.of("stale")) return CommandOutcome(product = c.product)
-        // A finish lands no earlier than the last set: a clamped future finishedAt reads serverNow, which a set stamped by a
-        // clock ahead of the server can outrun.
-        val landing = maxOf(finished, lastActivity(session, c.storedRecords("set")))
         val at = stored?.let { if (landing > it + STALE_MS) it else maxOf(it, landing) } ?: landing
         return CommandOutcome(listOf(PlannedDelta.update(session.key, session.lattice.born, mapOf("finishedAt" to Json.of(at), "closedBy" to Json.of("finish")))), listOf(WriteClaim(session.key, fields = listOf("finishedAt", "closedBy"))), product = c.product)
     }

@@ -118,9 +118,6 @@ final class RoutineEditingSession: Identifiable {
       if outcome.receipt != nil { gym.telemetry.event("gym_routine_saved", properties: ["screen": "routine_editor", "action": draft.isNew ? "create" : "update"]) }
       saved = true; return true
     }
-    if case .invalid(let violation) = outcome?.refusal, violation.rule == RoutineRules.loadFloor {
-      refusal = RoutineTargetDraft.belowFloor; return false
-    }
     refusal = gym.error ?? "This routine could not be saved. Try again."
     return false
   }

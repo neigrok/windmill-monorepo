@@ -289,6 +289,27 @@ TEST(gym_training_engine_set_doors_refuse_a_load_below_its_movements_floor) {
   CHECK(h.failures.messages.empty());
 }
 
+// A set completed past the allowed skew is refused as a start is, one write line naming it; at the bound it lands.
+TEST(gym_training_engine_append_refuses_a_set_completed_past_the_clock_skew) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto at = h.clock.now;
+  const SessionId session{"session_ahead1"};
+  REQUIRE(h.door.start(h.user, startAt("session_ahead1", at)).session);
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const AppendOutcome refused = h.door.append(h.user, session, setAt("set_ahead001", at + kMaxClockAheadMs + 1));
+  installWriteSink({});
+
+  CHECK_EQ(refused.error, AppendError::clockAhead);
+  CHECK_EQ(refused.clockAheadMs, kMaxClockAheadMs + 1);
+  CHECK_EQ(refused.set, std::optional<Set>());
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call clock-ahead"}));
+  CHECK_EQ(h.repo.log.setsOf(session), std::vector<Set>{});
+  REQUIRE(h.door.append(h.user, session, setAt("set_ahead002", at + kMaxClockAheadMs)).set);
+  CHECK(h.failures.messages.empty());
+}
+
 TEST(gym_training_engine_batch_preserves_receipt_payload_and_deleted_replay) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
   Harness h;

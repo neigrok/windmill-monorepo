@@ -217,12 +217,12 @@ public struct GymServerRules: ServerRules {
   func finish(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
     let session = try alive(key("session", command.string("sessionId")), in: context)
     let finished = command.args["finishedAt"]!.integerValue
-    guard finished > 0, finished >= value(session, "startedAt")!.integerValue else { throw refuse("bad-instant") }
+    // A finish lands no earlier than the last activity, the last alive set or else the start: a clamped future finishedAt
+    // reads serverNow, which a set stamped, or a start named, by a clock ahead of the server can outrun.
+    let landing = max(finished, lastActivity(session, in: context))
+    guard landing > 0, landing >= value(session, "startedAt")!.integerValue else { throw refuse("bad-instant") }
     let stored = value(session, "finishedAt")
     if let stored, !stored.isNull, value(session, "closedBy") != "stale" { return CommandOutcome(product: context.product) }
-    // A finish lands no earlier than the last set: a clamped future finishedAt reads serverNow, which a set stamped by a
-    // clock ahead of the server can outrun.
-    let landing = max(finished, lastActivity(session, in: context))
     let at = stored.flatMap { $0.isNull ? nil : $0.integerValue }.map { landing > $0 + Self.staleMs ? $0 : max($0, landing) } ?? landing
     return CommandOutcome(deltas: [.serverUpdate(session.key, born: session.lattice.born, fields: ["finishedAt": JSON(at), "closedBy": "finish"])],
       write: [WriteClaim(key: session.key, fields: ["finishedAt", "closedBy"])], product: context.product)

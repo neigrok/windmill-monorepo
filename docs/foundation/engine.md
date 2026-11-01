@@ -2885,10 +2885,10 @@ It is the only writer of `closedBy = stale`.
   Predicts the session and its sets.
 - **`gym.finish {sessionId: ref<session>, finishedAt: time}`.**
   - Absent or `foreign` → `unknown-record`; dead → `record-dead`.
-  - `finishedAt < startedAt`, zero or out of range → `bad-instant`.
   - The finish lands at `l = max(finishedAt, a)`, `a` the session's last alive set's `completedAt`
     (its `startedAt` when it has none): a `finishedAt` the clamp brought down to `serverNow` (§6.1)
-    never lands before a set a clock ahead of the server stamped.
+    never lands before a set a clock ahead of the server stamped, or before a start one named.
+  - `l` zero or before `startedAt` → `bad-instant`.
   - Unfinished → `finishedAt := l`, and `closedBy = finish`.
   - Closed `stale` at `f` → `closedBy = finish`, and `finishedAt := f` if `l > f + 4 h`,
     else `max(f, l)`.

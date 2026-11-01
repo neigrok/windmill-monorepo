@@ -236,6 +236,8 @@ bool canFinishAt(const Session& session, const std::vector<Set>& sets, std::uint
 // allowed; past it the start is refused naming the gap.
 constexpr std::uint64_t kMaxClockAheadMs = 5ull * 60 * 1000;
 bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs);
+// Nor can a set be completed past that skew.
+bool canCompleteAt(std::uint64_t completedAtMs, std::uint64_t nowMs);
 
 // A set continues a STALE-closed session when it sits within the four-hour window of that session's
 // last activity — which is what finished_at is on a stale close — and landing it moves the finish

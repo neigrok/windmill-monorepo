@@ -289,6 +289,10 @@ bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs) {
   return startedAtMs <= nowMs + kMaxClockAheadMs;
 }
 
+bool canCompleteAt(std::uint64_t completedAtMs, std::uint64_t nowMs) {
+  return completedAtMs <= nowMs + kMaxClockAheadMs;
+}
+
 std::string toString(ClosedBy closedBy) {
   return closedBy == ClosedBy::stale ? "stale" : "finish";
 }

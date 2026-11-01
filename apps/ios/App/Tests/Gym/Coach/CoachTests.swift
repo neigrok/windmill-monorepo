@@ -600,6 +600,22 @@ import SyncTesting
     #expect(card.outOfDate == nil)
     #expect(!card.decidable)
   }
+  // An Apply the load floor refuses says the routine editor's line: here the movement became a barbell after the proposal
+  // asked an assisted load of it, so nothing is applied and the proposal still waits.
+  @Test func anApplyTheLoadFloorRefusesSaysTheEditorsLine() throws {
+    let (h, gym) = fixture()
+    #expect(gym.run(CreateExercise(Exercise(id: ID("floor-press"), name: "Press", pattern: "press", equipment: "machine", stepKg: 2.5)))?.receipt != nil)
+    var routine = Draft(new: Routine(id: ID("floor-routine"), name: "Push", entries: [RoutineEntry(exerciseId: ID("floor-press"), sets: [SetTarget(reps: 5, weightKg: 40)])]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    let assisted = RoutineEntry(exerciseId: ID("floor-press"), sets: [SetTarget(reps: 5, weightKg: -10)])
+    #expect(try h.runner.run(ProposeRoutine(id: ID("floor-proposal"), routineId: routine.id, name: "Push", entries: [assisted], summary: "Assist")).receipt != nil)
+    #expect(gym.run(UpdateExercise(ID("floor-press"), equipment: "barbell"))?.receipt != nil)
+    h.sync(); gym.refresh()
+    let proposal = try #require(gym.proposals.first)
+    #expect(!gym.coachDecideProposal(proposal, apply: true))
+    #expect(gym.error == "Load, 0 or more." && gym.proposals.first?.state == "pending")
+  }
   // An edit the log has not confirmed moves the routine under a waiting proposal: it is out of date at once, Apply is not
   // offered, and the lifter's edit stands after the log answers.
   @Test func aProposalOverAnEditTheLogHasNotConfirmedIsOutOfDate() throws {

@@ -289,7 +289,7 @@ function sessions() {
     admitted('a finish of a session finished before closedBy was recorded is ok and writes nothing', { state: only(legacy), intent: finish(T + 2 * H) }),
     admitted('a finish within 4 h of a stale close\'s last activity moves finishedAt to it', { state: only(stale), intent: finish(T + 2 * H) }),
     admitted('a finish more than 4 h after a stale close\'s last activity keeps finishedAt', { state: only(stale), intent: finish(T + 5 * H) }),
-    admitted('a finish before the session\'s start is refused bad-instant', { state: only(stale), intent: finish(T - 1) }),
+    admitted('a finish before the session\'s start lands at its last set, ending a stale close there as the lifter\'s word', { state: only(stale), intent: finish(T - 1) }),
     admitted('an import creates a finished session and numbers its sets in argument order', { state: base(), intent: cmd('gym.importSession', importArgs()) }),
     admitted('an import crossing a finished session is refused session-overlap, naming it', { state: base(), intent: cmd('gym.importSession', importArgs({ startedAt: T + 1800_000, finishedAt: T + 2 * H, sets: [] })) }),
     admitted('an import starting at the instant a finished session ended does not cross it', { state: base(), intent: cmd('gym.importSession', importArgs({ startedAt: T + H, finishedAt: T + 2 * H, sets: [] })) }),
@@ -732,10 +732,16 @@ function lastSets() {
   const inFlight = (set = SQUATTED) => base({ a: [openWorkout(), set] });
   const finish = (finishedAt) => cmd('gym.finish', { sessionId: 'session0002', finishedAt });
   const ahead = rec('set', 'set00000005', { stamp: s(T + 8 * H + 60_000), seq: 7, f: { sessionId: 'session0002', exerciseId: 'back-squat', weightKg: 80, reps: 5, note: '', completedAt: NOW + 60_000 }, v: { setNumber: 1 } });
+  const elsewhere = rec('set', 'set00000007', { stamp: s(T + 8 * H + 200_000), seq: 9, f: { sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 8, note: '', completedAt: T + 8 * H + 200_000 }, v: { setNumber: 1 } });
+  const startsAhead = rec('session', 'session0002', { stamp: `${NOW}:0:srv`, seq: 6, f: { startedAt: NOW + 120_000 } });
   return [
     admitted('a finish before the workout\'s last set lands at the last set', { state: inFlight(), intent: finish(T + 8 * H + 30_000) }),
     admitted('a finish at the workout\'s last set lands there', { state: inFlight(), intent: finish(T + 8 * H + 60_000) }),
     admitted('a future finish clamped to serverNow lands at a last set a clock ahead of the server stamped', { state: inFlight(ahead), intent: finish(NOW + 400_000) }),
+    admitted('a finish lands at the last set of its own workout, never at another workout\'s later set', {
+      state: base({ a: [openWorkout(), SQUATTED, elsewhere] }), intent: finish(T + 8 * H + 30_000) }),
+    admitted('a future finish clamped below a start a clock ahead of the server named lands at that start', {
+      state: base({ a: [startsAhead] }), intent: finish(NOW + 400_000) }),
   ];
 }
 
@@ -762,6 +768,16 @@ function loadFloors() {
     { kind: 'kept', exerciseId: 'dip', before: { sets: [{ reps: 8 }] }, after: { sets: [{ reps: 8 }] } },
     { kind: 'added', exerciseId: 'bench-press', after: { sets: [{ reps: 8, weightKg: -20 }] } },
   ];
+  const loadedAs = (equipment) => ({ t: 'exerciseName', id: 'sledpush01', f: regs(s(T + 9 * H), { equipment }) });
+  const sledBelow = [{ exerciseId: 'sledpush01', sets: [{ reps: 5, weightKg: -5 }] }];
+  const pairGoblet = rec('exerciseName', 'goblet-squat', { stamp: s(T + 5), seq: 6, born: false, life: false, f: { loadCount: 2 } });
+  const customBar = create('exercise', 'custombar1', s(T + 9 * H), { name: 'Trap Bar Deadlift', pattern: 'hinge', equipment: 'barbell', stepKg: 2.5 });
+  const legacyPlan = { routine: 'Lower A', entries: [...SQUAT, { exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: -10 }] }, { exerciseId: 'dip', sets: [{ reps: 8 }] }] };
+  const keptLegacyPlan = [
+    { kind: 'kept', exerciseId: 'back-squat', before: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] }, after: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] } },
+    { kind: 'kept', exerciseId: 'bench-press', before: { sets: [{ reps: 5, weightKg: -10 }] }, after: { sets: [{ reps: 5, weightKg: -10 }] } },
+    { kind: 'retargeted', exerciseId: 'dip', before: { sets: [{ reps: 8 }] }, after: { sets: [{ reps: 8, weightKg: -10 }] } },
+  ];
   const workoutMint = (changes) => gym([create('workoutProposal', 'wproposal02', null, { sessionId: 'session0002', summary: 'Lighter bench', changes, door: 'mcp', connection: 'conn-1', agent: 'Claude' })]);
   return [
     admitted('a routine created with a barbell target below 0 kg is invalid', { state: base(), intent: routine([{ exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: -10 }] }]) }),
@@ -779,6 +795,13 @@ function loadFloors() {
       intent: mint('proposal003', keptLegacy, { routineId: 'routine0003', proposedName: 'Old Lower' }) }),
     admitted('apply of a proposal stored with a barbell line below 0 kg is refused invalid', { state: base({ a: [proposalRow('proposal002', 6, { changes: belowBar, door: 'ask', connection: '', agent: '' })] }),
       intent: cmd('gym.applyProposal', { proposalId: 'proposal002' }) }),
+    admitted('a machine keeps a target below 0 kg', { state: base(), intent: routine(sledBelow) }),
+    admitted('a movement loaded as a cable in the same intent keeps a target below 0 kg', { state: base(), intent: gym([loadedAs('cable'), upper(sledBelow)]) }),
+    admitted('a movement loaded as a kettlebell in the same intent keeps a target below 0 kg', { state: base(), intent: gym([loadedAs('kettlebell'), upper(sledBelow)]) }),
+    admitted('a single-dumbbell seed the account counts as a pair takes the floor', { state: base({ a: [pairGoblet] }), intent: routine([{ exerciseId: 'goblet-squat', sets: [{ reps: 8, weightKg: -2 }] }]) }),
+    admitted('a custom barbell movement with no exerciseName takes the floor', { state: base(), intent: gym([customBar, upper([{ exerciseId: 'custombar1', sets: [{ reps: 5, weightKg: -5 }] }])]) }),
+    admitted('a workout proposal keeping a barbell line below 0 kg its plan holds, beside an assisted retarget, is admitted', {
+      state: base({ a: [openWorkout({ plan: legacyPlan }), SQUATTED] }), origin: SERVER_A, intent: workoutMint(keptLegacyPlan) }),
     admitted('a workout proposal adding a barbell line below 0 kg is refused invalid', { state: inFlight(), origin: SERVER_A, intent: workoutMint(benchBelow) }),
     admitted('apply of a workout proposal stored with a barbell line below 0 kg is refused invalid', { state: inFlight([workoutProposalRow('wproposal01', 8, { changes: benchBelow })]),
       intent: cmd('gym.applyWorkoutProposal', { proposalId: 'wproposal01' }) }),

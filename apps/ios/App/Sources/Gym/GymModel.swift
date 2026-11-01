@@ -372,6 +372,7 @@ final class GymModel {
 
   func message(_ refusal: GymRefusal) -> String {
     switch refusal {
+    case .invalid(let violation) where violation.rule == RoutineRules.loadFloor: RoutineTargetDraft.belowFloor
     case .invalid: "Check the values and try again."
     case .stale: "This changed elsewhere. Review the latest version."
     case .gone: "This is no longer available."

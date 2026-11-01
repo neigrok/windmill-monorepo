@@ -404,12 +404,12 @@ export class GymProduct {
     if (state.state === 'none' || state.state === 'foreign') throw new Refusal('unknown-record');
     if (state.state === 'dead') throw new Refusal('record-dead');
     const session = ctx.stored('session', sessionId);
-    if (finishedAt === 0 || finishedAt < valueOf(session, 'startedAt')) throw new Refusal('bad-instant');
+    // A finish lands no earlier than the workout's last activity, its last alive set or else its start: a clamped future
+    // `finishedAt` reads serverNow, which a set stamped, or a start named, by a clock ahead of the server can outrun.
+    const landing = Math.max(finishedAt, lastActivity(ctx, session));
+    if (landing === 0 || landing < valueOf(session, 'startedAt')) throw new Refusal('bad-instant');
     const stored = valueOf(session, 'finishedAt');
     if (isSet(stored) && valueOf(session, 'closedBy') !== 'stale') return { deltas: [], write: [] };
-    // A finish lands no earlier than the workout's last set: a clamped future `finishedAt` reads serverNow, which a
-    // set stamped by a clock ahead of the server can outrun.
-    const landing = Math.max(finishedAt, lastActivity(ctx, session));
     const at = !isSet(stored) ? landing : landing > stored + STALE_MS ? stored : Math.max(stored, landing);
     return {
       deltas: [{ t: 'session', id: sessionId, born: session.born, f: { finishedAt: [at, null], closedBy: ['finish', null] } }],

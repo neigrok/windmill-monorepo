@@ -458,6 +458,11 @@ ToolResult logSet(GymWriteDoor& door, const UserId& caller, const Json::Value& a
     return ToolResult::failure("that set was deleted from the log. It is not coming back, and a "
                                "fresh id would only log it again — leave it out.");
   if (outcome.error == AppendError::unknownExercise) return ToolResult::failure(kNoExercise);
+  if (outcome.error == AppendError::clockAhead)
+    return ToolResult::failure("that completedAt is " + std::to_string((outcome.clockAheadMs + 59'999) / 60'000) +
+                               " minutes ahead of the log's clock, and a set cannot be completed in the future. "
+                               "Nothing was logged. Send the instant the set was finished, in epoch milliseconds.",
+                               "clock-ahead");
   if (outcome.error == AppendError::belowFloor)
     return ToolResult::failure(belowFloorSentence("that set logs " + kg(args["weightKg"].asDouble()) + " of " +
                                                   outcome.belowFloorOf->name, *outcome.belowFloorOf) +

@@ -70,6 +70,16 @@ Session finished(Harness& h, const UserId& user, const std::string& session, std
   return *outcome.session;
 }
 
+// A finished workout from recorded history, written whole as the import route writes it: every load stands as logged,
+// a barbell's below 0 kg included.
+Session imported(Harness& h, const UserId& user, const std::string& id, std::uint64_t startedAtMs, std::uint64_t finishedAtMs,
+                 std::vector<SetWrite> sets) {
+  h.clock.now = std::max(h.clock.now, finishedAtMs);
+  const BatchLogOutcome outcome = h.door.importSession(user, SessionImport{SessionId{id}, startedAtMs, finishedAtMs, std::nullopt, std::move(sets)});
+  if (!outcome.session) throw std::runtime_error("the door imported no " + id);
+  return *outcome.session;
+}
+
 // A phone's fix of a set it holds: the fields it names, admitted as one delta.
 void fixed(Harness& h, const std::string& set, const Json::Value& fields) {
   GymDoor::requireOk(h.admit(h.user, {GymDoor::delta("set", set, fields)}));
@@ -524,13 +534,11 @@ TEST(pg_gym_log_counts_every_set_and_clamps_an_assisted_set_out_of_the_tonnage) 
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'123;
 
-  started(h, h.user, "ses_pg000001", t1);
-  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 5, t1 + 2'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000003", 100, 5, t1 + 3'000));
-  logged(h, h.user, "ses_pg000001", bench("set_pg000004", 82.5, t1 + 4'000));                     // 82.5 × 8
-  logged(h, h.user, "ses_pg000001", lift("set_pg000005", "pull-up", -20, 8, t1 + 5'000));          // assisted × 8
-  finished(h, h.user, "ses_pg000001", t1 + 6'000);
+  imported(h, h.user, "ses_pg000001", t1, t1 + 6'000, {squat("set_pg000001", 60, 10, t1 + 1'000),
+                                                       squat("set_pg000002", 100, 5, t1 + 2'000),
+                                                       squat("set_pg000003", 100, 5, t1 + 3'000),
+                                                       bench("set_pg000004", 82.5, t1 + 4'000),     // 82.5 × 8
+                                                       bench("set_pg000005", -20, t1 + 5'000)});    // assisted × 8
   // A whole session of chin-ups: sets that moved no measurable load at all.
   started(h, h.user, "ses_pg000002", t1 + 100'000);
   logged(h, h.user, "ses_pg000002", bench("set_pg000006", 0, t1 + 101'000));
@@ -553,14 +561,12 @@ TEST(pg_gym_log_hands_back_every_set_of_a_row) {
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'123;
 
-  started(h, h.user, "ses_pg000001", t1);
-  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 5, t1 + 2'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000003", 95, 6, t1 + 3'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000004", 95, 10, t1 + 4'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000005", 95, 8, t1 + 5'000));
-  logged(h, h.user, "ses_pg000001", lift("set_pg000006", "pull-up", -20, 12, t1 + 6'000));
-  finished(h, h.user, "ses_pg000001", t1 + 7'000);
+  imported(h, h.user, "ses_pg000001", t1, t1 + 7'000, {squat("set_pg000001", 60, 10, t1 + 1'000),
+                                                       squat("set_pg000002", 100, 5, t1 + 2'000),
+                                                       squat("set_pg000003", 95, 6, t1 + 3'000),
+                                                       squat("set_pg000004", 95, 10, t1 + 4'000),
+                                                       squat("set_pg000005", 95, 8, t1 + 5'000),
+                                                       squat("set_pg000006", -20, 12, t1 + 6'000)});
 
   std::vector<SessionSummary> listed = pageOf(h, page(t1 + 100'000, 50));
 
@@ -571,7 +577,7 @@ TEST(pg_gym_log_hands_back_every_set_of_a_row) {
                                                        fact("ses_pg000001", t1, "set_pg000003", "back-squat", 95, 6),
                                                        fact("ses_pg000001", t1, "set_pg000004", "back-squat", 95, 10),
                                                        fact("ses_pg000001", t1, "set_pg000005", "back-squat", 95, 8),
-                                                       fact("ses_pg000001", t1, "set_pg000006", "pull-up", -20, 12)}));
+                                                       fact("ses_pg000001", t1, "set_pg000006", "back-squat", -20, 12)}));
   // And what the application makes of it: the session's number, not its heaviest set's.
   CHECK_EQ(topE1rmOf(listed[0].worked), Estimate::of(95.0, 10, std::nullopt)->e1rm);
   CHECK_EQ(listed[0].topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
@@ -1736,7 +1742,7 @@ TEST(pg_gym_session_volume_folds_canonical_raw_facts_without_numeric_rescue) {
       {{{"bench-press", maximum, 2}}, std::nullopt},
       {{{"dumbbell-bench-press", maximum, 1}}, std::nullopt},
       {{{"bench-press", maximum, 1}, {"bench-press", maximum, 1}}, std::nullopt},
-      {{{"bench-press", maximum, 1}, {"dip", -maximum, 500}}, maximum},
+      {{{"bench-press", maximum, 1}, {"dumbbell-bench-press", -maximum, 500}}, maximum},
       {{{"bench-press", .1, 3}}, .1 * 3},
       {{{"bench-press", 1e16, 1}, {"bench-press", 1, 1}, {"bench-press", 1, 1}}, 1e16},
       {{}, 0.0}};
@@ -1744,14 +1750,14 @@ TEST(pg_gym_session_volume_folds_canonical_raw_facts_without_numeric_rescue) {
   for (std::size_t i = 0; i < examples.size(); ++i) {
     const std::string session = "ses_volume" + std::to_string(i);
     const auto at = now - 100000 + i * 10000;
-    started(h, h.user, session, at);
+    std::vector<SetWrite> sets;
     for (std::size_t remaining = examples[i].sets.size(); remaining > 0; --remaining) {
       const std::size_t j = remaining - 1;
       const auto& [movement, load, reps] = examples[i].sets[j];
-      logged(h, h.user, session, lift("set_volume" + std::to_string(i) + std::to_string(j), movement,
+      sets.push_back(lift("set_volume" + std::to_string(i) + std::to_string(j), movement,
           load, reps, at + 1000 + examples[i].sets.size() - j));
     }
-    finished(h, h.user, session, at + 5000);
+    imported(h, h.user, session, at, at + 5000, std::move(sets));
     expected.emplace(SessionId{session}, examples[i].expected);
   }
   const auto rows = pageOf(h, page(now + 1, 50));

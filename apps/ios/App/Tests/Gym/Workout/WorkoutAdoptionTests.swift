@@ -21,6 +21,18 @@ struct SaveSignedOutWorkouts: Action {
   }
 }
 
+// A finish the log took before this phone's sets reached it, written past the phone's own finish rule.
+struct FinishAheadOfSets: Action {
+  let id: ID<Session>
+  let finishedAt: Instant
+  var scope: ScopeRef { Gym.scope }
+  func load(_ read: Reader) throws {}
+  func decide(_ loaded: Void, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    .write(try Plan(running: FinishSessionCommand(id: id, finishedAt: finishedAt),
+                    predicting: [.update(Session.self, id, ["finishedAt": .of(finishedAt), "closedBy": "finish"])]))
+  }
+}
+
 @Suite @MainActor struct WorkoutAdoptionTests {
   func finished(_ id: String, routine: String? = nil, exercise: ID<Exercise>, from start: Int64, to finish: Int64, sets: [Int64]) -> SignedOutWorkout {
     let session = Session(id: ID(RecordID(id)), startedAt: Instant(ms: start), finishedAt: Instant(ms: finish), closedBy: "finish",
@@ -116,7 +128,7 @@ struct SaveSignedOutWorkouts: Action {
     let late = TrainingSet(id: ID("late-set"), sessionId: id, exerciseId: squat, weightKg: 65, reps: 3, note: "Private late note", completedAt: Instant(ms: now - 5_000))
     #expect(gym.run(AppendSet(inside))?.receipt != nil)
     #expect(gym.run(AppendSet(late))?.receipt != nil)
-    #expect(gym.run(FinishSession(id: id, finishedAt: Instant(ms: now - 10_000)))?.receipt != nil)
+    #expect(gym.run(FinishAheadOfSets(id: id, finishedAt: Instant(ms: now - 10_000)))?.receipt != nil)
     #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: Session(id: id, startedAt: Instant(ms: now - 15_000)), sets: [inside, late])]))?.receipt != nil)
     harness.server.refuse(next: 2, code: Gym.Codes.sessionFinished)
     harness.sync()
@@ -435,7 +447,7 @@ struct SaveSignedOutWorkouts: Action {
     harness.sync(); gym.refresh()
     let late = TrainingSet(id: ID("late-outside-1"), sessionId: id, exerciseId: squat, weightKg: 70, reps: 3, completedAt: Instant(ms: now - 5_000))
     #expect(gym.run(AppendSet(late))?.receipt != nil)
-    #expect(gym.run(FinishSession(id: id, finishedAt: Instant(ms: now - 30_000)))?.receipt != nil)
+    #expect(gym.run(FinishAheadOfSets(id: id, finishedAt: Instant(ms: now - 30_000)))?.receipt != nil)
     #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: Session(id: id, startedAt: Instant(ms: now - 60_000)), sets: [late])]))?.receipt != nil)
     harness.server.refuse(next: 1, code: Gym.Codes.sessionFinished)
     harness.sync()

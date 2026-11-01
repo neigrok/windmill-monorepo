@@ -148,6 +148,13 @@ AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, cons
       return std::nullopt;
     }
     if (deletedFromLog(sql, user, incoming.id)) { answer.error = AppendError::deleted; return std::nullopt; }
+    const std::uint64_t now = clock_.nowMs();
+    if (!canCompleteAt(incoming.completedAtMs, now)) {
+      answer.error = AppendError::clockAhead;
+      answer.clockAheadMs = incoming.completedAtMs - now;
+      refusedCode = "clock-ahead";
+      return std::nullopt;
+    }
     if (stored->finishedAtMs && !lateSetLands(*stored, incoming.completedAtMs)) {
       answer.error = AppendError::finished;
       return std::nullopt;

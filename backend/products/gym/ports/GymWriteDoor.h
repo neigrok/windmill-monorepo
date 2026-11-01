@@ -93,9 +93,10 @@ struct ProposalWrite {
 // said it would not join. unknownRoutine is a creating start naming a plan this account cannot read.
 // `deleted` names a set the lifter took out of the log — never answer it as idTaken, whose repair
 // (mint a fresh id and resend) would bring the deleted set back. `belowFloor` is a new set's load under its movement's
-// load floor, the movement named by `belowFloorOf`; a set that already landed replays whatever it holds.
+// load floor, the movement named by `belowFloorOf`; a set that already landed replays whatever it holds. An append's
+// `clockAhead` is a new set completed more than kMaxClockAheadMs past the log's now, as a start's is.
 enum class StartError { none, idTaken, alreadyOpen, unknownRoutine, clockAhead };
-enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted, belowFloor };
+enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted, belowFloor, clockAhead };
 enum class FinishError { none, notFound, badInstant };
 // `open` refuses to delete a workout still being logged into, whose queued sets are in flight.
 enum class DiscardOutcome { done, notFound, open };
@@ -110,6 +111,7 @@ struct AppendOutcome {
   std::optional<Set> set;
   AppendError error;
   std::optional<Exercise> belowFloorOf = std::nullopt;
+  std::uint64_t clockAheadMs = 0;  // clockAhead only: how far the set's completedAt sits past the log's now
 };
 
 struct FinishOutcome {

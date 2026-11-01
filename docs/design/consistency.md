@@ -1144,6 +1144,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   (`web/src/products/gym/backfill/draft.js` `valueLabel`). Since 0 is the barbell and dumbbell floor,
   the lowest allowed barbell load reads as *bodyweight*. The same form labels a negative bodyweight load
   *kg added*, while the session page reads *kg assisted*. The form needs equipment-aware load words.
+- **12s · Coach Apply and a target under 0 (designer to confirm).** Applying a Coach proposal whose
+  added or retargeted line sets a barbell or two-dumbbell target under 0 is refused by every domain
+  (`routine.loadFloor`). iOS, Android and web show the routine editor's line, *Load, 0 or more.*, where
+  each shows an Apply refusal. No board draws this refusal; a designer confirms the reused line.
 
 ### Coach on the client
 

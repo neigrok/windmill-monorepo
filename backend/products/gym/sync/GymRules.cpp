@@ -820,12 +820,12 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
     requireAlive(facts, "session", id);
     const Row& session = *facts.row("session", id);
     const Ms finish = args["finishedAt"].asUInt64();
-    if (!finish || finish < value(&session, "startedAt").asUInt64()) throw Refusal("bad-instant");
+    // A finish lands no earlier than the last activity, the last alive set or else the start: a clamped future finishedAt
+    // reads serverNow, which a set stamped, or a start named, by a clock ahead of the server can outrun.
+    const Ms landing = std::max(finish, lastActivity(facts, session));
+    if (!landing || landing < value(&session, "startedAt").asUInt64()) throw Refusal("bad-instant");
     const Json::Value stored = value(&session, "finishedAt");
     if (!stored.isNull() && value(&session, "closedBy") != "stale") return result;
-    // A finish lands no earlier than the last set: a clamped future finishedAt reads serverNow, which a set stamped by
-    // a clock ahead of the server can outrun.
-    const Ms landing = std::max(finish, lastActivity(facts, session));
     const Ms at = stored.isNull() ? landing : landing > stored.asUInt64() + kStaleMs ? stored.asUInt64() : std::max(stored.asUInt64(), landing);
     append(outcome, fields(session, object({{"finishedAt", Json::UInt64(at)}, {"closedBy", "finish"}})));
     return result;
