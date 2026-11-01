@@ -749,9 +749,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Editor movement | `ui/RoutineBuilder.kt:482`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
   | Target set row | `ui/MovementForm.kt:203`, shared row | 02.11 `1253:29263` | shared row |
   | This workout row | `ui/AssemblySheet.kt:141`, shared row, *Remove movement* | 03.4 `1253:29834` | shared row |
-  | Workout detail set | `ui/SessionScreen.kt:430`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
+  | Workout detail set | `ui/SessionScreen.kt:430`, shared row, immediate | 05.4b `1793:27226` | swipe verified in Dark/Daylight; Session copy remains 23 |
   | The log row | `ui/LogScreen.kt:138`, shared row *Discard workout*, and the long-press menu's *Discard workout* (`:276`); both ask *Discard this workout?* (`ui/ConfirmDialog.kt:60`) | 05.2 `1252:27527` | swipe + *Discard this workout?* |
-  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:301`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
+  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:301`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.14b `1793:27005` | confirm once |
   | Bodyweight | `ui/BodyweightScreen.kt:328` and the log's weigh-in row (`ui/LogScreen.kt:146`), shared row; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
   | Coach History | `coach/ThreadsScreen.kt:143-160`, asks *Delete this conversation?*, then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
@@ -946,6 +946,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     `1793:27501`, caption `1793:27589`) and 05.13b (`1793:27594`, `1793:27683`, caption
     `1793:27772`) carry the same rows. At 200 % text a two-digit count widens its row's column past
     24 dp, so that row's load starts further in; no board draws it.
+  - *A movement with no plan (designer).* On a free workout (no plan) each movement heading keeps
+    its 48 dp touch target (`GymTap.minimum`) with no line under the name
+    (`Performed.Against.Silent` in `ui/SessionScreen.kt`), so a blank gap sits where 05.3b draws
+    *Plan 3 × 8 · 75 kg total*. Designer to draw a planless movement heading.
+  - *Movement headings are not headings (Android build, task 64's area).* TalkBack does not expose
+    a workout page's movement headings as accessibility headings, so heading navigation skips
+    them; the heading in `ui/SessionScreen.kt` sets no `semantics { heading() }`.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves

@@ -5,8 +5,8 @@
 - Native colour acceptance references (layout migrations remain with their owning tasks):
   - 02.3 Routine editor, new: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44602)
   - 02.4 Movement picker: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44782)
-  - 05.5 Share this workout: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31081)
-  - 05.13 Share, the link is live: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31139)
+  - 05.5b Share this workout: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1793-27501)
+  - 05.13b Share, the link is live: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1793-27683)
 
 **Implementation status**
 - `ui/GymSkin.kt` owns both palettes, including dedicated `error` / `onError` roles. `ui/GymMaterial.kt` maps native error slots to them; brick `alarmInk` remains a separate refusal-text role.
