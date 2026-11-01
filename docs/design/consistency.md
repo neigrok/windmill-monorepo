@@ -935,13 +935,17 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
   becomes **Retry** · *That read failed.*, which no Android board draws. A movement's record page
   before the first pull lists the days this phone holds under *Recent sets* (`ui/RecordScreen.kt`);
-  designer to say whether that heading stays before the pull lands. Two questions for the owner:
+  designer to say whether that heading stays before the pull lands.
   - *Routines before the first pull.* Routines reads *No routines yet.* (`ui/RoutinesScreen.kt`)
     while the account it has not pulled holds routines. Owner to say what Routines shows while it
     waits.
-  - *Set numbers on a workout.* The workout page lists sets in logged order but labels each with its
-    server set number (`ui/SessionScreen.kt`), so sets numbered out of logged order read *2, 3, 1*.
-    Owner to say whether the label counts the rows or names the set.
+  - *Set numbers on a workout (owner ruling, 2026-11-01).* A workout page's set rows carry no set
+    number. The app still labels each row with its server set number (`ui/SessionScreen.kt`
+    `SetRow`), so sets numbered out of logged order read *2, 3, 1*, and Fix set opened from a row
+    names *Set N* by the same number (`ui/FixSheet.kt`), which no board revises yet. Board 05.3b
+    *Sets without numbers* (Dark `1782:26943`, Daylight `1782:27019`, caption `1782:27095`, in
+    section 05, 🚧 awaiting owner approval) draws each movement's sets as one group led by load ×
+    reps; on approval 05.4, 05.14, 05.5 and 05.13 follow.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
