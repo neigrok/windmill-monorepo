@@ -865,7 +865,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Gap | Build today | Board (Dark · Daylight) |
   |---|---|---|
   | In-app predictive back and navigation motion | Built (task 53, awaiting merge): `GymStage` previews pushed screens, the logger and the editor; `WindmillSheet` previews every sheet from its own window, so a busy sheet still swallows Back; shared axis X and fade-through, cuts with Remove animations | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
-  | Nav labels at 320dp/200% | *Routines* and *The log* clip (see *Narrow tab label*) | 00.7 `1745:27419` · `1745:27475` |
+  | Nav labels at 320dp/200% | Built (task 54, awaiting merge): labels stay whole, spill into a neighbour's spare width and wrap only at a space (*The / log*) | 00.7 `1745:27419` · `1745:27475` |
   | Dirty routine draft on Back (4k) | Built (task 56, awaiting merge): Back, the gesture and the back arrow ask on an unsaved draft; a clean one leaves at once | 02.20 `1742:39519` · `1742:39682` |
   | Movement editor discard wording | Built (task 56, awaiting merge): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
@@ -1117,13 +1117,10 @@ iOS. It and the product differ in these places.
 - **Native acceptance.** Keep API 26, notification promotion-disabled fallback, full TalkBack
   traversal and review-gate transitions in the Android acceptance matrix. Existing source or
   representative captures do not establish the full device matrix.
-- **Narrow tab label.** Routines has a recorded clipping defect at 320dp/200% text in dark mode:
-  the visible label loses its final “s”, while the accessible name remains complete. Fix the
-  layout without reducing text scale or target size and verify both themes.
-  Task 17 native captures reproduce clipped *Routines* and *The log* labels in both appearances
-  at 320 dp/200% text; the hierarchy retains their complete names. Evidence:
-  `/private/tmp/windmill-android-task17/native2/02.7-no-routines-fab-large-dark.png` and
-  `02.7-no-routines-fab-large-light.png`. Tracking: `android-gym-large-text-tab-label`.
+- **Narrow tab label.** At 320dp/200% text Android keeps every navigation label whole (00.7,
+  task 54, awaiting merge): *Routines* spills into its neighbour's spare width and *The log* wraps
+  at its space. The 00.7 caption draws the wrapped label at a 28 sp line; Android keeps the
+  label's own 16 sp line scaled to 32 sp.
 
 - **Android Display stepper overflow.** [O · Display overflow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1523-6723)
   was human-approved on 2026-10-26. Task 04 implements the approved rule: retain the 88sp inline

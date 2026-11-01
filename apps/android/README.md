@@ -312,5 +312,4 @@ by 0.10.0 or earlier; installing 0.11.0 first moves them into the engine. Uninst
 device-only records; preserve them before changing installation. When both sides hold training,
 choose Add to transfer signed-out records.
 
-Spoken TalkBack acceptance is unverified. Routines tab labels clip at 320dp with 200% text; see
-[the design consistency ledger](../../docs/design/consistency.md).
+Spoken TalkBack acceptance is unverified.

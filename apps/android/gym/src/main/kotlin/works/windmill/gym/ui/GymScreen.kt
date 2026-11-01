@@ -39,6 +39,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import works.windmill.gym.R
@@ -91,7 +93,8 @@ internal object GymChrome {
     val tab = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp)
 }
 
-// The room owns system insets; each screen owns its native title and actions.
+// The room owns system insets; each screen owns its native title and actions. The bar tints to the
+// card ground once the screen's content scrolls under it (00.1), and stays pinned.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GymScreen(
@@ -106,8 +109,9 @@ fun GymScreen(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val skin = LocalGymColors.current
+    val scrolledUnder = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrolledUnder.nestedScrollConnection),
         containerColor = skin.canvas,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -130,7 +134,9 @@ fun GymScreen(
                 actions = actions,
                 expandedHeight = 64.dp,
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas, scrolledContainerColor = skin.surface),
+                scrollBehavior = scrolledUnder,
+                modifier = Modifier.testTag("gym-top-bar"),
             )
         },
         bottomBar = bottomBar,
