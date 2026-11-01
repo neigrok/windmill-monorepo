@@ -816,8 +816,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   task 24 still needs its approved compact sheet, calendar and IME-state implementation.
 - **11e · Equipment, units and Edit movement.** Routine summary, editor, finish receipt and
   workout detail use equipment-aware units with a preceding space: *kg each* for paired dumbbells,
-  *kg total* for barbell/machine, *kg added* for bodyweight, and *kg* for one dumbbell, cable,
-  kettlebell, Other or unknown equipment. Coach presentation retains its own formatter.
+  *kg total* for barbell, *kg added* for bodyweight, and *kg* for one dumbbell, machine, cable,
+  kettlebell, Other or unknown equipment, as on iOS and the web (owner ruling 2026-11-01; approved
+  section [`1814:13077`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1814-13077)).
+  The shared `loadUnit` (`TrainingReads.kt`, `TrainingReads.swift`, `trainingReads.js`) and its
+  vector still answer *kg total* for a machine until task 81 lands, so Android prints it; iOS's rack,
+  Fix set, Edit sets and routine editor already read *kg* through `MovementEquipment.unit`. Coach
+  presentation retains its own formatter.
   Standalone Edit movement uses plain **Barbell / Dumbbells / Other**, implicit 1/2/1, without a
   count selector or Name/Equipment hints. Its approved section is `1548:7642`; unchanged and
   name-only edits preserve legacy raw equipment/count and all historical loads. Record opens it
@@ -966,7 +971,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   can run (offline), its foot becomes **Retry** · *That read failed.*, which the caption names for a
   failed pull and no Android board draws.
   A movement's record page before the first pull lists the days this phone holds under *Recent sets*
-  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands (design brief QW3, task 104).
+  (`ui/RecordScreen.kt`) with nothing to say more may come. Board 05.20 (`1826:56648` · `1826:56764`,
+  design brief QW3, task 104) keeps the heading and adds 05.18's *Reading your log…* foot under the
+  days.
   - *Routines before the first pull (owner ruling, 2026-11-01).* Routines reads *No routines yet.*
     (`ui/RoutinesScreen.kt`) while the account it has not pulled holds routines; the owner keeps
     that line for now.
@@ -982,11 +989,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     `1793:27317`, caption `1793:27408`; the swipe, rows renumber), 05.5b (`1793:27413`,
     `1793:27501`, caption `1793:27589`) and 05.13b (`1793:27594`, `1793:27683`, caption
     `1793:27772`) carry the same rows. At 200 % text a two-digit count widens its row's column past
-    24 dp, so that row's load starts further in; no board draws it.
+    24 dp and the count touches its load, since no gap follows the column; no board settles it.
+    The options are on the Proposals page, section Q4 `1832:14186` (design brief QW4).
   - *A movement with no plan (designer, design brief QW1, task 102).* On a free workout (no plan) each movement heading keeps
     its 48 dp touch target (`GymTap.minimum`) with no line under the name
     (`Performed.Against.Silent` in `ui/SessionScreen.kt`), so a blank gap sits where 05.3b draws
-    *Plan 3 × 8 · 75 kg total*. Designer to draw a planless movement heading.
+    *Plan 3 × 8 · 75 kg total*. Board 05.19 (`1826:42663` · `1826:42749`) centres the name in the
+    48 dp target with no second line.
   - *Movement headings are not headings (Android build, task 86).* TalkBack does not expose
     a workout page's movement headings as accessibility headings, so heading navigation skips
     them; the heading in `ui/SessionScreen.kt` sets no `semantics { heading() }`.
@@ -1011,7 +1020,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     (`web/src/products/gym/log.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** Coach can answer before its proposal
   reaches the phone; until the miss settles, Android draws nothing in the card's place
-  (`coach/AskScreen.kt`), because no board draws a waiting state for it. A miss settles 10 s after it,
+  (`coach/AskScreen.kt`). Board 08.63 (`1828:53638` · `1828:53718`) draws the waiting state: a
+  compact card in the card's place reading *Proposal arriving…* under a linear indicator. A miss settles 10 s after it,
   once the phone reads further into the account or a pull asked after its wait lands caught up; the
   wait's end asks for that pull, so an idle account settles too, and the place then reads *This
   proposal is no longer available.* `gym_proposal_missing` counts only answers this visit waited

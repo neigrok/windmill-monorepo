@@ -27,6 +27,10 @@ else
 fi
 candidate=(docker compose --env-file "$candidate_env" -f docker-compose.next.yml)
 "${candidate[@]}" config -q
+# Images no container uses come back from their registry on demand; pruning them before the pull keeps the
+# disk to the live images plus the candidate. Volumes are never pruned.
+docker image prune -af > /dev/null
+docker builder prune -af > /dev/null
 "${candidate[@]}" pull
 python3 "$(dirname "$0")/sync_compatibility.py" preflight "$candidate_env" sync-cutover.json "$verification/sync.json"
 
