@@ -53,6 +53,20 @@ class SyncRuntimeTests {
         override fun now() = wall
         override fun reading(): ClockReading { beforeReading(); return ClockReading(wall, wall, "boot-1") }
     }
+    // Time the test moves: an engine sleep ends once the clock has passed it, in steps of `step` ms that each let the workers run.
+    private class VirtualTime(private val clock: Clock) : EngineSleeper {
+        private val sleeping = ConcurrentHashMap<CompletableDeferred<Unit>, Long>()
+        override suspend fun sleep(ms: Long) {
+            val woken = CompletableDeferred<Unit>()
+            sleeping[woken] = clock.wall + ms
+            try { woken.await() } finally { sleeping.remove(woken) }
+        }
+        suspend fun pass(ms: Long, step: Long = 100) = repeat((ms / step).toInt()) {
+            clock.wall += step
+            sleeping.filterValues { it <= clock.wall }.keys.forEach { it.complete(Unit) }
+            delay(3)
+        }
+    }
     private class Push(val request: Json, val token: String) {
         val answer = CompletableDeferred<Reply<SyncResponse>>()
         val cancelled = CompletableDeferred<Unit>()
@@ -136,10 +150,9 @@ class SyncRuntimeTests {
         sleeper: EngineSleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() },
         pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() },
         registry: Registry = this@SyncRuntimeTests.registry, activityAllowed: () -> Boolean = { true },
-        signOutDrainAllowed: () -> Boolean = activityAllowed, draw: (Int) -> Int = { 0 }) : AutoCloseable {
+        signOutDrainAllowed: () -> Boolean = activityAllowed, draw: (Int) -> Int = { 0 }, val clock: Clock = Clock()) : AutoCloseable {
         val events = CopyOnWriteArrayList<EngineEvent>()
         val tokens = Tokens()
-        val clock = Clock()
         val identities = Identities(draw)
         val engine = Engine.memory(registry, snapshot, clock, identities, "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
         val transport = Transport()
@@ -1368,6 +1381,44 @@ class SyncRuntimeTests {
             until { pauses().size > before.size }
             assertTrue("$before", before.last() >= 2_000)
             assertEquals(1_000, pauses()[before.size])
+        }
+    }
+
+    // §7.5: every refused open is a reconnect, so the puller runs at once, but the next open waits out the socket's own ladder. A pull
+    // landing in between never cuts that wait short: a minute of a server refusing live is six opens and as many pulls, not hundreds.
+    @Test fun aRefusedLiveSocketReopensOnItsOwnLadderAndThePullsItRunsNeverHurryIt() = runBlocking {
+        val clock = Clock()
+        val time = VirtualTime(clock)
+        Fixture(sleeper = time, draw = { it - 1 }, clock = clock).use { fixture ->
+            fixture.transport.liveRefusal = SyncResponse(503)
+            fixture.runtime.enter()
+            time.pass(60_000)
+            // Opens at 0, 1, 3, 7, 15 and 31 s; the seventh waits until 61 s.
+            assertEquals(listOf(1_000, 2_000, 4_000, 8_000, 16_000, 30_000), fixture.identities.bounds.filter { it >= 1_000 })
+            assertEquals(6, fixture.transport.opening.get())
+            // The foreground's own pull may carry the first refusal's.
+            assertTrue("${fixture.transport.pulling.get()}", fixture.transport.pulling.get() in 6..7)
+        }
+    }
+
+    // §7.5: a socket nobody wanted (the app away) opens at once when wanted again and keeps its step; a re-authentication opens it at
+    // once from the first step.
+    @Test fun aForegroundReopensTheRefusedSocketAtOnceKeepingItsStepAndAReauthenticationFromTheFirst() = runBlocking {
+        val clock = Clock()
+        val time = VirtualTime(clock)
+        Fixture(sleeper = time, draw = { it - 1 }, clock = clock).use { fixture ->
+            val pauses = { fixture.identities.bounds.filter { it >= 1_000 } }
+            fixture.transport.liveRefusal = SyncResponse(503)
+            fixture.runtime.enter()
+            time.pass(3_500)
+            assertEquals(listOf(1_000, 2_000, 4_000), pauses())
+            fixture.runtime.leave()
+            fixture.runtime.enter()
+            settles(listOf(1_000, 2_000, 4_000, 8_000)) { pauses() }
+            assertEquals(4, fixture.transport.opening.get())
+            fixture.runtime.reauthenticate("token:A")
+            settles(listOf(1_000, 2_000, 4_000, 8_000, 1_000)) { pauses() }
+            assertEquals(5, fixture.transport.opening.get())
         }
     }
 

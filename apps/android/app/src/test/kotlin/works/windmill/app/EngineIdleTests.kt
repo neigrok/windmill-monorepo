@@ -129,8 +129,11 @@ class EngineIdleTests {
                         assertEquals(if (online) 1 else 0, openings.get())
                         if (online) {
                             assertTrue(socket.get()!!.close(1011, "test disconnect"))
+                            // §7.5: the reopen waits out its first step, under 1 s of the engine's clock, and only a wake looks again.
                             withTimeout(2_000) {
-                                while (openings.get() < 2 || requests.none { it == "POST /v1/sync/pull" }) delay(5)
+                                while (openings.get() < 2 || requests.none { it == "POST /v1/sync/pull" }) {
+                                    clock.elapsed += 100; runtime.connectivity(true); delay(5)
+                                }
                             }
                         }
                     }

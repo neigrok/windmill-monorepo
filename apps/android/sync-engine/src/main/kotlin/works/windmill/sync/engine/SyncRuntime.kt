@@ -37,6 +37,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     private val liveWake = Channel<Unit>(Channel.CONFLATED)
     private val wait = SenderWait()
     private val helloWait = SenderWait()
+    // §7.5 the live socket's reopen backoff: its own `k` and the 30 s ceiling, stepped only by the live worker. A wake from a pull or a
+    // frame never cuts it short. A return to the foreground or the network, or a socket nobody wanted (no seat), opens at once when wanted
+    // again, keeping `k`; a re-authentication opens it at once from k = 0.
+    private val liveWait = SenderWait()
+    private val liveReauthenticated = java.util.concurrent.atomic.AtomicBoolean()
     private val heldWake = Channel<Unit>(Channel.CONFLATED)
     private val pullWaits = mutableMapOf<ScopeRef, SenderWait>()
     @Volatile private var pullFloor = 0L
@@ -95,6 +100,9 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         finally { task.cancel(); timer.cancel() }
     }
     private fun wakeAll() { senderWake.trySend(Unit); pullerWake.trySend(Unit); liveWake.trySend(Unit) }
+    // Set before the old token's socket closes, so the live worker resets `k` after that socket's end has stepped the backoff.
+    private fun reopenLiveFresh() { liveReauthenticated.set(true); liveWake.trySend(Unit) }
+    private fun liveWanted() = activityAllowed() && foreground && online && seat() != null
     private fun launchWorker(operation: EngineOperation, body: suspend CoroutineScope.() -> Unit) = scope.launch {
         try { body() }
         catch (cancelled: CancellationException) { throw cancelled }
@@ -154,20 +162,25 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             catch (_: Exception) { engine.report(EngineOperation.pull, EngineOutcome.failure) }
             wait(pullerWake, 1_000)
         } }
-        launchWorker(EngineOperation.live) { var k = 0
+        launchWorker(EngineOperation.live) { var readiness = readinessGeneration
             while (isActive && !closed) {
-                if (!activityAllowed() || !foreground || !online || seat() == null) { socket?.close(); socket = null; wait(liveWake, 30_000); continue }
+                if (readinessGeneration != readiness) { readiness = readinessGeneration; liveWait.ask(mono()) }
+                if (liveReauthenticated.getAndSet(false)) liveWait.kick(mono())
+                if (!liveWanted()) { liveWait.ask(mono()); socket?.close(); socket = null; wait(liveWake, 30_000); continue }
+                val pause = liveWait.until - mono()
+                if (pause > 0) { wait(liveWake, pause); continue }
                 try { liveStep() }
                 catch (_: CancellationException) { if (!isActive) break }
                 catch (_: LiveEnded) { /* Its end is already reported. */ }
                 catch (_: Exception) { engine.report(EngineOperation.live, EngineOutcome.failure) }
                 // §7.5: a socket that stayed open 30 s resets the reopen backoff, however it ended.
-                if (socketOpenedAt?.let { mono() - it >= 30_000 } == true) k = 0
+                if (socketOpenedAt?.let { mono() - it >= 30_000 } == true) liveWait.kick(mono())
                 socketOpenedAt = null
-                if (activityAllowed() && foreground && online && seat() != null) {
+                // §7.5: a failed open or an ended socket is a reconnect. The puller runs at once, and the next open waits out the backoff.
+                if (liveWanted()) {
                     engine.subscriptions(products).forEach(pullWanted::add); pullerWake.trySend(Unit)
-                    val pause = engine.draw(minOf(30_000L, 1_000L shl minOf(k++, 5)).toInt()).toLong()
-                    wait(liveWake, pause)
+                    liveWait.backoff(mono(), engine::draw, liveHint = true)
+                    wait(liveWake, liveWait.until - mono())
                 }
             }
             socket?.close(); socket = null
@@ -281,7 +294,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             bound
         }
         if (alreadyBound) {
-            engine.reauthenticate(); socket?.close(); socket = null; wakeAll()
+            engine.reauthenticate(); reopenLiveFresh(); socket?.close(); socket = null; wakeAll()
             launchWorker(EngineOperation.hello) { hello(token) }
             return SignInSession(this, account, emptyMap(), Json.objectOf("complete" to Json.of(true), "due" to Json.array()))
         }
@@ -381,7 +394,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     }
     fun reauthenticate(token: String) {
         val account = engine.lock.withLock { engine.device.current().account } ?: throw EngineError(EngineError.Code.notSignedIn)
-        storageIO { tokens.save(account, token) }; engine.reauthenticate(); socket?.close(); socket = null; launchWorker(EngineOperation.lifecycle) { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
+        storageIO { tokens.save(account, token) }; engine.reauthenticate(); reopenLiveFresh(); socket?.close(); socket = null; launchWorker(EngineOperation.lifecycle) { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
         launchWorker(EngineOperation.hello) { hello(token) }
     }
     suspend fun senderStep(leaving: Boolean = false): Boolean = runSenderStep(leaving, false)
