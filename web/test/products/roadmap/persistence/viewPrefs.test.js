@@ -26,9 +26,17 @@ test('ViewPrefs — last view round-trips per tree and defaults to null', () => 
 
   prefs.setLastView('t1', 'list');
   prefs.setLastView('t2', 'tree');
+  prefs.setLastView('t3', 'board');
   assert.equal(prefs.lastView('t1'), 'list');
   assert.equal(prefs.lastView('t2'), 'tree');
-  assert.equal(prefs.lastView('t3'), null);
+  assert.equal(prefs.lastView('t3'), 'board');
+  assert.equal(prefs.lastView('t4'), null);
+});
+
+test('ViewPrefs — a view this device does not know reads as no choice', () => {
+  const storage = memoryStorage();
+  storage.setItem('windmill:view:last', JSON.stringify({ t1: 'kanban' }));
+  assert.equal(new ViewPrefs(storage).lastView('t1'), null);
 });
 
 test('ViewPrefs — folded sections round-trip per tree and default to empty', () => {
@@ -95,6 +103,26 @@ test('initialView — a just-born tree opens on the canvas over every other sign
   assert.equal(initialView({ saved: 'list', owner: true, empty: false, born: true }), 'tree');
   assert.equal(initialView({ saved: null, owner: true, empty: false, born: true }), 'tree');
   assert.equal(initialView({ saved: null, owner: true, empty: false, born: false }), 'list');
+});
+
+test('initialView — with the Board open, the owner opens on the Board and the visitor on the Graph', () => {
+  assert.equal(initialView({ saved: null, owner: true, empty: false, boardOpen: true }), 'board');
+  assert.equal(initialView({ saved: null, owner: false, empty: false, boardOpen: true }), 'tree');
+});
+
+test('initialView — with the Board open, a saved choice wins and a saved List becomes the Board', () => {
+  assert.equal(initialView({ saved: 'tree', owner: true, empty: false, boardOpen: true }), 'tree');
+  assert.equal(initialView({ saved: 'board', owner: false, empty: false, boardOpen: true }), 'board');
+  assert.equal(initialView({ saved: 'list', owner: true, empty: false, boardOpen: true }), 'board');
+});
+
+test('initialView — with the Board closed, a saved Board becomes the List', () => {
+  assert.equal(initialView({ saved: 'board', owner: false, empty: false, boardOpen: false }), 'list');
+});
+
+test('initialView — with the Board open, an empty or just-born tree still opens on the canvas', () => {
+  assert.equal(initialView({ saved: 'board', owner: true, empty: true, boardOpen: true }), 'tree');
+  assert.equal(initialView({ saved: 'board', owner: true, empty: false, born: true, boardOpen: true }), 'tree');
 });
 
 test('birth stamp — peek reads without consuming; clear removes only the tree it names', () => {

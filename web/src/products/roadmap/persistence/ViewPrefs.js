@@ -2,6 +2,7 @@
 // a broken slot reads as empty. None of it syncs.
 
 const LAST_VIEW_KEY = 'windmill:view:last';
+const VIEWS = ['list', 'board', 'tree'];
 const FOLDED_KEY = 'windmill:view:folded';
 
 export class ViewPrefs {
@@ -11,7 +12,7 @@ export class ViewPrefs {
 
   lastView(treeId) {
     const view = this.readMap(LAST_VIEW_KEY)[treeId];
-    return view === 'list' || view === 'tree' ? view : null;
+    return VIEWS.includes(view) ? view : null;
   }
 
   setLastView(treeId, view) {
@@ -48,13 +49,14 @@ export class ViewPrefs {
   }
 }
 
-// A saved choice wins on return, except an empty or just-planted tree always opens on the canvas.
-// With no saved choice the owner gets the list and a visitor the tree.
-export function initialView({ saved, owner, empty, born = false }) {
+// Empty or just planted opens the canvas, then a saved choice wins, then owners work and visitors look; the Board, while open, is the List's stand-in.
+export function initialView({ saved, owner, empty, born = false, boardOpen = false }) {
+  const working = boardOpen ? 'board' : 'list';
   if (born) return 'tree';
   if (empty) return 'tree';
-  if (saved === 'list' || saved === 'tree') return saved;
-  return owner ? 'list' : 'tree';
+  if (saved === 'tree') return 'tree';
+  if (saved === 'list' || saved === 'board') return working;
+  return owner ? working : 'tree';
 }
 
 // Session-scoped one-shot birth stamp: a planting door stamps the tree it made, the view decision

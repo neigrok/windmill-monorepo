@@ -21,6 +21,9 @@ import { ActionLane, LaneButton } from './ui/mobile/ActionLane.jsx';
 import ListView from './list/ListView.jsx';
 import ViewPill from './list/ViewPill.jsx';
 import { SwitcherSheet } from './list/SwitcherSheet.jsx';
+import BoardView from './board/BoardView.jsx';
+import { ViewSwitch } from './board/ViewSwitch.jsx';
+import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
 import { sharedKind } from './ui/mobile/bulk.js';
@@ -75,6 +78,7 @@ import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, F
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
+const BOARD_OPEN = boardOpen();
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const NEXT_UP_SELECT_MS = 540;
@@ -339,7 +343,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [multiMode, setMultiMode] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switcherTrees, setSwitcherTrees] = useState(null); // null = not yet loaded
-  const [view, setView] = useState(null); // 'tree' | 'list' | null when undecided
+  const [view, setView] = useState(null); // 'tree' | 'list' | 'board' | null when undecided
   const [sheetHeld, setSheetHeld] = useState(false);
   const [coachAllowed, setCoachAllowed] = useState(false);
   const [demoCompletions, setDemoCompletions] = useState(0);
@@ -1205,11 +1209,11 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const mobileEditable = treeMine && !shared && !demo && !demotion && breakpoint !== 'desktop';
 
-  // Phone only: the initial view is decided ONCE, the moment the tree is ready; tablet and desktop keep `view` null.
+  // The initial view is decided ONCE, the moment the tree is ready: on phones, and on every band while the Board is open.
   const phone = breakpoint === 'phone';
-  if (view === null && phone && tree) {
+  if (view === null && (phone || BOARD_OPEN) && tree) {
     const owner = treeMine && !shared && !demo && !demotion;
-    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId) }));
+    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN }));
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
@@ -1222,9 +1226,19 @@ export function SkillTreeView({ treeId, demo = false }) {
   if (listActive) listShownRef.current = true;
   const listMounted = listReady && listShownRef.current;
 
+  const boardReady = BOARD_OPEN && !loading && !!tree && tree.nodes.length > 0;
+  const boardActive = boardReady && view === 'board';
+  const boardShownRef = useRef(false);
+  if (boardActive) boardShownRef.current = true;
+  const boardMounted = boardReady && boardShownRef.current;
+
+  const layerActive = listActive || boardActive;
+  const canvasView = view !== 'list' && view !== 'board';
+
   const switchView = useCallback((next) => {
     setView(next);
     viewPrefs.setLastView(treeId, next);
+    if (BOARD_OPEN) track('roadmap_view_switch', { view: next === 'board' ? 'board' : 'graph' });
     setAim(null);
     setRemoving(null);
     if (multiMode) {
@@ -1270,18 +1284,18 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [reconcileProjections]);
 
   useEffect(() => {
-    if (!phone || view === 'list' || !selectedId || multiMode || aim || removing) return;
+    if (!phone || !canvasView || !selectedId || multiMode || aim || removing) return;
     sceneRef.current?.revealNode(selectedId);
-  }, [phone, view, selectedId, multiMode, aim, removing]);
+  }, [phone, canvasView, selectedId, multiMode, aim, removing]);
 
   // stop() only cancels the RAF; applyModel runs fine while stopped and renders on the first frame after start().
   useEffect(() => {
     if (!scene) return undefined;
-    if (listActive) scene.stop(); else scene.start();
+    if (layerActive) scene.stop(); else scene.start();
     return undefined;
-  }, [scene, listActive]);
+  }, [scene, layerActive]);
 
-  const sheetOpenNow = readOnly && phone && !!selectedNode && !aim && !removing && !multiMode && !sheetHeld && view !== 'list';
+  const sheetOpenNow = readOnly && phone && !!selectedNode && !aim && !removing && !multiMode && !sheetHeld && canvasView;
   const forkPresent = readOnly && (shared || !!demotion) && !demotion?.cardOpen;
   const laneLift = Math.max(
     0,
@@ -1289,7 +1303,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     forkPresent ? (18 + 50 + 12) - 16 : 0,
   );
 
-  const listNotice = status === 'ghost' && treeMine && !demo ? (
+  const deviceNotice = status === 'ghost' && treeMine && !demo ? (
     <button type="button" className="st-list-notice" onClick={openSignInDoor}>
       <span className="st-list-notice-text">Saved on this device — sign in to keep it</span>
       <span className="st-list-notice-chevron" aria-hidden>
@@ -1399,7 +1413,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     const offer = milestoneOffer(completed, next.completed);
     const ceremony = offer ? offer.summary : stepSummary;
     const ceremonyOptions = offer ? { action: offer.action } : {};
-    if (listActive) showToast(ceremony, ceremonyOptions);
+    if (layerActive) showToast(ceremony, ceremonyOptions);
     else sceneRef.current?.announceCeremony(ceremony, ceremonyOptions);
 
     if (demo) {
@@ -1468,7 +1482,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     const label = currentTree.nodesById.get(changes.completed[0])?.label?.trim() || 'Step';
     const summary = changes.completed.length === 1 ? `Step completed: ${label}` : `${changes.completed.length} steps completed`;
     const ceremony = changes.unlocked.length ? `${summary} · ${changes.unlocked.length} more opened` : summary;
-    if (listActive) showToast(ceremony);
+    if (layerActive) showToast(ceremony);
     else sceneRef.current?.announceCeremony(ceremony);
   };
 
@@ -1523,7 +1537,11 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const mobileSurface = activeSurface({ multiMode, aim, removing, selectedNode });
 
-  const lanePill = listReady ? <ViewPill view={view} onSwitch={switchView} /> : null;
+  const viewSwitch = boardReady ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} /> : null;
+  // The Board carries its switch in its identity row; the Graph's, on surfaces without the topbar, rides the lane.
+  const lanePill = BOARD_OPEN
+    ? (readOnly && !boardActive ? viewSwitch : null)
+    : (listReady ? <ViewPill view={view} onSwitch={switchView} /> : null);
   const laneTend = canTend && breakpoint !== 'desktop' && mobileSurface === 'empty' ? (
     <TendBar
       variant="phone"
@@ -1538,7 +1556,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   ) : null;
   // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
-  const dockOpen = readOnly ? readOnlyDock && !!selectedNode : composerOpen || !!selectedNode || feedVisible;
+  const dockOpen = readOnly
+    ? readOnlyDock && !!selectedNode && !boardActive
+    : composerOpen || (!boardActive && (!!selectedNode || feedVisible));
 
   const insets = useMemo(
     () => viewportInsets({ breakpoint, dockOpen, sheetOpen: sheetOpenNow, sheetHeight: mobileEditable ? 300 : 216, laneInset, legendBox }),
@@ -1583,8 +1603,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}`} ref={rootRef}>
       <canvas
         ref={canvasRef}
-        className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''} ${phone && view !== null ? 'st-canvas--layer' : ''}`}
-        style={listActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
+        className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''} ${(phone || BOARD_OPEN) && view !== null ? 'st-canvas--layer' : ''}`}
+        style={layerActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
       />
 
       {!readOnly && (
@@ -1613,7 +1633,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             completedAt={completedAt}
             legend={legend}
             header={{ name: tree.title, dominantHue: shareStats?.dominantKind }}
-            notice={listNotice}
+            notice={deviceNotice}
             selectedId={selectedId}
             onSelect={setSelectedId}
             active={listActive}
@@ -1641,9 +1661,28 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
+      {boardMounted && (
+        <div className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
+          <BoardView
+            tree={tree}
+            completed={completed}
+            completedAt={completedAt}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            title={tree.title}
+            notice={deviceNotice}
+            identity={readOnly}
+            phone={phone}
+            onSwitchView={switchView}
+            underTopbar={!readOnly}
+            laneInset={laneInset}
+          />
+        </div>
+      )}
+
       {readOnly ? (
         <MobileChrome
-          view={phone && view === 'list' ? 'list' : 'tree'}
+          view={phone && view === 'list' ? 'list' : view === 'board' ? 'board' : 'tree'}
           title={tree?.title}
           progress={{ done: shareStats?.done ?? 0, total: shareStats?.total ?? 0 }}
           author={tree?.author}
@@ -1675,6 +1714,8 @@ export function SkillTreeView({ treeId, demo = false }) {
           onZoomOut={handleZoomOut}
           onFocus={handleFocus}
           onShowAll={handleShowAll}
+          viewSwitch={viewSwitch}
+          board={boardActive}
           onShare={() => setShareOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
@@ -1815,7 +1856,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       {readOnly && breakpoint === 'phone' && (
         <BottomSheet
-          open={!!selectedNode && !aim && !removing && !multiMode && view !== 'list' && !sheetHeld}
+          open={!!selectedNode && !aim && !removing && !multiMode && canvasView && !sheetHeld}
           onDismiss={() => setSelectedId(null)}
           peekHeight={mobileEditable ? 300 : undefined}
           maxVh={mobileEditable ? 66 : undefined}
@@ -1846,7 +1887,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </BottomSheet>
       )}
 
-      {mobileEditable && breakpoint === 'phone' && aim && !multiMode && view !== 'list' && (
+      {mobileEditable && breakpoint === 'phone' && aim && !multiMode && canvasView && (
         <AimBar
           sourceLabel={nodesById.get(aim.sourceId)?.label}
           direction={aim.direction}
@@ -1855,7 +1896,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {mobileEditable && breakpoint === 'phone' && removing && !multiMode && view !== 'list' && (
+      {mobileEditable && breakpoint === 'phone' && removing && !multiMode && canvasView && (
         <RemoveLinkBar
           onRemove={() => {
             const { from, to } = removing;
@@ -1879,7 +1920,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {mobileEditable && breakpoint === 'tablet' && (
-        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH }}>
+        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' && !boardActive ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH }}>
           <div className="st-dock-tenant" key={mobileSurface === 'editor' ? selectedNode.id : mobileSurface}>
             {mobileSurface === 'bulk' ? (
               <BulkBar
@@ -1968,7 +2009,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         <ForkDoor open={forkOpen} tablet={breakpoint === 'tablet'} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 
-      {demo && coachAllowed && scene && view !== 'list' && (
+      {demo && coachAllowed && scene && canvasView && (
         <CoachChip
           scene={scene}
           nodeId={COACHED_NODE_ID}

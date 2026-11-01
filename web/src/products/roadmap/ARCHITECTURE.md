@@ -20,12 +20,17 @@ A saved camera is scoped to its layout engine and format. Without one, an owner 
 zoom over the frontier; a visitor receives the whole-tree fit and arrival ceremony. The initial
 owner view reframes as chrome measurements arrive until the reader moves the camera.
 
+Phones open owners on the outline List and visitors on the canvas; a tree's last choice on the device wins,
+and an empty or just-planted tree opens on the canvas. `board/gate.js` keeps the Board closed in production; off production, localStorage
+`windmill:board:dev` set to `1` opens it. Then the Board takes the List's place, every band switches Board
+and Graph (owners open on the Board, visitors on the Graph), and the selected step carries across.
+
 ## Package map
 
 | Area | Responsibility |
 |---|---|
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. |
-| `board/` | The Board's derived columns, card reasons, orders, narrowing and every Board string. |
+| `board/` | The Board view behind its development gate: derived columns, cards, the Board/Graph switch and every Board string. |
 | `layout/` | Deterministic layout engines behind `index.js`. |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |
