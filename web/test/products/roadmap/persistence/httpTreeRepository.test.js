@@ -52,11 +52,41 @@ test('loadTree fills the three server facts a bare answer omits', async () => {
   });
 });
 
-test('loadTree throws on a status, so the caller can fall back to the local blob', async () => {
+test('loadTree throws on a status, so the caller can fall back to the local blob; a refusal reports nothing', async () => {
   await withFetch(() => status(404), async () => {
-    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
+    const reported = [];
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
     await assert.rejects(() => repo.loadTree(), /loadTree t_1: HTTP 404/);
+    assert.deepEqual(reported, []);
   });
+});
+
+test('loadTree reports a server failure under its static operation, with no id, then throws', async () => {
+  await withFetch(() => status(503), async () => {
+    const reported = [];
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+    await assert.rejects(() => repo.loadTree(), /loadTree t_1: HTTP 503/);
+    assert.deepEqual(reported, ['roadmap-tree-load']);
+  });
+});
+
+test('loadTree reports a request lost while online, and not one lost while the browser knows it is offline', async () => {
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const lose = async (onLine) => {
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine }, configurable: true });
+    const reported = [];
+    await withFetch(() => { throw new TypeError('Failed to fetch'); }, async () => {
+      const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+      await assert.rejects(() => repo.loadTree(), /Failed to fetch/);
+    });
+    return reported;
+  };
+  try {
+    assert.deepEqual([await lose(true), await lose(false)], [['roadmap-tree-load'], []]);
+  } finally {
+    if (realNavigator) Object.defineProperty(globalThis, 'navigator', realNavigator);
+    else delete globalThis.navigator;
+  }
 });
 
 test('loadProgress folds the server frame into the overlay to open at, credentialed', async () => {

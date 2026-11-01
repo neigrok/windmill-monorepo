@@ -1,9 +1,10 @@
 // One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card selects its step.
 // A column's run of them ends, while Done is folded, with the Show all row.
 
-import React from 'react';
+import React, { useContext } from 'react';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { reasonLine, showAllDone } from './copy.js';
+import { UpNextRest } from './BoardStates.jsx';
 
 export function StepCard({ card, selected = false, onSelect }) {
   const reason = reasonLine(card);
@@ -28,6 +29,8 @@ export function StepCard({ card, selected = false, onSelect }) {
 }
 
 export function ColumnCards({ column, recentDone, doneExpanded, selectedId, onSelect, onExpandDone }) {
+  const upNextRest = useContext(UpNextRest);
+  if (column.name === 'upNext' && upNextRest !== null) return upNextRest;
   const folded = column.name === 'done' && recentDone.folded && !doneExpanded;
   return (
     <>

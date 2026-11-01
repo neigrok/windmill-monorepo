@@ -617,6 +617,19 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
   strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
   icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
+- **Board · two skeleton cards.** The desktop Skeleton card (369:4027) breathes opacity 1 → .6 over
+  1200ms ease-glow for as long as the roadmap loads; the phone Skeleton card (369:10026) holds still,
+  and the motion canon reserves endless breathing for the crowned root (`tokens/motion.css`).
+  `board/states.css` follows each drawing. Choose one.
+- **Board · Roadmap complete for a reader.** The roadmap-complete frames (desktop 385:13038, phone
+  377:6685) draw only the owner. The Board shows a reader the title alone: *Add a step whenever
+  you're ready.* invites something a reader cannot do. Draw the reader's state.
+- **Board · states at 744px.** The loading, load-error and empty frames are drawn at
+  1440 and on phones; 744–1023px uses the desktop frames, with the three skeleton columns side by side
+  rather than the tablet's rail. Draw the tablet states.
+- **Board · New step on an empty phone roadmap.** The phone empty roadmap (185:2149) pins New step, but
+  the web has no way to plant a first step on a phone or tablet yet, so there an empty roadmap stays on
+  the Graph as before and the Board's empty state shows only on the desktop editor.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

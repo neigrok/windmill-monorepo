@@ -38,6 +38,20 @@ forward into the cards lands on the first Up next card. Shown with a step select
 that step's column (its tab, past the Done fold, or out of the rail) and scrolls its card into view.
 The layer stays mounted across Board/Graph switches, so each column keeps its scroll there. Crossing
 744px rebuilds the columns, and a column that folds to a rail starts at the top when it stands again.
+While the Board is shown, `coverBeneath` in `BoardView.jsx` makes everything stacked under its layer
+inert, the Graph's overlays and legend included.
+
+The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
+would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap
+loads, skeleton cards hold the columns under the identity row and band, with no counts and no spinner.
+A failed load says *Couldn't load this roadmap* with Try again, which reruns the load. A roadmap with no
+steps opens on the Graph; switched to the Board on the desktop editor it shows *Your first step* with
+New step as its one primary. Elsewhere it stays on the Graph, since phones and tablets cannot plant a
+first step yet. Once every step is done, the Up next column rests on Roadmap complete: the owner gets
+the body line, Share it (the share dialog) and, from 744px, New step; a reader gets the title alone.
+The Board has no step editor yet, so New step switches to the Graph and plants the step there — the
+first step on an empty roadmap, otherwise one after the roadmap's last leaf — without changing the
+saved view.
 
 ## Package map
 

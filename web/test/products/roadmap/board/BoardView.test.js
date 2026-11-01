@@ -85,7 +85,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
-import BoardView from '/src/products/roadmap/board/BoardView.jsx';
+import BoardView, { coverBeneath } from '/src/products/roadmap/board/BoardView.jsx';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 
 window.openBoard = (nodes, completed, breakpoint) => {
@@ -106,6 +106,16 @@ window.openBoard = (nodes, completed, breakpoint) => {
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
+window.openState = ({ nodes, completed = [], breakpoint, loading = false, failed = false, owner = true }) => {
+  const tree = nodes === null ? null : new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
+  const call = (name) => () => (window.calls ??= []).push(name);
+  createRoot(document.getElementById('root')).render(
+    React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
+      React.createElement(BoardView, { tree, completed: new Set(completed), completedAt: {}, loading, failed, selectedId: null,
+        onSelect: () => {}, breakpoint, active: true, identity: true, title: 'Learn to sail', onSwitchView: () => {},
+        onRetry: call('retry'), onShare: owner ? call('share') : undefined, onNewStep: owner ? call('newStep') : undefined })));
+};
+window.coverBeneath = coverBeneath;
 window.entryReady = true;
 `;
 
@@ -246,6 +256,134 @@ test('Chromium: a phone tab emits on a tap and an arrow, never on the opening co
       await page.locator('.st-board-phone-pane.is-shown .st-board-card[aria-current="true"] .st-board-card-title').textContent(),
       (await events(page)).length,
     ], ['Up next, 2 steps', 'Tie a bowline', 3]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+async function openStatePage(viewport, state, errors, { reducedMotion = 'no-preference' } = {}) {
+  const page = await browser.newPage({ viewport, reducedMotion });
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(`${origin}/board-view-test`);
+  await page.waitForFunction(() => window.entryReady);
+  await page.evaluate((options) => openState(options), state);
+  await page.locator('.st-board').waitFor();
+  return page;
+}
+
+test('Chromium: Try again on a load error reloads and emits once, with only the state and the action', async () => {
+  await ready;
+  const errors = [];
+  const page = await openStatePage({ width: 1440, height: 900 }, { nodes: null, failed: true, breakpoint: 'desktop' }, errors);
+  try {
+    await page.getByRole('button', { name: 'Try again' }).click();
+    assert.deepEqual([await page.evaluate(() => window.calls), await events(page)],
+      [['retry'], ['roadmap_board_state_action {"state":"error","action":"retry"}']]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: an empty roadmap’s New step plants and emits; Roadmap complete’s Share it and New step each emit', async () => {
+  await ready;
+  const errors = [];
+  const empty = await openStatePage({ width: 1440, height: 900 }, { nodes: [], breakpoint: 'desktop' }, errors);
+  const complete = await openStatePage({ width: 1440, height: 900 }, { nodes: learnToSailNodes, completed: learnToSailNodes.map((node) => node.id), breakpoint: 'desktop' }, errors);
+  try {
+    await empty.getByRole('button', { name: 'New step' }).click();
+    assert.deepEqual([await empty.evaluate(() => window.calls), await events(empty)],
+      [['newStep'], ['roadmap_board_state_action {"state":"empty","action":"newStep"}']]);
+    await complete.getByRole('button', { name: 'Share it' }).click();
+    await complete.getByRole('button', { name: 'New step' }).click();
+    assert.deepEqual([await complete.evaluate(() => window.calls), await events(complete)], [['share', 'newStep'], [
+      'roadmap_board_state_action {"state":"complete","action":"share"}',
+      'roadmap_board_state_action {"state":"complete","action":"newStep"}',
+    ]]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await empty.close();
+    await complete.close();
+  }
+});
+
+test('Chromium: on the phone Roadmap complete takes the Up next pane without its title and centres there', async () => {
+  await ready;
+  const errors = [];
+  const page = await openStatePage({ width: 390, height: 844 }, { nodes: learnToSailNodes, completed: learnToSailNodes.map((node) => node.id), breakpoint: 'phone' }, errors);
+  try {
+    const layout = await page.evaluate(() => {
+      const pane = document.querySelector('.st-board-phone-pane.is-shown');
+      const message = pane.querySelector('.st-board-complete').getBoundingClientRect();
+      const box = pane.getBoundingClientRect();
+      return {
+        heading: getComputedStyle(pane.querySelector('.st-board-phone-heading')).display,
+        centred: Math.abs((message.top + message.bottom) / 2 - (box.top + box.bottom) / 2) < 12,
+      };
+    });
+    assert.deepEqual(layout, { heading: 'none', centred: true });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: from 744px the skeleton breathes, and holds still under reduced motion', async () => {
+  await ready;
+  const errors = [];
+  const moving = await openStatePage({ width: 1440, height: 900 }, { nodes: null, loading: true, breakpoint: 'desktop' }, errors);
+  const still = await openStatePage({ width: 1440, height: 900 }, { nodes: null, loading: true, breakpoint: 'desktop' }, errors, { reducedMotion: 'reduce' });
+  try {
+    const animation = (page) => page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector('.st-board-skeleton-card'));
+      return `${style.animationName} ${style.animationDuration}`;
+    });
+    assert.deepEqual([await animation(moving), await animation(still), await moving.locator('.st-board-skeleton-card').count()],
+      ['st-board-skeleton-breathe 1.2s', 'none 0s', 8]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await moving.close();
+    await still.close();
+  }
+});
+
+test('Chromium: while the Board is shown, what it covers leaves the tab order — later arrivals too — and comes back after', async () => {
+  await ready;
+  const errors = [];
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(`${origin}/board-view-test`);
+    await page.waitForFunction(() => window.entryReady);
+    const tabbed = () => page.evaluate(() => {
+      const root = document.getElementById('stage');
+      const reached = [];
+      for (const button of root.querySelectorAll('button')) {
+        button.focus();
+        if (document.activeElement === button) reached.push(button.textContent);
+      }
+      return reached;
+    });
+    await page.evaluate(() => {
+      document.body.insertAdjacentHTML('beforeend', `<div id="stage" style="position: relative; height: 400px">
+        <button style="position: absolute; z-index: 16">Recolour</button>
+        <div style="position: absolute"><button>Graph overlay</button></div>
+        <div class="layer" style="position: absolute; inset: 0; z-index: 18"><button>Card</button></div>
+        <header style="position: absolute; z-index: 20"><button>Topbar</button></header>
+      </div>`);
+      window.uncover = coverBeneath(document.querySelector('#stage .layer'));
+    });
+    const covered = await tabbed();
+    await page.evaluate(() => document.getElementById('stage').insertAdjacentHTML('beforeend', '<span style="position: absolute; z-index: 11"><button>Edge ×</button></span>'));
+    await page.waitForFunction(() => document.querySelector('#stage span').inert);
+    const arrived = await tabbed();
+    await page.evaluate(() => window.uncover());
+    assert.deepEqual([covered, arrived, await tabbed()], [
+      ['Card', 'Topbar'],
+      ['Card', 'Topbar'],
+      ['Recolour', 'Graph overlay', 'Card', 'Topbar', 'Edge ×'],
+    ]);
     assert.deepEqual(errors, []);
   } finally {
     await page.close();
