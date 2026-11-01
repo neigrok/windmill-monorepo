@@ -437,6 +437,7 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
   Harness h;
   h.startAt(h.clock.now);
   const std::uint64_t t0 = h.clock.now;
+  h.clock.now = t0 + 600'000;
   h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, t0 + 600'000));
   h.clock.now = t0 + 5 * 3'600'000;
   h.training.detail(h.user, sid());                                    // the mirror settles it stale
@@ -454,9 +455,10 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0,
                                           8, std::nullopt, "", t0 + 600'000)});
   // A finish EARLIER than the stale close's last set is refused; one at that set becomes the lifter's word.
-  h.startAt(h.clock.now, "ses_00000002");
-  h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 600'000));
   const std::uint64_t t1 = h.clock.now;
+  h.startAt(t1, "ses_00000002");
+  h.clock.now = t1 + 600'000;
+  h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, t1 + 600'000));
   h.clock.now = t1 + 5 * 3'600'000;
   h.training.detail(h.user, sid("ses_00000002"));
   CHECK(h.door.finish(h.user, sid("ses_00000002"), t1 + 60'000).error == FinishError::badInstant);
@@ -464,9 +466,10 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
   CHECK_EQ(early.session, std::optional<Session>(Session(sid("ses_00000002"), h.user, t1, t1 + 600'000,
                                                          std::nullopt, std::nullopt, ClosedBy::finish)));
   // A tap hours after the last set keeps the end at that set; only the word changes.
-  h.startAt(h.clock.now, "ses_00000003");
-  h.door.append(h.user, sid("ses_00000003"), h.bench("set_00000004", 80.0, h.clock.now + 600'000));
   const std::uint64_t t2 = h.clock.now;
+  h.startAt(t2, "ses_00000003");
+  h.clock.now = t2 + 600'000;
+  h.door.append(h.user, sid("ses_00000003"), h.bench("set_00000004", 80.0, t2 + 600'000));
   h.clock.now = t2 + 5 * 3'600'000;
   h.training.detail(h.user, sid("ses_00000003"));
   FinishOutcome late = h.door.finish(h.user, sid("ses_00000003"), h.clock.now);
@@ -2116,6 +2119,7 @@ TEST(import_settles_a_walked_away_session_first_so_its_span_is_in_the_way) {
   Harness h;
   const std::uint64_t startedAt = h.clock.now;
   h.startAt(startedAt, "ses_00000001");
+  h.clock.now = startedAt + 30 * 60'000;
   h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, startedAt + 30 * 60'000));
   h.clock.now = startedAt + 30 * 60'000 + kAutoCloseMs;
 

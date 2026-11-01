@@ -367,6 +367,7 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
                                           std::nullopt, ClosedBy::stale}));
 
   const AppendOutcome owed = h.door.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 85.0, t1 + 600'000));
+  h.clock.now = t1 + 600'000 + kAutoCloseMs + 1;
   const AppendOutcome tomorrow = h.door.append(h.user, SessionId{"ses_pg000001"},
       bench("set_pg000003", 60.0, t1 + 600'000 + kAutoCloseMs + 1));
 
@@ -671,8 +672,10 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
   const std::uint64_t day = 86'400'000;
 
   started(h, h.user, "ses_pg000001", t1);                                                   // a week ago
-  logged(h, h.user, "ses_pg000001", bench("set_pg000001", 60.0, t1 + 30 * day));           // stamped 30 days ahead
+  h.clock.now = t1 + 30 * day;                                                              // a clock 30 days ahead
+  logged(h, h.user, "ses_pg000001", bench("set_pg000001", 60.0, t1 + 30 * day));           // stamps its set by it
   finished(h, h.user, "ses_pg000001", t1 + 30 * day);
+  h.clock.now = t1 + 6 * day;
   started(h, h.user, "ses_pg000002", t1 + 6 * day);                                         // yesterday
   const Set honest = logged(h, h.user, "ses_pg000002", bench("set_pg000002", 100.0, t1 + 6 * day + 1'000));
   finished(h, h.user, "ses_pg000002", t1 + 6 * day + 2'000);

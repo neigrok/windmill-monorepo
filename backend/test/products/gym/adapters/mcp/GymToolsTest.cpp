@@ -776,11 +776,13 @@ TEST(gym_a_finish_before_the_last_set_is_refused_and_says_to_finish_at_or_after_
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   const Agent me{h.tools, h.user};
-  me.start("ses_00000001", h.clock.now);
-  REQUIRE(!me.logSet("ses_00000001", "set_00000001", "bench-press", 60, 5, h.clock.now + 600'000).isError);
+  const std::uint64_t at = h.clock.now;
+  me.start("ses_00000001", at);
+  h.clock.now = at + 600'000;
+  REQUIRE(!me.logSet("ses_00000001", "set_00000001", "bench-press", 60, 5, at + 600'000).isError);
   std::vector<std::string> lines;
   installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
-  const ToolResult refused = me.finish("ses_00000001", h.clock.now + 599'999);
+  const ToolResult refused = me.finish("ses_00000001", at + 599'999);
   installWriteSink({});
 
   CHECK(refused.isError);
@@ -1980,6 +1982,7 @@ TEST(gym_a_workout_read_answers_with_the_rows_it_served) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   const Agent me{h.tools, h.user};
+  h.clock.now = 1'700'000'900'000;
   me.start("ses_00000001", 1'700'000'000'000);
   me.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 5, 1'700'000'300'000);
   me.logSet("ses_00000001", "set_00000002", "bench-press", 82.5, 5, 1'700'000'600'000);

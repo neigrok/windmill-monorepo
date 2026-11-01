@@ -470,21 +470,18 @@ import SyncTesting
     #expect(workout.sets == retained)
   }
 
-  @Test func backwardClockFinishPreservesTheWorkoutAndShowsItsSpecificRefusal() async throws {
+  // A clock stepped back behind the last set still finishes the workout: the finish lands at that set, so the receipt
+  // keeps every set and the workout's own duration.
+  @Test func backwardClockFinishLandsAtTheLastSet() async throws {
     let (harness, gym) = try fixture(), workout = try begin(gym)
     #expect(workout.logSet())
     let started = try #require(workout.session), retained = workout.sets
+    let last = try #require(retained.map(\.completedAt).max())
     harness.clock.skew(ms: -60_000)
     await workout.finish()
-    #expect(gym.refusal == .badInstant(Refused(Gym.Codes.badInstant, subject: started.id.ref, path: .predicted)))
-    #expect(workout.message == "Check the workout's start and finish times." && workout.message == gym.error)
-    #expect(workout.session == started && workout.sets == retained && workout.receipt == nil && workout.isPresented && !workout.finishing)
-    #expect(try gym.runner.read(Gym.scope) { try !$0.commands().contains { $0.command.name == Gym.Commands.finish } })
-    harness.clock.skew(ms: 0)
-    await workout.finish()
     let receipt = try #require(workout.receipt)
-    #expect(receipt.session.id == started.id && !receipt.session.isOpen && receipt.sets == retained)
-    #expect(workout.sets == retained && workout.message == nil && gym.refusal == nil)
+    #expect(receipt.session.id == started.id && receipt.session.finishedAt == last && receipt.sets == retained)
+    #expect(workout.message == nil && gym.refusal == nil)
   }
 
   @Test func previousAnonymousFinishQueueCannotBlockLoggingANewWorkout() async throws {
