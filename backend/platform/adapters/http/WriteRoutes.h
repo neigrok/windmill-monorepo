@@ -40,6 +40,8 @@ std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route);
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response);
+// The static operation of the write route the request matched, or empty when it matched none.
+std::string writeOperation(const drogon::HttpRequestPtr& request);
 void writeHttpFailure(const drogon::HttpRequestPtr& request, const std::exception& error);
 void writeHttpFailureUnknown(const drogon::HttpRequestPtr& request);
 std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std::string& operation);

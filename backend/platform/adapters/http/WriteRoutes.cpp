@@ -189,11 +189,15 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   return "failed";
 }
 
+std::string writeOperation(const drogon::HttpRequestPtr& request) {
+  if (!request->attributes()->find("wm.write_operation")) return {};
+  return request->attributes()->get<std::string>("wm.write_operation");
+}
+
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
   const auto observation = beginWriteRequest(request);
   if (!observation) return;
-  const std::string operation = request->attributes()->get<std::string>("wm.write_operation");
-  const std::string outcome = writeHttpOutcome(response, operation);
+  const std::string outcome = writeHttpOutcome(response, writeOperation(request));
   if (outcome == "failed") {
     observation->fail(HttpWriteFailure{});
     return;

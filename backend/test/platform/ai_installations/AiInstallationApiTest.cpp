@@ -1,4 +1,6 @@
 #include "platform/ai_installations/AiInstallationApi.h"
+#include "platform/adapters/http/AccessLog.h"
+#include "platform/adapters/http/WriteRoutes.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/json/AiBudgetJson.h"
 #include "platform/adapters/llm/AiCallBudget.h"
@@ -26,6 +28,7 @@ struct InstallationRows : AiInstallationRepository {
     return row->second;
   }
   AiInstallationCode issue(const AiInstallationRow& row, const AiInstallationNetwork& network) override {
+    if (fail) throw std::runtime_error("private_installation_detail");
     rows.emplace(row.tokenDigest, row);
     networks.push_back(network);
     return AiInstallationCode::Ok;
@@ -221,6 +224,75 @@ TEST(ai_installation_binding_survives_disabled_anonymous_admission_without_a_net
   CHECK_EQ(rows.networks.size(), std::size_t{2});
   CHECK(budgetRows.reservations.empty());
   CHECK(failures->reports.empty());
+}
+
+// One request is one completion, the route's: an expected refusal is one WARN line under door `rest`, and its access-log
+// line a warning; a storage failure is one failed line and one Issue, under the same operation.
+TEST(ai_installation_issue_completes_once_under_its_route) {
+  FakeAuthRepository accounts;
+  FakeEmail email;
+  FakeTokens authTokens;
+  OpenSslTokenGenerator installationTokens;
+  FakeClock clock;
+  clock.now = 1'792'281'600'000;
+  FakeOAuthRepository oauthRepo;
+  OAuthService oauth{oauthRepo, authTokens, clock};
+  FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
+  auto auth = std::make_shared<AuthService>(accounts, email, authTokens, clock, oauth, footprint,
+                                           revocations, "https://windmill.works");
+  FakeAiBudgetRepository budgetRows;
+  const AiBudgetLimits limits;
+  auto budgets = std::make_shared<AiBudgetService>(budgetRows, [=] { return limits; }, [&] { return clock.now; });
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository usage;
+  auto entitlements = std::make_shared<Entitlements>(subscriptions, usage, "", std::vector<std::string>{}, budgets);
+  InstallationRows rows;
+  auto failures = std::make_shared<InstallationFailures>();
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion); });
+  installWriteReporter(failures);
+  wm::test::DrogonLoopback::Connection wire;
+  const WriteRoute route{"/v1/ai/installations", "ai.installation.issue", "platform", "rest", {drogon::Post}};
+  const auto issue = [&](AiInstallationApi& api) {
+    const auto request = wire.exchange("POST /v1/ai/installations HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n"
+                                       "Content-Length: 2\r\n\r\n{}").request;
+    auto handler = [&api](const drogon::HttpRequestPtr& incoming, WriteHttpCallback&& reply) { api.issue(incoming, std::move(reply)); };
+    drogon::HttpResponsePtr response;
+    detail::ObservedHttpHandler<decltype(&decltype(handler)::operator())>::wrap(route, handler)(
+        request, [&](const drogon::HttpResponsePtr& value) { response = value; });
+    return std::make_pair(request, response);
+  };
+
+  AiInstallationApi disabled{std::make_shared<AiInstallations>(rows, budgets, installationTokens, clock), auth, entitlements,
+                             failures, AiInstallationProxy::Direct};
+  const auto [refusing, refused] = issue(disabled);
+  REQUIRE(refused);
+  CHECK_EQ(refused->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK(accessSeverity(refused, writeOperation(refusing)) == Severity::warn);
+  REQUIRE_EQ(lines.size(), std::size_t{1});
+  CHECK_EQ(lines[0].operation, std::string{"ai.installation.issue"});
+  CHECK_EQ(lines[0].product, std::string{"platform"});
+  CHECK_EQ(lines[0].door, std::string{"rest"});
+  CHECK_EQ(lines[0].outcome, std::string{"anonymous_ai_unavailable"});
+  CHECK(lines[0].severity == WriteSeverity::warn);
+  CHECK(failures->reports.empty());
+
+  AiInstallationApi enabled{std::make_shared<AiInstallations>(rows, budgets, installationTokens, clock, std::string(32, 'k')), auth,
+                            entitlements, failures, AiInstallationProxy::Direct};
+  rows.fail = true;
+  const auto [failing, failed] = issue(enabled);
+  REQUIRE(failed);
+  CHECK_EQ(failed->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK(accessSeverity(failed, writeOperation(failing)) == Severity::error);
+  REQUIRE_EQ(lines.size(), std::size_t{2});
+  CHECK_EQ(lines[1].operation, std::string{"ai.installation.issue"});
+  CHECK_EQ(lines[1].door, std::string{"rest"});
+  CHECK_EQ(lines[1].outcome, std::string{"failed"});
+  CHECK(lines[1].severity == WriteSeverity::error);
+  CHECK_EQ(failures->reports, (std::vector<std::string>{"ai.installation.issue"}));
+  installWriteSink({});
+  installWriteReporter({});
 }
 
 TEST(ai_installation_budget_is_explicit_and_keeps_legacy_anonymous_calls_closed) {

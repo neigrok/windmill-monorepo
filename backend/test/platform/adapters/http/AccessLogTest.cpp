@@ -1,4 +1,5 @@
 #include "platform/adapters/http/AccessLog.h"
+#include "platform/adapters/http/JsonReply.h"
 
 #include "test/testing.h"
 
@@ -17,6 +18,21 @@ TEST(access_log_levels_split_our_failures_from_refusals_from_traffic) {
   CHECK(severityForStatus(499) == Severity::warn);
   CHECK(severityForStatus(500) == Severity::error);
   CHECK(severityForStatus(503) == Severity::error);
+}
+
+// An expected 5xx refusal is a refusal on the access log too; a server failure, a 503 nobody declared and every other
+// status keep their level.
+TEST(access_log_reads_an_expected_5xx_refusal_as_a_warning_and_keeps_failures_errors) {
+  const auto answer = [](drogon::HttpStatusCode status, const char* code) { return error(status, "PRIVATE BODY", code); };
+  CHECK(accessSeverity(answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable"), "ai.installation.issue") == Severity::warn);
+  CHECK(accessSeverity(answer(drogon::k503ServiceUnavailable, "unavailable"), "") == Severity::warn);
+  CHECK(accessSeverity(answer(drogon::k503ServiceUnavailable, "compose-unavailable"), "roadmap.POST.v1.compose") == Severity::warn);
+  CHECK(accessSeverity(answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable"), "") == Severity::error);
+  CHECK(accessSeverity(answer(drogon::k503ServiceUnavailable, "ai_accounting_unavailable"), "ai.installation.issue") == Severity::error);
+  CHECK(accessSeverity(answer(drogon::k500InternalServerError, "unavailable"), "") == Severity::error);
+  CHECK(accessSeverity(answer(drogon::k502BadGateway, ""), "") == Severity::error);
+  CHECK(accessSeverity(answer(drogon::k404NotFound, "not_found"), "") == Severity::warn);
+  CHECK(accessSeverity(drogon::HttpResponse::newHttpResponse(), "") == Severity::info);
 }
 
 TEST(access_log_line_carries_the_verb_route_status_cost_and_caller) {

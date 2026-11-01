@@ -29,6 +29,9 @@ configuration, a busy gym engine, rate limits, invalid tool arguments and every 
 410 included — never create Issues.
 AI allowance, funding, pricing and closed-checkout 503 refusals keep their bounded codes on the
 matching HTTP routes. Accounting failures and unknown 503 responses remain Issues.
+The access log writes one `http …` line per request at the same split: INFO for traffic, WARN for every
+4xx and for a 5xx the write boundary reads as an expected refusal (`writeHttpOutcome`), ERROR for every
+other 5xx.
 Unexpected exceptions and unclassified 5xx create Issues grouped by static operation and compiled
 exception type; the Issue's `tags.request_id` matches its completion. Nested boundaries share the
 request state and report its first unexpected failure once. Admission, command and postcommit

@@ -1,6 +1,7 @@
 #include "platform/adapters/http/AccessLog.h"
 
 #include "platform/adapters/http/Caller.h"
+#include "platform/adapters/http/WriteRoutes.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -16,6 +17,12 @@ constexpr char kStartAttribute[] = "wm.received";
 bool isProbe(const std::string& path) {
   return path == "/healthz" || path == "/v1/health" || path == "/";
 }
+}
+
+Severity accessSeverity(const drogon::HttpResponsePtr& response, const std::string& operation) {
+  const Severity severity = severityForStatus(static_cast<int>(response->getStatusCode()));
+  if (severity == Severity::error && writeHttpOutcome(response, operation) != "failed") return Severity::warn;
+  return severity;
 }
 
 std::string accessLine(const std::string& method, const std::string& path, int status,
@@ -55,7 +62,7 @@ void installAccessLog(drogon::HttpAppFramework& app) {
       LOG_DEBUG << line;
       return;
     }
-    switch (severityForStatus(status)) {
+    switch (accessSeverity(resp, writeOperation(req))) {
       case Severity::error: LOG_ERROR << line; return;
       case Severity::warn: LOG_WARN << line; return;
       case Severity::info: LOG_INFO << line; return;
