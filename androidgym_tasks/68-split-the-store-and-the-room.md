@@ -1,6 +1,6 @@
 # Split TrainingStore into feature stores; screens take state and events, not the store
 
-**Status:** Refactor; nothing visual changes. 🚀 On main (`c124425c`). A local-stack regression pass over sign-in, workouts, the log, routines, notes, Coach, sharing and an account switch found no behaviour change. The rig recaptures have not been re-run.
+**Status:** Refactor; nothing visual changes. 🚀 On main (`c124425c`), not yet in a published release. A local-stack regression pass over sign-in, workouts, the log, routines, notes, Coach, sharing and an account switch found no behaviour change. The rig recaptures have not been re-run.
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - **Feature stores (`store/`):** each takes the shared `TrainingSeat` (whose replica is in hand, whether this phone may write it, the one guarded `readTraining`, `tried`, `reportFailure`, the refresh nudge) by constructor; upward edges are named lambdas, as `CoachStore` already used.

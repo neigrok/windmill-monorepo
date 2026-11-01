@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -13,7 +14,7 @@ import works.windmill.gym.R
 fun EquipmentIcon(
     equipment: String,
     modifier: Modifier = Modifier,
-    tint: Color = LocalGymColors.current.ink,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     val resource = when (equipment) {
         "barbell" -> R.drawable.gym_equipment_barbell

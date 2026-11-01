@@ -1,6 +1,6 @@
 # Accessibility pass: status lines are announced, targets are 48 dp, labels say each thing once
 
-**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Conformance; the one drawn change is the taller "What Coach read" row.
+**Status:** 🚀 On main (`ef0f05fb`), in Android 0.14.0. Conformance; the one drawn change is the taller "What Coach read" row.
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - **Status lines:** the room's `note` line (`GymRoom.kt`) and the routine sheet's failure line (`ui/RoutinesScreen.kt`) are polite live regions, so TalkBack says what the eye reads as it changes. The snackbar host keeps the transient with its window; `note` stays the line about the screen you are on, so the two are not merged.

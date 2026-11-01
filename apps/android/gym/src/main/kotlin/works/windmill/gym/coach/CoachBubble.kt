@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.ui.GymType
+import androidx.compose.material3.MaterialTheme
 import android.content.ClipData
 import android.text.format.DateFormat
 import androidx.compose.foundation.Image
@@ -24,9 +26,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -35,7 +35,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 
@@ -54,7 +53,7 @@ internal fun CoachBubble(
     copyLastIndex: Int = copyIndex,
     content: @Composable () -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val clipboard = LocalClipboard.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
@@ -91,16 +90,16 @@ internal fun CoachBubble(
         bottomStart = if (!fromLifter && first) 4.dp else 20.dp,
     )
     Box(if (fullWidth) Modifier.fillMaxWidth() else Modifier.widthIn(max = 321.dp)) {
-        Box(Modifier.clip(shape).background(if (fromLifter) skin.accent else skin.surface)
-            .background(if (menu) skin.ink.copy(alpha = 0.16f) else Color.Transparent)
+        Box(Modifier.clip(shape).background(if (fromLifter) colors.primary else colors.surfaceContainer)
+            .background(if (menu) colors.onSurface.copy(alpha = 0.16f) else Color.Transparent)
             .pointerInput(label) { detectTapGestures(onLongPress = { changeMenu(true) }) }
             .semantics(mergeDescendants = true) { customActions = listOf(CustomAccessibilityAction(label) { copy() }) }
             .padding(horizontal = 16.dp, vertical = if (fullWidth) 16.dp else 8.dp),
         ) { content() }
-        DropdownMenu(expanded = menu, onDismissRequest = { changeMenu(false) }, containerColor = skin.surface,
+        DropdownMenu(expanded = menu, onDismissRequest = { changeMenu(false) }, containerColor = colors.surfaceContainer,
             shape = RoundedCornerShape(16.dp), modifier = Modifier.width(208.dp),
         ) {
-            DropdownMenuItem(text = { Text(label, style = CoachType.body(14).copy(lineHeight = 20.sp), color = skin.ink) }, onClick = { copy() })
+            DropdownMenuItem(text = { Text(label, style = GymType.coachSupporting, color = colors.onSurface) }, onClick = { copy() })
         }
     }
 }
@@ -109,7 +108,7 @@ internal fun CoachBubble(
 internal fun CoachQuestion(question: String, group: CoachGroup = CoachGroup.Single) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         CoachBubble(fromLifter = true, group = group, copyText = { question }) {
-            Text(question, style = CoachType.body(16).copy(lineHeight = 22.sp), color = LocalGymColors.current.onAccent)
+            Text(question, style = GymType.coachParagraph, color = MaterialTheme.colorScheme.onPrimary)
         }
     }
 }
@@ -137,6 +136,6 @@ internal fun coachTimestamp(atMs: Long, nowMs: Long, clock24: Boolean, zone: Zon
 internal fun ChatTimestamp(atMs: Long, nowMs: Long) {
     val label = coachTimestamp(atMs, nowMs, DateFormat.is24HourFormat(LocalContext.current)) ?: return
     Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-        Text(label, style = CoachType.body(12, FontWeight.Bold).copy(lineHeight = 16.sp), color = LocalGymColors.current.inkDim)
+        Text(label, style = GymType.coachBubbleLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

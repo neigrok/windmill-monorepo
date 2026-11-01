@@ -30,6 +30,7 @@ fun windmillColorScheme(dark: Boolean): ColorScheme {
     return if (dark) {
         darkColorScheme(
             error = Color(0xFFE46962),
+            onError = Color(0xFF410E0B),
             primary = WindmillColor.gold400,
             onPrimary = WindmillColor.onAccent,
             secondary = WindmillColor.olive400,

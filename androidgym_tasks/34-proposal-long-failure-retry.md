@@ -10,7 +10,7 @@
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - While deciding, the sheet's Apply drops to 40 % with its label unchanged (`ui/ReviewSheet.kt:446-457`); *Turn this down* is disabled (`:489`).
-- A failure is one line in the sheet (`ui/ReviewSheet.kt:163-165`):
+- A failure is one line in the sheet (`ui/ReviewSheet.kt:162-164`):
   - *the log didn’t answer — nothing was applied*
   - for a removal still in flight, *Still waiting for the log. Retry to check this removal.*
 - Store: `decide` reports `gym.applyProposal` and maps the outcome to *decided*, *moved*, *gone*, *settled* or *failed* (`RoutinesStore.decide`).

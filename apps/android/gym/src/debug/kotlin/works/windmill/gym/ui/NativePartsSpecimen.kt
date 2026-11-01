@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,16 +29,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
 
 @Composable
 fun NativePartsSpecimen(specimen: String) {
-    val skin = LocalGymColors.current
-    val root = Modifier.fillMaxSize().background(skin.canvas)
+    val colors = MaterialTheme.colorScheme
+    val root = Modifier.fillMaxSize().background(colors.surface)
     if (specimen == "board") {
         Column(root.padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(48.dp)) {
@@ -116,8 +114,8 @@ fun NativePartsSpecimen(specimen: String) {
 @Composable
 private fun SpecimenGroup(caption: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(caption, color = LocalGymColors.current.inkDim, maxLines = 1,
-            style = TextStyle(fontFamily = GymNativeType.mono, fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.sp))
+        Text(caption, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+            style = GymType.specimenCaption)
         content()
     }
 }
@@ -145,15 +143,14 @@ private fun SpecimenNumber(initial: String, label: String, unit: String, modifie
 private fun SpecimenSwipe(label: String) {
     var visible by remember { mutableStateOf(true) }
     if (!visible) return
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     DeleteSwipeRow("Delete $label", { visible = false; true },
         Modifier.width(372.dp).semantics { contentDescription = label }) {
-        Column(Modifier.fillMaxWidth().height(68.dp).background(skin.surface, RoundedCornerShape(16.dp))
+        Column(Modifier.fillMaxWidth().height(68.dp).background(colors.surfaceContainer, RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Text("Push A", color = skin.ink, style = TextStyle(fontFamily = GymNativeType.sans,
-                fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold))
-            Text("Bench Press · Overhead Press", color = skin.inkDim,
-                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp))
+            Text("Push A", color = colors.onSurface, style = GymType.nativeRowTitle)
+            Text("Bench Press · Overhead Press", color = colors.onSurfaceVariant,
+                style = GymType.nativeDetail)
         }
     }
 }

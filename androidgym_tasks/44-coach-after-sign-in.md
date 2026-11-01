@@ -13,7 +13,7 @@
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `app/` or `platform/`)
 - There is no signed-out conversation to continue (38).
 - After sign-in, the Add / Discard decision (`app/MainActivity.kt:248`) adopts this phone's training. Coach then starts from an empty thread.
-- A proposal is the card *Proposal · Full body B* with **Review** (`coach/CoachAnswer.kt:327-341`), the line `Ask.promise` (`coach/AskScreen.kt:391`), and a review sheet with *Turn this down*.
+- A proposal is the card *Proposal · Full body B* with **Review** (`coach/CoachAnswer.kt:338-352`), the line `Ask.promise` (`coach/AskScreen.kt:390`), and a review sheet with *Turn this down*.
 
 **Change**
 - After sign-in and **Add**, the same thread stays on screen.

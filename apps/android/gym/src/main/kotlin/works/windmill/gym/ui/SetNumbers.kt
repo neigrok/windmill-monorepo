@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -24,10 +26,8 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.LoggedSetLimits
@@ -143,11 +143,11 @@ internal fun SetNumbers(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, enabled: Boolean = true, decreaseEnabled: Boolean = true) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val labels = Ladder.labels(weightKg)
-    val style = WindmillFont.body(16, FontWeight.Bold)
-    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = skin.ink,
+    val style = WindmillType.label
+    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = colors.onSurface,
         rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.12f, hoveredAlpha = 0.08f, pressedAlpha = 0.12f))) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val gap = WindmillSpace.x2
@@ -162,7 +162,7 @@ private fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, e
                                 onClick = { onDial(step, index == 0 || index == 3) },
                                 enabled = enabled && (step == NumberStep.Increase || decreaseEnabled), modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                                 contentPadding = PaddingValues(vertical = 10.dp), shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
+                                colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface),
                             ) { Text(label, style = style, maxLines = 1) }
                         }
                     }

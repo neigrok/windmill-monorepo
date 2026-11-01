@@ -1,13 +1,11 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
-import works.windmill.platform.design.WindmillFont
 
 @Composable
 fun ConfirmDialog(
@@ -19,30 +17,31 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onKeep: () -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     AlertDialog(
         onDismissRequest = onKeep,
-        containerColor = skin.surface,
-        titleContentColor = skin.ink,
-        textContentColor = skin.inkDim,
-        title = { Text(title, style = WindmillFont.display(19)) },
-        text = body?.let { { Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp)) } },
+        containerColor = colors.surfaceContainer,
+        titleContentColor = colors.onSurface,
+        textContentColor = colors.onSurfaceVariant,
+        title = { Text(title, style = GymType.confirmTitle) },
+        text = body?.let { { Text(it, style = GymType.quietParagraph) } },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = if (destructive) skin.alarmInk else skin.accent,
+                    contentColor = if (destructive) gymColors.alarmInk else colors.primary,
                 ),
             ) {
-                Text(confirm, style = WindmillFont.body(15, FontWeight.Bold))
+                Text(confirm, style = GymType.strongAction)
             }
         },
         dismissButton = {
             TextButton(
                 onClick = onKeep,
-                colors = ButtonDefaults.textButtonColors(contentColor = skin.inkDim),
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
             ) {
-                Text(keep, style = WindmillFont.body(15, FontWeight.SemiBold))
+                Text(keep, style = GymType.quietAction)
             }
         },
     )
@@ -58,24 +57,23 @@ data class WorkoutDiscardPrompt(
 
 @Composable
 fun WorkoutDiscardDialog(setCount: Int, onDiscard: () -> Unit, onCancel: () -> Unit, busy: Boolean = false) {
-    val skin = LocalGymColors.current
-    val native = androidx.compose.ui.text.font.FontFamily.Default
+    val colors = MaterialTheme.colorScheme
     AlertDialog(
         onDismissRequest = { if (!busy) onCancel() },
-        containerColor = skin.surface,
-        title = { Text("Discard this workout?", fontFamily = native, fontSize = 24.sp, lineHeight = 32.sp, color = skin.ink) },
+        containerColor = colors.surfaceContainer,
+        title = { Text("Discard this workout?", style = GymType.discardWorkoutTitle.overContainer(), color = colors.onSurface) },
         text = { Text("This deletes the workout and its $setCount ${if (setCount == 1) "set" else "sets"}. You can’t undo this.",
-            fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, color = skin.inkDim) },
+            style = GymType.discardText.overContainer(), color = colors.onSurfaceVariant) },
         confirmButton = {
             TextButton(onClick = onDiscard, enabled = !busy,
-                colors = ButtonDefaults.textButtonColors(contentColor = skin.error)) {
-                Text("Discard", fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.error)) {
+                Text("Discard", style = GymType.discardAction.overContainer())
             }
         },
         dismissButton = {
             TextButton(onClick = onCancel, enabled = !busy,
-                colors = ButtonDefaults.textButtonColors(contentColor = skin.inkDim)) {
-                Text("Cancel", fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant)) {
+                Text("Cancel", style = GymType.discardAction.overContainer())
             }
         },
     )

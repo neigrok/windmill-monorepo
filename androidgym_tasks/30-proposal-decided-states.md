@@ -10,10 +10,10 @@
 - Components: `Android / Change row` `337:2686`, `Android / Diff field` `337:2531`, `Android / Button` `210:181`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- After a decision, `ReceiptLine` (`coach/AskScreen.kt:378-384`) draws the receipt under the unchanged card: *Applied · Push A · 3 changes* in bold accent on `surface` (`presentation/Proposal.kt:181-189`).
+- After a decision, `ReceiptLine` (`coach/AskScreen.kt:377-383`) draws the receipt under the unchanged card: *Applied · Push A · 3 changes* in bold accent on `surface` (`presentation/Proposal.kt:181-189`).
 - A turned-down proposal reads *Turned down · nothing changed.* (`presentation/Proposal.kt:267`), and with a date *Turned down {day} at {time}. Nothing changed.* (`:249`).
-- Out of date: *{routine} changed after this was written, so it was set aside {on}. None of it was applied.* (`presentation/Proposal.kt:251`), and in the sheet *This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.* (`ui/ReviewSheet.kt:273-274`).
-- *Turn this down* (`ui/ReviewSheet.kt:491`) opens `ConfirmDialog` (`:434-438`): *Turn this down?* / *Nothing changes.* / **Turn down** (brick) · **Keep it** (`presentation/Proposal.kt:271-274`, `ui/ConfirmDialog.kt:22`).
+- Out of date: *{routine} changed after this was written, so it was set aside {on}. None of it was applied.* (`presentation/Proposal.kt:251`), and in the sheet *This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.* (`ui/ReviewSheet.kt:272-273`).
+- *Turn this down* (`ui/ReviewSheet.kt:491`) opens `ConfirmDialog` (`:434-438`): *Turn this down?* / *Nothing changes.* / **Turn down** (brick) · **Keep it** (`presentation/Proposal.kt:271-274`, `ui/ConfirmDialog.kt:20`).
 - History and thread outcomes say *turned down*, *set aside* and *superseded* (`coach/Thread.kt:53-54`, `:77-79`, `:88-90`).
 - The store calls it dismiss: `RoutinesStore.dismissProposal`, failure op `gym.dismissProposal`, event action `dismiss`.
 

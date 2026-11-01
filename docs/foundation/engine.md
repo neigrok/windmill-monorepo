@@ -22,7 +22,7 @@ equipment values and load counts remain stored without migration. `other` counts
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
 records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym and journal,
 whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
-schema 11 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
+schema 12 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
 holds the receipts. Every other product
 starts from empty stores.
 

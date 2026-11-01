@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -60,10 +61,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import works.windmill.gym.R
 import works.windmill.gym.presentation.WorkoutClocks
-import works.windmill.platform.design.WindmillFont
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,7 +91,6 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.RectangleShape
@@ -281,7 +279,7 @@ fun LoggerScreen(
     transient: SnackbarHostState? = null,
     onHide: () -> Unit = {},
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val notification = state.notification.collectAsState().value
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
@@ -458,7 +456,7 @@ fun LoggerScreen(
         titleAlignment = TextAlign.Center,
         navigation = { TopAction("Finish", enabled = state.canFinish, onClick = { entry.leave(); onFinish() }) },
         actions = { IconButton(onClick = ::hide) {
-            Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = skin.inkDim)
+            Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = colors.onSurfaceVariant)
         } },
     ) {
       Column(Modifier.fillMaxSize().imePadding()
@@ -606,8 +604,8 @@ fun LoggerScreen(
             onDismissRequest = { if (open == LoggerSheet.Picker) cancelPicker() else close() },
             onBack = if (open == LoggerSheet.Picker) ::cancelPicker else null,
             sheetState = sheetState,
-            containerColor = skin.surface,
-            scrimColor = skin.scrim,
+            containerColor = colors.surfaceContainer,
+            scrimColor = colors.scrim,
         ) {
             sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.setId}" else open.javaClass.simpleName) {
             when (open) {
@@ -666,7 +664,7 @@ fun LoggerScreen(
                     state = pickerState,
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
-                        .background(skin.surface)
+                        .background(colors.surfaceContainer)
                         .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
                     onClose = { cancelPicker() },
@@ -708,7 +706,7 @@ fun LoggerScreen(
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 internal fun WorkoutClockRow(clocks: WorkoutClocks) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     FlowRow(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
@@ -718,8 +716,8 @@ internal fun WorkoutClockRow(clocks: WorkoutClocks) {
             val value = Readout.clock(duration)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.clearAndSetSemantics { contentDescription = "$name, $value" }) {
-                Icon(painterResource(icon), contentDescription = null, tint = skin.inkDim, modifier = Modifier.size(16.dp))
-                Text(value, style = GymType.numeral(14), color = skin.inkDim)
+                Icon(painterResource(icon), contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                Text(value, style = GymType.numeralMedium, color = colors.onSurfaceVariant)
             }
         }
     }
@@ -736,7 +734,7 @@ private fun MovementHead(
     onMove: (String) -> Unit,
     onOpenSession: () -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(
         Modifier.fillMaxWidth().heightIn(min = GymTap.minimum)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = "open this workout", onClick = onOpenSession)
@@ -752,7 +750,7 @@ private fun MovementHead(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
             EquipmentIcon(equipment)
-            Text(name, style = WindmillFont.body(22, FontWeight.Bold), color = skin.ink,
+            Text(name, style = GymType.movementName, color = colors.onSurface,
                 textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
         }
         val markers = place?.markers.orEmpty()
@@ -761,7 +759,7 @@ private fun MovementHead(
             markers.forEach { marker ->
                 val size = if (marker.continuation) 4.dp else 6.dp
                 Box(Modifier.size(if (marker.current) 18.dp else size, if (marker.current) 6.dp else size)
-                    .background(if (marker.current) skin.accent else skin.inkDim.copy(alpha = 0.45f), RoundedCornerShape(3.dp)))
+                    .background(if (marker.current) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.45f), RoundedCornerShape(3.dp)))
             }
         }
     }
@@ -771,17 +769,17 @@ private fun MovementHead(
 // the server — and it exists only while something is wrong.
 @Composable
 private fun StrandedBand(count: Int, by: Blocker?) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val line = LiveLines.onThisDeviceLine(count, by) ?: return
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         verticalAlignment = Alignment.Top,
     ) {
-        Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = skin.unsyncedInk,
+        Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = gymColors.inkFaint,
              modifier = Modifier.size(16.dp).padding(top = 1.dp))
-        Text(line, style = MaterialTheme.typography.bodySmall, color = skin.inkDim,
-             lineHeight = 17.sp, modifier = Modifier.weight(1f))
+        Text(line, style = GymType.strandedLine, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
     }
 }
 
@@ -794,7 +792,8 @@ private fun Ledger(
     coveredBelow: Dp,
     modifier: Modifier = Modifier,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val reading = rememberScrollState()
     var current by remember { mutableStateOf<IntRange?>(null) }
     val landed = slots.count { it is LiveLines.Slot.Landed }
@@ -802,7 +801,7 @@ private fun Ledger(
     val measurer = rememberTextMeasurer()
     val indexWidth = remember(slots.size, density, measurer) {
         with(density) {
-            maxOf(64.dp, (measurer.measure("Set ${slots.size}", GymType.numeral(16)).size.width + measurer.measure("✓", WindmillFont.body(16)).size.width + 4.dp.roundToPx()).toDp())
+            maxOf(64.dp, (measurer.measure("Set ${slots.size}", GymType.numeralLarge).size.width + measurer.measure("✓", WindmillType.body).size.width + 4.dp.roundToPx()).toDp())
         }
     }
     // The window holds three whole rows however tall large text makes them; its rows scroll inside it.
@@ -836,8 +835,8 @@ private fun Ledger(
                 FlowRow(
                     Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).onSizeChanged { heights[keys[at]] = it.height }
                         .clip(RoundedCornerShape(12.dp))
-                        .then(if (active) Modifier.background(skin.accentSoft)
-                            .drawBehind { drawRect(skin.accent, size = Size(3.dp.toPx(), size.height)) }
+                        .then(if (active) Modifier.background(colors.primaryContainer)
+                            .drawBehind { drawRect(colors.primary, size = Size(3.dp.toPx(), size.height)) }
                             .onPlaced { current = it.positionInParent().y.toInt().let { top -> top..(top + it.size.height) } }
                         else Modifier)
                         .then(if (row != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) } else Modifier)
@@ -848,13 +847,13 @@ private fun Ledger(
                 ) {
                     Row(Modifier.width(indexWidth).align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("Set $index", style = if (active) WindmillFont.body(16, FontWeight.Bold) else GymType.numeral(16),
-                            color = if (active) skin.targetInk else skin.ink)
-                        if (row != null) Text("✓", style = WindmillFont.body(16), color = skin.setDone)
+                        Text("Set $index", style = if (active) WindmillType.label else GymType.numeralLarge,
+                            color = if (active) colors.primary else colors.onSurface)
+                        if (row != null) Text("✓", style = WindmillType.body, color = colors.tertiary)
                     }
-                    slot.line?.let { Text(it, style = GymType.numeral(16), color = if (active) skin.inkDim else skin.ink,
+                    slot.line?.let { Text(it, style = GymType.numeralLarge, color = if (active) colors.onSurfaceVariant else colors.onSurface,
                         modifier = Modifier.align(Alignment.CenterVertically)) }
-                    if (row?.isOnThisDevice == true) Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = skin.unsyncedInk,
+                    if (row?.isOnThisDevice == true) Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = gymColors.inkFaint,
                         modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
                 }
             }
@@ -926,7 +925,7 @@ private fun Rack(
     top: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val unit = Readout.loadUnit(exercise)
@@ -934,7 +933,7 @@ private fun Rack(
     val count = entry.count
     val page = rememberScrollState()
     val panel = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(skin.accent, Color.Transparent), endY = 24.dp.toPx()) }
+    val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(colors.primary, Color.Transparent), endY = 24.dp.toPx()) }
     DisposableEffect(load) { onDispose { if (load.focused || count.focused) onEdit(false) } }
     // While a number is typed, the whole rack stands on the band above the keyboard and the page above it scrolls away.
     val typing = load.focused || count.focused
@@ -944,7 +943,7 @@ private fun Rack(
             val viewport = constraints.maxHeight
             Layout(content = {
                 top()
-                Column(Modifier.fillMaxWidth().clip(panel).background(skin.surface).border(1.dp, edge, panel)
+                Column(Modifier.fillMaxWidth().clip(panel).background(colors.surfaceContainer).border(1.dp, edge, panel)
                     .testTag("Numeric rack").padding(horizontal = GymLayout.gutter).padding(top = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SetNumbers(load, count, unit, stepLoad = entry::stepLoad, stepReps = entry::stepReps, commit = entry::commit,
@@ -976,13 +975,13 @@ private fun Rack(
 // directly above it, so it echoes neither. Lifted, the band lies over the scrolled page with its own edge.
 @Composable
 private fun LogBand(lifted: Boolean, finishing: Boolean, enabled: Boolean, onLog: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val shape = if (lifted) RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp) else RectangleShape
-    val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(skin.accent, Color.Transparent), endY = 24.dp.toPx()) }
+    val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(colors.primary, Color.Transparent), endY = 24.dp.toPx()) }
     Box(
         Modifier.fillMaxWidth()
             .then(if (lifted) Modifier.shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.25f)) else Modifier)
-            .background(skin.surface, shape)
+            .background(colors.surfaceContainer, shape)
             .then(if (lifted) Modifier.border(1.dp, edge, shape) else Modifier)
             .padding(horizontal = if (lifted) 16.dp else GymLayout.gutter)
             .padding(top = 12.dp, bottom = 16.dp),
@@ -994,13 +993,13 @@ private fun LogBand(lifted: Boolean, finishing: Boolean, enabled: Boolean, onLog
             modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.logSet),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = skin.accent,
-                contentColor = skin.onAccent,
-                disabledContainerColor = if (finishing) skin.raised else skin.accent.copy(alpha = .38f),
-                disabledContentColor = if (finishing) skin.inkDim else skin.onAccent.copy(alpha = .38f),
+                containerColor = colors.primary,
+                contentColor = colors.onPrimary,
+                disabledContainerColor = if (finishing) colors.surfaceContainerHighest else colors.primary.copy(alpha = .38f),
+                disabledContentColor = if (finishing) colors.onSurfaceVariant else colors.onPrimary.copy(alpha = .38f),
             ),
         ) {
-            Text("Log set", style = GymType.primary)
+            Text("Log set", style = GymType.logSet)
         }
     }
 }

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.rememberSplineBasedDecay
@@ -52,7 +53,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -65,7 +65,6 @@ import works.windmill.gym.presentation.DatedGeometry
 import works.windmill.gym.presentation.DatedPoint
 import works.windmill.gym.presentation.DatedSeries
 import works.windmill.gym.presentation.Readout
-import works.windmill.platform.design.WindmillFont
 
 enum class PlotInteraction { Preview, Inspect, Select }
 private enum class PlotGesture { Hold, Pan, Yield }
@@ -82,15 +81,16 @@ fun DatedPlot(
     gapLabel: ((DatedPoint, DatedPoint) -> String)? = null,
     initialPointId: String? = null,
     minHeight: Dp = 220.dp,
-    labelStyle: TextStyle = WindmillFont.body(12).copy(lineHeight = 17.sp),
+    labelStyle: TextStyle = GymType.captionLoose,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val density = LocalDensity.current
     val text = rememberTextMeasurer()
     val haptic = rememberGymHaptics()
     val scope = rememberCoroutineScope()
     val decay = rememberSplineBasedDecay<Float>()
-    val axisStyle = labelStyle.copy(color = skin.inkDim)
+    val axisStyle = labelStyle.copy(color = colors.onSurfaceVariant)
     val facts = series.ordered
     var pan by remember(facts, series.fromMs, series.zone, series.maxGapDays) { mutableFloatStateOf(0f) }
     var inspected by remember(facts, series.fromMs, series.zone, series.maxGapDays, initialPointId) {
@@ -237,12 +237,12 @@ fun DatedPlot(
                 Canvas(Modifier.fillMaxWidth().height(with(density) { height.toDp() })) {
                     ticks.forEach { value ->
                         val y = top + geometry.y(value)
-                        drawLine(skin.line, Offset(left, y), Offset(left + plotWidth, y), 1.dp.toPx())
+                        drawLine(colors.outlineVariant, Offset(left, y), Offset(left + plotWidth, y), 1.dp.toPx())
                     }
                     val markInset = if (interaction == PlotInteraction.Inspect) 11.dp.toPx() else inset
                     clipRect(left - markInset, top - markInset, left + plotWidth + markInset, top + plotHeight + markInset) {
                         geometry.segments.forEach { (before, after) ->
-                            drawLine(skin.accent, Offset(left + before.x, top + before.y),
+                            drawLine(colors.primary, Offset(left + before.x, top + before.y),
                                 Offset(left + after.x, top + after.y), 2.dp.toPx())
                         }
                         geometry.visible.forEach { point ->
@@ -252,9 +252,9 @@ fun DatedPlot(
                                 interaction != PlotInteraction.Preview -> 4.dp.toPx()
                                 else -> 3.5.dp.toPx()
                             }
-                            if (point.fact.id == inspected?.id) drawCircle(skin.accent, 10.dp.toPx(),
+                            if (point.fact.id == inspected?.id) drawCircle(colors.primary, 10.dp.toPx(),
                                 Offset(left + point.x, top + point.y), style = Stroke(1.dp.toPx()))
-                            drawCircle(if (best) skin.prInk else skin.accent, radius, Offset(left + point.x, top + point.y))
+                            drawCircle(if (best) gymColors.prInk else colors.primary, radius, Offset(left + point.x, top + point.y))
                         }
                     }
                 }

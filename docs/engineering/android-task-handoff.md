@@ -1,6 +1,6 @@
 # Android Gym task handoff
 
-The [52-task backlog](../../androidgym_tasks/README.md) describes implementation work. The six revised
+The [Android task backlog](../../androidgym_tasks/README.md) describes implementation work. The six revised
 Coach, Log, Weigh-in, Workout, Finish and Routine editor flows were human-approved on 2026-10-25;
 92 affected frames and 46 captions are **✅ Ready for dev**. This task correction changes documents,
 not Android behavior. Other Gym/Shell states retain their own design status and prerequisites.
@@ -58,6 +58,6 @@ are approved and Ready on page `11:2`: no Other glyph, kg, signed existing load/
 of Name/Equipment footers. Existing iOS picker choices and target controls remain unchanged.
 
 The deployment guard and Android delivery-readiness gate are on main. Production's hello advertised
-schema 11 / minimum 11 when last verified, on 2026-10-30. Android's
+schema 12 / minimum 11 when last verified, on 2026-11-01. Android's
 new writes stay ready until a fresh hello meets its registry minimum. No implicit migration or
 physical-equipment alias is part of the release.

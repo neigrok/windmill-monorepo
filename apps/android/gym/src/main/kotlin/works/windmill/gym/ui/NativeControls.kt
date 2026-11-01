@@ -33,43 +33,23 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
-
-internal object GymNativeType {
-    val sans = FontFamily(
-        Font(R.font.onboarding_nunito_regular, FontWeight.Normal),
-        Font(R.font.onboarding_nunito_bold, FontWeight.Bold),
-        Font(R.font.onboarding_nunito_extrabold, FontWeight.ExtraBold),
-    )
-    val mono = FontFamily(Font(R.font.onboarding_mono_medium, FontWeight.Medium))
-    val button = TextStyle(fontFamily = sans, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 22.sp)
-    val note = TextStyle(fontFamily = FontFamily(Font(R.font.onboarding_mono_regular)), fontSize = 12.sp, lineHeight = 16.sp)
-}
 
 @Composable
 fun GymSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
-    val type = MaterialTheme.typography
-    MaterialTheme(typography = type.copy(
-        bodyMedium = type.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .25.sp),
-        labelLarge = type.labelLarge.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .1.sp, fontWeight = FontWeight.Medium),
-    )) {
+    MaterialTheme(typography = MaterialTheme.typography.withStockSnackbar()) {
         SnackbarHost(state, modifier.padding(horizontal = 4.dp))
     }
 }
 
 @Composable
 fun GymFab(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     FloatingActionButton(onClick, modifier.size(56.dp).semantics { contentDescription = label },
-        shape = RoundedCornerShape(16.dp), containerColor = skin.accentSoft.compositeOver(skin.surface),
-        contentColor = skin.accent) {
+        shape = RoundedCornerShape(16.dp), containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer),
+        contentColor = colors.primary) {
         Icon(painterResource(R.drawable.gym_native_add), null, Modifier.size(24.dp))
     }
 }
@@ -77,16 +57,16 @@ fun GymFab(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
 // Collapsed to its icon while the list beneath it is scrolled; the label stays its accessible name.
 @Composable
 fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: Modifier = Modifier, expanded: Boolean = true) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     ExtendedFloatingActionButton(
-        text = { Text(label, style = GymNativeType.button.copy(lineHeight = 24.sp)) },
+        text = { Text(label, style = GymType.extendedFabLabel) },
         icon = { Icon(icon, null, Modifier.size(24.dp)) },
         onClick = onClick,
         modifier = modifier.semantics { contentDescription = label },
         expanded = expanded,
         shape = RoundedCornerShape(16.dp),
-        containerColor = skin.accentSoft.compositeOver(skin.surface),
-        contentColor = skin.accent,
+        containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer),
+        contentColor = colors.primary,
     )
 }
 
@@ -96,7 +76,7 @@ fun GymErrorButton(label: String, onClick: () -> Unit, modifier: Modifier = Modi
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error,
             contentColor = MaterialTheme.colorScheme.onError)) {
-        Text(label, style = GymNativeType.button)
+        Text(label, style = GymType.button)
     }
 }
 
@@ -109,7 +89,7 @@ fun GymErrorTextButton(label: String, onClick: () -> Unit, modifier: Modifier = 
         TextButton(onClick, modifier.heightIn(min = minimumHeight), enabled = enabled, shape = RoundedCornerShape(16.dp),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
             colors = ButtonDefaults.textButtonColors(contentColor = error)) {
-            Text(label, style = GymNativeType.button)
+            Text(label, style = GymType.button)
         }
     }
 }
@@ -118,18 +98,18 @@ fun GymErrorTextButton(label: String, onClick: () -> Unit, modifier: Modifier = 
 fun GymMenu(expanded: Boolean, onDismissRequest: () -> Unit, modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit) {
     DropdownMenu(expanded, onDismissRequest, modifier, shape = RoundedCornerShape(16.dp),
-        containerColor = LocalGymColors.current.surface, tonalElevation = 0.dp, content = content)
+        containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp, content = content)
 }
 
 @Composable
 fun GymMenuItem(label: String, icon: Painter, onClick: () -> Unit, modifier: Modifier = Modifier,
     destructive: Boolean = false, enabled: Boolean = true) {
-    val ink = if (destructive) MaterialTheme.colorScheme.error else LocalGymColors.current.ink
+    val ink = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     DropdownMenuItem(text = {
         Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(20.dp))
-            Text(label, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 14.sp, lineHeight = 20.sp))
+            Text(label, style = GymType.nativeSupporting)
         }
     }, onClick = onClick, modifier = modifier.heightIn(min = 48.dp), enabled = enabled,
         contentPadding = PaddingValues(horizontal = 16.dp),

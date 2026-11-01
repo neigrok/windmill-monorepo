@@ -68,7 +68,7 @@ class WindmillMaterialTests {
             val palette = brandPalette(dark)
             val slots = mapOf(
                 "canvas" to palette.canvas, "surface" to palette.surface,
-                "ink" to palette.ink, "inkDim" to palette.inkDim, "inkFaint" to palette.inkFaint,
+                "ink" to palette.ink, "inkDim" to palette.inkDim,
                 "line" to palette.line, "lineStrong" to palette.lineStrong,
                 "accent" to palette.accent, "onAccent" to palette.onAccent,
                 "noticeWash" to palette.noticeWash, "noticeInk" to palette.noticeInk,
@@ -77,14 +77,13 @@ class WindmillMaterialTests {
                 assertTrue("$skin palette's $slot is not a Windmill colour: $colour", colour in ours)
             }
             // The door under only WindmillMaterial looks as it always has: gold capsule, canvas
-            // sheet, the family's three inks.
+            // sheet, the family's two inks.
             assertEquals(WindmillColor.gold400, palette.accent)
             assertEquals(WindmillColor.onAccent, palette.onAccent)
             val shade = { s: WindmillShade -> if (dark) s.dark else s.light }
             assertEquals(shade(WindmillColor.surfaceCanvas), palette.surface)
             assertEquals(shade(WindmillColor.textPrimary), palette.ink)
             assertEquals(shade(WindmillColor.textSecondary), palette.inkDim)
-            assertEquals(shade(WindmillColor.textTertiary), palette.inkFaint)
             assertEquals(shade(WindmillColor.borderSubtle), palette.line)
             assertEquals(shade(WindmillColor.borderDefault), palette.lineStrong)
         }

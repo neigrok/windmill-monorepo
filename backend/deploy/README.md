@@ -16,7 +16,7 @@ acknowledgement described below; ordinary backend batches cannot make that cutof
                    └▶ build-and-push (slim runtime image ─▶ ghcr.io)
                         └▶ deploy.yml, automatically, on that run's success
 
- (or by hand) run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ pull + up + migrate
+ (or by hand) run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ prune + pull + up + migrate
 
  VPS
  ┌──────────────────── docker compose (private network) ────────────────────┐
@@ -38,6 +38,7 @@ acknowledgement described below; ordinary backend batches cannot make that cutof
 | Deploy to the VPS (automatic on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | Promote the candidate files and prove Caddy loaded them (runs on the VPS) | `deploy/deploy-production.sh` |
+| Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |
@@ -150,20 +151,27 @@ must be public.
   The cutover evidence purge does not touch this directory. Host-managed cron jobs and provider
   backup policies must be checked on the host and with the provider.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
+- **Disk**: every deploy prunes images no container uses and the Docker build cache before it pulls,
+  so the host keeps the live images plus the candidate; volumes are never pruned. Actions → Ops · VPS
+  disk → `report` prints `df`, Docker usage, image and container sizes and `~/windmill` by folder;
+  `clean` also prunes images and build cache and, where the deploy user has passwordless sudo, trims the
+  systemd journal to 200 MB. Neither touches volumes, containers or `~/windmill/backups`.
 
 ## Coordinated client cutoff
 
 The repository registry is schema 12 / minimum 11. Every schema in that interval carries explicit gym
 `other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
-schema 11 / minimum 11, verified on 2026-10-30 after
-[deployment 40873633845](https://github.com/neigrok/windmill-monorepo/actions/runs/40873633845).
-The latest published Android release is 0.12.1 / code 184. iOS 0.2.0 (23) is uploaded and VALID,
+schema 12 / minimum 11, verified on 2026-11-01 after
+[deployment 41306516632](https://github.com/neigrok/windmill-monorepo/actions/runs/41306516632).
+The latest published Android release is [0.14.0 / code 277](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0),
+tag `android-v0.14.0` at `3b136a3d`. iOS 0.2.0 (23) is uploaded and VALID,
 with internal READY_FOR_BETA_TESTING and external READY_FOR_BETA_SUBMISSION; intended tester access
 is unverified. [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
-completed across three scopes and corrected two digests. [Web promotion 41101256320](https://github.com/neigrok/windmill-monorepo/actions/runs/41101256320)
-serves source `667bbc88` at schema 11 / minimum 11. Verification matched all 168 artifact file hashes
-and 82 public files exactly; five HTML files match after Cloudflare email-protection removal, and
-`gallery.html` follows its expected canonical redirect. Queued client delivery and final native
+completed across three scopes and corrected two digests. Web Deploy promotes each web push to `main`
+once the live hello admits it. The last complete promotion is
+[run 41325909004](https://github.com/neigrok/windmill-monorepo/actions/runs/41325909004), source `6aabcde2`.
+The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
+is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
 
 1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment

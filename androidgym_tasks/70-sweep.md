@@ -1,6 +1,6 @@
 # Sweep: deprecated APIs, dead code, warnings and stale references
 
-**Status:** 🚀 On main (`5e0bb26d`).
+**Status:** 🚀 On main (`5e0bb26d`), in Android 0.14.0.
 
 **Current implementation**
 - **Deprecated APIs:** clipboard writes go through `LocalClipboard`'s suspend `setClipEntry` (`GymRoom.kt`, `coach/CoachBubble.kt`, `sharing/WorkoutShareCard.kt`); the two on-tap copies start undispatched, so the copy lands in the same frame as before and Coach's accessible Copy still answers whether it landed. A refused copy on the workout's share card reports `gym.share` and a failed `session` `share` action, and the card claims nothing. Their tests fake `Clipboard` and read the platform clip. `MainActivity` asks for keyguard dismissal through `withResumed`, the one-shot replacement for `whenResumed`; `repeatOnLifecycle` would ask again on every resume. Coach photos read orientation with AndroidX `ExifInterface`.

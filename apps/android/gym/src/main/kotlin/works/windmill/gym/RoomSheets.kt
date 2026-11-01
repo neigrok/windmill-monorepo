@@ -1,5 +1,7 @@
 package works.windmill.gym
 
+import androidx.compose.material3.MaterialTheme
+import works.windmill.gym.ui.gymColors
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -43,7 +45,6 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.ReviewBinding
 import works.windmill.gym.ui.ReviewSheet
 import works.windmill.platform.Account
@@ -113,7 +114,7 @@ internal class ReviewFlow(
     // decides nothing: the proposal stays pending and its card reads `still waiting`.
     @Composable
     fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, say: (String) -> Unit) {
-        val skin = LocalGymColors.current
+        val colors = MaterialTheme.colorScheme
         reviewing?.let { open ->
             WindmillSheet(
                 onDismissRequest = {
@@ -122,8 +123,8 @@ internal class ReviewFlow(
                     if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
                 },
                 sheetState = sheet,
-                containerColor = skin.surface,
-                scrimColor = skin.scrim,
+                containerColor = colors.surfaceContainer,
+                scrimColor = colors.scrim,
             ) {
                 BackHandler(enabled = busy) {}
                 val proposalReview = remember(store) { ReviewBinding(store) }
@@ -329,7 +330,8 @@ internal class FinishFlow(
     @NonSkippableComposable
     @Composable
     fun Sheet(store: TrainingStore, account: Account, askAbsent: Boolean, onLeftEmpty: () -> Unit, onDiscard: (SessionDetail) -> Unit) {
-        val skin = LocalGymColors.current
+        val colors = MaterialTheme.colorScheme
+        val gymColors = MaterialTheme.gymColors
         val shell = LocalShellActions.current
         val currentAccount by rememberUpdatedState(account)
         finished?.let { original ->
@@ -344,11 +346,11 @@ internal class FinishFlow(
                 },
                 sheetState = sheet,
                 contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
-                containerColor = skin.surface,
-                scrimColor = skin.scrim,
+                containerColor = colors.surfaceContainer,
+                scrimColor = colors.scrim,
                 dragHandle = if (ended.sets.isEmpty()) null else { {
                     Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(32.dp, 4.dp).background(skin.inkFaint, RoundedCornerShape(2.dp)))
+                        Box(Modifier.size(32.dp, 4.dp).background(gymColors.inkFaint, RoundedCornerShape(2.dp)))
                     }
                 } },
             ) {

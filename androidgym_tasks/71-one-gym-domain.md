@@ -1,6 +1,6 @@
 # One gym domain: the last app-side rules move into :gym:domain, and the presentation package says what it is
 
-**Status:** 🚀 On main (`33848694`): all seven steps are built. It follows PR #43, which moved the receipt, record and last-time rules into `:gym:domain`.
+**Status:** 🚀 On main (`33848694`), in Android 0.14.0: all seven steps are built. It follows PR #43, which moved the receipt, record and last-time rules into `:gym:domain`.
 
 **Current implementation**
 - **The presentation package says what it is.** `apps/android/gym/src/main/kotlin/works/windmill/gym/presentation/` (package `works.windmill.gym.presentation`, tests mirrored) is the screens' projection of `:gym:domain` (package `works.windmill.gym.domain.sync`). Its `@Serializable`s are the ones saved state and the Coach and credential REST replies decode (`FinishedSession`, the rack, the saved-workout journal, the routine editor and picker, the Coach document), with their `@SerialName`s and the proposal enums' wire serializers; `ProposalDecision`, which nothing decodes, carries none. A saved receipt from before the rename still restores (`FinishTests`). `LiveLines.slots` still takes the workout's id, because the projection's `TrainingSet` carries none and the shared `Prefill` reads shared sets.

@@ -1,5 +1,6 @@
 package works.windmill.gym
 
+import androidx.compose.material3.MaterialTheme
 import android.app.Activity
 import android.content.ClipData
 import android.content.Context
@@ -69,7 +70,6 @@ import works.windmill.gym.ui.ConnectedLogScreen
 import works.windmill.gym.ui.ConnectionsBinding
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.gym.ui.GymScreen
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.PhoneRecovery
 import works.windmill.gym.ui.OnThisPhoneScreen
 import works.windmill.gym.ui.WorkoutInspectScreen
@@ -139,7 +139,7 @@ class GymModule(private val store: TrainingStore, private val notifications: Wor
 fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null,
     routineSaveContext: CoroutineContext = EmptyCoroutineContext) {
     val telemetry = LocalTelemetry.current
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val shell = LocalShellActions.current
@@ -220,13 +220,15 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val liveSession = store.workout.session
     val live = liveSession != null
     val loggerShown = live && !store.workout.loggerHidden
-    fun hideWorkout() {
-        val result = workout?.key?.let { store.workout.setLoggerHidden(it, true) }
+    // Asks of the workout open at the moment of the act.
+    fun showLogger(shown: Boolean, screen: String, action: String) {
+        val result = store.workout.notification.value?.key?.let { store.workout.setLoggerHidden(it, !shown) }
             ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: "The workout is not ready.")
-        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "hide",
+        telemetry.event("gym_action", mapOf("screen" to screen, "action" to action,
             "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
         if (result is WorkoutChange.Unavailable) note = result.reason
     }
+    fun hideWorkout() = showLogger(shown = false, screen = "workout", action = "hide")
     val screen = when {
         store.recovery.fixDraft != null -> "workout_fix"
         reviewFlow.reviewing != null -> "proposal"
@@ -895,13 +897,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     transient = transient.takeIf { standing && !frame.hostsTransient },
                     line = note.takeIf { standing && (selectedRoutineId == null || building != null) },
                     workout = liveSession.takeIf { selectedRoutineId == null && reviewFlow.reviewing == null },
-                    onOpenWorkout = {
-                        val result = workout?.key?.let { store.workout.setLoggerHidden(it, false) }
-                            ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: "The workout is not ready.")
-                        telemetry.event("gym_action", mapOf("screen" to "workout_bar", "action" to "open",
-                            "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
-                        if (result is WorkoutChange.Unavailable) note = result.reason
-                    },
+                    onOpenWorkout = { showLogger(shown = true, screen = "workout_bar", action = "open") },
                     recoveryCount = PhoneRecovery.needsYou(recoveryRead?.workouts.orEmpty()),
                     onPick = { picked ->
                         note = null
@@ -954,7 +950,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 RoomFrame(frame, standing = frame.key == standingKey)
             }
         } else {
-            Box(Modifier.fillMaxSize().background(skin.canvas))
+            Box(Modifier.fillMaxSize().background(colors.surface))
         }
     }
 }

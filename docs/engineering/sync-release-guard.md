@@ -13,8 +13,8 @@ at hello, push, pull and WebSocket upgrade for excluded schemas. Workflow failur
 commands, environment values, credentials and response bodies are not exposed by the compatibility
 helper. This operational flow has no product events or additional backend write route.
 
-The source registry is 12 / minimum 11. Production's hello advertised schema 11 / minimum 11 when
-last verified, on 2026-10-30. The
+The source registry is 12 / minimum 11. Production's hello advertised schema 12 / minimum 11 when
+last verified, on 2026-11-01. The
 [deployment runbook](../../backend/deploy/README.md#coordinated-client-cutoff) covers independent web
 deployment, TestFlight readiness versus tester access, Android publication and the compatible
 rollback floor. Approved Android equipment controls do not approve new iOS or web pickers.
