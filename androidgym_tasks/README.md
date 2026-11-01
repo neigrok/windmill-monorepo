@@ -56,7 +56,7 @@ Unchanged and name-only edits preserve all legacy equipment/count values.
 
 ## Native wave (tasks 53–72)
 
-The 2026-10-31 review of the Android app (native experience on the emulator, code quality, and the Codex backlog) produced tasks 53–72. The owner approved their new boards on 2026-10-31: 00.5, 00.6, 00.7, 02.20, the 02.17 revision, 02.21, 03.33–03.36 and 05.17, all ✅ Ready for dev on the Android page. Task 65's boards 27h and D6 are 🚧 and wait for the owner. Tasks 55, 62, 63 and 64 conform to boards that were already approved; 66–71 change no visuals. The designer renumbered the Android page the same day so that no number names two screens across the phone pages; task 66 carries the map into the repo.
+The 2026-10-31 review of the Android app (native experience on the emulator, code quality, and the Codex backlog) produced tasks 53–72. The owner approved their new boards on 2026-10-31: 00.5, 00.6, 00.7, 02.20, the 02.17 revision, 02.21, 03.33–03.36 and 05.17, all ✅ Ready for dev on the Android page. The owner approved task 65's boards 27h and D6 on 2026-11-01. Tasks 55, 62, 63 and 64 conform to boards that were already approved; 66–71 change no visuals. The designer renumbered the Android page the same day so that no number names two screens across the phone pages; task 66 carries the map into the repo.
 
 | Stage | Tasks |
 |---|---|
@@ -179,7 +179,7 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [62](62-native-buttons-and-icons.md) — Real Material buttons, a real disabled Log set, icons instead of text chevrons
 - [63](63-sign-in-code-keyboard.md) — Sign-in: a digit keyboard for the code, autofill for email and code
 - [64](64-accessibility-pass.md) — Accessibility pass: status lines announced, 48 dp targets, labels said once
-- [65](65-delete-account-clock-and-not-deleted.md) — **Pending owner approval.** Delete account: the wrong-clock refusal (27h) and a way out when nothing was deleted (D6)
+- [65](65-delete-account-clock-and-not-deleted.md) — Delete account: the wrong-clock refusal (27h) and a way out when nothing was deleted (D6)
 - [66](66-board-renumber-references.md) — Repo references follow the renumbered Android boards
 - [67](67-theme-roles.md) — Type and colour come from the theme's roles
 - [68](68-split-the-store-and-the-room.md) — Split TrainingStore into feature stores; screens take state and events

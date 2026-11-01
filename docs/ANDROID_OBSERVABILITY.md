@@ -183,7 +183,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 
 | Event | Module | Properties |
 |---|---|---|
-| `account_delete` | platform | `state`: `shown`; `action`: `confirm`, `check`, `cleanup`, `back`, `done`; `outcome`: `started`, `cancelled`, `refused`, `failed`, `ok`, `cleanup_pending`, `pending_confirmation` |
+| `account_delete` | platform | `state`: `shown`; `action`: `confirm`, `check`, `cleanup`, `back`, `done`, `retry` (Try again on Not deleted), `date_time` (with `outcome`: `failed` when date settings cannot open); `outcome`: `started`, `cancelled`, `refused`, `clock_refused` (the phone's date and time are wrong), `not_deleted` (the close never reached Windmill in time), `failed`, `ok`, `cleanup_pending`, `pending_confirmation`. Refusals file no Issue. |
 | `ai_installation_outcome` | platform | `action`: `bind`; `outcome`: `refused`, `failed` |
 | `api_request_failed` | platform | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase` |
 | `app_backgrounded` | app | none |

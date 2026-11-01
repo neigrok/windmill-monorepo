@@ -58,9 +58,11 @@ class AccountDeletionTests {
         var cleanupFailure = false
         var count = 3
         var clock = request.requestedAtMs
+        var monotonic = 0L
         var operation = request.operationId
         val closes = mutableListOf<Pair<AccountDeletionRequest, String>>()
         val results = mutableListOf<AccountDeletionRequest>()
+        fun pass(ms: Long) { clock += ms; monotonic += ms }
         val api = object : AccountDeletionApi {
             override suspend fun close(request: AccountDeletionRequest, credential: String): AccountDeletionResponse {
                 closes += request to credential
@@ -103,7 +105,7 @@ class AccountDeletionTests {
             cleanupCalls++
             if (cleanupFailure) throw IOException("test private cleanup")
             identity = null
-        }, telemetry, { clock }, { operation }, { request.proof })
+        }, telemetry, now = { clock }, elapsed = { monotonic }, operationId = { operation }, proof = { request.proof })
     }
 
     @Test fun actualBackendReceiptRetainsMillisecondsWhileIsoIsTruncatedToSeconds() {
@@ -136,7 +138,7 @@ class AccountDeletionTests {
         assertEquals(request, fixture.storage.pending?.request)
         assertEquals(1, fixture.cancelCalls)
         assertEquals(0, fixture.finishCalls)
-        fixture.clock += AccountDeletionStore.admissionWindowMs
+        fixture.pass(AccountDeletionStore.admissionWindowMs)
         fixture.resultFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
         store.recover()
         assertEquals(AccountDeletionPage.Unavailable, store.page)
@@ -146,7 +148,7 @@ class AccountDeletionTests {
         store.recover(); assertEquals(AccountDeletionPage.TemporarilyUnavailable, store.page)
         fixture.resultFailure = null
         store.recover()
-        assertEquals(listOf(request to "secret"), fixture.closes)
+        assertEquals(listOf(request to "secret", request to "secret"), fixture.closes)
         assertEquals(listOf(request, request, request), fixture.results)
         assertEquals(1, fixture.finishCalls)
         assertEquals(1, fixture.cleanupCalls)
@@ -226,7 +228,7 @@ class AccountDeletionTests {
         val fixture = Fixture(this)
         fixture.closeFailure = WindmillApiException.Offline
         val store = fixture.store(); store.open(); store.confirm(user.email)
-        fixture.clock += AccountDeletionStore.admissionWindowMs
+        fixture.pass(AccountDeletionStore.admissionWindowMs)
         fixture.resultFailure = WindmillApiException.Refused(503, Refusal(code = "temporarily_unavailable"))
         store.recover()
         assertEquals(AccountDeletionPage.TemporarilyUnavailable, store.page)
@@ -386,22 +388,27 @@ class AccountDeletionTests {
                 "account" to user.id, "operation" to request.operationId, "state" to "private_text")))
     }
 
-    @Test fun aSlowClockFirstCloseTheServerCallsUnavailableClearsTheRecordAndSaysTheClockSentence() = runTest {
+    @Test fun aPhoneClockEightMinutesSlowShows27hAndLeavesNoFence() = runTest {
         val fixture = Fixture(this)
+        fixture.clock -= 8 * 60 * 1_000L
+        val slow = request.copy(requestedAtMs = fixture.clock)
         fixture.closeFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
         val store = fixture.store(); store.open(); store.confirm(user.email)
         assertEquals(AccountDeletionPage.Confirm, store.page)
-        assertEquals(AccountDeletionStore.clockSentence, store.failure)
+        assertEquals(AccountDeletionFailure.Clock, store.failure)
+        assertEquals(user, store.confirmingUser)
+        assertNull(fixture.storage.pending)
         assertFalse(fixture.storage.blocked)
         assertFalse(store.transitionPending)
         assertTrue(store.visible)
-        assertEquals(listOf(request to "secret"), fixture.closes)
+        assertEquals(listOf(slow to "secret"), fixture.closes)
         assertTrue(fixture.results.isEmpty())
         assertEquals(1, fixture.cancelCalls)
         assertEquals(0, fixture.finishCalls)
+        assertEquals(emptyList<Pair<String, String?>>(), fixture.failures)
         assertEquals(listOf("account_delete" to mapOf("state" to "shown"),
             "account_delete" to mapOf("action" to "confirm", "outcome" to "started"),
-            "account_delete" to mapOf("outcome" to "refused")), fixture.events)
+            "account_delete" to mapOf("outcome" to "clock_refused")), fixture.events)
     }
 
     @Test fun anOfflineCloseIsSentAgainWithTheSameTupleInsideTheAdmissionWindow() = runTest {
@@ -411,7 +418,7 @@ class AccountDeletionTests {
         assertEquals(AccountDeletionPage.TemporarilyUnavailable, store.page)
         assertTrue(fixture.storage.blocked)
         fixture.closeFailure = null
-        fixture.clock += AccountDeletionStore.admissionWindowMs - 1
+        fixture.pass(AccountDeletionStore.admissionWindowMs - 1)
         store.recover()
         assertEquals(listOf(request to "secret", request to "secret"), fixture.closes)
         assertTrue(fixture.results.isEmpty())
@@ -433,48 +440,129 @@ class AccountDeletionTests {
         assertFalse(fixture.storage.blocked)
     }
 
-    @Test fun aSentAgainCloseThatClosedNothingClearsTheRecordWithoutReadingTheReceipt() = runTest {
+    @Test fun aSentAgainCloseThatLeftInsideTheWindowAndClosedNothingIs27hWithoutReadingTheReceipt() = runTest {
         val fixture = Fixture(this)
         fixture.closeFailure = WindmillApiException.Offline
         val store = fixture.store(); store.open(); store.confirm(user.email)
         fixture.closeFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
+        fixture.pass(AccountDeletionStore.admissionWindowMs - 1)
         store.recover()
         assertEquals(AccountDeletionPage.Confirm, store.page)
-        assertEquals(AccountDeletionStore.clockSentence, store.failure)
+        assertEquals(AccountDeletionFailure.Clock, store.failure)
         assertEquals(user, store.confirmingUser)
         assertFalse(fixture.storage.blocked)
         assertTrue(fixture.results.isEmpty())
         assertEquals(0, fixture.finishCalls)
     }
 
-    @Test fun outsideTheAdmissionWindowAnUnavailableReceiptKeepsThePhoneFenced() = runTest {
+    @Test fun offlineAtSendAndBackAfterTheWindowShowsD6AndReleasesTheFence() = runTest {
         val fixture = Fixture(this)
         fixture.closeFailure = WindmillApiException.Offline
         val store = fixture.store(); store.open(); store.confirm(user.email)
-        fixture.clock += AccountDeletionStore.admissionWindowMs
+        assertTrue(store.transitionPending)
+        fixture.pass(AccountDeletionStore.admissionWindowMs + 1)
+        fixture.closeFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
         fixture.resultFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
         store.recover()
-        assertEquals(AccountDeletionPage.Unavailable, store.page)
-        assertTrue(fixture.storage.blocked)
-        assertTrue(store.transitionPending)
-        assertEquals(listOf(request to "secret"), fixture.closes)
+        assertEquals(AccountDeletionPage.NotDeleted, store.page)
+        assertNull(fixture.storage.pending)
+        assertFalse(fixture.storage.blocked)
+        assertFalse(store.transitionPending)
+        assertNull(store.failure)
+        assertNull(store.confirmingUser)
+        assertEquals(listOf(request to "secret", request to "secret"), fixture.closes)
+        assertEquals(listOf(request), fixture.results)
+        assertEquals(0, fixture.finishCalls + fixture.cleanupCalls)
+        assertEquals(emptyList<Pair<String, String?>>(), fixture.failures)
+        assertEquals(listOf("account_delete" to mapOf("state" to "shown"),
+            "account_delete" to mapOf("action" to "confirm", "outcome" to "started"),
+            "account_delete" to mapOf("outcome" to "pending_confirmation"),
+            "account_delete" to mapOf("action" to "check", "outcome" to "started"),
+            "account_delete" to mapOf("outcome" to "not_deleted")), fixture.events)
+        store.startOver()
+        assertEquals(AccountDeletionPage.Confirm, store.page)
+        assertEquals(user, store.confirmingUser)
+        fixture.operation = "50000000-0000-0000-0000-000000000002"
+        fixture.closeFailure = null
+        store.confirm(user.email)
+        assertEquals(AccountDeletionRequest(user.id, fixture.operation, request.proof, fixture.clock), fixture.closes.last().first)
+        assertEquals(AccountDeletionPage.Deleted, store.page)
+    }
+
+    @Test fun afterARestartALateCloseTheSessionStillAcceptsShowsD6NotTheClock() = runTest {
+        val fixture = Fixture(this)
+        fixture.storage.replace(null, PendingAccountDeletion(request, user, "secret", "replica-a"))
+        fixture.clock += AccountDeletionStore.admissionWindowMs - 1
+        fixture.closeFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
+        fixture.resultFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
+        val restored = fixture.store()
+        restored.recover()
+        assertEquals(AccountDeletionPage.NotDeleted, restored.page)
+        assertFalse(fixture.storage.blocked)
+        assertFalse(restored.transitionPending)
+        assertEquals(listOf(request to "secret", request to "secret"), fixture.closes)
         assertEquals(listOf(request), fixture.results)
     }
 
-    @Test fun aClockAheadRefusalSaysTheClockSentenceAndOnlyAnExplicitTryAgainMintsAnotherOperation() = runTest {
+    @Test fun aRefusedSessionOrARequest35DaysOldStaysOnD3() = runTest {
+        for (age in listOf(AccountDeletionStore.admissionWindowMs, AccountDeletionStore.receiptLifetimeMs)) {
+            val fixture = Fixture(this)
+            fixture.closeFailure = WindmillApiException.Offline
+            val store = fixture.store(); store.open(); store.confirm(user.email)
+            fixture.pass(age)
+            fixture.closeFailure = WindmillApiException.Refused(401, Refusal(code = "unauthenticated"))
+            fixture.resultFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
+            store.recover()
+            assertEquals(AccountDeletionPage.Unavailable, store.page)
+            assertTrue(fixture.storage.blocked)
+            assertTrue(store.transitionPending)
+            assertEquals(if (age == AccountDeletionStore.receiptLifetimeMs) 1 else 2, fixture.closes.size)
+            assertEquals(listOf(request), fixture.results)
+            assertEquals(emptyList<Pair<String, String?>>(), fixture.failures)
+        }
+    }
+
+    @Test fun aCommittedCloseWhoseReplyWasLostStillEndsDeletedPastTheWindow() = runTest {
+        val fixture = Fixture(this)
+        fixture.closeFailure = WindmillApiException.Timeout(java.net.SocketTimeoutException("timeout"))
+        val store = fixture.store(); store.open(); store.confirm(user.email)
+        assertEquals(AccountDeletionPage.Unknown, store.page)
+        fixture.pass(AccountDeletionStore.admissionWindowMs + 1)
+        fixture.closeFailure = WindmillApiException.Refused(401, Refusal(code = "unauthenticated"))
+        store.recover()
+        assertEquals(AccountDeletionPage.Deleted, store.page)
+        assertEquals(receipt, store.deletedReceipt)
+        assertEquals(listOf(request to "secret"), fixture.closes)
+        assertEquals(listOf(request), fixture.results)
+        assertFalse(fixture.storage.blocked)
+    }
+
+    @Test fun theDateAndTimeButtonCountsAnOpenAndAFailedOneWithoutAnIssue() = runTest {
+        val fixture = Fixture(this)
+        val store = fixture.store()
+        store.openDateSettings {}
+        store.openDateSettings { throw SecurityException("test private content") }
+        assertEquals(listOf("account_delete" to mapOf("action" to "date_time"),
+            "account_delete" to mapOf("action" to "date_time", "outcome" to "failed")), fixture.events)
+        assertEquals(emptyList<Pair<String, String?>>(), fixture.failures)
+    }
+
+    @Test fun aClockAheadRefusalShows27hAndOnlyAnExplicitTryAgainMintsAnotherOperation() = runTest {
         val fixture = Fixture(this)
         fixture.closeFailure = WindmillApiException.Refused(409, Refusal(code = "clock-ahead"))
         val store = fixture.store(); store.open(); store.confirm(user.email)
         assertEquals(AccountDeletionPage.Confirm, store.page)
-        assertEquals(AccountDeletionStore.clockSentence, store.failure)
+        assertEquals(AccountDeletionFailure.Clock, store.failure)
         assertFalse(fixture.storage.blocked)
         advanceUntilIdle()
         assertEquals(listOf(request to "secret"), fixture.closes)
         fixture.operation = "50000000-0000-0000-0000-000000000002"
+        fixture.pass(1_000)
         store.confirm(user.email)
-        assertEquals(listOf(request.operationId, fixture.operation), fixture.closes.map { it.first.operationId })
-        assertEquals(AccountDeletionStore.clockSentence, store.failure)
-        assertEquals(2, fixture.events.count { it.second == mapOf("outcome" to "refused") })
+        assertEquals(listOf(request, AccountDeletionRequest(user.id, fixture.operation, request.proof, fixture.clock)),
+            fixture.closes.map { it.first })
+        assertEquals(AccountDeletionFailure.Clock, store.failure)
+        assertEquals(2, fixture.events.count { it.second == mapOf("outcome" to "clock_refused") })
     }
 
     @Test fun anAccountMismatchRefusalAsksThePageToReturnToYouWithoutACancelledStep() = runTest {
@@ -484,7 +572,7 @@ class AccountDeletionTests {
         assertTrue(store.visible)
         assertTrue(store.exitRequested)
         assertEquals(AccountDeletionPage.Confirm, store.page)
-        assertEquals(AccountDeletionStore.failedSentence, store.failure)
+        assertEquals(AccountDeletionFailure.Connection, store.failure)
         assertFalse(fixture.storage.blocked)
         store.back()
         assertFalse(store.visible)

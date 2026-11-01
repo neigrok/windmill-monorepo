@@ -1,6 +1,7 @@
 package works.windmill.platform.you
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -54,7 +55,12 @@ data class PendingAccountDeletion(val request: AccountDeletionRequest, val user:
 
 data class DeletionIdentity(val user: User, val credential: String, val replica: String, val revision: Long)
 
-enum class AccountDeletionPage { Confirm, Deleting, Unknown, TemporarilyUnavailable, Unavailable, Cleanup, Deleted }
+enum class AccountDeletionPage { Confirm, Deleting, Unknown, TemporarilyUnavailable, Unavailable, NotDeleted, Cleanup, Deleted }
+
+enum class AccountDeletionFailure(val sentence: String) {
+    Connection("Couldn’t delete your account. Check your connection and try again."),
+    Clock("Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again."),
+}
 
 class AccountDeletionStorage(private val values: KeptValues, private val vault: SecretVault,
     private val telemetry: Telemetry = Telemetry.None) {
@@ -143,6 +149,7 @@ class AccountDeletionStore(
     private val cleanup: suspend (PendingAccountDeletion) -> Unit,
     private val telemetry: Telemetry = Telemetry.None,
     private val now: () -> Long = System::currentTimeMillis,
+    private val elapsed: () -> Long = SystemClock::elapsedRealtime,
     private val operationId: () -> String = { UUID.randomUUID().toString() },
     private val proof: () -> String = { ByteArray(32).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) } },
 ) {
@@ -161,7 +168,7 @@ class AccountDeletionStore(
         private set
     var count by mutableStateOf(0)
         private set
-    var failure by mutableStateOf<String?>(null)
+    var failure by mutableStateOf<AccountDeletionFailure?>(null)
         private set
     var deletedReceipt by mutableStateOf<AccountDeletionResponse?>(null)
         private set
@@ -176,6 +183,7 @@ class AccountDeletionStore(
     private var held: AuthSignOutSession? = null
     private var finishedOperation: String? = null
     private var knownClosed: Pair<PendingAccountDeletion, AccountDeletionResponse>? = null
+    private var stamped: Pair<String, Long>? = null
 
     fun open() {
         if (busy) { visible = true; return }
@@ -199,6 +207,16 @@ class AccountDeletionStore(
         telemetry.event("account_delete", mapOf("state" to "shown"))
     }
 
+    fun startOver() {
+        telemetry.event("account_delete", mapOf("action" to "retry"))
+        open()
+    }
+
+    fun openDateSettings(openSettings: () -> Unit) {
+        val opened = try { openSettings(); true } catch (_: Exception) { false }
+        telemetry.event("account_delete", if (opened) mapOf("action" to "date_time") else mapOf("action" to "date_time", "outcome" to "failed"))
+    }
+
     fun refreshCount() {
         if (visible && page == AccountDeletionPage.Confirm && !transitionPending && identity()?.user == confirmingUser) count = unsent()
     }
@@ -213,7 +231,7 @@ class AccountDeletionStore(
         visible = false
         if (exitRequested) { exitRequested = false; return }
         telemetry.event("account_delete", mapOf("action" to if (page == AccountDeletionPage.Deleted) "done" else "back"))
-        if (!storage.blocked && page != AccountDeletionPage.Deleted)
+        if (!storage.blocked && page != AccountDeletionPage.Deleted && page != AccountDeletionPage.NotDeleted)
             telemetry.event("account_delete", mapOf("outcome" to "cancelled"))
     }
 
@@ -227,7 +245,6 @@ class AccountDeletionStore(
         page = AccountDeletionPage.Deleting
         failure = null
         var submitted = false
-        var attempted: PendingAccountDeletion? = null
         try {
             val handle = prepare(opening)
             held = handle
@@ -237,21 +254,18 @@ class AccountDeletionStore(
             }
             val record = PendingAccountDeletion(AccountDeletionRequest(opening.user.id, operationId(), proof(), now()),
                 opening.user, opening.credential, current.replica)
+            stamped = record.request.operationId to elapsed()
             storage.replace(null, record)
-            attempted = record
             submitted = true
-            val receipt = api.close(record.request, opening.credential)
-            accept(record, receipt)
+            send(record, receiptUnavailable = false) { throw it }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (refusal: WindmillApiException.Refused) {
-            if (submitted && closedNothing(refusal)) refused(requireNotNull(attempted), refusal) else uncertain(refusal)
-        } catch (failure: Exception) {
+        catch (failure: Exception) {
             if (submitted || storage.blocked) uncertain(failure)
             else {
                 releaseHold()
                 preparing = false
                 page = AccountDeletionPage.Confirm
-                this.failure = failedSentence
+                this.failure = AccountDeletionFailure.Connection
                 report(failure, "account_delete_prepare")
                 telemetry.event("account_delete", mapOf("outcome" to "failed"))
             }
@@ -268,44 +282,72 @@ class AccountDeletionStore(
         try {
             if (pending.receipt != null) clean(pending)
             else if (knownClosed?.first?.request == pending.request) accept(pending, requireNotNull(knownClosed).second)
-            else if (admissible(pending.request)) resend(pending)
-            else accept(pending, api.result(pending.request))
+            else if (admissible(pending.request)) send(pending, receiptUnavailable = false) { accept(pending, api.result(pending.request)) }
+            else readReceipt(pending)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { uncertain(failure) }
     }
 
-    // The session is checked before the operation, so a 401 here means a committed close revoked it or it lapsed.
-    private suspend fun resend(pending: PendingAccountDeletion) {
+    // The server checks the session before the operation, so a 404 answers an accepted session that this operation never closed.
+    private suspend fun send(pending: PendingAccountDeletion, receiptUnavailable: Boolean,
+        sessionRefused: suspend (WindmillApiException.Refused) -> Unit) {
+        val departed = elapsed()
         try { accept(pending, api.close(pending.request, pending.credential)) }
         catch (refusal: WindmillApiException.Refused) {
+            val unavailable = refusal.answers(404, "unavailable")
             when {
-                closedNothing(refusal) -> refused(pending, refusal)
-                refusal.status == 401 -> accept(pending, api.result(pending.request))
+                refusal.answers(400, "malformed") || refusal.answers(409, "account-mismatch") ->
+                    refused(pending, refusal, AccountDeletionFailure.Connection)
+                refusal.answers(409, "clock-ahead") || unavailable && leftInTime(pending, departed) ->
+                    refused(pending, refusal, AccountDeletionFailure.Clock)
+                unavailable && receiptUnavailable -> notDeleted(pending)
+                unavailable -> readReceipt(pending)
+                refusal.status == 401 -> sessionRefused(refusal)
                 else -> throw refusal
             }
         }
     }
 
+    // Past the admission window only the identical close, still accepted by the session, can prove nothing closed.
+    private suspend fun readReceipt(pending: PendingAccountDeletion) {
+        val receipt = try { api.result(pending.request) }
+        catch (refusal: WindmillApiException.Refused) {
+            if (!refusal.answers(404, "unavailable") || now() - pending.request.requestedAtMs >= receiptLifetimeMs) throw refusal
+            return send(pending, receiptUnavailable = true) { throw refusal }
+        }
+        accept(pending, receipt)
+    }
+
     private fun admissible(request: AccountDeletionRequest): Boolean =
         now() - request.requestedAtMs in 0 until admissionWindowMs
 
-    // A 404 from the close itself is an authenticated session with no committed operation: a slow phone clock.
-    private fun closedNothing(refusal: WindmillApiException.Refused): Boolean =
-        refusal.status == 400 && refusal.refusal.code == "malformed" ||
-            refusal.status == 409 && refusal.refusal.code in setOf("account-mismatch", "clock-ahead") ||
-            refusal.status == 404 && refusal.refusal.code == "unavailable"
+    private fun leftInTime(pending: PendingAccountDeletion, departed: Long): Boolean =
+        stamped?.takeIf { it.first == pending.request.operationId }?.let { departed - it.second in 0 until admissionWindowMs } == true
 
-    private suspend fun refused(attempted: PendingAccountDeletion, refusal: WindmillApiException.Refused) {
+    private suspend fun refused(attempted: PendingAccountDeletion, refusal: WindmillApiException.Refused, failure: AccountDeletionFailure) {
+        forget(attempted)
+        confirmingUser = identity()?.user?.takeIf { it.id == attempted.user.id } ?: confirmingUser
+        count = unsent()
+        page = AccountDeletionPage.Confirm
+        this.failure = failure
+        telemetry.event("account_delete", mapOf("outcome" to if (failure == AccountDeletionFailure.Clock) "clock_refused" else "refused"))
+        if (refusal.refusal.code == "account-mismatch") exitRequested = true
+    }
+
+    private suspend fun notDeleted(attempted: PendingAccountDeletion) {
+        forget(attempted)
+        confirmingUser = null
+        failure = null
+        page = AccountDeletionPage.NotDeleted
+        telemetry.event("account_delete", mapOf("outcome" to "not_deleted"))
+    }
+
+    // The operation is proven to have changed nothing: its record and fence go, and the account stays as it was.
+    private suspend fun forget(attempted: PendingAccountDeletion) {
         storage.replace(attempted, null)
         releaseHold()
         preparing = false
         knownClosed = null
-        confirmingUser = identity()?.user?.takeIf { it.id == attempted.user.id } ?: confirmingUser
-        count = unsent()
-        page = AccountDeletionPage.Confirm
-        failure = if (refusal.refusal.code in setOf("clock-ahead", "unavailable")) clockSentence else failedSentence
-        telemetry.event("account_delete", mapOf("outcome" to "refused"))
-        if (refusal.refusal.code == "account-mismatch") exitRequested = true
     }
 
     private suspend fun accept(expected: PendingAccountDeletion, receipt: AccountDeletionResponse) {
@@ -383,7 +425,7 @@ class AccountDeletionStore(
             } catch (failure: Exception) {
                 report(failure, "account_delete_recovery")
                 page = if (storage.blocked) AccountDeletionPage.Unavailable else AccountDeletionPage.Confirm
-                this@AccountDeletionStore.failure = failedSentence
+                this@AccountDeletionStore.failure = AccountDeletionFailure.Connection
                 try { releaseHold(); preparing = false }
                 catch (_: Exception) { preparing = true }
             } finally { busy = false }
@@ -393,8 +435,6 @@ class AccountDeletionStore(
 
     companion object {
         const val admissionWindowMs = 5 * 60 * 1_000L
-        const val failedSentence = "Couldn’t delete your account. Check your connection and try again."
-        // The clock refusal's sentence awaits design; it says the failed sentence until it is drawn.
-        const val clockSentence = failedSentence
+        const val receiptLifetimeMs = 35 * 24 * 60 * 60 * 1_000L
     }
 }

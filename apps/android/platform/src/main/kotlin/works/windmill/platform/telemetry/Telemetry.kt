@@ -62,8 +62,9 @@ class EventSchemas(val events: Map<String, EventSchema>, val reservedPrefixes: S
         val platform = EventSchemas(mapOf(
             "account_delete" to LabelSchema(mapOf(
                 "state" to setOf("shown"),
-                "action" to setOf("confirm", "check", "cleanup", "back", "done"),
-                "outcome" to setOf("started", "cancelled", "refused", "failed", "ok", "cleanup_pending", "pending_confirmation"),
+                "action" to setOf("confirm", "check", "cleanup", "back", "done", "retry", "date_time"),
+                "outcome" to setOf("started", "cancelled", "refused", "clock_refused", "not_deleted", "failed", "ok",
+                    "cleanup_pending", "pending_confirmation"),
             )),
             "ai_installation_outcome" to LabelSchema(mapOf("action" to setOf("bind"), "outcome" to setOf("refused", "failed"))),
         ))

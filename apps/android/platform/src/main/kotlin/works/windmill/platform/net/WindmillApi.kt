@@ -243,7 +243,9 @@ sealed class WindmillApiException(cause: Throwable? = null) : Exception(cause) {
     class Timeout(cause: IOException) : WindmillApiException(cause)
     class Transport(cause: IOException) : WindmillApiException(cause)
     class Unexpected(cause: Throwable) : WindmillApiException(cause)
-    data class Refused(val status: Int, val refusal: Refusal, val retryAfterAtMs: Long? = null) : WindmillApiException()
+    data class Refused(val status: Int, val refusal: Refusal, val retryAfterAtMs: Long? = null) : WindmillApiException() {
+        fun answers(status: Int, code: String): Boolean = this.status == status && refusal.code == code
+    }
     data object Malformed : WindmillApiException()
 
     val isUnauthorized: Boolean

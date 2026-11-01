@@ -1,5 +1,7 @@
 package works.windmill.platform.you
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,10 +16,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -43,6 +49,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
     val page = store.page
     val confirming = page == AccountDeletionPage.Confirm || page == AccountDeletionPage.Deleting
     var email by rememberSaveable(store.confirmingUser?.id) { mutableStateOf("") }
@@ -89,8 +96,15 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
                     shape = RoundedCornerShape(4.dp))
             }
-            store.failure?.let { Text(it, Modifier.padding(top = 10.dp),
-                style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = scheme.error) }
+            store.failure?.let { failure ->
+                Text(failure.sentence, Modifier.padding(top = 10.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                    style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = scheme.error)
+                if (failure == AccountDeletionFailure.Clock) TextButton(
+                    onClick = { store.openDateSettings { context.startActivity(Intent(Settings.ACTION_DATE_SETTINGS)) } },
+                    enabled = !store.busy, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = palette.ink)) { Text("Date & time") }
+            }
         } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val height = maxHeight
             if (page == AccountDeletionPage.Deleted) Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
@@ -109,10 +123,12 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                         color = palette.inkDim, textAlign = TextAlign.Center)
                 }
             } else Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
-                .padding(top = 172.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                .padding(top = 172.dp, bottom = 24.dp).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 val message = when (page) {
                     AccountDeletionPage.TemporarilyUnavailable -> "Can’t check yet" to "Your account may already be closed. Try checking again when your connection is back."
                     AccountDeletionPage.Unavailable -> "Confirmation unavailable" to "We can’t confirm the result on this phone. Signing in may restore a closing account."
+                    AccountDeletionPage.NotDeleted -> "Your account wasn’t deleted" to "The request didn’t reach Windmill in time, so nothing changed. Your account works as before."
                     AccountDeletionPage.Cleanup -> "Finishing deletion" to "Your account is closed. This phone still needs to remove its local copy."
                     else -> "Checking deletion" to "Your account may already be closed. We’re waiting for confirmation."
                 }
@@ -127,10 +143,12 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
             val fill = if (confirming) scheme.error else palette.accent
             val ink = if (confirming) { if (dark) Color(0xFF410E0B) else Color.White } else palette.onAccent
             Button(onClick = {
-                if (single) exit()
-                else {
-                    focus.clearFocus(); keyboard?.hide()
-                    scope.launch { if (confirming) store.confirm(email) else store.recover() }
+                focus.clearFocus(); keyboard?.hide()
+                when {
+                    single -> exit()
+                    page == AccountDeletionPage.NotDeleted -> store.startOver()
+                    confirming -> scope.launch { store.confirm(email) }
+                    else -> scope.launch { store.recover() }
                 }
             }, enabled = enabled, shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = fill, contentColor = ink, disabledContainerColor = fill, disabledContentColor = ink),
@@ -143,6 +161,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                 Text(when (page) {
                     AccountDeletionPage.Deleting -> "Deleting…"
                     AccountDeletionPage.Confirm -> if (store.failure == null) "Delete account" else "Try again"
+                    AccountDeletionPage.NotDeleted -> "Try again"
                     AccountDeletionPage.Deleted -> "Done"
                     AccountDeletionPage.Unavailable -> "Back to You"
                     AccountDeletionPage.Cleanup -> "Retry cleanup"

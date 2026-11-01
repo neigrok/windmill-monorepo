@@ -1053,11 +1053,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
   iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
   never reaches a room the question did not name; designer to rule.
-- **12o · Delete account: two proven no-close states, proposed for Android (🚧, awaiting owner).**
+- **12o · Delete account: two proven no-close states on Android (owner approved 2026-11-01).**
   Android's recoverable close (`backend/AUTH.md`, Recoverable deletion) can be refused for a wrong
-  phone clock, and approved 27e then says *Check your connection*, which is false; approved D3 is a
-  dead end when the close never reached the server: the account is live, but the phone keeps its
-  pending record, fences every gym write and offers only *Check deletion*. Two boards, Shell Android:
+  phone clock, or never reach the server while the account stays live. Android draws both
+  (`platform/you/DeleteAccount.kt`, `AccountDeletion.kt`, task 65). Two boards, Shell Android:
   - **27h Couldn’t delete — date and time** (Dark `139:2733`, Daylight `139:2786`, beside 27g in
     `33:1568`): error line *Your account wasn’t deleted. This phone’s date and time look wrong. Fix
     them, then try again.*, an inline *Date & time* text button (Android date settings), **Try again**,
