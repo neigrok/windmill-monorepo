@@ -38,7 +38,6 @@ function set(exerciseId, weightKg, reps, minute) {
     exerciseId,
     weightKg,
     reps,
-    setNumber: null,
     completedAt: AT + minute * 60_000,
   };
 }
@@ -81,6 +80,13 @@ test('RoutineValue.fromSession — sets handed over out of order are read in the
       { exerciseId: 'cable-fly', sets: [{ reps: 12, weightKg: 20 }] },
     ],
   });
+});
+
+test('RoutineValue.fromSession — the server\'s set numbers never reorder what was done', () => {
+  const sets = [{ ...set('bench-press', 80, 5, 9), setNumber: 1 }, { ...set('bench-press', 60, 8, 2), setNumber: 2 }];
+  assert.deepEqual(sessionRoutine({ id: 'rt_4', name: 'Push A', sets }).entries, [
+    { exerciseId: 'bench-press', sets: [{ reps: 8, weightKg: 60 }, { reps: 5, weightKg: 80 }] },
+  ]);
 });
 
 test('RoutineValue.fromSession — every set is its own slot, as lifted: no modal reps, no heaviest load', () => {

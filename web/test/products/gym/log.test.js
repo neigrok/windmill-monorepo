@@ -64,7 +64,7 @@ test('nameOfMovement — the catalog names a movement, and its id stands in unti
   assert.equal(nameOfMovement(undefined, 'back-squat'), 'back-squat');
 });
 
-test('groupByExercise — first-performed order across exercises, server numbering within one', () => {
+test('groupByExercise — first-performed order across exercises, logged order within one', () => {
   const set = (id, exerciseId, setNumber, completedAt) => ({ id, exerciseId, setNumber, completedAt });
   const sets = [
     set('set_4', 'bench-press', 2, 1_900_000_400_000),
@@ -91,15 +91,22 @@ test('groupByExercise — a movement returned to later keeps its first-performed
   ]);
 });
 
-test('groupByExercise — a set the server has not numbered yet sorts last, then by completion', () => {
+test('groupByExercise — sets read in the order they were done, then by id, never by the server\'s number', () => {
   const set = (id, exerciseId, setNumber, completedAt) => ({ id, exerciseId, setNumber, completedAt });
-  const first = set('set_1', 'back-squat', 1, 1_900_000_100_000);
-  const second = set('set_2', 'back-squat', 2, 1_900_000_200_000);
-  const flushing = set('set_3', 'back-squat', undefined, 1_900_000_300_000);
-  const alsoFlushing = set('set_4', 'back-squat', undefined, 1_900_000_250_000);
-  assert.deepEqual(groupByExercise([flushing, second, alsoFlushing, first]), [
-    ['back-squat', [first, second, alsoFlushing, flushing]],
+  const first = set('set_3', 'back-squat', 2, 1_900_000_100_000);
+  const arrivedFirst = set('set_2', 'back-squat', 1, 1_900_000_200_000);
+  const flushing = set('set_4', 'back-squat', undefined, 1_900_000_250_000);
+  const sameTime = set('set_1', 'back-squat', undefined, 1_900_000_250_000);
+  assert.deepEqual(groupByExercise([flushing, arrivedFirst, sameTime, first]), [
+    ['back-squat', [first, arrivedFirst, sameTime, flushing]],
   ]);
+});
+
+test('groupByExercise — a shared set carries no id, so equal times keep the order the share lists them in', () => {
+  const set = (exerciseId, setNumber, completedAt) => ({ exerciseId, setNumber, completedAt });
+  const one = set('back-squat', 1, 1_900_000_100_000);
+  const two = set('back-squat', 2, 1_900_000_100_000);
+  assert.deepEqual(groupByExercise([one, two]), [['back-squat', [one, two]]]);
 });
 
 test('isFinished — an end instant of zero is still an end, absence is not', () => {

@@ -233,7 +233,7 @@ test('routine reads preserve server metadata and own nested values without freez
   assert.equal(Object.isFrozen(value.entries[0]?.sets?.[0]), true);
 });
 
-test('a performed routine groups sets by performance then set number and retains actual zero load', () => {
+test('a performed routine groups sets in logged order, never by set number, and retains actual zero load', () => {
   const sets = [
     { exerciseId: 'dip', reps: 900, weightKg: 0, completedAt: 30, setNumber: 2 },
     { exerciseId: 'back-squat', reps: 5, weightKg: 80, completedAt: 20, setNumber: 1 },
@@ -242,7 +242,7 @@ test('a performed routine groups sets by performance then set number and retains
   ];
   const value = RoutineValue.fromSession({ id: new Id('routine1', Routine), name: 'Performed', sets });
   assert.deepEqual(value.fields(), { name: 'Performed', position: 0, entries: [
-    { exerciseId: 'dip', sets: [{ reps: 1, weightKg: -10 }, { reps: 100, weightKg: 0 }, { weightKg: 15 }] },
+    { exerciseId: 'dip', sets: [{ weightKg: 15 }, { reps: 1, weightKg: -10 }, { reps: 100, weightKg: 0 }] },
     { exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 80 }] },
   ] });
   const many = Array.from({ length: 21 }, (_, index) => ({ exerciseId: 'dip', reps: index + 1, weightKg: 0, completedAt: index }));

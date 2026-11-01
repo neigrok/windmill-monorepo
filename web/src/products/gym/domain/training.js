@@ -186,6 +186,13 @@ export const GymVolume = Object.freeze({
   },
 });
 
+// Logged order over set documents: completion, then identity. A set number is the server's serial, never the order a set
+// was done in. A shared set carries no identity, so equal times keep the order the share lists them in.
+/** @param {{ completedAt: number, id?: string }} a @param {{ completedAt: number, id?: string }} b */
+export function inLoggedOrder(a, b) {
+  return a.completedAt - b.completedAt || compareText(a.id ?? '', b.id ?? '');
+}
+
 export class TrainingSetValue {
   /**
    * @param {Id<TrainingSetValue>} id
