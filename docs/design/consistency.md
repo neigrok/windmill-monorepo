@@ -590,7 +590,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   1 to go*. Correct the description.
 - **Board · two pairs of view glyphs.** The phone identity row (258:1397) draws Board as three
   outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
-  strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band. Choose one pair.
+  strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
+  icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

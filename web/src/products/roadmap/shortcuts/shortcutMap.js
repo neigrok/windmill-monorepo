@@ -76,3 +76,10 @@ export function keyHint(rowLabel) {
   }
   return '';
 }
+
+// The keys that act on the canvas or its selection: select all, delete, the activity feed, Focus and All steps. The Board ignores them.
+export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = false }) {
+  if (key === 'Backspace' || key === 'Delete') return true;
+  if (metaKey || ctrlKey) return key.toLowerCase() === 'a';
+  return !altKey && (key === 'a' || key.toLowerCase() === 'f' || key === '0');
+}

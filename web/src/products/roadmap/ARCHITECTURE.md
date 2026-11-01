@@ -20,10 +20,13 @@ A saved camera is scoped to its layout engine and format. Without one, an owner 
 zoom over the frontier; a visitor receives the whole-tree fit and arrival ceremony. The initial
 owner view reframes as chrome measurements arrive until the reader moves the camera.
 
-Phones open owners on the outline List and visitors on the canvas; a tree's last choice on the device wins,
-and an empty or just-planted tree opens on the canvas. `board/gate.js` keeps the Board closed in production; off production, localStorage
-`windmill:board:dev` set to `1` opens it. Then the Board takes the List's place, every band switches Board
-and Graph (owners open on the Board, visitors on the Graph), and the selected step carries across.
+Phones open owners on the outline List and visitors on the canvas; a tree's last choice on the device
+wins, and an empty or just-planted tree opens on the canvas. `board/gate.js` keeps the Board closed in
+production; off production, localStorage `windmill:board:dev` set to `1` opens it. Then the Board takes
+the List's place, owners open on the Board and visitors on the Graph, and the selected step carries
+across. The desktop editor's topbar carries the Board/Graph switch on both views; elsewhere the Board's
+identity row carries it, and the Graph's rides the action lane on phones and tablets. A desktop
+visitor's Graph has no switch yet. Graph keyboard shortcuts do not act on the Board.
 
 ## Package map
 

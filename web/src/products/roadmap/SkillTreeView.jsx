@@ -53,7 +53,7 @@ import { renameLocalTree, deleteLocalTree, loadDeviceTree } from './sync/localTr
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { LocalTreeRegistry, resolveDeviceOwner, confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
-import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
+import { ViewPrefs, initialView, viewToShow, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
@@ -63,7 +63,7 @@ import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
 import { useLegend } from './ui/tree/useLegend.js';
 import { useWorkspace } from './ui/tree/useWorkspace.js';
-import { Button } from '../../design-system';
+import { Button, ErrorBoundary } from '../../design-system';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { parsePlan } from './paste/planGrammar.js';
 import { graftPlan } from './paste/graftPlan.js';
@@ -72,6 +72,8 @@ import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
+import { captureError } from '../../telemetry/sentry.js';
+import { graphOnlyKey } from './shortcuts/shortcutMap.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
@@ -344,6 +346,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switcherTrees, setSwitcherTrees] = useState(null); // null = not yet loaded
   const [view, setView] = useState(null); // 'tree' | 'list' | 'board' | null when undecided
+  const [boardCrashed, setBoardCrashed] = useState(false);
+  const boardActiveRef = useRef(false);
+  const switchFocusRef = useRef(false);
   const [sheetHeld, setSheetHeld] = useState(false);
   const [coachAllowed, setCoachAllowed] = useState(false);
   const [demoCompletions, setDemoCompletions] = useState(0);
@@ -835,6 +840,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   useEffect(() => {
     const onKey = (event) => {
+      if (boardActiveRef.current && graphOnlyKey(event)) return;
       if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
@@ -1219,21 +1225,23 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (view !== null) clearBorn(treeId);
   }, [view, treeId]);
   const listReady = phone && !loading && !!tree && tree.nodes.length > 0;
-  const listActive = listReady && view === 'list';
+  const boardReady = BOARD_OPEN && !boardCrashed && !loading && !!tree && tree.nodes.length > 0;
+  const shownView = viewToShow(view, { boardReady });
+  const listActive = listReady && shownView === 'list';
+  const boardActive = shownView === 'board';
+  boardActiveRef.current = boardActive;
 
   // Mounted on first use and kept mounted; the ref updates during render, so the layer is present on that paint.
   const listShownRef = useRef(false);
   if (listActive) listShownRef.current = true;
   const listMounted = listReady && listShownRef.current;
-
-  const boardReady = BOARD_OPEN && !loading && !!tree && tree.nodes.length > 0;
-  const boardActive = boardReady && view === 'board';
+  // The Board stays mounted through a reload or an emptied tree, so its scroll and fold survive; only a crash drops it.
   const boardShownRef = useRef(false);
   if (boardActive) boardShownRef.current = true;
-  const boardMounted = boardReady && boardShownRef.current;
+  const boardMounted = BOARD_OPEN && !boardCrashed && !!tree && boardShownRef.current;
 
   const layerActive = listActive || boardActive;
-  const canvasView = view !== 'list' && view !== 'board';
+  const canvasView = shownView !== 'list' && shownView !== 'board';
 
   const switchView = useCallback((next) => {
     setView(next);
@@ -1245,9 +1253,27 @@ export function SkillTreeView({ treeId, demo = false }) {
       setMultiMode(false);
       setSelectedIds(new Set());
       reconcileProjections(new Set(), new Set());
+    } else if (selectedIdsRef.current.size + selectedEdgesRef.current.size > 1) {
+      setSelectedId(selectedIdRef.current);
     }
+    if (next === 'board') setComposerOpen(false);
+    if (BOARD_OPEN) switchFocusRef.current = true;
     setSheetHeld(next === 'tree' && !multiMode && !!selectedId);
-  }, [treeId, multiMode, selectedId, reconcileProjections]);
+  }, [treeId, multiMode, selectedId, reconcileProjections, setSelectedId]);
+
+  // The switch a reader pressed has just gone out of sight, so focus moves to the pressed option of the one now shown.
+  useEffect(() => {
+    if (!switchFocusRef.current) return;
+    switchFocusRef.current = false;
+    const shownSwitch = boardActive && readOnly ? '.st-view-layer--board' : '.st-topbar, .st-action-lane';
+    rootRef.current?.querySelector(`:is(${shownSwitch}) .st-board-switch-option[aria-pressed="true"]`)?.focus();
+  }, [shownView, boardActive, readOnly]);
+
+  const handleBoardCrash = useCallback(() => {
+    captureError('roadmap', 'roadmap-board', '', '#/app');
+    setBoardCrashed(true);
+    setView('tree');
+  }, []);
 
   useEffect(() => {
     if (!switcherOpen) return undefined;
@@ -1537,10 +1563,10 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const mobileSurface = activeSurface({ multiMode, aim, removing, selectedNode });
 
-  const viewSwitch = boardReady ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} /> : null;
-  // The Board carries its switch in its identity row; the Graph's, on surfaces without the topbar, rides the lane.
+  const viewSwitch = boardReady ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} /> : null;
+  // The Board carries its switch in its identity row; the Graph's rides the topbar, or the lane on phones and tablets.
   const lanePill = BOARD_OPEN
-    ? (readOnly && !boardActive ? viewSwitch : null)
+    ? (readOnly && breakpoint !== 'desktop' && !boardActive ? viewSwitch : null)
     : (listReady ? <ViewPill view={view} onSwitch={switchView} /> : null);
   const laneTend = canTend && breakpoint !== 'desktop' && mobileSurface === 'empty' ? (
     <TendBar
@@ -1663,26 +1689,28 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       {boardMounted && (
         <div className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
-          <BoardView
-            tree={tree}
-            completed={completed}
-            completedAt={completedAt}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            title={tree.title}
-            notice={deviceNotice}
-            identity={readOnly}
-            phone={phone}
-            onSwitchView={switchView}
-            underTopbar={!readOnly}
-            laneInset={laneInset}
-          />
+          <ErrorBoundary fallback={null} onCrash={handleBoardCrash}>
+            <BoardView
+              tree={tree}
+              completed={completed}
+              completedAt={completedAt}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              title={tree.title}
+              notice={deviceNotice}
+              identity={readOnly}
+              phone={phone}
+              onSwitchView={switchView}
+              underTopbar={!readOnly}
+              laneInset={lanePill || laneTend || laneShare ? laneInset : 0}
+            />
+          </ErrorBoundary>
         </div>
       )}
 
       {readOnly ? (
         <MobileChrome
-          view={phone && view === 'list' ? 'list' : view === 'board' ? 'board' : 'tree'}
+          view={phone && shownView === 'list' ? 'list' : shownView === 'board' ? 'board' : 'tree'}
           title={tree?.title}
           progress={{ done: shareStats?.done ?? 0, total: shareStats?.total ?? 0 }}
           author={tree?.author}
@@ -1758,7 +1786,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {!readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && (
+      {!readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && !(boardActive && deviceNotice) && (
         <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>

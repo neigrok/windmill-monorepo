@@ -59,6 +59,11 @@ export function initialView({ saved, owner, empty, born = false, boardOpen = fal
   return owner ? working : 'tree';
 }
 
+// A Board that cannot show yet (loading, no steps, crashed) shows the Graph without forgetting the choice.
+export function viewToShow(view, { boardReady }) {
+  return view === 'board' && !boardReady ? 'tree' : view;
+}
+
 // Session-scoped one-shot birth stamp: a planting door stamps the tree it made, the view decision
 // peeks and clears it.
 const BORN_KEY = 'windmill:born';

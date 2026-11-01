@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ViewPrefs, initialView, stampBorn, peekBorn, clearBorn } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
+import { ViewPrefs, initialView, viewToShow, stampBorn, peekBorn, clearBorn } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
 
 function memoryStorage() {
   const map = new Map();
@@ -123,6 +123,14 @@ test('initialView — with the Board closed, a saved Board becomes the List', ()
 test('initialView — with the Board open, an empty or just-born tree still opens on the canvas', () => {
   assert.equal(initialView({ saved: 'board', owner: true, empty: true, boardOpen: true }), 'tree');
   assert.equal(initialView({ saved: 'board', owner: true, empty: false, born: true, boardOpen: true }), 'tree');
+});
+
+test('viewToShow — a Board that cannot show shows the Graph; every other view shows as chosen', () => {
+  assert.equal(viewToShow('board', { boardReady: true }), 'board');
+  assert.equal(viewToShow('board', { boardReady: false }), 'tree');
+  assert.equal(viewToShow('list', { boardReady: false }), 'list');
+  assert.equal(viewToShow('tree', { boardReady: true }), 'tree');
+  assert.equal(viewToShow(null, { boardReady: false }), null);
 });
 
 test('birth stamp — peek reads without consuming; clear removes only the tree it names', () => {
