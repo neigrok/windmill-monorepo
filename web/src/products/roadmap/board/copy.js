@@ -5,12 +5,14 @@ export const COLUMN_TITLES = { locked: 'Locked', upNext: 'Up next', done: 'Done'
 export const SORT_LABELS = { roadmap: 'Roadmap order', newest: 'Created · newest', oldest: 'Created · oldest' };
 
 export const LABELS = {
+  columns: 'Columns',
   findStep: 'Find a step',
   filterByKind: 'Filter by kind',
   allKinds: 'All',
   newStep: 'New step',
   recolor: 'Recolor',
   undo: 'Undo',
+  show: 'Show',
   allSubtasksDone: 'All subtasks done · Complete step',
 };
 
@@ -72,6 +74,10 @@ export function progressFigure({ done, total, compact = false }) {
 
 export function progressLabel({ done, total }) {
   return `${formatCount(done)} of ${stepCount(total)} done`;
+}
+
+export function showColumn({ column }) {
+  return `${LABELS.show} ${COLUMN_TITLES[column]}`;
 }
 
 export function showAllDone({ total }) {

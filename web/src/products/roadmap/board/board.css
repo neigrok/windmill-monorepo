@@ -34,11 +34,9 @@
   background: var(--surface-canvas);
 }
 .st-board--phone {
+  gap: var(--space-3);
   padding-left: var(--space-4);
   padding-right: var(--space-4);
-}
-.st-board--under-topbar {
-  padding-top: calc(var(--space-6) * 2 + 68px); /* the topbar: its inset, the brand pill around the 48px switch, a gap */
 }
 
 /* ---- Identity row: title, progress, Board/Graph. ---- */
@@ -141,24 +139,12 @@
   background-color: var(--color-brand-soft);
 }
 
-/* ---- Columns: plain stacks in flow order. ---- */
-.st-board-column {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+/* ---- The device notice sits the Board's gap under the chrome row, not the List's margin. ---- */
+.st-board .st-list-notice {
+  margin-top: 0;
 }
-.st-board-column-heading {
-  margin: 0;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: var(--text-base);
-  color: var(--text-primary);
-}
-.st-board-column-cards {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
+
+/* ---- Show all: the row ending a folded Done. ---- */
 .st-board-show-all {
   align-self: flex-start;
   padding: 0;
