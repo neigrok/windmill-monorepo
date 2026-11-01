@@ -178,6 +178,8 @@ class SenderWait {
         if ("clock-skew" in codes) backoff(now, draw, liveHint, true) else if (codes.isNotEmpty()) k = 0
     }
     fun kick(now: Long) { if (afterSkew && now < until) return; k = 0; until = maxOf(now, floor); afterSkew = false }
+    // Asked for by a person: due now unless a retry-after holds, and the backoff keeps its step.
+    fun ask(now: Long) { if (afterSkew && now < until) return; until = maxOf(now, floor) }
     fun due(now: Long) = now >= until
     fun leaveMayPush(now: Long) = now >= floor
 }

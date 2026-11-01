@@ -11,7 +11,7 @@
   - `MovementRecord.of` reads the shared `TrainingLog.recentDays` over the history the log holds; `TrainingHistory.record` serializes the same read.
   - `progressSeries` starts its twelve-week axis at the shared `MovementProgress.windowStart`. Its one-point-per-day choice stays in `:gym`: iOS plots every workout.
   - `LogTimeline` has no always-true filter.
-- **Every surface:** the `lastTime` and record documents list sets in logged order on Kotlin, Swift and web, with vectors holding numbered and unnumbered sets. The web's Backfill reads the `lastTime` document; no iOS screen does.
+- **Every surface:** the `lastTime`, last-sets and record documents list sets in logged order on Kotlin, Swift, web and the server, with vectors holding sets numbered out of logged order and unnumbered ones; the server's corpus test claims them. The web's Backfill reads the `lastTime` document; no iOS screen does.
 
 **Change**
 1. **Prefill:** replace the `:gym` copy with the shared read, `LiveLines` calls the shared `offeredLoads`, and the store keeps an unread last time as an incomplete `LastTime`. If the grid comparison is the correct rule, move it into the shared rule with vectors.

@@ -318,8 +318,9 @@ public:
     std::vector<Set> block;
     for (const Set& set : db.sets)
       if (set.session == newest->id && set.exercise == exercise) block.push_back(set);
-    std::sort(block.begin(), block.end(),
-              [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
+    std::sort(block.begin(), block.end(), [](const Set& a, const Set& b) {
+      return std::pair(a.completedAtMs, a.id.str()) < std::pair(b.completedAtMs, b.id.str());
+    });
     // The name comes off the session's own frozen snapshot.
     return {LastTime{*newest, newest->displayName.value_or(newest->plan ? newest->plan->routineName : ""), block},
             LastTimeError::none};
@@ -409,8 +410,9 @@ public:
       for (const Set& set : setsOf(session->id))
         if (set.exercise == exercise) block.push_back(set);
       if (block.empty()) continue;
-      std::sort(block.begin(), block.end(),
-                [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
+      std::sort(block.begin(), block.end(), [](const Set& a, const Set& b) {
+        return std::pair(a.completedAtMs, a.id.str()) < std::pair(b.completedAtMs, b.id.str());
+      });
       history.recent.push_back(MovementDay{session->id, session->startedAtMs, std::move(block)});
       if (static_cast<int>(history.recent.size()) == kRecentDays) break;
     }

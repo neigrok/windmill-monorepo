@@ -1061,6 +1061,36 @@ class SyncRuntimeTests {
         }
     }
 
+    // Each asked-for pull that fails steps the backoff on: the draws climb the ladder rather than restarting it.
+    @Test fun pullAgainKeepsTheBackoffStepAcrossRepeatedFailures() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Failed(SyncResponse(500, Json.objectOf())))
+            assertFalse(fixture.runtime.pullerStep())
+            repeat(2) {
+                assertTrue(fixture.runtime.pullAgain())
+                fixture.pull().answer.complete(Reply.Failed(SyncResponse(500, Json.objectOf())))
+                assertFalse(fixture.runtime.pullerStep())
+            }
+            assertEquals("the backoff draws", listOf(1_000, 2_000, 4_000), fixture.identities.bounds.filter { it >= 1_000 })
+        }
+    }
+
+    // With the account's token gone there is no seat to pull as, so nothing is asked and the tap says so.
+    @Test fun pullAgainAsksNothingWithoutASeat() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            assertFalse(fixture.runtime.pullerStep())
+            fixture.tokens.delete("A")
+            assertFalse(fixture.runtime.pullAgain())
+            assertFalse(fixture.runtime.pullerStep())
+            assertEquals(1, fixture.transport.pulling.get())
+        }
+    }
+
     @Test fun lateLiveFrameAfterAccountChangeCannotPauseTheNewAccount() = runBlocking {
         Fixture().use { fixture ->
             fixture.runtime.enter()

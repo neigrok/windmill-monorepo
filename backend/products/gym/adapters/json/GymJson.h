@@ -47,6 +47,8 @@ Exercise exerciseFromJson(const Json::Value&);
 Json::Value toJson(const std::vector<Exercise>& exercises);
 // One line per movement this lifter has trained; a movement with no row has never been logged.
 Json::Value toJson(const std::vector<LastSet>& movements);
+// A movement never trained is its id alone; otherwise its last session, routine name when there is one, and sets.
+Json::Value toJson(const ExerciseId& exercise, const std::optional<LastTime>& last);
 Json::Value toJson(const std::vector<RoutineEntry>& entries);
 Json::Value toJson(const Routine& routine);
 Json::Value toJson(const Routine& routine, const std::optional<ProposalHead>& pending);

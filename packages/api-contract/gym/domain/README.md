@@ -10,13 +10,15 @@ for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` 
 decodes separately.
 
 The server claims the `training-reads.json` cases that make an estimate, by the one e1RM rule it holds as
-`Estimate` (`backend/products/gym/domain/Progress.h`): every `GymEstimate` and `GymEstimateScore` case in its domain suite
-(`backend/test/products/gym/domain/ProgressTest.cpp`), and every `StatsProgress` case and `TrainingHistory` review and
-stats case over Postgres (`backend/test/products/gym/application/TrainingReadsCorpusTest.cpp`), which seeds each case's
-records into the engine's stores and reads them through `TrainingService`. The server's wire states a review's and the
-statistics' estimates to a tenth, so those expectations are stated the same way before the bytes are compared. That
-test names the cases the server answers otherwise, each by the rule it reads differently, and the one case its
-store cannot hold (a set without its session).
+`Estimate` (`backend/products/gym/domain/Progress.h`), and the cases that list a movement's sets: every `GymEstimate` and
+`GymEstimateScore` case in its domain suite (`backend/test/products/gym/domain/ProgressTest.cpp`), and every
+`StatsProgress` case and `TrainingHistory` review, stats, last-time, last-sets and record case over Postgres
+(`backend/test/products/gym/application/TrainingReadsCorpusTest.cpp`), which seeds each case's records into the engine's
+stores and reads them through `TrainingService`. The server's wire states a review's, the statistics' and a record's
+estimates to a tenth, so those expectations are stated the same way before the bytes are compared, and it numbers every
+set it holds, so a set a case leaves unnumbered is compared without its number. That test names the cases the server
+answers otherwise, each by the one field it reads by another rule, and the one case its store cannot hold (a set
+without its session).
 
 The ability conformance corpus beside this one, `../abilities/` ([README](../../README.md)), is claimed by the Swift replica
 executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`): each case runs through `RunAbility` over its

@@ -899,7 +899,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   wait: the workouts this phone holds, with no new best, record dot, weekly line or change since,
   and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,
   once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
-  becomes **Retry** · *That read failed.*, which no Android board draws.
+  becomes **Retry** · *That read failed.*, which no Android board draws. A movement's record page
+  before the first pull lists the days this phone holds under *Recent sets* (`ui/RecordScreen.kt`);
+  designer to say whether that heading stays before the pull lands.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
@@ -919,6 +921,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
     (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
     (`web/src/products/gym/log.js`).
+- **11w · An answer's proposal still arriving (designer).** Coach can answer before its proposal
+  reaches the phone; until the miss settles, Android draws nothing in the card's place
+  (`coach/AskScreen.kt`), because no board draws a waiting state for it.
 
 ### Parity rulings (owner, 2026-10-22)
 
