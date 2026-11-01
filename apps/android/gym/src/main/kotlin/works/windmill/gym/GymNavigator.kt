@@ -62,10 +62,11 @@ import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
-internal enum class Tab(val title: String) {
-    Routines("Routines"),
-    Log("The log"),
-    Coach("Coach"),
+// `hostsTransient`: the tab's screen has a floating button and hosts the room's transient above it (05.17).
+internal enum class Tab(val title: String, val hostsTransient: Boolean) {
+    Routines("Routines", hostsTransient = true),
+    Log("The log", hostsTransient = true),
+    Coach("Coach", hostsTransient = false),
 }
 
 // Saved as its NAME: a Bundle holding an entry this build does not have must land on home, not
@@ -187,25 +188,33 @@ internal sealed interface Frame {
     val railStands: Boolean
         get() = this is Root || this is Pushed && (away is Away.Coach || away is Away.Thread)
 
+    // A frame whose screen has a floating button hosts the room's transient itself, above that button
+    // (05.17); every other frame's chrome hosts it.
+    val hostsTransient: Boolean
+
     data class Root(override val tab: Tab) : Frame {
         override val key get() = "tab:${tab.name}"
         override val depth get() = 0
+        override val hostsTransient get() = tab.hostsTransient
     }
 
     data class Workout(override val tab: Tab) : Frame {
         override val key get() = "workout"
         override val depth get() = 1
+        override val hostsTransient get() = true
     }
 
     // `under` is the entry the way back leads to; null is the tab, or the logger, beneath the stack.
     data class Pushed(override val tab: Tab, val away: Away, val position: Int, val under: Away?) : Frame {
         override val key get() = "away:$position:${away.key}"
         override val depth get() = 1 + position
+        override val hostsTransient get() = false
     }
 
     data class Draft(override val tab: Tab) : Frame {
         override val key get() = "draft"
         override val depth get() = Int.MAX_VALUE
+        override val hostsTransient get() = false
     }
 }
 

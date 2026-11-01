@@ -33,7 +33,7 @@ import works.windmill.gym.ui.GymSkin
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-class GymRailTests {
+class RoomChromeTests {
     @get:Rule val compose = createComposeRule()
 
     private fun channel(part: Float): Double {
