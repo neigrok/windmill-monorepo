@@ -577,6 +577,14 @@ class TrainingStore(
         get() = allSessions.filterNot { it.id in withheldIds }
     var older: Older by mutableStateOf(Older.More)
         private set
+    // Before the first pull the phone holds part of the account at most, the same completeness the record page reads:
+    // the log's end is unknown, so a short page leaves the foot unread rather than claiming a first workout.
+    private val logUnread: Boolean get() = !training.anonymous && !training.firstPullComplete
+    private fun footAfter(page: List<SessionSummary>): Older = when {
+        page.size >= logPage -> Older.More
+        logUnread -> Older.Failed
+        else -> Older.End
+    }
     var session: Session? by mutableStateOf(null)                        // the open one, or none
         private set
     var sets: List<TrainingSet> by mutableStateOf(emptyList())           // its sets, performed order
@@ -1947,7 +1955,7 @@ class TrainingStore(
 
     // The foot's Retry reads the log again; on an account not pulled yet it also asks for the first pull.
     suspend fun retryLog() {
-        val unread = !training.anonymous && !training.firstPullComplete
+        val unread = logUnread
         val asked = unread && pullAgain()
         loadOlder()
         val outcome = when {
@@ -1972,7 +1980,7 @@ class TrainingStore(
             return
         }
         logged = logged + page.filter { fresh -> logged.none { it.id == fresh.id } }
-        older = if (page.size < logPage) Older.End else Older.More
+        older = footAfter(page)
     }
 
     suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
@@ -2096,7 +2104,7 @@ class TrainingStore(
         if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.
-        if (deeper.isEmpty()) older = if (rows.size < logPage) Older.End else Older.More
+        if (deeper.isEmpty()) older = footAfter(rows)
 
         val open = try { readTraining { training.openWorkout() } }
         catch (_: TrainingReadChanged) { return }

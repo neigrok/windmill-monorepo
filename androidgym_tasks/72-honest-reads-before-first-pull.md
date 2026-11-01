@@ -8,7 +8,7 @@
 
 **Current implementation**
 - **Record page:** on an unread account the record page leaves out the tiles, the *Estimated strength* card (its latest estimate and its workout count) and *Nothing logged for this movement yet*, under the same completeness flag (`Record.page`). It lists the sets the phone holds. The left-out lines appear once the first pull lands.
-- **Log foot:** the unread log's foot reads *That read failed. Retry*, but nothing failed; it is waiting for the first pull. Retry reads the phone's copy again and asks the sync runtime for the first pull (`TrainingStore.retryLog`, `SyncRuntime.pullAgain`); the log reads itself when the pull lands.
+- **Log foot:** the unread log's foot reads *That read failed. Retry*, but nothing failed; it is waiting for the first pull. It keeps that foot when the phone holds workouts logged here: on an unread account, under the record page's completeness flag, a short page claims no first workout (`TrainingStore.footAfter`). Retry reads the phone's copy again and asks the sync runtime for the first pull (`TrainingStore.retryLog`, `SyncRuntime.pullAgain`); the log reads itself when the pull lands, and the usual foot returns.
 - **New best:** the log row and the record page read one shared rule, `ProgressRecords`. A slight workout (fewer than 4 sets) sets new bests and record steps like any other; slightness silences only its receipt. The log states each new best once: by its woven moment, or by the row's dot when the week's moment is another best. So a slight workout's best can show as the moment and not as a dot. Slight-workout vectors in `packages/api-contract/gym/domain/training-reads.json` pin this on all three surfaces.
 
 **Change**

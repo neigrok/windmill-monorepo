@@ -894,7 +894,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   subtitle for D4's state.
 - **11u · The log before the first pull (🚧, awaiting owner).** On an account this phone has not
   pulled yet, the log's foot shows **Retry** over *That read failed.* (`ui/LogScreen.kt` `LogFoot`),
-  but nothing failed: the log is waiting for the first pull (task 72). Board 05.18 *Reading your
+  but nothing failed: the log is waiting for the first pull (task 72). It keeps that foot when the
+  phone holds workouts logged here, and claims no first workout until the pull lands. Board 05.18 *Reading your
   log* (Dark `1767:27118`, Daylight `1767:27204`, caption `1767:27286`, in section 05) draws the
   wait: the workouts this phone holds, with no new best, record dot, weekly line or change since,
   and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,

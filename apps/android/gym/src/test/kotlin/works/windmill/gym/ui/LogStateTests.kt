@@ -109,4 +109,26 @@ class LogStateTests {
             compose.runOnIdle { assertEquals(1, pulls) }
         } } finally { scope.cancel() }
     }
+
+    // A workout this phone logged before the first pull is part of the account at most: the foot claims no first
+    // workout and keeps Retry, and Retry still asks for the pull, until the pull lands and the log knows its end.
+    @Test
+    fun aWorkoutLoggedBeforeTheFirstPullLeavesTheFootUnread() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        var pulls = 0
+        try { EngineRoomFixture(tmp.newFolder(), scope, pullAgain = { pulls++; true }).use { room ->
+            runBlocking { room.select("a"); room.workout(); room.store.observeEngine() }
+            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.onNodeWithText("That read failed.").assertIsDisplayed()
+            compose.onAllNodesWithText("First workout", substring = true).assertCountEquals(0)
+            compose.onNodeWithText("Retry").performClick()
+            compose.waitUntil(5_000) { compose.runOnIdle { pulls == 1 } }
+            compose.onNodeWithText("Retry").assertIsDisplayed()
+            compose.onAllNodesWithText("First workout", substring = true).assertCountEquals(0)
+            compose.runOnIdle { room.pull(EngineRoomFixture.server()) }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("First workout", substring = true).fetchSemanticsNodes().size == 1 }
+            compose.onNodeWithText("Retry").assertDoesNotExist()
+            compose.onNodeWithText("That read failed.").assertDoesNotExist()
+        } } finally { scope.cancel() }
+    }
 }
