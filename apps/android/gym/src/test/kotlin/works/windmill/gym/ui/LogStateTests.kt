@@ -81,8 +81,7 @@ class LogStateTests {
         } } finally { scope.cancel() }
     }
 
-    // Signed in to an account this phone has not pulled, the log has no copy to read again: Retry asks for the first
-    // pull, and the log reads itself once that pull lands.
+    // Signed in to an account this phone has not pulled, Retry asks for the first pull, and the log reads itself once it lands.
     @Test
     fun retryOnAnAccountNotYetPulledAsksForTheFirstPullAgain() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -94,7 +93,7 @@ class LogStateTests {
             }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
         }
-        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, pullAgain = { pulls++ }).use { room ->
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, pullAgain = { pulls++; true }).use { room ->
             runBlocking { room.select("a"); room.store.observeEngine() }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
             compose.onNodeWithText("That read failed.").assertIsDisplayed()

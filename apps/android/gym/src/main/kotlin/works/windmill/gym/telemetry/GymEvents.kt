@@ -14,7 +14,7 @@ object GymActions : EventSchema {
             "discard" to setOf("ok", "cancelled", "refused", "failed"),
             "open_workout" to setOf("ok"), "open_bodyweight" to setOf("ok"), "open_record" to setOf("ok"),
             "share" to setOf("ok", "refused", "failed"),
-            "retry" to setOf("requested", "ok", "failed"),
+            "retry" to setOf("requested", "refused", "ok", "failed"),
         ),
         "finish" to mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"), "keep" to setOf("ok"), "done" to setOf("ok")),
         "session" to mapOf(

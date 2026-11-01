@@ -45,7 +45,7 @@ internal class EngineRoomFixture(
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
     private val readDispatcher: CoroutineDispatcher? = null,
-    private val pullAgain: () -> Unit = {},
+    private val pullAgain: suspend () -> Boolean = { false },
 ) : AutoCloseable {
     val scope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
     companion object {

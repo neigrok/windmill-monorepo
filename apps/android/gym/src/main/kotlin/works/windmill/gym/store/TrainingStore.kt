@@ -106,8 +106,8 @@ class TrainingStore(
     localCoach: LocalCoach? = null,
     coachOnboarding: CoachOnboardingStore? = null,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.Default,
-    // Asks the sync runtime for the account's copy again.
-    private val pullAgain: () -> Unit = {},
+    // Asks the sync runtime for the account's copy again; false when it is not pulling.
+    private val pullAgain: suspend () -> Boolean = { false },
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds },
@@ -1230,6 +1230,7 @@ class TrainingStore(
     }
 
     val caughtUpTo: Long? get() = training.caughtUpTo
+    fun proposalRecorded(id: String): Boolean = training.proposalRecorded(id)
 
     // Pending removals and unshown receipts remain readable after their synced rows disappear.
     suspend fun proposal(id: String): ProposalRead {
@@ -1950,16 +1951,17 @@ class TrainingStore(
         is Deletion.Bodyweight -> error("weigh-in deletion requires its engine receipt")
     }
 
-    // The foot's Retry. An account this phone has not pulled yet has no copy to read again: its log waits on the
-    // first pull, so Retry asks for that pull and the log reads itself when the pull lands. Any other log reads again.
+    // The foot's Retry reads the log again; on an account not pulled yet it also asks for the first pull.
     suspend fun retryLog() {
-        if (!training.anonymous && !training.firstPullComplete) {
-            pullAgain()
-            telemetry.event("gym_action", mapOf("screen" to "log", "action" to "retry", "outcome" to "requested"))
-            return
-        }
+        val unread = !training.anonymous && !training.firstPullComplete
+        val asked = unread && pullAgain()
         loadOlder()
-        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "retry", "outcome" to if (older == Older.Failed) "failed" else "ok"))
+        val outcome = when {
+            unread -> if (asked) "requested" else "refused"
+            older == Older.Failed -> "failed"
+            else -> "ok"
+        }
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "retry", "outcome" to outcome))
     }
 
     // Also re-reads a first page the replica could not answer: with no rows the cursor is absent, which is

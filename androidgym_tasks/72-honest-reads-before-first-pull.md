@@ -8,7 +8,7 @@
 
 **Current implementation**
 - **Record page:** on an unread account the record page leaves out the tiles, the *Estimated strength* card (its latest estimate and its workout count) and *Nothing logged for this movement yet*, under the same completeness flag (`Record.page`). It lists the sets the phone holds. The left-out lines appear once the first pull lands.
-- **Log foot:** the unread log's foot reads *That read failed. Retry*, but nothing failed; it is waiting for the first pull. Retry asks the sync runtime for the first pull again (`TrainingStore.retryLog`, `SyncRuntime.pullAgain`), and the log reads itself when the pull lands. On a pulled account, Retry reads the page again.
+- **Log foot:** the unread log's foot reads *That read failed. Retry*, but nothing failed; it is waiting for the first pull. Retry reads the phone's copy again and asks the sync runtime for the first pull (`TrainingStore.retryLog`, `SyncRuntime.pullAgain`); the log reads itself when the pull lands.
 - **New-best marker:** the log's *new best* marker is missing on a one-set workout that set an e1RM (115×8, e1RM 145.7 over 133.3), though the record page lists it under earlier records. Slight workouts (fewer than 4 sets) are not record-eligible by design, so this may be intended. Check the shared rule and make the log and the record page agree.
 
 **Change**

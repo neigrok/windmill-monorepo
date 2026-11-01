@@ -339,8 +339,10 @@ fun RoutineBuilder(
             telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "cancelled"))
         },
         onDiscard = {
-            telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "ok"))
-            leaveForm()
+            if (!closing) {
+                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "ok"))
+                leaveForm()
+            }
         })
     if (discarding) DiscardQuestion("Discard routine changes?",
         "${Program.named(draft.name) ?: "This routine"} won’t be saved.",

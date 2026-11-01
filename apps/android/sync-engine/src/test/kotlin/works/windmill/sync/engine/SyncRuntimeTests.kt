@@ -1036,25 +1036,28 @@ class SyncRuntimeTests {
         }
     }
 
-    // The clock stands still and every backoff draws half its bound, so only an asked-for pull can come early.
+    // The clock stands still and every backoff draws half its bound, so only an asked-for pull can come early. A pull
+    // step waits for the one in flight, so each "nothing is due" is read after it.
     @Test fun pullAgainAsksAtOnceAfterAFailedPullButKeepsTheServersRetryAfter() = runBlocking {
         Fixture(draw = { it / 2 }).use { fixture ->
             fixture.transport.controlPulls = true
             fixture.runtime.enter()
             fixture.pull().answer.complete(Reply.Unreachable)
-            delay(50)
-            assertTrue("a failed pull waits out its backoff", fixture.transport.pulls.tryReceive().isFailure)
-            fixture.runtime.pullAgain()
+            assertFalse("a failed pull waits out its backoff", fixture.runtime.pullerStep())
+            assertTrue(fixture.runtime.pullAgain())
             fixture.pull().answer.complete(Reply.Failed(SyncResponse(503, Json.objectOf("retryAfterMs" to Json.of(10_000)))))
-            delay(30)
-            fixture.runtime.pullAgain()
-            delay(50)
-            assertTrue("a server's retry-after outlasts the request", fixture.transport.pulls.tryReceive().isFailure)
+            assertFalse(fixture.runtime.pullerStep())
+            assertTrue(fixture.runtime.pullAgain())
+            assertFalse("a server's retry-after outlasts the request", fixture.runtime.pullerStep())
+            assertTrue(fixture.transport.pulls.tryReceive().isFailure)
             fixture.clock.wall += 10_000
-            fixture.runtime.pullAgain()
+            assertTrue(fixture.runtime.pullAgain())
             assertEquals(listOf(product.text), fixture.pull().also { it.answer.complete(Reply.Unreachable) }
                 .request.member("scopes").arr().map { it.member("scope").str() })
+            assertFalse(fixture.runtime.pullerStep())
             assertEquals(3, fixture.transport.pulling.get())
+            fixture.runtime.connectivity(false)
+            assertFalse("offline, nothing can be asked for", fixture.runtime.pullAgain())
         }
     }
 
