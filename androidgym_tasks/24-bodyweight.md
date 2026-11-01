@@ -1,6 +1,6 @@
 # Compact native Weigh-in, calendar date staging and nine-second Undo
 
-**Status:** On main at `b071acc1` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+**Status:** On main at `b071acc1` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. Android 0.14.0 carries it.
 
 **Approved flow:** [Weigh-in](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31991) — human-approved 2026-10-25.
 

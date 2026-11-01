@@ -1,6 +1,6 @@
 # The onboarding's gym glimpse draws today's rack
 
-**Status:** On main at `bb0223cb` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+**Status:** On main at `bb0223cb` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. Android 0.14.0 carries it.
 
 **Approved flow:** [Workout rack](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036) — human-approved 2026-10-25. The Shell frames below carry this approved headerless rack in the unchanged onboarding composition.
 

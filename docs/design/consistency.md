@@ -902,8 +902,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | `android-gym-mcp-proposal-row-design` | 17, 29 | A proposal with no conversation; retain its existing review route until the replacement is approved. |
   | `android-coach-uncertain-apply-design` · deferred, unapproved | 34 | Excluded from this release with Coach action-presentation changes; the proposed awaiting-receipt states are not approved. |
   | `android-coach-partial-drafts-design` · deferred, unapproved | 41, 42 | Excluded from this release with Coach action-presentation changes; the proposed mixed-result cards are not approved. |
-  | `android-coach-bound-installation-design` · access approved | 36, 38 | 08.58b Dark `1489:49152` / Daylight `1489:49306` are human-approved 2026-10-28 and Ready on the Android design page. History and Sign in remain available; anonymous Send is absent. The separate B.2 recovery card is unapproved. |
-  | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25; Android integration remains task 48. |
+  | `android-coach-bound-installation-design` · access approved | 36, 38 | 08.58b Dark `1489:49152` / Daylight `1489:49306` are human-approved 2026-10-28 and 🚀 In production on the Android design page. History and Sign in remain available; anonymous Send is absent. The separate B.2 recovery card is unapproved. |
+  | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is 🚀 In production, human-approved 2026-10-25; Android task 48 ships it in 0.14.0. |
   | `account-delete-reconciliation` · resolved | 48 | Backend account-scoped closure receipts and session-independent recovery are deployed in `ac1e0c75`; Android integration and acceptance remain task 48. |
 
 - **11q · Routine editor field and picker geometry (owner: task 18).** Installed Android
@@ -1179,7 +1179,7 @@ iOS. It and the product differ in these places.
   [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) /
   [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306).
   Anonymous waiting and local saving are distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
-  anonymous and account allowance-exhaustion boards are ✅ Ready for dev; the Windmill One
+  anonymous and account allowance-exhaustion boards are 🚀 In production on Android; the Windmill One
   variant remains excluded while checkout is closed.
 - **6v · Local Coach boards, 🚀 In production on iOS since 2026-10-29.** The Gym iOS page holds
   the states the local Coach adds (`gym_coach.md`, BUILD.md W4) as 🚀 In production Dark/Daylight
