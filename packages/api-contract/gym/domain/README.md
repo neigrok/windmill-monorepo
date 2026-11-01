@@ -225,14 +225,15 @@ sets. `WorkoutFix` opens the review's row (a landed copy edits its stranded sets
 parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-set admission,
 finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
 
-`LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
-last-time rows and today's sets. `OfferedLoads` is the prefill's load at every set the plan still
-holds, the set in hand first, each later set offered as though the one before were logged as
-offered; a load that would come from a last time not read yet is null. `SessionReadout` provides duration, set
+`LastTime` selects the latest finished movement session; it is unread when it found none and the account's history
+is not all here. `Prefill` follows ordered targets, last-time rows and today's sets. A scheme is straight when its
+sets agree, loads compared on the ladder's grid (`SetTarget.straight`); an open line is straight. `OfferedLoads` is
+the prefill's load at every set the plan still holds, the set in hand first, each later set offered as though the
+one before were logged as offered; a load that would come from an unread last time is null. `SessionReadout` provides duration, set
 and movement counts, volume and the session estimate. `StatsProgress` groups
 finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility
-and gaps. All estimates use `GymEstimate`: positive load, 1–10 reps, supplied RPE ≥7;
+and gaps; the twelve-week window starts 84 days before today (`windowStart`). All estimates use `GymEstimate`: positive load, 1–10 reps, supplied RPE ≥7;
 one rep is the load itself, otherwise Epley. Incomplete history does not assert a best or absence.
 Estimate ordering compares exact cent-load scores: load in cents multiplied by 30 for one rep or
 by `30 + reps` otherwise. Equal scores retain the earliest session, then lowest session identity;
@@ -258,7 +259,9 @@ has no routine or does not exist. `WorkoutOutOfDate` (`{id}` →
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
-session summaries, reviews, record details and weekly totals. History filters apply before summary and
+session summaries, reviews, record details and weekly totals. The last-time and record documents list a day's
+sets in logged order (`completedAt`, then identity), as every read does: a set number is the server's serial and
+absent until it answers. A record's `recentDays` are the movement's ten newest finished days (`recentDays`). History filters apply before summary and
 facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
 sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
 loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.

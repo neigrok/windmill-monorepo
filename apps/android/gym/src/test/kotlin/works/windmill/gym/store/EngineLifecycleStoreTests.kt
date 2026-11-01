@@ -8,6 +8,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.*
+import works.windmill.gym.domain.sync.Prefill
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.sync.api.Change

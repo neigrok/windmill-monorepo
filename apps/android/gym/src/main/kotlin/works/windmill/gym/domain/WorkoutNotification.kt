@@ -1,6 +1,7 @@
 package works.windmill.gym.domain
 
 import kotlinx.serialization.Serializable
+import works.windmill.gym.domain.sync.Prefill
 
 @Serializable
 data class WorkoutMoment(val wallMs: Long, val elapsedMs: Long, val bootId: String) {

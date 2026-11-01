@@ -1,5 +1,8 @@
 package works.windmill.gym.domain
 
+import works.windmill.gym.domain.sync.LastTime
+import works.windmill.gym.domain.sync.Prefill
+
 // "set 4 of 3" is legal: where plan and log disagree the log is right, so no target is hidden.
 
 object LiveOrder {
@@ -119,14 +122,14 @@ object LiveLines {
         }
     }
 
-    // Performed sets, the set in hand, and the remaining planned slots, each naming the load its rack will offer. A null
-    // `lastTime` is one not read yet.
-    fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?, stalled: Set<String>,
+    // Performed sets of the workout `sessionId`, the set in hand, and the remaining planned slots, each naming the load
+    // its rack will offer by the shared `Prefill.offeredLoads`.
+    fun slots(sets: List<TrainingSet>, sessionId: String, planEntry: PlanEntry?, lastTime: LastTime, stalled: Set<String>,
               unit: String = "kg"): List<Slot> {
         val landed = rows(sets, stalled, unit).map { Slot.Landed(it) }
         val lifted = setCount(sets)
         val plan = planEntry?.sets.orEmpty()
-        val offers = Prefill.offeredLoads(sets, planEntry, lastTime)
+        val offers = Prefill.offeredLoads(sets.map { it.domain(sessionId) }, planEntry?.domain, lastTime)
         val current = Slot.Current(index = lifted + 1, target = plan.getOrNull(lifted), offeredKg = offers.firstOrNull(), unit = unit)
         val coming = plan.drop(lifted + 1).mapIndexed { offset, target ->
             Slot.Planned(index = lifted + offset + 2, target = target, offeredKg = offers.getOrNull(offset + 1), unit = unit)

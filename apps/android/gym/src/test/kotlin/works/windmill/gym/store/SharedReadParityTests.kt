@@ -53,7 +53,7 @@ class SharedReadParityTests {
 
     @Test fun everySharedRecordCaseIsTheRecordPagesStanding() {
         val cases = sharedCases("record")
-        assertEquals(4, cases.size)
+        assertEquals(5, cases.size)
         for (case in cases) Engine.memory(SyncSchema.registry, clock = clock(case.member("input").member("now").long())).use { engine ->
             seed(engine, case.member("input").member("records").member("drawn").arr())
             val id = case.member("input").member("input").member("args").arr().single().str()
@@ -87,7 +87,7 @@ class SharedReadParityTests {
         assertNull(movement.heaviest)
         assertFalse(movement.hasChart(java.time.ZoneOffset.UTC))
         val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
-        val page = Record.page(MovementRecord.of(bench, training.details()), 1_800_000_000_000, movement)
+        val page = Record.page(MovementRecord.of(bench, training.details(), 1_800_000_000_000), 1_800_000_000_000, movement)
         assertEquals(Record.Page("Bench Press", "Barbell", emptyList(), emptyList(),
             listOf(Record.Day("10 Jan", "110 × 5 · 110 × 5 · 110 × 5 · 110 × 5"), Record.Day("4 Jan", "100 × 5 · 100 × 5 · 100 × 5 · 100 × 5")),
             null, null), page)

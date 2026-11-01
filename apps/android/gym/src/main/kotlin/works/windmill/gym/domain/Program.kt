@@ -1,6 +1,7 @@
 package works.windmill.gym.domain
 
 import kotlinx.serialization.Serializable
+import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
 
 // A routine is savable while incomplete: a row with no set target is `open` and asks at the rack.
 object Program {
@@ -117,7 +118,7 @@ object TargetEntry {
         constructor(targets: List<SetTarget>) : this(
             rows = targets.map(::TypedSet),
             sets = targets.size.takeIf { it > 0 }?.toString().orEmpty(),
-            varyBySet = targets.isNotEmpty() && !Scheme.straight(targets),
+            varyBySet = targets.isNotEmpty() && !DomainSetTarget.straight(targets.map { it.domain }),
         )
 
         // `floor` is the movement's: a barbell or a pair of dumbbells refuses a load under 0.
@@ -250,7 +251,7 @@ object TargetEntry {
         Reading.Open -> Readout.openTarget
         is Reading.Refused -> null
         is Reading.Scheme ->
-            if (Scheme.straight(reading.sets)) Readout.target(reading.sets)
+            if (DomainSetTarget.straight(reading.sets.map { it.domain })) Readout.target(reading.sets)
             else "${reading.sets.size} sets"
     }
 

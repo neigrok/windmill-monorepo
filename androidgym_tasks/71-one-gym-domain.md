@@ -1,17 +1,17 @@
 # One gym domain: the last app-side rules move into :gym:domain, and the presentation package says what it is
 
-**Status:** Refactor plus shared-vector work. Not started. It follows PR #43, which moved the receipt, record and last-time rules into `:gym:domain`.
+**Status:** Steps 1–5 and 7 are built on branch `worktree-agent-ad18ab6c71e24e009`, not yet on main. Step 6, the package rename, waits for another branch to merge. It follows PR #43, which moved the receipt, record and last-time rules into `:gym:domain`.
 
 **Current implementation**
 - **Two packages share a name.** `apps/android/gym/src/main/kotlin/works/windmill/gym/domain/` (package `works.windmill.gym.domain`) is now a presentation projection of `:gym:domain` (package `works.windmill.gym.domain.sync`). Same-named files exist in both: `Preferences.kt`, `Training.kt`, `Notes.kt`, `Bodyweight.kt`. `Units` is an enum in one and a `ChoiceSpec` String in the other.
-- **Prefill copy:** `Prefill` (with `offeredLoads`) and `Scheme.straight` in the `:gym` `Training.kt` duplicate the shared `Prefill`, and they have drifted: the Android copy compares loads on the ladder's grid, the shared one compares raw values. `LiveLines` reads the copy.
-- **Two forms of "not read yet":** `TrainingStore` says a movement's last time is unread by leaving it out of `lastTimes` (a null `LastTime`); the shared reads say it with `LastTime.isComplete == false`.
-- **Recovery rules:** import and recovery rules live in `store/WorkoutImports.kt` (~1,100 lines), outside every vector. `recovery-actions.json` is listed as pending in `apps/android/README.md`.
+- **Prefill:** `LiveLines` and the rack read the shared `Prefill` and `offeredLoads`; the `:gym` copy and `Scheme.straight` are gone. The shared `SetTarget.straight` compares loads on the ladder's grid, with a Prefill and an OfferedLoads vector on all three surfaces.
+- **One form of "not read yet":** `TrainingStore.lastTimeOf` answers the shared `LastTime`, unread (`isUnread`, `isComplete == false`) until its read answers; `EngineTraining.lastTime` returns the shared read and no longer throws for an unread account.
+- **Recovery:** the saved-copy checks (`SignedOutWorkout.importsUnchanged`, `SavedSets`) and stranded-set placement and steps (`StrandedSet`) live in `:gym:domain`; `store/WorkoutImports.kt` keeps the journal's I/O, its JSON merges and its state machine. `recovery-actions.json` is claimed.
 - **Smaller reads:**
-  - `MovementRecord.of` (the record page's recent days) still builds from `details()`; the shared `TrainingHistory.record` orders sets by `setNumber`, not by completion time.
-  - `progressSeries` applies its own 12-week chart axis beside the shared `window`.
-  - `LogTimeline`'s `workingSetCount > 0` filter is now always true.
-- **Every surface:** the shared `TrainingHistory.lastTime` JSON document still orders sets by `setNumber ?? 0`, then id, on Kotlin, Swift and web. `setNumber` is null on every signed-out or unpushed set. PR #43 fixed the typed `LastSet` read but left this document. Check whether any iOS or web screen (the rack prefill, a "last time" line) reads it. If one does, it is the same user-visible bug on signed-out phones.
+  - `MovementRecord.of` reads the shared `TrainingLog.recentDays` over the history the log holds; `TrainingHistory.record` serializes the same read.
+  - `progressSeries` starts its twelve-week axis at the shared `MovementProgress.windowStart`. Its one-point-per-day choice stays in `:gym`: iOS plots every workout.
+  - `LogTimeline` has no always-true filter.
+- **Every surface:** the `lastTime` and record documents list sets in logged order on Kotlin, Swift and web, with vectors holding numbered and unnumbered sets. The web's Backfill reads the `lastTime` document; no iOS screen does.
 
 **Change**
 1. **Prefill:** replace the `:gym` copy with the shared read, `LiveLines` calls the shared `offeredLoads`, and the store keeps an unread last time as an incomplete `LastTime`. If the grid comparison is the correct rule, move it into the shared rule with vectors.

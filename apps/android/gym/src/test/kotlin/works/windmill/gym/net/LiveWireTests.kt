@@ -278,16 +278,16 @@ class LiveWireTests {
         val trained = adapter.lastTime("bench-press")
         assertEquals("bench-press", trained.exerciseId)
         assertTrue(!trained.isFirstTime)
-        assertEquals(sessionAId, trained.session!!.id)
+        assertEquals(sessionAId, trained.session!!.id.record.string)
         assertEquals("Probe Day A", trained.routine)
-        assertEquals(listOf(storedFirst, storedSecond), trained.sets)
+        assertEquals(listOf(storedFirst, storedSecond).map { it!!.domain(sessionAId) }, trained.sets)
 
         val untouched = adapter.lastTime("suitcase-carry")
         assertEquals("suitcase-carry", untouched.exerciseId)
         assertTrue("no history means session and sets are omitted TOGETHER", untouched.isFirstTime)
         assertNull(untouched.session)
         assertNull(untouched.routine)
-        assertEquals(emptyList<TrainingSet>(), untouched.sets)
+        assertEquals(emptyList<works.windmill.gym.domain.sync.TrainingSet>(), untouched.sets)
 
         try {
             adapter.lastTime("probe-not-a-movement")

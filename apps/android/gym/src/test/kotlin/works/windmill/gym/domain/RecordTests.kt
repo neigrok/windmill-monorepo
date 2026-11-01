@@ -3,6 +3,7 @@ package works.windmill.gym.domain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import works.windmill.gym.domain.sync.RecentDay
 
 class RecordTests {
     private val squat = Exercise(id = "back-squat", name = "Back Squat", pattern = "squat",
@@ -28,7 +29,7 @@ class RecordTests {
             val other = set("other", kg, reps, today, exerciseId = chin.id)
             val details = if (combined) listOf(session("mixed", today, listOf(zero, other)))
                 else listOf(session("zero", today - 86_400_000, listOf(zero)), session("other", today, listOf(other)))
-            val page = Record.page(MovementRecord.of(chin, details), today, StatsProgress.of(details, today).movement(chin.id))
+            val page = Record.page(MovementRecord.of(chin, details, today), today, StatsProgress.of(details, today).movement(chin.id))
             assertEquals(Record.Tile("Most reps", "12", "reps · no added load", false), page.tiles.last())
         }
     }
@@ -43,7 +44,7 @@ class RecordTests {
             session("ses_3", today + 600_000, listOf(set("s5", 200.0, 1, today + 600_000)), open = true),
         )
 
-        val record = MovementRecord.of(squat, history)
+        val record = MovementRecord.of(squat, history, today)
 
         assertEquals(squat, record.exercise)
         assertEquals("newest first, and the open session is not in the log — it is the workout being stood in",
@@ -60,9 +61,9 @@ class RecordTests {
                     listOf(set("s$day", 100.0, 5, today - day * 86_400_000L)))
         }
 
-        val record = MovementRecord.of(squat, history)
+        val record = MovementRecord.of(squat, history, today)
 
-        assertEquals(MovementRecord.recentDaysShown, record.recentDays.size)
+        assertEquals(RecentDay.shown, record.recentDays.size)
         assertEquals(listOf("ses_0", "ses_9"),
                      listOf(record.recentDays.first().sessionId, record.recentDays.last().sessionId))
     }
@@ -82,7 +83,7 @@ class RecordTests {
     fun signedFactsAndSuccessfulUntrainedDataNeverBecomeZeroEstimates() {
         val detail = session("assisted", today, listOf(set("assistance", -20.0, 8, today, exerciseId = chin.id)))
         val movement = StatsProgress.of(listOf(detail), today).movement(chin.id)
-        val page = Record.page(MovementRecord.of(chin, listOf(detail)), today, movement)
+        val page = Record.page(MovementRecord.of(chin, listOf(detail), today), today, movement)
         assertEquals(listOf(Record.Tile("Heaviest", "−20", "kg · 8 reps", false)), page.tiles)
         assertNull(page.noEstimate)
         assertNull(page.nothingYet)
@@ -97,11 +98,11 @@ class RecordTests {
         }
         val progress = StatsProgress.of(rows, today).movement(squat.id)
         assertEquals(listOf("workout0", "workout2"), progress.earlierRecords.map { it.id })
-        val page = Record.page(MovementRecord.of(squat, rows), today, progress)
+        val page = Record.page(MovementRecord.of(squat, rows, today), today, progress)
         assertEquals(listOf(Record.Best("51.5 × 4", "e1RM 58.4", "10 Aug"),
             Record.Best("46 × 8", "e1RM 58.3", "8 Aug")), page.records)
         assertEquals(Record.Tile("Best e1RM", "62.3", "kg · today", true), page.tiles.first())
-        assertEquals(emptyList<Record.Best>(), Record.page(MovementRecord.of(squat, rows.take(2)), today,
+        assertEquals(emptyList<Record.Best>(), Record.page(MovementRecord.of(squat, rows.take(2), today), today,
             StatsProgress.of(rows.take(2), today).movement(squat.id)).records)
     }
 

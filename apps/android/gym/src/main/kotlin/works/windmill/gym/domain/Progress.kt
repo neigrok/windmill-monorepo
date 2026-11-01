@@ -1,6 +1,7 @@
 package works.windmill.gym.domain
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
@@ -20,7 +21,6 @@ import works.windmill.gym.domain.sync.ProgressSession as DomainProgressSession
 import works.windmill.gym.domain.sync.Session as DomainSession
 import works.windmill.gym.domain.sync.StatsProgress as DomainStatsProgress
 import works.windmill.gym.domain.sync.TrainingLog as DomainTrainingLog
-import works.windmill.gym.domain.sync.TrainingSet as DomainTrainingSet
 
 // The shared progress read, projected for the screens with string ids and epoch-ms instants. Every best, record,
 // window and chart threshold is the shared read's own, completeness gate included; nothing here decides one.
@@ -52,20 +52,21 @@ class StatsProgress(private val read: DomainStatsProgress) {
     override fun toString(): String = "StatsProgress(asOf=$asOf, sessions=$sessions, complete=${read.isComplete})"
 
     companion object {
-        // Progress reads estimates, never load counts, so its log carries no movements.
-        fun of(details: List<SessionDetail>, asOf: Long, complete: Boolean = true): StatsProgress {
-            val finished = details.filter { !it.session.isOpen }
-            val log = DomainTrainingLog(finished.map { detail ->
-                DomainSession(Id(detail.session.id, DomainSession), DomainInstant(detail.session.startedAtMs), DomainInstant(detail.session.finishedAtMs!!))
-            }, finished.flatMap { detail -> detail.sets.map { set ->
-                DomainTrainingSet(Id(set.id, DomainTrainingSet), Id(detail.session.id, DomainSession), Id(set.exerciseId, DomainExercise),
-                    set.weightKg, set.reps, set.rpe, set.note, DomainInstant(set.completedAtMs), set.setNumber)
-            } }, DomainCatalogue(emptyList()), Moment(DomainInstant(asOf), FixedZone(0)), complete)
-            return StatsProgress(DomainStatsProgress(log))
-        }
+        fun of(details: List<SessionDetail>, asOf: Long, complete: Boolean = true): StatsProgress =
+            StatsProgress(DomainStatsProgress(finishedLog(details, asOf, complete)))
 
         fun empty(asOf: Long): StatsProgress = StatsProgress(DomainStatsProgress(DomainInstant(asOf), emptyList()))
     }
+}
+
+// The finished workouts of `details` as the shared training log, for the shared reads over them. Those reads take
+// estimates and sets, never load counts, so the log carries no movements.
+fun finishedLog(details: List<SessionDetail>, asOf: Long, complete: Boolean = true): DomainTrainingLog {
+    val finished = details.filter { !it.session.isOpen }
+    return DomainTrainingLog(finished.map { detail ->
+        DomainSession(Id(detail.session.id, DomainSession), DomainInstant(detail.session.startedAtMs), DomainInstant(detail.session.finishedAtMs!!))
+    }, finished.flatMap { detail -> detail.sets.map { it.domain(detail.session.id) } },
+        DomainCatalogue(emptyList()), Moment(DomainInstant(asOf), FixedZone(0)), complete)
 }
 
 // One new best the log weaves: the session that set it, the best it beat, and both stated to 0.1 kg.
@@ -133,7 +134,7 @@ fun progressSeries(progress: MovementProgress, nowMs: Long, zone: ZoneId, all: B
             .thenBy { it.startedAt }.thenBy { it.id }).first() }
         .sortedWith(compareBy({ it.startedAt }, { it.id }))
         .map { DatedPoint(it.id, it.startedAt, requireNotNull(it.fact.estimate!!.e1rm), progressReading(it, nowMs)) }
-    val from = if (all) points.firstOrNull()?.atMs ?: nowMs else Instant.ofEpochMilli(nowMs).atZone(zone)
-        .toLocalDate().minusWeeks(12).atStartOfDay(zone).toInstant().toEpochMilli()
+    val from = if (all) points.firstOrNull()?.atMs ?: nowMs else LocalDate.parse(DomainMovementProgress.windowStart(DomainInstant(nowMs), zone.domain).text)
+        .atStartOfDay(zone).toInstant().toEpochMilli()
     return DatedSeries(points, from, nowMs, zone, DomainMovementProgress.gapDays.toLong())
 }

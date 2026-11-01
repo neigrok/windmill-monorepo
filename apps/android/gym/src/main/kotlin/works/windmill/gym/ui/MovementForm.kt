@@ -39,6 +39,7 @@ import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineMovement
 import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
 import works.windmill.platform.design.WindmillFont
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -137,7 +138,7 @@ private fun RoutineTargets(
     val summary = when (reading) {
         is TargetEntry.Reading.Refused -> "Check ${when (reading.field) { TargetEntry.Field.Sets -> "Sets"; TargetEntry.Field.Reps -> "Reps"; TargetEntry.Field.Weight -> "Load" }}"
         TargetEntry.Reading.Open -> Readout.openTarget
-        is TargetEntry.Reading.Scheme -> if (scheme.varyBySet && !works.windmill.gym.domain.Scheme.straight(reading.sets))
+        is TargetEntry.Reading.Scheme -> if (scheme.varyBySet && !DomainSetTarget.straight(reading.sets.map { it.domain }))
             "${reading.sets.size} sets · varies" else Readout.targetWithUnit(reading.sets, movement.current)
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

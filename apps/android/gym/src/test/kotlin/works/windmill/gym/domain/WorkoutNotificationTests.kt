@@ -2,6 +2,7 @@ package works.windmill.gym.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import works.windmill.gym.domain.sync.Prefill
 
 class WorkoutNotificationTests {
     @Test fun theClockSpansTheWorkoutWhileTheCounterBelongsToTheSelectedMovement() {

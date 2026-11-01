@@ -78,7 +78,7 @@ class TargetSheetLadderTests {
         }
         compose.onNodeWithText(movement).performClick()
         val targets = opening.entries.first().sets
-        if (targets.isNotEmpty() && works.windmill.gym.domain.Scheme.straight(targets)) {
+        if (targets.isNotEmpty() && works.windmill.gym.domain.sync.SetTarget.straight(targets.map { it.domain })) {
             compose.onNodeWithText("Vary by set").performClick()
         }
         return { draft }

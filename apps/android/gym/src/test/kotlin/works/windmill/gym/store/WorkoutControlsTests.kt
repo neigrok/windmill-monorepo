@@ -21,6 +21,11 @@ import works.windmill.gym.domain.WorkoutEvent
 import works.windmill.gym.domain.WorkoutKey
 import works.windmill.gym.domain.WorkoutMoment
 import works.windmill.platform.storage.AtomicDocument
+import works.windmill.domain.kit.Id
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.LastTime
+
+private val unread: (String) -> LastTime = { LastTime(Id(it, DomainExercise), isComplete = false) }
 
 class WorkoutControlsTests {
     @get:Rule
@@ -215,24 +220,24 @@ class WorkoutControlsTests {
         val controls = WorkoutControls(file)
         controls.hold(Session("first", 100_000))
         controls.choose("bench")
-        controls.prepare(null, moment, true) { "set_${++id}" }
+        controls.prepare(unread, moment, true) { "set_${++id}" }
         controls.control(controls.workout.edit(82.5, 8))
         controls.choose("row")
-        controls.prepare(null, moment, true) { "set_${++id}" }
+        controls.prepare(unread, moment, true) { "set_${++id}" }
         controls.control(controls.workout.edit(67.5, 9))
         controls.flush()
 
         val restored = WorkoutControls(file)
         restored.choose("bench")
-        restored.prepare(null, moment, true) { "set_${++id}" }
+        restored.prepare(unread, moment, true) { "set_${++id}" }
         assertEquals(listOf(82.5, 8, true), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
         val editedRow = restored.workout.editedRacks.getValue("row")
         val command = LogSetCommand(WorkoutKey("anon", "first"), restored.workout.offer!!.id)
-        assertTrue(restored.accept(command, moment, null) { "set_${++id}" } is LogSetAcceptance.Accepted)
+        assertTrue(restored.accept(command, moment, unread) { "set_${++id}" } is LogSetAcceptance.Accepted)
         assertEquals(mapOf("row" to editedRow), restored.workout.editedRacks)
         assertFalse(restored.workout.rack!!.edited)
         restored.choose("row")
-        restored.prepare(null, moment, true) { "set_${++id}" }
+        restored.prepare(unread, moment, true) { "set_${++id}" }
         assertEquals(listOf(67.5, 9, true), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
 
         restored.adopt("other")
@@ -243,7 +248,7 @@ class WorkoutControlsTests {
         restored.close("first")
         restored.hold(Session("second", 102_000))
         restored.choose("row")
-        restored.prepare(null, moment, true) { "set_${++id}" }
+        restored.prepare(unread, moment, true) { "set_${++id}" }
         assertEquals(listOf(20.0, 5, false), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
         assertEquals(emptyMap<String, works.windmill.gym.domain.WorkoutRack>(), restored.workout.editedRacks)
         assertEquals(restored.workout, WorkoutControls(file).workout)
@@ -259,10 +264,10 @@ class WorkoutControlsTests {
         controls.hold(live)
         controls.choose("bench")
         val now = WorkoutMoment(101_000, 1_000, "boot")
-        val first = controls.prepare(null, now, true) { "set_${++nextId}" }
+        val first = controls.prepare(unread, now, true) { "set_${++nextId}" }
         val command = LogSetCommand(WorkoutKey("anon", live.id), requireNotNull(first.offer).id)
         val before = writes
-        assertEquals(LogSetAcceptance.Accepted("set_1"), controls.accept(command, now, null) { "set_${++nextId}" })
+        assertEquals(LogSetAcceptance.Accepted("set_1"), controls.accept(command, now, unread) { "set_${++nextId}" })
         assertEquals(before + 1, writes)
         val set = TrainingSet("set_1", "bench", weightKg = 20.0, reps = 5, completedAtMs = now.wallMs)
         assertEquals(WorkoutControls.Entry(set, live.id, 101_000, WorkoutEvent(set.id, now), eventOrder = first.revision + 1),
@@ -273,12 +278,12 @@ class WorkoutControlsTests {
         val reopened = WorkoutControls(file)
         assertEquals(controls.workout, reopened.workout)
         assertEquals(controls.entry("set_1"), reopened.entry("set_1"))
-        assertEquals(LogSetAcceptance.Stale, reopened.accept(command, now, null) { error("no new ID") })
+        assertEquals(LogSetAcceptance.Stale, reopened.accept(command, now, unread) { error("no new ID") })
         reopened.drop("set_1")
-        reopened.prepare(null, now, true) { "set_${++nextId}" }
+        reopened.prepare(unread, now, true) { "set_${++nextId}" }
         assertEquals(emptyList<TrainingSet>(), reopened.sets)
         assertEquals(setOf("set_1"), reopened.workout.consumed)
-        assertEquals(LogSetAcceptance.Stale, WorkoutControls(file).accept(command, now, null) { error("no new ID") })
+        assertEquals(LogSetAcceptance.Stale, WorkoutControls(file).accept(command, now, unread) { error("no new ID") })
     }
 
     @Test
@@ -289,19 +294,19 @@ class WorkoutControlsTests {
         controls.hold(Session("session", 100_000))
         controls.choose("bench")
         val origin = WorkoutMoment(101_000, 1_000, "boot1")
-        controls.prepare(null, origin, true) { "set_${++id}" }
+        controls.prepare(unread, origin, true) { "set_${++id}" }
         controls.accept(LogSetCommand(WorkoutKey("anon", "session"), requireNotNull(controls.workout.offer).id),
-            origin, null) { "set_${++id}" }
+            origin, unread) { "set_${++id}" }
         val afterClockEdit = WorkoutMoment(901_000, 4_000, "boot1")
         val reopened = WorkoutControls(file)
-        reopened.prepare(null, afterClockEdit, true) { "set_${++id}" }
+        reopened.prepare(unread, afterClockEdit, true) { "set_${++id}" }
         assertEquals(origin, reopened.latestSet(afterClockEdit)?.origin)
         val oldOffer = requireNotNull(reopened.workout.offer)
         val afterBoot = WorkoutMoment(902_000, 100, "boot2")
-        reopened.prepare(null, afterBoot, true) { "set_${++id}" }
+        reopened.prepare(unread, afterBoot, true) { "set_${++id}" }
         assertEquals(listOf("set_1"), reopened.sets.map { it.id })
         assertEquals(LogSetAcceptance.Stale, reopened.accept(LogSetCommand(oldOffer.key, oldOffer.id), afterBoot,
-            null) { error("no new ID") })
+            unread) { error("no new ID") })
     }
 
     @Test
@@ -380,14 +385,14 @@ class WorkoutControlsTests {
         controls.hold(Session("session", 100_000))
         controls.choose("bench")
         val first = WorkoutMoment(101_000, 1_000, "boot")
-        controls.prepare(null, first, true) { "set_${++id}" }
+        controls.prepare(unread, first, true) { "set_${++id}" }
         val offer = requireNotNull(controls.workout.offer)
-        controls.accept(LogSetCommand(offer.key, offer.id), first, null) { "set_${++id}" }
+        controls.accept(LogSetCommand(offer.key, offer.id), first, unread) { "set_${++id}" }
         val second = WorkoutMoment(51_000, 1_000, "boot")
         val next = requireNotNull(controls.workout.offer)
-        controls.accept(LogSetCommand(next.key, next.id), second, null) { "set_${++id}" }
+        controls.accept(LogSetCommand(next.key, next.id), second, unread) { "set_${++id}" }
         val reopened = WorkoutControls(file)
-        reopened.prepare(null, second.copy(elapsedMs = 2_000), true) { "set_${++id}" }
+        reopened.prepare(unread, second.copy(elapsedMs = 2_000), true) { "set_${++id}" }
         assertEquals(WorkoutEvent("set_2", second), reopened.latestSet(second))
         assertEquals(mapOf("set_1" to 101_000L, "set_2" to 51_000L), reopened.sets.associate { it.id to it.completedAtMs })
     }
@@ -400,13 +405,13 @@ class WorkoutControlsTests {
         val origin = WorkoutMoment(101_000, 1_000, "boot")
         controls.hold(Session("session", 100_000))
         controls.choose("bench")
-        controls.prepare(null, origin, true) { "set_${++id}" }
+        controls.prepare(unread, origin, true) { "set_${++id}" }
         val first = requireNotNull(controls.workout.offer)
-        controls.accept(LogSetCommand(first.key, first.id), origin, null) { "set_${++id}" }
+        controls.accept(LogSetCommand(first.key, first.id), origin, unread) { "set_${++id}" }
         val second = requireNotNull(controls.workout.offer)
-        controls.accept(LogSetCommand(second.key, second.id), origin.copy(wallMs = 111_000, elapsedMs = 11_000), null) { "set_${++id}" }
+        controls.accept(LogSetCommand(second.key, second.id), origin.copy(wallMs = 111_000, elapsedMs = 11_000), unread) { "set_${++id}" }
         controls.drop(second.id)
-        controls.prepare(null, origin.copy(wallMs = 116_000, elapsedMs = 16_000), true) { "set_${++id}" }
+        controls.prepare(unread, origin.copy(wallMs = 116_000, elapsedMs = 16_000), true) { "set_${++id}" }
         assertEquals(WorkoutEvent(first.id, origin), WorkoutControls(file).latestSet(origin))
         assertEquals(listOf(first.id), controls.sets.map { it.id })
     }
@@ -418,15 +423,15 @@ class WorkoutControlsTests {
         var id = 0
         controls.hold(Session("session", 1_000))
         controls.choose("bench")
-        controls.prepare(null, now, true) { "set_${++id}" }
+        controls.prepare(unread, now, true) { "set_${++id}" }
         val old = requireNotNull(controls.workout.offer)
         for ((weight, reps) in listOf(20.0 to 100, 20.0 to 0)) {
             controls.control(controls.workout.edit(weight, reps))
-            controls.prepare(null, now, true) { "set_${++id}" }
+            controls.prepare(unread, now, true) { "set_${++id}" }
             assertNull(controls.workout.offer)
             assertEquals(weight, controls.workout.rack?.weightKg)
             assertEquals(reps, controls.workout.rack?.reps)
-            assertEquals(LogSetAcceptance.Stale, controls.accept(LogSetCommand(old.key, old.id), now, null) { error("stale never mints") })
+            assertEquals(LogSetAcceptance.Stale, controls.accept(LogSetCommand(old.key, old.id), now, unread) { error("stale never mints") })
         }
         assertEquals(emptyList<TrainingSet>(), controls.sets)
     }

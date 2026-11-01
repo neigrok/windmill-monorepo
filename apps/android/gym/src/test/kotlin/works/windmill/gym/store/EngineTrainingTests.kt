@@ -697,7 +697,7 @@ class EngineTrainingTests {
             engine.signIn("A", mapOf("gym" to true))
             val gym = EngineTraining(engine)
             try { gym.lastSets(); fail("An unread account cannot say never logged.") } catch (_: TrainingUnanswered) {}
-            try { gym.lastTime("bench-press"); fail("An unread account cannot invent the last workout.") } catch (_: TrainingUnanswered) {}
+            assertTrue("An unread account cannot invent the last workout or a first one.", gym.lastTime("bench-press").isUnread)
             try { gym.sessions(50, null, null); fail("An unread account cannot say first workout.") } catch (_: TrainingUnanswered) {}
         }
     }

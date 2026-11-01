@@ -2,9 +2,16 @@ package works.windmill.gym.domain
 
 import java.security.SecureRandom
 import kotlin.math.floor
-import kotlin.math.max
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Instant as DomainInstant
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.RoutineEntry as DomainRoutineEntry
+import works.windmill.gym.domain.sync.Session as DomainSession
+import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
+import works.windmill.gym.domain.sync.TrainingSet as DomainTrainingSet
+import works.windmill.gym.domain.sync.topSet
 
 // Wire conventions: instants are epoch-ms Longs, weights are signed kg (negative = band-assisted),
 // ids are client-minted, absent optionals are omitted rather than null, reads default rather than throw.
@@ -45,11 +52,12 @@ object TheSix {
 
 // One set of a scheme. No `reps` is max; no `weightKg` is last time's Nth set.
 @Serializable
-data class SetTarget(val reps: Int? = null, val weightKg: Double? = null)
+data class SetTarget(val reps: Int? = null, val weightKg: Double? = null) {
+    val domain: DomainSetTarget get() = DomainSetTarget(reps, weightKg)
+}
 
-// A line's target is a scheme: its sets in lifting order, each naming its own reps and load. A
-// straight scheme is one whose sets all agree; `5 × 5 · 80` is five sets that do. Loads are compared
-// on the ladder's grid and never on raw doubles.
+// A line's target is a scheme: its sets in lifting order, each naming its own reps and load. Whether a scheme is
+// straight is the shared `SetTarget.straight`. Loads are compared on the ladder's grid and never on raw doubles.
 object Scheme {
     const val maxSets = 20
 
@@ -57,8 +65,6 @@ object Scheme {
         sets.map { it.copy(weightKg = it.weightKg?.let(Ladder::round)) }
 
     fun same(a: List<SetTarget>, b: List<SetTarget>): Boolean = rounded(a) == rounded(b)
-
-    fun straight(sets: List<SetTarget>): Boolean = rounded(sets).distinct().size == 1
 
     // The slot the coming set fills, counted off the sets already lifted today.
     fun slot(sets: List<SetTarget>, setsToday: Int): SetTarget? = sets.getOrNull(setsToday)
@@ -99,6 +105,7 @@ data class PlanEntry(
     val sets: List<SetTarget> = emptyList(),
 ) {
     val isOpen: Boolean get() = sets.isEmpty()
+    val domain: DomainRoutineEntry get() = DomainRoutineEntry(Id(exerciseId, DomainExercise), sets.takeIf { it.isNotEmpty() }?.map { it.domain })
 }
 
 @Serializable
@@ -134,7 +141,11 @@ data class TrainingSet(
     val rpe: Double? = null,
     val note: String = "",
     @SerialName("completedAt") val completedAtMs: Long,
-)
+) {
+    // The set as the shared domain holds it, in the workout it was logged in.
+    fun domain(sessionId: String): DomainTrainingSet = DomainTrainingSet(Id(id, DomainTrainingSet), Id(sessionId, DomainSession),
+        Id(exerciseId, DomainExercise), weightKg, reps, rpe, note, DomainInstant(completedAtMs), setNumber)
+}
 
 @Serializable
 data class SessionDetail(val session: Session, val sets: List<TrainingSet> = emptyList())
@@ -172,22 +183,11 @@ data class SessionSummary(
                 catalog.firstOrNull { it.id == set.exerciseId }?.loadCount)
         }),
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
-        topSet = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
-            ?.let { TopSet(it.weightKg, it.reps) },
+        topSet = topSet(sets.map { it.domain(session.id) })?.let { TopSet(it.weightKg, it.reps) },
         closedItself = false,
     )
 
     val session: Session get() = Session(id, startedAtMs, finishedAtMs, routineId, plan)
-}
-
-// The movement's last finished workout and its sets in performed order, as the shared read answers it.
-data class LastTime(
-    val exerciseId: String,
-    val session: Session? = null,
-    val routine: String? = null,
-    val sets: List<TrainingSet> = emptyList(),
-) {
-    val isFirstTime: Boolean get() = session == null
 }
 
 // SPARSE: an absent movement is `never logged`. The row is the LAST set of that movement's last-time
@@ -282,38 +282,6 @@ data class Against(
 // previous workout movement by movement. Nothing at all is a review with nothing to say; it is saved with the receipt.
 @Serializable
 data class Review(val record: PersonalRecord? = null, val against: Against? = null)
-
-// One closed session's sets of a movement.
-data class RecordDay(
-    val sessionId: String,
-    val startedAtMs: Long,
-    val sets: List<TrainingSet> = emptyList(),
-)
-
-// A movement's page: the movement and its newest days. Its estimates and bests are read from
-// `StatsProgress`.
-data class MovementRecord(
-    val exercise: Exercise,
-    val recentDays: List<RecordDay> = emptyList(),    // newest first, at most ten
-) {
-    companion object {
-        const val recentDaysShown = 10
-
-        // A day is a closed session that holds a set of the movement.
-        fun of(exercise: Exercise, history: List<SessionDetail>): MovementRecord = MovementRecord(exercise,
-            history.filter { it.session.finishedAtMs != null }
-                .sortedByDescending { it.session.startedAtMs }
-                .mapNotNull { detail ->
-                    val performed = detail.sets
-                        .filter { it.exerciseId == exercise.id }
-                        .sortedBy { it.completedAtMs }
-                    if (performed.isEmpty()) return@mapNotNull null
-                    RecordDay(detail.session.id, detail.session.startedAtMs, performed)
-                }
-                .take(recentDaysShown))
-    }
-}
-
 
 data class SetWrite(
     val id: String,
@@ -459,53 +427,6 @@ data class RoutineWrite(
         },
         expectedRevision,
     )
-}
-
-// On a scheme whose sets disagree the pad follows the slot: the Nth set takes the Nth set's
-// numbers, then last time's Nth, then today's last set, then the bar. On a straight scheme, and on
-// no scheme, sticky beats the plan beats last time beats the empty bar — weight from the LAST
-// set of last time, reps from the FIRST.
-data class Prefill(val weightKg: Double, val reps: Int) {
-    companion object {
-        const val EMPTY_BAR_KG = 20.0
-        const val EMPTY_BAR_REPS = 5
-
-        fun of(todaySets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?): Prefill =
-            at(todaySets.size, todaySets.lastOrNull()?.let { Prefill(it.weightKg, max(1, it.reps)) }, planEntry, lastTime)
-
-        // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered
-        // as though the one before it were logged as offered. `lastTime` is null until it is read, and a load that
-        // would come from it is null until then.
-        fun offeredLoads(todaySets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?): List<Double?> {
-            val scheme = planEntry?.sets.orEmpty()
-            val slots = todaySets.size until scheme.size
-            if (lastTime != null) {
-                var sticky = todaySets.lastOrNull()?.let { Prefill(it.weightKg, max(1, it.reps)) }
-                return slots.map { slot -> at(slot, sticky, planEntry, lastTime).also { sticky = it }.weightKg }
-            }
-            val straight = scheme.isNotEmpty() && Scheme.straight(scheme)
-            var sticky: Double? = todaySets.lastOrNull()?.weightKg
-            return slots.map { slot -> (if (straight) sticky ?: scheme.first().weightKg else scheme[slot].weightKg).also { sticky = it } }
-        }
-
-        // The offer at a slot, `sticky` being the set logged just before it.
-        fun at(slot: Int, sticky: Prefill?, planEntry: PlanEntry?, lastTime: LastTime?): Prefill {
-            val scheme = planEntry?.sets.orEmpty()
-            val history = lastTime?.sets ?: emptyList()
-            if (scheme.isNotEmpty() && !Scheme.straight(scheme)) {
-                val target = Scheme.slot(scheme, slot)
-                val lastNth = history.getOrNull(slot)
-                val weight = target?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: EMPTY_BAR_KG
-                val reps = target?.reps ?: lastNth?.reps ?: sticky?.reps ?: EMPTY_BAR_REPS
-                return Prefill(weight, max(1, reps))
-            }
-            if (sticky != null) return sticky
-            val planned = scheme.firstOrNull()
-            val weight = planned?.weightKg ?: history.lastOrNull()?.weightKg ?: EMPTY_BAR_KG
-            val reps = planned?.reps ?: history.firstOrNull()?.reps ?: EMPTY_BAR_REPS
-            return Prefill(weight, max(1, reps))
-        }
-    }
 }
 
 // The idempotency key: 8 random bytes as hex behind a noun prefix, inside the server's 8..64 rule.

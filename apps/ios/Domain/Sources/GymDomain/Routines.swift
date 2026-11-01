@@ -27,6 +27,11 @@ public struct SetTarget: ValueObject, Equatable {
     if roundedWeight == 0 && weightKg != 0 { throw Violation(rule: "routine.zeroTarget", path: path + "weightKg", reason: .custom("zeroTarget")) }
     return SetTarget(reps: checkedReps, weightKg: roundedWeight)
   }
+
+  // A straight scheme is one whose sets all agree, loads read on the ladder's grid; an open line is straight.
+  public static func straight(_ sets: [SetTarget]) -> Bool {
+    sets.allSatisfy { $0.reps == sets[0].reps && $0.weightKg.map(WeightLadder.round) == sets[0].weightKg.map(WeightLadder.round) }
+  }
 }
 
 public struct RoutineEntry: ValueObject, Equatable {

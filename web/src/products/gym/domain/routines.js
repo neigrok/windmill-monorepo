@@ -12,6 +12,7 @@ import { setOwn } from '../../../../../packages/api-contract/sync/reference/core
 import { Catalogue, Exercise, ExerciseName, ExerciseNameValue, ExerciseValue, renamedAliases } from './catalogue.js';
 import { GymRefusals, RoutineRules } from './gymRules.js';
 import { SeedExercises } from './seedExercises.js';
+import { WeightLadder } from './units.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {{ base: ExerciseValue | null, current: ExerciseValue }} RoutineMovementChange */
@@ -50,6 +51,14 @@ export class SetTarget {
       throw new Violation('routine.zeroTarget', path.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
     }
     return new SetTarget(reps, weightKg);
+  }
+
+  // A straight scheme is one whose sets all agree, loads read on the ladder's grid; an open line is straight.
+  /** @param {readonly SetTarget[]} sets */
+  static straight(sets) {
+    /** @param {number | null} weightKg */
+    const onGrid = (weightKg) => weightKg === null ? null : WeightLadder.round(weightKg);
+    return sets.every((set) => set.reps === sets[0]?.reps && onGrid(set.weightKg) === onGrid(sets[0]?.weightKg ?? null));
   }
 }
 

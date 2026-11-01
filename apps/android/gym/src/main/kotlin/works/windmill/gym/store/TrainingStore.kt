@@ -40,14 +40,12 @@ import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LastSet
-import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveOrder
 import works.windmill.gym.domain.StatsProgress
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.PlanEntry
-import works.windmill.gym.domain.Prefill
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalDecision
@@ -64,6 +62,10 @@ import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighIn
+import works.windmill.domain.kit.Id
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.LastTime
+import works.windmill.gym.domain.sync.Prefill
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.coach.CoachStore
 import works.windmill.gym.coach.LocalCoach
@@ -196,12 +198,12 @@ class TrainingStore(
             series = training.weighins()
             val movement = controls.chosenMovement
             val previous = if (owner == null && movement != null) readTraining {
-                try { training.lastTime(movement) } catch (_: TrainingRefused) { null } catch (_: TrainingUnanswered) { null }
+                try { training.lastTime(movement) } catch (_: TrainingRefused) { null }
             } else null
             workoutReady = true
             reconcileWorkoutTime()
             exerciseId = controls.chosenMovement
-            lastTime = previous.takeIf { exerciseId == movement }
+            if (movement != null && previous != null && exerciseId == movement) lastTimes[movement] = previous
             drawFromControls()
         } catch (_: TrainingReadChanged) { return false }
         catch (cancelled: CancellationException) { throw cancelled }
@@ -236,7 +238,6 @@ class TrainingStore(
                 }
                 lastTimes.clear()
                 exerciseId = null
-                lastTime = null
                 drawFromControls()
                 return
             }
@@ -276,7 +277,7 @@ class TrainingStore(
             return LogSetAcceptance.Unavailable(workoutFailure ?: "The workout is not ready.")
         }
         return try {
-            val accepted = controls.accept(command, workoutClock.now(), lastTime, mintSet)
+            val accepted = controls.accept(command, workoutClock.now(), ::lastTimeOf, mintSet)
             if (accepted is LogSetAcceptance.Accepted) {
                 val entry = requireNotNull(controls.entry(accepted.setId))
                 controls.store(training.commitAccepted(controls, entry.set, entry.sessionId), entry.sessionId)
@@ -330,7 +331,7 @@ class TrainingStore(
         }
         val ready = workoutAuthorized && !isFinishing && controls.writable
         val state = try {
-            if (controls.writable && workoutAuthorized) controls.prepare(lastTime, workoutClock.now(), ready, mintSet) else controls.workout
+            if (controls.writable && workoutAuthorized) controls.prepare(::lastTimeOf, workoutClock.now(), ready, mintSet) else controls.workout
         } catch (error: Exception) {
             reportFailure("gym.refreshWorkout", error)
             refuseWorkout()
@@ -582,13 +583,13 @@ class TrainingStore(
         private set
     var exerciseId: String? by mutableStateOf(null)                      // the movement in hand
         private set
-    var lastTime: LastTime? by mutableStateOf(null)
-        private set
+    // The movement in hand's last time, as `lastTimeOf` answers it.
+    val lastTime: LastTime? get() = exerciseId?.let(::lastTimeOf)
     // Sparse: the absence of a key is `never logged`. NULL is the map that has not been read; an
     // EMPTY map is an answer, that this lifter has trained nothing.
     var lastSets: Map<String, LastSet>? by mutableStateOf(null)
         private set
-    var prefill: Prefill by mutableStateOf(Prefill(Prefill.EMPTY_BAR_KG, Prefill.EMPTY_BAR_REPS))
+    var prefill: Prefill by mutableStateOf(Prefill())
         private set
     var refusals: List<RefusedWrite> by mutableStateOf(emptyList())      // writes the log refused
         private set
@@ -710,7 +711,6 @@ class TrainingStore(
             sets = emptyList()
             order = emptyList()
             exerciseId = null
-            lastTime = null
             pendingConnection = null
             resumePending = false
             acknowledgeWorkoutRequest()
@@ -763,7 +763,6 @@ class TrainingStore(
             progressFailure = null
             progressLoading = false
             lastTimes.clear()
-            lastTime = null
             lastSets = null
             closedDetails = emptyMap()
             for (clock in clocks.values) clock.cancel()
@@ -947,7 +946,6 @@ class TrainingStore(
         controls.flush()
         order = controls.order
         exerciseId = movement
-        lastTime = lastTimes[movement]
         redial()
 
         readLastTime()
@@ -955,7 +953,7 @@ class TrainingStore(
 
     private suspend fun readLastTime() {
         val movement = exerciseId ?: return
-        if (!workoutAuthorized || lastTimes.containsKey(movement)) return
+        if (!workoutAuthorized || lastTimes[movement]?.isComplete == true) return
         val seat = owner
         val sessionId = session?.id
         val answer = try { readTraining { training.lastTime(movement) } }
@@ -963,13 +961,11 @@ class TrainingStore(
         catch (failure: Exception) { reportFailure("gym.choose", failure); return }
         if (!workoutAuthorized || owner != seat || session?.id != sessionId) return
         lastTimes[movement] = answer
-        if (exerciseId != movement) return
-        lastTime = answer
-        redial()
+        if (exerciseId == movement) redial()
     }
 
-    // A movement's last time as this workout has read it: null until the movement is first chosen and its read answers.
-    fun lastTimeOf(movement: String): LastTime? = lastTimes[movement]
+    // A movement's last time as this workout has read it, unread until the movement is first chosen and its read answers.
+    fun lastTimeOf(movement: String): LastTime = lastTimes[movement] ?: LastTime(Id(movement, DomainExercise), isComplete = false)
 
     // Sets are keyed by movement and never by position, so only the walk order moves.
     fun reorder(from: Int, to: Int) {
@@ -992,7 +988,6 @@ class TrainingStore(
         order = walked
         if (this.exerciseId == exerciseId) {
             this.exerciseId = null
-            lastTime = null
             redial()
         }
         return true
@@ -1038,7 +1033,6 @@ class TrainingStore(
             controls.flush()
             lastTimes.clear()
             exerciseId = null
-            lastTime = null
             drawFromControls()
             if (detail == null) {
                 loadLog()
@@ -2171,7 +2165,7 @@ class TrainingStore(
     }
 
     private fun redial() {
-        prefill = Prefill.of(todaySets, planEntry, lastTime)
+        prefill = Prefill.of(session?.let { live -> todaySets.map { it.domain(live.id) } }.orEmpty(), planEntry?.domain, lastTime)
         refreshWorkout()
     }
 

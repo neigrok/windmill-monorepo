@@ -115,6 +115,8 @@ public struct LastTime: Equatable, Sendable {
   public let isComplete: Bool
   public var routine: String? { session?.name }
   public var isFirstTime: Bool { isComplete && session == nil }
+  // Not read yet: no workout found, and the account's history is not all here to say there is none.
+  public var isUnread: Bool { !isComplete && session == nil }
 
   public init(exerciseId: ID<Exercise>, session: Session? = nil, sets: [TrainingSet] = [], isComplete: Bool = true) {
     self.exerciseId = exerciseId
@@ -157,7 +159,7 @@ public struct Prefill: Equatable, Sendable {
   public static func offeredLoads(todaySets: [TrainingSet], planEntry: PlannedExercise?, lastTime: LastTime) -> [Double?] {
     let scheme = planEntry?.sets ?? []
     let slots = todaySets.count..<max(todaySets.count, scheme.count)
-    if lastTime.session != nil || lastTime.isComplete {
+    if !lastTime.isUnread {
       var sticky = todaySets.last.map { Prefill(weightKg: $0.weightKg, reps: $0.reps) }
       return slots.map { slot in
         let offer = at(slot: slot, after: sticky, planEntry: planEntry, lastTime: lastTime)
@@ -165,7 +167,7 @@ public struct Prefill: Equatable, Sendable {
         return offer.weightKg
       }
     }
-    let straight = scheme.allSatisfy { $0 == scheme[0] }
+    let straight = SetTarget.straight(scheme)
     var sticky = todaySets.last?.weightKg
     return slots.map { slot in
       let load = straight ? sticky ?? scheme[0].weightKg : scheme[slot].weightKg
@@ -178,8 +180,7 @@ public struct Prefill: Equatable, Sendable {
   public static func at(slot: Int, after sticky: Prefill?, planEntry: PlannedExercise?, lastTime: LastTime?) -> Prefill {
     let scheme = planEntry?.sets ?? []
     let history = lastTime?.sets ?? []
-    let straight = scheme.first.map { first in scheme.allSatisfy { $0 == first } } ?? true
-    if !scheme.isEmpty && !straight {
+    if !SetTarget.straight(scheme) {
       let target = slot < scheme.count ? scheme[slot] : nil
       let lastNth = slot < history.count ? history[slot] : nil
       return Prefill(weightKg: target?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? emptyBarKg,
@@ -311,6 +312,11 @@ public struct StatsProgress: Equatable, Sendable {
 
 public struct MovementProgress: Equatable, Sendable {
   public static let gapDays = 21
+  public static let windowDays = 84
+
+  // The first day of the recent window: twelve weeks back from today.
+  public static func windowStart(now: Instant, zone: any Zone) -> LocalDay { LocalDay(now, in: zone).adding(days: -windowDays) }
+
   public struct Point: Equatable, Sendable {
     public let id: ID<Session>
     public let startedAt: Instant
@@ -376,7 +382,7 @@ public struct MovementProgress: Equatable, Sendable {
   }
 
   public func window(now: Instant, zone: any Zone) -> MovementProgress {
-    let start = LocalDay(now, in: zone).adding(days: -84)
+    let start = Self.windowStart(now: now, zone: zone)
     return MovementProgress(exerciseId: exerciseId, isComplete: isComplete, sessions: sessions.filter { $0.startedAt <= now && LocalDay($0.startedAt, in: zone) >= start })
   }
 
@@ -435,7 +441,20 @@ public struct ProgressRecords: Equatable, Sendable {
   }
 }
 
+// A movement's newest finished days, newest first, each holding its sets of the movement in logged order.
+public struct RecentDay: Equatable, Sendable {
+  public static let shown = 10
+  public let session: Session
+  public let sets: [TrainingSet]
+}
+
 extension TrainingLog {
+  public func recentDays(for exerciseId: ID<Exercise>) -> [RecentDay] {
+    Array(drawnSessions.filter { !$0.isOpen }.compactMap { session in
+      let held = sets(session: session.id).filter { $0.exerciseId == exerciseId }
+      return held.isEmpty ? nil : RecentDay(session: session, sets: held)
+    }.prefix(RecentDay.shown))
+  }
   public func readout(session id: ID<Session>) -> SessionReadout? {
     drawnSessions.first { $0.id == id }.map { SessionReadout(session: $0, sets: sets(session: id), catalogue: catalogue) }
   }

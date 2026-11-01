@@ -1,5 +1,32 @@
 package works.windmill.gym.domain
 
+import works.windmill.domain.kit.Id
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.recentDays
+
+// One finished workout's sets of a movement, in logged order.
+data class RecordDay(
+    val sessionId: String,
+    val startedAtMs: Long,
+    val sets: List<TrainingSet> = emptyList(),
+)
+
+// A movement's page: the movement and its newest days, the shared `recentDays` read over the history the log holds.
+// Its estimates and bests are read from `StatsProgress`.
+data class MovementRecord(
+    val exercise: Exercise,
+    val recentDays: List<RecordDay> = emptyList(),
+) {
+    companion object {
+        fun of(exercise: Exercise, history: List<SessionDetail>, asOf: Long): MovementRecord {
+            val held = history.flatMap { it.sets }.associateBy { it.id }
+            return MovementRecord(exercise, finishedLog(history, asOf).recentDays(Id(exercise.id, DomainExercise)).map { day ->
+                RecordDay(day.session.id.record.string!!, day.session.startedAt.ms, day.sets.map { held.getValue(it.id.record.string!!) })
+            })
+        }
+    }
+}
+
 object Record {
     data class Tile(val label: String, val value: String, val caption: String, val loud: Boolean)
     data class Best(val effort: String, val estimate: String, val day: String)

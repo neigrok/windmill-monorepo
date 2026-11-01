@@ -199,17 +199,6 @@ class ProgramTests {
     }
 
     @Test
-    fun testAnOpenRowLeavesThePrefillToTheLog() {
-        val history = LastTime(exerciseId = "barbell-row", sets = listOf(
-            TrainingSet(id = "set_a", exerciseId = "barbell-row", weightKg = 60.0, reps = 10,
-                completedAtMs = 1_000)))
-        val prefill = Prefill.of(todaySets = emptyList(),
-            planEntry = PlanEntry(exerciseId = "barbell-row"), lastTime = history)
-
-        assertEquals(Prefill(60.0, 10), prefill)
-    }
-
-    @Test
     fun testTheEditSnapshotAndWireGuardSurviveSerializationWithoutMakingAnUntouchedDraftDirty() {
         val routine = Routine("rt_a", "Push", 3, revision = 7, lastTrainedAtMs = 42,
             entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)))))

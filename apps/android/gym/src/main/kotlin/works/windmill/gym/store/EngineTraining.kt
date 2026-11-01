@@ -46,7 +46,6 @@ import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.LastTime
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.domain.StatsProgress
 import works.windmill.gym.domain.PersonalRecord
@@ -414,11 +413,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         if (review == null && session(sessionId) == null) throw missing("That workout is no longer on the log.")
         review?.ui() ?: Review()
     }
+    // The shared read, unread while the account's history is not all here and holds no workout of the movement.
     fun lastTime(exerciseId: String): LastTime = read { reader ->
         if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", "That movement is not in the catalog.")
-        val last = TrainingLog(reader).lastTime(Id(exerciseId, EngineExercise))
-        if (last.session == null && !last.isComplete && !reader.isAnonymous) throw TrainingUnanswered
-        LastTime(exerciseId, last.session?.ui(), last.routine, last.sets.map { it.ui() })
+        TrainingLog(reader).lastTime(Id(exerciseId, EngineExercise))
     }
     fun lastSets(): List<LastSet> = read { reader ->
         val known = EngineLastSet.all(TrainingLog(reader)).map { LastSet(it.exerciseId.text, it.weightKg, it.reps, it.at.ms) }
@@ -622,7 +620,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }?.let { exercise ->
         val refused = imports.refusals().filter { it.session != null }.mapTo(mutableSetOf()) { it.id }
-        MovementRecord.of(exercise, details().filterNot { it.session.id in refused })
+        MovementRecord.of(exercise, details().filterNot { it.session.id in refused }, engine.physNow())
     }
     fun settings(): GymPreferences = read { reader ->
         val value = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn) ?: Preferences()

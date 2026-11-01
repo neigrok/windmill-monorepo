@@ -36,7 +36,7 @@ import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.Note
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.PlanSnapshot
-import works.windmill.gym.domain.Prefill
+import works.windmill.gym.domain.sync.Prefill
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.coach.ReadTally
@@ -536,7 +536,7 @@ class TrainingStoreTests {
             assertNull(cold.workoutFailure)
             assertEquals(session.id, cold.session?.id)
             assertEquals("back-squat", cold.exerciseId)
-            assertNull(cold.lastTime)
+            assertTrue(cold.lastTime!!.isUnread)
         }
     }
 

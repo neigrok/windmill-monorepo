@@ -249,7 +249,7 @@ export class TrainingHistory {
   lastTime(exerciseId) {
     const last = this.log.lastTime(new Id(exerciseId, Exercise));
     return { exerciseId, ...(last.session ? { session: sessionDocument(last.session),
-      ...(last.routine === null ? {} : { routine: last.routine }), sets: [...last.sets].sort((a, b) => (a.setNumber ?? 0) - (b.setNumber ?? 0) || Id.compare(a.id, b.id)).map(setDocument) } : {}) };
+      ...(last.routine === null ? {} : { routine: last.routine }), sets: last.sets.map(setDocument) } : {}) };
   }
 
   lastSets() {
@@ -331,9 +331,8 @@ export class TrainingHistory {
       return { weightKg: value.weightKg, reps: value.reps, at: point.startedAt.ms, ...(e1rm === null ? {} : { e1rm }) }; };
     const series = movement.chartWindow(this.read.moment.now, this.read.moment.zone).estimates.map((point) => fact(point, 'estimate'));
     const records = movement.records.map((point) => fact(point, 'estimate')).reverse();
-    const recentDays = this.finished.filter((session) => this.log.setsFor(session.id).some((set) => set.exerciseId.record === exerciseId)).slice(0, 10)
-      .map((session) => ({ sessionId: session.id.record, startedAt: session.startedAt.ms, sets: this.log.setsFor(session.id).filter((set) => set.exerciseId.record === exerciseId)
-        .sort((a, b) => (a.setNumber ?? 0) - (b.setNumber ?? 0) || Id.compare(a.id, b.id)).map(setDocument) }));
+    const recentDays = this.log.recentDays(new Id(exerciseId, Exercise))
+      .map((day) => ({ sessionId: day.session.id.record, startedAt: day.session.startedAt.ms, sets: day.sets.map(setDocument) }));
     return { exercise, routineCount: routines.length, sessionCount: movement.sessions.length,
       ...(routines.length ? { routines: routines.map((value) => value.name) } : {}),
       ...(movement.best ? { bestE1rm: fact(movement.best, 'estimate') } : {}), ...(movement.heaviest ? { heaviest: fact(movement.heaviest, 'heaviest') } : {}),
