@@ -607,9 +607,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
   prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
   lists it plainly. The build follows each drawing. Choose one.
-- **Board · `/` has two owners.** `shortcuts/shortcutMap.js` lists `/` as Ask AI's second chord and
-  `SkillTreeView.jsx` binds it. The proposal gives `/` to *Find a step* and leaves Ask AI on ⌘K
-  (desktop 10.03 386:13666).
+- **Board · `/` is Find a step.** On the Board `/` focuses *Find a step* and Ask AI keeps ⌘K, as the
+  proposal draws (desktop 10.03 386:13666); on the Graph `/` still opens Ask AI.
+- **Board · two names for the checklist.** The Board's step workspace says *Subtasks* and *Add subtask*
+  (07.01, 03.08); the Graph's step panel (`ui/StepPanel.jsx` through `ui/tree/Checklist.jsx`) says
+  *Checklist* and *Add a sub-task*, and its add menu *Sub-task*. Choose one name for both views.
+- **Board · a failed Copy link says nothing.** The step menu's Copy link (01.09, 03.02) draws only
+  *Link copied*. When the browser refuses the clipboard write the build shows nothing, since no drawing
+  covers it; the Share dialog's inline *Could not copy the link* has no menu equivalent. Draw the
+  failure.
 - **Board · swipe commit.** The shipped List commits a swipe on release past 72px
   (`SWIPE_COMMIT_PX` in `list/editing.js`). The Board card swipe reveals Complete at 96px and never
   commits on release or a full swipe; only a tap on Complete does (phone 17.03 378:16515, swipe spec

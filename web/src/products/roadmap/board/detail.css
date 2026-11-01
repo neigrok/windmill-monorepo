@@ -1,4 +1,4 @@
-/* The step body both frames share: identity, status, relations, sections, actions, the subtask offer and the ⋯ menu. */
+/* The step layer and the body both its frames share: identity, status, relations, sections, actions, the subtask offer and the ⋯ menu. */
 
 .st-board-step-layer {
   position: absolute;
@@ -8,7 +8,7 @@
 }
 
 .st-board-step-layer [role="dialog"]:focus,
-.st-board-step-layer[role="dialog"]:focus {
+.st-board-step-status:focus {
   outline: none;
 }
 .st-board-step-layer button:focus-visible,

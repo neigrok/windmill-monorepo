@@ -174,6 +174,10 @@ export function removeChip({ label }) {
   return `Remove ${label}`;
 }
 
+export function sortButtonLabel({ sort }) {
+  return `${SORT_MENU.title}: ${SORT_MENU.options[sort]}`;
+}
+
 // The step page and modal.
 export const STEP_DETAIL = {
   sections: { overview: 'Overview', workspace: 'Workspace', history: 'History' },

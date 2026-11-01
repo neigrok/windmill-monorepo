@@ -6,7 +6,7 @@ import { createServer } from 'vite';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
@@ -15,28 +15,41 @@ import { StepDetail } from '/src/products/roadmap/board/StepDetail.jsx';
 import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
-import { advanceProgress } from '/src/products/roadmap/model/progress.js';
+import { advanceProgress, restoreProgress } from '/src/products/roadmap/model/progress.js';
 import { toggleSubtask } from '/src/products/roadmap/model/NodeWorkspace.js';
 
 const noop = () => {};
 const call = (line) => (window.calls ??= []).push(line);
+const bandOf = (width) => (width < 744 ? 'phone' : width < 1024 ? 'tablet' : 'desktop');
+const without = (steps, id) => steps.filter((step) => step.id !== id).map((step) => ({ ...step, prerequisites: step.prerequisites.filter((need) => need !== id) }));
 
-window.openRoom = ({ nodes, completed, breakpoint, editable = true, workspaces = {}, kinds = [] }) => {
-  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
+window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true }) => {
   function Room() {
+    const [steps, setSteps] = useState(nodes);
+    const tree = useMemo(() => new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: steps }), [steps]);
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
     const [spaces, setSpaces] = useState(workspaces);
     const [query, setQuery] = useState(() => new BoardQuery({ kinds }));
+    const [breakpoint, setBreakpoint] = useState(() => bandOf(window.innerWidth));
     const address = useStepAddress();
+    useEffect(() => {
+      const follow = () => setBreakpoint(bandOf(window.innerWidth));
+      window.addEventListener('resize', follow);
+      return () => window.removeEventListener('resize', follow);
+    }, []);
+    const stale = address.id !== null && !tree.nodesById.has(address.id);
+    useEffect(() => { if (stale) address.drop(); }, [stale]);
     const mark = (id, target) => setProgress((current) => advanceProgress(current, [id], target, Date.now()));
+    window.restoreSteps = () => setSteps(nodes);
     return React.createElement('div', { style: { position: 'fixed', inset: 0 } },
       React.createElement('div', { className: 'st-view-layer--board is-active', style: { position: 'absolute', inset: 0, zIndex: 18 } },
         React.createElement(BoardView, { tree, completed: progress.completed, completedAt: progress.completedAt, selectedId,
-          onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, breakpoint, active: true, onSwitchView: noop, query, onQuery: setQuery })),
-      address.id && React.createElement(StepDetail, {
+          onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, onAnchor: setSelectedId, breakpoint, active: true,
+          onSwitchView: noop, query, onQuery: setQuery })),
+      address.id && !stale && React.createElement(StepDetail, {
         tree, completed: progress.completed, completedAt: progress.completedAt, address, breakpoint, roadmapTitle: 'Learn to sail',
-        editable, deletable: true, stepLink: 'https://windmill.test/t/sail#?step=' + address.id,
+        editable, deletable: true, stepLink: linked ? 'https://windmill.test/t/sail#?step=' + address.id : null,
         workspace: spaces[address.id] ?? { subtasks: [], note: '', links: [] },
         workspaceActions: { onToggleSubtask: (nodeId, subtaskId) => setSpaces((current) => ({ ...current, [nodeId]: toggleSubtask(current[nodeId], subtaskId) })),
           onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: noop, onAddLink: noop, onDeleteLink: noop },
@@ -46,9 +59,10 @@ window.openRoom = ({ nodes, completed, breakpoint, editable = true, workspaces =
         onClose: () => { const origin = address.trail[0]; address.close(); setSelectedId(origin); },
         onComplete: (id) => { call('complete ' + id); mark(id, 'complete'); },
         onReset: (id) => { call('reset ' + id); mark(id, 'none'); },
+        onRestore: (id, snapshot) => { call('restore ' + id); setProgress((current) => restoreProgress(current, snapshot, id)); },
         onOpenInGraph: (id) => call('graph ' + id),
         onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
-        onDelete: (id) => call('delete ' + id),
+        onDelete: (id) => { call('delete ' + id); address.close(); setSteps((current) => without(current, id)); },
         onNotify: (message) => call('notify ' + message),
       }));
   }
@@ -100,14 +114,14 @@ const learnToSailNodes = [
   { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
 ];
 
-async function openRoom({ viewport, breakpoint, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], clock = false, permissions = [] }, errors) {
+async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, clock = false, permissions = [] }, errors) {
   const context = await browser.newContext({ viewport, permissions });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   if (clock) await page.clock.install();
   await page.goto(`${origin}/step-detail-test#/app/sail`);
   await page.waitForFunction(() => window.entryReady);
-  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], breakpoint, editable, workspaces, kinds });
+  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked });
   await page.locator('.st-board-card:visible').first().waitFor();
   return page;
 }
@@ -129,7 +143,7 @@ const card = (page, label) => page.locator('.st-board-card:visible', { has: page
 test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, Escape closes it and focus returns to the card', async () => {
   await ready;
   const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop' }, errors);
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
     await card(page, 'Read the wind').focus();
     await page.keyboard.press('Enter');
@@ -160,7 +174,7 @@ test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, E
 test('Chromium: from 744px the modal takes the 696px form, 24px in from the window', async () => {
   await ready;
   const errors = [];
-  const page = await openRoom({ viewport: { width: 744, height: 960 }, breakpoint: 'tablet' }, errors);
+  const page = await openRoom({ viewport: { width: 744, height: 960 } }, errors);
   try {
     await card(page, 'Read the wind').click();
     const box = await page.locator('.st-board-step-modal').boundingBox();
@@ -174,7 +188,7 @@ test('Chromium: from 744px the modal takes the 696px form, 24px in from the wind
 test('Chromium: Complete and Reset act in place — the modal stays, the status flips with Undo, a line names what moved, nothing toasts', async () => {
   await ready;
   const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop' }, errors);
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
     await card(page, 'Read the wind').click();
     await page.getByRole('button', { name: 'Complete', exact: true }).click();
@@ -191,7 +205,7 @@ test('Chromium: Complete and Reset act in place — the modal stays, the status 
     assert.deepEqual([await status(page), await column(page, 'locked')],
       [['Up next', 'Undo', '2 steps locked again'], ['Read the wind', 'Tie a bowline', 'Leave the dock', 'Sail a triangle', 'Sail solo']]);
 
-    assert.deepEqual([await calls(page), await events(page)], [['complete wind', 'reset wind', 'reset parts'], [
+    assert.deepEqual([await calls(page), await events(page)], [['complete wind', 'restore wind', 'reset parts'], [
       'roadmap_board_step_open {"surface":"modal","column":"upNext","door":"card"}',
       'roadmap_board_step_action {"surface":"modal","action":"complete"}',
       'roadmap_board_step_action {"surface":"modal","action":"undo"}',
@@ -207,7 +221,7 @@ test('Chromium: Complete and Reset act in place — the modal stays, the status 
 test('Chromium: Undo lasts the hold window, then goes; the outcome line and Reset remain', async () => {
   await ready;
   const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop', clock: true }, errors);
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, clock: true }, errors);
   try {
     await card(page, 'Read the wind').click();
     await page.getByRole('button', { name: 'Complete', exact: true }).click();
@@ -224,8 +238,8 @@ test('Chromium: Undo lasts the hold window, then goes; the outcome line and Rese
 test('Chromium: a locked step leads with what it still needs; on the phone each unmet need names its column and opens it', async () => {
   await ready;
   const errors = [];
-  const desktop = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop' }, errors);
-  const phone = await openRoom({ viewport: { width: 390, height: 844 }, breakpoint: 'phone' }, errors);
+  const desktop = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  const phone = await openRoom({ viewport: { width: 390, height: 844 } }, errors);
   const overview = (page) => page.evaluate(() => [...document.querySelectorAll('.st-board-step-panel > *')].map((part) => part.innerText.replace(/\n+/g, ' | ')));
   try {
     await card(desktop, 'Leave the dock').click();
@@ -261,7 +275,7 @@ test('Chromium: on the phone a step is a pushed page, and Back returns to the sa
   await ready;
   const errors = [];
   const knots = Array.from({ length: 14 }, (_, index) => ({ id: `knot${index + 1}`, label: `Knot ${index + 1}`, prerequisites: ['solo'], color: 'plum' }));
-  const page = await openRoom({ viewport: { width: 390, height: 844 }, breakpoint: 'phone', nodes: [...learnToSailNodes, ...knots] }, errors);
+  const page = await openRoom({ viewport: { width: 390, height: 844 }, nodes: [...learnToSailNodes, ...knots] }, errors);
   try {
     await page.getByRole('tab', { name: 'Locked, 17 steps' }).click();
     const pane = page.locator('.st-board-phone-pane.is-shown');
@@ -292,7 +306,7 @@ test('Chromium: checking the last subtask offers Complete step; the subtasks alo
   await ready;
   const errors = [];
   const workspaces = { wind: { subtasks: [{ id: 's1', label: 'Watch the telltales', done: true }, { id: 's2', label: 'Try a small turn', done: false }], note: '', links: [] } };
-  const page = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop', workspaces }, errors);
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, workspaces }, errors);
   try {
     await card(page, 'Read the wind').click();
     await page.getByRole('tab', { name: 'Workspace' }).click();
@@ -313,8 +327,8 @@ test('Chromium: checking the last subtask offers Complete step; the subtasks alo
 test('Chromium: the step menu copies the step’s link with Link copied and opens the step in the Graph; a reader’s has no Delete', async () => {
   await ready;
   const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop', permissions: ['clipboard-read', 'clipboard-write'] }, errors);
-  const reader = await openRoom({ viewport: { width: 390, height: 844 }, breakpoint: 'phone', editable: false }, errors);
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, permissions: ['clipboard-read', 'clipboard-write'] }, errors);
+  const reader = await openRoom({ viewport: { width: 390, height: 844 }, editable: false }, errors);
   const items = (where) => where.getByRole('menuitem').allTextContents();
   try {
     await card(page, 'Read the wind').click();
@@ -345,7 +359,7 @@ test('Chromium: the step menu copies the step’s link with Link copied and open
 test('Chromium: View branch closes the step and scopes the Board to it; a locked step offers no View branch', async () => {
   await ready;
   const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop' }, errors);
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
     await card(page, 'Leave the dock').click();
     assert.equal(await page.getByRole('button', { name: 'View branch' }).count(), 0);
@@ -358,6 +372,189 @@ test('Chromium: View branch closes the step and scopes the Board to it; a locked
       ['branch wind'], ['Leave the dock', 'Sail a triangle', 'Sail solo'], ['Read the wind'], '#/app/sail',
       'roadmap_board_step_action {"surface":"modal","action":"viewBranch"}',
     ]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+const activeIs = (page) => page.evaluate(() => {
+  const element = document.activeElement;
+  if (element === document.body) return 'body';
+  if (element.matches('.st-board-step-status')) return `status: ${element.querySelector('.st-board-step-status-label').textContent}`;
+  if (element.matches('[role="dialog"]')) return 'dialog';
+  return element.getAttribute('aria-label') ?? element.textContent;
+});
+
+test('Chromium: crossing 744px with a step open swaps the modal for the page and back on one live layer: focus, Back and Escape still work', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('.st-board-step-page').waitFor();
+    assert.deepEqual([await activeIs(page), await page.locator('.st-board-step-layer').count(), await page.locator('.st-board-step-layer').evaluate((layer) => layer.inert)],
+      ['dialog', 1, false]);
+    await page.locator('.st-board-step-page-back').click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+
+    await card(page, 'Read the wind').click();
+    await page.locator('.st-board-step-page').waitFor();
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.locator('.st-board-step-modal').waitFor();
+    assert.equal(await activeIs(page), 'dialog');
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
+    assert.deepEqual([await focusedName(page), await hash(page)], ['Read the wind', '#/app/sail']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: focus never falls to the page — Complete, Undo, Reset and the subtask offer land on the status row, Escape still closes', async () => {
+  await ready;
+  const errors = [];
+  const workspaces = { wind: { subtasks: [{ id: 's1', label: 'Try a small turn', done: false }], note: '', links: [] } };
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, workspaces }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('button', { name: 'Complete', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await activeIs(page), 'status: Done');
+    await page.getByRole('button', { name: 'Undo' }).focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await activeIs(page), 'status: Up next');
+
+    await page.getByRole('tab', { name: 'Workspace' }).click();
+    await page.getByText('Try a small turn').click();
+    await page.getByRole('button', { name: 'Complete step' }).focus();
+    await page.keyboard.press('Enter');
+    assert.deepEqual([await page.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected'), await activeIs(page), await status(page)],
+      ['true', 'status: Done', ['Done', 'Undo', 'Leave the dock is up next']]);
+    await page.getByRole('button', { name: 'Reset' }).focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await activeIs(page), 'status: Up next');
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert.deepEqual(await calls(page), ['complete wind', 'restore wind', 'complete wind', 'reset wind']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: Undo expiring and a workspace edit ending hand focus to the status row or the dialog, and Escape still closes', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, clock: true }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await page.getByRole('button', { name: 'Undo' }).focus();
+    await page.clock.runFor(6100);
+    assert.equal(await activeIs(page), 'status: Done');
+
+    await page.getByRole('tab', { name: 'Workspace' }).click();
+    await page.getByRole('button', { name: 'Add to this step' }).click();
+    await page.getByRole('menuitem', { name: 'Sub-task' }).click();
+    await page.keyboard.press('Escape');
+    assert.equal(await activeIs(page), 'dialog');
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: Undo after Reset gives the step back its completion time, so Done keeps its order', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    assert.deepEqual(await column(page, 'done'), ['Rig the boat', 'Name the boat parts', 'Choose a sailing course']);
+    await card(page, 'Name the boat parts').click();
+    await page.getByRole('button', { name: 'Reset' }).click();
+    await page.getByRole('button', { name: 'Undo' }).click();
+    assert.deepEqual([await column(page, 'done'), await calls(page)],
+      [['Rig the boat', 'Name the boat parts', 'Choose a sailing course'], ['reset parts', 'restore parts']]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops the step from the URL, and restoring the step reopens nothing', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('menuitem', { name: 'Delete step' }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
+    assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex), await hash(page)],
+      ['Leave the dock', 0, '#/app/sail']);
+    await page.evaluate(() => restoreSteps());
+    await card(page, 'Read the wind').waitFor();
+    assert.deepEqual([await page.getByRole('dialog').count(), (await events(page)).filter((line) => line.startsWith('roadmap_board_step_open')).length], [0, 1]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: a stale step link leaves the URL without opening anything', async () => {
+  await ready;
+  const errors = [];
+  const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+  const page = await context.newPage();
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(`${origin}/step-detail-test#/app/sail?step=gone`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate((nodes) => openRoom({ nodes, completed: ['course', 'parts', 'rig'] }), learnToSailNodes);
+    await page.locator('.st-board-card:visible').first().waitFor();
+    await page.waitForFunction(() => window.location.hash === '#/app/sail');
+    assert.deepEqual([await page.getByRole('dialog').count(), await events(page)], [0, []]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Chromium: View branch from a step the visit reached by rows hands focus to the scoped Board’s stop when the first card left the branch', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    await card(page, 'Tie a bowline').click();
+    await page.getByRole('button', { name: 'Name the boat parts, done' }).click();
+    await page.getByRole('button', { name: 'Read the wind, up next' }).click();
+    await page.getByRole('button', { name: 'View branch' }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
+    assert.deepEqual([await focusedName(page), await card(page, 'Tie a bowline').count(), await hash(page)], ['Read the wind', 0, '#/app/sail']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: with no link to share, the step menu offers no Copy link', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, linked: false }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('button', { name: 'More' }).click();
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Open in Graph', 'Delete step']);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();

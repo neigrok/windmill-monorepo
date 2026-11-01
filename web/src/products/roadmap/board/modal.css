@@ -1,6 +1,8 @@
 /* The step modal from 744px (03.01–03.10, 05.06): 760 by 800 at most, 24px in from the window's edges below that. */
 
 .st-board-step-scrim {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;

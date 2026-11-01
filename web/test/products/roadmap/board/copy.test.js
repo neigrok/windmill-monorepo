@@ -43,6 +43,7 @@ import {
   searchEmpty,
   emptyColumn,
   removeChip,
+  sortButtonLabel,
 } from '../../../../src/products/roadmap/board/copy.js';
 
 test('copy — one word per state, one title per column, one label per sort', () => {
@@ -170,6 +171,7 @@ test('copy — an emptied column names its way out: the search, the kinds or bot
     { title: 'No steps match “wind”', action: 'Clear both' },
   ]);
   assert.equal(removeChip({ label: 'Created · newest' }), 'Remove Created · newest');
+  assert.deepEqual(['roadmap', 'newest'].map((sort) => sortButtonLabel({ sort })), ['Sort: Roadmap order', 'Sort: Newest first']);
 });
 
 test('copy — the step page and modal', async () => {

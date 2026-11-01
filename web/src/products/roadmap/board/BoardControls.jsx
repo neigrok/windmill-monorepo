@@ -9,7 +9,7 @@ import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import {
-  FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, emptyColumn, removeChip,
+  FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, emptyColumn, removeChip, sortButtonLabel,
 } from './copy.js';
 
 const SORT_STEPS = { ArrowDown: 1, ArrowUp: -1 };
@@ -27,10 +27,11 @@ function toggleKind(query, onQuery, hue) {
   onQuery((current) => current.toggledKind(hue));
 }
 
+// All also drops kinds no swatch offers any more (among() set them aside), so they never come back on their own; only a
+// change the reader can see emits.
 function clearKinds(query, onQuery) {
-  if (query.kinds.length === 0) return;
-  track('roadmap_board_filter', { count: 0 });
-  onQuery((current) => current.without('kinds'));
+  if (query.kinds.length > 0) track('roadmap_board_filter', { count: 0 });
+  onQuery((current) => (current.kinds.length === 0 ? current : current.without('kinds')));
 }
 
 // `what` is 'search', 'kinds' or 'both'; `from` is the door: 'field', 'empty' or 'sheet'.
@@ -104,10 +105,10 @@ export function FindStep({ query, onQuery, phone = false }) {
 }
 
 // From 744px, between the chrome and the columns: the branch in scope, All and one swatch per kind worn, then the sort.
-export function FilterStrip({ board, worn, query, onQuery, onSelect }) {
+export function FilterStrip({ board, worn, query, onQuery, onAnchor }) {
   return (
     <div className="st-board-strip">
-      {board.branch && <BranchScope step={board.branch} onQuery={onQuery} onSelect={onSelect} />}
+      {board.branch && <BranchScope step={board.branch} onQuery={onQuery} onAnchor={onAnchor} />}
       {worn.length > 0 && <KindSwatches worn={worn} query={query} onQuery={onQuery} withAll />}
       <SortMenu query={query} onQuery={onQuery} />
     </div>
@@ -115,10 +116,10 @@ export function FilterStrip({ board, worn, query, onQuery, onSelect }) {
 }
 
 // The branch the Board is scoped to: the title returns to its anchor step, × clears only the scope.
-function BranchScope({ step, onQuery, onSelect }) {
+function BranchScope({ step, onQuery, onAnchor }) {
   const anchor = () => {
     track('roadmap_board_branch', { action: 'anchor' });
-    onSelect(step.id);
+    onAnchor(step.id);
   };
   const clearBranch = () => {
     track('roadmap_board_branch', { action: 'clear' });
@@ -206,7 +207,15 @@ function SortMenu({ query, onQuery }) {
       ref={box}
       onBlur={(event) => { if (open && !box.current.contains(event.relatedTarget)) setOpen(false); }}
     >
-      <button ref={opener} type="button" className="st-board-sort-button" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+      <button
+        ref={opener}
+        type="button"
+        className="st-board-sort-button"
+        aria-label={sortButtonLabel({ sort: query.sort })}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={toggle}
+      >
         <span>{SORT_MENU.options[query.sort]}</span>
         <ChevronGlyph />
       </button>
@@ -295,13 +304,13 @@ export function PaneEmpty({ query, onQuery }) {
 }
 
 // Over the phone's panes: the branch in scope, then a removable chip per kind on and for an order other than Roadmap order.
-export function ActiveFilters({ board, worn, query, onQuery, onSelect }) {
+export function ActiveFilters({ board, worn, query, onQuery, onAnchor }) {
   const on = worn.filter((kind) => query.kinds.includes(kind.hue));
   const sorted = query.sort !== 'roadmap';
   if (board.branch === null && on.length === 0 && !sorted) return null;
   return (
     <div className="st-board-active">
-      {board.branch && <BranchScope step={board.branch} onQuery={onQuery} onSelect={onSelect} />}
+      {board.branch && <BranchScope step={board.branch} onQuery={onQuery} onAnchor={onAnchor} />}
       {(on.length > 0 || sorted) && (
         <div className="st-board-active-chips">
           {on.map((kind) => <RemovableChip key={kind.hue} label={kind.label} onRemove={() => toggleKind(query, onQuery, kind.hue)} />)}

@@ -61,7 +61,7 @@ import { ViewPrefs, initialView, boardCanShow, viewToShow, peekBorn, clearBorn }
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
-import { advanceProgress, progressChanges, milestoneAnnouncement } from './model/progress.js';
+import { advanceProgress, restoreProgress, progressChanges, milestoneAnnouncement } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -883,7 +883,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
       const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
-      const boardAction = stepDetailOpenRef.current ? null : boardKey(event, typing);
+      const covered = stepDetailOpenRef.current || composerOpenRef.current || document.querySelector('[aria-modal="true"]') !== null;
+      const boardAction = boardKey(event, { typing, covered });
       if (boardAction === 'find' && boardActiveRef.current) {
         const find = rootRef.current?.querySelector('.st-board-find-input');
         if (!find) return;
@@ -1333,8 +1334,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     else handleNextUpAddStep();
   }, [handleCreateRoot, handleNextUpAddStep]);
 
-  const handleBoardCrash = useCallback(() => {
-    captureError('roadmap', 'roadmap-board', '', '#/app');
+  const handleBoardCrash = useCallback((error) => {
+    captureError('roadmap', 'roadmap-board', error?.stack ?? '', '#/app');
     setBoardCrashed(true);
     setView('tree');
   }, []);
@@ -1343,6 +1344,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   // Back leaves it; selection follows the open step and, on close, returns to the card the visit began on.
   const detailId = boardActive && tree && stepAddress.id !== null && tree.nodesById.has(stepAddress.id) ? stepAddress.id : null;
   stepDetailOpenRef.current = detailId !== null;
+  // A step the loaded roadmap no longer holds (deleted here or elsewhere, or a stale link) leaves the URL, so restoring
+  // it later never reopens it.
+  const staleStep = !loading && tree && stepAddress.id !== null && !tree.nodesById.has(stepAddress.id);
+  useEffect(() => {
+    if (staleStep) stepAddress.drop();
+  }, [staleStep, stepAddress.drop]);
   useEffect(() => {
     if (detailId !== null) setSelectedId(detailId);
   }, [detailId, setSelectedId]);
@@ -1369,11 +1376,12 @@ export function SkillTreeView({ treeId, demo = false }) {
     stepAddress.close();
     deleteNodeAt(id);
   };
-  const handleStepCrash = () => {
-    captureError('roadmap', 'roadmap-board-step', '', '#/app');
+  const handleStepCrash = (error) => {
+    captureError('roadmap', 'roadmap-board-step', error?.stack ?? '', '#/app');
     stepAddress.close();
   };
-  const stepShareUrl = demo ? null : treeShareUrl(treeId);
+  // A step's link opens for anyone only where the roadmap itself does: public or unlisted, on the server.
+  const stepShareUrl = !demo && (treeVisibility === 'public' || treeVisibility === 'unlisted') ? treeShareUrl(treeId) : null;
 
   useEffect(() => {
     if (!switcherOpen) return undefined;
@@ -1588,6 +1596,17 @@ export function SkillTreeView({ treeId, demo = false }) {
     pushProgress(id, 'none');
   }
 
+  // The step page and modal's Undo: the step's mark and completion time as they were, with no ceremony and no activity.
+  // The progress lattice dates every mark anew, so once synced progress is adopted, here or on another device, the step
+  // carries the time of the Undo.
+  function restoreStep(id, snapshot) {
+    const next = restoreProgress({ completed, completedAt }, snapshot, id);
+    setCompleted(next.completed);
+    setCompletedAt(next.completedAt);
+    witnessProgress(next);
+    pushProgress(id, next.completed.has(id) ? 'complete' : 'none');
+  }
+
   // A viewer keeps the owner's displayed progress; every owner surface adopts its private lane.
   applyRemoteProgressRef.current = (overlay) => {
     if (demoRef.current || shared || demotion || !seedRef.current?.mine) return;
@@ -1672,7 +1691,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} />
     : null;
   // G switches on the desktop wherever a switch is shown: the editor's topbar, or the Board's identity row for a reader.
-  boardSwitchRef.current = breakpoint === 'desktop' && viewSwitch && (boardActive || !readOnly)
+  boardSwitchRef.current = breakpoint === 'desktop' && viewSwitch && !readOnly
     ? () => switchView(boardActive ? 'tree' : 'board')
     : null;
   // The Board carries its switch in its identity row; the Graph's rides the topbar, or the lane on phones and tablets.
@@ -1811,6 +1830,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               failed={loadError}
               selectedId={selectedId}
               onSelect={openStepFromBoard}
+              onAnchor={setSelectedId}
               title={tree?.title}
               notice={deviceNotice}
               identity={readOnly}
@@ -1850,6 +1870,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             onClose={closeStep}
             onComplete={(id) => completeStep(id, { quiet: true })}
             onReset={resetStep}
+            onRestore={restoreStep}
             onOpenInGraph={openStepInGraph}
             onViewBranch={viewBranchFromDetail}
             onDelete={deleteStepFromDetail}

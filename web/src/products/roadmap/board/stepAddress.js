@@ -86,5 +86,12 @@ export function useStepAddress() {
     else close();
   }, [close]);
 
-  return { ...address, open, back, close };
+  // A step the roadmap no longer holds leaves the URL where it stands, with nothing pushed or popped.
+  const drop = useCallback(() => {
+    if (stepOf(window.location.hash) === null) return;
+    dropStep();
+    setAddress(readAddress('back'));
+  }, []);
+
+  return { ...address, open, back, close, drop };
 }

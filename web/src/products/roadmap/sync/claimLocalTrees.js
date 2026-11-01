@@ -66,7 +66,8 @@ async function ensureServerTree(entry) {
   const freshId = mintTreeId();
   await moveLocalTree(entry.id, freshId);
   window.dispatchEvent(new CustomEvent('wm-claim-conflict', { detail: { treeId: entry.id, remappedTo: freshId } }));
-  if (window.location.hash === `#/app/${entry.id}`) window.location.hash = `#/app/${freshId}`;
+  const [route, query] = window.location.hash.split('?');
+  if (route === `#/app/${entry.id}`) window.location.hash = `#/app/${freshId}${query === undefined ? '' : `?${query}`}`;
   const { treeId } = await createTree(claimBody(freshId, entry.title));
   return treeId;
 }

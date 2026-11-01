@@ -103,10 +103,10 @@ already open emits nothing. An action in the step's page or modal emits `roadmap
 and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
 (which also emits `roadmap_view_switch`), `viewBranch`, `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
 write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
-static Sentry operation `roadmap-board-step` and closes it. The switch, the tabs, the rail, Show all, the controls, the states and
+static Sentry operation `roadmap-board-step` with its stack frames and closes it. The switch, the tabs, the rail, Show all, the controls, the states and
 the step's page and modal exist only while the Board's development gate
 (`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
-storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
+storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board` with its stack frames (file, line, column and function name only),
 drops the Board until that roadmap is opened again and shows the Graph. Loading a roadmap reports to Sentry whatever the
 gate: `HttpTreeRepository` reports the static operation `roadmap-tree-load` when the server answers 5xx, answers 200
 with something that is not a tree (an app shell a proxy served, say), or the request is lost while the page is visible,

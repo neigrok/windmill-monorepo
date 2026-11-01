@@ -46,6 +46,7 @@ function BoardView({
   failed = false,
   selectedId,
   onSelect,
+  onAnchor = () => {},
   title,
   notice = null,
   identity = false,
@@ -72,20 +73,33 @@ function BoardView({
   const [railed, setRailed] = useState(DEFAULT_RAIL);
   const [shown, setShown] = useState('upNext');
   const [wasRevealing, setWasRevealing] = useState(false);
+  const [branchShown, setBranchShown] = useState(asked.branch);
+  const [anchored, setAnchored] = useState(null);
   const boardRef = useRef(null);
   const retried = useRef(false);
   const lastFocus = useRef(null);
   const phone = breakpoint === 'phone';
   const revealing = active && board !== null;
 
-  // Shown with a step selected (Graph → Board, a link, a roadmap that just loaded): its column opens — the phone's tab,
-  // past the Done fold, out of the tablet's rail. A follow, never a pick, so it emits nothing.
+  // A step's column opens — the phone's tab, past the Done fold, out of the tablet's rail. A follow, never a pick, so it
+  // emits nothing.
+  const standColumnOf = (id) => {
+    const column = board.columnOf(id);
+    if (column === null) return;
+    setShown(column);
+    if (column === 'done' && !board.recentDone().cards.some((card) => card.id === id)) setDoneExpanded(true);
+    if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column));
+  };
+
+  // Shown with a step selected (Graph → Board, a link, a roadmap that just loaded), its column opens; so does the anchor's
+  // when the Board is scoped to a branch.
   if (revealing !== wasRevealing) {
     setWasRevealing(revealing);
-    const column = revealing ? board.columnOf(selectedId) : null;
-    if (column !== null) setShown(column);
-    if (column === 'done' && !board.recentDone().cards.some((card) => card.id === selectedId)) setDoneExpanded(true);
-    if (column !== null && breakpoint === 'tablet') setRailed((current) => railToReveal(current, column));
+    if (revealing) standColumnOf(selectedId);
+  }
+  if (board !== null && asked.branch !== branchShown) {
+    setBranchShown(asked.branch);
+    if (asked.branch !== null) standColumnOf(asked.branch);
   }
 
   // Then its card scrolls into view at once, so reduced motion has nothing to opt out of.
@@ -93,6 +107,17 @@ function BoardView({
     if (!revealing) return;
     boardRef.current?.querySelector('.st-board-card[aria-current="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
   }, [revealing]);
+
+  // The branch scope's title returns to its step: selects it and brings its card into view, without opening it.
+  const anchor = (id) => {
+    onAnchor(id);
+    standColumnOf(id);
+    setAnchored({ id });
+  };
+  useEffect(() => {
+    if (anchored === null) return;
+    boardRef.current?.querySelector(`.st-board-card[data-step-id="${CSS.escape(anchored.id)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  }, [anchored]);
 
   // After Try again, focus follows the Board through its frames: the skeleton while it loads, then the columns' tab stop,
   // or Try again or New step if the roadmap failed again or came back empty.
@@ -156,6 +181,7 @@ function BoardView({
                 onShow={setShown}
                 selectedId={selectedId}
                 onSelect={onSelect}
+                onAnchor={anchor}
                 doneExpanded={doneExpanded}
                 onExpandDone={onExpandDone}
                 query={query}
@@ -165,7 +191,7 @@ function BoardView({
             )
             : (
               <>
-                <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onSelect={onSelect} />
+                <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={anchor} />
                 <BoardColumns
                   board={board}
                   band={breakpoint}

@@ -2,7 +2,7 @@
 // identity, the status row, what the step needs and opens, the workspace and its history — and one set of verbs.
 // Complete and Reset act in place: the status row flips with an inline Undo for the hold window and a line names what
 // moved; nothing here toasts. While open the layer makes everything beneath it inert and keeps Tab inside; closing hands
-// focus back to the card the visit began on. Measures from 01.04–01.11, 07.01–07.06 (phone), 02.01–02.04, 03.01–03.10
+// focus back to the card the visit began on, or to the columns' tab stop. Measures from 01.04–01.11, 07.01–07.06 (phone), 02.01–02.04, 03.01–03.10
 // and 05.06 (from 744px).
 
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -14,11 +14,11 @@ import { EventRow } from '../activity/EventRow.jsx';
 import { coverBeneath } from './BoardView.jsx';
 import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
 import { StepIcons } from './StepIcons.jsx';
-import { StepModal } from './StepModal.jsx';
-import { StepPage } from './StepPage.jsx';
+import './modal.css';
+import './page.css';
 import {
   COLUMN_TITLES, LABELS, LINK_COPIED, STATE_WORDS, STEP_DETAIL,
-  completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
+  backTo, completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
 } from './copy.js';
 
 const UNDO_HOLD_MS = 6000;
@@ -27,6 +27,7 @@ const BRAND_CHECKS = { base: 'var(--color-brand)', ring: 'var(--color-brand)' };
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
 const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
+const TAB_STOP = '[data-column] [tabindex="0"], [data-column][tabindex="0"]';
 
 const titleOf = (step) => step.label?.trim() || STEP_DETAIL.unnamed;
 
@@ -50,6 +51,7 @@ export function StepDetail({
   onClose,
   onComplete,
   onReset,
+  onRestore,
   onOpenInGraph,
   onViewBranch,
   onDelete,
@@ -60,12 +62,14 @@ export function StepDetail({
   const facts = useMemo(() => new StepFacts(tree, { completed, completedAt }, id), [tree, completed, completedAt, id]);
   const layerRef = useRef(null);
   const originRef = useRef(null);
+  const leaveRef = useRef(null);
   const titleId = useId();
   const sectionsId = useId();
   const [stepShown, setStepShown] = useState(id);
   const [section, setSection] = useState('overview');
   const [outcome, setOutcome] = useState(null);
   originRef.current = trail[0];
+  leaveRef.current = surface === 'page' ? onBack : onClose;
 
   if (stepShown !== id) {
     setStepShown(id);
@@ -73,20 +77,46 @@ export function StepDetail({
     setOutcome(null);
   }
 
+  // One layer for the whole visit, whichever frame it holds. It covers everything beneath it and takes Escape wherever
+  // focus is; when the element holding focus gives way (an action replaced, Undo expiring, a frame swapped across 744px,
+  // a workspace edit ending), focus lands on the status row, or on the dialog where there is none. Closing hands focus to
+  // the card the visit began on, or to the columns' tab stop once that card has gone.
   useEffect(() => {
-    const uncover = coverBeneath(layerRef.current);
+    const layer = layerRef.current;
+    const uncover = coverBeneath(layer);
+    const recover = () => {
+      if (document.activeElement !== null && document.activeElement !== document.body) return;
+      (layer.querySelector('.st-board-step-status') ?? layer.querySelector('[role="dialog"]'))?.focus({ preventScroll: true });
+    };
+    const watcher = new MutationObserver(recover);
+    watcher.observe(layer, { childList: true, subtree: true });
+    const escape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      leaveRef.current();
+    };
+    document.addEventListener('keydown', escape);
     return () => {
+      watcher.disconnect();
+      document.removeEventListener('keydown', escape);
       uncover();
       const returnTo = originRef.current;
       requestAnimationFrame(() => {
-        document.querySelector(`.st-view-layer--board.is-active .st-board-card[data-step-id="${CSS.escape(returnTo)}"]`)?.focus();
+        const board = document.querySelector('.st-view-layer--board.is-active');
+        if (!board) return;
+        const card = board.querySelector(`.st-board-card[data-step-id="${CSS.escape(returnTo)}"]`);
+        const stop = [...board.querySelectorAll(TAB_STOP)].find((element) => element.getClientRects().length > 0);
+        (card ?? stop)?.focus();
       });
     };
   }, []);
 
   useEffect(() => {
-    const layer = layerRef.current;
-    (layer.matches('[role="dialog"]') ? layer : layer.querySelector('[role="dialog"]')).focus();
+    layerRef.current.querySelector('[role="dialog"]').focus();
+  }, [id, surface]);
+
+  useEffect(() => {
     if (door !== 'back') track('roadmap_board_step_open', { surface, column: facts.column, door });
   }, [id, door]);
 
@@ -98,21 +128,25 @@ export function StepDetail({
 
   const act = (action, extra = {}) => track('roadmap_board_step_action', { surface, action, ...extra });
 
+  // Complete from the subtask offer comes back to the overview, where the status row says what happened and offers Undo.
+  // Undo gives the step back exactly as it was before: its mark and its completion time.
   const complete = (action) => {
+    const before = { completed, completedAt };
     onComplete(id);
-    setOutcome({ kind: 'complete', line: completedOutcome({ unlocked: facts.opens.map(titleOf) }), undoable: true });
+    setSection('overview');
+    setOutcome({ kind: 'complete', line: completedOutcome({ unlocked: facts.opens.map(titleOf) }), undoable: true, before });
     act(action);
   };
 
   const reset = () => {
+    const before = { completed, completedAt };
     onReset(id);
-    setOutcome({ kind: 'reset', line: resetOutcome({ relocked: facts.relocks }), undoable: true });
+    setOutcome({ kind: 'reset', line: resetOutcome({ relocked: facts.relocks }), undoable: true, before });
     act('reset');
   };
 
   const undo = () => {
-    if (outcome.kind === 'complete') onReset(id);
-    else onComplete(id);
+    onRestore(id, outcome.before);
     setOutcome(null);
     act('undo');
   };
@@ -133,15 +167,8 @@ export function StepDetail({
     editable && deletable && { label: STEP_DETAIL.deleteStep, icon: StepIcons.trash, danger: true, run: () => { act('delete'); onDelete(id); } },
   ].filter(Boolean);
 
-  // Escape leaves the way the frame does (the page goes back a step, the modal closes); Tab wraps inside the layer.
+  // Tab wraps inside the layer.
   const onKeyDown = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      if (surface === 'page') onBack();
-      else onClose();
-      return;
-    }
     if (event.key !== 'Tab') return;
     const stops = [...layerRef.current.querySelectorAll(FOCUSABLE)].filter((element) => element.getClientRects().length > 0);
     if (stops.length === 0) return;
@@ -160,6 +187,12 @@ export function StepDetail({
     ? <SubtaskOffer onComplete={() => complete('completeFromSubtasks')} />
     : null;
   const shownSection = editable ? section : 'overview';
+  const identity = <StepIdentity step={facts.step} titleId={titleId} />;
+  const menu = <StepMenu items={menuItems} />;
+  const sections = editable ? <StepSections idPrefix={sectionsId} section={section} onSection={setSection} /> : null;
+  const actions = editable && facts.column !== 'locked'
+    ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset} />
+    : null;
   const content = (
     <div id={`${sectionsId}-${shownSection}`} role={editable ? 'tabpanel' : undefined} aria-labelledby={editable ? `${sectionsId}-tab-${shownSection}` : undefined} className="st-board-step-panel">
       {shownSection === 'overview' && (
@@ -189,23 +222,60 @@ export function StepDetail({
     </div>
   );
 
-  const frame = {
-    layerRef,
-    labelledBy: titleId,
-    onKeyDown,
-    identity: <StepIdentity step={facts.step} titleId={titleId} />,
-    menu: <StepMenu items={menuItems} />,
-    sections: editable ? <StepSections idPrefix={sectionsId} section={section} onSection={setSection} /> : null,
-    content,
-    offer,
-    actions: editable && facts.column !== 'locked' ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset} /> : null,
-  };
-
+  // Below 744px the step is a page pushed over the Board, which stays mounted beneath it with its pane and scroll; the
+  // back row names the screen it returns to, and the sections and actions sit under the thumb. From 744px it is a modal
+  // centred over the scrim, 760 wide and 24px in from the window below that (05.06); a press on the scrim closes it.
   if (surface === 'page') {
     const previous = trail.length > 1 ? tree.nodesById.get(trail[trail.length - 2]) : null;
-    return <StepPage {...frame} backLabel={previous ? titleOf(previous) : roadmapTitle} onBack={onBack} />;
+    const backLabel = previous ? titleOf(previous) : roadmapTitle;
+    return (
+      <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
+        <div className="st-board-step-page" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+          <div className="st-board-step-page-nav">
+            <button type="button" className="st-board-step-page-back" aria-label={backTo({ screen: backLabel })} onClick={onBack}>
+              <span className="st-board-step-page-back-glyph"><StepIcons.back /></span>
+              <span className="st-board-step-page-back-label">{backLabel}</span>
+            </button>
+            {menu}
+          </div>
+          <div className="st-board-step-page-scroll">
+            {identity}
+            {offer}
+            {content}
+          </div>
+          {(sections || actions) && (
+            <div className="st-board-step-page-pinned">
+              {sections}
+              {actions}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
-  return <StepModal {...frame} onClose={onClose} />;
+  return (
+    <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
+      <div className="st-board-step-scrim" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+        <div className="st-board-step-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+          <div className="st-board-step-modal-tools">
+            {identity}
+            {menu}
+            <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.close} onClick={onClose}>
+              <StepIcons.close />
+            </button>
+          </div>
+          {sections}
+          <div className="st-board-step-modal-content">{content}</div>
+          {(offer || actions) && (
+            <div className="st-board-step-modal-actions">
+              {offer}
+              {actions}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function StepIdentity({ step, titleId }) {
@@ -273,7 +343,7 @@ function StatusRow({ facts, outcome, onUndo }) {
   const Glyph = STATUS_GLYPHS[facts.column];
   const label = facts.column === 'locked' ? lockedStatus({ toGo: facts.toGo }) : COLUMN_TITLES[facts.column];
   return (
-    <div className={`st-board-step-status st-board-step-status--${facts.column}`}>
+    <div className={`st-board-step-status st-board-step-status--${facts.column}`} tabIndex={-1}>
       <div className="st-board-step-status-row">
         <span className="st-board-step-status-glyph"><Glyph /></span>
         <span className="st-board-step-status-label">{label}</span>

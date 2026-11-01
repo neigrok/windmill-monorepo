@@ -2,6 +2,8 @@
    the actions pinned under the thumb. */
 
 .st-board-step-page {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   background: var(--surface-canvas);

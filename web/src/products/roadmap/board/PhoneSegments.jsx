@@ -16,7 +16,7 @@ const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
 // The shown column is the host's: a pick here emits roadmap_board_column, the host following a selected step does not.
 export function PhoneSegments({
-  board, shown, onShow, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery,
+  board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery,
 }) {
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
   const tabs = useRef({});
@@ -69,7 +69,7 @@ export function PhoneSegments({
 
   return (
     <div className="st-board-phone">
-      <ActiveFilters board={board} worn={worn} query={query} onQuery={onQuery} onSelect={onSelect} />
+      <ActiveFilters board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={onAnchor} />
       <div className="st-board-phone-panes" ref={roving.ref} onFocus={focus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
         {board.columns.map((column) => (
           <div
