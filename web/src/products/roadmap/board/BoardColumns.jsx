@@ -7,7 +7,7 @@ import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { StepCard } from './StepCard.jsx';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount, showAllDone } from './copy.js';
 
-const DEFAULT_RAIL = 'done';
+export const DEFAULT_RAIL = 'done';
 const RAIL_DECK_DEPTH = 3;
 
 export function columnStage({ band, railed = DEFAULT_RAIL }) {
@@ -19,6 +19,11 @@ export function swapRail(railed) {
   return railed === 'done' ? 'locked' : 'done';
 }
 
+// Revealing a step that sits in the rail stands its column and folds the other side column instead.
+export function railToReveal(railed, column) {
+  return column === railed ? swapRail(railed) : railed;
+}
+
 // Keyboard focus that arrives on the cards from outside lands on the first Up next card; a pointer press stays where it fell.
 export function enterAtUpNext(event) {
   const columns = event.currentTarget;
@@ -28,8 +33,7 @@ export function enterAtUpNext(event) {
   if (first && first !== event.target) first.focus();
 }
 
-export function BoardColumns({ board, band, selectedId, onSelect, doneExpanded, onToggleDone }) {
-  const [railed, setRailed] = useState(DEFAULT_RAIL);
+export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onToggleDone }) {
   const stage = columnStage({ band, railed });
   const recentDone = board.recentDone();
   const cardsOf = (column) => (column.name === 'done' && !doneExpanded ? recentDone.cards : column.cards);
@@ -37,7 +41,7 @@ export function BoardColumns({ board, band, selectedId, onSelect, doneExpanded, 
   return (
     <div className="st-board-columns" onFocus={enterAtUpNext}>
       {board.columns.map((column) => (stage[column.name] === 'rail'
-        ? <ColumnRail key={`${column.name}-rail`} column={column} onShow={() => setRailed(swapRail)} />
+        ? <ColumnRail key={`${column.name}-rail`} column={column} onShow={onShowRail} />
         : (
           <FullColumn key={column.name} column={column}>
             {cardsOf(column).map((card) => (

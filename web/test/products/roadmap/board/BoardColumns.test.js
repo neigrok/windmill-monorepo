@@ -5,7 +5,7 @@ import { register } from 'node:module';
 register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { BoardColumns, columnStage, swapRail, enterAtUpNext } = await import('../../../../src/products/roadmap/board/BoardColumns.jsx');
+const { BoardColumns, columnStage, swapRail, railToReveal, enterAtUpNext } = await import('../../../../src/products/roadmap/board/BoardColumns.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
 const { Board } = await import('../../../../src/products/roadmap/board/Board.js');
 
@@ -53,6 +53,13 @@ test('columnStage — from 1024px every column stands; below it Done folds to a 
 test('swapRail — Show on a rail stands that column and folds the other side column instead', () => {
   assert.equal(swapRail('done'), 'locked');
   assert.equal(swapRail('locked'), 'done');
+});
+
+test('railToReveal — a step in the rail stands its column; a step in a standing column leaves the rail where it is', () => {
+  assert.equal(railToReveal('done', 'done'), 'locked');
+  assert.equal(railToReveal('locked', 'locked'), 'done');
+  assert.equal(railToReveal('done', 'locked'), 'done');
+  assert.equal(railToReveal('done', 'upNext'), 'done');
 });
 
 test('BoardColumns — at 1024px and up Locked, Up next and Done stand in flow order, each heading naming its count', () => {

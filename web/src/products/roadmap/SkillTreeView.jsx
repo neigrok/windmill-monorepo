@@ -1586,6 +1586,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const laneShare = mobileEditable && tree && tree.nodes.length > 0 ? (
     <LaneButton icon="share" label="Share" onClick={() => setShareOpen(true)} />
   ) : null;
+  // The phone Board draws no lane: its band holds the controls, and Ask AI and Share wait for the roadmap sheet.
+  const laneShown = (lanePill || laneTend || laneShare) && !(phone && boardActive);
   // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
   const dockOpen = readOnly
@@ -1708,7 +1710,8 @@ export function SkillTreeView({ treeId, demo = false }) {
               breakpoint={breakpoint}
               onSwitchView={switchView}
               topInset={readOnly ? 0 : topbarBottom}
-              laneInset={lanePill || laneTend || laneShare ? laneInset : 0}
+              active={boardActive}
+              laneInset={laneShown ? laneInset : 0}
             />
           </ErrorBoundary>
         </div>
@@ -1760,7 +1763,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {(lanePill || laneTend || laneShare) && (
+      {laneShown && (
         <ActionLane lift={laneLift} onHeight={setLaneInset} left={lanePill} center={laneTend} right={laneShare} />
       )}
 

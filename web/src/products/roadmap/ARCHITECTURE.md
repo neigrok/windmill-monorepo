@@ -31,9 +31,11 @@ visitor's Graph has no switch yet. Graph keyboard shortcuts do not act on the Bo
 From 1024px the Board stands Locked, Up next and Done side by side, each column scrolling under its
 sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures. From
 744px one side column folds to a rail, Done first; Show swaps which one, and Up next never folds
-(`columnStage` in `BoardColumns.jsx`). Below 744px `PhoneSegments` takes the columns. Keyboard focus
-entering the cards lands on the first Up next card. The layer stays mounted across Board/Graph
-switches, so each column keeps its scroll.
+(`columnStage` in `BoardColumns.jsx`). Phones show one column at a time behind Locked · Up next · Done
+tabs in a bottom band (`PhoneSegments.jsx`), and the phone Board has no action lane. Keyboard focus
+entering the cards lands on the first Up next card. Shown with a step selected, the Board opens that
+step's column (its tab, past the Done fold, or out of the rail) and scrolls its card into view. The
+layer stays mounted across Board/Graph switches, so each column keeps its scroll.
 
 ## Package map
 

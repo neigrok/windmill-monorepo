@@ -34,6 +34,7 @@
   background: var(--surface-canvas);
 }
 .st-board--phone {
+  gap: var(--space-3);
   padding-left: var(--space-4);
   padding-right: var(--space-4);
 }
