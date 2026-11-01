@@ -939,7 +939,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Movement editor discard wording | Built (task 56): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
   | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the rack will offer, *22.5 kg total × max*, or *— × max* while last time is unread | 03.34 `1742:40960` · `1742:41112` |
-  | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
+  | Rack at 320dp/200% | Built (task 59): the movement head, the ledger and the rack scroll as one page above the pinned *Log set* band, and rows wrap instead of clipping | 03.35 `1742:41245` · `1742:41402` |
   | Receipt at 320dp/200% | Built (task 60): the receipt opens full height, the facts wrap two to a row and the body scrolls to *Performed* under the pinned actions. A value no size fits on one line stays at the 16 sp floor and drops only its unit to the next line. *Share with Coach* and *Done* are Material filled tonal and filled buttons with one-line labels, which at 200 % run into the 24 dp side padding as the board draws them. The crown is the 24 dp drawable 8 dp before the label, where the board sets an emoji glyph at the label size | 03.36 `1742:41620` · `1742:41702` |
   | Weigh-in Undo | Built (task 61): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887` |
 
@@ -964,7 +964,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   can run (offline), its foot becomes **Retry** · *That read failed.*, which the caption names for a
   failed pull and no Android board draws.
   A movement's record page before the first pull lists the days this phone holds under *Recent sets*
-  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands.
+  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands (design brief QW3, task 104).
   - *Routines before the first pull (owner ruling, 2026-11-01).* Routines reads *No routines yet.*
     (`ui/RoutinesScreen.kt`) while the account it has not pulled holds routines; the owner keeps
     that line for now.
@@ -981,11 +981,11 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     `1793:27501`, caption `1793:27589`) and 05.13b (`1793:27594`, `1793:27683`, caption
     `1793:27772`) carry the same rows. At 200 % text a two-digit count widens its row's column past
     24 dp, so that row's load starts further in; no board draws it.
-  - *A movement with no plan (designer).* On a free workout (no plan) each movement heading keeps
+  - *A movement with no plan (designer, design brief QW1, task 102).* On a free workout (no plan) each movement heading keeps
     its 48 dp touch target (`GymTap.minimum`) with no line under the name
     (`Performed.Against.Silent` in `ui/SessionScreen.kt`), so a blank gap sits where 05.3b draws
     *Plan 3 × 8 · 75 kg total*. Designer to draw a planless movement heading.
-  - *Movement headings are not headings (Android build, task 64's area).* TalkBack does not expose
+  - *Movement headings are not headings (Android build, task 86).* TalkBack does not expose
     a workout page's movement headings as accessibility headings, so heading navigation skips
     them; the heading in `ui/SessionScreen.kt` sets no `semantics { heading() }`.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
@@ -1007,7 +1007,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
     (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
     (`web/src/products/gym/log.js`).
-- **11w · An answer's proposal still arriving (designer).** Coach can answer before its proposal
+- **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** Coach can answer before its proposal
   reaches the phone; until the miss settles, Android draws nothing in the card's place
   (`coach/AskScreen.kt`), because no board draws a waiting state for it. A miss settles 10 s after it,
   once the phone reads further into the account or a pull asked after its wait lands caught up; the

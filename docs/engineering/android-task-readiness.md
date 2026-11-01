@@ -1,6 +1,6 @@
 # Android task design readiness
 
-The [52-task backlog](../../androidgym_tasks/README.md) uses the current Gym and Shell Android
+The [Android task backlog](../../androidgym_tasks/README.md) uses the current Gym and Shell Android
 frames. The live Figma audit on 2026-10-25 finds every linked implementation frame marked
 **✅ Ready for dev** or **🚀 In production**, except the explicitly excluded Windmill One
 allowance example in task 43. Those markers describe the drawn states; they do not approve

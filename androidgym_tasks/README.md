@@ -1,6 +1,6 @@
 # Android gym tasks
 
-These 72 tasks describe the Android implementation backlog. Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
+These 105 tasks describe the Android implementation backlog; the quality wave's design work is in [the design brief](design-brief-quality-wave.md). Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
 
 The six revised Gym flows were approved on **2026-10-25**. Each task records its current implementation and design status. Approval covers the linked revisions, including the headerless Workout and retained weigh-in Undo; it does not approve every other Gym or Shell board in this backlog.
 
@@ -93,6 +93,34 @@ Stage A is on main (`70ec2dbe`, and 70 at `5e0bb26d`); its boards 00.5, 00.6, 02
 - **Delivery:**
   - One commit per task, then the gauntlet: an adversarial review that executes its findings, one fix pass, then native and local-stack acceptance including failures, Sentry and content-free events.
   - Once the verified implementation is on main, mark its boards 🚀 In production and delete the boards it supersedes.
+
+## Quality wave (tasks 73–105)
+
+On 2026-11-01 the dogfood tree's open Android, gym and sync nodes were checked against main (`28c3d48a`). Work already on main was closed with its evidence, and superseded work was closed as obsolete. What is still open became tasks 73–105, ordered by what a person would notice first. The wave's parent node on the tree is **Android · quality wave**. Task 67, the logger Back and sign-out event fixes, and the 0.14.0/0.14.1 releases are in flight and not part of the wave.
+
+| Stage | Tasks, in order |
+|---|---|
+| A · Bugs a person can hit | [73](73-finish-after-last-set.md), [74](74-load-floor-on-every-door.md), [75](75-update-required-always-arrives.md), [76](76-reads-off-the-main-thread.md), [77](77-callbacks-held-by-identity.md), [78](78-proposal-over-a-dead-routine.md), [79](79-recovery-through-the-domain.md), [80](80-keep-the-rest-of-a-partly-landed-copy.md), [81](81-machine-reads-kg.md) |
+| B · Release confidence | [82](82-release-test-account.md), [83](83-play-store-decision.md) |
+| C · Accessibility | [84](84-delete-on-the-focused-row.md), [85](85-talkback-on-a-real-phone.md), [86](86-headings-talkback-can-walk.md), [87](87-large-text-everywhere.md) |
+| D · Reliability | [88](88-flaky-tests.md), [89](89-alerting.md), [90](90-web-sync-noise.md), [91](91-outbox-costs-linear.md) |
+| E · Cross-platform parity | [92](92-catch-up-after-a-reopen.md), [93](93-share-page-set-count.md), [94](94-web-planned-rows-offered-load.md), [95](95-one-stated-best.md), [96](96-shared-performed-range.md), [97](97-coach-read-receipt-weeks.md), [98](98-coach-during-a-workout.md) |
+| F · Polish | [99](99-destructive-actions-in-red.md), [100](100-proposal-diff-unit-space.md), [101](101-capture-recipes-name-current-boards.md), [102](102-planless-movement-heading.md), [103](103-proposal-still-arriving.md), [104](104-record-before-the-first-pull.md), [105](105-quiet-set-count-follow-ups.md) |
+
+**What each waiting task waits for**
+- **A board or ruling** from the [design brief](design-brief-quality-wave.md):
+  - 80 (QW5), 81 (QW6) and 94 (QW7);
+  - 96's iOS screen (QW8), 97's numberless wording (QW10) and 98 (QW9);
+  - 99 (QW11) and 100 (QW13);
+  - 102–105 (QW1–QW4).
+  Domain and backend halves can start before their board.
+- **The owner:**
+  - 82 needs the release test account and its mailbox;
+  - 83 is the owner's decision;
+  - backend halves (74, 89, 97, 98) redeploy production when pushed.
+- **Other work:** 77 waits for the logger Back fix to reach main.
+
+Tasks that touch iOS or web pass their own gates too: `swift test` for `GymDomain` and the iOS engine, and web's test suite.
 
 ## Execution order
 
@@ -187,5 +215,38 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [70](70-sweep.md) — Sweep: deprecated APIs, dead code, warnings and stale references
 - [71](71-one-gym-domain.md) — One gym domain: the last app-side rules move into :gym:domain; the presentation package says what it is
 - [72](72-honest-reads-before-first-pull.md) — Before the first pull, nothing counts or claims from partial history
+- [73](73-finish-after-last-set.md) — A finish never lands before the last set
+- [74](74-load-floor-on-every-door.md) — The load floor holds on Coach Apply and on the server
+- [75](75-update-required-always-arrives.md) — Update required always arrives, and delivery state comes from the engine alone
+- [76](76-reads-off-the-main-thread.md) — Nothing the engine reads runs on the main thread
+- [77](77-callbacks-held-by-identity.md) — No screen keeps a callback from an earlier composition
+- [78](78-proposal-over-a-dead-routine.md) — A proposal over a dead routine reads as out of date instead of failing to decode
+- [79](79-recovery-through-the-domain.md) — Signed-out workout recovery runs through the domain's actions
+- [80](80-keep-the-rest-of-a-partly-landed-copy.md) — A saved copy that partly reached the server keeps the sets that did not
+- [81](81-machine-reads-kg.md) — A machine's load reads kg
+- [82](82-release-test-account.md) — Every release is accepted signed in, on production, with a dedicated test account
+- [83](83-play-store-decision.md) — Play Store distribution: a decision for the owner
+- [84](84-delete-on-the-focused-row.md) — Every swipe row offers Delete on the node TalkBack focuses
+- [85](85-talkback-on-a-real-phone.md) — A TalkBack pass on a real phone, and each thing said once
+- [86](86-headings-talkback-can-walk.md) — Headings TalkBack can walk
+- [87](87-large-text-everywhere.md) — Every screen holds at 320 dp and 200 % text
+- [88](88-flaky-tests.md) — Flaky tests fail fast and then stop failing
+- [89](89-alerting.md) — Someone is told when the server is refusing or saturated
+- [90](90-web-sync-noise.md) — Web reports sync failures the way both phones do
+- [91](91-outbox-costs-linear.md) — A phone back from a long time offline drains its outbox in linear time
+- [92](92-catch-up-after-a-reopen.md) — iOS and web catch up after a live socket reopens
+- [93](93-share-page-set-count.md) — The web share page counts sets 1..N in logged order
+- [94](94-web-planned-rows-offered-load.md) — The web live mirror's planned rows read the load the rack will offer
+- [95](95-one-stated-best.md) — The Best tile follows the stated rule the records follow
+- [96](96-shared-performed-range.md) — Every surface states what was lifted, every set counted
+- [97](97-coach-read-receipt-weeks.md) — What Coach read counts only weeks it can show
+- [98](98-coach-during-a-workout.md) — Coach answers during a workout on Android
+- [99](99-destructive-actions-in-red.md) — The last three destructive actions use the error role
+- [100](100-proposal-diff-unit-space.md) — A proposal's load change spaces its unit like every other readout
+- [101](101-capture-recipes-name-current-boards.md) — The capture recipes name the workout page's current boards
+- [102](102-planless-movement-heading.md) — A movement with no plan has a heading that leaves no gap
+- [103](103-proposal-still-arriving.md) — Coach shows that its proposal is still arriving
+- [104](104-record-before-the-first-pull.md) — The record page's Recent sets before the first pull
+- [105](105-quiet-set-count-follow-ups.md) — The quiet set count: the owner's open questions
 
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.

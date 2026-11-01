@@ -1,6 +1,6 @@
 # Android Gym task handoff
 
-The [52-task backlog](../../androidgym_tasks/README.md) describes implementation work. The six revised
+The [Android task backlog](../../androidgym_tasks/README.md) describes implementation work. The six revised
 Coach, Log, Weigh-in, Workout, Finish and Routine editor flows were human-approved on 2026-10-25;
 92 affected frames and 46 captions are **✅ Ready for dev**. This task correction changes documents,
 not Android behavior. Other Gym/Shell states retain their own design status and prerequisites.
