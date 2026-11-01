@@ -939,13 +939,19 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   - *Routines before the first pull.* Routines reads *No routines yet.* (`ui/RoutinesScreen.kt`)
     while the account it has not pulled holds routines. Owner to say what Routines shows while it
     waits.
-  - *Set numbers on a workout (owner ruling, 2026-11-01).* A workout page's set rows carry no set
-    number. The app still labels each row with its server set number (`ui/SessionScreen.kt`
-    `SetRow`), so sets numbered out of logged order read *2, 3, 1*, and Fix set opened from a row
-    names *Set N* by the same number (`ui/FixSheet.kt`), which no board revises yet. Board 05.3b
-    *Sets without numbers* (Dark `1782:26943`, Daylight `1782:27019`, caption `1782:27095`, in
-    section 05, 🚧 awaiting owner approval) draws each movement's sets as one group led by load ×
-    reps; on approval 05.4, 05.14, 05.5 and 05.13 follow.
+  - *Set numbers on a workout (owner ruling, 2026-11-01).* Each set row on a workout page leads
+    with a quiet count: a bare digit with no *Set* word, the set's position within its movement
+    counted 1..N in logged order, never the server's set number, so it never reads *2, 3, 1*;
+    after a delete the rows that remain renumber. Fix set keeps *Set N* in its title, N by the
+    same count. The app still prints the server number on the row and in Fix set
+    (`ui/SessionScreen.kt` `Row.number` from `set.setNumber`, passed to `ui/FixSheet.kt`) until
+    this is built. Board 05.3b *Quiet set count* (Dark `1782:26943`, Daylight `1782:27019`,
+    caption `1782:27095`, in section 05, ✅ Ready for dev) draws the count in JetBrains Mono 12/16 in
+    text/tertiary, in a 24 dp column on the load's baseline, inside each movement's one group of
+    sets. Revisions 05.14b (`1793:27005`, `1793:27113`, caption `1793:27221`), 05.4b (`1793:27226`,
+    `1793:27317`, caption `1793:27408`; the swipe, rows renumber), 05.5b (`1793:27413`,
+    `1793:27501`, caption `1793:27589`) and 05.13b (`1793:27594`, `1793:27683`, caption
+    `1793:27772`) carry the same rows.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
@@ -1178,6 +1184,10 @@ iOS. It and the product differ in these places.
 - **Coach Markdown.** Android renders answer Markdown blocks and paces streamed text; web
   `CoachRoom.jsx` renders plain text. Decide the shared block typography and pacing, then align the
   other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.
+- **Shared workout set numbers.** The web single-workout share page prints each set's server set
+  number (`web/src/products/gym/share/SharedSession.jsx`, `gym-set-number`), so sets numbered out
+  of logged order read *2, 3, 1*. The owner's ruling (11u) counts each movement's sets 1..N in
+  logged order as a quiet digit.
 - **Workout display names.** The API's optional `routineName` changes a corrected workout's
   display name independently of its frozen plan. Native session readers need to prefer it,
   including an explicitly empty name for a free session.
