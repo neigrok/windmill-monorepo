@@ -155,7 +155,7 @@ fun AskScreen(
     val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
     val headerProposals = proposalIds.filterNot { it in attachedProposals }
     val wanted = (attachedProposals + proposalIds).toList()
-    LaunchedEffect(wanted, store.replicaReadRevision, store.pulled.landed) { proposals.read(wanted) }
+    LaunchedEffect(wanted, store.replicaReadRevision, store.pulled.caughtUp) { proposals.read(wanted) }
     proposals.missing.keys.forEach { id -> key(id) { LaunchedEffect(Unit) { proposals.settle(id) } } }
 
     GymScreen(
@@ -393,18 +393,18 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
 }
 
 // The proposals a room's answers name. Coach can answer before its proposal reaches this phone, so an id not found is
-// read again each time the replica changes or a pull lands. A proposal the phone holds a dead row of is gone at once.
-// One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at or
-// after that miss, has read further into the account, or a pull has landed since the wait ended. The wait's end asks
-// for that pull once. One named by an answer this visit waited for and gone that way is reported once.
+// read again each time the replica changes or a pull lands caught up. A proposal the phone holds a dead row of is gone at
+// once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at
+// or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The
+// wait's end asks for that pull once. One named by an answer this visit waited for and gone that way is reported once.
 internal class AnsweredProposals(private val store: TrainingStore, private val telemetry: Telemetry) {
     data class Miss(val recorded: Boolean = false, val caughtUpAt: Long? = null, val readPast: Boolean = false,
         val waitedAt: Long? = null, val pulledPast: Boolean = false) {
         val settled: Boolean get() = waitedAt != null && (readPast || pulledPast)
         val gone: Boolean get() = recorded || settled
 
-        fun read(recorded: Boolean, caughtUpTo: Long?, landed: Long): Miss {
-            val pulled = pulledPast || waitedAt != null && landed > waitedAt
+        fun read(recorded: Boolean, caughtUpTo: Long?, caughtUpPull: Long): Miss {
+            val pulled = pulledPast || waitedAt != null && caughtUpPull > waitedAt
             return when {
                 caughtUpTo == null -> copy(recorded = recorded, pulledPast = pulled)
                 caughtUpAt == null -> copy(recorded = recorded, caughtUpAt = caughtUpTo, pulledPast = pulled)
@@ -422,12 +422,12 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
 
     suspend fun read(wanted: List<String>) {
         val caughtUpTo = store.caughtUpTo
-        val landed = store.pulled.landed
+        val caughtUpPull = store.pulled.caughtUp
         for (id in wanted) {
             if (minted.containsKey(id)) continue
             when (val read = store.proposal(id)) {
                 is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
-                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.proposalRecorded(id), caughtUpTo, landed)
+                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.proposalRecorded(id), caughtUpTo, caughtUpPull)
             }
         }
         report()
@@ -436,7 +436,7 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
     suspend fun settle(id: String) {
         delay(settleMs)
         val miss = missing[id] ?: return
-        missing[id] = miss.copy(waitedAt = store.pulled.landed)
+        missing[id] = miss.copy(waitedAt = store.pulled.sent)
         report()
         if (missing[id]?.gone == false) store.pullAgain()
     }

@@ -897,23 +897,23 @@ class AskScreenTests {
     // phone, caught up at or after the miss, has read further, or a pull has landed since the wait ended.
     @Test
     fun aMissIsGoneAtOnceWithADeadRowAndOtherwiseOnceItSettles() {
-        val dead = AnsweredProposals.Miss().read(recorded = true, caughtUpTo = null, landed = 0)
+        val dead = AnsweredProposals.Miss().read(recorded = true, caughtUpTo = null, caughtUpPull = 0)
         assertEquals(AnsweredProposals.Miss(recorded = true), dead)
         assertTrue(dead.gone)
-        val behind = AnsweredProposals.Miss().read(recorded = false, caughtUpTo = null, landed = 3)
-        val level = behind.read(recorded = false, caughtUpTo = 7, landed = 3).copy(waitedAt = 3)
+        val behind = AnsweredProposals.Miss().read(recorded = false, caughtUpTo = null, caughtUpPull = 3)
+        val level = behind.read(recorded = false, caughtUpTo = 7, caughtUpPull = 3).copy(waitedAt = 3)
         assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, waitedAt = 3), level)
         assertFalse(level.gone)
-        assertEquals(level, level.read(recorded = false, caughtUpTo = 7, landed = 3))
-        val past = level.read(recorded = false, caughtUpTo = 8, landed = 3)
+        assertEquals(level, level.read(recorded = false, caughtUpTo = 7, caughtUpPull = 3))
+        val past = level.read(recorded = false, caughtUpTo = 8, caughtUpPull = 3)
         assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, readPast = true, waitedAt = 3), past)
         assertTrue(past.gone)
-        assertEquals(past, past.read(recorded = false, caughtUpTo = null, landed = 3))
-        val pulled = level.read(recorded = false, caughtUpTo = 7, landed = 4)
+        assertEquals(past, past.read(recorded = false, caughtUpTo = null, caughtUpPull = 3))
+        val pulled = level.read(recorded = false, caughtUpTo = 7, caughtUpPull = 4)
         assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, waitedAt = 3, pulledPast = true), pulled)
         assertTrue(pulled.gone)
         assertEquals("a pull before the wait ended settles nothing", AnsweredProposals.Miss(caughtUpAt = 7),
-            AnsweredProposals.Miss(caughtUpAt = 7).read(recorded = false, caughtUpTo = 7, landed = 9))
+            AnsweredProposals.Miss(caughtUpAt = 7).read(recorded = false, caughtUpTo = 7, caughtUpPull = 9))
     }
 
     // Snapshots land about once a second; what each one adds after the room mounted is paced by
@@ -1146,7 +1146,7 @@ class AskScreenTests {
         room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), pulls = pulls, pullAgain = {
             asked++
             room.pull(server)
-            pulls.value = pulls.value.after(room.engine.activeReplica(), landing = true)
+            pulls.value = pulls.value.sending(room.engine.activeReplica()).let { it.ending(room.engine.activeReplica(), it.sent, landed = true, caughtUp = true) }
             true
         }).also { rooms += it }
         runBlocking { room.select("u1") }
@@ -1169,7 +1169,7 @@ class AskScreenTests {
         compose.mainClock.advanceTimeBy(2_000)
         compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.line).fetchSemanticsNodes().size == 1 }
         compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
-        compose.runOnIdle { pulls.value = pulls.value.after(room.engine.activeReplica(), landing = true) }
+        compose.runOnIdle { pulls.value = pulls.value.sending(room.engine.activeReplica()).let { it.ending(room.engine.activeReplica(), it.sent, landed = true, caughtUp = true) } }
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.runOnIdle {
             assertEquals(1, asked)
@@ -1190,7 +1190,7 @@ class AskScreenTests {
         room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), pulls = pulls, pullAgain = {
             asked++
             room.pull(server)
-            pulls.value = pulls.value.after(room.engine.activeReplica(), landing = true)
+            pulls.value = pulls.value.sending(room.engine.activeReplica()).let { it.ending(room.engine.activeReplica(), it.sent, landed = true, caughtUp = true) }
             true
         }).also { rooms += it }
         runBlocking { room.select("u1") }
@@ -1217,6 +1217,55 @@ class AskScreenTests {
         compose.runOnIdle {
             assertEquals(1, asked)
             assertEquals(emptyList<String>(), events.map { it.first }.filter { it == "gym_proposal_missing" })
+        }
+        scope.cancel()
+    }
+
+    // Only a pull sent after the wait ended confirms there is no row: one already in flight when the wait ended lands
+    // without settling the miss, and so does the first page of a backlog with more to read.
+    @Test
+    fun aMissSettlesOnlyOnAPullSentAfterItsWaitThatLandsCaughtUp() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val pulls = MutableStateFlow(Pulls())
+        var asked = 0
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), pulls = pulls, pullAgain = { asked++; true })
+            .also { rooms += it }
+        runBlocking { room.select("u1") }
+        room.pull(server)
+        room.store.observeEngine()
+        val replica = room.engine.activeReplica()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
+                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                    "https://windmill.works", onThreads = {}, onReview = {})
+            }
+        }
+        compose.runOnIdle { thread = listOf(thread.single().copy(answer = AskAnswer("The answer stays readable.", read,
+            proposals = listOf("proposal1")))) }
+        compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
+        compose.runOnIdle { pulls.value = pulls.value.sending(replica) }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.pulled.sent == 1L } }
+        compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
+        compose.runOnIdle {
+            assertEquals(1, asked)
+            pulls.value = pulls.value.ending(replica, 1, landed = true, caughtUp = true)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.runOnIdle { pulls.value = pulls.value.sending(replica).let { it.ending(replica, it.sent, landed = true, caughtUp = false) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(emptyList<String>(), events.map { it.first }.filter { it == "gym_proposal_missing" })
+            pulls.value = pulls.value.sending(replica).let { it.ending(replica, it.sent, landed = true, caughtUp = true) }
+        }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.line).fetchSemanticsNodes().size == 1 }
+        compose.runOnIdle {
+            assertEquals(1, asked)
+            assertEquals(listOf("gym_proposal_missing" to emptyMap<String, String>()), events.filter { it.first == "gym_proposal_missing" })
         }
         scope.cancel()
     }

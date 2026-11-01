@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -579,14 +580,15 @@ class TrainingStore(
     val recent: List<SessionSummary>
         get() = allSessions.filterNot { it.id in withheldIds }
     private var foot: Older by mutableStateOf(Older.More)
-    // How the sync runtime's pulls have ended, as the screens read them.
+    // How the sync runtime's pulls stand, as the screens read them, and how they stood when Retry last asked for one.
     var pulled: Pulls by mutableStateOf(pulls.value)
         private set
-    private var retriedAt by mutableStateOf(0L)
+    private var retried: Pulls? by mutableStateOf(null)
     // Before the first pull the phone holds part of the account at most, the same completeness the record page reads:
     // the log's end is unknown, so a short or unanswered page's foot is still reading rather than claiming a first
-    // workout, until a pull of this replica ends without landing since the last Retry asked for one.
+    // workout, until no pull of this replica can run or the latest failed since Retry asked for one.
     private val logUnread: Boolean get() = !training.anonymous && !training.firstPullComplete
+    val historyRead: Boolean get() = !logUnread
     private fun footAfter(page: List<SessionSummary>?): Older = when {
         page != null && page.size >= logPage -> Older.More
         logUnread -> Older.Reading
@@ -594,8 +596,21 @@ class TrainingStore(
         else -> Older.End
     }
     val older: Older get() =
-        if (foot == Older.Reading && pulled.failed && pulled.replica == controls.engineReplica && pulled.ended > retriedAt) Older.Failed
-        else foot
+        if (foot == Older.Reading && pulled.replica == controls.engineReplica && pulled.stalled(retried)) Older.Failed else foot
+    // The first pull's wait as the person sees it: the screen shows its bar once the wait passes 400 ms, and how the wait
+    // ended is told once, `read` when the pull lands and `failed` when the foot turns to Retry.
+    var readingShown by mutableStateOf(false)
+        private set
+    fun showReading() {
+        if (older != Older.Reading || readingShown) return
+        readingShown = true
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "first_pull", "state" to "shown"))
+    }
+    private fun footSettled(now: Older) {
+        if (now == Older.Reading || now == Older.Loading || !readingShown) return
+        readingShown = false
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "first_pull", "outcome" to if (now == Older.Failed) "failed" else "read"))
+    }
     var session: Session? by mutableStateOf(null)                        // the open one, or none
         private set
     var sets: List<TrainingSet> by mutableStateOf(emptyList())           // its sets, performed order
@@ -776,7 +791,8 @@ class TrainingStore(
             logged = emptyList()
             shelved = emptyList()
             foot = Older.More
-            retriedAt = 0L
+            retried = null
+            readingShown = false
             deliveryRead = DeliveryRead()
             enginePendingSessions = emptySet()
             bodyweightRead = false
@@ -876,6 +892,7 @@ class TrainingStore(
         }
         scope.launch { engine.status.state.collect { refreshes.trySend(Unit) } }
         scope.launch { pulls.collect { pulled = it } }
+        scope.launch { snapshotFlow { older }.collect { footSettled(it) } }
         scope.launch { engine.notices("gym").notices.collect { refreshes.trySend(Unit) } }
         scope.launch { engine.offers.offers.collect { refreshes.trySend(Unit) } }
         for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))
@@ -1965,8 +1982,9 @@ class TrainingStore(
     // reads again until that pull ends.
     suspend fun retryLog() {
         val unread = logUnread
-        val asked = unread && pullAgain()
-        if (asked) retriedAt = pulls.value.ended
+        val before = pulls.value
+        val asked = unread && !before.blocked && pullAgain()
+        if (asked) retried = before
         loadOlder()
         val outcome = when {
             unread -> if (asked) "requested" else "refused"
@@ -2111,6 +2129,7 @@ class TrainingStore(
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.
         if (deeper.isEmpty()) foot = footAfter(rows)
+        else if (foot == Older.Reading && !logUnread) foot = Older.More
 
         val open = try { readTraining { training.openWorkout() } }
         catch (_: TrainingReadChanged) { return }

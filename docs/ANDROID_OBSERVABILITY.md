@@ -205,7 +205,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_coach_routine_confirm` | gym | `outcome`: `started`, `saved`, `refused`, `failed` |
 | `gym_import_recovery` | gym | `action`: `inspect`, `keep`, `retry`, `fix`, `discard`; `state`: `opened`, `started`, `shown`, `date_opened`, `time_opened`, `date_confirmed`, `time_confirmed`, `date_cancelled`, `time_cancelled`, `marked_finished`, `link_changed`, `set_opened`, `set_staged`, `set_removed`; `outcome`: `ok`, `completed`, `refused`, `failed`, `cancelled` |
 | `gym_note_moved` | gym | none |
-| `gym_proposal_missing` | gym | none. A proposal named by an answer the Coach room waited for has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account or landed a pull since the wait ended (the wait's end asks for one); once per proposal while the room stays composed |
+| `gym_proposal_missing` | gym | none. A proposal named by an answer the Coach room waited for has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account or a pull sent after the wait ended has landed caught up (the wait's end asks for one); once per proposal while the room stays composed |
 | `gym_proposal_outcome` | gym | `action`: `apply`, `dismiss`; `outcome`: `decided`, `moved`, `gone`, `settled`, `failed` |
 | `gym_proposal_receipt_shown` | gym | `outcome`: `applied` |
 | `gym_routine_saved` | gym | `action`: `create`, `update` |
@@ -226,7 +226,9 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 ### gym_action labels
 
 `GymActions` in `gym/telemetry/GymEvents.kt` is the allowlist. A row marked *asks first* also
-sends `state`: `shown` when its question opens.
+sends `state`: `shown` when its question opens. The log's `first_pull` sends `state`: `shown` when the
+reading bar shows before the first pull, then once `read` when the pull lands or `failed` when the
+foot turns to Retry.
 
 | Screen | Action | Outcomes | Asks first |
 |---|---|---|---|
@@ -250,6 +252,7 @@ sends `state`: `shown` when its question opens.
 | `finish` | `done` | `ok` | |
 | `finish` | `keep` | `ok` | |
 | `log` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
+| `log` | `first_pull` | `read`, `failed` | yes |
 | `log` | `open_bodyweight` | `ok` | |
 | `log` | `open_record` | `ok` | |
 | `log` | `open_workout` | `ok` | |

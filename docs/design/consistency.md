@@ -925,8 +925,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   drawn only for an unknown result (*Deletion unconfirmed*); Android still shows it while the
   confirmed closure waits for local cleanup, where it is no longer true. Designer to draw the
   subtitle for D4's state.
-- **11u · Before the first pull.** The log builds 05.18 (task 72): when the first pull fails, its
-  foot becomes **Retry** · *That read failed.*, which the caption names and no Android board draws.
+- **11u · Before the first pull.** The log builds 05.18 (task 72): when the first pull fails or none
+  can run (offline), its foot becomes **Retry** · *That read failed.*, which the caption names for a
+  failed pull and no Android board draws.
   A movement's record page before the first pull lists the days this phone holds under *Recent sets*
   (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands.
   - *Routines before the first pull (owner ruling, 2026-11-01).* Routines reads *No routines yet.*
@@ -961,8 +962,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11w · An answer's proposal still arriving (designer).** Coach can answer before its proposal
   reaches the phone; until the miss settles, Android draws nothing in the card's place
   (`coach/AskScreen.kt`), because no board draws a waiting state for it. A miss settles 10 s after it,
-  once the phone reads further into the account or lands a pull; the wait's end asks for one pull, so
-  an idle account settles too, and the place then reads *This proposal is no longer available.*
+  once the phone reads further into the account or a pull asked after its wait lands caught up; the
+  wait's end asks for that pull, so an idle account settles too, and the place then reads *This
+  proposal is no longer available.*
 
 ### Parity rulings (owner, 2026-10-22)
 
