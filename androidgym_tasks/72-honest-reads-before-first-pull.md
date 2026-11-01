@@ -13,6 +13,7 @@
 
 **Change**
 - **Log foot:** the designer gives the waiting state its own copy, for example "Reading your log…". File it in `docs/design/consistency.md` and build it once approved.
+- **Routines' empty line before the first pull:** Routines reads *No routines yet.* on an account it has not pulled. The owner decides what it shows while it waits (ledger 11u); build it once drawn.
 
 **Done when**
 - Before the first pull, the log's foot matches the approved 05.18.
