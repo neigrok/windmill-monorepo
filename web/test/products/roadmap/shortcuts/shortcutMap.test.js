@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyLabel, visibleGroups, keyHint, detectPlatform, graphOnlyKey, SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
+import { keyLabel, visibleGroups, keyHint, detectPlatform, graphOnlyKey, boardKey, SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
 
 test('keyLabel swaps the four platform keys on Windows', () => {
   assert.equal(keyLabel('⌘', 'windows'), 'Ctrl');
@@ -63,4 +63,43 @@ test('graphOnlyKey — select all, delete, the activity feed, Focus and All step
     [{ key: 'k', metaKey: true }, false],
   ];
   assert.deepEqual(keys.map(([event]) => graphOnlyKey(event)), keys.map(([, graphOnly]) => graphOnly));
+});
+
+test('boardKey — / finds and G switches, unmodified and never while typing in a field; ⌘K stays Ask AI', () => {
+  const keys = [
+    [{ key: '/' }, false, 'find'],
+    [{ key: 'g' }, false, 'switch'],
+    [{ key: 'G' }, false, 'switch'],
+    [{ key: '/' }, true, null],
+    [{ key: 'g' }, true, null],
+    [{ key: '/', metaKey: true }, false, null],
+    [{ key: 'g', ctrlKey: true }, false, null],
+    [{ key: 'g', altKey: true }, false, null],
+    [{ key: 'k', metaKey: true }, false, null],
+    [{ key: 'f' }, false, null],
+  ];
+  assert.deepEqual(keys.map(([event, typing]) => boardKey(event, { typing })), keys.map(([, , action]) => action));
+  assert.deepEqual([boardKey({ key: '/' }, { covered: true }), boardKey({ key: 'g' }, { covered: true })], [null, null]);
+});
+
+test('boardKey — Share open over the Board is a modal layer, so / and G stand aside while it is', async () => {
+  const { register } = await import('node:module');
+  register('../../../jsxLoader.mjs', import.meta.url);
+  const React = (await import('react')).default;
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { ShareDialog } = await import('../../../../src/products/roadmap/share/ShareDialog.jsx');
+  const [held, heldDocument] = [globalThis.window, globalThis.document];
+  globalThis.window = { location: { origin: 'https://windmill.works' } };
+  globalThis.document = { activeElement: null };
+  try {
+    const share = (open) => renderToStaticMarkup(React.createElement(ShareDialog, { open, treeId: 't_sail', visibility: 'public', mine: true, onClose() {} }));
+    const covered = (markup) => markup.includes('aria-modal="true"');
+    assert.deepEqual(
+      [true, false].map((open) => [boardKey({ key: '/' }, { covered: covered(share(open)) }), boardKey({ key: 'g' }, { covered: covered(share(open)) })]),
+      [[null, null], ['find', 'switch']],
+    );
+  } finally {
+    globalThis.window = held;
+    globalThis.document = heldDocument;
+  }
 });

@@ -23,6 +23,10 @@ import ViewPill from './list/ViewPill.jsx';
 import { SwitcherSheet } from './list/SwitcherSheet.jsx';
 import BoardView, { coverBeneath } from './board/BoardView.jsx';
 import { ViewSwitch } from './board/ViewSwitch.jsx';
+import { BoardQuery } from './board/Board.js';
+import { FindStep } from './board/BoardControls.jsx';
+import { StepDetail } from './board/StepDetail.jsx';
+import { useStepAddress, hashWithStep, stepIsStale } from './board/stepAddress.js';
 import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
@@ -31,7 +35,7 @@ import { markDoneTargets } from './selection/bulkSelection.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
-import { ShareDialog } from './share/ShareDialog.jsx';
+import { ShareDialog, treeShareUrl } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
@@ -73,7 +77,7 @@ import { TreeEditor } from './editing/TreeEditor.js';
 import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
-import { graphOnlyKey } from './shortcuts/shortcutMap.js';
+import { boardKey, graphOnlyKey } from './shortcuts/shortcutMap.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
@@ -350,6 +354,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [view, setView] = useState(null); // 'tree' | 'list' | 'board' | null when undecided
   const [boardCrashed, setBoardCrashed] = useState(false);
   const boardActiveRef = useRef(false);
+  const boardSwitchRef = useRef(null); // G's switch while the desktop offers one, else null
+  const [boardQuery, setBoardQuery] = useState(() => new BoardQuery()); // sort, kinds, search and branch, for this visit
+  const viewBranch = useCallback((id) => setBoardQuery((query) => query.inBranch(id)), []); // a step's View branch
+  const stepDetailOpenRef = useRef(false); // '/' and G wait while a step's page or modal is open
   const switchFocusRef = useRef(false);
   const [sheetHeld, setSheetHeld] = useState(false);
   const [coachAllowed, setCoachAllowed] = useState(false);
@@ -454,7 +462,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       const meta = event.metaKey || event.ctrlKey;
       const target = event.target;
       const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
-      if ((event.key.toLowerCase() === 'k' && meta) || (event.key === '/' && !meta && !typing)) {
+      if ((event.key.toLowerCase() === 'k' && meta) || (event.key === '/' && !meta && !typing && !boardActiveRef.current)) {
         event.preventDefault();
         setTendOpen((open) => !open);
       }
@@ -875,6 +883,20 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
       const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
+      const covered = stepDetailOpenRef.current || composerOpenRef.current || document.querySelector('[aria-modal="true"]') !== null;
+      const boardAction = boardKey(event, { typing, covered });
+      if (boardAction === 'find' && boardActiveRef.current) {
+        const find = rootRef.current?.querySelector('.st-board-find-input');
+        if (!find) return;
+        event.preventDefault();
+        find.focus();
+        return;
+      }
+      if (boardAction === 'switch' && boardSwitchRef.current) {
+        event.preventDefault();
+        boardSwitchRef.current();
+        return;
+      }
       if (event.key === 'a' && plainKey) {
         event.preventDefault();
         toggleActivity();
@@ -1236,8 +1258,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The initial view is decided ONCE, the moment the tree is ready: on phones, and on every band while the Board is open.
   const phone = breakpoint === 'phone';
   const owner = treeMine && !shared && !demo && !demotion;
+  const stepAddress = useStepAddress();
   if (view === null && (phone || BOARD_OPEN) && tree) {
-    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN }));
+    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id }));
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
@@ -1246,7 +1269,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // Until the tree arrives, the Board's skeleton or load error stands where the Board would open: the saved choice, or
   // the owner's default anywhere but a share or the demo.
   const openingView = view ?? (BOARD_OPEN && !tree
-    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, empty: false, born: peekBorn(treeId), boardOpen: true })
+    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, empty: false, born: peekBorn(treeId), boardOpen: true, linkedStep: stepAddress.id })
     : null);
   const boardFacts = {
     crashed: boardCrashed,
@@ -1311,11 +1334,58 @@ export function SkillTreeView({ treeId, demo = false }) {
     else handleNextUpAddStep();
   }, [handleCreateRoot, handleNextUpAddStep]);
 
-  const handleBoardCrash = useCallback(() => {
-    captureError('roadmap', 'roadmap-board', '', '#/app');
+  const handleBoardCrash = useCallback((error) => {
+    captureError('roadmap', 'roadmap-board', error?.stack ?? '', '#/app');
     setBoardCrashed(true);
     setView('tree');
   }, []);
+
+  // A card opens its step: the modal from 744px, the pushed page below. The step rides the URL, so a link lands on it and
+  // Back leaves it; selection follows the open step and, on close, returns to the card the visit began on.
+  const detailId = boardActive && tree && stepAddress.id !== null && tree.nodesById.has(stepAddress.id) ? stepAddress.id : null;
+  stepDetailOpenRef.current = detailId !== null;
+  // A step the loaded roadmap no longer holds (deleted here or elsewhere, or a stale link) leaves the URL, so restoring
+  // it later never reopens it.
+  const staleStep = stepIsStale({ boardOpen: BOARD_OPEN, loading, tree, treeId, stepId: stepAddress.id });
+  useEffect(() => {
+    if (staleStep) stepAddress.drop();
+  }, [staleStep, stepAddress.drop]);
+  useEffect(() => {
+    if (detailId !== null) setSelectedId(detailId);
+  }, [detailId, setSelectedId]);
+  const openStepFromBoard = useCallback((id) => {
+    setSelectedId(id);
+    stepAddress.open(id, 'card');
+  }, [setSelectedId, stepAddress.open]);
+  const closeStep = () => {
+    const origin = stepAddress.trail[0];
+    stepAddress.close();
+    if (origin && nodesById.has(origin)) setSelectedId(origin);
+  };
+  const openStepInGraph = (id) => {
+    stepAddress.close();
+    setSelectedId(id);
+    switchView('tree');
+    sceneRef.current?.revealNode(id);
+  };
+  const viewBranchFromDetail = (id) => {
+    stepAddress.close();
+    viewBranch(id);
+  };
+  const deleteStepFromDetail = (id) => {
+    stepAddress.close();
+    deleteNodeAt(id);
+  };
+  const handleStepCrash = (error) => {
+    captureError('roadmap', 'roadmap-board-step', error?.stack ?? '', '#/app');
+    stepAddress.close();
+    requestAnimationFrame(() => {
+      const stops = boardLayerRef.current?.querySelectorAll('[data-column] [tabindex="0"], [data-column][tabindex="0"]') ?? [];
+      [...stops].find((element) => element.getClientRects().length > 0)?.focus();
+    });
+  };
+  // A step's link opens for anyone only where the roadmap itself does: public or unlisted, on the server.
+  const stepShareUrl = !demo && (treeVisibility === 'public' || treeVisibility === 'unlisted') ? treeShareUrl(treeId) : null;
 
   useEffect(() => {
     if (!switcherOpen) return undefined;
@@ -1460,7 +1530,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
   }
 
-  function completeStep(id) {
+  // `quiet` is the step page and modal's door: they say the outcome in place, so no ceremony or milestone toast speaks.
+  function completeStep(id, { quiet = false } = {}) {
     const node = nodesById.get(id);
     const next = advanceProgress({ completed, completedAt }, [id], 'complete', Date.now());
     setCompleted(next.completed);
@@ -1473,6 +1544,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       const unlocked = nodesById.get(otherId);
       emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
+    if (quiet) return;
     const opened = changes.unlocked.length;
     const label = node?.label?.trim() || 'Step';
     const stepSummary = demo && id === COACHED_NODE_ID
@@ -1526,6 +1598,16 @@ export function SkillTreeView({ treeId, demo = false }) {
     setCompletedAt(next.completedAt);
     witnessProgress(next);
     pushProgress(id, 'none');
+  }
+
+  // The step page and modal's Undo: the step's mark goes back as it was, with no ceremony and no activity. Its completion
+  // time cannot: the progress lattice dates every mark it sends, so an Undo of Reset completes the step at the Undo's time.
+  function restoreStep(id, snapshot) {
+    const next = advanceProgress({ completed, completedAt }, [id], snapshot.completed.has(id) ? 'complete' : 'none', Date.now());
+    setCompleted(next.completed);
+    setCompletedAt(next.completedAt);
+    witnessProgress(next);
+    pushProgress(id, next.completed.has(id) ? 'complete' : 'none');
   }
 
   // A viewer keeps the owner's displayed progress; every owner surface adopts its private lane.
@@ -1610,6 +1692,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const boardAwaitsRoadmap = boardActive && !boardFacts.loaded;
   const viewSwitch = boardAvailable && !(boardActive && loadError)
     ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} />
+    : null;
+  // G switches on the desktop wherever a switch is shown: the editor's topbar, or the Board's identity row for a reader.
+  boardSwitchRef.current = breakpoint === 'desktop' && viewSwitch && !readOnly
+    ? () => switchView(boardActive ? 'tree' : 'board')
     : null;
   // The Board carries its switch in its identity row; the Graph's rides the topbar, or the lane on phones and tablets.
   const lanePill = BOARD_OPEN
@@ -1746,7 +1832,8 @@ export function SkillTreeView({ treeId, demo = false }) {
               loading={loading}
               failed={loadError}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={openStepFromBoard}
+              onAnchor={setSelectedId}
               title={tree?.title}
               notice={deviceNotice}
               identity={readOnly}
@@ -1758,9 +1845,41 @@ export function SkillTreeView({ treeId, demo = false }) {
               onRetry={retryLoad}
               onShare={owner ? () => setShareOpen(true) : undefined}
               onNewStep={owner ? newStepFromBoard : undefined}
+              query={boardQuery}
+              onQuery={setBoardQuery}
+              legend={legend}
             />
           </ErrorBoundary>
         </div>
+      )}
+
+      {detailId !== null && (
+        <ErrorBoundary fallback={null} onCrash={handleStepCrash}>
+          <StepDetail
+            tree={tree}
+            completed={completed}
+            completedAt={completedAt}
+            address={stepAddress}
+            breakpoint={breakpoint}
+            roadmapTitle={tree.title}
+            editable={owner}
+            deletable={detailId !== singleRootId}
+            stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
+            workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
+            workspaceActions={{ onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }}
+            history={selectedHistory}
+            onOpenStep={(id) => stepAddress.open(id, 'step')}
+            onBack={stepAddress.back}
+            onClose={closeStep}
+            onComplete={(id) => completeStep(id, { quiet: true })}
+            onReset={resetStep}
+            onRestore={restoreStep}
+            onOpenInGraph={openStepInGraph}
+            onViewBranch={viewBranchFromDetail}
+            onDelete={deleteStepFromDetail}
+            onNotify={showToast}
+          />
+        </ErrorBoundary>
       )}
 
       {readOnly ? (
@@ -1798,6 +1917,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onFocus={handleFocus}
           onShowAll={handleShowAll}
           viewSwitch={viewSwitch}
+          find={boardActive && boardFacts.loaded && !boardFacts.empty ? <FindStep query={boardQuery} onQuery={setBoardQuery} /> : null}
           board={boardActive}
           onBottom={BOARD_OPEN ? setTopbarBottom : undefined}
           onShare={boardAwaitsRoadmap ? undefined : () => setShareOpen(true)}

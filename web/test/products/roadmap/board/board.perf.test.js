@@ -19,7 +19,7 @@ test('Board — a 5,000-step lattice with 1,800 steps unfinished builds in under
 
   const timings = Array.from({ length: 5 }, (_, run) => {
     const started = performance.now();
-    const board = new Board(tree, progress, { query: run % 2 === 0 ? '' : 'step 4' });
+    const board = new Board(tree, progress, { search: run % 2 === 0 ? '' : 'step 4' });
     const elapsed = performance.now() - started;
     assert.equal(board.overall.total, 5000);
     return elapsed;

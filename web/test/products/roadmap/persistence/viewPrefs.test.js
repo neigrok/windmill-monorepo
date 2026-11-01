@@ -83,6 +83,15 @@ test('ViewPrefs — a throwing storage never throws and reads as empty', () => {
   assert.equal(prefs.lastView('t1'), null);
 });
 
+test('initialView — a step link opens the Board for owner and visitor alike while the Board is open, and nothing while it is closed', () => {
+  assert.deepEqual([
+    initialView({ saved: 'tree', owner: true, empty: false, boardOpen: true, linkedStep: 'wind' }),
+    initialView({ saved: null, owner: false, empty: false, boardOpen: true, linkedStep: 'wind' }),
+    initialView({ saved: null, owner: false, empty: false, boardOpen: false, linkedStep: 'wind' }),
+    initialView({ saved: null, owner: false, empty: false, born: true, boardOpen: true, linkedStep: 'wind' }),
+  ], ['board', 'board', 'tree', 'tree']);
+});
+
 test('initialView — an empty tree always opens as the bud canvas, saved choice notwithstanding', () => {
   assert.equal(initialView({ saved: 'list', owner: true, empty: true }), 'tree');
   assert.equal(initialView({ saved: 'tree', owner: false, empty: true }), 'tree');

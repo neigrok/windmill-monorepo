@@ -27,7 +27,26 @@ the List's place, owners open on the Board and visitors on the Graph, and the se
 across. The desktop editor's topbar carries the Board/Graph switch on both views; elsewhere the Board's
 identity row carries it, and the Graph's rides the action lane on phones and tablets. A desktop
 visitor's Graph has no switch yet. While the Board stands in for a roadmap that has not loaded, the topbar names
-none and offers no Share, and after a failed load it offers no switch. Graph keyboard shortcuts do not act on the Board.
+none and offers no Share, and after a failed load it offers no switch. Graph keyboard shortcuts do not act on the Board;
+`/` focuses *Find a step* there instead of opening Ask AI, which keeps ⌘K, and on the desktop editor, where both views
+carry the switch, G switches Board and Graph (`boardKey` in `shortcuts/shortcutMap.js`). Neither acts while typing in a
+field or while a modal layer covers the Board: a step open over it, a dialog or the composer.
+
+`SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
+branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`
+scopes the Board to a step, every ancestor and every descendant; availability and progress still read the whole roadmap.
+Kinds narrow only among the kinds a roadmap wears (`kindOptions` in `model/Legend.js`), so a roadmap wearing one kind
+shows no filter and a kind with no control left hides nothing. From 744px a strip over the columns holds the branch
+scope, All and one named swatch per kind, and the sort menu (Roadmap order, or Created newest or oldest, for Locked and
+Up next; Done keeps its newest completions); *Find a step* rides the desktop editor's topbar and the identity row
+elsewhere (`board/BoardControls.jsx`). On phones the band's first row adds Sort beside the tabs and its second holds
+*Find a step* and Filter, each of Sort and Filter opening a sheet; the branch scope and a removable chip per kind on and
+for a non-default order sit over the panes, and Sort and Filter wear a dot while they narrow. A branch scope opens its
+step's column, and its title selects that step and brings its card into view without opening it. All also drops a kind
+no swatch offers any more, so it cannot come back on its own. A column the query emptied
+names its way out: *Clear search*, *Clear filters* (the kinds; the branch clears only on its own) or *Clear both*; from
+744px, when every column is empty, only Up next says so. A control the query took away hands focus to the columns' tab
+stop.
 
 From 1024px the Board stands Locked, Up next and Done side by side, each column scrolling under its
 sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures while
@@ -53,12 +72,36 @@ rail's Show. Tab enters on the stop last focused while it still stands, else the
 held (Up next's before the others'), else the first Up next card, else the first stop of any column. Up and
 Down move within a column, Home and End to its ends, and Left and Right to the neighbouring column's
 stop at the nearest height, skipping an empty column; a rail offers only its Show. Enter is the stop's
-own button, so a card selects its step. A focused stop that unmounts hands focus to the new stop, and
+own button, so a card opens its step. A focused stop that unmounts hands focus to the new stop, and
 after Try again focus rests on the skeleton until the roadmap loads. On phones each pane is one tab stop
 of its own with the same Up, Down, Home and End, and the tabs keep their own arrow keys. A step that
 becomes up next, or a new step that is not done, wakes once while the Board stays mounted (`arrivals` in
 `Board.js`); reduced motion fades it in, and focus landing on it ends the wake. While hidden the Board
 skips the host's renders and catches up when shown, so a step that arrived meanwhile wakes then.
+
+A card opens its step (`StepDetail.jsx`): from 744px a modal over the scrimmed roadmap, 760px wide and 24px in from the
+window below that; below 744px a page pushed over the Board, which stays mounted beneath it with its pane and scroll.
+Crossing 744px swaps the frame inside the same layer. The open step rides the hash as `?step=<id>` (`stepAddress.js`).
+Each step opened from a card or from another step is a history entry, so Back steps out one step at a time and the page's
+back row names the screen it returns to; closing pops the whole visit, and a link lands owner and visitor alike on the
+Board with that step open. A view reads a step only on its own roadmap's route, and once that roadmap has loaded without
+the step, the step leaves the URL in place, so restoring it reopens nothing; with the gate closed the URL is never
+touched. While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape, wherever focus is,
+closes the modal or steps the page back. When the element holding focus gives way (an action replaced, Undo expiring, a
+workspace edit ending) focus lands on the status row, or the dialog where there is none. Closing returns focus to the card
+the visit began on, or to the columns' tab stop once that card has gone (deleted, or outside the branch View branch
+scoped). `StepFacts.js` reads the step off the
+whole roadmap, whatever the Board filters: its column, its prerequisites and the steps it unlocks with their columns, what
+Complete would open and how many steps Reset would lock. Complete and Reset act in place through the Graph's progress
+writes and toast nothing: the status row flips with an inline Undo for six seconds and a line names what moved, and
+hovering or focusing Reset previews what it returns to Locked. Undo puts back the step's mark with no ceremony or activity, but not its completion
+time: the progress lattice dates every mark it sends, so an Undo of Reset completes the step at the Undo's time and it
+heads Done. On the Workspace section, a step whose every subtask is checked offers Complete step, which returns to
+the overview's status row; subtasks never complete it. The ⋯ menu copies the step's link (the roadmap's share address
+plus its step) only while the roadmap is public or unlisted, opens the step in the Graph, and for the owner deletes it
+through the Graph's delete with its Undo toast.
+The owner's up next and done steps offer View branch, which closes the step and scopes the Board to its branch. A
+visitor gets the overview and the menu without Delete. The detail offers no Edit step yet.
 
 The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
 would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap
@@ -77,7 +120,7 @@ saved view.
 | Area | Responsibility |
 |---|---|
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. |
-| `board/` | The Board view behind its development gate: derived columns, cards, the Board/Graph switch and every Board string. |
+| `board/` | The Board view behind its development gate: derived columns, cards, find, filter, sort and branch scope, the step page and modal, the Board/Graph switch and every Board string. |
 | `layout/` | Deterministic layout engines behind `index.js`. |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |

@@ -3,6 +3,11 @@ import { Dialog, Button } from '../../../design-system';
 import { setVisibility } from '../persistence/TreeRegistry.js';
 import { track } from '../../../telemetry/beacon.js';
 
+// A roadmap's public address, or null for one with no id yet; a step's link adds its `?step=` to this.
+export function treeShareUrl(treeId) {
+  return treeId && treeId !== 'new' ? `${window.location.origin}/t/${treeId}` : null;
+}
+
 export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -10,7 +15,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
   const pending = useRef(false);
   const mounted = useRef(false);
   const urlRef = useRef(null);
-  const shareUrl = treeId && treeId !== 'new' ? `${window.location.origin}/t/${treeId}` : null;
+  const shareUrl = treeShareUrl(treeId);
   const reachable = visibility === 'public' || visibility === 'unlisted';
   const publish = mine && visibility !== 'public';
 

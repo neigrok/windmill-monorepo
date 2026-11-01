@@ -86,7 +86,14 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView, { coverBeneath } from '/src/products/roadmap/board/BoardView.jsx';
+import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
+
+const legend = [
+  { id: 'build', hue: 'terracotta', label: 'Build' },
+  { id: 'learn', hue: 'olive', label: 'Learn' },
+  { id: 'milestone', hue: 'gold', label: 'Milestone' },
+];
 
 window.openBoard = (nodes, completed, breakpoint) => {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
@@ -94,14 +101,17 @@ window.openBoard = (nodes, completed, breakpoint) => {
   function Room() {
     const [selectedId, setSelectedId] = useState(null);
     const [active, setActive] = useState(true);
+    const [query, setQuery] = useState(() => new BoardQuery());
     window.setActive = setActive;
     window.selectElsewhere = setSelectedId;
+    window.viewBranch = (id) => setQuery((current) => current.inBranch(id));
     const edge = (label, side) => React.createElement('button', { type: 'button', style: { position: 'fixed', [side]: 0, left: 0 } }, label);
     return React.createElement(React.Fragment, null,
       edge('Before the Board', 'top'),
       React.createElement('div', { className: 'st-view-layer--board' + (active ? ' is-active' : ''), style: { height: '100vh' } },
-        React.createElement(BoardView, { tree, completed: new Set(completed), completedAt, selectedId, onSelect: setSelectedId,
-          breakpoint, active, onSwitchView: () => {} })),
+        React.createElement(BoardView, { tree, completed: new Set(completed), completedAt, selectedId, onSelect: setSelectedId, onAnchor: setSelectedId,
+          breakpoint, active, onSwitchView: () => {}, query, onQuery: setQuery, legend, identity: true,
+          title: 'Learn to sail' })),
       edge('After the Board', 'bottom'));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
@@ -160,15 +170,16 @@ after(async () => {
   try { await ready; } finally { await browser?.close(); await server?.close(); }
 });
 
+const imported = Date.parse('2026-10-20T09:00:00Z');
 const learnToSailNodes = [
-  { id: 'course', label: 'Choose a sailing course', prerequisites: [], color: 'terracotta' },
-  { id: 'parts', label: 'Name the boat parts', prerequisites: ['course'], color: 'sky' },
-  { id: 'rig', label: 'Rig the boat', prerequisites: ['parts'], color: 'terracotta' },
-  { id: 'bowline', label: 'Tie a bowline', prerequisites: ['parts'], color: 'olive' },
-  { id: 'wind', label: 'Read the wind', prerequisites: ['parts'], color: 'sky' },
-  { id: 'dock', label: 'Leave the dock', prerequisites: ['rig', 'wind'], color: 'terracotta' },
-  { id: 'triangle', label: 'Sail a triangle', prerequisites: ['dock'], color: 'olive' },
-  { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
+  { id: 'course', label: 'Choose a sailing course', prerequisites: [], color: 'terracotta', createdMs: imported },
+  { id: 'parts', label: 'Name the boat parts', prerequisites: ['course'], color: 'sky', createdMs: imported },
+  { id: 'rig', label: 'Rig the boat', prerequisites: ['parts'], color: 'terracotta', createdMs: imported },
+  { id: 'bowline', label: 'Tie a bowline', prerequisites: ['parts'], color: 'olive', createdMs: Date.parse('2026-10-22T10:00:00Z') },
+  { id: 'wind', label: 'Read the wind', prerequisites: ['parts'], color: 'sky', createdMs: Date.parse('2026-10-21T10:00:00Z') },
+  { id: 'dock', label: 'Leave the dock', prerequisites: ['rig', 'wind'], color: 'terracotta', createdMs: imported },
+  { id: 'triangle', label: 'Sail a triangle', prerequisites: ['dock'], color: 'olive', createdMs: imported },
+  { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold', createdMs: imported },
 ];
 
 async function openBoardPage(viewport, breakpoint, errors) {
@@ -222,12 +233,12 @@ test('Chromium: a step selected in the rail column stands it when the Board is s
   }
 });
 
-test('Chromium: tabbing into the columns from either side lands on the first Up next card', async () => {
+test('Chromium: tabbing into the columns from either side — past the strip, or back from below — lands on the first Up next card', async () => {
   await ready;
   const errors = [];
   const page = await openBoardPage({ width: 1440, height: 900 }, 'desktop', errors);
   try {
-    await page.getByRole('button', { name: 'Before the Board' }).focus();
+    await page.getByRole('button', { name: 'Roadmap order' }).focus();
     await page.keyboard.press('Tab');
     assert.equal(await focused(page), 'Read the wind');
     await page.getByRole('button', { name: 'After the Board' }).focus();

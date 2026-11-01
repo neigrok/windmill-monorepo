@@ -1,0 +1,421 @@
+/* The step layer and the body both its frames share: identity, status, relations, sections, actions, the subtask offer and the ⋯ menu. */
+
+.st-board-step-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 45; /* over the Board, the topbar and the mobile chrome; under the z-50 toast, which still speaks from here */
+  font-family: var(--font-body);
+}
+
+.st-board-step-layer [role="dialog"]:focus,
+.st-board-step-status:focus {
+  outline: none;
+}
+.st-board-step-layer button:focus-visible,
+.st-board-step-layer a:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.st-board-step-icon-button {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.st-board-step-icon-button:hover,
+.st-board-step-icon-button[aria-expanded="true"] {
+  background: var(--color-brand-soft);
+}
+
+/* ---- Identity: the kind rail inset 4px top and bottom, and the full title, wrapping. ---- */
+.st-board-step-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+.st-board-step-identity-rail {
+  flex-shrink: 0;
+  width: 4px;
+  margin: 4px 0;
+  border-radius: 2px;
+  background: var(--st-board-step-rail);
+}
+.st-board-step-identity-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 32px;
+  line-height: 40px;
+  color: var(--text-primary);
+}
+
+.st-board-step-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.st-board-step-description {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+/* ---- Status: glyph, the column, Undo for the hold window, and the line naming what moved. ---- */
+.st-board-step-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+.st-board-step-status-glyph {
+  display: inline-flex;
+  color: var(--text-primary);
+}
+.st-board-step-status--locked .st-board-step-status-glyph,
+.st-board-step-status--locked .st-board-step-status-label {
+  color: var(--text-secondary);
+}
+.st-board-step-status-label {
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+}
+.st-board-step-status-dot {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.st-board-step-undo {
+  min-height: 44px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-brand);
+  cursor: pointer;
+}
+.st-board-step-outcome {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 19px;
+  color: var(--text-secondary);
+}
+.st-board-step-outcome:empty {
+  display: none;
+}
+
+/* ---- Step links, prerequisites and unlocks. ---- */
+.st-board-step-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+}
+.st-board-step-heading > span:first-child {
+  flex: 1;
+}
+.st-board-step-heading-count {
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 19px;
+  color: var(--text-secondary);
+}
+.st-board-step-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.st-board-step-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  text-decoration: none;
+  color: var(--color-brand);
+}
+.st-board-step-link-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+}
+.st-board-step-relations {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-default);
+}
+.st-board-step-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-family: var(--font-body);
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.st-board-step-row-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-board-step-row-glyph--done {
+  color: var(--color-success);
+}
+.st-board-step-row-glyph--upNext {
+  color: var(--text-primary);
+}
+.st-board-step-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 24px;
+}
+.st-board-step-row-state {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+.st-board-step-row-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+/* ---- Sections: three equal tabs on the sunken track, the shown one on the card surface. ---- */
+.st-board-step-sections {
+  display: flex;
+  flex-shrink: 0;
+  height: 44px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.st-board-step-section {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-1);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.st-board-step-section:focus-visible {
+  outline-offset: -2px;
+}
+.st-board-step-section-surface {
+  flex: 1;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.st-board-step-section[aria-selected="true"] .st-board-step-section-surface {
+  background: var(--surface-card);
+}
+
+.st-board-step-history {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Actions: Complete is the primary, Reset the secondary; the preview names what Reset would return. ---- */
+.st-board-step-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.st-board-step-action {
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 24px;
+  cursor: pointer;
+}
+.st-board-step-action--primary {
+  border: 1px solid transparent;
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-sm);
+}
+.st-board-step-action--primary:hover {
+  background: var(--color-brand-hover);
+}
+.st-board-step-action--secondary {
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
+}
+.st-board-step-action--secondary:hover {
+  background: var(--surface-hover);
+}
+.st-board-step-preview {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+
+/* ---- All subtasks done: one tap away from Complete, never automatic. ---- */
+.st-board-step-offer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 4px 0 12px;
+  border-radius: 14px;
+  background: var(--color-brand-soft);
+}
+.st-board-step-offer-glyph {
+  display: inline-flex;
+  color: var(--color-success);
+}
+.st-board-step-offer-body {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+}
+.st-board-step-offer-action {
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-brand);
+  cursor: pointer;
+}
+
+/* ---- The ⋯ popover. ---- */
+.st-board-step-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.st-board-step-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 262px;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+}
+.st-board-step-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.st-board-step-menu-item svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-board-step-menu-item:hover,
+.st-board-step-menu-item:focus-visible {
+  background: var(--surface-hover);
+}
+.st-board-step-menu-item--danger,
+.st-board-step-menu-item--danger svg {
+  color: var(--color-danger);
+}
+
+/* ---- View branch: the Board scoped to this step, its ancestors and descendants. ---- */
+.st-board-step-explore {
+  display: flex;
+  justify-content: flex-end;
+}
+.st-board-step-view-branch {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.st-board-step-view-branch:hover {
+  background: var(--surface-hover);
+}

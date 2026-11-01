@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
-import { Board, BOARD_SORTS, DONE_RECENT_LIMIT, arrivals } from '../../../../src/products/roadmap/board/Board.js';
+import { Board, BoardQuery, BOARD_SORTS, DONE_RECENT_LIMIT, arrivals } from '../../../../src/products/roadmap/board/Board.js';
 
 function learnToSail(extra = []) {
   const imported = Date.parse('2026-10-20T09:00:00Z');
@@ -224,7 +224,7 @@ test('Board — an unpainted step wears the default hue under the filter', () =>
 test('Board — search matches a title or a description, ignoring case, and composes with the filter', () => {
   const tree = learnToSail();
 
-  assert.equal(render(new Board(tree, initialProgress(), { query: '  BOAT ' })), [
+  assert.equal(render(new Board(tree, initialProgress(), { search: '  BOAT ' })), [
     'locked 0',
     'upNext 0',
     'done 2',
@@ -232,21 +232,21 @@ test('Board — search matches a title or a description, ignoring case, and comp
     '  Name the boat parts',
     'progress 3/8',
   ].join('\n'));
-  assert.equal(render(new Board(tree, initialProgress(), { query: 'Rudder' })), [
+  assert.equal(render(new Board(tree, initialProgress(), { search: 'Rudder' })), [
     'locked 0',
     'upNext 0',
     'done 1',
     '  Name the boat parts',
     'progress 3/8',
   ].join('\n'));
-  assert.equal(render(new Board(tree, initialProgress(), { query: 'boat', kinds: ['sky'] })), [
+  assert.equal(render(new Board(tree, initialProgress(), { search: 'boat', kinds: ['sky'] })), [
     'locked 0',
     'upNext 0',
     'done 1',
     '  Name the boat parts',
     'progress 3/8',
   ].join('\n'));
-  assert.equal(render(new Board(tree, initialProgress(), { query: 'astronomy' })), [
+  assert.equal(render(new Board(tree, initialProgress(), { search: 'astronomy' })), [
     'locked 0',
     'upNext 0',
     'done 0',
@@ -276,7 +276,7 @@ test('Board — the Read the wind branch holds six steps and still reads status 
 test('Board — filter and search intersect the branch; a vanished anchor scopes nothing', () => {
   const tree = learnToSail();
 
-  assert.equal(render(new Board(tree, initialProgress(), { branch: 'wind', query: 'sail', kinds: ['terracotta', 'gold'] })), [
+  assert.equal(render(new Board(tree, initialProgress(), { branch: 'wind', search: 'sail', kinds: ['terracotta', 'gold'] })), [
     'locked 1',
     '  Sail solo · needs Sail a triangle +1 · 4 to go',
     'upNext 0',
@@ -412,4 +412,52 @@ test('Board — an unknown sort is refused, and columnOf reads the whole roadmap
 
   assert.throws(() => new Board(tree, initialProgress(), { sort: 'unlocked' }), { message: 'Unknown board sort "unlocked"' });
   assert.deepEqual(['course', 'wind', 'dock', 'gone'].map((id) => board.columnOf(id)), ['done', 'upNext', 'locked', null]);
+});
+
+// A query as one line: what narrows it, the way out an emptied column names, and the order in force.
+function describe(query) {
+  return `sort ${query.sort} · kinds [${query.kinds.join(', ')}] · search "${query.search}" · branch ${query.branch} · recovery ${query.recovery}`;
+}
+
+test('BoardQuery — each change returns a new query; clearing filters takes the kinds and the search and leaves the branch', () => {
+  const start = new BoardQuery();
+  const narrowed = start.sortedBy('newest').toggledKind('sky').toggledKind('gold').searchingFor(' wind').inBranch('wind');
+
+  assert.deepEqual([start, narrowed.toggledKind('sky'), narrowed, narrowed.without('search'), narrowed.without('kinds'),
+    narrowed.without('both'), narrowed.without('sort'), narrowed.without('branch'), start.inBranch('wind')].map(describe), [
+    'sort roadmap · kinds [] · search "" · branch null · recovery null',
+    'sort newest · kinds [gold] · search " wind" · branch wind · recovery both',
+    'sort newest · kinds [sky, gold] · search " wind" · branch wind · recovery both',
+    'sort newest · kinds [sky, gold] · search "" · branch wind · recovery kinds',
+    'sort newest · kinds [] · search " wind" · branch wind · recovery search',
+    'sort newest · kinds [] · search "" · branch wind · recovery null',
+    'sort roadmap · kinds [sky, gold] · search " wind" · branch wind · recovery both',
+    'sort newest · kinds [sky, gold] · search " wind" · branch null · recovery both',
+    'sort roadmap · kinds [] · search "" · branch wind · recovery null',
+  ]);
+  assert.equal(start.searchingFor('   ').recovery, null);
+  assert.ok(Object.isFrozen(narrowed));
+  assert.throws(() => start.sortedBy('unlocked'), /Unknown board sort "unlocked"/);
+  assert.throws(() => start.without('everything'), /Unknown board query part "everything"/);
+});
+
+test('BoardQuery — kinds narrow only among the hues a filter offers, so a kind with no control left hides nothing', () => {
+  const query = new BoardQuery({ kinds: ['sky', 'plum'] });
+
+  assert.equal(query.among(['sky', 'plum', 'gold']), query);
+  assert.deepEqual(query.among(['sky', 'gold']).kinds, ['sky']);
+  assert.deepEqual(query.among([]).kinds, []);
+});
+
+test('Board — a query builds the Board: Created · newest orders Locked and Up next, Done keeps its newest completions', () => {
+  assert.equal(render(new Board(learnToSail(), initialProgress(), new BoardQuery().sortedBy('newest').toggledKind('sky').toggledKind('olive'))), [
+    'locked 1',
+    '  Sail a triangle · needs Leave the dock +0 · 2 to go',
+    'upNext 2',
+    '  Tie a bowline',
+    '  Read the wind · unlocks Leave the dock +0',
+    'done 1',
+    '  Name the boat parts',
+    'progress 3/8',
+  ].join('\n'));
 });
