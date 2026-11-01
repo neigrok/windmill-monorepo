@@ -55,6 +55,7 @@ class RoutineEditorTests {
                 onSave = {},
                 onClose = {},
                 say = {},
+                backTo = "Routines",
             )
         }
         return { draft }
@@ -375,23 +376,26 @@ class RoutineEditorTests {
         assertEquals("Pull Day", typedName())
         handle("Move Back Squat, 1 of 2").assertExists()
         handle("Move Bench Press, 2 of 2").assertExists()
-        compose.onNodeWithContentDescription("Back to the routine you were on").performClick()
+        compose.onNodeWithContentDescription("Back to Pull").performClick()
         compose.onNodeWithText("Discard routine changes?").assertIsDisplayed()
         compose.onNodeWithText("Keep editing").performClick()
         editorTitle("Edit routine").assertExists()
         assertEquals(listOf("shown", "cancelled", "shown", "cancelled"), actions.map { it["state"] ?: it.getValue("outcome") })
     }
 
-    @Test fun backOnACleanDraftLeavesWithoutAsking() = room(
+    // Back's description names where it goes: the list a new routine was opened from, the routine an edit came from.
+    @Test fun backOnACleanDraftLeavesWithoutAskingAndSaysWhereItGoes() = room(
         saved = RoutineDraft(name = "Pull", creationId = "routine_pull").adding("bench-press"),
     ) { back, _, actions ->
         compose.onNodeWithContentDescription("New routine").performClick()
         editorTitle("New routine").assertExists()
+        compose.onNodeWithContentDescription("Back to Routines").assertIsDisplayed()
         back()
         editorTitle("New routine").assertDoesNotExist()
         compose.onNodeWithText("Pull").performClick()
         compose.onNodeWithText("Edit routine").performClick()
         editorTitle("Edit routine").assertExists()
+        compose.onNodeWithContentDescription("Back to Pull").assertIsDisplayed()
         back()
         editorTitle("Edit routine").assertDoesNotExist()
         compose.onNodeWithText("Start workout").assertIsDisplayed()

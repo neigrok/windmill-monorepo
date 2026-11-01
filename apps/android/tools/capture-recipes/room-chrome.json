@@ -100,7 +100,7 @@
     ],
     "after": [
       {
-        "tap": "Back to the routine you were on"
+        "tap": "Back to Push A"
       },
       {
         "wait": "Start workout"

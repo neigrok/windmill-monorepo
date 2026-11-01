@@ -148,7 +148,7 @@ class HiddenWorkoutTests {
         compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("-")
         compose.onNodeWithContentDescription("Hide workout").performClick()
         compose.onNodeWithContentDescription("${Readout.noRoutine}, in progress").performClick()
-        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("Load", "kg total", "−")
+        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("−")
         compose.runOnIdle {
             assertEquals(92.5, phone.store.rack!!.weightKg, 0.0)
             assertEquals(7, phone.store.rack!!.reps)

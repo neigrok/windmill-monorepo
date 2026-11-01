@@ -60,9 +60,11 @@ import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextStyle
@@ -269,7 +271,9 @@ fun NumberStepper(
                         editor = accepted
                         if (accepted.text != previous.text) onValueChange(accepted.text)
                     }, Modifier.semantics {
-                        contentDescription = "$label, $unit"
+                        // The label once and the unit only when it adds to it: "Sets", "Load, kg total". TalkBack
+                        // reads the typed value from the field itself, so the drawn label and unit stay silent.
+                        contentDescription = if (unit.equals(label, ignoreCase = true)) label else "$label, $unit"
                         refusal?.let { error(it) }
                         customActions = listOf(
                             CustomAccessibilityAction("Decrease") { step(NumberStep.Decrease) },
@@ -299,7 +303,7 @@ fun NumberStepper(
                                 Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp,
                                     bottom = if (display && fieldLayout == NumberFieldLayout.Inline) 4.dp else 8.dp)) {
                                     Text(label, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp),
-                                        color = if (focused || flash) skin.accent else skin.inkDim)
+                                        color = if (focused || flash) skin.accent else skin.inkDim, modifier = Modifier.clearAndSetSemantics { testTag = "stepper-label" })
                                     Layout(content = {
                                         Box(Modifier.clipToBounds()) {
                                             Box(Modifier.fillMaxWidth().graphicsLayer {
@@ -312,7 +316,8 @@ fun NumberStepper(
                                                 innerTextField()
                                             }
                                         }
-                                        Text(unit, color = if (flash) skin.accent else skin.inkDim, style = unitStyle, maxLines = 1)
+                                        Text(unit, color = if (flash) skin.accent else skin.inkDim, style = unitStyle, maxLines = 1,
+                                            modifier = Modifier.clearAndSetSemantics { testTag = "stepper-unit" })
                                     }) { children, limits ->
                                         val unitPlaceable = children[1].measure(limits.copy(minWidth = 0, minHeight = 0))
                                         val below = fieldLayout != NumberFieldLayout.Inline

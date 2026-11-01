@@ -103,7 +103,7 @@ class FixSheetStateTests {
         compose.onNodeWithText("1e999").assertIsDisplayed()
         compose.onNodeWithText(NumberEntry.notANumber).assertIsDisplayed()
         compose.onNodeWithContentDescription("Load, kg").performClick()
-        compose.onNodeWithContentDescription("Reps, reps").performClick()
+        compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithText("1e999").assertIsDisplayed()
         compose.runOnIdle { cancel!!() }
         compose.onNodeWithText("60").assertIsDisplayed()
@@ -145,8 +145,8 @@ class FixSheetStateTests {
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("70")
         compose.onNodeWithContentDescription("Load, kg").performImeAction()
-        compose.onNodeWithContentDescription("Reps, reps").performClick().performTextReplacement("100")
-        compose.onNodeWithContentDescription("Reps, reps").performImeAction()
+        compose.onNodeWithContentDescription("Reps").performClick().performTextReplacement("100")
+        compose.onNodeWithContentDescription("Reps").performImeAction()
         compose.runOnIdle { set = set.copy(id = "canonical_set") }
         compose.onNodeWithText("100").assertIsDisplayed()
         compose.onNodeWithText(NumberEntry.outsideReps).assertIsDisplayed()

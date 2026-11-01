@@ -186,7 +186,7 @@ class LoggerScreenTests {
             val restored = runBlocking { recovery.await() }
             compose.runOnIdle { current.value = restored }
             compose.onNodeWithText(reason).assertDoesNotExist()
-            compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("Load", "kg total", "60").assertIsEnabled()
+            compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("60").assertIsEnabled()
             compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("61")
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.runOnIdle {
@@ -232,20 +232,20 @@ class LoggerScreenTests {
             val load = compose.onNodeWithContentDescription("Load, kg total")
             load.performClick().performTextReplacement("10")
             compose.onNodeWithText("+1").performClick()
-            load.assertTextEquals("Load", "kg total", "11")
-            val reps = compose.onNodeWithContentDescription("Reps, reps")
+            load.assertTextEquals("11")
+            val reps = compose.onNodeWithContentDescription("Reps")
             reps.performClick().performTextReplacement("99")
             reps.performImeAction()
             compose.onNodeWithContentDescription("Increase Reps").assertIsNotEnabled()
             reps.performClick().performTextReplacement("5")
             compose.onNodeWithContentDescription("Increase Reps").assertIsEnabled().performClick()
-            reps.assertTextEquals("Reps", "reps", "6")
+            reps.assertTextEquals("6")
             reps.performTextReplacement("1")
             reps.performImeAction()
             compose.onNodeWithContentDescription("Decrease Reps").assertIsNotEnabled()
             reps.performClick().performTextReplacement("5")
             compose.onNodeWithContentDescription("Decrease Reps").assertIsEnabled().performClick()
-            reps.assertTextEquals("Reps", "reps", "4")
+            reps.assertTextEquals("4")
             compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets) }
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
@@ -263,21 +263,21 @@ class LoggerScreenTests {
             load.performClick().performTextReplacement("1e999")
             compose.onNodeWithText("Log set").performClick()
             compose.onNodeWithText("That is not a number yet.").assertExists()
-            load.assertTextEquals("Load", "kg total", "1e999")
+            load.assertTextEquals("1e999")
             compose.runOnIdle {
                 assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
                 assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
             }
-            compose.onNodeWithContentDescription("Reps, reps").performClick()
-            load.assertTextEquals("Load", "kg total", "1e999")
+            compose.onNodeWithContentDescription("Reps").performClick()
+            load.assertTextEquals("1e999")
             compose.onNodeWithText("That is not a number yet.").assertExists()
             compose.runOnIdle { assertEquals(20.0, room.store.rack!!.weightKg, 0.0) }
             load.performClick().performTextReplacement("82.5")
-            compose.onNodeWithContentDescription("Reps, reps").performClick()
-            load.assertTextEquals("Load", "kg total", "82.5")
+            compose.onNodeWithContentDescription("Reps").performClick()
+            load.assertTextEquals("82.5")
             compose.onNodeWithText("That is not a number yet.").assertDoesNotExist()
             compose.runOnIdle { assertEquals(82.5, room.store.rack!!.weightKg, 0.0) }
-            compose.onNodeWithContentDescription("Reps, reps").performTextReplacement("7")
+            compose.onNodeWithContentDescription("Reps").performTextReplacement("7")
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
                 val saved = room.store.sets.single()
@@ -300,7 +300,7 @@ class LoggerScreenTests {
             compose.runOnIdle { assertEquals(85.0 to listOf("hide", "finish"), room.store.rack!!.weightKg to left.toList()) }
             load.performClick().performTextReplacement("1e999")
             compose.onNodeWithContentDescription("Hide workout").performClick()
-            load.assertTextEquals("Load", "kg total", "1e999")
+            load.assertTextEquals("1e999")
             compose.onNodeWithText("That is not a number yet.").assertExists()
             compose.runOnIdle { assertEquals(85.0, room.store.rack!!.weightKg, 0.0) }
             load.performClick().performTextReplacement("87.5")
@@ -321,11 +321,11 @@ class LoggerScreenTests {
         try { logger(scope).use { room ->
             val load = compose.onNodeWithContentDescription("Load, kg total")
             val panel = compose.onNodeWithTag("Numeric rack")
-            load.assertTextEquals("Load", "kg total", "20")
+            load.assertTextEquals("20")
             val heights = listOf("+2.5" to "22.5", "−2.5" to "20").map { (step, shown) ->
                 val before = panel.getBoundsInRoot().height
                 compose.onNodeWithText(step).performClick()
-                load.assertTextEquals("Load", "kg total", shown)
+                load.assertTextEquals(shown)
                 before to panel.getBoundsInRoot().height
             }
             compose.runOnIdle { assertEquals(20.0, room.store.rack!!.weightKg, 0.0) }
@@ -558,7 +558,7 @@ class LoggerScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, history = true).use {
             compose.onNode((hasContentDescription("Load, kg total") and hasText("80"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             compose.onAllNodes(hasText("Last time", substring = true)).assertCountEquals(0)
             compose.onAllNodes(hasContentDescription("Last time", substring = true)).assertCountEquals(0)
             compose.onAllNodes(hasText("80 × 6")).assertCountEquals(0)
@@ -571,7 +571,7 @@ class LoggerScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, lastTimeDown = true).use {
             compose.onNode((hasContentDescription("Load, kg total") and hasText("20"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("5"))).assertIsDisplayed()
             compose.onAllNodes(hasText("Last time", substring = true)).assertCountEquals(0)
             compose.onAllNodes(hasText("Didn’t load")).assertCountEquals(0)
         } } finally { scope.cancel() }
@@ -666,7 +666,7 @@ class LoggerScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { rack(scope).use {
             compose.onNode((hasContentDescription("Load, kg total") and hasText("90"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("3"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("3"))).assertIsDisplayed()
             assertEquals(
                 listOf(
                     "Set 1, logged, 60 kg total, 5 reps, on this device" to true,
@@ -685,7 +685,7 @@ class LoggerScreenTests {
             compose.onNodeWithText("Log set").performClick()
             compose.waitForIdle()
             compose.onNode((hasContentDescription("Load, kg total") and hasText("100"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("1"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("1"))).assertIsDisplayed()
             assertEquals(
                 listOf(
                     "Set 1, logged, 60 kg total, 5 reps, on this device" to true,
@@ -802,7 +802,7 @@ class LoggerScreenTests {
             compose.onNodeWithText("Finish").assertIsDisplayed().assertHasClickAction()
             compose.onNode(hasContentDescription("Decrease Reps")).assertHasClickAction()
             compose.onNode(hasContentDescription("Increase Reps")).assertHasClickAction()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed().assertHasClickAction()
+            compose.onNode((hasContentDescription("Reps") and hasText("5"))).assertIsDisplayed().assertHasClickAction()
         } } finally { scope.cancel() }
     }
 }

@@ -18,7 +18,7 @@
         "tap": "Log set"
       },
       {
-        "tap": "Reps, reps"
+        "tap": "Reps"
       },
       {
         "key": "KEYCODE_MOVE_END"
@@ -54,7 +54,7 @@
         "key": "KEYCODE_ENTER"
       },
       {
-        "tap": "Reps, reps"
+        "tap": "Reps"
       },
       {
         "key": "KEYCODE_MOVE_END"

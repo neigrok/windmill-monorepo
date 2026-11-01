@@ -106,7 +106,7 @@ class PlanningSwipePaintTests {
             var draft by mutableStateOf(RoutineDraft(name = "Push Day").adding("bench-press"))
             compose.setContent {
                 contentView = LocalView.current
-                GymMaterial { RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}) }
+                GymMaterial { RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines") }
             }
             val row = compose.onNode(hasText("Bench Press") and hasClickAction())
             val bounds = row.fetchSemanticsNode().boundsInRoot

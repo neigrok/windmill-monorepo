@@ -28,7 +28,7 @@
         "wait": "Save"
       },
       {
-        "tap": "Back to the routine you were on"
+        "tap": "Back to Routines"
       },
       {
         "wait": "No routines yet."
@@ -64,7 +64,7 @@
         "wait": "Save"
       },
       {
-        "tap": "Back to the routine you were on"
+        "tap": "Back to Routines"
       },
       {
         "wait": "No routines yet."
@@ -106,7 +106,7 @@
         "wait": "Save"
       },
       {
-        "tap": "Back to the routine you were on"
+        "tap": "Back to Routines"
       },
       {
         "wait": "Push A"
@@ -142,7 +142,7 @@
         "wait": "Save"
       },
       {
-        "tap": "Back to the routine you were on"
+        "tap": "Back to Routines"
       },
       {
         "wait": "Legs"

@@ -34,6 +34,8 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.unit.width
 import androidx.compose.ui.unit.height
@@ -64,10 +66,10 @@ class NumberStepperTests {
                 onCommit = { NumberEditResult.Unchanged }, size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal)
         } } }
         val field = compose.onNodeWithContentDescription("Load, kg total")
-        val unit = compose.onNodeWithText("kg total", useUnmergedTree = true)
+        val unit = compose.onNodeWithTag("stepper-unit", useUnmergedTree = true)
         val drawn = listOf("20", "22.5", "20").map { typed ->
             compose.runOnIdle { value = typed }
-            field.assertTextEquals("Load", "kg total", typed)
+            field.assertTextEquals(typed)
             val bounds = field.getBoundsInRoot()
             bounds.height to (unit.getBoundsInRoot().left - bounds.left > 40.dp)
         }
@@ -105,9 +107,9 @@ class NumberStepperTests {
         val actions = field.fetchSemanticsNode().config[SemanticsActions.CustomActions]
         assertEquals(listOf("Decrease", "Increase"), actions.map { it.label })
         compose.runOnIdle { assertTrue(actions.last().action()) }
-        field.assertTextEquals("Load", "kg added", "-11.5")
+        field.assertTextEquals("-11.5")
         compose.runOnIdle { assertTrue(actions.first().action()) }
-        field.assertTextEquals("Load", "kg added", "-12.5")
+        field.assertTextEquals("-12.5")
         compose.runOnIdle { assertEquals(List(2) { HapticFeedbackType.TextHandleMove }, sensations) }
         field.performImeAction()
         field.performClick()
@@ -168,7 +170,7 @@ class NumberStepperTests {
             assertEquals(changed.height, settled.height)
             assertTrue("$from → $to, reduced=$reduceMotion: numeral still moving during the settled flash",
                 changed.sameAs(settled))
-            field.assertTextEquals("Load", "kg", to)
+            field.assertTextEquals(to)
             compose.mainClock.autoAdvance = true
             compose.mainClock.advanceTimeBy(400)
         }
@@ -223,24 +225,24 @@ class NumberStepperTests {
         }
         val field = compose.onNodeWithContentDescription("Load, kg")
         field.performClick().performTextInput(".")
-        field.assertTextEquals("Load", "kg", "12.5")
+        field.assertTextEquals("12.5")
         assertEquals(TextRange(4), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
         field.performTextInput(",")
-        field.assertTextEquals("Load", "kg", "12,5")
+        field.assertTextEquals("12,5")
         assertEquals(TextRange(3), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         field.performSemanticsAction(SemanticsActions.SetSelection) { it(1, 3, false) }
         field.performTextReplacement("1,2.3")
-        field.assertTextEquals("Load", "kg", "12,5")
+        field.assertTextEquals("12,5")
         assertEquals(TextRange(1, 3), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         compose.runOnIdle {
             assertEquals(listOf("12,5"), drafts)
             assertEquals(emptyList<HapticFeedbackType>(), sensations)
         }
         field.performTextReplacement("1.25e+305")
-        field.assertTextEquals("Load", "kg", "1.25e+305")
+        field.assertTextEquals("1.25e+305")
         field.performTextInput(".")
-        field.assertTextEquals("Load", "kg", "1.25e+305")
+        field.assertTextEquals("1.25e+305")
         compose.runOnIdle { assertEquals(listOf("12,5", "1.25e+305"), drafts) }
     }
 
@@ -257,20 +259,43 @@ class NumberStepperTests {
         val field = compose.onNodeWithContentDescription("Load, kg")
         field.performClick().performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
         field.performTextInput("")
-        field.assertTextEquals("Load", "kg", "12..5")
+        field.assertTextEquals("12..5")
         field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
         field.performTextInput("")
-        field.assertTextEquals("Load", "kg", "12.5")
+        field.assertTextEquals("12.5")
         field.performTextReplacement("1.25e+305")
         field.performSemanticsAction(SemanticsActions.SetSelection) { it(0, 4, false) }
         field.performTextInput("")
-        field.assertTextEquals("Load", "kg", "e+305")
+        field.assertTextEquals("e+305")
         field.performImeAction()
         field.assertIsFocused()
         field.performSemanticsAction(SemanticsActions.SetSelection) { it(0, 1, false) }
         field.performTextInput("")
-        field.assertTextEquals("Load", "kg", "+305")
+        field.assertTextEquals("+305")
         compose.runOnIdle { assertEquals(listOf("12..5", "12.5", "1.25e+305", "e+305", "+305"), drafts) }
+    }
+
+    // TalkBack hears each thing once: "Sets, 3", "Reps, 8", "Load, kg total, 60". The drawn label and unit are silent.
+    @Test fun aStepperSaysItsLabelOnceItsValueOnceAndItsUnitOnlyWhenItAddsSomething() {
+        compose.setContent {
+            GymMaterial {
+                Column {
+                    NumberStepper("3", {}, "Sets", "sets", onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Unchanged })
+                    NumberStepper("8", {}, "Reps", "reps", onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Unchanged })
+                    NumberStepper("60", {}, "Load", "kg total", onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Unchanged })
+                }
+            }
+        }
+        val said = listOf("Sets", "Reps", "Load, kg total").map { description ->
+            val field = compose.onNodeWithContentDescription(description).fetchSemanticsNode()
+            Triple(field.config[SemanticsProperties.ContentDescription], field.config[SemanticsProperties.EditableText].text,
+                field.config.getOrElse(SemanticsProperties.Text) { emptyList() }.map { it.text })
+        }
+        assertEquals(listOf(
+            Triple(listOf("Sets"), "3", emptyList<String>()),
+            Triple(listOf("Reps"), "8", emptyList()),
+            Triple(listOf("Load, kg total"), "60", emptyList()),
+        ), said)
     }
 
     @Test fun countFieldsRejectMalformedPasteWithoutChangingTheirOwner() {
@@ -282,9 +307,9 @@ class NumberStepperTests {
                     onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Unchanged })
             }
         }
-        val field = compose.onNodeWithContentDescription("Reps, reps")
+        val field = compose.onNodeWithContentDescription("Reps")
         field.performClick().performTextReplacement("3.5.1")
-        field.assertTextEquals("Reps", "reps", "5")
+        field.assertTextEquals("5")
         compose.runOnIdle { assertEquals(emptyList<String>(), drafts) }
     }
 
@@ -311,7 +336,7 @@ class NumberStepperTests {
         }
         repeat(3) { compose.onNodeWithContentDescription("Increase Reps").performClick() }
         compose.runOnIdle { text.value = "12" }
-        compose.onNodeWithContentDescription("Reps, reps").assertTextEquals("Reps", "reps", "12")
+        compose.onNodeWithContentDescription("Reps").assertTextEquals("12")
         compose.runOnIdle { haptics.value = false }
         compose.onNodeWithContentDescription("Increase Reps").performClick()
         compose.runOnIdle { assertEquals(listOf(HapticFeedbackType.TextHandleMove), sensations) }
@@ -325,7 +350,7 @@ class NumberStepperTests {
                     onCommit = { commits += 1; NumberEditResult.Refused }, refusal = "Sets, 1 to 20.")
             }
         }
-        val field = compose.onNodeWithContentDescription("Sets, sets")
+        val field = compose.onNodeWithContentDescription("Sets")
         field.performClick().performImeAction()
         field.assertIsFocused()
         compose.onNodeWithText("Sets, 1 to 20.").assertExists()
@@ -343,7 +368,7 @@ class NumberStepperTests {
         }
         compose.onNodeWithContentDescription("Decrease Sets").performClick()
         compose.onNodeWithContentDescription("Increase Sets").performClick()
-        val field = compose.onNodeWithContentDescription("Sets, sets")
+        val field = compose.onNodeWithContentDescription("Sets")
         field.performClick().performImeAction()
         field.assertIsFocused()
         compose.runOnIdle { assertEquals(0, calls) }
@@ -357,8 +382,8 @@ class NumberStepperTests {
                     input = NumberStepperInput.SignedDecimal)
             }
         }
-        compose.onNodeWithContentDescription("Load, kg each").assertTextEquals("Load", "kg each", "-102.5")
-        compose.onNodeWithText("kg each").assertExists()
+        compose.onNodeWithContentDescription("Load, kg each").assertTextEquals("-102.5")
+        compose.onNodeWithTag("stepper-unit", useUnmergedTree = true).assertExists()
     }
 
     @Test fun validSignedDisplayValuesFitAtBothWidthsAndTextScalesAtEitherCaretEnd() {
@@ -380,7 +405,7 @@ class NumberStepperTests {
             compose.runOnIdle { width.value = controlWidth; scale.value = fontScale }
             for (value in listOf("24", "-12.5", "-102.5", "-499.99")) {
                 compose.runOnIdle { text.value = value }
-                field.assertTextEquals("Load", "kg added", value)
+                field.assertTextEquals(value)
                 val layouts = mutableListOf<TextLayoutResult>()
                 field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
                 val layout = layouts.single()
@@ -437,9 +462,9 @@ class NumberStepperTests {
             field.fetchSemanticsNode().boundsInRoot.bottom)
         field.performImeAction()
         compose.runOnIdle { assertEquals(1, commits) }
-        compose.onNodeWithContentDescription("Reps, reps").performClick()
+        compose.onNodeWithContentDescription("Reps").performClick()
         field.assertIsNotFocused()
-        field.assertTextEquals("Load", "kg added", "24")
+        field.assertTextEquals("24")
         compose.waitUntil { field.fetchSemanticsNode().boundsInRoot.height == inlineHeight }
         assertEquals(inlineHeight, field.fetchSemanticsNode().boundsInRoot.height)
     }
@@ -471,8 +496,8 @@ class NumberStepperTests {
             assertEquals(20.sp, valueLayout.layoutInput.style.fontSize)
             val bounds = field.fetchSemanticsNode().boundsInRoot
             assertEquals(original, bounds)
-            val unit = compose.onNodeWithText("kg added", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            val label = compose.onNodeWithText("Load", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val unit = compose.onAllNodesWithTag("stepper-unit", useUnmergedTree = true)[0].fetchSemanticsNode().boundsInRoot
+            val label = compose.onAllNodesWithTag("stepper-label", useUnmergedTree = true)[0].fetchSemanticsNode().boundsInRoot
             assertTrue(unit.top >= label.bottom + valueLayout.size.height)
             for (name in listOf("Decrease Load", "Increase Load")) {
                 val button = compose.onNodeWithContentDescription(name).fetchSemanticsNode().boundsInRoot
@@ -487,10 +512,10 @@ class NumberStepperTests {
         field.performTextReplacement("82.5")
         field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
         field.performTextInput(",")
-        field.assertTextEquals("Load", "kg added", "82,5")
+        field.assertTextEquals("82,5")
         field.performImeAction()
         assertEquals(1, commits)
-        compose.onNodeWithContentDescription("Reps, reps").performClick()
+        compose.onNodeWithContentDescription("Reps").performClick()
         field.assertIsNotFocused()
     }
 
@@ -506,7 +531,7 @@ class NumberStepperTests {
         }
         val field = compose.onNodeWithContentDescription("Load, kg added")
         field.performClick().performTextReplacement("-12345678901234567890.12345")
-        field.assertTextEquals("Load", "kg added", "−12345678901234567890.12345")
+        field.assertTextEquals("−12345678901234567890.12345")
         val layouts = mutableListOf<TextLayoutResult>()
         field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertEquals(32.sp, layouts.single().layoutInput.style.fontSize)

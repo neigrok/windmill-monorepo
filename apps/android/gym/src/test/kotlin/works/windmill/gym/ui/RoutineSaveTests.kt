@@ -21,6 +21,8 @@ import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.SetTarget
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
 import works.windmill.platform.telemetry.Telemetry
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -66,11 +68,13 @@ class RoutineSaveTests {
                 compose.onNodeWithText("Save").performClick()
                 compose.waitForIdle()
                 if (refused) {
-                    compose.onNodeWithContentDescription("Routine name").assertIsEnabled().assertTextEquals("Name", "Saved push")
+                    compose.onNodeWithContentDescription("Routine name").assertIsEnabled().assertTextEquals("Saved push")
                     compose.onNodeWithText("Save").assertIsEnabled()
+                    // The room's line is a polite live region, so TalkBack says what the eye reads.
                     compose.onNodeWithText("That changed. Open it again.").assertIsDisplayed()
+                        .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
                     compose.onNodeWithContentDescription("Routine name").performTextReplacement("Retry push")
-                    compose.onNodeWithContentDescription("Routine name").assertTextEquals("Name", "Retry push")
+                    compose.onNodeWithContentDescription("Routine name").assertTextEquals("Retry push")
                     assertEquals(Routine("routine_push", "Push elsewhere", entries = entries, revision = 2), moved)
                     assertEquals("the refused draft never reached the replica", moved, room.training.program().single())
                 } else {
@@ -123,7 +127,7 @@ class RoutineSaveTests {
                 compose.onNodeWithText("Add movement").performClick()
                 compose.onNodeWithText("Bench Press").performClick()
                 compose.onNodeWithText("Add").performClick()
-                compose.onNodeWithContentDescription("Routine name").assertTextEquals("Name", "Second draft")
+                compose.onNodeWithContentDescription("Routine name").assertTextEquals("Second draft")
                 compose.onNodeWithText("Save").assertIsEnabled().performClick()
                 compose.waitForIdle()
                 assertEquals(listOf("Second draft"), room.training.program().map { it.name })
@@ -170,7 +174,7 @@ class RoutineSaveTests {
                 compose.runOnIdle { saveScheduler.runCurrent() }
                 compose.waitForIdle()
                 assertEquals(opening, room.engine.snapshot())
-                compose.onNodeWithContentDescription("Routine name").assertTextEquals("Name", "Retained edit").assertIsEnabled()
+                compose.onNodeWithContentDescription("Routine name").assertTextEquals("Retained edit").assertIsEnabled()
                 compose.onNodeWithText("Save").assertIsEnabled().performClick()
                 compose.runOnIdle { saveScheduler.runCurrent() }
                 compose.waitForIdle()

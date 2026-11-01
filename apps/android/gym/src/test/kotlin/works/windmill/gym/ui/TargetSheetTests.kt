@@ -72,6 +72,7 @@ class TargetSheetTests {
                 onSave = {},
                 onClose = {},
                 say = {},
+                backTo = "Routines",
             )
         }
         return { draft }
@@ -109,18 +110,18 @@ class TargetSheetTests {
             editor(room, pushA)
             openTheSheet()
 
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("0")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("0")
             compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
             compose.onNode(hasText("Done") and hasClickAction()).assertIsNotEnabled()
 
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("21")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("21")
             compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
             compose.onNodeWithText(TargetEntry.zeroTarget).assertDoesNotExist()
 
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("2.5")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("2.5")
             compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
 
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("3")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("3")
             compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
             compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
@@ -135,14 +136,14 @@ class TargetSheetTests {
             editor(room, pushA)
             openTheSheet()
 
-            compose.onNodeWithContentDescription("Reps, reps").performTextReplacement("101")
+            compose.onNodeWithContentDescription("Reps").performTextReplacement("101")
             compose.onAllNodesWithText(TargetEntry.outsideReps).assertCountEquals(1)
             val said = compose.onNodeWithText(TargetEntry.outsideReps).fetchSemanticsNode().positionInRoot.y
-            val head = compose.onNodeWithContentDescription("Reps, reps").fetchSemanticsNode().positionInRoot.y
+            val head = compose.onNodeWithContentDescription("Reps").fetchSemanticsNode().positionInRoot.y
             assertTrue("under the focused head field", said > head)
             compose.onNodeWithContentDescription("Set 1 reps").assertDoesNotExist()
 
-            compose.onNodeWithContentDescription("Reps, reps").performTextReplacement("5")
+            compose.onNodeWithContentDescription("Reps").performTextReplacement("5")
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("82.5.0")
             compose.onNodeWithContentDescription("Load, kg total").assertTextContains("60")
             compose.onNodeWithText(TargetEntry.onePoint).assertDoesNotExist()
@@ -166,18 +167,18 @@ class TargetSheetTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             editor(room, RoutineDraft(name = "Push A").adding("bench-press"))
             openTheSheet()
-            assertEquals("", compose.onNodeWithContentDescription("Sets, sets").fetchSemanticsNode()
+            assertEquals("", compose.onNodeWithContentDescription("Sets").fetchSemanticsNode()
                 .config[SemanticsProperties.EditableText].text)
-            compose.onNodeWithContentDescription("Reps, reps").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Reps").assertIsNotEnabled()
             compose.onNodeWithContentDescription("Load, kg total").assertIsNotEnabled()
             compose.onNodeWithContentDescription("Movement name").assertExists()
             compose.onNodeWithContentDescription("Equipment").assertExists()
             compose.onNodeWithText(TargetEntry.openLine).assertDoesNotExist()
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("3")
-            assertEquals("3", compose.onNodeWithContentDescription("Sets, sets").fetchSemanticsNode()
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("3")
+            assertEquals("3", compose.onNodeWithContentDescription("Sets").fetchSemanticsNode()
                 .config[SemanticsProperties.EditableText].text)
-            compose.onNodeWithContentDescription("Sets, sets").performTextClearance()
-            assertEquals("", compose.onNodeWithContentDescription("Sets, sets").fetchSemanticsNode()
+            compose.onNodeWithContentDescription("Sets").performTextClearance()
+            assertEquals("", compose.onNodeWithContentDescription("Sets").fetchSemanticsNode()
                 .config[SemanticsProperties.EditableText].text)
             compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
@@ -191,7 +192,7 @@ class TargetSheetTests {
             openTheSheet()
 
             compose.onNodeWithContentDescription("Load, kg total").performTextClearance()
-            compose.onNodeWithContentDescription("Reps, reps").performTextReplacement("5")
+            compose.onNodeWithContentDescription("Reps").performTextReplacement("5")
             compose.onNodeWithText("Done").performClick()
 
             compose.runOnIdle {
@@ -224,15 +225,15 @@ class TargetSheetTests {
             editor(room, pushA)
 
             openTheSheet()
-            val first = compose.onNodeWithContentDescription("Sets, sets").getBoundsInRoot().top
-            compose.onNodeWithContentDescription("Sets, sets").performClick()
+            val first = compose.onNodeWithContentDescription("Sets").getBoundsInRoot().top
+            compose.onNodeWithContentDescription("Sets").performClick()
             keyboardOverTheSheet(up = true)
-            val lifted = compose.onNodeWithContentDescription("Sets, sets").getBoundsInRoot().top
+            val lifted = compose.onNodeWithContentDescription("Sets").getBoundsInRoot().top
             assertTrue("the keyboard lifts the sheet while it stands", lifted < first)
             dismissTheSheet()
 
             openTheSheet()
-            val second = compose.onNodeWithContentDescription("Sets, sets").getBoundsInRoot().top
+            val second = compose.onNodeWithContentDescription("Sets").getBoundsInRoot().top
             assertEquals("the same place on the next open", first, second)
         } } finally { scope.cancel() }
     }
@@ -245,7 +246,7 @@ class TargetSheetTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             editor(room, pushA)
             openTheSheet()
-            compose.onNodeWithContentDescription("Sets, sets").performClick()
+            compose.onNodeWithContentDescription("Sets").performClick()
 
             keyboardOverTheSheet(up = true)
             compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }

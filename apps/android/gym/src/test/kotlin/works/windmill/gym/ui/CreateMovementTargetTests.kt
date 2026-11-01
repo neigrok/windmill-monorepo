@@ -72,7 +72,7 @@ class CreateMovementTargetTests {
         } }
         compose.onNodeWithText(hint).assertExists()
         compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("-12.5")
-        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("Load", "kg total", "−12.5")
+        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("−12.5")
         compose.onNodeWithText(hint).assertDoesNotExist()
         compose.onNodeWithText("Load, 0 or more.").assertExists()
         compose.onNodeWithText("Check Load").assertExists()
@@ -91,7 +91,7 @@ class CreateMovementTargetTests {
             var draft by mutableStateOf(RoutineDraft(name = "Push").adding("bench-press",
                 List(3) { SetTarget(8, 75.0) }))
             val before = room.engine.snapshot()
-            compose.setContent { GymMaterial { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}) } }
+            compose.setContent { GymMaterial { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}, "Routines") } }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithText("Vary by set").performScrollTo().performClick()
             val field = compose.onNodeWithContentDescription("Set 1 load")
@@ -137,13 +137,13 @@ class CreateMovementTargetTests {
             val before = room.engine.snapshot()
             val restorer = StateRestorationTester(compose)
             restorer.setContent { GymMaterial {
-                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {})
+                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
             compose.onNodeWithContentDescription("Movement name").performTextReplacement("Meadows 🏋 row")
-            assertEquals("3", raw("Sets, sets"))
-            assertEquals("10", raw("Reps, reps"))
+            assertEquals("3", raw("Sets"))
+            assertEquals("10", raw("Reps"))
             assertEquals("", raw("Load, kg total"))
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("1e999")
             compose.onNodeWithText("Add").assertIsNotEnabled()
@@ -184,7 +184,7 @@ class CreateMovementTargetTests {
             val changes = mutableListOf<RoutineDraft>()
             val before = room.engine.snapshot()
             compose.setContent { GymMaterial {
-                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {})
+                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()

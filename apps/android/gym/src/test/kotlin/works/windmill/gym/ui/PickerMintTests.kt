@@ -67,6 +67,7 @@ class PickerMintTests {
                 onSave = {},
                 onClose = {},
                 say = {},
+                backTo = "Routines",
             )
         }
         compose.onNodeWithText("Add movement").performClick()

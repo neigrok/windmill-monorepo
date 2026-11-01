@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import works.windmill.gym.R
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -223,7 +224,8 @@ fun YouSeat(initial: String) {
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(skin.raised), contentAlignment = Alignment.Center) {
-            Text(initial.uppercase().ifEmpty { "•" }, style = GymChrome.account, color = skin.ink)
+            Text(initial.uppercase().ifEmpty { "•" }, style = GymChrome.account, color = skin.ink,
+                modifier = Modifier.clearAndSetSemantics {})
         }
     }
 }

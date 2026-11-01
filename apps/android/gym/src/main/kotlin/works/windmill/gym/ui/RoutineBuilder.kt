@@ -73,6 +73,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
@@ -170,6 +171,8 @@ fun RoutineBuilder(
     onSave: () -> Unit,
     onClose: () -> Unit,
     say: (String?) -> Unit,
+    // What Back returns to, named for its description: the routine, the tab or the screen beneath.
+    backTo: String,
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
@@ -249,7 +252,7 @@ fun RoutineBuilder(
     }
 
     BuildStep(
-        draft = draft, store = store, history = history, editing = editing, editable = !saving,
+        draft = draft, store = store, history = history, editing = editing, editable = !saving, backTo = backTo,
         savable = draft.savable && draft.changed && !saving,
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
@@ -366,6 +369,7 @@ private fun BuildStep(
     onAdd: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    backTo: String,
 ) {
     val skin = LocalGymColors.current
     val focus = remember { FocusRequester() }
@@ -419,7 +423,7 @@ private fun BuildStep(
         title = if (editing) "Edit routine" else "New routine",
         navigation = {
             IconButton(onClick = onCancel, enabled = editable, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to the routine you were on",
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to $backTo",
                     tint = if (editable) skin.ink else skin.inkDim, modifier = Modifier.size(24.dp))
             }
         },
@@ -435,7 +439,7 @@ private fun BuildStep(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 NativeFieldType {
                     OutlinedTextField(draft.name, onValueChange = { onDraft(draft.named(it)) }, enabled = editable,
-                        label = { Text("Name") }, singleLine = true,
+                        label = { Text("Name", Modifier.clearAndSetSemantics {}) }, singleLine = true,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words,
                             autoCorrectEnabled = false, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),

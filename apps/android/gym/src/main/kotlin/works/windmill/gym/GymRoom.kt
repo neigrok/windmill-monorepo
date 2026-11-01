@@ -12,6 +12,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import kotlin.math.ceil
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1013,11 +1016,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 )
             }
 
+            // What a way back is named after: the screen beneath, else the tab, or the logger when it stands.
+            fun wayBackTo(under: Away?, tab: Tab): String = under?.wayBack(store.catalog)
+                ?: if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
+
             @Composable
             fun PushedScreen(frame: Frame.Pushed) {
-                // Beneath the stack is the tab, or the logger when it stands.
-                val backTo = frame.under?.wayBack(store.catalog)
-                    ?: if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else frame.tab.title
+                val backTo = wayBackTo(frame.under, frame.tab)
                 when (val standing = frame.away) {
                     is Away.Movement -> RecordScreen(
                         exerciseId = standing.exerciseId,
@@ -1143,9 +1148,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                         style = GymNativeType.note,
                                         color = skin.inkDim,
                                         maxLines = 2,
+                                        // Said as it changes, so TalkBack hears the line the eye reads.
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                                            .semantics { liveRegion = LiveRegionMode.Polite },
                                     )
                                 }
                                 if (frame.railStands) {
@@ -1201,6 +1208,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                         onSave = { building?.let(::write) },
                                         onClose = { building = null },
                                         say = { note = it },
+                                        // An edit returns to its routine's sheet; a new draft to what it was opened over.
+                                        backTo = selectedRoutineId?.let { store.routine(it)?.name }
+                                            ?: wayBackTo(navigator.away.lastOrNull(), frame.tab),
                                     )
                                 }
                                 is Frame.Pushed -> PushedScreen(frame)

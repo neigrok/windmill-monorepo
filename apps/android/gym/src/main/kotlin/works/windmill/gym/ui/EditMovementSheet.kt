@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
@@ -72,13 +73,13 @@ internal fun MovementFields(
     val choice = ExerciseRules.loadingChoice(equipment, loadCount)
     val labels = mapOf("barbell" to "Barbell", "dumbbell" to "Dumbbells", "other" to "Other")
     NativeFieldType {
-        OutlinedTextField(name, onValueChange = onName, enabled = enabled, label = { Text("Name") },
+        OutlinedTextField(name, onValueChange = onName, enabled = enabled, label = { Text("Name", Modifier.clearAndSetSemantics {}) },
             singleLine = true, isError = problem != null,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = "Movement name" })
         ExposedDropdownMenuBox(expanded = menu && enabled, onExpandedChange = { if (enabled) menu = it }) {
             OutlinedTextField(labels.getValue(choice), onValueChange = {}, enabled = enabled, readOnly = true,
-                label = { Text("Equipment") },
+                label = { Text("Equipment", Modifier.clearAndSetSemantics {}) },
                 leadingIcon = if (choice == "other") null else { { EquipmentIcon(choice, Modifier.size(24.dp)) } },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menu) },
                 modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
