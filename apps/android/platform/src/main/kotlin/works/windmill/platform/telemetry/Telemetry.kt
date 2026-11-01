@@ -19,6 +19,8 @@ interface Telemetry {
     fun event(name: String, properties: Map<String, String> = emptyMap())
     fun failure(operation: String, error: Throwable, properties: Map<String, String> = emptyMap())
     fun identity(userId: String?) {}
+    // An event that tells of the account ending: it waits on the signed-out shelf and sends without credentials, so the ending cannot strand it.
+    fun signedOutEvent(name: String, properties: Map<String, String> = emptyMap()) = event(name, properties)
     // An account that cannot return: its queued events named in `carrying` send without credentials, the rest are dropped.
     fun retireAccount(userId: String, carrying: Set<String>) {}
 

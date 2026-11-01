@@ -54,6 +54,23 @@ class EventQueueTest {
     }
 
     @Test
+    fun aSignedOutEventLeavesWithoutCredentialsAndOutlivesTheAccountItWasToldUnder() = runTest {
+        var disk: String? = null
+        val sent = mutableListOf<Pair<List<String>, String?>>()
+        val queue = EventQueue("account-a", "secret-a", { disk }, { disk = it; true }, { batch, bearer ->
+            sent += batch.events.map { it.name } to bearer
+            batch.events.size
+        }, { _, _, _ -> }, backgroundScope, now = { 7L })
+        queue.add("gym_sign_out", mapOf("action" to "keep", "outcome" to "completed"), signedOut = true)
+        queue.add("app_foregrounded", emptyMap())
+        queue.identity(null, null)
+        queue.add("auth_signed_out", emptyMap())
+        runCurrent()
+        assertEquals(listOf(listOf("gym_sign_out", "auth_signed_out") to null), sent)
+        assertTrue(disk!!.contains("app_foregrounded"))
+    }
+
+    @Test
     fun aReservedPrefixRefusesUnregisteredNamesAndItsSchemasKeepOnlyTheirLabels() = runTest {
         var disk: String? = null
         val failures = mutableListOf<String>()

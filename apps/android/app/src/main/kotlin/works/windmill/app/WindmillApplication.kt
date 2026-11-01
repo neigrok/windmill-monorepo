@@ -189,7 +189,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             unsent = { sessions.user()?.id?.let(engineSession::deletionUnsent) ?: 0 },
             prepare = { identity ->
                 check(deletionIdentity() == identity) { "The account changed." }
-                accountLifecycle.prepareSignOut(identity.user.id)
+                engineSession.prepareAccountDeletion(identity.user.id)
             },
             finishEngine = { pending, held ->
                 val stored = sessions.user()

@@ -25,7 +25,9 @@ names something the code still sends.
   by its operation.
 - **Event queue:** events wait in the app's private preferences (`works.windmill.telemetry`), on a
   shelf per account, at most 500. They leave in batches of 50 with the account's credential, or
-  none when signed out, and retry every 30 s. An account that cannot return
+  none when signed out, and retry every 30 s. A signed-out account's shelf waits for that account
+  to sign in again. An event that tells of the account ending (`signedOutEvent`) waits on the
+  signed-out shelf instead, so the ending cannot strand it. An account that cannot return
   (`retireAccount`) sends the events it names, `account_delete`, without a credential and drops
   the rest.
 
@@ -215,7 +217,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_set_logged` | gym | none |
 | `gym_setup_step` | gym | `screen`: `coach`; `action`: `shown`, `screenshot`, `build_manually`, `photo_selected`, `photo_removed`, `sign_in` |
 | `gym_sign_in_decision` | gym, app | `state`: `shown`, `discard_confirmation`; `action`: `add`, `discard`, `cancel`; `outcome`: `completed`, `cancelled`, `changed` or the engine's error code |
-| `gym_sign_out` | gym | `state`: `shown`; `action`: `keep`, `discard`, `cancel`; `outcome`: `completed`, `failed` |
+| `gym_sign_out` | gym | `state`: `shown`; `action`: `keep`, `discard`, `cancel`; `outcome`: `completed`, `failed`. Keep and Discard send their outcome signed out; account deletion sends none |
 | `onboarding_action` | gym | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `action`: `next`, `back`, `swipe`, `adjust` |
 | `onboarding_exited` | gym, app | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `outcome`: `skipped`, `completed`, `back`, `closed` |
 | `onboarding_opened` | gym | `state`: `first_launch`, `replay` |

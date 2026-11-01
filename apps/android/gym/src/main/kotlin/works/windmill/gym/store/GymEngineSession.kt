@@ -21,6 +21,7 @@ import works.windmill.sync.engine.EngineError
 import works.windmill.sync.engine.LineageAnswer
 import works.windmill.sync.engine.SignInSession
 import works.windmill.sync.engine.SignOutChoice
+import works.windmill.sync.engine.SignOutSession
 import works.windmill.sync.engine.SyncRuntime
 import works.windmill.sync.engine.discardDormant
 import works.windmill.sync.core.*
@@ -116,7 +117,7 @@ class GymEngineSession(
         } finally { decisionBusy = false }
     }
 
-    private var recoveringSignOut: works.windmill.sync.engine.SignOutSession? = null
+    private var recoveringSignOut: SignOutSession? = null
 
     private fun activeAccount(): String? {
         val snapshot = engine.snapshot()
@@ -124,7 +125,17 @@ class GymEngineSession(
         return if (active.member("state").str() == "bound") active.member("account").str() else null
     }
 
-    override suspend fun prepareSignOut(account: String): AuthSignOutSession {
+    // The engine's sign-out held for exactly this account, as the account's lifecycle answers it.
+    private class HeldSignOut(private val held: SignOutSession, private val tell: suspend (String, suspend () -> Unit) -> Unit) : AuthSignOutSession {
+        override val account = held.account
+        override val unsent = held.unsent
+        override suspend fun finish(choice: AuthSignOutChoice) = tell(choice.name.lowercase()) {
+            held.finish(if (choice == AuthSignOutChoice.Keep) SignOutChoice.keep else SignOutChoice.discard)
+        }
+        override suspend fun cancel() = tell("cancel") { held.cancel() }
+    }
+
+    private suspend fun holdSignOut(account: String): SignOutSession {
         check(activeAccount() == account) { "The account changed." }
         beforeAccountChange()
         check(activeAccount() == account) { "The account changed." }
@@ -133,24 +144,27 @@ class GymEngineSession(
             held.cancel()
             error("The account changed.")
         }
-        telemetry.event("gym_sign_out", mapOf("state" to "shown"))
-        return object : AuthSignOutSession {
-            override val account = held.account
-            override val unsent = held.unsent
-            override suspend fun finish(choice: AuthSignOutChoice) = signOutAction(choice.name.lowercase()) {
-                held.finish(if (choice == AuthSignOutChoice.Keep) SignOutChoice.keep else SignOutChoice.discard)
-            }
-            override suspend fun cancel() = signOutAction("cancel") { held.cancel() }
-        }
+        return held
     }
 
+    override suspend fun prepareSignOut(account: String): AuthSignOutSession {
+        val held = holdSignOut(account)
+        telemetry.event("gym_sign_out", mapOf("state" to "shown"))
+        return HeldSignOut(held, ::signOutAction)
+    }
+
+    // Deletion asks no sign-out question, so it tells nothing as one; `account_delete` tells it.
+    suspend fun prepareAccountDeletion(account: String): AuthSignOutSession = HeldSignOut(holdSignOut(account)) { _, body -> body() }
+
+    // Keep and Discard end the account, so their outcome is a signed-out event; Cancel stays with the account.
     private suspend fun signOutAction(action: String, body: suspend () -> Unit) {
+        val tell: (String, Map<String, String>) -> Unit = if (action == "cancel") telemetry::event else telemetry::signedOutEvent
         try {
             body()
-            telemetry.event("gym_sign_out", mapOf("action" to action, "outcome" to "completed"))
+            tell("gym_sign_out", mapOf("action" to action, "outcome" to "completed"))
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            telemetry.event("gym_sign_out", mapOf("action" to action, "outcome" to "failed"))
+            tell("gym_sign_out", mapOf("action" to action, "outcome" to "failed"))
             throw failure
         }
     }
@@ -178,7 +192,7 @@ class GymEngineSession(
         return active["outbox"]?.arr().orEmpty().count { it.member("state").str() in setOf("held", "ready", "sent") } + pending
     }
 
-    private var deletingSignOut: works.windmill.sync.engine.SignOutSession? = null
+    private var deletingSignOut: SignOutSession? = null
 
     suspend fun finishAccountDeletion(account: String, replica: String, held: AuthSignOutSession?) {
         val snapshot = engine.snapshot()
