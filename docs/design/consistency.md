@@ -954,7 +954,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     (`web/src/products/gym/log.js`).
 - **11w · An answer's proposal still arriving (designer).** Coach can answer before its proposal
   reaches the phone; until the miss settles, Android draws nothing in the card's place
-  (`coach/AskScreen.kt`), because no board draws a waiting state for it.
+  (`coach/AskScreen.kt`), because no board draws a waiting state for it. A miss settles 10 s after it,
+  once the phone reads further into the account or lands a pull; the wait's end asks for one pull, so
+  an idle account settles too, and the place then reads *This proposal is no longer available.*
 
 ### Parity rulings (owner, 2026-10-22)
 
