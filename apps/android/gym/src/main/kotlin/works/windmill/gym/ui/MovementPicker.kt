@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -215,7 +216,7 @@ class MovementPickerState(
     var refusal by mutableStateOf(refusal)
     var busy by mutableStateOf(false)
     var scheme by mutableStateOf(scheme)
-    var loadCount by mutableStateOf(loadCount)
+    var loadCount by mutableIntStateOf(loadCount)
     var created by mutableStateOf(created)
     var submitted by mutableStateOf(submitted)
 
