@@ -350,7 +350,7 @@ struct CoachTab: View {
       if let response = record.response, response.status == "completed" {
         if let message = response.message, !message.isEmpty { CoachAnswerText(text: message) }
         if coach.offersSignIn(record) {
-          Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
+          Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(RoomDecisionStyle(.prominent))
             .accessibilityIdentifier("coach-sign-in")
         }
         if record.results.isEmpty, !response.routines.isEmpty {

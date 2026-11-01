@@ -480,11 +480,11 @@ public enum Readout {
   }
 
   public static func loadUnit(equipment: String?, loadCount: Int) -> String {
-    switch equipment {
-    case "dumbbell": return loadCount == 2 ? "kg each" : "kg"
-    case "barbell", "machine": return "kg total"
-    case "bodyweight": return "kg added"
-    default: return "kg"
+    switch Equipment(equipment) {
+    case .dumbbell: loadCount == 2 ? "kg each" : "kg"
+    case .barbell, .machine: "kg total"
+    case .bodyweight: "kg added"
+    case .cable, .kettlebell, .other, nil: "kg"
     }
   }
 

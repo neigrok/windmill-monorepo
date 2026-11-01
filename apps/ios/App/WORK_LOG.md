@@ -11,10 +11,10 @@ the system may dismiss that confirmation outside its popover on iOS 26. Tests co
 as well as committed deletion. The app has no Undo band or delayed removal task.
 
 Routine summaries are sheets with Close, Edit and Start. Starting waits for dismissal before
-opening the workout. Start stands on the sheet's system bottom bar. On iOS 26 a bar re-dresses
-`.glassProminent` as its own compact item, ignoring the label's width, and hiding the item's shared
-background removes its fill too, so a primary that spans a bar draws its tinted glass itself
-(`RoomPrimaryStyle(onBar:)`). Workout pages use the native pager and page control. The compact ledger
+opening the workout. Start stands in the sheet's reach band and spans it. The band is on a surface,
+so the movements pass under it on a hard edge over the bar material and no row reads through Start.
+`GymIntegrationFlowTests.testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit` holds Start to at least 85% of the
+window's width. Workout pages use the native pager and page control. The compact ledger
 contains the saved sets and preserves access to earlier rows without a duplicate statistics strip.
 
 Coach history invalidates reads at both the start and completion of deletion, so a concurrent
@@ -303,3 +303,28 @@ Dogfood follow-up `ios-workout-load-wheel-responsiveness`: profile edited-set Sa
 dismissal in a signed Release build on a physical device, repeating open/save/close cycles. Compare main-thread duration and traces with the baseline
 before selecting a fix. Current sampled stacks show framework rendering/teardown and no changed flow
 function; release-device performance remains unmeasured.
+
+UI tests find a room-menu row by its `room-…` identifier or its room's title through
+`XCUIApplication.roomItem(_:)`. `PalettesTests` holds the palettes to exactly the theme catalog's colours, each
+carried by the app's bundle.
+
+Every button role a room draws lives in `Theme/RoomControls.swift`: the primary (`RoomPrimaryStyle`), the
+secondary, the glass seat and a card's decision (`RoomDecisionStyle`, prominent or quiet, a
+destructive quiet one in system red). `RoomGlass` is the one Liquid Glass surface, the regular material before
+iOS 26, under the seat, the floating act and the transient band. `GymTransient.Band` resolves the band's words
+and its one control from plain values, and `GymModel.dismissError(_:)` clears the error a band showed. A read
+the room cannot make goes through `GymModel.failRead(_:)`, which says `GymModel.unreadable` and reports under `gym_read`.
+`DestructiveQuestion` takes only telemetry and the account. `RoomSpace` names the 52 pt control height and the
+22 and 24 pt radii Coach's cards and the weigh-in keep apart from `cardRadius`; that drift, the drawn card
+decisions and the weigh-in's own rows wait on Figma in `docs/design/consistency.md`.
+
+The refactor draws the same pixels. Throwaway captures before and after it, in Dark and Daylight on iPhone Air
+(iOS 27.0) and iPhone 17 Pro (iOS 26.5), compare the Coach greeting, Routines with its floating plus, the routine
+sheet's reach-band Start (on `2e36dd27`), The log, the weigh-in sheet, the discard alert, the rack, the receipt,
+the transient band at default and AX3 sizes, the welcome and the first onboarding page. With the status bar and
+the home indicator masked every pair is identical, except for differences of at most two levels on Liquid Glass
+that two runs of the same build also show, and the iOS 26.5 Daylight receipt, whose sheet differs by up to 13
+levels between any two runs, the same build's included. Coach's cards were not reachable: the signed-in capture
+helpers fail before Coach opens. Their decision style renders byte-identical to the previous one in an
+`ImageRenderer` check, light and dark, enabled and disabled. iOS 18's material branch has no simulator here and
+is unverified.

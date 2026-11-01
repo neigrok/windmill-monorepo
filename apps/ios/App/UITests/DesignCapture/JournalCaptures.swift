@@ -40,7 +40,7 @@ final class JournalCaptures: DesignCapture {
       XCTAssertTrue(replay.waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
       closeSheet(app)
-      roomMenuOpen("journal-room-menu-open", look, app, current: "journal")
+      roomMenuOpen("journal-room-menu-open", look, app, current: "Journal")
       capture("journal-today-after-ink-lifted", look, app)
     }
   }

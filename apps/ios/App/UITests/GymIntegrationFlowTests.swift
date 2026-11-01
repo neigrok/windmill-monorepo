@@ -158,7 +158,10 @@ import XCTest
     }
     app.buttons["gym-movement-editor-commit"].tap(); app.buttons["save-routine"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
-    app.buttons["routine-start"].tap()
+    // Start spans the summary sheet's reach band, never a content-sized capsule.
+    let start = app.buttons["routine-start"]
+    XCTAssertGreaterThanOrEqual(start.frame.width, app.windows.firstMatch.frame.width * 0.85)
+    start.tap()
     hideAndReturn(app)
     let rackWeight = app.buttons["workout-weight"].label
     let rackSet = app.descendants(matching: .any)["workout-current-set"].label

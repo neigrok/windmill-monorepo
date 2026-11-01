@@ -21,7 +21,7 @@ import XCTest
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     let menu = app.buttons["room-menu"]
     XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
-    let gym = app.buttons["room-gym"]
+    let gym = app.roomItem("Gym")
     XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
     openTab("Coach", app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 10))

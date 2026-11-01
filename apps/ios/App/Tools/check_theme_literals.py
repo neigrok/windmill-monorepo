@@ -43,7 +43,7 @@ ALLOWED = [
      "the simulator fixture's program screenshot draws another app's page, black on white, in either appearance"),
     ("Sources/Gym/Coach/CoachFixtures.swift", ".foregroundColor: UIColor.black])",
      "the simulator fixture's program screenshot draws another app's page, black on white, in either appearance"),
-    ("Sources/Gym/Components/ChangeBlock.swift", ".opacity(enabled ? 1 : 0.5)",
+    ("Sources/Theme/RoomControls.swift", ".opacity(enabled ? 1 : 0.5)",
      "a card's decision dims whole while it cannot be taken, as the boards draw Applying… over a disabled Reject (08.30)"),
     ("WorkoutActivityWidget/WorkoutActivityWidget.swift", ".foregroundStyle(.secondary)",
      "the same view draws on the Island's black and on the lock screen in either appearance; only the system's hierarchy reads on both"),

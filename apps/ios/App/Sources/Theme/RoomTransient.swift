@@ -3,7 +3,8 @@ import SwiftUI
 // The one band (Figma Gym · iOS 00.3): a message with at most one control, an accent action or the
 // dismiss xmark. Where its host keys `roomMotion` on what it says, it rises on the system spring and leaves the way it
 // came, a 200 ms fade with Reduce Motion; a band with a way to be dismissed also goes by a swipe down, unless its text
-// scrolls within a bounded band, where a drag reads the text and its control sends it away.
+// scrolls within a bounded band, where a drag reads the text and its control sends it away. It floats over the list it
+// answers, so it stands on glass, never on a row's card.
 struct RoomTransient: View {
   let message: String
   let room: RoomColors
@@ -38,7 +39,7 @@ struct RoomTransient: View {
     }.font(.footnote)
       .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
       .frame(minHeight: RoomSpace.minimumTarget)
-      .modifier(FloatingSurface())
+      .roomGlass(in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius), floating: true)
       .contentShape(RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
       .accessibilityElement(children: .contain)
       .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
@@ -55,16 +56,6 @@ struct RoomTransient: View {
         guard drag.translation.height > RoomSpace.minimumTarget / 2 || drag.predictedEndTranslation.height > RoomSpace.minimumTarget else { return }
         withAnimation(motion) { dismiss?() }
       }
-  }
-}
-
-// A band floats over the list it answers, so it stands on glass — the regular material with the system shadow before
-// iOS 26 — never on a row's card.
-struct FloatingSurface: ViewModifier {
-  @ViewBuilder func body(content: Content) -> some View {
-    let shape = RoundedRectangle(cornerRadius: RoomSpace.cardRadius)
-    if #available(iOS 26.0, *) { content.glassEffect(.regular, in: shape) }
-    else { content.background(.regularMaterial, in: shape).shadow(radius: 8, y: 2) }
   }
 }
 

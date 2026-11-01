@@ -20,7 +20,7 @@ import XCTest
     app.launch()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 20))
     let currentSet = app.descendants(matching: .any)["workout-current-set"]
-    XCTAssertTrue(currentSet.waitForLabel("Set 3, current, target 100 kilograms, 5 reps"))
+    XCTAssertTrue(currentSet.waitForLabel("Set 3, current, 100 kilograms, 5 reps"))
     let before = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(before.map(\.label), ["Set 1, logged, 100 kilograms, 5 reps", "Set 2, logged, 100 kilograms, 5 reps"])
     XCUIDevice.shared.press(.home)
@@ -33,8 +33,8 @@ import XCTest
       XCTAssertTrue(control.wait(for: \.isHittable, toEqual: true, timeout: 5)); control.tap()
       XCUIDevice.shared.press(.home)
       app.activate()
-      if currentSet.waitForLabel("Set 4, current, target 100 kilograms, 5 reps", timeout: 15) { break }
-      XCTAssertEqual(currentSet.label, "Set 3, current, target 100 kilograms, 5 reps", "The control's tap logged something other than one set")
+      if currentSet.waitForLabel("Set 4, current, 100 kilograms, 5 reps", timeout: 15) { break }
+      XCTAssertEqual(currentSet.label, "Set 3, current, 100 kilograms, 5 reps", "The control's tap logged something other than one set")
       XCTAssertEqual(attempt, 1, "Two taps on the control logged nothing")
       XCUIDevice.shared.press(.home)
     }
@@ -53,7 +53,7 @@ import XCTest
     controlCenterControl().tap()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
-    XCTAssertTrue(currentSet.waitForLabel("Set 4, current, target 100 kilograms, 5 reps"))
+    XCTAssertTrue(currentSet.waitForLabel("Set 4, current, 100 kilograms, 5 reps"))
     let reopened = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(reopened.map(\.identifier), after.map(\.identifier))
     XCTAssertEqual(reopened.map(\.label), after.map(\.label))
@@ -263,7 +263,7 @@ import XCTest
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     let parked = editor.screenshot().pngRepresentation
     app.buttons["room-menu"].tap()
-    app.buttons["room-journal"].tap()
+    app.roomItem("Journal").tap()
     XCTAssertEqual(editor.screenshot().pngRepresentation, parked)
     app.buttons["write-today"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))

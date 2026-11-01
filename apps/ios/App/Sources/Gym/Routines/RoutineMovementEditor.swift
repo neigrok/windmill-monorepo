@@ -16,22 +16,22 @@ struct RoutineMovementDraft: Equatable {
   init(exercise: Exercise, base: Exercise?, entry: RoutineEntry?) {
     self.base = base; opening = exercise; adding = entry == nil
     name = exercise.name; equipment = exercise.equipment
-    loadCount = exercise.equipment == "dumbbell" ? exercise.loadCount : 2
+    loadCount = Equipment(exercise.equipment) == .dumbbell ? exercise.loadCount : 2
     initialTargets = RoutineTargetDraft(sets: entry?.sets)
     targets = initialTargets
   }
 
   var id: ID<Exercise> { opening.id }
   var exercise: Exercise {
-    Exercise(id: id, name: MovementName.trimmed(name), pattern: opening.pattern, equipment: equipment,
+    Exercise(id: id, name: NameField.movement.trimmed(name), pattern: opening.pattern, equipment: equipment,
              stepKg: base == nil ? ExerciseRules.defaultStepKg(equipment: equipment) : opening.stepKg, loadCount: loadCount, aliases: opening.aliases)
   }
   var equipmentChanged: Bool { base != nil && (equipment != base?.equipment || exercise.loadCount != base?.loadCount) }
   var isDirty: Bool { exercise != opening || targets != initialTargets }
   var problem: String? {
-    if let problem = MovementName.problem(name) { return problem }
-    if !MovementEquipment.choices.contains(equipment) && !(base?.equipment == "other" && equipment == "other") { return "Choose equipment." }
-    if equipment == "dumbbell" && ![1, 2].contains(loadCount) { return "Choose one or two dumbbells." }
+    if let problem = NameField.movement.problem(name) { return problem }
+    if !MovementEquipment.choices.contains(equipment) && !(Equipment(base?.equipment) == .other && Equipment(equipment) == .other) { return "Choose equipment." }
+    if Equipment(equipment) == .dumbbell && ![1, 2].contains(loadCount) { return "Choose one or two dumbbells." }
     return targets.refusal?.message
   }
 }
@@ -66,8 +66,8 @@ struct RoutineMovementEditor: View {
               .textInputAutocapitalization(.words).autocorrectionDisabled()
               .accessibilityIdentifier("gym-movement-name").onSubmit { nextField() }
           }
-          if let counter = MovementName.counter(movement.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-          if !movement.name.isEmpty, let problem = MovementName.problem(movement.name) { refusalLine(problem) }
+          if let counter = NameField.movement.counter(movement.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          if !movement.name.isEmpty, let problem = NameField.movement.problem(movement.name) { refusalLine(problem) }
           MovementEquipmentPicker(equipment: $movement.equipment, loadCount: $movement.loadCount, identifier: "gym-movement-equipment")
         }
         Section {
@@ -75,8 +75,8 @@ struct RoutineMovementEditor: View {
           headField("Reps", field: .reps, placeholder: movement.targets.varies(.reps) ? "varies" : "max", focus: .reps)
           headField(MovementEquipment(exercise).unit, field: .weight, placeholder: movement.targets.varies(.weight) ? "varies" : "last time", focus: .weight)
         } header: { Text("Targets") } footer: {
-          if exercise.equipment != "other" {
-            Text(exercise.equipment == "bodyweight" ? "Enter added weight or a negative value for assistance. Blank means no load target." : MovementEquipment(exercise).help)
+          if Equipment(exercise.equipment) != .other {
+            Text(Equipment(exercise.equipment) == .bodyweight ? "Enter added weight or a negative value for assistance. Blank means no load target." : MovementEquipment(exercise).help)
           }
         }
         Section {
@@ -171,7 +171,7 @@ struct RoutineMovementEditor: View {
         Stepper(label) { movement.targets.step(field, direction: 1); feedback += 1 } onDecrement: { movement.targets.step(field, direction: -1); feedback += 1 }
           .labelsHidden()
           .accessibilityIdentifier("gym-target-\(field)-stepper")
-        if field == .weight && exercise.equipment == "bodyweight" { signButton(row: nil) }
+        if field == .weight && Equipment(exercise.equipment) == .bodyweight { signButton(row: nil) }
       }
       .disabled(!enabled)
       if refused, let refusal = movement.targets.headRefusal { refusalLine(refusal.message) }
@@ -186,13 +186,13 @@ struct RoutineMovementEditor: View {
         rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
         HStack {
           rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
-          if exercise.equipment == "bodyweight" { signButton(row: index) }
+          if Equipment(exercise.equipment) == .bodyweight { signButton(row: index) }
         }
       } else {
         HStack(spacing: 16) {
           rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
           rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
-          if exercise.equipment == "bodyweight" { signButton(row: index) }
+          if Equipment(exercise.equipment) == .bodyweight { signButton(row: index) }
         }
       }
       if let refusal { refusalLine(refusal.message) }

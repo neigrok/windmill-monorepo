@@ -71,7 +71,7 @@ enum GymTab: String {
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     let menu = app.buttons["room-menu"]
     XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
-    let gym = app.buttons["room-gym"]
+    let gym = app.roomItem("Gym")
     XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
     XCTAssertTrue(app.descendants(matching: .any)[first.screen].waitForExistence(timeout: 15))
   }
@@ -117,10 +117,10 @@ enum GymTab: String {
   func roomMenuOpen(_ screen: String, _ look: Look, _ app: XCUIApplication, current: String) {
     let menu = app.buttons["room-menu"]
     XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10)); menu.tap()
-    XCTAssertTrue(app.buttons["room-journal"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.roomItem("Journal").waitForExistence(timeout: 5))
     capture(screen, look, app, settle: 0.6)
-    app.buttons["room-" + current].tap()
-    XCTAssertTrue(app.buttons["room-journal"].waitForNonExistence(timeout: 5))
+    app.roomItem(current).tap()
+    XCTAssertTrue(app.roomItem("Journal").waitForNonExistence(timeout: 5))
   }
   // A lazy list keeps rows it scrolled away with an empty frame, and asking those for hittability raises.
   func onScreen(_ element: XCUIElement, _ app: XCUIApplication) -> Bool {
