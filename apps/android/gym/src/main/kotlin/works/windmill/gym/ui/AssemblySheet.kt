@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -99,11 +100,16 @@ fun AssemblySheet(
             preview = walk.toMutableList().apply { add(to, removeAt(from)) }
         }
     }
-    val direction = when {
-        dragged == null -> 0f
-        centre < list.layoutInfo.viewportStartOffset + edge -> -1f
-        centre > list.layoutInfo.viewportEndOffset - edge -> 1f
-        else -> 0f
+    // Derived off the layout, so a drag recomposes when the edge it scrolls toward changes rather than every frame.
+    val direction by remember(order, edge) {
+        derivedStateOf {
+            when {
+                dragged == null -> 0f
+                centre < list.layoutInfo.viewportStartOffset + edge -> -1f
+                centre > list.layoutInfo.viewportEndOffset - edge -> 1f
+                else -> 0f
+            }
+        }
     }
     LaunchedEffect(dragged, direction) {
         if (direction == 0f) return@LaunchedEffect

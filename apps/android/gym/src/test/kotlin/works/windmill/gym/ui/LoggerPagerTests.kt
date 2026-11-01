@@ -91,7 +91,7 @@ class LoggerPagerTests {
         room.store.observeEngine()
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides telemetry) {
-                LoggerScreen(store = room.store, say = {}, onFinish = {})
+                LoggerBinding(room.store).let { LoggerScreen(it, it, say = {}, onFinish = {}) }
             }
         }
         return room

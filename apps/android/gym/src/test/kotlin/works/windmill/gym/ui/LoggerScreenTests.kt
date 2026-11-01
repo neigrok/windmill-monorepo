@@ -125,7 +125,7 @@ class LoggerScreenTests {
         room.store.observeEngine()
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
-                LoggerScreen(store = room.store, say = say, onFinish = onFinish, onHide = onHide)
+                LoggerBinding(room.store).let { LoggerScreen(it, it, say = say, onFinish = onFinish, onHide = onHide) }
             }
         }
         return room
@@ -159,7 +159,7 @@ class LoggerScreenTests {
                 other.startExternalWorkout()
                 other.store.workout.choose("bench-press")
             }
-            compose.setContent { if (showing.value) GymMaterial { LoggerScreen(current.value, {}, {}) } }
+            compose.setContent { if (showing.value) GymMaterial { LoggerBinding(current.value).let { LoggerScreen(it, it, {}, {}) } } }
             compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("61")
             val before = compose.runOnIdle {
                 broken = true
@@ -366,7 +366,7 @@ class LoggerScreenTests {
                 room.store.refreshEngine()
             }
             val shown = mutableStateOf(room.store)
-            compose.setContent { LoggerScreen(shown.value, say = {}, onFinish = {}) }
+            compose.setContent { LoggerBinding(shown.value).let { LoggerScreen(it, it, say = {}, onFinish = {}) } }
 
             compose.onNodeWithText("Free workout").assertIsDisplayed()
             compose.onNodeWithText("What are you lifting?").assertIsDisplayed()
@@ -436,8 +436,8 @@ class LoggerScreenTests {
             room.store.observeEngine()
             var finished: FinishOutcome? = null
             compose.setContent {
-                LoggerScreen(store = room.store, say = { said += it },
-                    onFinish = { scope.launch { finished = room.store.workout.finish() } })
+                LoggerBinding(room.store).let { logger -> LoggerScreen(logger, logger, say = { said += it },
+                    onFinish = { scope.launch { finished = room.store.workout.finish() } }) }
             }
 
             listOf("bench-press", "barbell-row", "overhead-press").forEachIndexed { index, movement ->
@@ -495,7 +495,7 @@ class LoggerScreenTests {
         }
         room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = room.store, say = {}, onFinish = {})
+            LoggerBinding(room.store).let { LoggerScreen(it, it, say = {}, onFinish = {}) }
         }
         return room
     }

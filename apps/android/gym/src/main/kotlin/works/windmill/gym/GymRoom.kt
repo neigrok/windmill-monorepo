@@ -118,6 +118,7 @@ import works.windmill.gym.ui.WorkoutInspectScreen
 import works.windmill.gym.ui.WorkoutFixScreen
 import works.windmill.gym.ui.RecoveryBinding
 import works.windmill.gym.ui.LogScreen
+import works.windmill.gym.ui.LoggerBinding
 import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.NoteEditorScreen
 import works.windmill.gym.ui.NotesScreen
@@ -1215,13 +1216,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
                         if (stateKey != null) sessionStates.SaveableStateProvider(stateKey) {
                             when (frame) {
-                                is Frame.Workout -> LoggerScreen(
-                                    store = store,
+                                is Frame.Workout -> remember(store) { LoggerBinding(store) }.let { logger -> LoggerScreen(
+                                    state = logger,
+                                    events = logger,
                                     say = { note = it },
                                     onFinish = { close() },
                                     onHide = ::hideWorkout,
                                     transient = transient.takeIf { standing },
-                                )
+                                ) }
                                 // A day being built outranks a tab and nothing else, and it covers the rail.
                                 is Frame.Draft -> (building?.also { leavingDraft.draft = it } ?: leavingDraft.draft)?.let { draft ->
                                     val builder = remember(store) { RoutineBuilderBinding(store) }
