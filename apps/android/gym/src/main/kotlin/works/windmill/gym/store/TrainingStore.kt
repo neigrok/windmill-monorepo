@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
@@ -636,7 +637,7 @@ class TrainingStore(
     // Whose the replica in hand is: the account id, or null for the signed-out seat.
     private var owner: String? = null
     private var closedDetails by mutableStateOf<Map<String, SessionDetail>>(emptyMap())
-    private val lastTimes = mutableMapOf<String, LastTime>()
+    private val lastTimes = mutableStateMapOf<String, LastTime>()
     private var resumePending = false
     // A change of seat drops the map and the picker's own effect never runs again, so `connect` asks
     // again on the way out.
@@ -966,6 +967,9 @@ class TrainingStore(
         lastTime = answer
         redial()
     }
+
+    // A movement's last time as this workout has read it: null until the movement is first chosen and its read answers.
+    fun lastTimeOf(movement: String): LastTime? = lastTimes[movement]
 
     // Sets are keyed by movement and never by position, so only the walk order moves.
     fun reorder(from: Int, to: Int) {

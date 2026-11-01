@@ -709,7 +709,7 @@ import SyncTesting
     #expect(done.tally == "3 of 3 sets" && done.complete)
     let open = workout.ledger(second)
     #expect(open.planLine == "plan open" && open.tally == "0 sets" && !open.complete && open.rows.map(\.place) == [.current])
-    let free = MovementLedger(sets: [set], plan: nil)
+    let free = MovementLedger(sets: [set], plan: nil, lastTime: LastTime(exerciseId: first))
     #expect(free.planLine == nil && free.tally == "1 set" && !free.complete)
   }
 

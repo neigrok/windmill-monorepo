@@ -401,7 +401,8 @@ fun LoggerScreen(
                         }
                         val exercise = store.catalog.firstOrNull { it.id == pageMovement }
                         val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
-                        val slots = LiveLines.slots(today, store.session?.plan?.entry(pageMovement), store.stalled, unit)
+                        val slots = LiveLines.slots(today, store.session?.plan?.entry(pageMovement), store.lastTimeOf(pageMovement),
+                            store.stalled, unit)
                         var ledgerBottom by remember(pageMovement) { mutableStateOf(0.dp) }
                         val pageSemantics = if (!visible) Modifier.clearAndSetSemantics {}
                             else Modifier.semantics { if (!active) hideFromAccessibility() }

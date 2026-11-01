@@ -116,10 +116,12 @@ struct TrainingReadsTests {
       case "LastTime":
         let last = log.lastTime(for: try fields.ref("exerciseId", Exercise.self))
         return ["sessionId": last.session?.id.json ?? .null, "routine": .of(last.routine), "sets": .array(last.sets.map { $0.id.json }), "isFirstTime": .bool(last.isFirstTime)]
-      case "Prefill":
+      case "Prefill", "OfferedLoads":
         let last = log.lastTime(for: try fields.ref("exerciseId", Exercise.self))
         let today = try fields.optionalRef("todaySessionId", Session.self).map { log.sets(session: $0).filter { $0.exerciseId == last.exerciseId } } ?? []
-        let prefill = Prefill.of(todaySets: today, planEntry: try fields.optionalValue("planEntry", of: RoutineEntry.self), lastTime: last)
+        let plan = try fields.optionalValue("planEntry", of: RoutineEntry.self)
+        if operation == "OfferedLoads" { return .array(Prefill.offeredLoads(todaySets: today, planEntry: plan, lastTime: last).map { .of($0) }) }
+        let prefill = Prefill.of(todaySets: today, planEntry: plan, lastTime: last)
         return ["weightKg": .of(prefill.weightKg), "reps": JSON(prefill.reps)]
       case "RestTarget":
         guard let target = RestTarget.of(try fields.optionalValue("planEntry", of: RoutineEntry.self), rest: try restSettings(read)) else { return .null }

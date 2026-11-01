@@ -57,11 +57,12 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
         "LastTime" -> log.lastTime(f.ref("exerciseId", Exercise)).let {
             Json.objectOf("sessionId" to (it.session?.id?.json ?: Json.Null), "routine" to nullable(it.routine), "sets" to Json.Arr(it.sets.map { set -> set.id.json }), "isFirstTime" to Json.of(it.isFirstTime))
         }
-        "Prefill" -> {
+        "Prefill", "OfferedLoads" -> {
             val last = log.lastTime(f.ref("exerciseId", Exercise))
             val today = f.optionalRef("todaySessionId", Session)?.let { log.sets(it).filter { set -> set.exerciseId == last.exerciseId } } ?: emptyList()
-            val prefill = Prefill.of(today, f.optionalValue("planEntry", RoutineEntry), last)
-            Json.objectOf("weightKg" to Json.of(prefill.weightKg), "reps" to Json.of(prefill.reps))
+            val plan = f.optionalValue("planEntry", RoutineEntry)
+            if (vector.input.member("read").str() == "OfferedLoads") Json.Arr(Prefill.offeredLoads(today, plan, last).map { nullable(it) })
+            else Prefill.of(today, plan, last).let { Json.objectOf("weightKg" to Json.of(it.weightKg), "reps" to Json.of(it.reps)) }
         }
         "RestTarget" -> RestTarget.of(f.optionalValue("planEntry", RoutineEntry), restSettings(read))?.let {
             Json.objectOf("seconds" to Json.of(it.seconds), "reached" to Json.of(it.isReached(f.int("sinceMs").toLong())))

@@ -41,7 +41,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
 | `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
-| `training-reads.json` | Prefill, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
+| `training-reads.json` | Prefill and the loads it offers ahead, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -226,7 +226,9 @@ parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-s
 finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
 
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
-last-time rows and today's sets. `SessionReadout` provides duration, set
+last-time rows and today's sets. `OfferedLoads` is the prefill's load at every set the plan still
+holds, the set in hand first, each later set offered as though the one before were logged as
+offered; a load that would come from a last time not read yet is null. `SessionReadout` provides duration, set
 and movement counts, volume and the session estimate. `StatsProgress` groups
 finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility

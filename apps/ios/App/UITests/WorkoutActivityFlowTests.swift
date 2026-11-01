@@ -12,7 +12,7 @@ import XCTest
     app.launch()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
     let currentSet = app.descendants(matching: .any)["workout-current-set"]
-    XCTAssertTrue(currentSet.waitForLabel("Set 3, current, target 100 kilograms, 5 reps"))
+    XCTAssertTrue(currentSet.waitForLabel("Set 3, current, 100 kilograms, 5 reps"))
     let before = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(before.map(\.label), ["Set 1, logged, 100 kilograms, 5 reps", "Set 2, logged, 100 kilograms, 5 reps"])
     let activity = app.otherElements["workout-activity-state"]
@@ -56,12 +56,12 @@ import XCTest
     XCTAssertTrue(log.waitForExistence(timeout: 5))
     log.tap()
     app.activate()
-    XCTAssertTrue(currentSet.waitForLabel("Set 4, current, target 100 kilograms, 5 reps", timeout: 30))
+    XCTAssertTrue(currentSet.waitForLabel("Set 4, current, 100 kilograms, 5 reps", timeout: 30))
     let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(after.map(\.label), before.map(\.label) + ["Set 3, logged, 100 kilograms, 5 reps"])
     XCTAssertEqual(after.prefix(before.count).map(\.identifier), before.map(\.identifier))
     XCTAssertEqual(Set(after.map(\.identifier)).count, 3)
-    XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, "Set 4, current, target 100 kilograms, 5 reps")
+    XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, "Set 4, current, 100 kilograms, 5 reps")
     app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts["Ended early."].waitForExistence(timeout: 5))
     XCUIDevice.shared.press(.home)

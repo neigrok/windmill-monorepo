@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -42,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import works.windmill.gym.R
@@ -55,7 +60,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 import works.windmill.gym.domain.Against
 import works.windmill.gym.domain.AgainstMovement
 import works.windmill.gym.domain.Effort
@@ -227,6 +234,7 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FinishScreen(
     finished: FinishedSession,
@@ -250,11 +258,14 @@ fun FinishScreen(
         }
         return
     }
+    // At large text the receipt opens the whole sheet; otherwise it stands at its board height and grows to hold every
+    // fact. Either way the body scrolls under the pinned actions.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val requestedHeight = if (finished.slight) 465.dp else 815.dp
-        val receiptHeight = requestedHeight.coerceAtMost(maxHeight)
-        Column(Modifier.fillMaxWidth().height(receiptHeight).navigationBarsPadding()) {
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
+        val largeText = LocalDensity.current.fontScale > 1.3f
+        val floor = if (largeText) maxHeight else (if (finished.slight) 465.dp else 815.dp).coerceAtMost(maxHeight)
+        Column(Modifier.fillMaxWidth().heightIn(min = floor, max = maxHeight).navigationBarsPadding().testTag("Finish receipt"),
+            verticalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp).padding(bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -279,6 +290,7 @@ fun FinishScreen(
                 }
                 val summary = SessionSummary(finished.session, finished.sets, catalog)
                 val duration = ((finished.session.finishedAtMs ?: finished.session.startedAtMs) - finished.session.startedAtMs).coerceAtLeast(0)
+                // The three facts share one row, or wrap two to a row where large text or a narrow sheet leaves no room.
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val facts: @Composable (Modifier) -> Unit = { modifier ->
                         ReceiptFact(Readout.duration(duration), "Duration", modifier)
@@ -286,14 +298,14 @@ fun FinishScreen(
                         val volume = Finish.volume(summary.tonnageKg)
                         ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
                     }
-                    if (LocalDensity.current.fontScale > 1.3f || maxWidth < 270.dp) {
-                        Column(Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))) {
-                            facts(Modifier.fillMaxWidth())
+                    val tiles = Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))
+                    if (largeText || maxWidth < 270.dp) {
+                        FlowRow(tiles.padding(vertical = 16.dp), maxItemsInEachRow = 2,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            facts(Modifier.fillMaxWidth(0.5f))
                         }
                     } else {
-                        Row(Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))) {
-                            facts(Modifier.weight(1f))
-                        }
+                        Row(tiles) { facts(Modifier.weight(1f).padding(vertical = 16.dp)) }
                     }
                 }
                 onKeep?.let { keep ->
@@ -329,15 +341,25 @@ fun FinishScreen(
     }
 }
 
+// The value keeps one line, shrinking where a half-width tile at large text cannot hold it, and wraps only a value no
+// readable size fits.
 @Composable
 private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: String? = null) {
     val skin = LocalGymColors.current
-    Column(modifier.padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(buildAnnotatedString {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        val text = buildAnnotatedString {
             append(value)
-            unit?.let { withStyle(SpanStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal)) { append(" $it") } }
-        }, style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp), color = skin.ink)
+            unit?.let { withStyle(SpanStyle(fontSize = 0.5.em, fontWeight = FontWeight.Normal)) { append(" $it") } }
+        }
+        val style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp, color = skin.ink, textAlign = TextAlign.Center)
+        val measurer = rememberTextMeasurer()
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val oneLine = !measurer.measure(text, style.copy(fontSize = 16.sp), maxLines = 1,
+                constraints = Constraints(maxWidth = constraints.maxWidth)).hasVisualOverflow
+            if (oneLine) BasicText(text, Modifier.fillMaxWidth(), style, maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 32.sp))
+            else BasicText(text, Modifier.fillMaxWidth(), style)
+        }
         Text(label, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.inkDim,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }

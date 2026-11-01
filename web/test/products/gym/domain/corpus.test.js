@@ -108,11 +108,14 @@ function trainingReadsForm(vector, read) {
       const value = log.lastTime(f.ref('exerciseId', Exercise));
       return { sessionId: value.session?.id.json ?? null, routine: value.routine, sets: value.sets.map((set) => set.id.json), isFirstTime: value.isFirstTime };
     }
-    case 'Prefill': {
+    case 'Prefill':
+    case 'OfferedLoads': {
       const last = log.lastTime(f.ref('exerciseId', Exercise));
       const today = f.optionalRef('todaySessionId', Session);
       const sets = today === null ? [] : log.setsFor(today).filter((set) => set.exerciseId.equals(last.exerciseId));
-      const value = Prefill.of(sets, f.optionalValue('planEntry', RoutineEntry.decode), last);
+      const plan = f.optionalValue('planEntry', RoutineEntry.decode);
+      if (vector.input.read === 'OfferedLoads') return Prefill.offeredLoads(sets, plan, last);
+      const value = Prefill.of(sets, plan, last);
       return { weightKg: value.weightKg, reps: value.reps };
     }
     case 'RestTarget': {

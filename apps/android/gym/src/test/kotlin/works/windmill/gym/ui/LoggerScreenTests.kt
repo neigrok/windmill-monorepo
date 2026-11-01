@@ -675,13 +675,13 @@ class LoggerScreenTests {
                 listOf(
                     "Set 1, logged, 60 kg total, 5 reps, on this device" to true,
                     "Set 2, logged, 80 kg total, 5 reps, on this device" to true,
-                    "Set 3, current, target 90 kg total, 3 reps" to false,
+                    "Set 3, current, 90 kg total, 3 reps" to false,
                     "Set 4, planned, 100 kg total, 1 rep" to false,
                     "Set 5, planned, 80 kg total, 5 reps" to false,
                 ),
                 ledger(),
             )
-            compose.onNode(hasContentDescription("Set 3, current, target 90 kg total, 3 reps"))
+            compose.onNode(hasContentDescription("Set 3, current, 90 kg total, 3 reps"))
                 .assert(hasText("90 kg total × 3"))
                 .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
             compose.onAllNodes(hasText("Set 3")).assertCountEquals(1)
@@ -695,12 +695,12 @@ class LoggerScreenTests {
                     "Set 1, logged, 60 kg total, 5 reps, on this device" to true,
                     "Set 2, logged, 80 kg total, 5 reps, on this device" to true,
                     "Set 3, logged, 90 kg total, 3 reps, on this device" to true,
-                    "Set 4, current, target 100 kg total, 1 rep" to false,
+                    "Set 4, current, 100 kg total, 1 rep" to false,
                     "Set 5, planned, 80 kg total, 5 reps" to false,
                 ),
                 ledger(),
             )
-            compose.onNode(hasContentDescription("Set 4, current, target 100 kg total, 1 rep")).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 4, current, 100 kg total, 1 rep")).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

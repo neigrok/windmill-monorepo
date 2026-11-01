@@ -200,7 +200,8 @@ struct OnboardingGlimpse: View {
     let sets = (0..<(logged < 1 ? 1 : 2)).map { index in
       TrainingSet(id: ID(RecordID("onboarding-glimpse-\(index)")), sessionId: session, exerciseId: squat, weightKg: 100, reps: 5, completedAt: Instant(ms: 0))
     }
-    let ledger = MovementLedger(sets: sets, plan: RoutineEntry(exerciseId: squat, sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 3)))
+    let ledger = MovementLedger(sets: sets, plan: RoutineEntry(exerciseId: squat, sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 3)),
+                                lastTime: LastTime(exerciseId: squat))
     return card(GymPalette.canvas, GymPalette.line) {
       ZStack(alignment: .topLeading) {
         VStack(spacing: 8) {
