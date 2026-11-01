@@ -457,6 +457,25 @@ class EngineTrainingTests {
         }
     }
 
+    // A routine deleted on another surface under a pending proposal: the log kills the proposal with it, so once the
+    // deaths are pulled neither is drawn, Apply is refused as gone with nothing queued, and nothing fails to decode.
+    @Test fun aProposalOverARoutineDeletedElsewhereLeavesWithItAndApplyIsGone() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server(); proposalFixture(room, server)
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+                other.select("A"); other.pull(server)
+                other.training.deleteRoutine("routine1")
+                other.sync(server)
+            }
+            room.pull(server)
+            assertEquals(emptyList<Routine>(), room.training.program())
+            assertNull(room.training.proposal("proposal1"))
+            assertEquals(emptySet<String>(), room.training.outOfDateProposals())
+            assertEquals("unknown-record", (runCatching { room.training.applyProposal("proposal1") }.exceptionOrNull() as TrainingRefused).code)
+            assertEquals(emptyList<Json>(), room.outbox())
+        }
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test fun proposalTimeoutCancellationAndAccountChangeCannotInventAReceiptOrLoseThePendingIntent() = runTest {
         for (removing in listOf(false, true)) for (ending in listOf("timeout", "cancel", "account")) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->

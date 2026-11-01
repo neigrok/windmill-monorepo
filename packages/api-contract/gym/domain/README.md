@@ -53,7 +53,7 @@ Entity vectors may name `nonFinite: {path, value}` with `NaN`, `Infinity` or `-I
 Every JSON vector file is an array of `{name, input, expect}`. The kit's
 [forms](../../domain-kit/README.md) define specs, violations, row scenes, gestures and decisions.
 An action scene has `{action, input, records:{drawn, stored?, device?}, ids?, now, offsetSeconds}`;
-`stored` defaults to `drawn`, and `device` lists device keys with their values (the saved
+`stored` defaults to `drawn` and is also what the scene confirms, and `device` lists device keys with their values (the saved
 workouts under `rack:adoption`); `ids` are minted in order, a correction's `requestId` included. A read scene replaces `action` with `read` and may specify
 `firstPullComplete:false`. That flag prevents absence and lifetime-best claims over a booting history.
 Pure value reads use their input directly. Malformed decode cases return
@@ -198,6 +198,8 @@ last confirmed it (`confirmedRoutine`, the stored routine when absent) and wheth
 true when absent). Applying a pending proposal is refused `proposalSuperseded` with reason `routine-changed` when the
 routine's revision moved or its name or movements differ from the confirmed copy, an edit the log will count before it
 reads the decision; a reorder alone does not refuse. It is refused `gone` when the routine is absent or out of sight.
+`ApplyProposal` and `DismissProposal` read the confirmed routine only while it is visible: a dead confirmed row has no
+fields to read and is no confirmed copy.
 Turning down ignores both. A proposal is out of date when it is superseded, replaced, or pending with its Apply refused.
 
 ## Change blocks

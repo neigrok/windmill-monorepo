@@ -349,6 +349,7 @@ public struct ProposeRoutine: Action {
 }
 
 // A proposal with its routine three ways: as this phone stores it, whether it is in sight, and as the log last confirmed it.
+// A confirmed routine row that is dead has no fields to read, and is no confirmed copy.
 public struct ProposalState {
   public let proposal: Proposal?
   public let routine: Routine?
@@ -366,7 +367,7 @@ public struct ProposalState {
     let routines = read.repository(Routine.self)
     self.init(proposal: proposal, routine: try proposal.flatMap { try routines.find($0.routineId, in: .stored) }, moment: read.moment,
               routineVisible: try proposal.flatMap { try routines.find($0.routineId, in: .drawn) } != nil,
-              confirmedRoutine: try proposal.flatMap { try read.confirmed(Routine.self, $0.routineId) }.map { try Routine(Fields($0)) })
+              confirmedRoutine: try proposal.flatMap { try read.confirmed(Routine.self, $0.routineId) }.flatMap { $0.isVisible ? $0 : nil }.map { try Routine(Fields($0)) })
   }
 
   // What the log would answer the decision, said before it is sent. Applying asks more than turning down: the routine must

@@ -6,6 +6,7 @@ import { Plan, Prediction } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation, precondition } from '../../../platform/domain-kit/values.js';
+import { isVisible } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Catalogue, Exercise } from './catalogue.js';
 import { GymRefusals, ProposalRules, RoutineRules } from './gymRules.js';
 import { Routine, RoutineEntry, SetTarget } from './routines.js';
@@ -269,6 +270,7 @@ export function ProposeRoutine({ id, routineId, name, entries, summary, removing
 }
 
 // A proposal with its routine three ways: as this device stores it, whether it is in sight, and as the log last confirmed it.
+// A confirmed routine row that is dead has no fields to read, and is no confirmed copy.
 export class ProposalState {
   /**
    * @param {{ proposal: ProposalValue | null, routine: RoutineValue | null, moment: Moment,
@@ -287,7 +289,8 @@ export class ProposalState {
   static of(read, id) {
     const proposal = read.repository(Proposal).find(id, 'stored');
     const routines = read.repository(Routine);
-    const confirmed = proposal === null ? null : read.confirmed(Routine, proposal.routineId);
+    const row = proposal === null ? null : read.confirmed(Routine, proposal.routineId);
+    const confirmed = row !== null && isVisible(read.views.registry.type(Routine.type), row) ? row : null;
     return new ProposalState({ proposal, moment: read.moment,
       routine: proposal === null ? null : routines.find(proposal.routineId, 'stored'),
       routineVisible: proposal !== null && routines.find(proposal.routineId, 'drawn') !== null,
