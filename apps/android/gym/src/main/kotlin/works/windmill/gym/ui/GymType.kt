@@ -1,15 +1,18 @@
 package works.windmill.gym.ui
 
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
 import works.windmill.platform.design.WindmillFont
@@ -97,7 +100,8 @@ object GymType {
     val emptyRoutinesTitle = TextStyle(fontFamily = GymFonts.nunito, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp,
         lineHeight = 32.sp)
 
-    // The number stepper: its value at display and inline size, its unit, label and refusal.
+    // The number stepper: its value at display and inline size, its unit, label and refusal. A display value shrinks to
+    // fit: beside its unit down to `stepperDisplayBesideUnit` sp, under it down to `stepperDisplayFloor` sp.
     val stepperDisplay = TextStyle(fontFamily = GymFonts.nunito, fontWeight = FontWeight.ExtraBold, fontSize = 88.sp,
         lineHeight = 92.sp, fontFeatureSettings = tabular)
     val stepperInline = TextStyle(fontFamily = GymFonts.jetBrainsMono, fontWeight = FontWeight.Medium, fontSize = 20.sp,
@@ -106,6 +110,8 @@ object GymType {
     val stepperUnitInline = nativeBody
     val stepperLabel = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp)
     val stepperRefusal = nativeSupporting
+    val stepperDisplayBesideUnit = 64
+    val stepperDisplayFloor = 32
     val stockFieldInput = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp)
 
     // Readouts in the system mono.
@@ -140,6 +146,7 @@ object GymType {
     val finishStat = sans(32, FontWeight.ExtraBold, leading = 40).copy(textAlign = TextAlign.Center)
     val finishStatFloor = finishStat.copy(fontSize = 16.sp, lineHeight = 20.sp)
     val finishStatFit = TextAutoSize.StepBased(minFontSize = finishStatFloor.fontSize, maxFontSize = finishStat.fontSize)
+    val finishStatUnit = SpanStyle(fontSize = .5.em, fontWeight = FontWeight.Normal)
     val emptyFinishLine = sans(16, leading = 23)
     val performedName = sans(15)
     val actionLabel = gymTypography.labelLarge.copy(lineHeight = 22.sp)
@@ -167,14 +174,6 @@ object GymType {
     val routineSheetTitle = sans(28, FontWeight.Bold)
     val movementTarget = sans(15, leading = 21)
     val historyTitle = sans(17, FontWeight.Bold, leading = 23)
-    val discardRoutineTitle = gymTypography.headlineSmall.merge(TextStyle(fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp))
-    val discardWorkoutTitle = gymTypography.headlineSmall.merge(TextStyle(fontFamily = FontFamily.Default, fontSize = 24.sp,
-        lineHeight = 32.sp))
-    val discardText = gymTypography.bodyMedium.merge(TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal,
-        fontSize = 14.sp, lineHeight = 20.sp))
-    val discardAction = gymTypography.labelLarge.merge(TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium,
-        fontSize = 14.sp, lineHeight = 20.sp))
 
     // Confirmations, proposals and sharing.
     val confirmTitle = sans(19, FontWeight.Bold)
@@ -202,8 +201,6 @@ object GymType {
     val coachNone = nunito(15)
     val coachNote = nunito(12)
     val coachBubbleLabel = nunito(12, FontWeight.Bold, leading = 16)
-    val coachChoice = gymTypography.labelLarge.merge(TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium,
-        fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .1.sp))
     val coachCode = WindmillFont.mono(15)
     val coachSourcesTitle = nunito(28, FontWeight.ExtraBold, leading = 36)
     val coachSourceTitle = nunito(15, FontWeight.Bold, leading = 20)
@@ -214,9 +211,17 @@ object GymType {
     val coachElsewhere = nunito(15, leading = 23)
     val coachDeleteTitle = nunito(24, FontWeight.Bold, leading = 32)
 
+    // What a Text sets over the style its container provides, read through `overContainer`: a dialog's title, text and
+    // actions take the rest from the dialog, a chip's label from the chip, a text button's glyph from the button.
+    val discardWorkoutTitle = TextStyle(fontFamily = FontFamily.Default, fontSize = 24.sp, lineHeight = 32.sp)
+    val discardRoutineTitle = discardWorkoutTitle.copy(fontWeight = FontWeight.Normal)
+    val discardText = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp)
+    val discardAction = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp)
+    val coachChoice = discardAction.copy(letterSpacing = .1.sp)
+    val onboardingBackGlyph = TextStyle(fontSize = 32.sp)
+
     // Onboarding.
     val wordmark = TextStyle(fontFamily = GymFonts.baloo2, fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp)
-    val onboardingBackGlyph = gymTypography.labelLarge.copy(fontSize = 32.sp)
     val onboardingKicker = WindmillFont.mono(11, FontWeight.Medium).copy(lineHeight = 16.sp, letterSpacing = 2.2.sp)
     val onboardingTitle = gymTypography.headlineLarge.copy(lineHeight = 38.sp)
     val onboardingBody = gymTypography.bodyLarge.copy(lineHeight = 24.sp)
@@ -226,6 +231,15 @@ object GymType {
     val specimenCaption = TextStyle(fontFamily = GymFonts.jetBrainsMono, fontWeight = FontWeight.Medium, fontSize = 11.sp,
         lineHeight = 15.sp, letterSpacing = 0.sp)
 }
+
+// A stepper value at `size` sp, its line as far above the type as its role's.
+fun GymType.stepperValue(role: TextStyle, size: Int): TextStyle =
+    role.copy(fontSize = size.sp, lineHeight = (size + role.lineHeight.value.toInt() - role.fontSize.value.toInt()).sp)
+
+// A role that sets only what a Text overrides, drawn over the style its container provides.
+@Composable
+@ReadOnlyComposable
+fun TextStyle.overContainer(): TextStyle = LocalTextStyle.current.merge(this)
 
 private const val tabular = "tnum"
 

@@ -130,4 +130,5 @@ tasks.withType<Test>().configureEach {
     inputs.file(doc)
     for (module in listOf("app", "platform", "gym")) inputs.dir(rootProject.file("$module/src/main/kotlin"))
     for (module in listOf("app", "gym")) inputs.dir(rootProject.file("$module/src/debug/kotlin"))
+    inputs.dir(rootProject.file("app/src/main/res"))
 }

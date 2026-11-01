@@ -402,11 +402,11 @@ private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Un
     val colors = MaterialTheme.colorScheme
     @Composable
     fun Action(label: String, colour: Color, onClick: () -> Unit) = TextButton(onClick = onClick) {
-        Text(label, color = colour, style = GymType.discardAction)
+        Text(label, color = colour, style = GymType.discardAction.overContainer())
     }
     AlertDialog(onDismissRequest = onKeepEditing,
-        title = { Text(title, style = GymType.discardRoutineTitle, color = colors.onSurface) },
-        text = { Text(text, style = GymType.discardText, color = colors.onSurfaceVariant) },
+        title = { Text(title, style = GymType.discardRoutineTitle.overContainer(), color = colors.onSurface) },
+        text = { Text(text, style = GymType.discardText.overContainer(), color = colors.onSurfaceVariant) },
         confirmButton = { Action("Discard", colors.error, onDiscard) },
         dismissButton = { Action("Keep editing", colors.primary, onKeepEditing) },
         containerColor = colors.surfaceContainer)

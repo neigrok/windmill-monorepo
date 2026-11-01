@@ -68,8 +68,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.testTag
 import works.windmill.gym.presentation.Against
 import works.windmill.gym.presentation.AgainstMovement
@@ -356,7 +354,7 @@ private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: 
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         val text = buildAnnotatedString {
             append(value)
-            unit?.let { withStyle(SpanStyle(fontSize = 0.5.em, fontWeight = FontWeight.Normal)) { append(" $it") } }
+            unit?.let { withStyle(GymType.finishStatUnit) { append(" $it") } }
         }
         val style = GymType.finishStat.copy(color = colors.onSurface)
         val floor = GymType.finishStatFloor.copy(color = colors.onSurface)

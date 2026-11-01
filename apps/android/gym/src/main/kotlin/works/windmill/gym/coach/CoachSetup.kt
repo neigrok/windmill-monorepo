@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.ui.overContainer
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.gymColors
@@ -84,7 +85,7 @@ internal fun CoachChoices(clarification: CoachClarification, selected: Map<Strin
                     group.options.forEach { option ->
                         val chosen = option.id in selected[group.id].orEmpty()
                         FilterChip(selected = chosen, enabled = enabled, onClick = { onChoose(group.id, option.id) },
-                            label = { Text(option.label, Modifier.padding(vertical = 6.dp), style = GymType.coachChoice) },
+                            label = { Text(option.label, Modifier.padding(vertical = 6.dp), style = GymType.coachChoice.overContainer()) },
                             leadingIcon = if (chosen) { { Icon(painterResource(R.drawable.gym_coach_selected), null, Modifier.size(18.dp)) } } else null,
                             border = BorderStroke(1.dp, if (chosen) colors.primary else colors.outlineVariant),
                             colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = colors.onSurface,

@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
@@ -23,12 +24,15 @@ import works.windmill.platform.design.WindmillPalette
 fun GymMaterial(content: @Composable () -> Unit) {
     val dark = LocalWindmillDark.current
     val skin = if (dark) GymSkin.Instrument else GymSkin.Daylight
-    CompositionLocalProvider(LocalGymExtendedColors provides GymExtendedColors(skin), LocalWindmillPalette provides gymPalette(skin)) {
-        MaterialTheme(colorScheme = gymColorScheme(skin, dark), typography = gymTypography, content = content)
+    val extended = remember(skin) { GymExtendedColors(skin) }
+    val palette = remember(skin) { gymPalette(skin) }
+    val scheme = remember(skin, dark) { gymColorScheme(skin, dark) }
+    CompositionLocalProvider(LocalGymExtendedColors provides extended, LocalWindmillPalette provides palette) {
+        MaterialTheme(colorScheme = scheme, typography = gymTypography, content = content)
     }
 }
 
-// The room's colour roles Material has no slot for. A value, so providing the same skin again invalidates nothing.
+// The room's colour roles Material has no slot for.
 @Immutable
 data class GymExtendedColors(val inkFaint: Color, val prInk: Color, val prSoft: Color, val alarmInk: Color) {
     constructor(skin: GymColors) : this(inkFaint = skin.inkFaint, prInk = skin.prInk, prSoft = skin.prSoft, alarmInk = skin.alarmInk)

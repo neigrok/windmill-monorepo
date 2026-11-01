@@ -72,7 +72,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import works.windmill.gym.R
 import works.windmill.platform.design.WindmillMotion
@@ -216,7 +215,8 @@ fun NumberStepper(
             val sideWidth = (constraints.maxWidth - button * 2 - gap * 2 - padding).coerceAtLeast(0)
             val unitWidth = textMeasurer.measure(unit, unitStyle).size.width
             val measured = baseStyle.copy(color = Color.Unspecified)
-            fun numeralWidth(size: Int) = textMeasurer.measure(measuredValue, measured.copy(fontSize = size.sp)).size.width
+            val roleSize = baseStyle.fontSize.value.toInt()
+            fun numeralWidth(size: Int) = textMeasurer.measure(measuredValue, GymType.stepperValue(measured, size)).size.width
             // Width grows with size, so the largest size that fits is found by halving the range.
             fun largest(range: IntRange, fits: (Int) -> Boolean): Int? {
                 var low = range.first
@@ -228,15 +228,15 @@ fun NumberStepper(
                 }
                 return found
             }
-            val baseWidth = numeralWidth(if (display) 88 else 20)
-            // The Display numeral first fits beside its unit, from 88 sp down to 64 sp; only below that does the unit go under it.
-            val inlineSize = if (display) largest(64..88) { numeralWidth(it) + gap + unitGap + unitWidth <= sideWidth } else null
+            val baseWidth = numeralWidth(roleSize)
+            // The Display numeral first fits beside its unit, from its role's size down; only below that does the unit go under it.
+            val inlineSize = if (display) largest(GymType.stepperDisplayBesideUnit..roleSize) { numeralWidth(it) + gap + unitGap + unitWidth <= sideWidth } else null
             val requiredLayout = when {
                 !display && (input != NumberStepperInput.SignedDecimal ||
                     baseWidth + gap + unitGap + unitWidth <= sideWidth) -> NumberFieldLayout.Inline
                 !display -> NumberFieldLayout.UnitBelow
                 inlineSize != null -> NumberFieldLayout.Inline
-                numeralWidth(32) + gap <= sideWidth && unitWidth <= sideWidth -> NumberFieldLayout.UnitBelow
+                numeralWidth(GymType.stepperDisplayFloor) + gap <= sideWidth && unitWidth <= sideWidth -> NumberFieldLayout.UnitBelow
                 else -> NumberFieldLayout.FullWidth
             }
             val fieldLayout = if (focused) maxOf(focusedLayout, requiredLayout) else requiredLayout
@@ -244,14 +244,13 @@ fun NumberStepper(
             val contentWidth = if (fieldLayout == NumberFieldLayout.FullWidth)
                 (constraints.maxWidth - padding).coerceAtLeast(0) else sideWidth
             val numeralSize = when {
-                !display -> 20
-                fieldLayout == NumberFieldLayout.Inline -> inlineSize ?: 64
-                else -> largest(32..88) { numeralWidth(it) + gap <= contentWidth } ?: 32
+                !display -> roleSize
+                fieldLayout == NumberFieldLayout.Inline -> inlineSize ?: GymType.stepperDisplayBesideUnit
+                else -> largest(GymType.stepperDisplayFloor..roleSize) { numeralWidth(it) + gap <= contentWidth } ?: GymType.stepperDisplayFloor
             }
-            val valueStyle = baseStyle.copy(fontSize = numeralSize.sp,
-                lineHeight = (numeralSize + 4).sp)
+            val valueStyle = GymType.stepperValue(baseStyle, numeralSize)
             val numeralWidth = textMeasurer.measure(measuredValue, valueStyle).size.width
-            // A numeral fitted below 88 sp keeps the 88 sp line, so stepping never changes the field's height.
+            // A numeral fitted below its role's size keeps the role's line, so stepping never changes the field's height.
             val numeralLine = if (display && fieldLayout == NumberFieldLayout.Inline) textMeasurer.measure(measuredValue, measured).size.height else 0
             val animateValue = !focused && !reducedMotion && numeralWidth + gap <= contentWidth
             Layout(content = {

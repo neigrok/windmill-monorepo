@@ -61,19 +61,19 @@ fun WorkoutDiscardDialog(setCount: Int, onDiscard: () -> Unit, onCancel: () -> U
     AlertDialog(
         onDismissRequest = { if (!busy) onCancel() },
         containerColor = colors.surfaceContainer,
-        title = { Text("Discard this workout?", style = GymType.discardWorkoutTitle, color = colors.onSurface) },
+        title = { Text("Discard this workout?", style = GymType.discardWorkoutTitle.overContainer(), color = colors.onSurface) },
         text = { Text("This deletes the workout and its $setCount ${if (setCount == 1) "set" else "sets"}. You can’t undo this.",
-            style = GymType.discardText, color = colors.onSurfaceVariant) },
+            style = GymType.discardText.overContainer(), color = colors.onSurfaceVariant) },
         confirmButton = {
             TextButton(onClick = onDiscard, enabled = !busy,
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.error)) {
-                Text("Discard", style = GymType.discardAction)
+                Text("Discard", style = GymType.discardAction.overContainer())
             }
         },
         dismissButton = {
             TextButton(onClick = onCancel, enabled = !busy,
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant)) {
-                Text("Cancel", style = GymType.discardAction)
+                Text("Cancel", style = GymType.discardAction.overContainer())
             }
         },
     )

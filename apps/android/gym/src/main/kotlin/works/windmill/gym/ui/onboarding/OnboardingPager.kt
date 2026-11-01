@@ -1,5 +1,6 @@
 package works.windmill.gym.ui.onboarding
 
+import works.windmill.gym.ui.overContainer
 import works.windmill.gym.ui.GymType
 import android.database.ContentObserver
 import android.os.Handler
@@ -147,7 +148,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
             },
             navigationIcon = {
                 if (replay) TextButton(onClick = { exit("closed") }, modifier = Modifier.semantics { traversalIndex = -2f }) {
-                    Text("‹", color = accent, style = GymType.onboardingBackGlyph, modifier = Modifier.clearAndSetSemantics { })
+                    Text("‹", color = accent, style = GymType.onboardingBackGlyph.overContainer(), modifier = Modifier.clearAndSetSemantics { })
                     Text(stringResource(R.string.onboarding_back), color = accent,
                         style = GymType.actionLabel)
                 }
