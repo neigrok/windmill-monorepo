@@ -28,9 +28,9 @@ fun GymMaterial(content: @Composable () -> Unit) {
     }
 }
 
-// The room's colour roles Material has no slot for.
+// The room's colour roles Material has no slot for. A value, so providing the same skin again invalidates nothing.
 @Immutable
-class GymExtendedColors(val inkFaint: Color, val prInk: Color, val prSoft: Color, val alarmInk: Color) {
+data class GymExtendedColors(val inkFaint: Color, val prInk: Color, val prSoft: Color, val alarmInk: Color) {
     constructor(skin: GymColors) : this(inkFaint = skin.inkFaint, prInk = skin.prInk, prSoft = skin.prSoft, alarmInk = skin.alarmInk)
 }
 
