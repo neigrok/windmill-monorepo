@@ -1061,8 +1061,9 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
     `33:1568`): error line *Your account wasn’t deleted. This phone’s date and time look wrong. Fix
     them, then try again.*, an inline *Date & time* text button (Android date settings), **Try again**,
     **Cancel**. Condition: a send of the operation answers 409 `clock-ahead`, or 404 `unavailable`
-    while the session is still accepted and the phone's monotonic clock puts that send under 5 minutes
-    after the operation's stamp. Either proves the operation changed nothing.
+    while the session is still accepted and the phone's monotonic clock puts that send at least 90 s
+    inside the 5 minutes after the operation's stamp (Android allows that margin for transit and server
+    lag; a later send goes the D6 way). Either proves the operation changed nothing.
   - **D6 Not deleted** (Dark `139:2867`, Daylight `139:2896`, in section D `116:754`): *Your account
     wasn’t deleted* / *The request didn’t reach Windmill in time, so nothing changed. Your account
     works as before.* / **Try again** (opens 27a; a new confirm mints a new operation) · **Back to
@@ -1071,6 +1072,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
     server's clock, no receipt). A close revokes every session, so the accepted session proves no
     closure. On that proof the phone clears the pending record and releases the fence before drawing.
     A refused session (401) or a request 35 or more days old stays on D3.
+  - After a restart the phone has no monotonic stamp, so a slow clock's refusal reads D6 (*didn't reach Windmill in time*), not 27h; Try again then shows 27h. Designer to rule whether D6's words should cover that case.
   iOS sends the body-only close (`AppRuntime.swift` `deleteAccount`), so it has no clock refusal and no
   pending record; its 27e stays as drawn. If iOS adopts the recoverable close, it takes both states.
 - **12p · iOS receipt *Save to ‹routine›* and a load under 0 (needs words).** A barbell or two-dumbbell

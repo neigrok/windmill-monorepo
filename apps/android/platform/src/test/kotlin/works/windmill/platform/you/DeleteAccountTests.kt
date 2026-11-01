@@ -119,9 +119,11 @@ class DeleteAccountTests {
         compose.onNodeWithText("Sign in").assertExists()
     }
 
-    private fun refusingStore(close: WindmillApiException.Refused, result: WindmillApiException.Refused) =
+    private fun refusingStore(result: WindmillApiException.Refused, vararg closes: WindmillApiException) =
         AccountDeletionStore(storage, object : AccountDeletionApi {
-            override suspend fun close(request: AccountDeletionRequest, credential: String): AccountDeletionResponse { calls++; throw close }
+            override suspend fun close(request: AccountDeletionRequest, credential: String): AccountDeletionResponse {
+                calls++; throw closes[minOf(calls, closes.size) - 1]
+            }
             override suspend fun result(request: AccountDeletionRequest): AccountDeletionResponse = throw result
         }, scope, { identity }, { identity = it.copy(revision = it.revision + 1); identity }, { count }, {
             object : AuthSignOutSession {
@@ -133,16 +135,18 @@ class DeleteAccountTests {
         }, { _, _ -> error("A close that changed nothing finishes nothing") }, {})
 
     @Test fun a27hClockRefusalKeepsTheEmailOffersDateAndTimeAndReadsInOrderAtTwiceTheText() {
-        val clock = refusingStore(WindmillApiException.Refused(409, Refusal(code = "clock-ahead")),
-            WindmillApiException.Refused(404, Refusal(code = "unavailable")))
+        val clock = refusingStore(WindmillApiException.Refused(404, Refusal(code = "unavailable")),
+            WindmillApiException.Refused(409, Refusal(code = "clock-ahead")))
         clock.open()
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
                 WindmillMaterial { DeleteAccount(clock) {} }
             }
         }
+        val failureNode = compose.onNodeWithTag("deletion-failure", useUnmergedTree = true).fetchSemanticsNode().id
         compose.onNodeWithTag("deletion-email").performTextInput(user.email)
         compose.onNodeWithTag("deletion-primary").performClick()
+        assertEquals(failureNode, compose.onNodeWithTag("deletion-failure", useUnmergedTree = true).fetchSemanticsNode().id)
         val sentence = "Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again."
         compose.onNodeWithText(sentence).performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("deletion-email").assertTextContains(user.email).assertIsNotFocused()
@@ -180,6 +184,26 @@ class DeleteAccountTests {
         compose.onNodeWithText("Cancel").performClick()
         compose.waitUntil(5_000) { exits.isNotEmpty() }
         assertEquals(listOf(false), exits)
+    }
+
+    @Test fun theTypedEmailOutlivesLeavingAPendingCheckAndComesBackWith27h() {
+        val pending = refusingStore(WindmillApiException.Refused(404, Refusal(code = "unavailable")),
+            WindmillApiException.Timeout(java.net.SocketTimeoutException("timeout")),
+            WindmillApiException.Refused(404, Refusal(code = "unavailable")))
+        pending.open()
+        compose.setContent { WindmillMaterial { if (pending.visible) DeleteAccount(pending) {} } }
+        compose.onNodeWithTag("deletion-email").performTextInput(user.email)
+        compose.onNodeWithTag("deletion-primary").performClick()
+        compose.onNodeWithText("Checking deletion").assertIsDisplayed()
+        compose.onNodeWithText("Back to You").performClick()
+        compose.waitUntil(5_000) { !pending.visible }
+        compose.runOnIdle { pending.open() }
+        compose.onNodeWithText("Check again").performClick()
+        compose.onNodeWithText("Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again.").assertExists()
+        compose.onNodeWithTag("deletion-email").assertTextContains(user.email)
+        compose.onNodeWithTag("deletion-primary").assertTextEquals("Try again").assertIsEnabled()
+        assertFalse(storage.blocked)
+        assertEquals(2, calls)
     }
 
     @Test fun anAccountMismatchRefusalLeavesThroughTheExitSoYouReopens() {

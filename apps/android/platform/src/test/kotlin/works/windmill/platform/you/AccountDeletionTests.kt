@@ -440,19 +440,35 @@ class AccountDeletionTests {
         assertFalse(fixture.storage.blocked)
     }
 
-    @Test fun aSentAgainCloseThatLeftInsideTheWindowAndClosedNothingIs27hWithoutReadingTheReceipt() = runTest {
+    @Test fun aSentAgainCloseThatLeftWellInsideTheWindowAndClosedNothingIs27hWithoutReadingTheReceipt() = runTest {
         val fixture = Fixture(this)
         fixture.closeFailure = WindmillApiException.Offline
         val store = fixture.store(); store.open(); store.confirm(user.email)
         fixture.closeFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
-        fixture.pass(AccountDeletionStore.admissionWindowMs - 1)
+        fixture.pass(60_000)
         store.recover()
         assertEquals(AccountDeletionPage.Confirm, store.page)
         assertEquals(AccountDeletionFailure.Clock, store.failure)
         assertEquals(user, store.confirmingUser)
+        assertEquals(user.email, store.email)
         assertFalse(fixture.storage.blocked)
         assertTrue(fixture.results.isEmpty())
         assertEquals(0, fixture.finishCalls)
+    }
+
+    @Test fun aSendThatLeftNearTheWindowsEdgeDoesNotBlameTheClockAndEndsOnD6() = runTest {
+        val fixture = Fixture(this)
+        fixture.closeFailure = WindmillApiException.Offline
+        val store = fixture.store(); store.open(); store.confirm(user.email)
+        fixture.closeFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
+        fixture.resultFailure = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
+        fixture.pass(AccountDeletionStore.admissionWindowMs - AccountDeletionStore.transitMarginMs)
+        store.recover()
+        assertEquals(AccountDeletionPage.NotDeleted, store.page)
+        assertNull(store.failure)
+        assertFalse(fixture.storage.blocked)
+        assertEquals(listOf(request to "secret", request to "secret", request to "secret"), fixture.closes)
+        assertEquals(listOf(request), fixture.results)
     }
 
     @Test fun offlineAtSendAndBackAfterTheWindowShowsD6AndReleasesTheFence() = runTest {
@@ -469,7 +485,7 @@ class AccountDeletionTests {
         assertFalse(fixture.storage.blocked)
         assertFalse(store.transitionPending)
         assertNull(store.failure)
-        assertNull(store.confirmingUser)
+        assertEquals("", store.email)
         assertEquals(listOf(request to "secret", request to "secret"), fixture.closes)
         assertEquals(listOf(request), fixture.results)
         assertEquals(0, fixture.finishCalls + fixture.cleanupCalls)

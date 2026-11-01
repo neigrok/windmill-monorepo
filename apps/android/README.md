@@ -81,9 +81,9 @@ Account deletion has a separate sealed operation record, read before ordinary au
 sync startup. An unknown result keeps the exact account, proof and request instant fenced until
 session-independent result recovery proves closure, or until the operation is proven to have changed
 nothing: a refusal for this phone's date and time (409 `clock-ahead`, or 404 `unavailable` for a send
-that left under five minutes after its stamp by the monotonic clock), or an unavailable receipt
-followed by the identical close, still accepted by its session, answering 404. Either clears the
-record and lifts the fence without a restart. Known closure persists cleanup owed before
+that left at least 90 seconds inside the five minutes after its stamp by the monotonic clock), or an
+unavailable receipt followed by the identical close, still accepted by its session, answering 404.
+Either clears the record and lifts the fence without a restart. Known closure persists cleanup owed before
 Discard, removes the original replica, owner workout controls and Coach archive/photos, and clears
 only the captured credentials. Decryption or storage ambiguity fails closed. Coach owner epochs
 reject late writes after cleanup, including after a fresh verified sign-in restores the same account

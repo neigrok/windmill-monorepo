@@ -11,7 +11,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -52,7 +51,6 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
     val context = LocalContext.current
     val page = store.page
     val confirming = page == AccountDeletionPage.Confirm || page == AccountDeletionPage.Deleting
-    var email by rememberSaveable(store.confirmingUser?.id) { mutableStateOf("") }
     fun exit() {
         if (store.busy) return
         scope.launch {
@@ -91,20 +89,20 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
             Text("Type your email to confirm", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = palette.inkDim)
             Spacer(Modifier.height(10.dp))
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-                OutlinedTextField(email, { email = it }, modifier = Modifier.fillMaxWidth().testTag("deletion-email"),
+                OutlinedTextField(store.email, store::type, modifier = Modifier.fillMaxWidth().testTag("deletion-email"),
                     label = { Text("Email") }, singleLine = true, enabled = !store.busy,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
                     shape = RoundedCornerShape(4.dp))
             }
-            store.failure?.let { failure ->
-                Text(failure.sentence, Modifier.padding(top = 10.dp).semantics { liveRegion = LiveRegionMode.Polite },
-                    style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = scheme.error)
-                if (failure == AccountDeletionFailure.Clock) TextButton(
+            val failure = store.failure
+            Text(failure?.sentence.orEmpty(), (if (failure == null) Modifier.height(0.dp) else Modifier.padding(top = 10.dp))
+                .testTag("deletion-failure").semantics { liveRegion = LiveRegionMode.Polite },
+                style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = scheme.error)
+            if (failure == AccountDeletionFailure.Clock) TextButton(
                     onClick = { store.openDateSettings { context.startActivity(Intent(Settings.ACTION_DATE_SETTINGS)) } },
                     enabled = !store.busy, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     colors = ButtonDefaults.textButtonColors(contentColor = palette.ink)) { Text("Date & time") }
-            }
         } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val height = maxHeight
             if (page == AccountDeletionPage.Deleted) Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
@@ -139,7 +137,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
         Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val single = page == AccountDeletionPage.Deleted || page == AccountDeletionPage.Unavailable
-            val enabled = !store.busy && (!confirming || store.emailMatches(email))
+            val enabled = !store.busy && (!confirming || store.emailMatches(store.email))
             val fill = if (confirming) scheme.error else palette.accent
             val ink = if (confirming) { if (dark) Color(0xFF410E0B) else Color.White } else palette.onAccent
             Button(onClick = {
@@ -147,7 +145,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                 when {
                     single -> exit()
                     page == AccountDeletionPage.NotDeleted -> store.startOver()
-                    confirming -> scope.launch { store.confirm(email) }
+                    confirming -> scope.launch { store.confirm(store.email) }
                     else -> scope.launch { store.recover() }
                 }
             }, enabled = enabled, shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),

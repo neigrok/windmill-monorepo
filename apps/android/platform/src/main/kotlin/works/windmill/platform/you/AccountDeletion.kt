@@ -166,6 +166,9 @@ class AccountDeletionStore(
         private set
     var confirmingUser by mutableStateOf<User?>(null)
         private set
+    // The typed confirmation lives here, in memory only, for the life of one operation.
+    var email by mutableStateOf("")
+        private set
     var count by mutableStateOf(0)
         private set
     var failure by mutableStateOf<AccountDeletionFailure?>(null)
@@ -195,6 +198,7 @@ class AccountDeletionStore(
             }
         } else {
             confirmingUser = identity()?.user ?: return
+            email = ""
             deletedReceipt = null
             finishedOperation = null
             knownClosed = null
@@ -221,6 +225,8 @@ class AccountDeletionStore(
         if (visible && page == AccountDeletionPage.Confirm && !transitionPending && identity()?.user == confirmingUser) count = unsent()
     }
 
+    fun type(value: String) { email = value }
+
     fun emailMatches(value: String): Boolean = confirmingUser?.email?.let { it.trim().equals(value.trim(), ignoreCase = true) } == true
 
     suspend fun back() {
@@ -229,6 +235,7 @@ class AccountDeletionStore(
         preparing = false
         operationRevision += 1
         visible = false
+        if (!storage.blocked) email = ""
         if (exitRequested) { exitRequested = false; return }
         telemetry.event("account_delete", mapOf("action" to if (page == AccountDeletionPage.Deleted) "done" else "back"))
         if (!storage.blocked && page != AccountDeletionPage.Deleted && page != AccountDeletionPage.NotDeleted)
@@ -237,6 +244,7 @@ class AccountDeletionStore(
 
     suspend fun confirm(email: String) = run {
         if (storage.blocked || !emailMatches(email)) return@run
+        this.email = email
         val captured = identity()?.takeIf { it.user == confirmingUser } ?: return@run
         val opening = begin(captured)
         telemetry.event("account_delete", mapOf("action" to "confirm", "outcome" to "started"))
@@ -321,8 +329,9 @@ class AccountDeletionStore(
     private fun admissible(request: AccountDeletionRequest): Boolean =
         now() - request.requestedAtMs in 0 until admissionWindowMs
 
+    // Only a send that left well inside the window, by this phone's own monotonic clock, can blame the date and time.
     private fun leftInTime(pending: PendingAccountDeletion, departed: Long): Boolean =
-        stamped?.takeIf { it.first == pending.request.operationId }?.let { departed - it.second in 0 until admissionWindowMs } == true
+        stamped?.takeIf { it.first == pending.request.operationId }?.let { departed - it.second in 0 until admissionWindowMs - transitMarginMs } == true
 
     private suspend fun refused(attempted: PendingAccountDeletion, refusal: WindmillApiException.Refused, failure: AccountDeletionFailure) {
         forget(attempted)
@@ -336,7 +345,7 @@ class AccountDeletionStore(
 
     private suspend fun notDeleted(attempted: PendingAccountDeletion) {
         forget(attempted)
-        confirmingUser = null
+        email = ""
         failure = null
         page = AccountDeletionPage.NotDeleted
         telemetry.event("account_delete", mapOf("outcome" to "not_deleted"))
@@ -377,6 +386,7 @@ class AccountDeletionStore(
             storage.replace(pending, null)
             preparing = false
             confirmingUser = null
+            email = ""
             deletedReceipt = pending.receipt
             knownClosed = null
             page = AccountDeletionPage.Deleted
@@ -436,5 +446,6 @@ class AccountDeletionStore(
     companion object {
         const val admissionWindowMs = 5 * 60 * 1_000L
         const val receiptLifetimeMs = 35 * 24 * 60 * 60 * 1_000L
+        const val transitMarginMs = 90 * 1_000L
     }
 }
