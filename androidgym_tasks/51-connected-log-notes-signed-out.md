@@ -1,6 +1,6 @@
 # Connected log follows iOS, names ChatGPT or Claude and says it saves notes; Notes signed out keeps one head line
 
-**Status:** On main at `eb34fb30` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+**Status:** On main at `eb34fb30` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. Android 0.14.0 carries it.
 
 **Figma:**
 - 09.3 Connected log: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39148) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44042)

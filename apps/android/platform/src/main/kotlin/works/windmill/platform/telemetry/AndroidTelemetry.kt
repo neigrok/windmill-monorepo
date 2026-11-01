@@ -73,6 +73,10 @@ class AndroidTelemetry(
         runCatching { events.add(name, properties + metadata) }.onFailure { capture("telemetry_enqueue", it) }
     }
 
+    override fun signedOutEvent(name: String, properties: Map<String, String>) {
+        runCatching { events.add(name, properties + metadata, signedOut = true) }.onFailure { capture("telemetry_enqueue", it) }
+    }
+
     override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
         if (!TelemetryPolicy.report(error)) return
         val safe = mapOf("failure_kind" to TelemetryPolicy.failureKind(error)) + TelemetryPolicy.properties(properties) +

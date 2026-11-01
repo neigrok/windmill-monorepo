@@ -2,10 +2,10 @@
 
 **Status:** Not started. Needs the owner to create the account and hold its mailbox. Process and tooling; nothing visual changes.
 
-**Context:** release acceptance today runs signed out against production. Signed-in checks ran on debug-key builds against a local backend, and the README records that signed-in acceptance was not repeated on the published-key APK. Sync, Coach, sharing, sign-out and account deletion are exactly what a local stack cannot prove, so a release can break them for every signed-in person without anyone seeing it first.
+**Context:** release acceptance today runs signed out against production. For 0.14.0 the README records that signed-in acceptance against production was not run, and no account or telemetry checks ran. Sync, Coach, sharing, sign-out and account deletion are exactly what a local stack cannot prove, so a release can break them for every signed-in person without anyone seeing it first.
 
 **Current implementation**
-- `apps/android/README.md`, CI and releases: production acceptance is signed out on the `Pixel_API34_Root` emulator. Signed-in acceptance used debug-key builds against a local backend, and "Signed-in acceptance was not repeated on the published-key APK."
+- `apps/android/README.md`, CI and releases: 0.14.0's acceptance ran signed out on an API 34 emulator against production: "Signed-in acceptance against production was not run, and no account or telemetry checks ran for this release." `androidgym_tasks/README.md` adds that 0.14.0 did not re-accept #41's last fix pass natively.
 - The coordinated release runbook (`backend/deploy/README.md`, Coordinated client cutoff, step 3) asks for the signed Android update and its delivery to be verified, but names no signed-in production check.
 - No dedicated production test account exists. Sign-in is an emailed six-digit code (`door:"app"`), so an operator must be able to read that account's mail.
 
