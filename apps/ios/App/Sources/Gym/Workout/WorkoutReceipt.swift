@@ -334,7 +334,7 @@ struct WorkoutReceipt: View {
           Text("Share with Coach")
         }.frame(maxWidth: .infinity, minHeight: 22)
       }
-        .modifier(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule)
+        .buttonStyle(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule)
         .accessibilityLabel("👑 Share with Coach")
         .accessibilityIdentifier("workout-share-coach")
         .accessibilityHint(gym.sharingNeedsSignIn ? "Sign in to continue" : gym.coachUnavailable ? "Coach is unavailable" : "Opens Coach to review this workout")
@@ -344,7 +344,7 @@ struct WorkoutReceipt: View {
         guard receipt.savePlan(gym) else { return }
         dismiss()
       } label: { Text("Done").frame(maxWidth: .infinity, minHeight: 22) }
-        .modifier(RoomPrimaryStyle(room: .gym)).accessibilityIdentifier("workout-done")
+        .buttonStyle(RoomPrimaryStyle(room: .gym)).accessibilityIdentifier("workout-done")
     }.font(.headline).padding(.horizontal, RoomSpace.inset).padding(.top, RoomSpace.inset)
       .disabled(gym.accountTransition)
   }

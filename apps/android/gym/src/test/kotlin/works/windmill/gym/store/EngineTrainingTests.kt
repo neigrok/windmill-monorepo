@@ -254,7 +254,7 @@ class EngineTrainingTests {
             val renamed = room.training.catalogue().associateBy { it.id }
             assertEquals(before, after)
             assertEquals(volume, SessionSummary(after.session, after.sets, renamed.values.toList()).tonnageKg)
-            assertEquals(listOf("1 × 8 · 16 kg total", "1 × 8 · 16 kg each", "1 × 8 · 16 kg", "1 × 8 · 16 kg total", "1 × 8 · −10 kg added", "1 × 8 · 16 kg", "1 × 8 · 16 kg"),
+            assertEquals(listOf("1 × 8 · 16 kg total", "1 × 8 · 16 kg each", "1 × 8 · 16 kg", "1 × 8 · 16 kg", "1 × 8 · −10 kg added", "1 × 8 · 16 kg", "1 × 8 · 16 kg"),
                 ids.map { id -> Readout.targetWithUnit(after.sets.filter { it.exerciseId == id }.map { SetTarget(it.reps, it.weightKg) }, renamed.getValue(id)) })
         }
     }

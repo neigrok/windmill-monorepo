@@ -30,7 +30,9 @@ them, so a role row keeps its form: `` | `room/role` | dark | light | ``.
 5. **One primary per screen**, in the reach band (`guidelines/thumb-reach.md`); everything else is
    quiet. A screen without a primary action has no prominent button.
 6. **Density is the system's.** List rows, insets, section spacing and large titles are the
-   defaults. We adjust content, never the metrics.
+   defaults. We adjust content, never the metrics. A card Windmill draws on a room's canvas takes
+   `RoomSpace.cardRadius`, 22 pt continuous (Figma `ios/radius/card`); a list's sections keep the
+   system's corners.
 7. **Signed out is first class.** Nothing asks for an account outside the three places
    `brand-foundations.md` names under Honesty; an account verb the person starts opens the same
    door and resumes. No banners.
@@ -102,13 +104,12 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/done` | `#9AA859` | `#7D8C43` | a logged set's check, a fully logged movement, an applied proposal |
 | `gym/record` | `#D9B04C` | `#6E5217` | a personal record, and nothing else |
 | `gym/alarm` | `#D08268` | `#A84E35` | refusal text in a field, a counter past its limit |
-| `gym/alarm-fill` | `#A84E35` | `#A84E35` | a removal proposal's primary; native destructive actions use the system red |
 
 These roles bind to Figma Theme `ios/gym/*` in Dark and Light. The native light accent is
 verdigris `#106B5F`, darkened from the shared Gym brand `#137A6C` so text holds 4.5:1 on the
-Gym grounds. Gold is a *record*, never a warning; brick is a refusal or a removal proposal's
-primary. Every destructive control is `role: .destructive` with no tint of its own, so the system
-paints it red.
+Gym grounds. Gold is a *record*, never a warning; brick is a refusal, and no fill takes it. Every
+destructive control is `role: .destructive` and reads in the system red: a removal proposal's
+*Remove routine* is regular glass with a system-red label.
 
 The Live Activity uses `gym/accent` and `gym/on-accent` for its one button and `gym/accent` for
 the keyline; the banner ground stays the system's. The workout control in Control Center declares `gym/accent`
@@ -190,5 +191,5 @@ and arrow are `gym/accent`, not `shell/brand`.
   belongs to.
 - `ink-faint` on an essential label — it is below 4.5:1 on both night canvases
   (`guidelines/system-architecture.md`, the grandfathered tertiaries).
-- `.black` or `.white` as a CTA foreground: it is `on-accent` (or white on `alarm-fill`). Apple's
+- `.black` or `.white` as a CTA foreground: it is `on-accent`. Apple's
   own control (Sign in with Apple) keeps its black and white.

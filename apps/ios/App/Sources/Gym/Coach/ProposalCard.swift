@@ -144,24 +144,26 @@ struct ProposalCard: View {
 
   func buttons(_ proposal: Proposal) -> some View {
     let decision = decision(stalled: stalled)
-    return VStack(spacing: 10) {
-      // Try again resends a decision still queued, never writing it twice, or decides again after the log refused it.
-      Button(role: removal ? .destructive : nil) {
-        guard pending else { _ = gym.coachDecideProposal(proposal, apply: true); return }
-        resent += 1
-        guard let resend = gym.coachResendDecision(proposal.id) else { return }
-        retrying = true
-        Task { await resend.value; retrying = false }
-      } label: {
-        HStack(spacing: RoomSpace.related) {
-          if pending && !decision.retries { ProgressView().tint(removal ? GymPalette.destructive : GymPalette.onAccent) }
-          Text(decision.title)
-        }
-      }.buttonStyle(RoomDecisionStyle(removal ? .quiet : .prominent)).disabled(!decision.applies)
-        .accessibilityIdentifier("coach-apply-proposal")
-      Button("Reject") { _ = gym.coachDecideProposal(proposal, apply: false) }
-        .buttonStyle(RoomDecisionStyle(.quiet)).disabled(!decision.rejects).accessibilityIdentifier("coach-reject-proposal")
-    }.padding(.top, 16)
+    // Try again resends a decision still queued, never writing it twice, or decides again after the log refused it.
+    let apply = Button(role: removal ? .destructive : nil) {
+      guard pending else { _ = gym.coachDecideProposal(proposal, apply: true); return }
+      resent += 1
+      guard let resend = gym.coachResendDecision(proposal.id) else { return }
+      retrying = true
+      Task { await resend.value; retrying = false }
+    } label: {
+      HStack(spacing: RoomSpace.related) {
+        if pending && !decision.retries { ProgressView().controlSize(.regular).tint(GymPalette.inkDim) }
+        Text(decision.title)
+      }.frame(maxWidth: .infinity)
+    }
+    return CardDecisions {
+      Group {
+        if removal { apply.buttonStyle(RoomSecondaryStyle(room: .gym)) } else { apply.buttonStyle(RoomPrimaryStyle(room: .gym)) }
+      }.disabled(!decision.applies).accessibilityIdentifier("coach-apply-proposal")
+      Button { _ = gym.coachDecideProposal(proposal, apply: false) } label: { Text("Reject").frame(maxWidth: .infinity) }
+        .buttonStyle(RoomSecondaryStyle(room: .gym)).disabled(!decision.rejects).accessibilityIdentifier("coach-reject-proposal")
+    }
   }
 
   func acknowledgeReceipt() {
@@ -247,12 +249,12 @@ struct WorkoutProposalCard: View {
       ProposalChanges(blocks: diff.blocks.map { ProposalChanges.Shown(kind: $0.kind, title: gym.coachTitle($0), fields: $0.fields) },
                       unchanged: diff.unchanged, count: gym.coachWorkoutChangeCount(proposal), outOfDate: outOfDate, identifier: "coach-workout-proposal")
       if stance == .open {
-        VStack(spacing: 10) {
-          Button("Apply") { if gym.coachDecideWorkoutProposal(proposal, apply: true) { applied += 1 } }
-            .buttonStyle(RoomDecisionStyle(.prominent)).disabled(!decidable).accessibilityIdentifier("coach-apply-workout-proposal")
-          Button("Reject") { _ = gym.coachDecideWorkoutProposal(proposal, apply: false) }
-            .buttonStyle(RoomDecisionStyle(.quiet)).disabled(!decidable).accessibilityIdentifier("coach-reject-workout-proposal")
-        }.padding(.top, 16)
+        CardDecisions {
+          Button { if gym.coachDecideWorkoutProposal(proposal, apply: true) { applied += 1 } } label: { Text("Apply").frame(maxWidth: .infinity) }
+            .buttonStyle(RoomPrimaryStyle(room: .gym)).disabled(!decidable).accessibilityIdentifier("coach-apply-workout-proposal")
+          Button { _ = gym.coachDecideWorkoutProposal(proposal, apply: false) } label: { Text("Reject").frame(maxWidth: .infinity) }
+            .buttonStyle(RoomSecondaryStyle(room: .gym)).disabled(!decidable).accessibilityIdentifier("coach-reject-workout-proposal")
+        }
       }
     }.modifier(ChangeCard(stroke: stance == .open ? GymPalette.accent : outOfDate != nil ? GymPalette.line : nil))
       .accessibilityElement(children: .contain).accessibilityIdentifier("coach-workout-proposal")

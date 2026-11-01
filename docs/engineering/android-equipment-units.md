@@ -2,7 +2,7 @@
 
 Routine summary, routine editor, finish receipt and workout detail format the entered load against
 the resolved catalogue. The pure shared `Readout.loadUnit` maps two dumbbells to `kg each`, barbell
-and machine to `kg total`, and bodyweight to `kg added`. One dumbbell, cable, kettlebell, unknown
+to `kg total`, and bodyweight to `kg added`. One dumbbell, machine, cable, kettlebell, unknown
 equipment and a missing exercise read `kg`. Signed loads remain signed; no formatter changes
 weights, volume, equipment or load counts. The rack and Coach draft/action/review strings use their
 existing formatters. A barbell or two-dumbbell load is 0 or more (`ExerciseRules.loadFloor`, shared

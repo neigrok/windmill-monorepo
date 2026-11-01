@@ -125,9 +125,11 @@ Weights remain factual rows regardless of highlight limits. Workout and weight r
 respective detail/correction; derived records open progress and have no independent Delete. A weight’s
 context menu opens the Bodyweight chart. Weigh in floats directly above the canvas.
 
-The content-sized weigh-in sheet preserves the typed weight while a native graphical `DatePicker`
-stages another day; Back cancels the date change and checkmark accepts it without saving the weight.
-The calendar dismisses the keyboard and expands within the same sheet. Correction keeps its day fixed.
+The weigh-in sheet is a content-sized native grouped `Form`: Weight and Date in one section, a refusal as its
+footer, and on a correction Delete weigh-in in a section of its own. It preserves the typed weight while a native
+graphical `DatePicker` stages another day in its own section; Back cancels the date change and checkmark accepts it
+without saving the weight. The calendar dismisses the keyboard and expands within the same sheet. Correction keeps
+its day fixed.
 
 A conversation's messages are engine records (`thread`, `message`; Coach §9.1) that sync for an account and
 stay on the phone signed out. Each turn runs on this phone (`Coach/Turn/`): admitted locally (a connection, no

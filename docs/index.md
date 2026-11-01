@@ -93,6 +93,15 @@ Other equipment fields use plain headings and kg; Name/Equipment footers are rem
 add an Other picker option or a target sign button. [Task 20](../androidgym_tasks/20-edit-exercise.md)
 owns implementation and native acceptance.
 
+Four sections beside the journeys draw rulings that span flows:
+[R · one iOS card radius](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1811-64816), 22 pt
+continuous, with the Journal file's
+[R.10 · echo card](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=231-431);
+[C · Coach card decisions in system glass](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1803-10580);
+[W · the weigh-in as a native grouped Form](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1806-11105);
+and [U · a machine's load reads kg](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1814-13077) on
+iOS, Android and web.
+
 ## Gym · Android
 
 Figma: Gym file, page [Android](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=56-2).
