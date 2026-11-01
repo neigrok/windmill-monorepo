@@ -1,4 +1,4 @@
-/* The phone Board: the shown column's pane over the bottom band. When the text outgrows one track, the tabs part into pills on two rows. */
+/* The phone Board: the shown column's pane over the bottom band. When the text outgrows one track, the tabs part into pills on two or three rows. */
 
 .st-board-phone {
   container: st-board-phone / inline-size;
@@ -8,7 +8,7 @@
   flex-direction: column;
 }
 
-/* ---- Panes: one per column stacked in one cell, the hidden ones keeping their scroll; edge to edge so focus rings never clip. ---- */
+/* ---- Panes: one per column stacked in one cell, the hidden ones keeping their scroll; edge to edge, with room on every side for a card's focus ring. ---- */
 .st-board-phone-panes {
   flex: 1;
   min-height: 0;
@@ -46,7 +46,7 @@
   color: var(--text-primary);
 }
 
-/* ---- Band: rows in thumb reach above the home indicator. Sort joins the tabs' row; Find a step, Filter and New step take a row of their own. ---- */
+/* ---- Band: the tabs in thumb reach above the home indicator. ---- */
 .st-board-phone-band {
   flex-shrink: 0;
   display: flex;
@@ -119,6 +119,9 @@
 @container st-board-phone (max-width: 15em) {
   .st-board-phone-heading {
     display: none;
+  }
+  .st-board-phone-pane {
+    padding-top: var(--space-1); /* the 4px a card's focus ring needs, with no title above it */
   }
   .st-board-phone-segments {
     gap: var(--space-1);

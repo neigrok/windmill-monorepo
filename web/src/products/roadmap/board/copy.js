@@ -76,6 +76,10 @@ export function progressLabel({ done, total }) {
   return `${formatCount(done)} of ${stepCount(total)} done`;
 }
 
+export function showColumn({ column }) {
+  return `${LABELS.show} ${COLUMN_TITLES[column]}`;
+}
+
 export function showAllDone({ total }) {
   return `Show all ${formatCount(total)}`;
 }

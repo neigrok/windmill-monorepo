@@ -82,7 +82,9 @@ conversation, question, identifier or server text is reported.
 Roadmap's Board/Graph switch emits `roadmap_view_switch` with only `view` (`board` or `graph`) when a reader
 switches; the view a tree opens on emits nothing. Below 744px the Board's column tabs emit `roadmap_board_column`
 with only `column` (`locked`, `upNext` or `done`) when a reader picks another column; the column a Board opens on, or
-moves to because a step was selected elsewhere, emits nothing. The switch and the tabs exist only while the Board's
+moves to because a step was selected elsewhere, emits nothing. From 744px to 1023px Show on the Board's rail emits
+`roadmap_board_rail` with only `column` (`locked` or `done`, the column the reader stands) when a reader presses it;
+a rail swapped because a selected step sat in it emits nothing. The switch, the tabs and the rail exist only while the Board's
 development gate (`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
 storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
 drops the Board until that roadmap is opened again and shows the Graph. No tree, step, title, identifier or exception

@@ -28,7 +28,7 @@ function learnToSailBoard() {
 
 function markup(props) {
   return renderToStaticMarkup(React.createElement(PhoneSegments, {
-    board: learnToSailBoard(), selectedId: null, onSelect: () => {}, doneExpanded: false, onToggleDone: () => {}, ...props,
+    board: learnToSailBoard(), shown: 'upNext', onShow: () => {}, selectedId: null, onSelect: () => {}, doneExpanded: false, onExpandDone: () => {}, ...props,
   }));
 }
 
@@ -80,8 +80,15 @@ test('PhoneSegments — Up next shows first; every column has a pane labelled by
   assert.equal(markup(), learnToSailMarkup('upNext'));
 });
 
-test('PhoneSegments — a selected step opens on its own column, newest completion first', () => {
-  assert.equal(markup({ selectedId: 'parts' }), learnToSailMarkup('done', 'parts'));
+test('PhoneSegments — the host’s shown column shows, newest completion first, the selected card marked', () => {
+  assert.equal(markup({ shown: 'done', selectedId: 'parts' }), learnToSailMarkup('done', 'parts'));
+});
+
+test('PhoneSegments — an empty column’s pane takes focus, so its tab never points at nothing focusable', () => {
+  const tree = new SkillTree({ id: 'one', title: 'One', nodes: [{ id: 'only', label: 'Only step', prerequisites: [] }] });
+  const html = markup({ board: new Board(tree, { completed: new Set(['only']), completedAt: { only: 1 } }) });
+  assert.deepEqual([...html.matchAll(/id=":R0:panel-(\w+)"[^>]*class="[^"]*"( tabindex="0")?/g)].map(([, name, focusable]) => `${name}${focusable ? ' focusable' : ''}`),
+    ['locked focusable', 'upNext focusable', 'done']);
 });
 
 // A 5,000-step roadmap with 1,770 Locked, 30 Up next and 3,200 Done: thirty open roots, every locked step waiting on the first.
@@ -120,17 +127,17 @@ import { Board } from '/src/products/roadmap/board/Board.js';
 window.openBoard = (nodes, completed) => {
   const board = new Board(new SkillTree({ id: 'coast', title: 'Coast', nodes }),
     { completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index])) });
-  window.toggles = 0;
+  window.expansions = 0;
   function Room() {
     const [selectedId, setSelectedId] = useState(null);
+    const [shown, setShown] = useState('upNext');
     const [doneExpanded, setDoneExpanded] = useState(false);
     const [boardActive, setBoardActive] = useState(true);
-    window.selectElsewhere = setSelectedId;
     window.setBoardActive = setBoardActive;
     return React.createElement('div', { className: 'st-view-layer--board' + (boardActive ? ' is-active' : '') },
       React.createElement('div', { className: 'st-board st-board--phone', style: { height: '100vh' } },
-        React.createElement(PhoneSegments, { board, selectedId, onSelect: setSelectedId, doneExpanded,
-          onToggleDone: () => { window.toggles += 1; setDoneExpanded((expanded) => !expanded); } })));
+        React.createElement(PhoneSegments, { board, shown, onShow: setShown, selectedId, onSelect: setSelectedId, doneExpanded,
+          onExpandDone: () => { window.expansions += 1; setDoneExpanded(true); } })));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
@@ -239,7 +246,7 @@ test('Chromium: arrow keys, Home and End move between tabs, choosing and focusin
   }
 });
 
-test('Chromium: Done shows its twelve newest and a Show all row, and a step selected elsewhere opens its column', async () => {
+test('Chromium: Done shows its twelve newest and a Show all row that unfolds the rest', async () => {
   await ready;
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
@@ -248,13 +255,9 @@ test('Chromium: Done shows its twelve newest and a Show all row, and a step sele
     assert.deepEqual(await shown(page), { tab: 'Done, 3,200 steps', panes: ['Done · 12 cards · 0'] });
     assert.equal(await page.locator('.st-board-phone-pane.is-shown .st-board-card-title').first().textContent(), 'Done 3199');
     await page.getByRole('button', { name: 'Show all 3,200' }).dispatchEvent('click');
-    assert.equal(await page.evaluate(() => window.toggles), 1);
+    assert.equal(await page.evaluate(() => window.expansions), 1);
     assert.deepEqual(await shown(page), { tab: 'Done, 3,200 steps', panes: ['Done · 3200 cards · 0'] });
     assert.equal(await page.getByRole('button', { name: 'Show all 3,200' }).count(), 0);
-
-    await page.evaluate(() => selectElsewhere('l42'));
-    await page.locator('.st-board-card[aria-current="true"]').waitFor();
-    assert.deepEqual(await shown(page), { tab: 'Locked, 1,770 steps', panes: ['Locked · 1770 cards · 0'] });
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

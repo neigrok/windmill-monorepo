@@ -81,6 +81,8 @@ const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const BOARD_OPEN = boardOpen();
+// The reader's Fork this tree pill: 18px off the bottom edge and 50px tall, as MobileChrome places it.
+const FORK_PILL_FOOTPRINT = 18 + 50;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const NEXT_UP_SELECT_MS = 540;
@@ -1332,7 +1334,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const laneLift = Math.max(
     0,
     sheetOpenNow ? (mobileEditable ? 300 : 216) + 12 - 16 : 0,
-    forkPresent ? (18 + 50 + 12) - 16 : 0,
+    forkPresent ? FORK_PILL_FOOTPRINT + 12 - 16 : 0,
   );
 
   const deviceNotice = status === 'ghost' && treeMine && !demo ? (
@@ -1586,8 +1588,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const laneShare = mobileEditable && tree && tree.nodes.length > 0 ? (
     <LaneButton icon="share" label="Share" onClick={() => setShareOpen(true)} />
   ) : null;
-  // The phone Board draws no lane: its band holds the controls, and Ask AI and Share wait for the roadmap sheet.
-  const laneShown = (lanePill || laneTend || laneShare) && !(phone && boardActive);
+  // The Board draws no lane on any band: Ask AI and Share wait for its roadmap row and sheet.
+  const laneShown = (lanePill || laneTend || laneShare) && !boardActive;
   // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
   const dockOpen = readOnly
@@ -1711,7 +1713,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onSwitchView={switchView}
               topInset={readOnly ? 0 : topbarBottom}
               active={boardActive}
-              laneInset={laneShown ? laneInset : 0}
+              bottomInset={forkPresent ? FORK_PILL_FOOTPRINT : 0}
             />
           </ErrorBoundary>
         </div>
@@ -1753,7 +1755,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onShowAll={handleShowAll}
           viewSwitch={viewSwitch}
           board={boardActive}
-          onBottom={setTopbarBottom}
+          onBottom={BOARD_OPEN ? setTopbarBottom : undefined}
           onShare={() => setShareOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}

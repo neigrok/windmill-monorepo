@@ -29,13 +29,15 @@ identity row carries it, and the Graph's rides the action lane on phones and tab
 visitor's Graph has no switch yet. Graph keyboard shortcuts do not act on the Board.
 
 From 1024px the Board stands Locked, Up next and Done side by side, each column scrolling under its
-sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures. From
-744px one side column folds to a rail, Done first; Show swaps which one, and Up next never folds
-(`columnStage` in `BoardColumns.jsx`). Phones show one column at a time behind Locked · Up next · Done
-tabs in a bottom band (`PhoneSegments.jsx`), and the phone Board has no action lane. Keyboard focus
-entering the cards lands on the first Up next card. Shown with a step selected, the Board opens that
-step's column (its tab, past the Done fold, or out of the rail) and scrolls its card into view. The
-layer stays mounted across Board/Graph switches, so each column keeps its scroll.
+sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures while
+the gate is open. From 744px to 1023px one side column folds to a rail, Done first; Show swaps which
+one, and Up next never folds (`columnStage` in `BoardColumns.jsx`). Phones show one column at a time
+behind Locked · Up next · Done tabs in a bottom band (`PhoneSegments.jsx`). No band draws the action
+lane on the Board; a reader's Fork pill lifts the columns and the band clear of it. From 744px, tabbing
+forward into the cards lands on the first Up next card. Shown with a step selected, the Board opens
+that step's column (its tab, past the Done fold, or out of the rail) and scrolls its card into view.
+The layer stays mounted across Board/Graph switches, so each column keeps its scroll there. Crossing
+744px rebuilds the columns, and a column that folds to a rail starts at the top when it stands again.
 
 ## Package map
 

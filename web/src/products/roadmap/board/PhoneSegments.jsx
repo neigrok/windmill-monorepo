@@ -1,31 +1,25 @@
 // Below 744px: one column at a time over the bottom band's Locked · Up next · Done tabs; each column's pane keeps its scroll.
 
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import './phone.css';
 import { track } from '../../../telemetry/beacon.js';
-import { StepCard } from './StepCard.jsx';
-import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount, showAllDone } from './copy.js';
+import { ColumnCards } from './StepCard.jsx';
+import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount } from './copy.js';
 
 const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
-export function PhoneSegments({ board, selectedId, onSelect, doneExpanded, onToggleDone }) {
-  const [shown, setShown] = useState(() => board.columnOf(selectedId) ?? 'upNext');
+// The shown column is the host's: a pick here emits roadmap_board_column, the host following a selected step does not.
+export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, doneExpanded, onExpandDone }) {
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
   const tabs = useRef({});
   const idPrefix = useId();
   const tabId = (name) => `${idPrefix}tab-${name}`;
   const panelId = (name) => `${idPrefix}panel-${name}`;
 
-  // A step selected elsewhere (the Graph, a link) opens its column; the same step changing column in place does not.
-  useEffect(() => {
-    const column = board.columnOf(selectedId);
-    if (column !== null) setShown(column);
-  }, [selectedId]);
-
   const choose = (name) => {
     if (name === shown) return;
     track('roadmap_board_column', { column: name });
-    setShown(name);
+    onShow(name);
   };
 
   const order = board.columns.map((column) => column.name);
@@ -47,7 +41,6 @@ export function PhoneSegments({ board, selectedId, onSelect, doneExpanded, onTog
   };
 
   const recentDone = board.recentDone();
-  const folded = recentDone.folded && !doneExpanded;
 
   return (
     <div className="st-board-phone">
@@ -59,17 +52,18 @@ export function PhoneSegments({ board, selectedId, onSelect, doneExpanded, onTog
             role="tabpanel"
             aria-labelledby={tabId(column.name)}
             className={`st-board-phone-pane ${column.name === shown ? 'is-shown' : ''} ${scrolled[column.name] ? 'is-scrolled' : ''}`}
+            tabIndex={column.count === 0 ? 0 : undefined}
             onScroll={(event) => handleScroll(column.name, event)}
           >
             <h2 className="st-board-phone-heading">{COLUMN_TITLES[column.name]}</h2>
-            {(column.name === 'done' && folded ? recentDone.cards : column.cards).map((card) => (
-              <StepCard key={card.id} card={card} selected={card.id === selectedId} onSelect={onSelect} />
-            ))}
-            {column.name === 'done' && folded && (
-              <button type="button" className="st-board-show-all" onClick={() => onToggleDone()}>
-                {showAllDone({ total: recentDone.total })}
-              </button>
-            )}
+            <ColumnCards
+              column={column}
+              recentDone={recentDone}
+              doneExpanded={doneExpanded}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              onExpandDone={onExpandDone}
+            />
           </div>
         ))}
       </div>

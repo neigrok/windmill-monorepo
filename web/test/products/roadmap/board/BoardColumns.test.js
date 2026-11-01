@@ -31,8 +31,8 @@ function learnToSail({ extraDone = 0 } = {}) {
 
 // One line per landmark the reader meets, in document order.
 function outline(props) {
-  const html = renderToStaticMarkup(React.createElement(BoardColumns, { selectedId: null, onSelect: () => {}, doneExpanded: false, onToggleDone: () => {}, ...props }));
-  const landmarks = /<section class="st-board-columns-(column|rail) st-board-columns-\w+--(\w+)"|<h2 [^>]*aria-label="([^"]+)"|st-board-card-title">([^<]+)|st-board-columns-deck-layer--behind-(\d)"><span class="st-board-columns-deck-card" style="--st-board-rail:var\(--kind-(\w+)\)">|st-board-columns-deck-title">([^<]+)|st-board-show-all">([^<]+)|<\/svg>(Show)<\/button>/g;
+  const html = renderToStaticMarkup(React.createElement(BoardColumns, { selectedId: null, onSelect: () => {}, doneExpanded: false, onExpandDone: () => {}, ...props }));
+  const landmarks = /<section class="st-board-columns-(column|rail) st-board-columns-\w+--(\w+)"|<h2 [^>]*aria-label="([^"]+)"|st-board-card-title">([^<]+)|st-board-columns-deck-layer--behind-(\d)"><span class="st-board-columns-deck-card" style="--st-board-rail:var\(--kind-(\w+)\)">|st-board-columns-deck-title">([^<]+)|st-board-show-all">([^<]+)|st-board-spoken">([^<]+)<\/span><\/button>/g;
   return [...html.matchAll(landmarks)].map(([, shape, column, heading, card, behind, kind, front, showAll, show]) => {
     if (shape) return `${shape} ${column}`;
     if (heading) return `  heading ${heading}`;
@@ -98,12 +98,12 @@ test('BoardColumns — on a tablet Done is a rail: its count, the newest complet
     '  deck 1 behind · sky',
     '  deck 0 behind · terracotta',
     '    front Rig the boat',
-    '  button Show',
+    '  button Show Done',
   ]);
 });
 
 test('BoardColumns — the Up next weighting: an accent dot and a filled count only on its heading, a tinted ground by class', () => {
-  const html = renderToStaticMarkup(React.createElement(BoardColumns, { board: learnToSail(), band: 'desktop', onSelect: () => {}, onToggleDone: () => {} }));
+  const html = renderToStaticMarkup(React.createElement(BoardColumns, { board: learnToSail(), band: 'desktop', onSelect: () => {}, onExpandDone: () => {} }));
   const headings = [...html.matchAll(/<h2 class="([^"]+)" aria-label="[^"]+">(.*?)<\/h2>/g)].map(([, className, inner]) => `${className.trim()} · ${inner}`);
   assert.deepEqual(headings, [
     'st-board-columns-heading st-board-columns-heading--locked · <span class="st-board-columns-title">Locked</span><span class="st-board-columns-count">3</span>',
@@ -127,33 +127,44 @@ test('BoardColumns — a rail over fewer than three cards stacks only what it ha
   const board = learnToSail();
   board.done.cards = board.done.cards.slice(0, 1);
   const lines = outline({ board, band: 'tablet' });
-  assert.deepEqual(lines.slice(lines.indexOf('rail done')), ['rail done', '  heading Done, 1 step', '  deck 0 behind · terracotta', '    front Rig the boat', '  button Show']);
+  assert.deepEqual(lines.slice(lines.indexOf('rail done')), ['rail done', '  heading Done, 1 step', '  deck 0 behind · terracotta', '    front Rig the boat', '  button Show Done']);
 });
 
-function focusArrival({ fromInside = false, keyboard = true, onFirstUpNext = false, upNextEmpty = false } = {}) {
+function focusArrival({ from = 'before', keyboard = true, onFirstUpNext = false, upNextEmpty = false } = {}) {
   const moves = [];
   const firstUpNext = { focus: () => moves.push('first Up next') };
-  const previous = { name: 'previous' };
+  const previous = from === null ? null : { name: from };
   const target = onFirstUpNext ? firstUpNext : { focus: () => moves.push('target') };
   target.matches = (selector) => selector === '.st-board-card:focus-visible' && keyboard;
   enterAtUpNext({
     relatedTarget: previous,
     target,
     currentTarget: {
-      contains: (node) => fromInside && node === previous,
+      DOCUMENT_POSITION_PRECEDING: 2,
+      DOCUMENT_POSITION_FOLLOWING: 4,
+      contains: (node) => node?.name === 'inside',
+      compareDocumentPosition: (node) => (node.name === 'before' ? 2 : 4),
       querySelector: (selector) => (selector === '.st-board-columns-column--upNext .st-board-card' && !upNextEmpty ? firstUpNext : null),
     },
   });
   return moves;
 }
 
-test('enterAtUpNext — keyboard focus arriving on any card from outside lands on the first Up next card', () => {
+test('enterAtUpNext — tabbing forward into any card from before the columns lands on the first Up next card', () => {
   assert.deepEqual(focusArrival(), ['first Up next']);
 });
 
-test('enterAtUpNext — moves between cards, pointer presses, arriving on Up next itself and an empty Up next stay put', () => {
-  assert.deepEqual(focusArrival({ fromInside: true }), []);
+test('enterAtUpNext — backward entry, focus from nowhere, moves between cards, pointer presses, Up next itself and an empty Up next stay put', () => {
+  assert.deepEqual(focusArrival({ from: 'after' }), []);
+  assert.deepEqual(focusArrival({ from: null }), []);
+  assert.deepEqual(focusArrival({ from: 'inside' }), []);
   assert.deepEqual(focusArrival({ keyboard: false }), []);
   assert.deepEqual(focusArrival({ onFirstUpNext: true }), []);
   assert.deepEqual(focusArrival({ upNextEmpty: true }), []);
+});
+
+test('BoardColumns — the rail heading counts compactly from 1,000 and keeps the whole number in its spoken name', () => {
+  const board = learnToSail({ extraDone: 1200 });
+  const html = renderToStaticMarkup(React.createElement(BoardColumns, { board, band: 'tablet', onSelect: () => {}, onExpandDone: () => {} }));
+  assert.deepEqual(/<section class="st-board-columns-rail[^"]*" aria-labelledby="[^"]+"><h2 [^>]*aria-label="([^"]+)">.*?columns-count">([^<]+)</.exec(html).slice(1), ['Done, 1,203 steps', '1.2k']);
 });

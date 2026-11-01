@@ -62,6 +62,9 @@
   background: var(--border-default);
 }
 .st-board-columns-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-display);
   font-weight: 700;
