@@ -60,7 +60,7 @@ fun WorkoutBar(session: Session, onOpen: () -> Unit) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(routine, style = WindmillType.label, color = colors.onSurface,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text(" · ${Readout.clock(nowMs - session.startedAtMs)}", style = GymType.numeralRow, color = colors.onSurfaceVariant,
+                Text(" · ${Readout.clock(nowMs - session.startedAtMs)}", style = GymType.numeralMedium, color = colors.onSurfaceVariant,
                     maxLines = 1)
             }
             Icon(Icons.Rounded.KeyboardArrowUp, null, Modifier.size(48.dp).padding(12.dp), tint = colors.onSurfaceVariant)

@@ -85,7 +85,7 @@ internal fun CoachAnswer(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
                     Text("Review routine", style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                    Text(draft.name, style = GymType.routineDraftTitle, color = colors.onSurface)
+                    Text(draft.name, style = GymType.cardTitle, color = colors.onSurface)
                     draft.entries.forEach { entry ->
                         val exercise = catalog.firstOrNull { it.id == entry.exerciseId }
                         val equipment = when (exercise?.equipment) {

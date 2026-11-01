@@ -331,9 +331,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
                     Row(Modifier.fillMaxWidth().testTag("recovery-set:${row.id}").then(if (onSet == null) Modifier else Modifier.clickable(role = Role.Button) { onSet(row.set) })
                         .heightIn(min = if (times) 59.dp else 42.dp).padding(vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(row.savedNumber.toString(), style = GymType.numeralRow, color = colors.onSurfaceVariant)
+                        Text(row.savedNumber.toString(), style = GymType.numeralMedium, color = colors.onSurfaceVariant)
                         Column(Modifier.weight(1f)) {
-                            Text(row.effort, style = GymType.numeralRow, color = colors.onSurface)
+                            Text(row.effort, style = GymType.numeralMedium, color = colors.onSurface)
                             if (times) Text(Readout.time(row.set.completedAtMs), style = GymType.captionLoose, color = colors.onSurfaceVariant)
                         }
                     }

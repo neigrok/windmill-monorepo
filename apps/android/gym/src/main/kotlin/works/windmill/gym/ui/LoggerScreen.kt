@@ -717,7 +717,7 @@ internal fun WorkoutClockRow(clocks: WorkoutClocks) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.clearAndSetSemantics { contentDescription = "$name, $value" }) {
                 Icon(painterResource(icon), contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                Text(value, style = GymType.numeralRow, color = colors.onSurfaceVariant)
+                Text(value, style = GymType.numeralMedium, color = colors.onSurfaceVariant)
             }
         }
     }

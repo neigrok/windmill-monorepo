@@ -112,7 +112,7 @@ object GymType {
     val numeral = numeral(13)
     val numeralSmall = numeral(12)
     val numeralTiny = numeral(11)
-    val numeralRow = numeral(14)
+    val numeralMedium = numeral(14)
     val numeralLarge = numeral(16)
     val numeralDetail = numeral(13).copy(lineHeight = 18.sp)
     val numeralReadout = numeral(15).copy(lineHeight = 20.sp)
@@ -194,7 +194,6 @@ object GymType {
     val coachTitle = nunito(16, FontWeight.Bold, leading = 24)
     val coachDraft = nunito(16, leading = 24)
     val coachComposer = nunito(16, leading = 24, tracking = .5)
-    val coachInput = nunito(16)
     val coachSupporting = nunito(14, leading = 20)
     val coachStrong = nunito(14, FontWeight.Bold, leading = 20)
     val coachAction = nunito(14, FontWeight.Bold, leading = 20, tracking = .1)
@@ -214,7 +213,6 @@ object GymType {
     val coachAccessNote = nunito(18, leading = 26)
     val coachElsewhere = nunito(15, leading = 23)
     val coachDeleteTitle = nunito(24, FontWeight.Bold, leading = 32)
-    val routineDraftTitle = cardTitle
 
     // Onboarding.
     val wordmark = TextStyle(fontFamily = GymFonts.baloo2, fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp)
