@@ -94,8 +94,9 @@ class CoachHistoryTests {
         runBlocking { store.connect(fixture.account()) }
         val chat = store.coach.freshChat()
         var showing by mutableStateOf(false)
+        val ask = AskBinding(store)
         compose.setContent { GymMaterial {
-            if (showing) ThreadScreen(chat, store, emptyList(), emptySet(), "History", {}, {}, {}, composerEnabled = true)
+            if (showing) ThreadScreen(ask, ask, chat, emptyList(), emptySet(), "History", {}, {}, {}, composerEnabled = true)
         } }
         compose.runOnIdle { store.coach.refreshAnonymousAccess() }
         compose.waitUntil(5_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); store.coach.anonymousAccess == AnonymousCoachAccess.Available }
@@ -119,8 +120,9 @@ class CoachHistoryTests {
         val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = api, telemetry = telemetry)
         room = fixture
         runBlocking { fixture.select("alice") }
+        val threads = ThreadsBinding(fixture.store.coach)
         compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
-            ThreadsScreen(fixture.store, "Coach", {}, {}, {})
+            ThreadsScreen(threads, threads, "Coach", {}, {}, {})
         } } }
         compose.onNodeWithText("Private first question").assertIsDisplayed()
         compose.onNodeWithContentDescription(Threads.open).assertIsDisplayed()

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.ThreadsBinding
 import works.windmill.gym.coach.ThreadsScreen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -139,9 +140,10 @@ class RowSwipeAccessibilityTests {
         val rest = FakeGymRest()
         rest.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         try { store(scope, rest).use { room ->
+            val threads = ThreadsBinding(room.store.coach)
             compose.setContent {
                 ThreadsScreen(
-                    store = room.store, backTo = "Coach", onBack = {}, onOpen = {},
+                    state = threads, events = threads, backTo = "Coach", onBack = {}, onOpen = {},
                     onAskNew = {},
                 )
             }

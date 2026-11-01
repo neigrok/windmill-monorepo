@@ -2,6 +2,8 @@ package works.windmill.gym.coach
 
 import works.windmill.gym.store.unexpected
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -79,7 +81,7 @@ class CoachStore internal constructor(
     private val chatVersions = mutableMapOf<Pair<String, String>, Long>()
     var archiveFailure by mutableStateOf<String?>(null)
         private set
-    private var onboardingRevision by mutableStateOf(0L)
+    private var onboardingRevision by mutableLongStateOf(0L)
     var anonymousAccess by mutableStateOf(AnonymousCoachAccess.Checking)
         private set
     private var accessJob: Job? = null
@@ -524,7 +526,7 @@ class CoachStore internal constructor(
     }
 
     private val drafts = mutableMapOf<Pair<String, String>, CoachDraft>()
-    var draftVersion by mutableStateOf(0)
+    var draftVersion by mutableIntStateOf(0)
         private set
 
     private val unsavedDrafts = mutableSetOf<Pair<String, String>>()

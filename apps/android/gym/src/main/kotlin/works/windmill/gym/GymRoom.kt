@@ -98,6 +98,7 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.coach.AskAbsentStance
+import works.windmill.gym.coach.AskBinding
 import works.windmill.gym.coach.AskScreen
 import works.windmill.gym.coach.CoachAccessStance
 import works.windmill.gym.ui.BodyweightScreen
@@ -127,6 +128,7 @@ import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.rememberGymHaptics
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.coach.ThreadScreen
+import works.windmill.gym.coach.ThreadsBinding
 import works.windmill.gym.coach.ThreadsScreen
 import works.windmill.gym.notification.WorkoutNotifications
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -966,8 +968,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             }
 
             @Composable
-            fun Conversation(backTo: String?, onBack: (() -> Unit)?) = AskScreen(
-                store = store,
+            fun Conversation(backTo: String?, onBack: (() -> Unit)?) = remember(store) { AskBinding(store) }.let { ask -> AskScreen(
+                state = ask, events = ask,
                 seat = youInitial,
                 thread = conversation,
                 conversationId = conversationId,
@@ -993,7 +995,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 backTo = backTo,
                 onBack = onBack,
                 onReview = { review(it.id, it.routineId, Reviewing.coach) },
-            )
+            ) }
 
             @Composable
             fun TabScreen(tab: Tab, transient: SnackbarHostState? = null) = when (tab) {
@@ -1097,21 +1099,21 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         onDraftOpen = { pushedDraftOpen = it },
                     )
                     is Away.Coach -> CoachStance { Conversation(backTo = backTo, onBack = { back() }) }
-                    Away.Threads -> ThreadsScreen(
-                        store = store,
+                    Away.Threads -> remember(store) { ThreadsBinding(store.coach) }.let { threads -> ThreadsScreen(
+                        state = threads, events = threads,
                         backTo = backTo,
                         onBack = { back() },
                         onOpen = { openCoachChat(it, "history_open") },
                         onAskNew = { askSomethingNew() },
-                    )
-                    is Away.Thread -> ThreadScreen(
+                    ) }
+                    is Away.Thread -> remember(store) { AskBinding(store) }.let { ask -> ThreadScreen(
+                        state = ask, events = ask,
                         threadId = standing.threadId,
                         seat = youInitial,
                         composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
                         onSignIn = shell.openSignIn,
                         onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
                         onAskNew = { askSomethingNew() },
-                        store = store,
                         origin = origin,
                         onThreads = { look(Away.Threads) },
                         onConnections = { look(Away.Connections) },
@@ -1124,7 +1126,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         onBack = { back() },
                         onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
                         say = { note = it },
-                    )
+                    ) }
                 }
             }
 

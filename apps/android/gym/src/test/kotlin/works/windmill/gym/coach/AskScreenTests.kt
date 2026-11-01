@@ -144,9 +144,10 @@ class AskScreenTests {
         cap: AskCap?,
         doors: MutableList<String>,
     ) {
+        val ask = AskBinding(store)
         compose.setContent {
             AskScreen(
-                store = store,
+                state = ask, events = ask,
                 thread = thread,
                 receipts = emptyList(),
                 lookedAt = emptySet(),
@@ -180,7 +181,8 @@ class AskScreenTests {
         val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
         runBlocking { room.select("u1") }
         val sent = mutableListOf<String>()
-        compose.setContent { GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
+        val ask = AskBinding(room.store)
+        compose.setContent { GymMaterial { AskScreen(ask, ask, listOf(exchange), emptyList(), emptySet(), false, null,
             { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = "chat-123") } }
         compose.onNodeWithText("2 days").performScrollTo().performClick()
         compose.onNodeWithText("3 days").performScrollTo().performClick()
@@ -237,7 +239,8 @@ class AskScreenTests {
         val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
         runBlocking { room.select("u1") }
         val sent = mutableListOf<String>()
-        compose.setContent { GymMaterial { AskScreen(room.store, emptyList(), emptyList(), emptySet(), false, null,
+        val ask = AskBinding(room.store)
+        compose.setContent { GymMaterial { AskScreen(ask, ask, emptyList(), emptyList(), emptySet(), false, null,
             { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = "account-chat") } }
         compose.onNodeWithText("Draft kept on this phone").assertIsDisplayed()
         compose.onNodeWithContentDescription("Question").performTextReplacement("Just typed")
@@ -276,7 +279,8 @@ class AskScreenTests {
         val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
         runBlocking { room.select("u1") }
         var shown by mutableStateOf(true)
-        compose.setContent { if (shown) GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
+        val ask = AskBinding(room.store)
+        compose.setContent { if (shown) GymMaterial { AskScreen(ask, ask, listOf(exchange), emptyList(), emptySet(), false, null,
             {}, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = "account-chat") } }
         compose.runOnIdle { unreadable = true }
         compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
@@ -299,8 +303,9 @@ class AskScreenTests {
         val store = signedIn(scope).store
         var generation by mutableStateOf<AskGeneration?>(null)
         compose.mainClock.autoAdvance = false
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, listOf(generation?.exchange() ?: AskExchange("Question", requestId = "request-a")),
+            AskScreen(ask, ask, listOf(generation?.exchange() ?: AskExchange("Question", requestId = "request-a")),
                 emptyList(), emptySet(), generation?.terminal != true, null, onAsk = {}, onRetry = {}, onAskNew = {},
                 seed = "", origin = "https://windmill.works", onThreads = {}, onReview = {},
                 conversationId = "thread-a", onStop = {})
@@ -334,8 +339,9 @@ class AskScreenTests {
         val older = AskExchange("Older question", trouble = Ask.interrupted, again = true, requestId = "request-a")
         val newer = AskExchange("Newer question", answer = AskAnswer("Newer answer", ReadTally()), requestId = "request-b")
         val retried = mutableListOf<AskExchange>()
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, listOf(older, newer), emptyList(), emptySet(), false, null,
+            AskScreen(ask, ask, listOf(older, newer), emptyList(), emptySet(), false, null,
                 onAsk = {}, onRetry = { retried += it }, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
@@ -351,8 +357,9 @@ class AskScreenTests {
         val store = signedIn(scope).store
         var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "First words", revision = 1))
         var busy by mutableStateOf(true)
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), busy, null,
+            AskScreen(ask, ask, listOf(generation.exchange()), emptyList(), emptySet(), busy, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a",
                 onStop = { generation = generation.copy(status = "stopped", revision = 3); busy = false })
@@ -378,8 +385,9 @@ class AskScreenTests {
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         store.coach.saveDraft("new", CoachDraft(photo = photo))
         val sent = mutableListOf<Pair<String, CoachAttachment?>>()
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, emptyList(), emptyList(), emptySet(), false, null,
+            AskScreen(ask, ask, emptyList(), emptyList(), emptySet(), false, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, onPhotoAsk = { text, attachment -> sent += text to attachment })
         }
@@ -397,8 +405,9 @@ class AskScreenTests {
         val store = signedIn(scope).store
         val earlier = (1..12).map { AskExchange("Question $it", AskAnswer("Answer $it.\n".repeat(8), ReadTally()), requestId = "request-$it") }
         var generation by mutableStateOf(AskGeneration("generation-new", "request-new", "Newest", "running", "Partial", revision = 1))
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, earlier + generation.exchange(), emptyList(), emptySet(), true, null,
+            AskScreen(ask, ask, earlier + generation.exchange(), emptyList(), emptySet(), true, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a", onStop = {})
         }
@@ -415,8 +424,9 @@ class AskScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         var thread by mutableStateOf((5..14).map { AskExchange("Question $it", AskAnswer("Answer $it.\n".repeat(8), ReadTally()), requestId = "request-$it") })
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, thread, emptyList(), emptySet(), false, null,
+            AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
@@ -436,9 +446,10 @@ class AskScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "Partial café", revision = 1))
+        val ask = AskBinding(store)
         compose.setContent {
             clipboard = LocalClipboard.current
-            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
+            AskScreen(ask, ask, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
@@ -691,9 +702,10 @@ class AskScreenTests {
             answer = AskAnswer(answer = "Triples.", read = read, proposals = listOf("proposal1")),
         )
         var receipts by mutableStateOf<List<String>>(emptyList())
+        val ask = AskBinding(room.store)
         compose.setContent {
             AskScreen(
-                store = room.store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
+                state = ask, events = ask, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
                 asking = false, cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
                 origin = "https://windmill.works", backTo = null, onBack = null,
                 onThreads = {}, onReview = {},
@@ -724,9 +736,10 @@ class AskScreenTests {
             answer = AskAnswer(answer = "Triples.", read = read, proposals = listOf("proposal1")),
         )
         var receipts by mutableStateOf<List<String>>(emptyList())
+        val ask = AskBinding(room.store)
         compose.setContent {
             AskScreen(
-                store = room.store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
+                state = ask, events = ask, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
                 asking = false, cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
                 origin = "https://windmill.works", backTo = null, onBack = null,
                 onThreads = {}, onReview = {},
@@ -765,8 +778,9 @@ class AskScreenTests {
             AskExchange(fifth, trouble = Ask.threadFull, needsNew = true))
         var seed by mutableStateOf("")
         val sent = mutableListOf<String>()
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, thread, emptyList(), emptySet(), false, null,
+            AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null,
                 onAsk = { sent += it }, onRetry = { sent += "retry" }, onAskNew = {},
                 seed = seed, origin = "https://windmill.works", onThreads = {}, onReview = {},
                 onNewDraft = { seed = it; thread = emptyList() })
@@ -786,8 +800,9 @@ class AskScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         var thread by mutableStateOf(listOf(AskExchange("First question", AskAnswer("Long history. ".repeat(500), ReadTally(0, 0, 0)))))
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, thread, emptyList(), emptySet(), false, null, onAsk = {}, onRetry = {}, onAskNew = {},
+            AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, onAsk = {}, onRetry = {}, onAskNew = {},
                 seed = "", origin = "https://windmill.works", onThreads = {}, onReview = {})
         }
         compose.runOnIdle {
@@ -810,9 +825,10 @@ class AskScreenTests {
         var thread by mutableStateOf(listOf(first))
         var height by mutableStateOf(540.dp)
         val sent = mutableListOf<String>()
+        val ask = AskBinding(store)
         compose.setContent {
             Box(Modifier.height(height)) {
-                AskScreen(store, thread, emptyList(), emptySet(), thread.last().pending, null,
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), thread.last().pending, null,
                     onAsk = { sent += it; thread = thread + AskExchange(it) }, onRetry = {}, onAskNew = {},
                     seed = "", origin = "https://windmill.works", onThreads = {}, onReview = {})
             }
@@ -846,8 +862,9 @@ class AskScreenTests {
         var conversation by mutableStateOf("old-thread")
         var thread by mutableStateOf((1..4).map { AskExchange("Old question $it", AskAnswer("Short answer.", ReadTally(0, 0, 0))) })
         val sent = mutableListOf<String>()
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, thread, emptyList(), emptySet(), false, null,
+            AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null,
                 onAsk = {
                     sent += it
                     conversation = "new-thread"
@@ -880,8 +897,9 @@ class AskScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         val thread = listOf(AskExchange("What next?", AskAnswer("The original answer.", ReadTally(0, 0, 0), proposals = listOf("prop_gone"))))
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "", "https://windmill.works",
+            AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "", "https://windmill.works",
                 onThreads = {}, onReview = {})
         }
         compose.onNodeWithText("The original answer.").assertIsDisplayed()
@@ -927,8 +945,9 @@ class AskScreenTests {
         val whole = first + " " + "more ".repeat(60).trim()
         var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", opening, revision = 1))
         compose.mainClock.autoAdvance = false
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
+            AskScreen(ask, ask, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a", onStop = {})
         }
@@ -975,8 +994,9 @@ class AskScreenTests {
         val partial = "word ".repeat(300).trim().take(1499)
         val generation = AskGeneration("generation-a", "request-a", "Question", "running", partial, revision = 7)
         compose.mainClock.autoAdvance = false
+        val ask = AskBinding(store)
         compose.setContent {
-            AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), true, null,
+            AskScreen(ask, ask, listOf(generation.exchange()), emptyList(), emptySet(), true, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a", onStop = {})
         }
@@ -1004,8 +1024,9 @@ class AskScreenTests {
         val answered = AskExchange("Remove this routine?",
             AskAnswer(answer = "You can remove it.", read = read, proposals = listOf("proposal1")))
         var receipts by mutableStateOf<List<String>>(emptyList())
+        val ask = AskBinding(room.store)
         compose.setContent {
-            AskScreen(room.store, listOf(answered), receipts, emptySet(), false, null, {}, {}, {}, "",
+            AskScreen(ask, ask, listOf(answered), receipts, emptySet(), false, null, {}, {}, {}, "",
                 "https://windmill.works", onThreads = {}, onReview = {})
         }
         compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
@@ -1038,9 +1059,10 @@ class AskScreenTests {
         room.store.observeEngine()
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        val ask = AskBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
-                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
@@ -1072,9 +1094,10 @@ class AskScreenTests {
         room.store.observeEngine()
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        val ask = AskBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
-                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
@@ -1113,9 +1136,10 @@ class AskScreenTests {
         assertNull(room.store.routines.caughtUpTo)
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        val ask = AskBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
-                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
@@ -1154,9 +1178,10 @@ class AskScreenTests {
         room.store.observeEngine()
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        val ask = AskBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
-                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
@@ -1198,9 +1223,10 @@ class AskScreenTests {
         room.store.observeEngine()
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        val ask = AskBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
-                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
@@ -1237,9 +1263,10 @@ class AskScreenTests {
         val replica = room.engine.activeReplica()
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        val ask = AskBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
-                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
@@ -1281,9 +1308,10 @@ class AskScreenTests {
         room.store.observeEngine()
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1"), AskExchange("And then?", requestId = "request2")))
+        val ask = AskBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
-                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
