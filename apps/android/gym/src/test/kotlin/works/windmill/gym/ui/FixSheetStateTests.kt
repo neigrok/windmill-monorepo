@@ -11,7 +11,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performImeAction
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import kotlin.coroutines.CoroutineContext

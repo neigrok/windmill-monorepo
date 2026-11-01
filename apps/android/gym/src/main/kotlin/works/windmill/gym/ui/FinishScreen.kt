@@ -48,7 +48,6 @@ import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetTarget
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -238,7 +237,7 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
     ) {
         Text(comparison.title, style = GymType.numeral(11), color = skin.inkDim)
         comparison.rows.forEach { row ->
-            ReceiptLine(row.movement, row.detail, skin.ink, skin.inkDim)
+            ReceiptLine(row.movement, row.detail)
         }
     }
 }
@@ -270,7 +269,7 @@ fun FinishScreen(
     // At large text the receipt opens the whole sheet; otherwise it stands at its board height and grows to hold every
     // fact. Either way the body scrolls under the pinned actions.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val largeText = LocalDensity.current.fontScale > 1.3f
+        val largeText = GymTextScale.large
         val floor = if (largeText) maxHeight else (if (finished.slight) 465.dp else 815.dp).coerceAtMost(maxHeight)
         Column(Modifier.fillMaxWidth().heightIn(min = floor, max = maxHeight).navigationBarsPadding().testTag("Finish receipt"),
             verticalArrangement = Arrangement.SpaceBetween) {
@@ -400,18 +399,18 @@ private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = f
 }
 
 @Composable
-private fun ReceiptLine(name: String, detail: String, nameColor: androidx.compose.ui.graphics.Color, detailColor: androidx.compose.ui.graphics.Color) {
-    val largeText = LocalDensity.current.fontScale > 1.3f
+private fun ReceiptLine(name: String, detail: String) {
+    val skin = LocalGymColors.current
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (largeText || maxWidth < 360.dp || name.length > 22 || detail.length > 24) {
+        if (GymTextScale.large || maxWidth < 360.dp || name.length > 22 || detail.length > 24) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(name, style = WindmillFont.body(15), color = nameColor, modifier = Modifier.fillMaxWidth())
-                Text(detail, style = GymType.numeral(13), color = detailColor, modifier = Modifier.fillMaxWidth())
+                Text(name, style = WindmillFont.body(15), color = skin.ink, modifier = Modifier.fillMaxWidth())
+                Text(detail, style = GymType.numeral(13), color = skin.inkDim, modifier = Modifier.fillMaxWidth())
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, style = WindmillFont.body(15), color = nameColor, modifier = Modifier.weight(1f))
-                Text(detail, style = GymType.numeral(13), color = detailColor)
+                Text(name, style = WindmillFont.body(15), color = skin.ink, modifier = Modifier.weight(1f))
+                Text(detail, style = GymType.numeral(13), color = skin.inkDim)
             }
         }
     }

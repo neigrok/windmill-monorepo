@@ -192,7 +192,7 @@ fun WeighInSheet(
             )
             if (correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = skin.inkDim)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val stacked = maxWidth < 320.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+                val stacked = maxWidth < 320.dp || GymTextScale.stacked
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp))
                     .background(skin.canvas)
                     .then(if (!correction) Modifier.clickable(enabled = !busy, role = Role.Button,

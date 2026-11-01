@@ -1,6 +1,5 @@
 package works.windmill.gym.domain
 
-import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.serialization.json.Json

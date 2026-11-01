@@ -16,7 +16,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -167,7 +166,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
     }
     page.nothingYet?.let { Text(it, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim); return }
     if (page.tiles.isNotEmpty()) {
-        if (LocalDensity.current.fontScale >= 1.5f) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (GymTextScale.stacked) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             page.tiles.forEach { RecordMetric(it, Modifier.fillMaxWidth()) }
         } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             page.tiles.forEach { RecordMetric(it, Modifier.weight(1f)) }

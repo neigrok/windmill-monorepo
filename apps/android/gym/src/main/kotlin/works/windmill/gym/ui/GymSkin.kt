@@ -1,6 +1,8 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -8,6 +10,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -103,6 +106,13 @@ object GymType {
     )
 
     val readout = numeral(15)
+}
+
+// Where the room's layouts reflow for the system text size: past its 130 % step a layout opens up (the receipt fills
+// its sheet, a set row stacks its readout), and from 150 % side-by-side parts stack.
+object GymTextScale {
+    val large: Boolean @Composable @ReadOnlyComposable get() = LocalDensity.current.fontScale > 1.3f
+    val stacked: Boolean @Composable @ReadOnlyComposable get() = LocalDensity.current.fontScale >= 1.5f
 }
 
 // Native action sizes; the rack keeps its larger logging target.

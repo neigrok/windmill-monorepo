@@ -19,7 +19,6 @@ import works.windmill.gym.GymRoom
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.SetTarget
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties

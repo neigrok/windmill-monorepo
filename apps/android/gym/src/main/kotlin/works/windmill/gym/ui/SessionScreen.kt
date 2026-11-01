@@ -8,7 +8,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
@@ -438,7 +437,7 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
     val skin = LocalGymColors.current
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
-    val largeText = LocalDensity.current.fontScale > 1.3f
+    val largeText = GymTextScale.large
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
         .background(if (pressed) skin.raised else skin.surface)
         .clickable(interactionSource = pressing, indication = null, role = Role.Button,

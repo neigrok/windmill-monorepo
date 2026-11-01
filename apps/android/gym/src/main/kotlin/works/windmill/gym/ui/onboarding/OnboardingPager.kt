@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
 import works.windmill.gym.ui.GymSkin
+import works.windmill.gym.ui.GymTextScale
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -179,7 +180,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                 .semantics { isTraversalGroup = false; if (page != pager.currentPage) hideFromAccessibility() },
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 val example = stringResource(examples[page])
-                val largeType = LocalDensity.current.fontScale >= 1.5f
+                val largeType = GymTextScale.stacked
                 Box(Modifier.widthIn(max = 354.dp).fillMaxWidth()
                     .height(if (largeType) 260.dp else if (page == 0) 320.dp else 340.dp)
                     .clearAndSetSemantics { contentDescription = example; traversalIndex = 5f }

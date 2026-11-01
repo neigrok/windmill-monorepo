@@ -16,13 +16,10 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -220,7 +217,7 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, onOpe
 @Composable
 private fun WeightRow(weight: LogEntry.Weight, readout: LogReadout.Weight, onOpen: () -> Unit) {
     val skin = LocalGymColors.current
-    val stacked = LocalDensity.current.fontScale >= 1.5f
+    val stacked = GymTextScale.stacked
     Column(Modifier.fillMaxWidth().background(skin.canvas)) {
         HorizontalDivider(color = skin.line)
         Row(Modifier.fillMaxWidth().testTag(weight.key).heightIn(min = 72.dp)
@@ -252,9 +249,8 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
     val skin = LocalGymColors.current
     var menu by remember { mutableStateOf(false) }
     val haptics = rememberGymHaptics()
-    val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val timeBelowTitle = maxWidth < 320.dp || fontScale >= 1.5f
+        val timeBelowTitle = maxWidth < 320.dp || GymTextScale.stacked
         Row(Modifier.fillMaxWidth().testTag("session:${row.summary.id}").heightIn(min = 72.dp)
             .clip(RoundedCornerShape(16.dp)).background(skin.surface)
             .combinedClickable(role = Role.Button, onClickLabel = "Open workout", onLongClickLabel = "Workout actions",

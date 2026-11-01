@@ -17,7 +17,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -310,7 +309,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
 @Composable
 private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, markFinished: (() -> Unit)? = null) {
     val skin = LocalGymColors.current
-    val largeText = LocalDensity.current.fontScale > 1.3f
+    val largeText = GymTextScale.large
     Column(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp)) {
         for ((index, field) in listOf("Started" to session.startedAtMs, "Finished" to session.finishedAtMs).withIndex()) {
             if (index > 0) HorizontalDivider(color = skin.inkDim.copy(alpha = .12f))
