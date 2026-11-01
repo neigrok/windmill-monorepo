@@ -100,6 +100,39 @@ class CoachBubbleTests {
         }
     }
 
+    @Test fun theAccessibleCopyActionAnswersWhetherTheClipboardTookTheText() {
+        var refused = true
+        var copied: String? = null
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {}
+        }
+        compose.setContent {
+            val clipboard = object : Clipboard by LocalClipboard.current {
+                override suspend fun setClipEntry(clipEntry: ClipEntry?) {
+                    if (refused) throw IllegalStateException("private clipboard content")
+                    copied = clipEntry?.clipData?.getItemAt(0)?.text?.toString()
+                }
+            }
+            GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry, LocalClipboard provides clipboard) {
+                CoachAnswer("Exact fixture answer", null, emptyList(), 0)
+            } }
+        }
+        val copy = compose.onNodeWithText("Exact fixture answer").fetchSemanticsNode().config[SemanticsActions.CustomActions].single()
+        compose.runOnIdle {
+            assertFalse(copy.action())
+            assertNull(copied)
+            refused = false
+            assertTrue(copy.action())
+            assertEquals("Exact fixture answer", copied)
+            assertEquals(listOf(
+                "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed"),
+                "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok"),
+            ), events)
+        }
+    }
+
     @Test fun longMarkdownUsesTheFullLaneAndTableCellsKeepTheirContent() {
         val answer = "## Thursday · Push A\n\nKeep the same total work each week.\n\n- Bench — 3 × 3 at 90 kg\n\n| Movement | Sets | Load |\n| --- | --- | --- |\n| Incline Press | 3 × 10 | 24 kg |"
         compose.setContent { GymMaterial { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {

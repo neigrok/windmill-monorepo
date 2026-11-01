@@ -31,7 +31,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.ChangeKind
-import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalChange
 import works.windmill.gym.presentation.ProposalTargets
 import works.windmill.gym.presentation.Routine

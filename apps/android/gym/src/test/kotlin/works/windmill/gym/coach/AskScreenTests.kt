@@ -55,7 +55,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.presentation.ChangeKind
-import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalChange
 import works.windmill.gym.presentation.ProposalTargets

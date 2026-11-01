@@ -273,6 +273,7 @@ sends `state`: `shown` when its question opens.
 | `session` | `delete` | `ok`, `refused`, `failed` | |
 | `session` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
 | `session` | `fix` | `ok`, `refused`, `failed` | |
+| `session` | `share` | `ok`, `failed` | |
 | `threads` | `delete` | `ok`, `refused`, `failed`, `cancelled` | yes |
 | `tile` | `open` | `ok`, `failed` | |
 | `tile` | `routines` | `ok`, `failed` | |

@@ -31,18 +31,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.telemetry.LocalTelemetry
 
 @Composable
 fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
+    val telemetry = LocalTelemetry.current
     var state by remember(sessionId) { mutableStateOf<WorkoutSharing.State>(WorkoutSharing.State.Closed()) }
     val card = WorkoutSharing.card(state, sharing.origin)
 
@@ -50,7 +53,14 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
         val standing = state
         if (standing is WorkoutSharing.State.Live) {
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", WorkoutSharing.link(standing.share, sharing.origin))))
+                try { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", WorkoutSharing.link(standing.share, sharing.origin)))) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    telemetry.failure("gym.share", failure)
+                    telemetry.event("gym_action", mapOf("screen" to "session", "action" to "share", "outcome" to "failed"))
+                    return@launch
+                }
+                telemetry.event("gym_action", mapOf("screen" to "session", "action" to "share", "outcome" to "ok"))
                 state = state.after(WorkoutSharing.Event.Copied)
             }
             return
