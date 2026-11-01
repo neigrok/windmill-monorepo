@@ -1,25 +1,27 @@
 # Split TrainingStore into feature stores; screens take state and events, not the store
 
-**Status:** Refactor; nothing visual changes. Not started. Land it after 53, which moves the navigator out of `GymRoom`, to avoid a double rewrite.
+**Status:** Refactor; nothing visual changes. Done on branch `wave-68`, not yet on main. The rig recaptures have not been re-run.
 
-**Current implementation**
-- **`store/TrainingStore.kt` (~2,300 lines)** is one class with about 75 functions and about 50 Compose `mutableStateOf` fields. It mixes:
-  - repository and view-model work
-  - the recovery flow and deletion/undo
-  - Coach composition
-  - preferences, bodyweight, notes and progress
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- **Feature stores (`store/`):** each takes the shared `TrainingSeat` (whose replica is in hand, whether this phone may write it, the one guarded `readTraining`, `tried`, `reportFailure`, the refresh nudge) by constructor; upward edges are named lambdas, as `CoachStore` already used.
+  - `WorkoutSession`: rack, sets, movement walk, start, finish, save state and stranded sets, and fix, delete and discard of a set or workout already on the log, because the live workout's controls follow every such change.
+  - `HistoryReads`: the log's pages and foot (`Older`, `Pulls`, the `first_pull` events, the walked-range refresh), retained details, record, routine history, progress, movement edit. `loadLog` keeps its lock around the live workout's follow of the replica's open one (`followOpenWorkout`).
+  - `RoutinesStore`: routines, movement catalogue, proposals and their settling.
+  - `RecoveryStore`: imports and On this phone.
+  - `DeletionsStore`: the routed set, routine and note delete, and the weigh-in's engine hold with its Undo. `HeldDeletes` (`WithheldDelete.kt`) holds the holds and the room's settled set deletes.
+  - `BodyweightStore`, `NotesStore`, `SharingStore` (connected log and share links), and the existing `CoachStore`.
+  - `TrainingStore` is the composition root: it builds the seat and the stores and moves them together in `connect`, `refreshEngine`, `observeEngine`, `prepareEngineTransition`, `eraseDeletedOwner` and `restoreWorkout`; `clearRefusals` and `initialGymEmpty` span several stores. Write outcomes live in `WriteOutcomes.kt`.
+- **Screens:** each screen file declares a `@Stable` `…State` of live getters, an `…Events` interface and a stateless `…Binding` over the feature stores; `GymRoom` remembers one binding per store. No composable but `GymRoom` and `GymModule` takes `TrainingStore`. Every screen previews its main states in Dark and Daylight (`@DarkAndDaylight`, `GymPreview` in `ui/GymMaterial.kt`), themed from the system appearance as the app is.
+- **Room:** `RoomSheets.kt` holds `FinishFlow` (the finished session and its saver, the sheet, closing, the queued share, the first signed-out receipt's Keep, read from `gym-receipts` only when a receipt opens) and `ReviewFlow` (the open review, busy, looked-at, receipts). `RoomChrome.kt` holds `FrameChrome`, `TabRail`, `RailLabels` and `railIcon`. Each `Frame` declares `hostsTransient`: the Log and Routines tabs and the logger host the room's transient above their floating button; every other frame's chrome hosts it. `GymRoom.kt` is about 980 lines.
+- **Lint:** no `AutoboxingStateCreation` and no `FrequentlyChangedStateReadInComposition`; `AssemblySheet` derives its drag edge with `derivedStateOf`.
+- **Held deletes:** every held delete is a weigh-in's engine hold. The store's timed session hold, its explicit settle and abandon, and the filters only it fed (Coach threads, note moves, routine history, the log's `recent`) are gone.
+- **Tests** mirror the stores: `store/WorkoutSessionTests`, `RoutinesStoreTests`, `HistoryReadsTests`, `NotesStoreTests`, `DeletionsStoreTests`, with seat changes, restore and Coach through the store left in `TrainingStoreTests`; the room's in `RoomSheetsTests` and `RoomChromeTests`.
 
-  Compose runtime state lives in the store layer.
-- **`GymRoom.kt` (~1,400 lines)** is mostly one `@Composable` with about 30 `remember`/`rememberSaveable` states:
-  - the finish-sheet choreography, the review sheet and receipts
-  - Coach selection and the notification permission
-  - SharedPreferences reads in composition (`FinishReceipts`)
-
-  Any store read at its top re-executes the whole body.
-- **Screens and previews:** about 20 screen entry points take `store: TrainingStore` directly (`LogScreen`, `LoggerScreen`, `AskScreen`, …), so no screen hoists its state and there are **0 `@Preview`s**. Design iteration depends on the emulator rig.
-- **Lint flags:**
-  - `AutoboxingStateCreation` ×11: use `mutableLongStateOf`/`mutableIntStateOf`.
-  - `FrequentlyChangedStateReadInComposition` in `AssemblySheet.kt`, where `layoutInfo` is read during composition and recomposes every drag frame.
+**Observations**
+- `WorkoutSession` is about 790 lines. Fix, delete and discard of a logged workout read and redraw the live workout's controls, so there is no clean seam between live and logged corrections yet; a split would first need the live workout to follow a correction by observation rather than by call.
+- `AskState` carries the whole `CoachStore`, because `CoachComposer` and `CoachPhoto` take it. Narrowing it means giving the composer its own state and events (about ten members) and the conversation's remaining Coach reads their own; worth doing with the next Coach screen change.
+- The bindings' secondary `TrainingStore` constructors are a convenience for the room and the tests; the primary constructors name the exact stores each screen reads.
+- `HistoryReads`, `RecoveryStore` and `WorkoutSession` reach back into the composition through lambdas (`followOpenWorkout`, `refresh`). They mark where a feature still triggers a room-wide re-read; an observed engine revision could replace them.
 
 **Change**
 - **Feature stores:** split `TrainingStore` in the same constructor-injected style:
