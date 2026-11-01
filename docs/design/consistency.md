@@ -38,9 +38,9 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   stores and releases them, and the gym room draws their Undo from the engine's offers
   (`useTrainingLog.js`). These holds still go the other way, putting the row back and sending
   nothing: the web's Coach conversation delete, a REST call held in the gym room's memory, when the
-  document hides or the room unmounts; Android's workout/conversation windows on room disposal
-  (`GymRoom.kt`, `abandonWithheld`). Android weights use durable engine holds and the application
-  process lifecycle, preserving remaining time through recreation and releasing on true backgrounding.
+  document hides or the room unmounts. Android holds nothing in the room: its only held delete is
+  a weigh-in's durable engine hold, which preserves remaining time through recreation and releases
+  on true backgrounding.
   Workout/conversation confirmation migrations remain with tasks 14 and 37 (11b).
 - **7c · Sign-out.** Canon (engine §7.10; owner ruling 2026-09-26): signing out takes the
   account's synced data off the device. When the account has not confirmed some changes, the
