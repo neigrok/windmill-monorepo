@@ -872,7 +872,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
   | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the rack will offer, *22.5 kg total × max*, or *— × max* while last time is unread | 03.34 `1742:40960` · `1742:41112` |
   | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
-  | Receipt at 320dp/200% | Built (task 60): the receipt opens full height, the facts wrap two to a row and the body scrolls to *Performed* under the pinned actions. *Share with Coach* still wraps: its custom button sets a 16 sp label where 03.36 draws the M3 label size | 03.36 `1742:41620` · `1742:41702` |
+  | Receipt at 320dp/200% | Built (task 60): the receipt opens full height, the facts wrap two to a row and the body scrolls to *Performed* under the pinned actions. A value no size fits on one line stays at the 16 sp floor and drops only its unit to the next line. *Share with Coach* and *Done* are Material filled tonal and filled buttons with one-line labels, which at 200 % run into the 24 dp side padding as the board draws them. The crown is the 24 dp drawable 8 dp before the label, where the board sets an emoji glyph at the label size | 03.36 `1742:41620` · `1742:41702` |
   | Weigh-in Undo | Built (task 61): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887`; 05.16 stays as the production picture until 05.17 ships |
 
   Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
@@ -881,10 +881,11 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   floating-label idiom the movement sheet uses, and Android builds it (task 56); 02.3, 02.5 and the
   other editor boards still draw a label above the field (designer to redraw). 02.20 draws only a
   named draft: Android says *This routine won't be saved.* while the name is blank (designer to
-  confirm). Under its dialog 02.20 also draws Save muted on a new draft that is named and holds a
-  movement, where 00.1's rule enables it, and an editor body at 16 dp margins with mono target lines;
-  Android's body keeps its 20 dp margins and sans target lines (designer to
-  reconcile).
+  confirm). Editing a saved routine, Android says *<Name> won't be saved.* although only the edits are
+  lost and the routine stays (designer to word that case). Under its dialog 02.20 also draws Save
+  muted on a new draft that is named and holds a movement, where 00.1's rule enables it, and an
+  editor body at 16 dp margins with mono target lines; Android's body keeps its 20 dp margins and
+  sans target lines (designer to reconcile).
 
 - **11t · You after a confirmed closure (designer).** D5's caption names the row *Finish deletion*
   once closure is confirmed, and Android builds that label (task 48). The subtitle under *You* is

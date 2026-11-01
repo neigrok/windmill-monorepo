@@ -10,6 +10,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.runtime.getValue
@@ -115,6 +117,41 @@ class LoggerTransientTests {
                 assertEquals(emptyList<WithheldDelete>(), store.withheld)
             }
         } finally {
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            scope.cancel()
+            room.close()
+        }
+    }
+
+    @Test
+    fun whileTheLoggerSlidesAwayTheUndoIsDrawnOnce() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val room = EngineRoomFixture(tmp.newFolder(), scope)
+        try {
+            val store = room.store
+            live(room)
+            compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
+            compose.waitForIdle()
+            compose.runOnIdle { runBlocking { assertNull(store.weighIn("2026-09-01", 81.25)) } }
+            compose.runOnIdle { store.withhold(Deletion.Bodyweight("2026-09-01")) }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText(Withheld.undo).fetchSemanticsNodes().isNotEmpty() }
+
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithContentDescription("Hide workout").performClick()
+            // Frame by frame until the log stands beneath the logger that is sliding off it.
+            repeat(30) {
+                if (compose.onAllNodesWithText("The log").fetchSemanticsNodes().isEmpty()) compose.mainClock.advanceTimeByFrame()
+            }
+            compose.onAllNodesWithText("The log").assertCountEquals(1)
+            compose.onAllNodesWithText("Log set").assertCountEquals(1)
+            compose.onAllNodesWithText(Withheld.undo).assertCountEquals(1)
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            compose.onAllNodesWithText("Log set").assertCountEquals(0)
+            compose.onAllNodesWithText(Withheld.undo).assertCountEquals(1)
+        } finally {
+            compose.mainClock.autoAdvance = true
             compose.runOnIdle { showing = false }
             compose.waitForIdle()
             scope.cancel()

@@ -1206,7 +1206,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     say = { note = it },
                                     onFinish = { close() },
                                     onHide = ::hideWorkout,
-                                    transient = transient,
+                                    transient = transient.takeIf { standing },
                                 )
                                 // A day being built outranks a tab and nothing else, and it covers the rail.
                                 is Frame.Draft -> (building?.also { leavingDraft.draft = it } ?: leavingDraft.draft)?.let { draft ->

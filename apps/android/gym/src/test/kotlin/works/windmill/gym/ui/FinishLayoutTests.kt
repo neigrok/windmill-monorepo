@@ -7,7 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
@@ -26,6 +32,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.domain.*
@@ -177,6 +184,48 @@ class FinishLayoutTests {
                 val node = compose.onNodeWithText(text).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                 assertTrue("$text ends at ${node.bottom}, under the band at $band", node.bottom <= band + 0.5f)
             }
+        }
+    }
+
+    @Test
+    fun atLargeTextAVolumeNoSizeFitsWholeKeepsItsNumberOnOneLineAndDropsOnlyItsUnit() {
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 3_121_000),
+            listOf(TrainingSet("set", "bench-press", weightKg = 12_437.75, reps = 1, completedAtMs = 2_000)), null)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                GymMaterial { FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell"))) }
+            }
+        }
+        val node = compose.onNodeWithText("12,437.75 kg").performScrollTo().assertIsDisplayed()
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+        val layout = layouts.single()
+        assertEquals(16f, layout.layoutInput.style.fontSize.value)
+        assertEquals(listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1), "12,437.75 kg".indices.filter { it != 9 }.map(layout::getLineForOffset))
+        assertFalse(layout.hasVisualOverflow)
+    }
+
+    // The real 200 %: Android 14 scales type non-linearly, so a 16 sp label sets at 28 dp.
+    @Test
+    fun atTheLargestTextBothReceiptActionsAreMaterialButtonsWithOneLineLabelsInsideThem() {
+        RuntimeEnvironment.setFontScale(2f)
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 3_121_000, plan = PlanSnapshot("Push A")),
+            List(5) { TrainingSet("set_$it", "bench-press", weightKg = 80.0, reps = 6, completedAtMs = 2_000L + it) }, null)
+        compose.setContent {
+            GymMaterial {
+                FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell")), onShareWithCoach = {})
+            }
+        }
+        for (label in listOf(FinishCoach.action, "Done")) {
+            val button = compose.onNode(hasText(label) and hasClickAction()).assertIsDisplayed()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)).fetchSemanticsNode().boundsInRoot
+            val text = compose.onNode(hasText(label), useUnmergedTree = true).fetchSemanticsNode()
+            val layouts = mutableListOf<TextLayoutResult>()
+            text.config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+            assertEquals(label, 1, layouts.single().lineCount)
+            assertEquals(label, label.length, layouts.single().getLineEnd(0, visibleEnd = true))
+            assertTrue("$label at ${text.boundsInRoot} spills out of its button at $button",
+                text.boundsInRoot.left >= button.left && text.boundsInRoot.right <= button.right)
         }
     }
 }

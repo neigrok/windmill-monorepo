@@ -8,7 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
@@ -26,7 +31,11 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -341,8 +350,9 @@ fun FinishScreen(
     }
 }
 
-// The value keeps one line, shrinking where a half-width tile at large text cannot hold it, and wraps only a value no
-// readable size fits.
+// The value keeps one line, shrinking where a half-width tile at large text cannot hold it. A value too wide even at
+// the 16 sp floor stays at the floor and wraps at the space before its unit, so the number itself keeps one line
+// wherever one line can hold it.
 @Composable
 private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: String? = null) {
     val skin = LocalGymColors.current
@@ -352,29 +362,41 @@ private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: 
             unit?.let { withStyle(SpanStyle(fontSize = 0.5.em, fontWeight = FontWeight.Normal)) { append(" $it") } }
         }
         val style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp, color = skin.ink, textAlign = TextAlign.Center)
+        val floor = style.copy(fontSize = 16.sp, lineHeight = 20.sp)
         val measurer = rememberTextMeasurer()
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val oneLine = !measurer.measure(text, style.copy(fontSize = 16.sp), maxLines = 1,
+            val oneLine = !measurer.measure(text, floor, maxLines = 1,
                 constraints = Constraints(maxWidth = constraints.maxWidth)).hasVisualOverflow
             if (oneLine) BasicText(text, Modifier.fillMaxWidth(), style, maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 32.sp))
-            else BasicText(text, Modifier.fillMaxWidth(), style)
+            else BasicText(text, Modifier.fillMaxWidth(), floor)
         }
         Text(label, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.inkDim,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
+// 03.36: the label keeps one line, centred, and at large text may run into the side padding rather than wrap.
 @Composable
 private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = false, crown: Boolean = false) {
     val skin = LocalGymColors.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(if (tonal) skin.raised else skin.accent, RoundedCornerShape(16.dp))
-        .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-        if (crown) Image(painterResource(R.drawable.gym_coach_crown), contentDescription = null,
-            contentScale = ContentScale.Fit, modifier = Modifier.size(24.dp))
-        Text(label, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = if (tonal) skin.ink else skin.onAccent)
+    val modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary)
+    val shape = RoundedCornerShape(16.dp)
+    val padding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+    val content: @Composable RowScope.() -> Unit = {
+        Row(Modifier.wrapContentWidth(unbounded = true), verticalAlignment = Alignment.CenterVertically) {
+            if (crown) {
+                Image(painterResource(R.drawable.gym_coach_crown), contentDescription = null,
+                    contentScale = ContentScale.Fit, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            }
+            Text(label, style = MaterialTheme.typography.labelLarge.copy(lineHeight = 22.sp))
+        }
     }
+    if (tonal) FilledTonalButton(onClick, modifier, shape = shape, contentPadding = padding, content = content,
+        colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink))
+    else Button(onClick, modifier, shape = shape, contentPadding = padding, content = content,
+        colors = ButtonDefaults.buttonColors(containerColor = skin.accent, contentColor = skin.onAccent))
 }
 
 @Composable
