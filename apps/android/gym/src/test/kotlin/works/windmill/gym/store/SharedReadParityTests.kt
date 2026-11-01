@@ -74,7 +74,7 @@ class SharedReadParityTests {
         assertEquals(sharedReview(engine, "today").member("record").jcs, sharedForm(training.review("today")).member("record").jcs)
     }
 
-    @Test fun aPhoneThatHasNotReadItsAccountClaimsNoRecordAndShowsNoTiles() = withEngine(signedIn = true) { engine ->
+    @Test fun aPhoneThatHasNotReadItsAccountClaimsNoRecordAndShowsNoTilesEstimateOrCount() = withEngine(signedIn = true) { engine ->
         seedWorkout(engine, "earlier", java.time.Instant.parse("2027-01-04T10:00:00Z").toEpochMilli(), List(4) { 100.0 to 5 })
         seedWorkout(engine, "today", java.time.Instant.parse("2027-01-10T10:00:00Z").toEpochMilli(), List(4) { 110.0 to 5 })
         val training = EngineTraining(engine)
@@ -86,11 +86,12 @@ class SharedReadParityTests {
         assertNull(movement.best)
         assertNull(movement.heaviest)
         assertFalse(movement.hasChart(java.time.ZoneOffset.UTC))
+        assertEquals(2, movement.estimates.size)
         val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
         val page = Record.page(MovementRecord.of(bench, training.details()), 1_800_000_000_000, movement)
         assertEquals(Record.Page("Bench Press", "Barbell", emptyList(), emptyList(),
             listOf(Record.Day("10 Jan", "110 × 5 · 110 × 5 · 110 × 5 · 110 × 5"), Record.Day("4 Jan", "100 × 5 · 100 × 5 · 100 × 5 · 100 × 5")),
-            null, null), page)
+            null, null, false), page)
     }
 
     @Test fun theReceiptCountsEverySetOfTheComparisonAndItsBoundsBesideTheSharedTopSet() = withEngine(signedIn = false) { engine ->

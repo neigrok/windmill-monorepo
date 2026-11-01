@@ -75,7 +75,26 @@ class RecordTests {
         assertEquals(Record.Page("Back Squat", "Barbell",
             listOf(Record.Tile("Best e1RM", "116.7", "kg · today", true), Record.Tile("Heaviest", "120", "kg · 12 reps", false)),
             emptyList(),
-            listOf(Record.Day("today", "100 × 5 · 120 × 12")), null, null), Record.page(record, today, progress))
+            listOf(Record.Day("today", "100 × 5 · 120 × 12")), null, null, true), Record.page(record, today, progress))
+    }
+
+    // The phone's copy of an account it has not pulled yet is partial: it lists the sets it holds and claims nothing.
+    @Test
+    fun beforeTheFirstPullThePageListsItsSetsAndLeavesEveryClaimOut() {
+        val history = listOf(session("earlier", julyThirteenth, listOf(set("s1", 100.0, 5, julyThirteenth))),
+            session("latest", today, listOf(set("s2", 110.0, 5, today))))
+        val unread = StatsProgress.of(history, today, complete = false).movement(squat.id)
+        assertEquals(2, unread.estimates.size)
+        assertEquals(Record.Page("Back Squat", "Barbell", emptyList(), emptyList(),
+            listOf(Record.Day("today", "110 × 5"), Record.Day("13 Jul", "100 × 5")), null, null, false),
+            Record.page(MovementRecord.of(squat, history), today, unread))
+        assertEquals(Record.Page("Back Squat", "Barbell", emptyList(), emptyList(), emptyList(), null, null, false),
+            Record.page(MovementRecord(squat), today, StatsProgress.of(emptyList(), today, complete = false).movement(squat.id)))
+        assertEquals(Record.Page("Back Squat", "Barbell",
+            listOf(Record.Tile("Best e1RM", "128.3", "kg · today", true), Record.Tile("Heaviest", "110", "kg · 5 reps", false)),
+            listOf(Record.Best("100 × 5", "e1RM 116.7", "13 Jul")),
+            listOf(Record.Day("today", "110 × 5"), Record.Day("13 Jul", "100 × 5")), null, null, true),
+            Record.page(MovementRecord.of(squat, history), today, StatsProgress.of(history, today).movement(squat.id)))
     }
 
     @Test

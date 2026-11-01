@@ -252,6 +252,7 @@ sends `state`: `shown` when its question opens.
 | `log` | `open_bodyweight` | `ok` | |
 | `log` | `open_record` | `ok` | |
 | `log` | `open_workout` | `ok` | |
+| `log` | `retry` | `requested`, `ok`, `failed` | |
 | `log` | `share` | `ok`, `refused`, `failed` | |
 | `movement_form` | `add` | `ok`, `refused`, `failed` | |
 | `movement_form` | `cancel` | `ok` | |

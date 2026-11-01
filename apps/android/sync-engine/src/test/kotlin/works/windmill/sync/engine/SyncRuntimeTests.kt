@@ -35,14 +35,14 @@ class SyncRuntimeTests {
         override fun delete(account: String) { if (failDelete) error("secret-token/private-content"); values.remove(account) }
         override fun accounts() = values.keys.toSet()
     }
-    private class Identities : IdentitySource {
+    private class Identities(private val drawn: (Int) -> Int = { 0 }) : IdentitySource {
         val bounds = CopyOnWriteArrayList<Int>()
         private var gestures = 0
         private var replicas = 0
         private var actors = 0
         private var guards = 0
         override fun opaqueID() = "g${++gestures}"
-        override fun draw(bound: Int): Int { bounds.add(bound); return 0 }
+        override fun draw(bound: Int): Int { bounds.add(bound); return drawn(bound) }
         override fun replicaID() = "rp_${(++replicas).toString(16).padStart(32, '0')}"
         override fun actorID() = "r_${(++actors).toString(16).padStart(12, '0')}"
         override fun forkGuard() = "fg_${++guards}"
@@ -136,11 +136,11 @@ class SyncRuntimeTests {
         sleeper: EngineSleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() },
         pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() },
         registry: Registry = this@SyncRuntimeTests.registry, activityAllowed: () -> Boolean = { true },
-        signOutDrainAllowed: () -> Boolean = activityAllowed) : AutoCloseable {
+        signOutDrainAllowed: () -> Boolean = activityAllowed, draw: (Int) -> Int = { 0 }) : AutoCloseable {
         val events = CopyOnWriteArrayList<EngineEvent>()
         val tokens = Tokens()
         val clock = Clock()
-        val identities = Identities()
+        val identities = Identities(draw)
         val engine = Engine.memory(registry, snapshot, clock, identities, "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
         val transport = Transport()
         val runtime = SyncRuntime(engine, transport, tokens, "1", sleeper, listOf("probe"), activityAllowed = activityAllowed, signOutDrainAllowed = signOutDrainAllowed)
@@ -1033,6 +1033,28 @@ class SyncRuntimeTests {
             val next = fixture.pull()
             assertEquals(setOf(product.text, "tree/b_00000001"), next.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
             next.answer.complete(Reply.Unreachable); due.await(); Unit
+        }
+    }
+
+    // The clock stands still and every backoff draws half its bound, so only an asked-for pull can come early.
+    @Test fun pullAgainAsksAtOnceAfterAFailedPullButKeepsTheServersRetryAfter() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            delay(50)
+            assertTrue("a failed pull waits out its backoff", fixture.transport.pulls.tryReceive().isFailure)
+            fixture.runtime.pullAgain()
+            fixture.pull().answer.complete(Reply.Failed(SyncResponse(503, Json.objectOf("retryAfterMs" to Json.of(10_000)))))
+            delay(30)
+            fixture.runtime.pullAgain()
+            delay(50)
+            assertTrue("a server's retry-after outlasts the request", fixture.transport.pulls.tryReceive().isFailure)
+            fixture.clock.wall += 10_000
+            fixture.runtime.pullAgain()
+            assertEquals(listOf(product.text), fixture.pull().also { it.answer.complete(Reply.Unreachable) }
+                .request.member("scopes").arr().map { it.member("scope").str() })
+            assertEquals(3, fixture.transport.pulling.get())
         }
     }
 

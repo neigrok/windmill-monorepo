@@ -221,6 +221,17 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
     }
+    // A person asked for the account's copy again: every subscribed scope is wanted now and its backoff starts over,
+    // while a server's retry-after still holds.
+    fun pullAgain() {
+        if (!activityAllowed()) return
+        launchWorker(EngineOperation.pull) {
+            pullerTurn.withLock {
+                engine.subscriptions(products).forEach { target -> pullWaits.getOrPut(target, ::SenderWait).kick(mono()); pullWanted.add(target) }
+            }
+            pullerWake.trySend(Unit)
+        }
+    }
     suspend fun leave() {
         engine.lock.withLock { if (foreground) { foreground = false; readinessGeneration++ } }
         socket?.close(); socket = null

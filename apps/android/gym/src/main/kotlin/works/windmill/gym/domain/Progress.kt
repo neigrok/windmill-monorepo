@@ -110,6 +110,7 @@ class MovementProgress(private val read: DomainMovementProgress, val earlierReco
 
     val exerciseId: String = read.exerciseId.record.string!!
     val sessions: List<Point> = read.sessions.map(::Point)
+    val isComplete: Boolean get() = read.isComplete
     val estimatesComplete: Boolean get() = read.estimatesComplete
     val estimates: List<Point> get() = read.estimates.map(::Point)
     val best: Point? get() = read.best?.let(::Point)

@@ -4,6 +4,7 @@ object Record {
     data class Tile(val label: String, val value: String, val caption: String, val loud: Boolean)
     data class Best(val effort: String, val estimate: String, val day: String)
     data class Day(val day: String, val sets: String)
+    // Before the first pull the phone's partial copy leaves claims out: the tiles, the strength card and `nothingYet` wait.
     data class Page(
         val name: String,
         val subhead: String,
@@ -12,12 +13,13 @@ object Record {
         val days: List<Day>,
         val nothingYet: String?,
         val noEstimate: String?,
+        val strength: Boolean,
     )
 
     fun page(record: MovementRecord, now: Long, progress: MovementProgress): Page {
         val best = progress.best
         val heaviest = progress.heaviest?.fact?.heaviest
-        val untrained = progress.sessions.isEmpty() && record.recentDays.isEmpty()
+        val untrained = progress.isComplete && progress.sessions.isEmpty() && record.recentDays.isEmpty()
         val tiles = buildList {
             best?.let { point ->
                 add(Tile("Best e1RM", Readout.estimatedWeight(requireNotNull(point.fact.estimate!!.e1rm)),
@@ -47,6 +49,7 @@ object Record {
             if (untrained) "Nothing logged for this movement yet. The first set you log lands here." else null,
             if (!untrained && progress.estimatesComplete && best == null && (heaviest?.weightKg ?: 0.0) > 0)
                 "No eligible estimate yet. Estimates use 1–10 reps at effort 7 or higher, or unrated sets." else null,
+            progress.isComplete && progress.estimates.isNotEmpty(),
         )
     }
 }

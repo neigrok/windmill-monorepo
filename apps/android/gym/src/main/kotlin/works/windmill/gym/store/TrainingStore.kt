@@ -106,6 +106,8 @@ class TrainingStore(
     localCoach: LocalCoach? = null,
     coachOnboarding: CoachOnboardingStore? = null,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    // Asks the sync runtime for the account's copy again.
+    private val pullAgain: () -> Unit = {},
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds },
@@ -1946,9 +1948,20 @@ class TrainingStore(
         is Deletion.Bodyweight -> error("weigh-in deletion requires its engine receipt")
     }
 
-    // Doubles as the retry for a first page the replica could not answer: with no rows the cursor is
-    // absent, which is the top of the log. The cursor is BOTH halves of the sort key, because two
-    // sessions can share an instant.
+    // The foot's Retry. An account this phone has not pulled yet has no copy to read again: its log waits on the
+    // first pull, so Retry asks for that pull and the log reads itself when the pull lands. Any other log reads again.
+    suspend fun retryLog() {
+        if (!training.anonymous && !training.firstPullComplete) {
+            pullAgain()
+            telemetry.event("gym_action", mapOf("screen" to "log", "action" to "retry", "outcome" to "requested"))
+            return
+        }
+        loadOlder()
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "retry", "outcome" to if (older == Older.Failed) "failed" else "ok"))
+    }
+
+    // Also re-reads a first page the replica could not answer: with no rows the cursor is absent, which is
+    // the top of the log. The cursor is BOTH halves of the sort key, because two sessions can share an instant.
     suspend fun loadOlder(): Unit = logRead.withLock {
         if (older == Older.Loading || older == Older.End) return
         val seat = owner
