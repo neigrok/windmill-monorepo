@@ -39,9 +39,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.store.EngineRoomFixture
 
 // The combined form retains raw targets, inline refusals and native keyboard priority.

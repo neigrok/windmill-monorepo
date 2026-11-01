@@ -28,10 +28,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.coach.AskCap
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.Session
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.Session
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
@@ -134,7 +134,7 @@ class TelemetryTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             val store = room.store
             room.select(null)
-            val routine = (store.saveRoutine(works.windmill.gym.domain.RoutineDraft(name = "Workout")
+            val routine = (store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
                 .adding("bench-press")) as GymResult.Ok).value
             telemetry.events.clear()
             val beforeMissing = room.engine.snapshot()
@@ -163,7 +163,7 @@ class TelemetryTests {
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select(null)
-            val routine = (room.store.saveRoutine(works.windmill.gym.domain.RoutineDraft(name = "Workout")
+            val routine = (room.store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
                 .adding("bench-press")) as GymResult.Ok).value
             telemetry.events.clear()
             var afterDelete: Json? = null
@@ -200,7 +200,7 @@ class TelemetryTests {
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select(null)
-            val routine = (room.store.saveRoutine(works.windmill.gym.domain.RoutineDraft(name = "Workout")
+            val routine = (room.store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
                 .adding("bench-press")) as GymResult.Ok).value
             telemetry.events.clear()
             var afterExternalStart: List<Json>? = null

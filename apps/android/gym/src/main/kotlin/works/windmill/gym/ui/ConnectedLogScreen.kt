@@ -24,9 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.ConnectedLogState
-import works.windmill.gym.domain.LogLevel
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.ConnectedLogState
+import works.windmill.gym.presentation.LogLevel
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.LocalTelemetry
 

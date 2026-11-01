@@ -8,10 +8,10 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.ConnectedLogState
-import works.windmill.gym.domain.McpKey
-import works.windmill.gym.domain.OAuthGrant
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.ConnectedLogState
+import works.windmill.gym.presentation.McpKey
+import works.windmill.gym.presentation.OAuthGrant
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.net.GymRest
 import works.windmill.platform.Account

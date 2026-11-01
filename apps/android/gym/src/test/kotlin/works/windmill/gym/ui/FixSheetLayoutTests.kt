@@ -32,9 +32,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.platform.design.LocalWindmillDark
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOutcome
 
 @RunWith(RobolectricTestRunner::class)

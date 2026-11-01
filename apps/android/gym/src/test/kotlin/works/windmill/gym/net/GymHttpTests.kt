@@ -15,8 +15,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
-import works.windmill.gym.domain.McpKey
-import works.windmill.gym.domain.OAuthGrant
+import works.windmill.gym.presentation.McpKey
+import works.windmill.gym.presentation.OAuthGrant
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson

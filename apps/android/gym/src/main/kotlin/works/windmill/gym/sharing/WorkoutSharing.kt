@@ -2,7 +2,7 @@ package works.windmill.gym.sharing
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
 

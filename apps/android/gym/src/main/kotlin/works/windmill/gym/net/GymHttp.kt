@@ -28,8 +28,8 @@ import works.windmill.gym.coach.AnswerReceipt
 import works.windmill.gym.coach.AskStep
 import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.coach.AskThread
-import works.windmill.gym.domain.McpKey
-import works.windmill.gym.domain.OAuthGrant
+import works.windmill.gym.presentation.McpKey
+import works.windmill.gym.presentation.OAuthGrant
 import works.windmill.gym.sharing.SessionShare
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi

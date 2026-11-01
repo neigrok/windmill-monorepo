@@ -10,16 +10,16 @@ import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
-import works.windmill.gym.domain.Against
-import works.windmill.gym.domain.AgainstMovement
-import works.windmill.gym.domain.Effort
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.LastSet
-import works.windmill.gym.domain.MovementProgress
-import works.windmill.gym.domain.PersonalRecord
-import works.windmill.gym.domain.MovementRecord
-import works.windmill.gym.domain.Record
-import works.windmill.gym.domain.Review
+import works.windmill.gym.presentation.Against
+import works.windmill.gym.presentation.AgainstMovement
+import works.windmill.gym.presentation.Effort
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.LastSet
+import works.windmill.gym.presentation.MovementProgress
+import works.windmill.gym.presentation.PersonalRecord
+import works.windmill.gym.presentation.MovementRecord
+import works.windmill.gym.presentation.Record
+import works.windmill.gym.presentation.Review
 import works.windmill.gym.domain.sync.GymEstimate
 import works.windmill.gym.domain.sync.TrainingHistory
 import works.windmill.gym.domain.sync.Session as EngineSession

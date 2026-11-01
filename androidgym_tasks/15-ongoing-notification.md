@@ -7,7 +7,7 @@
 - Component (Design System library, Android page): `Android / Ongoing notification` `337:2845`
 
 **Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `domain/WorkoutNotification.kt` carries the latest visible set time across the whole workout,
+- `presentation/WorkoutNotification.kt` carries the latest visible set time across the whole workout,
   falling back to its start before the first set. The selected movement still owns the set counter.
   Fixing or deleting the newest set updates the clock; restore and reconnect retain its timestamp.
 - `notification/WorkoutNotifications.kt` uses the snapshot for the native chronometer in the

@@ -33,10 +33,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.gym.domain.Ids
-import works.windmill.gym.domain.Note
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.Notes
+import works.windmill.gym.presentation.Ids
+import works.windmill.gym.presentation.Note
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore

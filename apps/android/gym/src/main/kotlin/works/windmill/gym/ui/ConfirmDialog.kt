@@ -49,8 +49,8 @@ fun ConfirmDialog(
 }
 
 data class WorkoutDiscardPrompt(
-    val summary: works.windmill.gym.domain.SessionSummary,
-    val detail: works.windmill.gym.domain.SessionDetail?,
+    val summary: works.windmill.gym.presentation.SessionSummary,
+    val detail: works.windmill.gym.presentation.SessionDetail?,
     val screen: String,
     val replica: String?,
     val anonymous: Boolean,

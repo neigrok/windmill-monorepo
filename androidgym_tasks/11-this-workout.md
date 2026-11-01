@@ -28,7 +28,7 @@
 - Screenshots of 03.4 match in Dark and Daylight, apart from the *Hide workout* and *Notification off* rows (45); the rig (01) adds `03.4-this-workout-dark/light`.
 - New `gym_action` with `screen` `workout`, `action` `remove`, `outcome` `ok` / `refused`, content-free. `gym_screen_viewed` is unchanged.
 - `TrainingStore.drop` (`store/TrainingStore.kt:722`) refuses with `false` and has no failure path, so a refusal is the event only.
-- `ui/AssemblySwipeTests.kt` asserts one direction only and the new ground; `domain/LiveSessionTests.kt` asserts full meta strings. This task verifies name → This workout → picker → existing selection and picker Cancel with preserved workout/rack state. Task 19 owns final custom-create success/refusal/Cancel/recreation integration; retain its existing working path until 19 lands. The combined acceptance then covers all return paths without a blank/grey surface.
+- `ui/AssemblySwipeTests.kt` asserts one direction only and the new ground; `presentation/LiveSessionTests.kt` asserts full meta strings. This task verifies name → This workout → picker → existing selection and picker Cancel with preserved workout/rack state. Task 19 owns final custom-create success/refusal/Cancel/recreation integration; retain its existing working path until 19 lands. The combined acceptance then covers all return paths without a blank/grey surface.
 - Record picker open/cancel/add outcomes with content-free `gym_action` labels under `screen=workout`; unexpected create/add boundary failures use static existing operations. No exercise names, values, search text or IDs in telemetry.
 
 **Depends on:** 04, 05, 08, 09.

@@ -10,15 +10,15 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
-import works.windmill.gym.domain.LiveLines
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.WorkoutEvent
-import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutMoment
-import works.windmill.gym.domain.WorkoutState
+import works.windmill.gym.presentation.LiveLines
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WorkoutEvent
+import works.windmill.gym.presentation.WorkoutKey
+import works.windmill.gym.presentation.WorkoutMoment
+import works.windmill.gym.presentation.WorkoutState
 import works.windmill.gym.domain.sync.LastTime
 import works.windmill.gym.domain.sync.Prefill
 

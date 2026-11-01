@@ -272,7 +272,7 @@ and Android disagree.
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
-  obsolete strings from `ui/NotesScreen.kt` and `domain/Notes.kt`.
+  obsolete strings from `ui/NotesScreen.kt` and `presentation/Notes.kt`.
 - **9t · Connected log with a connection.** Android source (`ConnectedLogScreen.kt`) follows the
   approved connected/empty roots and separate disclosure page in 09.3–09.5. Browser rows use the
   drawn `arrow_forward`; the How door uses the matching Material chevron. Task 51's paired local
@@ -792,7 +792,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   Android decides a proposal in a review sheet
   (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm), its card
   says *Review* under the promise line (`coach/CoachAnswer.kt:327-341`, `Ask.promise`), and receipts
-  say *Turned down* (`domain/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
+  say *Turned down* (`presentation/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
   the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
   the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). 10v covers the words on every surface.
 - **11l · Outside the app.** The native ongoing notification and promoted Live Update show a
@@ -917,7 +917,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     so *Changes to this movement won't be kept.* fits one line where 02.17 wraps it; the Daylight
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
-    the unit (`ui/ReviewSheet.kt:384` over `domain/Proposal.kt`); every other Android readout spaces it.
+    the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
   - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
     (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
     (`web/src/products/gym/log.js`).
@@ -1175,8 +1175,8 @@ iOS. It and the product differ in these places.
 - **Connected-log write disclosure (Android build).** `GymToolCatalog.cpp` exposes append-only
   `save_note` at `gym:write`; the Write level reads *logs sets · saves notes · adds routines · shares
   workouts · proposes changes* on both phones (Android 09.3 `1254:39148`), but Android's copy omits
-  *saves notes* (`domain/ConnectedLog.kt:61`), and its head names *Claude, Cursor or Codex* where both
-  phones now say *Your log, read by ChatGPT or Claude.* (`domain/ConnectedLog.kt:10`).
+  *saves notes* (`presentation/ConnectedLog.kt:61`), and its head names *Claude, Cursor or Codex* where both
+  phones now say *Your log, read by ChatGPT or Claude.* (`presentation/ConnectedLog.kt:10`).
 
 - **2h / 2w / 5k · Refusals.** Set one wording rule for invalid numeric entry, byte-limit errors
   and failed session deletion. A refusal must identify the affected act, retain the user's input
@@ -1199,7 +1199,7 @@ iOS. It and the product differ in these places.
   stays in code and on the wire. The approved Android Workout uses visual position dots and speaks
   *Movement 3 of 5* through accessibility; the count is not a visible pager label. The tab is
   *The log*, and Android uses it for both its tab and root title. Code still differs: Android
-  *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
+  *Exercise {i} / {n}* (`presentation/LiveSession.kt:134`), *Rename movement*,
   *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`); the web's *No sessions yet.*, *no
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).

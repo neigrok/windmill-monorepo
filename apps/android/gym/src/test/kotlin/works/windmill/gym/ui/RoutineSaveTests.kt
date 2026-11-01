@@ -16,9 +16,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineEntry
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.RoutineEntry
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -99,8 +99,8 @@ class RoutineSaveTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, readDispatcher = Dispatchers.Unconfined).use { room ->
             runBlocking {
                 room.select("first")
-                room.training.createRoutine(works.windmill.gym.domain.RoutineWrite("routine_first", "First push", 0,
-                    listOf(works.windmill.gym.domain.RoutineEntryWrite("bench-press"))))
+                room.training.createRoutine(works.windmill.gym.presentation.RoutineWrite("routine_first", "First push", 0,
+                    listOf(works.windmill.gym.presentation.RoutineEntryWrite("bench-press"))))
                 room.store.refreshEngine()
             }
             val account = mutableStateOf(room.account())
@@ -148,8 +148,8 @@ class RoutineSaveTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, readDispatcher = Dispatchers.Unconfined).use { room ->
             runBlocking {
                 room.select("first")
-                room.training.createRoutine(works.windmill.gym.domain.RoutineWrite("routine_identity", "Opening", 0,
-                    listOf(works.windmill.gym.domain.RoutineEntryWrite("bench-press"))))
+                room.training.createRoutine(works.windmill.gym.presentation.RoutineWrite("routine_identity", "Opening", 0,
+                    listOf(works.windmill.gym.presentation.RoutineEntryWrite("bench-press"))))
                 room.store.refreshEngine()
             }
             val account = mutableStateOf(room.account())

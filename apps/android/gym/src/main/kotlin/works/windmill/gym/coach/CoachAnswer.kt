@@ -48,8 +48,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.Readout
 import works.windmill.platform.design.WindmillFont
 
 @Composable

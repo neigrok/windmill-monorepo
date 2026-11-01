@@ -41,8 +41,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.domain.DatedPoint
-import works.windmill.gym.domain.DatedSeries
+import works.windmill.gym.presentation.DatedPoint
+import works.windmill.gym.presentation.DatedSeries
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")

@@ -22,19 +22,21 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Against
-import works.windmill.gym.domain.AgainstMovement
-import works.windmill.gym.domain.Effort
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.PersonalRecord
-import works.windmill.gym.domain.Program
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.Review
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.PlannedLine
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Against
+import works.windmill.gym.presentation.AgainstMovement
+import works.windmill.gym.presentation.Effort
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.PersonalRecord
+import works.windmill.gym.presentation.Program
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.Review
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.PlanEntry
+import works.windmill.gym.presentation.PlanSnapshot
+import works.windmill.gym.presentation.PlannedLine
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TrainingSet
 
 private val catalog = listOf(
     Exercise(id = "back-squat", name = "Back Squat"),
@@ -308,6 +310,21 @@ class FinishedSessionTests {
             Review(PersonalRecord("e1rm", "bench-press", 128.3, 110.0, 5, 105.0, 1_799_000_060_000),
                 Against("w0", "Push A", 1_799_000_000_000, listOf(AgainstMovement("bench-press", Effort(4, 5, 110.0), Effort(4, 5, 100.0),
                     PlannedLine(listOf(SetTarget(5, 100.0)))))))),
+            works.windmill.platform.net.WindmillJson.decodeFromString(FinishedSession.serializer(), saved))
+    }
+
+    // Saved state names no class, only fields: a receipt saved while these types lived in `works.windmill.gym.domain`
+    // restores whole, its frozen plan, a set's effort and note, and an unread review included.
+    @Test
+    fun aReceiptSavedBeforeThePresentationPackageRestoresWhole() {
+        val saved = """{"session":{"id":"w2","startedAt":1799500000000,"finishedAt":1799503600000,"routineId":"routineA",""" +
+            """"plan":{"routine":"Push A","entries":[{"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":100.0},{}]}]}},""" +
+            """"sets":[{"id":"s1","exerciseId":"bench-press","weightKg":102.5,"reps":5,"rpe":8.5,"note":"paused","completedAt":1799500060000}],""" +
+            """"review":null,"reviewRead":false,"suggestsKeep":true}"""
+        assertEquals(FinishedSession(Session("w2", 1_799_500_000_000, 1_799_503_600_000, "routineA",
+                PlanSnapshot("Push A", listOf(PlanEntry("bench-press", listOf(SetTarget(5, 100.0), SetTarget()))))),
+            listOf(TrainingSet("s1", "bench-press", null, 102.5, 5, 8.5, "paused", 1_799_500_060_000)),
+            review = null, reviewRead = false, suggestsKeep = true),
             works.windmill.platform.net.WindmillJson.decodeFromString(FinishedSession.serializer(), saved))
     }
 

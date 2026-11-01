@@ -10,16 +10,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.PlanEntry
-import works.windmill.gym.domain.PlanSnapshot
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.WorkoutEvent
-import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutMoment
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.PlanEntry
+import works.windmill.gym.presentation.PlanSnapshot
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WorkoutEvent
+import works.windmill.gym.presentation.WorkoutKey
+import works.windmill.gym.presentation.WorkoutMoment
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.domain.kit.Id
 import works.windmill.gym.domain.sync.Exercise as DomainExercise
@@ -242,7 +242,7 @@ class WorkoutControlsTests {
 
         restored.adopt("other")
         assertNull(restored.workout.rack)
-        assertEquals(emptyMap<String, works.windmill.gym.domain.WorkoutRack>(), restored.workout.editedRacks)
+        assertEquals(emptyMap<String, works.windmill.gym.presentation.WorkoutRack>(), restored.workout.editedRacks)
         restored.adopt(null)
         assertEquals(editedRow.weightKg, restored.workout.rack!!.weightKg, 0.0)
         restored.close("first")
@@ -250,7 +250,7 @@ class WorkoutControlsTests {
         restored.choose("row")
         restored.prepare(unread, moment, true) { "set_${++id}" }
         assertEquals(listOf(20.0, 5, false), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
-        assertEquals(emptyMap<String, works.windmill.gym.domain.WorkoutRack>(), restored.workout.editedRacks)
+        assertEquals(emptyMap<String, works.windmill.gym.presentation.WorkoutRack>(), restored.workout.editedRacks)
         assertEquals(restored.workout, WorkoutControls(file).workout)
     }
 

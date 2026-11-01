@@ -10,7 +10,7 @@ import kotlinx.coroutines.MainCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlin.coroutines.ContinuationInterceptor
 import org.junit.Assert.*
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.storage.AtomicDocument

@@ -20,8 +20,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.WorkoutKey
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.gym.store.WorkoutCommands
 import works.windmill.platform.telemetry.Telemetry
 

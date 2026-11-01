@@ -8,9 +8,9 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.GymPreferences
-import works.windmill.gym.domain.McpKey
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.GymPreferences
+import works.windmill.gym.presentation.McpKey
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.net.GymRest
 

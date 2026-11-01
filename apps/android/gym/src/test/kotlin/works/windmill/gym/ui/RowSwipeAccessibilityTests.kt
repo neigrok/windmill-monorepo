@@ -34,7 +34,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.coach.AskThread
-import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.RefusedSet

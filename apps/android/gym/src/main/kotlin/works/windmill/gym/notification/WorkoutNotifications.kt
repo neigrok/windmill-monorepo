@@ -32,12 +32,12 @@ import kotlinx.coroutines.withContext
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.R
 import works.windmill.gym.ui.GymSkin
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.WorkoutClock
-import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutMoment
-import works.windmill.gym.domain.WorkoutNotification
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.WorkoutClock
+import works.windmill.gym.presentation.WorkoutKey
+import works.windmill.gym.presentation.WorkoutMoment
+import works.windmill.gym.presentation.WorkoutNotification
 import works.windmill.gym.store.WorkoutCommands
 
 interface WorkoutNotificationHost {

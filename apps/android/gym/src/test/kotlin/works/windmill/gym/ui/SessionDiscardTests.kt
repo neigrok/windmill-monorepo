@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.sharing.WorkoutShareActions
-import works.windmill.gym.domain.Review
+import works.windmill.gym.presentation.Review
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.sync.core.Json

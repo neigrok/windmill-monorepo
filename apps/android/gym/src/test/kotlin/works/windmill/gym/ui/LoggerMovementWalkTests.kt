@@ -183,7 +183,7 @@ class LoggerMovementWalkTests {
             }
             compose.runOnIdle {
                 assertEquals("bench-press", room.store.exerciseId)
-                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
             }
         } } finally { scope.cancel() }
     }
@@ -205,7 +205,7 @@ class LoggerMovementWalkTests {
             compose.runOnIdle {
                 assertEquals("barbell-row", room.store.exerciseId)
                 assertEquals(session, room.store.session)
-                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
             }
         } } finally { scope.cancel() }
     }

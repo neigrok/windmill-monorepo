@@ -11,7 +11,7 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.ClockReading

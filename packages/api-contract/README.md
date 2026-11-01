@@ -109,7 +109,7 @@ byte-equal to the backend's (`Legend::seededDefaults` + `Hlc{1,0,"genesis"}`). R
 Read as a test — each from this file in the repo, never a bundled copy — by:
 
 - `web/test/products/gym/logger/ladder.test.js` → `web/src/products/gym/logger/ladder.js`
-- `apps/android/gym/src/test/kotlin/works/windmill/gym/domain/LadderTests.kt` → `apps/android/gym/src/main/kotlin/works/windmill/gym/domain/Ladder.kt`
+- `apps/android/gym/src/test/kotlin/works/windmill/gym/presentation/LadderTests.kt` → `apps/android/gym/src/main/kotlin/works/windmill/gym/presentation/Ladder.kt`
 
 ## `gym/turns/`
 

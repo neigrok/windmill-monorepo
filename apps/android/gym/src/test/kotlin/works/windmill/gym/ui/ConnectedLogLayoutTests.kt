@@ -17,8 +17,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.LogLevel
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.LogLevel
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.design.LocalWindmillDark

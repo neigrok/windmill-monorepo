@@ -49,10 +49,10 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.GymPreferences
-import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetTarget
+import works.windmill.gym.presentation.GymPreferences
+import works.windmill.gym.presentation.Ladder
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
@@ -170,7 +170,7 @@ class LoggerScreenTests {
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button))
                 .performClick()
             compose.runOnIdle {
-                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), first.store.sets)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), first.store.sets)
                 assertEquals(listOf("gym.editRack"), failures)
                 assertEquals(before, first.controlsFile.readText())
                 current.value = other.store
@@ -218,7 +218,7 @@ class LoggerScreenTests {
             load.performClick().performTextReplacement("12,5")
             compose.runOnIdle {
                 assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
-                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
             }
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
@@ -250,7 +250,7 @@ class LoggerScreenTests {
             reps.performClick().performTextReplacement("5")
             compose.onNodeWithContentDescription("Decrease Reps").assertIsEnabled().performClick()
             reps.assertTextEquals("4")
-            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets) }
+            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets) }
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
                 val saved = room.store.sets.single()
@@ -270,7 +270,7 @@ class LoggerScreenTests {
             load.assertTextEquals("1e999")
             compose.runOnIdle {
                 assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
-                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
             }
             compose.onNodeWithContentDescription("Reps").performClick()
             load.assertTextEquals("1e999")
@@ -384,7 +384,7 @@ class LoggerScreenTests {
                 assertEquals("bench-press", restored.exerciseId)
                 assertEquals(sets, restored.sets)
                 assertEquals(listOf("bench-press"), restored.order)
-                assertEquals(emptyList<works.windmill.gym.domain.Routine>(), room.training.program())
+                assertEquals(emptyList<works.windmill.gym.presentation.Routine>(), room.training.program())
                 assertEquals(listOf("gym_set_logged" to emptyMap<String, String>()), events)
                 assertEquals(emptyList<String>(), failures)
             }

@@ -35,9 +35,9 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.store.EngineRoomFixture
 
 // The sheet's two zooms — the head that speaks about every set at once and the ladder with a row

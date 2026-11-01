@@ -2,9 +2,9 @@ package works.windmill.gym.store
 
 import kotlinx.serialization.Serializable
 import works.windmill.domain.kit.*
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.WorkoutEvent
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WorkoutEvent
 import works.windmill.gym.domain.sync.Catalogue
 import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.domain.sync.ImportSession
@@ -968,10 +968,10 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             "routineId" to (session.routineId?.let(Json::of) ?: Json.Null), "historyRoutineId" to (session.routineId?.let(Json::of) ?: Json.Null),
             "plan" to (session.plan?.let(::planFields) ?: Json.Null), "displayName" to Json.Null)
 
-        private fun planFields(plan: works.windmill.gym.domain.PlanSnapshot) = Json.objectOf("routine" to Json.of(plan.routine),
+        private fun planFields(plan: works.windmill.gym.presentation.PlanSnapshot) = Json.objectOf("routine" to Json.of(plan.routine),
             "entries" to Json.Arr(plan.entries.map { entry -> Json.Obj(buildList {
                 add("exerciseId" to Json.of(entry.exerciseId))
-                if (entry.sets.isNotEmpty()) add("sets" to Json.parse(diskJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(works.windmill.gym.domain.SetTarget.serializer()), entry.sets)))
+                if (entry.sets.isNotEmpty()) add("sets" to Json.parse(diskJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(works.windmill.gym.presentation.SetTarget.serializer()), entry.sets)))
             }) }))
 
         private fun unknownFinishedFields(source: Json): Boolean {

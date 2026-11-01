@@ -1,0 +1,203 @@
+package works.windmill.gym.presentation
+
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
+import kotlin.math.max
+
+// Days and months are spelled out rather than localised, exactly as the web spells them.
+
+object Readout {
+    private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val fullMonths = listOf("January", "February", "March", "April", "May", "June",
+                                    "July", "August", "September", "October", "November", "December")
+    private val names = listOf("zero", "one", "two", "three", "four", "five",
+                               "six", "seven", "eight", "nine", "ten")
+
+    // Trailing zeros stripped and a real U+2212 minus; the grid is the LADDER's own.
+    fun weight(kg: Double): String {
+        return works.windmill.gym.domain.sync.Readout.weight(kg)
+    }
+
+    fun effort(weightKg: Double, reps: Int): String = "${weight(weightKg)} × $reps"
+    fun repCount(reps: Int): String = "$reps ${if (reps == 1) "rep" else "reps"}"
+
+    // A rep target a routine declines to set is `max` — never a zero and never a blank.
+    fun repTarget(reps: Int?): String = reps?.toString() ?: "max"
+
+    const val openTarget = "open"
+
+    // One set as `{load} × {reps}`, with the nulls as their placeholders:
+    // `100 × 5` · `100 × max` · `last × 5`.
+    fun setTarget(set: SetTarget): String =
+        "${set.weightKg?.let(::weight) ?: "last"} × ${repTarget(set.reps)}"
+
+    // A scheme: `{n} × {reps or lo–hi} · {load or lo–hi}`, a one-set scheme included — `1 × 5 · 100`.
+    // A column whose sets agree prints its one value; one whose sets disagree prints its range over
+    // the named values with the placeholder as the high end — `5–max` when any set is max, `60–last`
+    // when any set is last time's — and the load column is left off where no set names a load.
+    fun target(sets: List<SetTarget>): String {
+        if (sets.isEmpty()) return openTarget
+        return "${sets.size} × ${repsColumn(sets)}${loadColumn(sets)}"
+    }
+
+    // Coach review and the rack use the compact unit line.
+    fun targetWithUnit(sets: List<SetTarget>): String =
+        target(sets) + if (sets.any { it.weightKg != null }) "kg" else ""
+
+    fun targetWithUnit(sets: List<SetTarget>, exercise: Exercise?): String {
+        if (sets.none { it.weightKg != null }) return target(sets)
+        val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+        return "${target(sets)} $unit"
+    }
+
+    // The ladder unfolded, one set after another: `60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5`.
+    fun ladder(sets: List<SetTarget>): String = sets.joinToString(" · ", transform = ::setTarget)
+
+    private fun repsColumn(sets: List<SetTarget>): String {
+        val named = sets.mapNotNull { it.reps }
+        if (named.isEmpty()) return repTarget(null)
+        val low = named.min()
+        if (sets.any { it.reps == null }) return "$low–max"
+        val high = named.max()
+        if (low == high) return low.toString()
+        return "$low–$high"
+    }
+
+    private fun loadColumn(sets: List<SetTarget>): String {
+        val named = sets.mapNotNull { it.weightKg }.map(Ladder::round)
+        if (named.isEmpty()) return ""
+        val low = named.min()
+        if (sets.any { it.weightKg == null }) return " · ${weight(low)}–last"
+        val high = named.max()
+        if (low == high) return " · ${weight(low)}"
+        return " · ${weight(low)}–${weight(high)}"
+    }
+
+    fun time(ms: Long): String {
+        val at = at(ms)
+        return pad(at.hour) + ":" + pad(at.minute)
+    }
+
+    // The shared readout omits zero tonnage and spells a positive total without integer narrowing.
+    fun tonnes(kg: Double): String? {
+        return works.windmill.gym.domain.sync.Readout.tonnes(kg)
+    }
+
+    const val noRoutine = "Free workout"
+
+
+    // The shared readout states an estimate to a tenth.
+    fun estimatedWeight(e1rm: Double): String = works.windmill.gym.domain.sync.Readout.estimatedWeight(e1rm)
+
+    fun estimate(e1rm: Double): String = "e1RM ${estimatedWeight(e1rm)}"
+
+    fun spelled(count: Int): String = names.getOrNull(count) ?: count.toString()
+
+    fun weekOf(ms: Long): String {
+        val at = at(ms)
+        return "week of ${at.dayOfMonth} ${months[at.monthValue - 1]}"
+    }
+
+    fun date(ms: Long): String {
+        val at = at(ms)
+        return "${at.dayOfMonth} ${months[at.monthValue - 1]} ${at.year}"
+    }
+
+    fun whenLogged(ms: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        if (then == today) return "today · ${time(ms)}"
+        return day(ms)
+    }
+
+    fun day(ms: Long): String {
+        val at = at(ms)
+        return "${weekdays[at.dayOfWeek.value % 7]} ${at.dayOfMonth} ${months[at.monthValue - 1]}"
+    }
+
+    fun shortDate(ms: Long, now: Long): String {
+        val at = at(ms)
+        val here = at(now)
+        val date = "${at.dayOfMonth} ${months[at.monthValue - 1]}"
+        if (at.year == here.year) return date
+        return "$date ${at.year}"
+    }
+
+    fun month(ms: Long, now: Long): String {
+        val at = at(ms)
+        val name = fullMonths[at.monthValue - 1]
+        if (at.year == at(now).year) return name
+        return "$name ${at.year}"
+    }
+
+    fun briefDay(ms: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        if (then == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) return "today"
+        return shortDate(ms, now)
+    }
+
+    fun recentDay(ms: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val days = ChronoUnit.DAYS.between(then, today)
+        if (days == 0L) return "today"
+        if (days == 1L) return "yesterday"
+        if (days in 2..6) return weekday(ms)
+        return shortDate(ms, now)
+    }
+
+    fun weekday(ms: Long): String {
+        val names = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        return names[at(ms).dayOfWeek.value % 7]
+    }
+
+    // A claim about the CALENDAR, not elapsed hours: both instants fall to their local date first.
+    fun ago(ms: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val days = ChronoUnit.DAYS.between(then, today)
+        if (days <= 0) return "today"
+        if (days == 1L) return "yesterday"
+        return "$days days ago"
+    }
+
+    fun clock(ms: Long): String {
+        val total = max(0L, ms / 1000)
+        val hours = total / 3600
+        val minutes = (total % 3600) / 60
+        val seconds = total % 60
+        val head = if (hours > 0) "$hours:${pad(minutes.toInt())}" else minutes.toString()
+        return head + ":" + pad(seconds.toInt())
+    }
+
+    fun duration(ms: Long): String {
+        val minutes = max(1L, ms / 60_000)
+        if (minutes < 60) return "${minutes}m"
+        return "${minutes / 60}h ${pad((minutes % 60).toInt())}m"
+    }
+
+    fun setCount(count: Int): String = if (count == 1) "1 set" else "$count sets"
+
+    fun routineCount(count: Int): String = if (count == 1) "1 routine" else "$count routines"
+
+    fun sessionCount(count: Int): String = if (count == 1) "1 workout" else "$count workouts"
+
+    // A week is the server's Monday-UTC bucket (`date_trunc('week')`); this only spells the count.
+    fun weekCount(count: Int): String = if (count == 1) "1 week" else "$count weeks"
+
+    fun movement(exerciseId: String, catalog: List<Exercise>): String =
+        catalog.firstOrNull { it.id == exerciseId }?.name ?: exerciseId
+
+    private fun at(ms: Long): ZonedDateTime =
+        Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
+
+    private fun pad(value: Int): String = if (value < 10) "0$value" else value.toString()
+}

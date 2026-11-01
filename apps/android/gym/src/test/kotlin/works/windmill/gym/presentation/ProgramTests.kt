@@ -1,0 +1,234 @@
+package works.windmill.gym.presentation
+
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+private val json = Json { ignoreUnknownKeys = true }
+
+private fun at(year: Int, month: Int, day: Int, hour: Int = 9): Long =
+    ZonedDateTime.of(year, month, day, hour, 0, 0, 0, ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+class ProgramTests {
+    @Test
+    fun testTheNameCapRefusesTheOverflowAndKeepsEverythingAlreadyTyped() {
+        val sixty = "a".repeat(60)
+        assertEquals(sixty, Program.capped(sixty))
+        assertEquals("the 61st character is refused, the first sixty stand", sixty, Program.capped(sixty + "b"))
+        assertEquals("60/60", Program.counter(sixty))
+        assertNull("a name nowhere near the cap counts nothing out loud",
+                   Program.counter("Heavy Thursday"))
+    }
+
+    // The last fifth and no sooner — the same threshold and the same silence as the note editor's
+    // byte counter, because a lifter should not have to learn two rules for one idea.
+    @Test
+    fun testTheCounterAppearsInTheLastFifthAndIsSilentBeforeIt() {
+        assertEquals(48, Program.counterFrom)
+        assertNull(Program.counter("a".repeat(47)))
+        assertEquals("48/60", Program.counter("a".repeat(48)))
+        assertEquals("53/60", Program.counter("a".repeat(53)))
+    }
+
+    @Test
+    fun testTheCounterCountsCharactersAndNotUtf16Units() {
+        assertNull("two characters, whatever their width", Program.counter("💪A"))
+        val wide = "💪".repeat(30)
+        assertNull("thirty characters is below the threshold, not sixty units", Program.counter(wide))
+        assertEquals("50/60", Program.counter("💪".repeat(50)))
+        assertEquals("the 31st emoji still fits", 31, Program.length(Program.capped(wide + "💪")))
+        assertEquals("and the 61st does not", 60, Program.length(Program.capped("💪".repeat(61))))
+    }
+
+    @Test
+    fun testANameIsTrimmedAndAnEmptyOneIsNotAName() {
+        assertEquals("Heavy Thursday", Program.named("  Heavy Thursday  "))
+        assertNull(Program.named("   "))
+        assertNull(Program.named(""))
+    }
+
+    @Test
+    fun testARenameToTheSameNameIsNotAChangeAndIsNotOffered() {
+        assertNull(Program.renamed("Push A", "Push A"))
+        assertNull("the trimmed name is the one that would be written", Program.renamed("Push A", "  Push A  "))
+        assertNull(Program.renamed("Push A", "   "))
+        assertEquals("Push B", Program.renamed("Push A", " Push B "))
+        assertEquals("case is a change: it is the lifter's own spelling", "PUSH A",
+            Program.renamed("Push A", "PUSH A"))
+    }
+
+    // The roll-up that named every open row is gone: one sentence, `TargetEntry.openLine`, is drawn
+    // once, on the target sheet, and the row's own target column says WHICH row is open.
+    @Test
+    fun testTheOpenLineIsOneSentenceAndTheRowNamesItselfOpen() {
+        assertEquals("You decide the numbers at the rack.", TargetEntry.openLine)
+        assertEquals("open", Readout.openTarget)
+    }
+
+    @Test
+    fun testLeavingARowOpenDropsItsWholeScheme() {
+        val draft = RoutineDraft(name = "Heavy Thursday")
+            .adding("back-squat")
+            .adding("deadlift")
+            .targeting("deadlift", List(3) { SetTarget(5, 140.0) })
+
+        assertEquals(RoutineEntry(position = 2, exerciseId = "deadlift", sets = List(3) { SetTarget(5, 140.0) }),
+            draft.entry("deadlift"))
+
+        val opened = draft.opening("deadlift")
+        assertEquals(RoutineEntry(position = 2, exerciseId = "deadlift"), opened.entry("deadlift"))
+        assertTrue(opened.entry("deadlift")!!.isOpen)
+    }
+
+    @Test
+    fun testATypedTargetIsRoundedOnTheLaddersOwnGrid() {
+        val draft = RoutineDraft(name = "Push A").adding("bench-press")
+            .targeting("bench-press", listOf(SetTarget(5, 82.499999999999996), SetTarget(3, 90.004)))
+        assertEquals(listOf(SetTarget(5, 82.5), SetTarget(3, 90.0)), draft.entry("bench-press")?.sets)
+    }
+
+    @Test
+    fun testAMovementIsNotAddedTwiceAndTheDayHasACeiling() {
+        val twice = RoutineDraft(name = "Push A").adding("bench-press").adding("bench-press")
+        assertEquals(1, twice.entries.size)
+
+        var full = RoutineDraft(name = "Everything")
+        repeat(Program.maxEntries + 5) { full = full.adding("ex_$it") }
+        assertEquals(Program.maxEntries, full.entries.size)
+        assertTrue(full.full)
+    }
+
+    @Test
+    fun testRemovingAMovementRenumbersTheDay() {
+        val draft = RoutineDraft(name = "Push A")
+            .adding("bench-press").adding("deadlift").adding("chin-up")
+            .removing("deadlift")
+
+        assertEquals(listOf("bench-press" to 1, "chin-up" to 2),
+            draft.entries.map { it.exerciseId to it.position })
+        assertEquals(listOf(2, 2), listOf(draft.placeOf("chin-up"), draft.entries.size))
+    }
+
+    @Test
+    fun testAnEmptyDayIsNotSavableAndAnIncompleteOneIs() {
+        assertFalse("no name, no movements", RoutineDraft().savable)
+        assertFalse("a name is not a day", RoutineDraft(name = "Heavy Thursday").savable)
+        assertFalse("a day needs a name", RoutineDraft().adding("deadlift").savable)
+        assertTrue("one open movement is a routine",
+            RoutineDraft(name = "Heavy Thursday").adding("deadlift").savable)
+    }
+
+    @Test
+    fun testAnOpenRowTravelsAsAnAbsentKeyAndATargetNeverVanishes() {
+        val draft = RoutineDraft(name = "Heavy Thursday")
+            .adding("back-squat")
+            .adding("barbell-row")
+            .targeting("back-squat", listOf(SetTarget(3, 110.0), SetTarget(1, 120.0)))
+
+        val written = json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(RoutineEntryWrite.serializer()), draft.write)
+        assertEquals(
+            """[{"exerciseId":"back-squat","sets":[{"reps":3,"weightKg":110.0},{"reps":1,"weightKg":120.0}]},""" +
+                """{"exerciseId":"barbell-row"}]""",
+            written)
+    }
+
+    @Test
+    fun testEditCarriesTheDocument() {
+        val routine = Routine(id = "rt_1", name = "Heavy Thursday", position = 2,
+            lastTrainedAtMs = 5_000,
+            entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget(3) }),
+                RoutineEntry(position = 2, exerciseId = "barbell-row"),
+            ))
+
+        val edit = RoutineDraft.of(routine)
+        assertEquals("rt_1", edit.id)
+        assertEquals("Heavy Thursday", edit.name)
+        assertEquals(2, edit.position)
+        assertEquals(routine.entries, edit.entries)
+    }
+
+    @Test
+    fun testARecentDayIsAWeekdayOnlyWhileAWeekdayStillPlacesIt() {
+        val monday = at(2026, 8, 10)
+        assertEquals("today", Readout.recentDay(monday, monday))
+        assertEquals("yesterday", Readout.recentDay(at(2026, 8, 9), monday))
+        assertEquals("Saturday", Readout.recentDay(at(2026, 8, 8), monday))
+        assertEquals("Tuesday", Readout.recentDay(at(2026, 8, 4), monday))
+        assertEquals("8 Aug is seven days back and is a date again",
+            "3 Aug", Readout.recentDay(at(2026, 8, 3), monday))
+        assertEquals("13 Jul 2025", Readout.recentDay(at(2025, 7, 13), monday))
+        assertEquals("11 Aug", Readout.recentDay(at(2026, 8, 11), monday))
+    }
+
+    @Test
+    fun testATargetWithNoSetsIsTheWordOpenAndNothingElse() {
+        assertEquals("open", Readout.target(emptyList()))
+        assertEquals("3 × 5 · 140", Readout.target(List(3) { SetTarget(5, 140.0) }))
+        assertEquals("3 × max", Readout.target(List(3) { SetTarget() }))
+    }
+
+    @Test
+    fun testAnOpenLineFreezesAsAnAbsenceAndTheCounterCountsWithoutIt() {
+        val routine = Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
+            RoutineEntry(position = 1, exerciseId = "barbell-row"),
+            RoutineEntry(position = 2, exerciseId = "back-squat", sets = List(5) { SetTarget(3) }),
+        ))
+        val plan = PlanSnapshot(routine)
+
+        assertEquals(PlanEntry(exerciseId = "barbell-row"), plan.entry("barbell-row"))
+        assertEquals("set 3", LiveLines.counter(setsToday = 2, planEntry = plan.entry("barbell-row")))
+        assertEquals("set 3 of 5", LiveLines.counter(setsToday = 2, planEntry = plan.entry("back-squat")))
+    }
+
+    @Test
+    fun testAnOpenPlanLineIsNotJustAdded() {
+        val plan = PlanSnapshot("Heavy Thursday", listOf(PlanEntry(exerciseId = "barbell-row")))
+        val rows = LiveLines.assemblyRows(order = listOf("barbell-row"), sets = emptyList(),
+            plan = plan, catalog = emptyList(), current = null)
+
+        assertEquals(1, rows.size)
+        assertFalse("a written line was not just added", rows.single().justAdded)
+        assertNull(rows.single().tag)
+    }
+
+    @Test
+    fun testTheEditSnapshotAndWireGuardSurviveSerializationWithoutMakingAnUntouchedDraftDirty() {
+        val routine = Routine("rt_a", "Push", 3, revision = 7, lastTrainedAtMs = 42,
+            entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)))))
+        val draft = RoutineDraft.of(routine)
+        val encoded = json.encodeToString(RoutineDraft.serializer(), draft)
+        assertEquals(draft, json.decodeFromString(RoutineDraft.serializer(), encoded))
+        assertFalse(draft.changed)
+        assertTrue(draft.named("Pull").changed)
+        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}]}],"revision":7}""",
+            json.encodeToString(RoutineWrite.serializer(), draft.original!!))
+        assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}]}]}""",
+            json.encodeToString(RoutineWrite.serializer(), RoutineWrite(routine)))
+    }
+
+    @Test
+    fun testOnlyADraftHoldingWorkBackWouldLoseIsUnsaved() {
+        val routine = Routine("rt_a", "Push", 3, revision = 7, entries = listOf(
+            RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0))), RoutineEntry(2, "squat")))
+        val opened = RoutineDraft.of(routine)
+        assertEquals(listOf(false, false, true, true, false, true, true, true), listOf(
+            RoutineDraft(position = 3).unsaved,
+            RoutineDraft(position = 3).named("   ").unsaved,
+            RoutineDraft(position = 3).named("Pull").unsaved,
+            RoutineDraft(position = 3).adding("squat").unsaved,
+            opened.unsaved,
+            opened.moving(0, 1).unsaved,
+            opened.removing("squat").unsaved,
+            opened.named("Pull").unsaved,
+        ))
+        assertFalse("a reorder undone by hand is the routine it opened", opened.moving(0, 1).moving(0, 1).unsaved)
+    }
+
+}

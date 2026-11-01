@@ -10,12 +10,12 @@
 - Components: `Android / Change row` `337:2686` (Changed), `Android / Diff field` `337:2531` (Changed, Same, New).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `Proposal.moves` (`domain/Proposal.kt:282-292`) returns one move per change:
+- `Proposal.moves` (`presentation/Proposal.kt:282-292`) returns one move per change:
   - one set moved: *set 4 · 100 × 1 → 102.5 × 1*
   - anything else: both schemes in the readout formula under the label *sets* (`:277`)
 - The sheet unfolds a scheme move on tap to two ladders (`SchemeMove`, `ui/ReviewSheet.kt:363`).
-- Missing reps read *max* and no sets read *open* (`domain/Readout.kt:33-35`).
-- `ProposalTargets` holds only `sets` (`domain/Proposal.kt:75-77`). The server's targets also carry `restSeconds` (`backend/products/gym/domain/Proposal.h:70`); Android drops it.
+- Missing reps read *max* and no sets read *open* (`presentation/Readout.kt:33-35`).
+- `ProposalTargets` holds only `sets` (`presentation/Proposal.kt:75-77`). The server's targets also carry `restSeconds` (`backend/products/gym/domain/Proposal.h:70`); Android drops it.
 
 **Change**
 - While every set is the same before and after, show *Sets*, *Reps* and *Load* lines (08.21):
@@ -27,7 +27,7 @@
 - Open to numbers (08.24): *Target ~~None~~ → 3 × 10*. Rest: *Rest ~~90 s~~ → 2 min*.
   - Add `restSeconds` to `ProposalTargets` so the card can read it.
 - Loads carry the load basis (*kg each*, *kg total*, *kg added*; 08).
-- Reuse the existing pure `ProposalDiff.fields` in `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/ProposalDiff.kt`. The shared formatter and ChangeBlocks vectors already cover uniform, varied, ramp, open, rest, Max and Last time; this task wires the UI adapter and adds missing equipment-basis cases. Do not create a second formatter in the legacy app-layer `domain/Proposal.kt`. Delete `moves`, `FieldMove` and the sheet's `SchemeMove` only after every consumer uses the domain result.
+- Reuse the existing pure `ProposalDiff.fields` in `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/ProposalDiff.kt`. The shared formatter and ChangeBlocks vectors already cover uniform, varied, ramp, open, rest, Max and Last time; this task wires the UI adapter and adds missing equipment-basis cases. Do not create a second formatter in the legacy app-layer `presentation/Proposal.kt`. Delete `moves`, `FieldMove` and the sheet's `SchemeMove` only after every consumer uses the domain result.
 - Preserve/extend `packages/api-contract/gym/domain/proposals-actions.json` and its cross-surface runners. The legacy `ProposalTargets` adapter must carry the `restSeconds` already held by the sync domain.
 
 **Out of scope:** the card shell (29), movement changes (32).

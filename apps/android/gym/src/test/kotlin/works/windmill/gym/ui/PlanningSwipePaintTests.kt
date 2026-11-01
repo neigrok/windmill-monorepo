@@ -27,7 +27,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.LocalWindmillDark
@@ -120,7 +120,7 @@ class PlanningSwipePaintTests {
             assertPixel(point, GymSkin.Instrument.canvas)
             row.performTouchInput { swipeLeft() }
             row.assertDoesNotExist()
-            assertEquals(emptyList<works.windmill.gym.domain.RoutineEntry>(), draft.entries)
+            assertEquals(emptyList<works.windmill.gym.presentation.RoutineEntry>(), draft.entries)
         } } finally { scope.cancel() }
     }
 }

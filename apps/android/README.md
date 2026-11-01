@@ -8,7 +8,7 @@ account and backend. There is no subscription surface.
 | Module | Responsibility |
 |---|---|
 | `:platform` | Bearer HTTP transport, account/session storage, sign-in, tokens and product-neutral shell. |
-| `:gym` | Android training runtime, device storage, presentation models, network/notification adapters and Compose UI. |
+| `:gym` | Android training runtime, device storage, presentation models (`works.windmill.gym.presentation`, the screens' projection of `:gym:domain`), network/notification adapters and Compose UI. |
 | `:app` | Composition root; one auth store, gym runtime, training store and notification adapters shared by activity, receivers and the Quick Settings service. |
 | `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
 | `:sync-api` | JVM product values, Replica port, transaction readers and typed commit failures; depends only on sync-core. |
@@ -18,7 +18,7 @@ account and backend. There is no subscription surface.
 | `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
 | `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering and refusal subjects. |
 | `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
-| `:gym:domain` | JVM gym actions, training reads, progress, units and rules, including signed-out workout recovery (saved-copy checks, stranded-set placement, separate-restore steps); every shared gym domain vector. `gym/store/WorkoutImports.kt` keeps the saved-workout journal's I/O and state machine. |
+| `:gym:domain` | JVM gym actions (`works.windmill.gym.domain.sync`), training reads, progress, units and rules, including signed-out workout recovery (saved-copy checks, stranded-set placement, separate-restore steps); every shared gym domain vector. `gym/store/WorkoutImports.kt` keeps the saved-workout journal's I/O and state machine. |
 
 The eight JVM modules and Android engine library contain the SyncAPI, client runtime, model server
 and kit. The full build enforces corpus coverage, properties, replay fuzz, schema freshness and

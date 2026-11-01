@@ -35,7 +35,7 @@
 **Done when**
 - Screenshots of 02.2 and 02.5 match in Dark and Daylight; the rig (01) adds `02.2-routine-summary-dark/light`, `02.5-editor-sortable-dark/light`.
 - No new events: copy only. `gym_screen_viewed` `routine` and `routine_editor` still fire.
-- `domain/ReadoutTests.kt` covers all six supported equipment values and the two dumbbell counts. Include seeded cable/kettlebell reads and name-only edits that leave equipment, raw weights and volume unchanged. Routine summary and editor tests assert full strings; Coach draft tests preserve the current strings. New visual variants stay gated until drawn and approved.
+- `presentation/ReadoutTests.kt` covers all six supported equipment values and the two dumbbell counts. Include seeded cable/kettlebell reads and name-only edits that leave equipment, raw weights and volume unchanged. Routine summary and editor tests assert full strings; Coach draft tests preserve the current strings. New visual variants stay gated until drawn and approved.
 
 **Depends on:** 02.
 

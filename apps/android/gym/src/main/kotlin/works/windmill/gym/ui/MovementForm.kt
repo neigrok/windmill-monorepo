@@ -35,10 +35,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import works.windmill.gym.domain.Program
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.RoutineMovement
-import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.presentation.Program
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.RoutineMovement
+import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
 import works.windmill.platform.design.WindmillFont
 

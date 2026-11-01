@@ -19,8 +19,8 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.RecordsView
 import works.windmill.platform.User
-import works.windmill.gym.domain.RoutineWrite
-import works.windmill.gym.domain.RoutineEntryWrite
+import works.windmill.gym.presentation.RoutineWrite
+import works.windmill.gym.presentation.RoutineEntryWrite
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -33,11 +33,11 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SessionDetail
-import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetWrite
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionDetail
+import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SetWrite
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.domain.sync.SessionRules
 import works.windmill.platform.Account
 import works.windmill.platform.telemetry.Telemetry
@@ -444,7 +444,7 @@ class EngineReadTests {
             store.choose("bench-press")
             assertEquals(3, changes)
             assertTrue(store.lastTime!!.isUnread)
-            assertTrue(store.editRack(77.0, 7) is works.windmill.gym.domain.WorkoutChange.Saved)
+            assertTrue(store.editRack(77.0, 7) is works.windmill.gym.presentation.WorkoutChange.Saved)
             runCurrent()
             assertEquals(listOf(100.0 to 6), store.lastTime!!.sets.map { it.weightKg to it.reps })
             assertEquals(77.0 to 7, store.rack!!.weightKg to store.rack!!.reps)

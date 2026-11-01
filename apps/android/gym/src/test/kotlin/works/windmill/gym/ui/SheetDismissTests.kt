@@ -37,8 +37,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.LiveLines
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.LiveLines
 
 // Native sheet dismissal preserves each form’s uncommitted state.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,8 +96,8 @@ class SheetDismissTests {
     @Test
     fun theFixSheetsHandleDismissesWithoutCommittingItsNumericDraft() {
         val dismissed = mutableListOf<String>()
-        val committed = mutableListOf<works.windmill.gym.domain.SetFix>()
-        val set = works.windmill.gym.domain.TrainingSet("set", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 0)
+        val committed = mutableListOf<works.windmill.gym.presentation.SetFix>()
+        val set = works.windmill.gym.presentation.TrainingSet("set", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 0)
         raised(dismissed) {
             FixSheet(set, "Bench Press", 1, null, onSave = {
                 committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
@@ -107,14 +107,14 @@ class SheetDismissTests {
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("10")
         compose.onNodeWithText("10").assertIsDisplayed()
         dismissFromTheHandle(dismissed)
-        assertEquals(emptyList<works.windmill.gym.domain.SetFix>(), committed)
+        assertEquals(emptyList<works.windmill.gym.presentation.SetFix>(), committed)
     }
 
     @Test
     fun theFixSheetsScrimDismissesWithoutCommittingItsNumericDraft() {
         val dismissed = mutableListOf<String>()
-        val committed = mutableListOf<works.windmill.gym.domain.SetFix>()
-        val set = works.windmill.gym.domain.TrainingSet("set", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 0)
+        val committed = mutableListOf<works.windmill.gym.presentation.SetFix>()
+        val set = works.windmill.gym.presentation.TrainingSet("set", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 0)
         raised(dismissed) {
             FixSheet(set, "Bench Press", 1, null, onSave = {
                 committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
@@ -122,7 +122,7 @@ class SheetDismissTests {
         }
         compose.onNodeWithContentDescription("Reps").performClick().performTextReplacement("8")
         dismissFromTheScrim(dismissed)
-        assertEquals(emptyList<works.windmill.gym.domain.SetFix>(), committed)
+        assertEquals(emptyList<works.windmill.gym.presentation.SetFix>(), committed)
     }
 
     @Test

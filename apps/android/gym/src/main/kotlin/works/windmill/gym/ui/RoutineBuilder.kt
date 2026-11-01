@@ -92,12 +92,12 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
-import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.RoutineMovement
-import works.windmill.gym.domain.Program
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.RoutineMovement
+import works.windmill.gym.presentation.Program
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.RoutineRules
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.GymResult
@@ -321,7 +321,7 @@ fun RoutineBuilder(
                     onPick = { id ->
                         val movement = draft.movement(id, store.catalog)
                         if (movement == null) say("That movement is no longer on the log.")
-                        else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.domain.SetTarget>()), movement, adding = true)
+                        else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.presentation.SetTarget>()), movement, adding = true)
                     }, onCreate = null,
                     onCreateDraft = { exercise, scheme ->
                         sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)

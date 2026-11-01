@@ -4,9 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.TheSix
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.TheSix
 
 class PickerSixRankingTests {
     private val openers = TheSix.movements

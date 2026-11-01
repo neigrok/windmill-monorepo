@@ -63,9 +63,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.drop
 import works.windmill.gym.R
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.Proposal
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.ProposalRead
 import works.windmill.platform.telemetry.LocalTelemetry

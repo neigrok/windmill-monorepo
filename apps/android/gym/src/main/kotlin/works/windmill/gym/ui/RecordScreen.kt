@@ -24,8 +24,8 @@ import java.time.ZoneId
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import works.windmill.gym.domain.*
-import works.windmill.gym.domain.Record
+import works.windmill.gym.presentation.*
+import works.windmill.gym.presentation.Record
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure

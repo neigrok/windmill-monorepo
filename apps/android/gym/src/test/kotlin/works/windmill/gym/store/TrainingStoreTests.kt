@@ -30,28 +30,28 @@ import works.windmill.gym.coach.AskAnswer
 import works.windmill.gym.coach.AskCap
 import works.windmill.gym.coach.AskThread
 import works.windmill.gym.coach.AskTurn
-import works.windmill.gym.domain.Blocker
-import works.windmill.gym.domain.GymPreferences
-import works.windmill.gym.domain.LastSet
-import works.windmill.gym.domain.Note
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.PlanSnapshot
+import works.windmill.gym.presentation.Blocker
+import works.windmill.gym.presentation.GymPreferences
+import works.windmill.gym.presentation.LastSet
+import works.windmill.gym.presentation.Note
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.domain.sync.Prefill
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalState
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.coach.ReadTally
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.Review
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.SetWrite
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.Review
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.RoutineEntry
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.SetWrite
 import works.windmill.gym.coach.ThreadOutcome
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.domain.sync.ImportSession
 import works.windmill.gym.domain.sync.ImportedSet
 import works.windmill.gym.domain.sync.ProposeRoutine
@@ -574,7 +574,7 @@ class TrainingStoreTests {
         val folder = tmp.newFolder()
         val snapshot: Json
         val clock: Long
-        val movement: works.windmill.gym.domain.Exercise
+        val movement: works.windmill.gym.presentation.Exercise
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select(null)
             movement = (room.store.create("Bench Pres", "barbell") as GymResult.Ok).value
@@ -638,7 +638,7 @@ class TrainingStoreTests {
         val folder = tmp.newFolder()
         val snapshot: Json
         val clock: Long
-        val pristine: List<works.windmill.gym.domain.Exercise>
+        val pristine: List<works.windmill.gym.presentation.Exercise>
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select("alice")
             pristine = room.store.catalog
@@ -788,8 +788,8 @@ class TrainingStoreTests {
         }
         val snapshot: Json
         val clock: Long
-        val pristine: List<works.windmill.gym.domain.Exercise>
-        val read: List<works.windmill.gym.domain.Exercise>
+        val pristine: List<works.windmill.gym.presentation.Exercise>
+        val read: List<works.windmill.gym.presentation.Exercise>
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.now = 1_800_000_100_000L
             pristine = room.training.catalogue()

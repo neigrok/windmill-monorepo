@@ -12,8 +12,8 @@
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The review sheet's `ChangeRow` (`ui/ReviewSheet.kt:325-356`) titles a row *Add {m}* or *Remove {m}* (`:330-331`):
   - added: *{target} · after {m}* or *{target} · first in the routine* (`:336-340`)
-  - removed: *removed from the routine · 3 logged sets kept*, *… · never logged* (`domain/Proposal.kt:114-120`)
-- Kinds are `Kept`, `Added`, `Removed`, `Retargeted` (`domain/Proposal.kt:81`). There is no move and no swap; a change carries only its new `position` (`:99`).
+  - removed: *removed from the routine · 3 logged sets kept*, *… · never logged* (`presentation/Proposal.kt:114-120`)
+- Kinds are `Kept`, `Added`, `Removed`, `Retargeted` (`presentation/Proposal.kt:81`). There is no move and no swap; a change carries only its new `position` (`:99`).
 
 **Change**
 - *Added* block: the name, then *Sets 3*, *Reps 15*, *Load 12.5 kg*, all as new values (08.17: *Add Face Pull to Pull A for your shoulders.* · *CHANGES TO PULL A* · *1 change*).
@@ -24,7 +24,7 @@
   - This task owns the durable history contract: retain the proposal's immutable base order and proposed order with its stored data/decision receipt, including the backend/wire and shared-schema work needed to read it on another device. Capture the base at proposal creation against its expected routine revision, before any Apply. Backfill an existing pending proposal only when that expected revision still matches; otherwise retain its out-of-date refusal. Never replace the base with the changed routine. Keep the display derived from domain data rather than persisting localized strings.
   - Expose that immutable base to the shared formatter for settled proposals. Older applied records without base-order evidence omit unprovable order lines; they must not infer history from the current routine. Retain all change kinds whose before/after fields are present.
 - Every card ends its blocks with *No change: N movements* when some movements are kept.
-- Delete `addedLine`, `removedLine` and `compactLine` (`domain/Proposal.kt:106-131`) once the card no longer reads them.
+- Delete `addedLine`, `removedLine` and `compactLine` (`presentation/Proposal.kt:106-131`) once the card no longer reads them.
 
 **Out of scope:** target changes (33), the card shell (29).
 

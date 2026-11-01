@@ -1,6 +1,6 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
 import org.junit.Assert.assertEquals

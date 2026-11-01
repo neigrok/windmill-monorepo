@@ -7,7 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import works.windmill.domain.kit.*
-import works.windmill.gym.domain.Ids
+import works.windmill.gym.presentation.Ids
 import works.windmill.gym.domain.sync.*
 import works.windmill.gym.store.withGymActionContext
 import works.windmill.platform.telemetry.Telemetry

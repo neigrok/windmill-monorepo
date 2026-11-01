@@ -23,9 +23,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOrigin
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -82,7 +82,7 @@ class FixSheetNumberEntryTests {
             FixSheet(set, "Bench Press", 1, null, onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {},
                 exercise = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5))
         } }
-        val (bigDown, down, up) = works.windmill.gym.domain.Ladder.labels(-10.0)
+        val (bigDown, down, up) = works.windmill.gym.presentation.Ladder.labels(-10.0)
         listOf(bigDown, down).forEach { compose.onNodeWithText(it).assertIsNotEnabled() }
         compose.onNodeWithContentDescription("Decrease Load").assertIsNotEnabled()
         compose.onNodeWithText(up).performClick()
@@ -159,11 +159,11 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("1e999")
         compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("1e999")
-        compose.onNodeWithText(works.windmill.gym.domain.NumberEntry.notANumber).assertExists()
+        compose.onNodeWithText(works.windmill.gym.presentation.NumberEntry.notANumber).assertExists()
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-12.5")
         compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("−12.5")
-        compose.onNodeWithText(works.windmill.gym.domain.NumberEntry.notANumber).assertDoesNotExist()
+        compose.onNodeWithText(works.windmill.gym.presentation.NumberEntry.notANumber).assertDoesNotExist()
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = -12.5)), saved)

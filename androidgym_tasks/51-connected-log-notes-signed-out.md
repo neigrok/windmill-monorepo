@@ -11,7 +11,7 @@
 **Approved states:** 09.3–09.6 above are 🚀 In production, verified 2026-10-29.
 
 **Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `domain/ConnectedLog.kt` names ChatGPT or Claude and includes saving notes at the Write level. Existing scope parsing, since-date semantics and account-wide static-key disclosure stay intact.
+- `presentation/ConnectedLog.kt` names ChatGPT or Claude and includes saving notes at the Write level. Existing scope parsing, since-date semantics and account-wide static-key disclosure stay intact.
 - `ui/ConnectedLogScreen.kt` leads a connected root with **Connected** and browser rows; an empty root keeps the permission levels and Apply caption. **How this works** is a separate page, with levels after its five paragraphs only when opened from a connected root. The browser rows reuse the drawn forward glyph; the How door reuses the existing Material chevron whose path matches the approved 20 dp icon. Header, row and footer typography/insets follow the linked drawings.
 - Credential reads publish a complete pair for the current owner, replica and request generation. Both readers restart after cache invalidation, including a same-owner reconnect whose loading state settles in one turn. A stale answer cannot fill a later seat, a missing authenticated transport is unread, and a known offline read uses the approved internet sentence. Neither failure claims an empty connection list.
 - Task 26 already supplies the single signed-out Notes head and sign-in door. Only the signed-out account sentence adopts the existing Nunito 16 sp/24 sp role to match 09.6; signed-in production is retained. Its test checks one head and the existing callback/read behavior.
@@ -31,7 +31,7 @@
 **Done when**
 - Screenshots of 09.3, 09.4, 09.5 and 09.6 match in Dark and Daylight; the rig (01) adds `09.3-connected-log-dark/light`, `09.4-connected-how-dark/light`, `09.5-connected-log-empty-dark/light`, `09.6-notes-signed-out-dark/light`.
 - No new events; `gym_screen_viewed` `connections` and `notes` still fire.
-- Tests: `domain/ConnectedLogTests.kt` pins the new head and Write line byte for byte; `ui/ConnectedLogScreenTests.kt` and `ui/NotesScreenTests.kt` (signed out) pass.
+- Tests: `presentation/ConnectedLogTests.kt` pins the new head and Write line byte for byte; `ui/ConnectedLogScreenTests.kt` and `ui/NotesScreenTests.kt` (signed out) pass.
 
 **Depends on:** 26.
 

@@ -14,7 +14,7 @@
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ui/LoggerScreen.kt` keeps the native number-entry buffers and signed decimal IME from 07. The movement name wraps at 22 sp with its existing equipment glyph and opens **This workout**; 11 owns that sheet’s separate presentation.
 - The name announces exact position and supplies Previous/Next accessibility actions. Decorative markers show a bounded window of at most seven positions, with smaller continuation endpoints and no markers for one movement.
-- `domain/LiveSession.kt` supplies performed/current/planned rows with inline equipment units. The ledger has no column header or main Add movement row and a maximum 144 dp viewport. Its current row remains visible as sets arrive.
+- `presentation/LiveSession.kt` supplies performed/current/planned rows with inline equipment units. The ledger has no column header or main Add movement row and a maximum 144 dp viewport. Its current row remains visible as sets arrive.
 - The rack uses the shared Display/Regular `NumberStepper`, the existing load-band ladder, and a silent 64 dp **Log set**. Equipment units come from the shared readout: kg each, kg total, kg added, or kg for unclassified equipment.
 - Affected Debug and Release gates each pass 75 cases; six platform telemetry cases pass, with zero failures/errors/skips. API 37 native acceptance retains twelve Dark/Daylight captures: all three equipment modes, the signed keyboard, a long name with ten movements, and one open movement. The first-party intake records four logged sets and two completed switches/management opens per appearance.
 

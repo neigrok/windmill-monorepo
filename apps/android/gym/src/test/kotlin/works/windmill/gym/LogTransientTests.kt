@@ -31,7 +31,7 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowDialog
 import java.time.LocalDate
-import works.windmill.gym.domain.Bodyweight
+import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.store.*
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.design.LocalWindmillDark

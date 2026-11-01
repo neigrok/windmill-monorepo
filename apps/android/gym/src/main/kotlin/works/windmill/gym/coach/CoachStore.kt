@@ -17,7 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import works.windmill.gym.domain.Ids
+import works.windmill.gym.presentation.Ids
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.Seat

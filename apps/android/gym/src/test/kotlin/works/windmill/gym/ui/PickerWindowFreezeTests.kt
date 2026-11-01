@@ -11,8 +11,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.SessionSummary
 
 // The picker freezes its first non-empty ranking even as the replica receives more sessions.
 @RunWith(RobolectricTestRunner::class)
@@ -74,7 +74,7 @@ class PickerWindowFreezeTests {
                     sessions = sessions(),
                     title = "Add movement",
                     onPick = {},
-                    onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.domain.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
+                    onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.presentation.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
                 )
             }
         }
