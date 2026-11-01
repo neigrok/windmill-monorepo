@@ -112,7 +112,7 @@ public final class HTTPTransport: SyncTransport {
       task.cancel()
       if !Task.isCancelled {
         diagnostics.report(operation: "sync_live", method: "GET", kind: "http", status: status,
-                           durationMs: TransportDiagnostics.elapsed(since: start))
+                           expected: ExpectedStatuses.liveUpgrade, durationMs: TransportDiagnostics.elapsed(since: start))
       }
       return .answered(.failed(HTTPFailure(status: status)))
     case .unanswered(let kind):
@@ -126,7 +126,7 @@ public final class HTTPTransport: SyncTransport {
   }
 
   func exchange<Body: ResponseBody>(_ method: String, _ path: String, operation: String,
-                                    expected: Set<Int> = ExpectedStatuses.sync, body: [UInt8]?,
+                                    expected: Set<Int> = ExpectedStatuses.all, body: [UInt8]?,
                                     token: SessionToken?) async -> Reply<Body> {
     let start = ContinuousClock.now
     var request = URLRequest(url: baseURL.appending(path: path))
@@ -147,7 +147,9 @@ public final class HTTPTransport: SyncTransport {
       }
       let reply = Reply<Body>(status: http.statusCode, body: try? JSON(parsing: [UInt8](data)))
       if http.statusCode != 200 {
-        diagnostics.report(operation: operation, method: method, kind: "http", status: http.statusCode, expected: expected,
+        let unavailable = if case .answered(.failed(let failure)) = reply { failure.isUnavailable } else { false }
+        diagnostics.report(operation: operation, method: method, kind: "http", status: http.statusCode,
+                           expected: unavailable ? expected.union([503]) : expected,
                            durationMs: TransportDiagnostics.elapsed(since: start))
       } else if case .unreachable = reply {
         diagnostics.report(operation: operation, method: method, kind: "decode", status: 200,

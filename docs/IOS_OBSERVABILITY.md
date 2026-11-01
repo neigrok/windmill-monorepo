@@ -55,8 +55,9 @@ HTTP failures carry method, coarse route family (`/v1/ai`, `/v1/auth`, `/v1/me`,
 operation, `failure_kind`, optional numeric status label and `duration_ms`. Duration uses a monotonic
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
 to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422, 426 and 429 are product/API metrics,
-not Sentry Issues, and so is a sync push's 413, which the engine halves or refuses too-large, and a 503 on any sync
-route or the live socket's upgrade, the server's `unavailable` the engine backs off from. A deployment without Coach
+not Sentry Issues, and so is a sync push's 413, which the engine halves or refuses too-large, the server's own 503
+`unavailable` in the sync envelope, and any 503 at the live socket's upgrade, whose body is not read; a bare or foreign
+503 (an edge, a maintenance page) is reportable. A deployment without Coach
 does not mount `POST /v1/gym/coach/turns`, so a send meets the server's 404 page: `api_request_failed` carries status `404`
 under operation `gym_coach_turn`, `gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no
 composer and no retry. A turn stream that drops resumes after 1, 2, 4 and 8 beats through `GET …/turns/{turnId}`; a fifth

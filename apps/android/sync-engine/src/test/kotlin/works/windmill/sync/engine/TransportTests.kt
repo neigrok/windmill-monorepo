@@ -133,17 +133,19 @@ class TransportTests {
         Unit
     }
 
-    // §9.6: an update, an authentication or an unavailable server is answered on purpose, on every route and at the socket's upgrade.
+    // §9.6: an update, an authentication and the server's own `unavailable` are answered on purpose, on every route, and so is
+    // any 503 at the socket's upgrade, whose body cannot be read.
     @Test fun updateAuthenticationAndUnavailableRefusalsRemainMetricsWithoutFailureIssues() = runBlocking {
         val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
         MockWebServer().use { server ->
             HTTPTransport(server.url("/").toString(), 5, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
-                for (status in listOf(401, 410, 426, 503)) {
+                for (status in listOf(401, 410, 426)) {
                     server.enqueue(MockResponse().setResponseCode(status))
                     assertEquals(SyncResponse(status, null), answer(transport.hello("token")))
-                    assertEquals(EngineEvent(EngineOperation.hello, EngineOutcome.refused, status = status), withTimeout(2_000) { events.receive() })
                 }
-                val unavailable = json("""{"error":"unavailable","retryAfterMs":1000}""")
+                val unavailable = json("""{"serverTime":2001,"epoch":"ep-1","error":"unavailable","retryAfterMs":1000}""")
+                server.enqueue(MockResponse().setResponseCode(503).setBody(unavailable.jcs))
+                assertEquals(SyncResponse(503, unavailable), answer(transport.hello("token")))
                 server.enqueue(MockResponse().setResponseCode(503).setBody(unavailable.jcs))
                 assertEquals(SyncResponse(503, unavailable), answer(transport.pull(Json.objectOf(), "token")))
                 server.enqueue(MockResponse().setResponseCode(503).setBody(unavailable.jcs))
@@ -152,10 +154,30 @@ class TransportTests {
                     server.enqueue(MockResponse().setResponseCode(status))
                     assertEquals(Reply.Failed(SyncResponse(status)), transport.openLive("token"))
                 }
-                assertEquals(listOf(EngineEvent(EngineOperation.pull, EngineOutcome.refused, status = 503),
+                assertEquals(listOf(401, 410, 426, 503).map { EngineEvent(EngineOperation.hello, EngineOutcome.refused, status = it) } + listOf(
+                    EngineEvent(EngineOperation.pull, EngineOutcome.refused, status = 503),
                     EngineEvent(EngineOperation.push, EngineOutcome.refused, status = 503),
                     EngineEvent(EngineOperation.live, EngineOutcome.refused, status = 426),
-                    EngineEvent(EngineOperation.live, EngineOutcome.refused, status = 503)), List(4) { withTimeout(2_000) { events.receive() } })
+                    EngineEvent(EngineOperation.live, EngineOutcome.refused, status = 503)), List(8) { withTimeout(2_000) { events.receive() } })
+                assertTrue(events.tryReceive().isFailure)
+            }
+        }
+        events.close()
+        Unit
+    }
+
+    // §9.6: a 503 without the server's envelope — an edge with no upstream, a maintenance page, an envelope missing its epoch —
+    // is an outage the server may never see: a fault, filed once until the operation is answered.
+    @Test fun aForeign503IsAFaultFiledOncePerOutage() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
+        val fault = EngineEvent(EngineOperation.pull, EngineOutcome.failure, "http", 503)
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 5, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                for (body in listOf("", "<html>maintenance</html>", """{"error":"unavailable","serverTime":2001}""")) {
+                    server.enqueue(MockResponse().setResponseCode(503).setBody(body))
+                    assertEquals(503, answer(transport.pull(Json.objectOf(), "token")).status)
+                }
+                assertEquals(listOf(fault, fault.copy(repeated = true), fault.copy(repeated = true)), List(3) { withTimeout(2_000) { events.receive() } })
                 assertTrue(events.tryReceive().isFailure)
             }
         }

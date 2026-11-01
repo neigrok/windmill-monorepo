@@ -2412,13 +2412,20 @@ Frames are at most `LIVE_FRAME_BYTES`.
 A client records every failed request as a metric. A status the server answers on purpose — `400`,
 `401`, `403`, `404`, `409`, `410`, `422`, `426`, `429` — is never a crash-reporter issue: Swift's
 `ExpectedStatuses.all` serves the engine, the app's sign-in and its REST clients, and Kotlin's
-transport counts the same set as refusals. A sync request's `503` — the server's `unavailable` (§6.6),
-or an edge's while the server is away — is a transient every route backs off from, the live socket's
-upgrade included where the client can read it, and is never an issue either: an outage is the
-server's to report, once, not every client's (`ExpectedStatuses.sync` in each engine). Both engines
-also expect a push's `413`, which §7.4 halves or refuses `too-large` (`ExpectedStatuses.push` in each).
-The web engine files an issue for no answered status: only a request that gets no readable answer
-reports.
+transport counts the same set as refusals. Both engines also expect a push's `413`, which §7.4 halves
+or refuses `too-large` (`ExpectedStatuses.push` in each). Every route backs off from a `503`, but only
+the server's own is answered on purpose: its `unavailable` in the sync envelope (`error`, `serverTime`
+and `epoch`), which the Swift and Kotlin engines read from the body as they read a `426`
+(`HTTPFailure.isUnavailable`, `SyncResponse.unavailable`). It is never an issue: the server reports
+its own saturation and transient failures, once a window (`worker_pool.saturated`,
+`sync.push.bind_unavailable`). A bare or foreign `503` — an edge with no upstream, a maintenance page
+— is an outage the server may never see, and files its issue once per outage like any other failure.
+A `503` at the live socket's upgrade, whose body neither engine reads, is a refusal
+(`ExpectedStatuses.liveUpgrade`): the pull the failed open runs hears the server. The web engine files
+no issue for an answered status whose body it can parse, a bare `503` included; an HTML `503`, whose
+body is not JSON, fails as an unreadable answer and files its `sync-transport` issue, and every ended
+or refused live socket files a `sync-live` issue, its status unreadable to a browser, both within the
+engine's telemetry budget of 30 a minute.
 
 | Refusal code | Source |
 |---|---|

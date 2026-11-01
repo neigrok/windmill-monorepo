@@ -119,6 +119,12 @@ public struct HTTPFailure: Sendable, Hashable, Served {
   // §9.2: the server's own 426 names its cause; a bare 426 (a proxy, a captive portal) is a failure like any other.
   public var requiresUpgrade: Bool { status == 426 && error.map { $0.utf8.elementsEqual("upgrade-required".utf8) } == true }
 
+  // §9.6: the server's own 503 is its `unavailable` in the sync envelope; a bare or foreign 503 (an edge with no
+  // upstream, a maintenance page) is a failure like any other.
+  public var isUnavailable: Bool {
+    status == 503 && error.map { $0.utf8.elementsEqual("unavailable".utf8) } == true && serverTime != nil && epoch != nil
+  }
+
   public var isRecoveryConflict: Bool {
     guard status == 409, let error, ["gap", "replica-forked", "replica-foreign"].contains(where: { $0.utf8.elementsEqual(error.utf8) }),
           let epoch, !epoch.isEmpty, let serverTime, serverTime >= 0, serverTime <= JSON.maxSafeInteger else { return false }
