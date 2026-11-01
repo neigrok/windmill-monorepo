@@ -246,4 +246,21 @@ class RoutineProposalTests {
         assertEquals(Decision.Refuse(GymRefusal.Gone(proposalId.ref, Refused.Path.predicted)), decide(ApplyProposal(proposalId)))
         assertEquals(Decision.Refuse(GymRefusal.Gone(routineId.ref, Refused.Path.predicted)), decide(ApplyProposal(proposalId), reader(listOf(proposalRow(proposal)))))
     }
+
+    @Test fun applyFloorsChangeLinesInChangeThenSetOrderAndLeavesWhatItCannotNameToTheLog() {
+        val below = listOf(
+            RoutineChange("retargeted", squat, EntryTargets(entry), EntryTargets(listOf(SetTarget(5, 80.0), SetTarget(5, -5.0)), 120)),
+            RoutineChange("added", bench, after = EntryTargets(listOf(SetTarget(5, -10.0)))))
+        invalid(decide(ApplyProposal(proposalId), reader(listOf(row(routine), proposalRow(proposal.copy(changes = below))))),
+            RoutineRules.loadFloor, "changes.0.after.sets.1.weightKg", Violation.Reason.Below(0.0))
+        val superseded = writing(decide(ApplyProposal(proposalId), reader(listOf(row(routine), proposalRow(proposal.copy(changes = below, state = "superseded")))))).plan
+        assertEquals(Gym.Commands.applyProposal, superseded.command!!.name)
+        assertEquals(Json.objectOf("proposalId" to proposalId.json), superseded.command!!.args)
+        assertEquals(emptyList<Prediction>(), superseded.predictions)
+        val unnamed = listOf(RoutineChange("kept", squat, EntryTargets(entry), EntryTargets(entry)),
+            RoutineChange("added", Id("not-owned", Exercise), after = EntryTargets(listOf(SetTarget(5, -10.0)))))
+        val applied = writing(decide(ApplyProposal(proposalId), reader(listOf(row(routine), proposalRow(proposal.copy(changes = unnamed)))))).plan
+        assertEquals(Prediction.update(Routine, routineId, mapOf("name" to Json.of("Lower B"), "entries" to Json.Arr(RoutineChange.document(unnamed).map { it.json }))),
+            applied.predictions.last())
+    }
 }

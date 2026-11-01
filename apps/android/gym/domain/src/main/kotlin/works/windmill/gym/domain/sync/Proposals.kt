@@ -149,8 +149,10 @@ class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name:
         val proposed = if (removing) emptyList() else RoutineRules.entries.apply(entries, Path("entries"))
         val proposedName = if (removing) "" else RoutineRules.name.apply(name, Path("name"))
         if (proposed.any { loaded.catalogue.find(it.exerciseId) == null }) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.unknownExercise), id.ref, path = Refused.Path.predicted)))
+        val changes = RoutineChange.between(base.entries, proposed)
+        RoutineRules.floored(changes, loaded.catalogue)
         if (!removing && base.name == proposedName && base.entries == proposed) return Decision.Unchanged(id)
-        val proposal = Proposal(id, base.id, if (removing) "remove" else "revise", proposedName, summary, RoutineChange.between(base.entries, proposed))
+        val proposal = Proposal(id, base.id, if (removing) "remove" else "revise", proposedName, summary, changes)
         val plan = Plan()
         plan.create(Valid(proposal, Proposal, at = loaded.moment))
         plan.guardRead(base.id, listOf("entries", "name"))
@@ -207,19 +209,22 @@ data class ProposalState(val proposal: Proposal?, val routine: Routine?, val mom
     }
 }
 
-class ApplyProposal(val id: Id<Proposal>) : Action<ProposalState, Unit, GymRefusal> {
+class ApplyProposal(val id: Id<Proposal>) : Action<ApplyProposal.Loaded, Unit, GymRefusal> {
+    data class Loaded(val state: ProposalState, val catalogue: Catalogue)
     override val scope = Proposal.scope
     override val refusals = GymRefusal
-    override fun load(read: Reader) = ProposalState(read, id)
-    override fun decide(loaded: ProposalState, ids: IDSource): Decision<Unit, GymRefusal> {
-        loaded.refusal(id, true)?.let { return Decision.Refuse(it) }
-        val proposal = loaded.proposal!!
+    override fun load(read: Reader) = Loaded(ProposalState(read, id), Catalogue(read, ViewMode.stored))
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
+        val state = loaded.state
+        state.refusal(id, true)?.let { return Decision.Refuse(it) }
+        val proposal = state.proposal!!
         if (proposal.state == "applied") return Decision.Unchanged(Unit)
         if (proposal.state == "superseded") return Decision.Write(Plan(GymCommand(Gym.Commands.applyProposal, mapOf("proposalId" to id.json))), Unit)
-        val routine = loaded.routine!!
+        RoutineRules.floored(proposal.changes, loaded.catalogue)
+        val routine = state.routine!!
         val change = if (proposal.intent == "remove") Prediction.remove(Routine, routine.id)
         else Prediction.update(Routine, routine.id, mapOf("name" to Json.of(proposal.proposedName), "entries" to Json.Arr(proposal.document.map { it.json })))
-        val settled = Prediction.update(Proposal, id, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(loaded.moment.now.ms)))
+        val settled = Prediction.update(Proposal, id, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(state.moment.now.ms)))
         return Decision.Write(Plan(GymCommand(Gym.Commands.applyProposal, mapOf("proposalId" to id.json)), listOf(settled, change)), Unit)
     }
 }

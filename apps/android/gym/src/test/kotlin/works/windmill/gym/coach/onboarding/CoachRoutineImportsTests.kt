@@ -64,7 +64,7 @@ class CoachRoutineImportsTests {
     private val movement = Exercise(Id("movement1", Exercise), "Single press", "press", "dumbbell", 2.0, loadCount = 1)
     private val routines = listOf(CoachRoutineImport(Id("routineA", Routine), "Upper", listOf(RoutineEntry(movement.id,
         listOf(SetTarget(5, 0.0)), 90))), CoachRoutineImport(Id("routineB", Routine), "Lower",
-        listOf(RoutineEntry(Id("back-squat", Exercise), listOf(SetTarget(5, -501.0)), 120))))
+        listOf(RoutineEntry(Id("back-squat", Exercise), listOf(SetTarget(5, 501.0)), 120))))
 
     @Test fun oneAtomicImportReplaysAfterProcessDeathBeforeAnyChatSavedStateUpdate() = runTest {
         val snapshot: Json

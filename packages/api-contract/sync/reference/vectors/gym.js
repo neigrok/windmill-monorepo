@@ -23,7 +23,10 @@ const GYM_B = 'acct:B/gym';
 const A = { kind: 'replica', account: 'A', replica: 'rp_0000000000000000000000000000000a', n: 1 };
 const SERVER_A = { kind: 'server', account: 'A' };
 const s = (ms, counter = 0) => `${ms}:${counter}:${ACTOR}`;
-const SEEDS = { 'back-squat': { name: 'Back Squat' }, 'bench-press': { name: 'Bench Press' }, dip: { name: 'Dip' } };
+const SEEDS = {
+  'back-squat': { name: 'Back Squat', equipment: 'barbell' }, 'bench-press': { name: 'Bench Press', equipment: 'barbell' }, dip: { name: 'Dip', equipment: 'bodyweight' },
+  'dumbbell-bench-press': { name: 'Dumbbell Bench Press', equipment: 'dumbbell' }, 'goblet-squat': { name: 'Goblet Squat', equipment: 'dumbbell', loadCount: 1 },
+};
 const SQUAT = [{ exerciseId: 'back-squat', restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] }];
 
 // A stored row: every register at one stamp; `born` and `life` unless the type has none.
@@ -724,8 +727,66 @@ function conversations() {
   ];
 }
 
+// M12: a finish lands at or after the workout's last set (A.2 `gym.finish`).
+function lastSets() {
+  const inFlight = (set = SQUATTED) => base({ a: [openWorkout(), set] });
+  const finish = (finishedAt) => cmd('gym.finish', { sessionId: 'session0002', finishedAt });
+  const ahead = rec('set', 'set00000005', { stamp: s(T + 8 * H + 60_000), seq: 7, f: { sessionId: 'session0002', exerciseId: 'back-squat', weightKg: 80, reps: 5, note: '', completedAt: NOW + 60_000 }, v: { setNumber: 1 } });
+  return [
+    admitted('a finish before the workout\'s last set lands at the last set', { state: inFlight(), intent: finish(T + 8 * H + 30_000) }),
+    admitted('a finish at the workout\'s last set lands there', { state: inFlight(), intent: finish(T + 8 * H + 60_000) }),
+    admitted('a future finish clamped to serverNow lands at a last set a clock ahead of the server stamped', { state: inFlight(ahead), intent: finish(NOW + 400_000) }),
+  ];
+}
+
+// M13: the load floor (A.2): a barbell or a pair of dumbbells takes no target below 0 kg wherever a write sets new
+// targets: a routine's entries, a proposal of either kind, and a workout proposal's apply. A scheme a write leaves
+// as it stood keeps what it held, and every other loading keeps its sign.
+function loadFloors() {
+  const upper = (entries) => create('routine', 'routine0002', s(T + 9 * H), { name: 'Upper', position: 1, entries });
+  const routine = (entries) => gym([upper(entries)]);
+  const edit = (entries) => gym([update('routine', 'routine0001', s(T + 1), s(T + 9 * H), { entries })]);
+  const legacy = rec('routine', 'routine0003', { stamp: s(T + 1), seq: 6, f: { name: 'Old Lower', position: 1, entries: [{ exerciseId: 'back-squat', restSeconds: 180, sets: [{ reps: 5, weightKg: -10 }] }], revision: 1, createdEntries: 1 } });
+  const singleBench = rec('exerciseName', 'dumbbell-bench-press', { stamp: s(T + 5), seq: 6, born: false, life: false, f: { loadCount: 1 } });
+  const asBarbell = { t: 'exerciseName', id: 'sledpush01', f: regs(s(T + 9 * H), { equipment: 'barbell' }) };
+  const mint = (id, changes, extra = {}) => gym([{ t: 'proposal', id, born: null, life: ['alive', null], f: regs(null, {
+    routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Lighter', changes, door: 'mcp', connection: 'conn-1', agent: 'Claude', ...extra }) }]);
+  const belowBar = [{ kind: 'retargeted', exerciseId: 'back-squat', before: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] }, after: { restSeconds: 180, sets: [{ reps: 5, weightKg: -10 }] } }];
+  const keptLegacy = [
+    { kind: 'kept', exerciseId: 'back-squat', before: { restSeconds: 180, sets: [{ reps: 5, weightKg: -10 }] }, after: { restSeconds: 180, sets: [{ reps: 5, weightKg: -10 }] } },
+    { kind: 'added', exerciseId: 'dip', after: { sets: [{ reps: 8, weightKg: -10 }] } },
+  ];
+  const inFlight = (a = []) => base({ a: [openWorkout(), SQUATTED, ...a] });
+  const benchBelow = [
+    { kind: 'kept', exerciseId: 'back-squat', before: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] }, after: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] } },
+    { kind: 'kept', exerciseId: 'dip', before: { sets: [{ reps: 8 }] }, after: { sets: [{ reps: 8 }] } },
+    { kind: 'added', exerciseId: 'bench-press', after: { sets: [{ reps: 8, weightKg: -20 }] } },
+  ];
+  const workoutMint = (changes) => gym([create('workoutProposal', 'wproposal02', null, { sessionId: 'session0002', summary: 'Lighter bench', changes, door: 'mcp', connection: 'conn-1', agent: 'Claude' })]);
+  return [
+    admitted('a routine created with a barbell target below 0 kg is invalid', { state: base(), intent: routine([{ exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: -10 }] }]) }),
+    admitted('a routine created with a dumbbell pair target below 0 kg is invalid', { state: base(), intent: routine([{ exerciseId: 'dumbbell-bench-press', sets: [{ reps: 8, weightKg: -2 }] }]) }),
+    admitted('a routine created with a single dumbbell target below 0 kg is admitted: one dumbbell keeps its sign', { state: base(), intent: routine([{ exerciseId: 'goblet-squat', sets: [{ reps: 8, weightKg: -2 }] }]) }),
+    admitted('a routine created with a bodyweight target below 0 kg is admitted: assistance keeps its sign', { state: base(), intent: routine([{ exerciseId: 'dip', sets: [{ reps: 8, weightKg: -10 }] }]) }),
+    admitted('a routine created at a barbell target of 0 kg is admitted', { state: base(), intent: routine([{ exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 0 }] }]) }),
+    admitted('a seed the account loads as one dumbbell keeps its sign', { state: base({ a: [singleBench] }), intent: routine([{ exerciseId: 'dumbbell-bench-press', sets: [{ reps: 8, weightKg: -2 }] }]) }),
+    admitted('a movement loaded as a barbell in the same intent takes the floor', { state: base(), intent: gym([asBarbell, upper([{ exerciseId: 'sledpush01', sets: [{ reps: 5, weightKg: -5 }] }])]) }),
+    admitted('a routine edit retargeting a barbell scheme below 0 kg is invalid', { state: base(), intent: edit([{ exerciseId: 'back-squat', restSeconds: 180, sets: [{ reps: 5, weightKg: -5 }] }]) }),
+    admitted('a routine edit keeping a scheme below 0 kg it held stands', { state: base({ a: [legacy] }),
+      intent: gym([update('routine', 'routine0003', s(T + 1), s(T + 9 * H), { entries: [{ exerciseId: 'back-squat', restSeconds: 120, sets: [{ reps: 5, weightKg: -10 }] }, { exerciseId: 'dip' }] })]) }),
+    admitted('a proposal retargeting a barbell line below 0 kg is refused invalid', { state: base(), origin: SERVER_A, intent: mint('proposal003', belowBar) }),
+    admitted('a proposal keeping a scheme below 0 kg its routine holds, beside an assisted line, is admitted', { state: base({ a: [legacy] }), origin: SERVER_A,
+      intent: mint('proposal003', keptLegacy, { routineId: 'routine0003', proposedName: 'Old Lower' }) }),
+    admitted('apply of a proposal stored with a barbell line below 0 kg is refused invalid', { state: base({ a: [proposalRow('proposal002', 6, { changes: belowBar, door: 'ask', connection: '', agent: '' })] }),
+      intent: cmd('gym.applyProposal', { proposalId: 'proposal002' }) }),
+    admitted('a workout proposal adding a barbell line below 0 kg is refused invalid', { state: inFlight(), origin: SERVER_A, intent: workoutMint(benchBelow) }),
+    admitted('apply of a workout proposal stored with a barbell line below 0 kg is refused invalid', { state: inFlight([workoutProposalRow('wproposal01', 8, { changes: benchBelow })]),
+      intent: cmd('gym.applyWorkoutProposal', { proposalId: 'wproposal01' }) }),
+  ];
+}
+
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata(), ...conversations(), ...workoutPlans(), ...workoutProposals()],
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata(), ...conversations(), ...workoutPlans(), ...workoutProposals(), ...lastSets(), ...loadFloors()],
   };
 }

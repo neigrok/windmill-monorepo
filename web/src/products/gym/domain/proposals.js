@@ -89,6 +89,22 @@ export class RoutineChange {
       .map((change) => new RoutineEntry(change.exerciseId, change.after?.sets ?? null, change.after?.restSeconds ?? null)));
   }
 
+  // A line sets new targets when it adds its movement or retargets its sets; a rest-only retarget or a kept line keeps what it held.
+  get setsNewTargets() {
+    if (this.kind === 'added') return true;
+    return this.kind === 'retargeted' && !sameJson(this.before?.json.sets ?? null, this.after?.json.sets ?? null);
+  }
+
+  // The editor's load floor on every line that sets new targets, in change order then set order; a movement the catalogue
+  // lacks has no floor here.
+  /** @param {readonly RoutineChange[]} changes @param {Catalogue} catalogue @param {Path} path */
+  static floored(changes, catalogue, path) {
+    changes.forEach((change, index) => {
+      const movement = catalogue.find(change.exerciseId);
+      if (change.setsNewTargets && movement !== null) SetTarget.floored(change.after?.sets ?? [], movement, path.plus(index).plus('after').plus('sets'));
+    });
+  }
+
   // R118's count: every line that is not kept, and one more when the kept movements left the base's order.
   /** @param {readonly RoutineEntry[]} base @param {readonly RoutineChange[]} changes */
   static count(base, changes) {
@@ -255,11 +271,12 @@ export function ProposeRoutine({ id, routineId, name, entries, summary, removing
       if (proposed.some((entry) => loaded.catalogue.find(entry.exerciseId) === null)) {
         return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')));
       }
+      const changes = RoutineChange.between(base.entries, proposed);
+      RoutineChange.floored(changes, loaded.catalogue, new Path('changes'));
       if (!removing && base.name === proposedName && sameJson(base.entries.map((entry) => entry.json), proposed.map((entry) => entry.json))) {
         return Decision.unchanged(id);
       }
-      const proposal = new ProposalValue({ id, routineId: base.id, intent: removing ? 'remove' : 'revise', proposedName,
-        summary, changes: RoutineChange.between(base.entries, proposed) });
+      const proposal = new ProposalValue({ id, routineId: base.id, intent: removing ? 'remove' : 'revise', proposedName, summary, changes });
       const plan = new Plan();
       plan.create(new Valid(proposal, loaded.moment));
       plan.guardRead(base.id, ['entries', 'name']);
@@ -337,25 +354,28 @@ export class ProposalState {
   superseded(id, reason) { return GymRefusals.ofRefused(new Refused('proposal-superseded', id.ref, { reason }, 'predicted')); }
 }
 
+/** @typedef {{ state: ProposalState, catalogue: Catalogue }} ProposalApplication */
+
 /** @param {Id<ProposalValue>} id */
 export function ApplyProposal(id) {
   return Object.freeze({
     scope: Proposal.scope,
     refusals: GymRefusals,
-    /** @param {Reader} read */
-    load(read) { return ProposalState.of(read, id); },
-    /** @param {ProposalState} loaded */
-    decide(loaded) {
-      const refused = loaded.refusal(id, true);
+    /** @param {Reader} read @returns {ProposalApplication} */
+    load(read) { return { state: ProposalState.of(read, id), catalogue: new Catalogue(read, 'stored') }; },
+    /** @param {ProposalApplication} loaded */
+    decide({ state, catalogue }) {
+      const refused = state.refusal(id, true);
       if (refused !== null) return Decision.refuse(refused);
-      const proposal = loaded.proposal;
+      const proposal = state.proposal;
       precondition(proposal !== null, 'an applicable proposal exists');
       if (proposal.state === 'applied') return Decision.unchanged(null);
       const command = { name: 'gym.applyProposal', args: { proposalId: id.json }, specs: [] };
       if (proposal.state === 'superseded') return Decision.write(Plan.running(command), null);
+      RoutineChange.floored(proposal.changes, catalogue, new Path('changes'));
       const change = proposal.intent === 'remove' ? Prediction.remove(proposal.routineId)
         : Prediction.update(proposal.routineId, { name: proposal.proposedName, entries: proposal.document.map((entry) => entry.json) });
-      const settled = Prediction.update(id, { state: 'applied', settledAt: loaded.moment.now.ms });
+      const settled = Prediction.update(id, { state: 'applied', settledAt: state.moment.now.ms });
       return Decision.write(Plan.running(command, [settled, change]), null);
     },
   });
@@ -411,13 +431,13 @@ export function ApplyProposalKeepingReceipt(id) {
     scope: Proposal.scope,
     refusals: GymRefusals,
     /** @param {Reader} read */
-    load(read) { return { state: action.load(read), rows: Fields.object(read.device(REMOVAL_RECEIPTS) ?? {}).values }; },
-    /** @param {{ state: ProposalState, rows: Record<string, Json> }} loaded */
+    load(read) { return { application: action.load(read), rows: Fields.object(read.device(REMOVAL_RECEIPTS) ?? {}).values }; },
+    /** @param {{ application: ProposalApplication, rows: Record<string, Json> }} loaded */
     decide(loaded) {
       const receipt = loaded.rows[key];
       if (receipt !== undefined && Fields.object(receipt).string('status') !== 'refused') return Decision.unchanged(null);
-      const decided = action.decide(loaded.state);
-      const proposal = loaded.state.proposal;
+      const decided = action.decide(loaded.application);
+      const proposal = loaded.application.state.proposal;
       if (decided.kind !== 'write' || proposal === null || proposal.intent !== 'remove') return decided;
       const snapshot = { ...proposal.fields(), state: proposal.state, supersededBy: proposal.supersededBy?.json ?? null,
         settledAt: proposal.settledAt?.ms ?? null, baseRevision: proposal.baseRevision, baseName: proposal.baseName,

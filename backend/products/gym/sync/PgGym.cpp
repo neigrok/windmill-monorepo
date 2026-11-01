@@ -395,7 +395,12 @@ Json::Value PgGymState::load(SyncTxn& txn, const ScopeKey& scope) {
   Json::Value books(Json::objectValue);
   auto& sql = sqlOf(txn);
   const pqxx::params owner{scope.account().str()};
-  for (const auto& row : sql.exec("select id,name from gym_exercises where created_by is null")) books["seeds"][row[0].template as<std::string>()]["name"] = row[1].template as<std::string>();
+  for (const auto& row : sql.exec("select id,name,equipment,load_count from gym_exercises where created_by is null")) {
+    Json::Value& seed = books["seeds"][row[0].template as<std::string>()];
+    seed["name"] = row[1].template as<std::string>();
+    seed["equipment"] = row[2].template as<std::string>();
+    if (!row[3].is_null()) seed["loadCount"] = row[3].template as<int>();
+  }
   for (const auto& row : sql.exec("select id,session_id,sync_kind,sync_args,request_hash from gym_write_receipts where user_id=$1::uuid and kind='session'", owner)) {
     const std::string id = row[0].template as<std::string>();
     if (row[2].is_null() || row[2].template as<std::string>() == "starts") books["starts"][id] = row[1].template as<std::string>();

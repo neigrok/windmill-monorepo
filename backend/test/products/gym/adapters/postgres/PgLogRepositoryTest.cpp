@@ -529,7 +529,7 @@ TEST(pg_gym_log_counts_every_set_and_clamps_an_assisted_set_out_of_the_tonnage) 
   logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 5, t1 + 2'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000003", 100, 5, t1 + 3'000));
   logged(h, h.user, "ses_pg000001", bench("set_pg000004", 82.5, t1 + 4'000));                     // 82.5 × 8
-  logged(h, h.user, "ses_pg000001", bench("set_pg000005", -20, t1 + 5'000));                      // assisted × 8
+  logged(h, h.user, "ses_pg000001", lift("set_pg000005", "pull-up", -20, 8, t1 + 5'000));          // assisted × 8
   finished(h, h.user, "ses_pg000001", t1 + 6'000);
   // A whole session of chin-ups: sets that moved no measurable load at all.
   started(h, h.user, "ses_pg000002", t1 + 100'000);
@@ -559,7 +559,7 @@ TEST(pg_gym_log_hands_back_every_set_of_a_row) {
   logged(h, h.user, "ses_pg000001", squat("set_pg000003", 95, 6, t1 + 3'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000004", 95, 10, t1 + 4'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000005", 95, 8, t1 + 5'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000006", -20, 12, t1 + 6'000));
+  logged(h, h.user, "ses_pg000001", lift("set_pg000006", "pull-up", -20, 12, t1 + 6'000));
   finished(h, h.user, "ses_pg000001", t1 + 7'000);
 
   std::vector<SessionSummary> listed = pageOf(h, page(t1 + 100'000, 50));
@@ -571,7 +571,7 @@ TEST(pg_gym_log_hands_back_every_set_of_a_row) {
                                                        fact("ses_pg000001", t1, "set_pg000003", "back-squat", 95, 6),
                                                        fact("ses_pg000001", t1, "set_pg000004", "back-squat", 95, 10),
                                                        fact("ses_pg000001", t1, "set_pg000005", "back-squat", 95, 8),
-                                                       fact("ses_pg000001", t1, "set_pg000006", "back-squat", -20, 12)}));
+                                                       fact("ses_pg000001", t1, "set_pg000006", "pull-up", -20, 12)}));
   // And what the application makes of it: the session's number, not its heaviest set's.
   CHECK_EQ(topE1rmOf(listed[0].worked), Estimate::of(95.0, 10, std::nullopt)->e1rm);
   CHECK_EQ(listed[0].topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
@@ -666,7 +666,7 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
 
   started(h, h.user, "ses_pg000001", t1);                                                   // a week ago
   logged(h, h.user, "ses_pg000001", bench("set_pg000001", 60.0, t1 + 30 * day));           // stamped 30 days ahead
-  finished(h, h.user, "ses_pg000001", t1 + 1'000);
+  finished(h, h.user, "ses_pg000001", t1 + 30 * day);
   started(h, h.user, "ses_pg000002", t1 + 6 * day);                                         // yesterday
   const Set honest = logged(h, h.user, "ses_pg000002", bench("set_pg000002", 100.0, t1 + 6 * day + 1'000));
   finished(h, h.user, "ses_pg000002", t1 + 6 * day + 2'000);
@@ -1736,7 +1736,7 @@ TEST(pg_gym_session_volume_folds_canonical_raw_facts_without_numeric_rescue) {
       {{{"bench-press", maximum, 2}}, std::nullopt},
       {{{"dumbbell-bench-press", maximum, 1}}, std::nullopt},
       {{{"bench-press", maximum, 1}, {"bench-press", maximum, 1}}, std::nullopt},
-      {{{"bench-press", maximum, 1}, {"dumbbell-bench-press", -maximum, 500}}, maximum},
+      {{{"bench-press", maximum, 1}, {"dip", -maximum, 500}}, maximum},
       {{{"bench-press", .1, 3}}, .1 * 3},
       {{{"bench-press", 1e16, 1}, {"bench-press", 1, 1}, {"bench-press", 1, 1}}, 1e16},
       {{}, 0.0}};

@@ -2,6 +2,7 @@
 #include "test/testing.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/application/WorkerPool.h"
+#include "platform/application/WriteObservation.h"
 #include "platform/domain/sync/FractionalIndex.h"
 #include "products/gym/sync/PgGym.h"
 #include "products/gym/sync/GymProduct.h"
@@ -22,6 +23,12 @@ RoutineWrite routineWrite(std::string id = "routine_0001", std::string name = "P
 ProposalWrite proposalWrite(std::string id = "proposal_001", ProposalDoor door = ProposalDoor::mcp) {
   return ProposalWrite{ProposalId{id}, RoutineId{"routine_0001"}, "New press", "Rename the day",
       {RoutineEntry{1, ExerciseId{"dip"}, {}, std::nullopt}}, ProposalSource{door, "", "", std::nullopt}};
+}
+
+// The caller's movement under that id, as the catalog read resolves it.
+Exercise movement(doortest::Harness& h, const char* id) {
+  for (const Exercise& exercise : h.repo.catalog.catalog(h.user)) if (exercise.id.str() == id) return exercise;
+  throw std::logic_error(std::string("no movement ") + id);
 }
 
 // A phone's note write through /v1/sync: a create carries its ord, an edit only the text.
@@ -90,6 +97,74 @@ TEST(gym_record_engine_proposal_mint_translates_identity_replay_and_refusals) {
   CHECK_EQ(h.door.propose(h.user, unknown).error, ProposalMintError::unknownExercise);
   unknown.entries = {RoutineEntry{1, ExerciseId{"."}, {}, std::nullopt}};
   CHECK_EQ(h.door.propose(h.user, unknown).error, ProposalMintError::unknownExercise);
+}
+
+// The load floor holds before admission: a barbell or a pair of dumbbells below 0 kg is refused naming the movement and
+// the set, writes nothing, and its door line names the refusal; a single dumbbell and assistance keep their sign.
+TEST(gym_record_engine_routine_and_proposal_doors_refuse_a_target_below_its_load_floor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  auto barbell = routineWrite("routine_floor1", "Legs");
+  barbell.entries = {RoutineEntry{1, ExerciseId{"dip"}, {SetTarget{8, -20.0}}, std::nullopt},
+                     RoutineEntry{2, ExerciseId{"back-squat"}, {SetTarget{5, 60.0}, SetTarget{5, -10.0}}, std::nullopt}};
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const RoutineWriteOutcome refused = h.door.createRoutine(h.user, barbell, ProposalDoor::mcp);
+  installWriteSink({});
+  CHECK_EQ(refused.error, RoutineWriteError::belowFloor);
+  CHECK_EQ(refused.routine, std::optional<Routine>());
+  CHECK_EQ(refused.belowFloor, std::optional<BelowFloor>(BelowFloor{movement(h, "back-squat"), 1, 1, -10.0}));
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call load-floor"}));
+  CHECK_EQ(h.repo.program.routine(h.user, RoutineId{"routine_floor1"}), std::optional<Routine>());
+
+  auto pair = routineWrite("routine_floor2", "Legs");
+  pair.entries = {RoutineEntry{1, ExerciseId{"bulgarian-split-squat"}, {SetTarget{10, -2.0}}, std::nullopt}};
+  CHECK_EQ(h.door.createRoutine(h.user, pair, ProposalDoor::mcp).belowFloor,
+           std::optional<BelowFloor>(BelowFloor{movement(h, "bulgarian-split-squat"), 0, 0, -2.0}));
+  auto signedLoads = routineWrite("routine_floor3", "Legs");
+  signedLoads.entries = {RoutineEntry{1, ExerciseId{"goblet-squat"}, {SetTarget{10, -2.0}}, std::nullopt},
+                         RoutineEntry{2, ExerciseId{"dip"}, {SetTarget{8, -20.0}}, std::nullopt},
+                         RoutineEntry{3, ExerciseId{"back-squat"}, {SetTarget{5, 0.0}}, std::nullopt}};
+  REQUIRE_EQ(h.door.createRoutine(h.user, signedLoads, ProposalDoor::mcp).error, RoutineWriteError::none);
+
+  ProposalWrite retarget{ProposalId{"proposal_flr1"}, RoutineId{"routine_floor3"}, std::nullopt, "Deeper squat",
+      {RoutineEntry{1, ExerciseId{"goblet-squat"}, {SetTarget{10, -2.0}}, std::nullopt},
+       RoutineEntry{2, ExerciseId{"dip"}, {SetTarget{8, -30.0}}, std::nullopt},
+       RoutineEntry{3, ExerciseId{"back-squat"}, {SetTarget{5, -2.5}}, std::nullopt}},
+      ProposalSource{ProposalDoor::mcp, "", "", std::nullopt}};
+  lines.clear();
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const ProposalMintOutcome minted = h.door.propose(h.user, retarget);
+  installWriteSink({});
+  CHECK_EQ(minted.error, ProposalMintError::belowFloor);
+  CHECK_EQ(minted.proposal, std::optional<RoutineProposal>());
+  CHECK_EQ(minted.belowFloor, std::optional<BelowFloor>(BelowFloor{movement(h, "back-squat"), 2, 0, -2.5}));
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call load-floor"}));
+  CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"proposal_flr1"}), std::optional<RoutineProposal>());
+  retarget.entries[2].sets = {SetTarget{5, 20.0}};
+  CHECK_EQ(h.door.propose(h.user, retarget).error, ProposalMintError::none);
+  CHECK(h.failures.messages.empty());
+}
+
+// A workout proposal adding a barbell line below 0 kg is refused before admission, naming the movement and the set.
+TEST(gym_record_engine_workout_proposal_door_refuses_a_target_below_its_load_floor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  REQUIRE_EQ(h.door.createRoutine(h.user, routineWrite("routine_floor4", "Press"), ProposalDoor::mcp).error, RoutineWriteError::none);
+  REQUIRE(h.door.start(h.user, SessionStart{SessionId{"session_floor1"}, h.clock.now, true, RoutineId{"routine_floor4"}}).session);
+  const WorkoutProposalWrite below{ProposalId{"wprop_floor01"}, SessionId{"session_floor1"}, "Add squats",
+      {RoutineEntry{1, ExerciseId{"dip"}, {}, std::nullopt},
+       RoutineEntry{2, ExerciseId{"back-squat"}, {SetTarget{5, -10.0}}, std::nullopt}},
+      ProposalSource{ProposalDoor::ask, "", "", std::nullopt}};
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const WorkoutProposalOutcome refused = h.door.proposeWorkout(h.user, below);
+  installWriteSink({});
+  CHECK_EQ(refused.error, WorkoutProposalError::belowFloor);
+  CHECK_EQ(refused.proposal, std::optional<WorkoutProposal>());
+  CHECK_EQ(refused.belowFloor, std::optional<BelowFloor>(BelowFloor{movement(h, "back-squat"), 1, 0, -10.0}));
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call load-floor"}));
+  CHECK(h.failures.messages.empty());
 }
 
 TEST(gym_record_engine_catalog_create_rounds_its_step_and_refuses_taken_and_seed_ids) {

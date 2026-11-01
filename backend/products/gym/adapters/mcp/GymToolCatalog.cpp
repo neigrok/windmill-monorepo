@@ -96,8 +96,9 @@ Json::Value setArray() {
   Json::Value fields(Json::objectValue);
   fields["reps"] = boundedInt("Reps for THIS set (1–100). OMIT to mean `max` — as many as you can.",
                               1, 100);
-  fields["weightKg"] = num("Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they "
-                          "lifted for the set of the same number last time.");
+  fields["weightKg"] = num("Load for THIS set in kg. Zero is explicit. A barbell or a pair of dumbbells takes 0 kg or "
+                          "more; on any other movement a negative load is assistance. OMIT to mean what they lifted "
+                          "for the set of the same number last time.");
   Json::Value set(Json::objectValue);
   set["type"] = "object";
   set["properties"] = fields;
@@ -322,7 +323,8 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["sessionId"] = sessionHandle();
     p["id"] = str("The id YOU mint for this set (`set_` + hex is the house shape).");
     p["exerciseId"] = exerciseHandle();
-    p["weightKg"] = num("Load in kg. Negative is legal — that is band-assisted work.");
+    p["weightKg"] = num("Load in kg. A barbell or a pair of dumbbells logs 0 kg or more; on any other movement a "
+                        "negative load is assistance, as on an assisted pull-up.");
     p["reps"] = boundedInt("Reps completed (1–500).", 1, 500);
     p["completedAt"] = instant("When the set was completed, epoch ms.");
     p["rpe"] = num("Rated exertion, 1–10. Omit if it was not rated.");
@@ -337,7 +339,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["sessionId"] = sessionHandle();
-    p["finishedAt"] = instant("When the workout ended, epoch ms — at or after it started.");
+    p["finishedAt"] = instant("When the workout ended, epoch ms — at or after it started and at or after its last set.");
     tools.push_back(tool("finish_session", Access::write,
         "Close a workout. A finish is permanent: a workout already finished by a tap answers with "
         "the end it already has. A workout the FOUR-HOUR RULE closed (at its last set, because "
@@ -543,7 +545,9 @@ std::vector<ToolDeclaration> gymToolCatalog() {
       });
       Json::Value row = single->descriptor["inputSchema"];
       row["properties"].removeMember("sessionId");
-      row["properties"]["weightKg"]["description"] = "Load in kg, at most two decimal places.";
+      row["properties"]["weightKg"]["description"] = "Load in kg, at most two decimal places. A barbell or a pair of "
+                                                     "dumbbells logs 0 kg or more; on any other movement a negative load "
+                                                     "is assistance.";
       row["properties"]["rpe"]["description"] = "Exertion from 1 to 10, at most one decimal place.";
       row["properties"]["exerciseId"]["minLength"] = 1;
       row["properties"]["exerciseId"]["maxLength"] = 128;

@@ -32,7 +32,7 @@ test('an unreadable frozen plan retains its exact JSON while session facts remai
     assert.equal(session.name, null);
     assert.deepEqual(session.fields(), { ...values, plan });
     assert.deepEqual(SessionRules.drawn(session, [], moment.now).fields().plan, plan);
-    assert.deepEqual(SessionRules.finish(session, new Instant(2000)).fields().plan, plan);
+    assert.deepEqual(SessionRules.finish(session, [], new Instant(2000)).fields().plan, plan);
     assert.deepEqual(SignedOutWorkout.decode(new SignedOutWorkout(session, []).json).session.fields().plan, plan);
     assert.throws(() => PlanSnapshot.decode(plan), DecodeError);
   }
@@ -69,13 +69,16 @@ test('stale closure uses its own last activity and includes the four-hour bounda
 
 test('start and finish bounds reject the adjacent invalid instants', () => {
   const session = new SessionValue(sessionId, new Instant(1000));
-  for (const at of [0, 999, SessionRules.maxInstantMs + 1]) assert.equal(SessionRules.canFinishAt(session, new Instant(at)), false);
-  for (const at of [1000, SessionRules.maxInstantMs]) assert.equal(SessionRules.canFinishAt(session, new Instant(at)), true);
+  for (const at of [0, 999, SessionRules.maxInstantMs + 1]) assert.equal(SessionRules.canFinishAt(session, [], new Instant(at)), false);
+  for (const at of [1000, SessionRules.maxInstantMs]) assert.equal(SessionRules.canFinishAt(session, [], new Instant(at)), true);
+  const sets = [performed(), performed('set00002', new Id('session2', Session), 9000)];
+  assert.equal(SessionRules.canFinishAt(session, sets, new Instant(1999)), false);
+  assert.equal(SessionRules.canFinishAt(session, sets, new Instant(2000)), true);
   assert.equal(SessionRules.canStartAt(new Instant(1), moment.now), true);
   assert.equal(SessionRules.canStartAt(new Instant(moment.now.ms + SessionRules.maxClockAheadMs), moment.now), true);
   assert.equal(SessionRules.canStartAt(new Instant(moment.now.ms + SessionRules.maxClockAheadMs + 1), moment.now), false);
   assert.equal(SessionRules.canStartAt(new Instant(0), moment.now), false);
-  assert.throws(() => SessionRules.finish(session, new Instant(999)), (error) => {
+  assert.throws(() => SessionRules.finish(session, sets, new Instant(1999)), (error) => {
     assert.ok(error instanceof Violation);
     assert.deepEqual(error.json, { rule: 'session.finishedAt', path: 'finishedAt', reason: 'custom', custom: 'badInstant' });
     return true;
@@ -93,18 +96,18 @@ test('only stale closure yields to finishing and late sets stop at its grace bou
   const start = new Instant(1000);
   const finish = new Instant(2000);
   const open = new SessionValue(sessionId, start);
-  assert.deepEqual(SessionRules.finish(open, finish), new SessionValue(sessionId, start, finish, 'finish'));
+  assert.deepEqual(SessionRules.finish(open, [], finish), new SessionValue(sessionId, start, finish, 'finish'));
   for (const closedBy of [null, 'finish']) {
     const terminal = new SessionValue(sessionId, start, finish, closedBy);
-    assert.equal(SessionRules.finish(terminal, new Instant(3000)), terminal);
+    assert.equal(SessionRules.finish(terminal, [], new Instant(3000)), terminal);
     assert.equal(SessionRules.lateSetLands(terminal, new Instant(1500)), false);
   }
   const stale = new SessionValue(sessionId, start, finish, 'stale');
   for (const at of [1500, 2000, 2000 + SessionRules.staleAfterMs]) {
-    assert.deepEqual(SessionRules.finish(stale, new Instant(at)), new SessionValue(sessionId, start, new Instant(Math.max(at, 2000)), 'finish'));
+    assert.deepEqual(SessionRules.finish(stale, [], new Instant(at)), new SessionValue(sessionId, start, new Instant(Math.max(at, 2000)), 'finish'));
     assert.equal(SessionRules.lateSetLands(stale, new Instant(at)), true);
   }
-  assert.deepEqual(SessionRules.finish(stale, new Instant(2001 + SessionRules.staleAfterMs)), new SessionValue(sessionId, start, finish, 'finish'));
+  assert.deepEqual(SessionRules.finish(stale, [], new Instant(2001 + SessionRules.staleAfterMs)), new SessionValue(sessionId, start, finish, 'finish'));
   assert.equal(SessionRules.lateSetLands(stale, new Instant(2001 + SessionRules.staleAfterMs)), false);
   assert.equal(SessionRules.lateSetLands(open, new Instant(SessionRules.maxInstantMs)), true);
 });

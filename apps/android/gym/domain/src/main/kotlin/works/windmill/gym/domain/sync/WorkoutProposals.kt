@@ -62,6 +62,7 @@ class ProposeWorkout(val id: Id<WorkoutProposal>, val sessionId: Id<Session>, va
             movement in loaded.logged && stored.firstOrNull { it.exerciseId == movement } != entries.firstOrNull { it.exerciseId == movement }
         }
         if (changed != null) return Decision.Refuse(WorkoutPlanRules.logged(changed, id.ref))
+        RoutineRules.floored(proposal.value.changes, loaded.catalogue)
         if (entries == stored) return Decision.Unchanged(id)
         val plan = Plan()
         plan.create(proposal)
@@ -120,8 +121,10 @@ class ApplyWorkoutProposal(val id: Id<WorkoutProposal>) : Action<WorkoutProposal
         loaded.refusal(id, applying = true)?.let { return Decision.Refuse(it) }
         val proposal = loaded.proposal!!
         if (proposal.state == "applied") return Decision.Unchanged(Unit)
+        val workout = loaded.workout!!
+        RoutineRules.floored(proposal.changes, workout.catalogue)
         val settled = Prediction.update(WorkoutProposal, id, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(loaded.moment.now.ms)))
-        val plan = Prediction.update(Session, proposal.sessionId, mapOf("plan" to loaded.workout!!.plan.copy(entries = proposal.document).json))
+        val plan = Prediction.update(Session, proposal.sessionId, mapOf("plan" to workout.plan.copy(entries = proposal.document).json))
         return Decision.Write(Plan(GymCommand(Gym.Commands.applyWorkoutProposal, mapOf("proposalId" to id.json)), listOf(settled, plan)), Unit)
     }
 }

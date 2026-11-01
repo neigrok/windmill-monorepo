@@ -101,6 +101,15 @@ sets whose load differs from the saved copy meet the floor at `sets.<i>.weightKg
 `WorkoutFix` reports the same refusal live. `SaveRoutinePlan` refuses a target load under
 the floor with `routine.loadFloor` at `entries.<i>.sets.<j>.weightKg` on each line whose targets
 changed or whose staged movement changed its loading; a line the save leaves alone keeps its loads.
+A proposal of either kind meets the same floor on its change lines when it is made and when it is applied:
+`ProposeRoutine`, `ApplyProposal`, `ProposeWorkout` and `ApplyWorkoutProposal` refuse with `routine.loadFloor`
+at `changes.<i>.after.sets.<j>.weightKg` on each `added` line and each `retargeted` line whose `sets` changed,
+the movement resolved from the catalogue the action reads (a routine proposal's `stored`, a workout proposal's
+open workout's); a kept line, or a retarget of rest alone, keeps its loads.
+`ProposeRoutine` floors after its unknown-movement check, `ProposeWorkout` after its logged-movement check, and
+the two applies a pending proposal only, after the refusal of its state. `ImportCoachRoutineBatch` floors every
+line of each routine it creates, after that routine's identity and movement checks, at
+`routines.<k>.entries.<i>.sets.<j>.weightKg`, a movement the import brings resolved from the import.
 
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 `ImportCoachRoutineBatch` takes the captured replica, full result identity, a supplied SHA-256 fingerprint of the normalized payload, a bounded device receipt key, preassigned routine identities and required custom movements. The adapter derives `rack:coachImport` plus 48 lowercase hexadecimal SHA-256 digits from the result identity; its 59-character rack suffix fits the existing device-key grammar. One Plan writes every record and that receipt together. A matching receipt returns the same identities without writes; a full result-identity or fingerprint conflict refuses. Receipt keys are separate per result so Add preserves unrelated account and anonymous receipts. Record-identity adoption rewrites the receipt's routine and movement references while retaining its fingerprint. Swift also replays, without writing, a result an earlier iOS build imported under the single `rack:coachOnboarding` key.
@@ -142,7 +151,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `SaveNoteCall` | `{note:{id,fields}}` | Call id, or the stored note with the same words |
 | `MoveNote` | `{id,below}`; `below:null` means the top | `null`; only the moved note's order changes, a drop in place writes nothing |
 | `StartSession` | `{id,routineId?,startedAt?}` | Predicted or joined session id; always sends `joinOpenSession:true` |
-| `FinishSession` | `{id,finishedAt?}` | `null` |
+| `FinishSession` | `{id,finishedAt?}`; without `finishedAt` it finishes at the later of now and the workout's last activity (its last `stored` set's `completedAt`, else its start), and a `finishedAt` before that is `badInstant` | `null` |
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |
 | `AppendSet.recorded`, `CorrectSet.recorded`, `ImportSession.recorded`, `CorrectSession.recorded` | as the action | as the action; the replay of a recorded fact, never refused by the load floor |
 | `DiscardSession` | `{id}` | `null`; held, refuses an active non-stale session |
@@ -225,7 +234,8 @@ sets. `WorkoutFix` opens the review's row (a landed copy edits its stranded sets
 
 `TrainingLog` draws local staleness without submitting `gym.closeStale`, hides sets with an absent
 parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-set admission,
-finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
+finish behavior, start bounds, the finish bounds (`canFinishAt` over the read's `stored` sets: no earlier than the
+start or the last set) and half-open overlap. `SetRules` pins next-number overflow.
 
 `LastTime` selects the latest finished movement session; it is unread when it found none and the account's history
 is not all here. `Prefill` follows ordered targets, last-time rows and today's sets. A scheme is straight when its

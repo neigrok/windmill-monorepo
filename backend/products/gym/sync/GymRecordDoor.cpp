@@ -18,11 +18,9 @@ Json::Value entriesOf(const Routine& routine) {
   return entries;
 }
 
-bool knownEntries(CatalogRepository& catalog, const UserId& user, const std::vector<RoutineEntry>& entries) {
-  if (entries.empty()) return true;
-  const auto visible = catalog.catalog(user);
+bool knownEntries(const std::vector<Exercise>& catalog, const std::vector<RoutineEntry>& entries) {
   return std::all_of(entries.begin(), entries.end(), [&](const RoutineEntry& entry) {
-    return std::any_of(visible.begin(), visible.end(), [&](const Exercise& exercise) { return exercise.id == entry.exercise; });
+    return std::any_of(catalog.begin(), catalog.end(), [&](const Exercise& exercise) { return exercise.id == entry.exercise; });
   });
 }
 
@@ -50,12 +48,21 @@ RoutineWriteOutcome GymDoor::createRoutine(const UserId& user, const RoutineWrit
                                           std::optional<ProposalDoor> byAgent) {
   const Routine incoming{write.id, user, write.name, write.position, write.entries};
   std::optional<Routine> held;
-  RoutineWriteError error = RoutineWriteError::none;
+  RoutineWriteOutcome refused{std::nullopt, RoutineWriteError::none};
+  std::string refusedCode;
+  const auto refuse = [&](RoutineWriteError error, std::string code) -> std::optional<Json::Value> {
+    refused.error = error;
+    refusedCode = std::move(code);
+    return std::nullopt;
+  };
   const Json::Value result = execute(incoming.user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     held = program_.routine(incoming.user, incoming.id);
     if (held) return std::nullopt;
-    if (recordTaken(txn, incoming.user, "routine", incoming.id.str())) { error = RoutineWriteError::idTaken; return std::nullopt; }
-    if (!knownEntries(catalog_, incoming.user, incoming.entries)) { error = RoutineWriteError::unknownExercise; return std::nullopt; }
+    if (recordTaken(txn, incoming.user, "routine", incoming.id.str())) return refuse(RoutineWriteError::idTaken, sync::code::idTaken);
+    const std::vector<Exercise> catalog = catalog_.catalog(incoming.user);
+    if (!knownEntries(catalog, incoming.entries)) return refuse(RoutineWriteError::unknownExercise, "unknown-exercise");
+    refused.belowFloor = firstBelowFloor(changesBetween({}, incoming.entries), catalog);
+    if (refused.belowFloor) return refuse(RoutineWriteError::belowFloor, "load-floor");
     Json::Value fields(Json::objectValue);
     fields["name"] = incoming.name;
     fields["position"] = incoming.position;
@@ -64,8 +71,8 @@ RoutineWriteOutcome GymDoor::createRoutine(const UserId& user, const RoutineWrit
     Json::Value built = intent();
     built["d"].append(delta("routine", incoming.id.str(), fields, true));
     return built;
-  });
-  if (error != RoutineWriteError::none) return {std::nullopt, error};
+  }, &refusedCode);
+  if (refused.error != RoutineWriteError::none) return refused;
   const std::string code = refusal(result);
   if (code == "id-taken" || code == "id-spent") return {std::nullopt, RoutineWriteError::idTaken};
   if (code == "unknown-exercise") return {std::nullopt, RoutineWriteError::unknownExercise};
@@ -103,26 +110,35 @@ ProposalMintOutcome GymDoor::proposeRemoval(const UserId& user, const ProposalId
 // is the replay and answers the stored proposal, and the caller's own with another document is idReused.
 ProposalMintOutcome GymDoor::mintProposal(const UserId& user, const ProposalId& id, const RoutineId& routine,
                                           const std::vector<RoutineEntry>& lines, const ProposalOf& proposalOf) {
-  ProposalMintError error = ProposalMintError::none;
+  ProposalMintOutcome refused{std::nullopt, ProposalMintError::none};
+  std::string refusedCode;
+  const auto refuse = [&](ProposalMintError error, std::string code) -> std::optional<Json::Value> {
+    refused.error = error;
+    refusedCode = std::move(code);
+    return std::nullopt;
+  };
   std::optional<RoutineProposal> held;
   const Json::Value result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     const auto base = program_.routine(user, routine);
-    if (!base) { error = ProposalMintError::unknownRoutine; return std::nullopt; }
+    if (!base) return refuse(ProposalMintError::unknownRoutine, sync::code::unknownRecord);
     const std::optional<RoutineProposal> proposal = proposalOf(*base);
-    if (!proposal) { error = ProposalMintError::noChange; return std::nullopt; }
+    if (!proposal) return refuse(ProposalMintError::noChange, "no-change");
     const auto ids = sync::sqlOf(txn).exec("select user_id=$2::uuid from gym_proposals where id=$1", pqxx::params{id.str(), user.str()});
     if (!ids.empty()) {
-      if (!ids[0][0].as<bool>()) { error = ProposalMintError::idTaken; return std::nullopt; }
+      if (!ids[0][0].as<bool>()) return refuse(ProposalMintError::idTaken, sync::code::idTaken);
       held = program_.proposal(user, id);
-      if (!held || !isReplayOf(*held, *proposal)) error = ProposalMintError::idReused;
+      if (!held || !isReplayOf(*held, *proposal)) return refuse(ProposalMintError::idReused, "id-reused");
       return std::nullopt;
     }
-    if (recordTaken(txn, user, "proposal", id.str())) { error = ProposalMintError::idTaken; return std::nullopt; }
-    if (!knownEntries(catalog_, user, lines)) { error = ProposalMintError::unknownExercise; return std::nullopt; }
+    if (recordTaken(txn, user, "proposal", id.str())) return refuse(ProposalMintError::idTaken, sync::code::idTaken);
+    const std::vector<Exercise> catalog = catalog_.catalog(user);
+    if (!knownEntries(catalog, lines)) return refuse(ProposalMintError::unknownExercise, "unknown-exercise");
+    refused.belowFloor = firstBelowFloor(proposal->changes, catalog);
+    if (refused.belowFloor) return refuse(ProposalMintError::belowFloor, "load-floor");
     Json::Value built = intent(); built["d"].append(delta("proposal", id.str(), proposalFields(*proposal), true));
     return built;
-  });
-  if (error != ProposalMintError::none) return {std::nullopt, error};
+  }, &refusedCode);
+  if (refused.error != ProposalMintError::none) return refused;
   const std::string code = refusal(result);
   if (code == "id-taken" || code == "id-spent") return {std::nullopt, ProposalMintError::idTaken};
   if (code == "unknown-record") return {std::nullopt, ProposalMintError::unknownRoutine};
@@ -159,6 +175,8 @@ WorkoutProposalOutcome GymDoor::proposeWorkout(const UserId& user, const Workout
     }
     if (proposal.changeCount == 0) return refuse(WorkoutProposalError::noChange, "no-change");
     if (recordTaken(txn, user, "workoutProposal", incoming.id.str())) return refuse(WorkoutProposalError::idTaken, sync::code::idTaken);
+    outcome.belowFloor = firstBelowFloor(proposal.changes, catalog_.catalog(user));
+    if (outcome.belowFloor) return refuse(WorkoutProposalError::belowFloor, "load-floor");
     Json::Value fields(Json::objectValue);
     fields["sessionId"] = proposal.session.str();
     fields["summary"] = proposal.summary;
@@ -173,7 +191,7 @@ WorkoutProposalOutcome GymDoor::proposeWorkout(const UserId& user, const Workout
     built["d"].append(delta("workoutProposal", incoming.id.str(), fields, true));
     return built;
   }, &refusedCode);
-  if (outcome.error != WorkoutProposalError::none) return {std::nullopt, outcome.error, std::nullopt};
+  if (outcome.error != WorkoutProposalError::none) return {std::nullopt, outcome.error, std::nullopt, outcome.belowFloor};
   const std::string code = refusal(result);
   const auto refused = [](WorkoutProposalError error) { return WorkoutProposalOutcome{std::nullopt, error, std::nullopt}; };
   if (code == "id-taken" || code == "id-spent") return refused(WorkoutProposalError::idTaken);

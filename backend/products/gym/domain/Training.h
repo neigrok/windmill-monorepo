@@ -99,6 +99,12 @@ struct Exercise {
   Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
            bool custom, std::vector<std::string> aliases = {}, int loadCount = 0);
 
+  // The lowest target a phone's editor takes for it: 0 kg for a barbell or a pair of dumbbells, which cannot weigh
+  // less than empty; none for every other loading, whose negative load is assistance.
+  std::optional<double> loadFloorKg() const;
+  // Whether a load, logged or targeted, sits at or above that floor.
+  bool takes(double weightKg) const;
+
   bool operator==(const Exercise&) const = default;
 };
 
@@ -197,6 +203,10 @@ struct Set {
   bool operator==(const Set&) const = default;
 };
 
+// The movement a set's load falls below the floor of, as the catalog resolves it; nothing when the load stands, or the
+// catalog lacks the movement.
+std::optional<Exercise> movementBelowFloor(const Set& set, const std::vector<Exercise>& catalog);
+
 constexpr std::size_t kMaxSetBatch = 200;
 
 struct SetBatch {
@@ -213,13 +223,14 @@ struct SetBatch {
 // isStale says the open session has gone stale.
 constexpr std::uint64_t kAutoCloseMs = 4ull * 60 * 60 * 1000;
 
-// GymRules' rule exactly: the last activity is the latest set's completedAt, else the start, and the
-// session is stale once now stands kAutoCloseMs or more past it. A now before it is never stale.
+// GymRules' rule exactly: the last activity is the latest completedAt of the session's sets, else its start, and
+// the session is stale once now stands kAutoCloseMs or more past it. A now before it is never stale.
+std::uint64_t lastActivityAt(const Session& session, const std::vector<Set>& sets);
 bool isStale(const Session& open, const std::vector<Set>& sets, std::uint64_t nowMs);
 
-// A workout cannot end before it began, at zero, or past what the store can hold. The first write to
-// finished_at is permanent.
-bool canFinishAt(const Session& session, std::uint64_t finishedAtMs);
+// A workout cannot end at zero, past what the store can hold, before it began, or before its last activity. The
+// first write to finished_at is permanent.
+bool canFinishAt(const Session& session, const std::vector<Set>& sets, std::uint64_t finishedAtMs);
 
 // A workout cannot begin in the server's future. Five minutes is the skew an honest clock is
 // allowed; past it the start is refused naming the gap.

@@ -338,9 +338,11 @@ public struct ProposeRoutine: Action {
     if proposed.contains(where: { loaded.catalogue.find($0.exerciseId) == nil }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.unknownExercise, subject: id.ref, path: .predicted)))
     }
+    let changes = RoutineChange.lines(from: base.entries, to: proposed)
+    try RoutineRules.floored(changes, catalogue: loaded.catalogue)
     if !removing && base.name.utf8.elementsEqual(proposedName.utf8) && JSON.array(base.entries.map(\.json)) == JSON.array(proposed.map(\.json)) { return .unchanged }
     let proposal = try Valid(Proposal(id: id, routineId: base.id, intent: removing ? "remove" : "revise", proposedName: proposedName,
-                                      summary: summary, changes: RoutineChange.lines(from: base.entries, to: proposed)), at: loaded.moment)
+                                      summary: summary, changes: changes), at: loaded.moment)
     var plan = Plan()
     plan.create(proposal)
     plan.guardRead(base.id, fields: ["entries", "name"])
@@ -417,17 +419,19 @@ public struct ApplyProposal: Action {
     public var args: [String: JSON] { ["proposalId": proposalId.json] }
   }
 
+  public typealias Loaded = (state: ProposalState, catalogue: Catalogue)
   public let id: ID<Proposal>
   public var scope: ScopeRef { Proposal.scope }
   public init(_ id: ID<Proposal>) { self.id = id }
-  public func load(_ read: Reader) throws -> ProposalState { try ProposalState(read, id: id) }
+  public func load(_ read: Reader) throws -> Loaded { (try ProposalState(read, id: id), try Catalogue(read, in: .stored)) }
 
-  public func decide(_ loaded: ProposalState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    if let refusal = loaded.refusal(for: id, applying: true) { return .refuse(refusal) }
-    guard let proposal = loaded.proposal else { return .refuse(GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted))) }
+  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    if let refusal = loaded.state.refusal(for: id, applying: true) { return .refuse(refusal) }
+    guard let proposal = loaded.state.proposal else { return .refuse(GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted))) }
     if proposal.state == "applied" { return .unchanged(()) }
     if proposal.state == "superseded" { return .write(try Plan(running: Command(proposalId: id))) }
-    var predictions: [Prediction] = [.update(Proposal.self, id, ["state": "applied", "settledAt": JSON(loaded.moment.now.ms)])]
+    try RoutineRules.floored(proposal.changes, catalogue: loaded.catalogue)
+    var predictions: [Prediction] = [.update(Proposal.self, id, ["state": "applied", "settledAt": JSON(loaded.state.moment.now.ms)])]
     if proposal.intent == "remove" {
       predictions.append(.remove(Routine.self, proposal.routineId))
     } else {
@@ -518,13 +522,13 @@ public struct ApplyProposalKeepingReceipt: Action {
   public let id: ID<Proposal>
   public var scope: ScopeRef { Gym.scope }
   public init(_ id: ID<Proposal>) { self.id = id }
-  public func load(_ read: Reader) throws -> (ProposalState, JSON.Object) {
+  public func load(_ read: Reader) throws -> (ApplyProposal.Loaded, JSON.Object) {
     (try ApplyProposal(id).load(read), try read.device(RoutineRemovalReceipt.key)?.asObject() ?? [:])
   }
-  public func decide(_ loaded: (ProposalState, JSON.Object), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+  public func decide(_ loaded: (ApplyProposal.Loaded, JSON.Object), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     if let receipt = loaded.1[id.description], receipt["status"] != "refused" { return .unchanged(()) }
     let decision = try ApplyProposal(id).decide(loaded.0, ids: ids)
-    guard let proposal = loaded.0.proposal, proposal.intent == "remove", case .write(var plan, _) = decision else { return decision }
+    guard let proposal = loaded.0.state.proposal, proposal.intent == "remove", case .write(var plan, _) = decision else { return decision }
     var receipts = loaded.1; receipts[id.description] = RoutineRemovalReceipt(proposal).json
     plan.device(RoutineRemovalReceipt.key, .object(receipts))
     return .write(plan)

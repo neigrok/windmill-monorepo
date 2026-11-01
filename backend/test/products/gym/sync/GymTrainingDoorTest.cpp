@@ -9,6 +9,7 @@
 #include "products/gym/sync/PgGym.h"
 #include "products/gym/sync/GymProduct.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -214,6 +215,77 @@ TEST(gym_training_engine_finish_maps_bad_instant_unknown_and_dead) {
   CHECK_EQ(h.door.finish(h.user, session, at + 1000).error, FinishError::notFound);
   CHECK_EQ(h.door.discard(h.user, session), DiscardOutcome::notFound);
   CHECK_EQ(h.door.start(h.user, startAt("session_finish", at)).error, StartError::idTaken);
+  CHECK(h.failures.messages.empty());
+}
+
+// A clock stepped back behind the last set cannot end the workout before it; the refusal is one write line naming it.
+TEST(gym_training_engine_finish_refuses_an_instant_before_the_last_set_on_its_door_line) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto at = h.clock.now;
+  const SessionId session{"session_lastset"};
+  REQUIRE(h.door.start(h.user, startAt("session_lastset", at)).session);
+  h.clock.now = at + 600'000;
+  REQUIRE(h.door.append(h.user, session, setAt("set_lastset01", at + 600'000)).set);
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const FinishOutcome refused = h.door.finish(h.user, session, at + 599'999);
+  installWriteSink({});
+  CHECK_EQ(refused.error, FinishError::badInstant);
+  CHECK_EQ(refused.session, std::optional<Session>());
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call bad-instant"}));
+  CHECK_EQ(h.repo.log.session(h.user, session)->finishedAtMs, std::optional<std::uint64_t>());
+  const FinishOutcome landed = h.door.finish(h.user, session, at + 600'000);
+  REQUIRE(landed.session);
+  CHECK_EQ(landed.session->finishedAtMs, std::optional<std::uint64_t>(at + 600'000));
+  CHECK(h.failures.messages.empty());
+}
+
+// A new set below its movement's floor is refused before admission on every set door, naming the movement; a single
+// dumbbell and assistance keep their sign, and each refusal is one write line naming it.
+TEST(gym_training_engine_set_doors_refuse_a_load_below_its_movements_floor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto at = h.clock.now;
+  const SessionId session{"session_floor1"};
+  const std::vector<Exercise> catalog = h.repo.catalog.catalog(h.user);
+  const Exercise squat = *std::find_if(catalog.begin(), catalog.end(), [](const Exercise& exercise) { return exercise.id.str() == "back-squat"; });
+  REQUIRE(h.door.start(h.user, startAt("session_floor1", at - 600'000)).session);
+  SetWrite below = setAt("set_floor001", at - 500'000, "back-squat");
+  below.weightKg = -10;
+  SetWrite assisted = setAt("set_floor003", at - 400'000, "dip");
+  assisted.weightKg = -20;
+  SetWrite single = setAt("set_floor004", at - 300'000, "goblet-squat");
+  single.weightKg = -2;
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const AppendOutcome refused = h.door.append(h.user, session, below);
+  const BatchLogOutcome batch = h.door.appendSets(h.user, session, {assisted, single, below});
+  const BatchLogOutcome imported = h.door.importSession(h.user, SessionImport{SessionId{"session_floor2"}, at - 7'200'000,
+      at - 3'600'000, std::nullopt, {setAt("set_floor005", at - 5'000'000, "back-squat"),
+      SetWrite{SetId{"set_floor006"}, ExerciseId{"back-squat"}, -2.5, 5, std::nullopt, "", at - 4'000'000}}, ImportOrigin::entered});
+  installWriteSink({});
+
+  CHECK_EQ(refused.error, AppendError::belowFloor);
+  CHECK_EQ(refused.set, std::optional<Set>());
+  CHECK_EQ(refused.belowFloorOf, std::optional<Exercise>(squat));
+  CHECK_EQ(batch.error, BatchLogError::belowFloor);
+  CHECK_EQ(batch.errorIndex, std::optional<std::size_t>(2));
+  CHECK_EQ(batch.belowFloorOf, std::optional<Exercise>(squat));
+  CHECK_EQ(imported.error, BatchLogError::belowFloor);
+  CHECK_EQ(imported.errorIndex, std::optional<std::size_t>(1));
+  CHECK_EQ(imported.belowFloorOf, std::optional<Exercise>(squat));
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call load-floor", "sync.admit ok",
+                                            "gym.server_call load-floor", "sync.admit ok", "gym.server_call load-floor"}));
+  CHECK_EQ(h.repo.log.setsOf(session), std::vector<Set>{});
+  CHECK_EQ(h.repo.log.session(h.user, SessionId{"session_floor2"}), std::optional<Session>());
+  CHECK_EQ(h.door.appendSets(h.user, session, {assisted, single}).error, BatchLogError::none);
+  CHECK_EQ(h.repo.log.setsOf(session).size(), 2u);
+  // Recorded history keeps its loads: the same import replayed as recorded lands as it was logged.
+  const BatchLogOutcome recorded = h.door.importSession(h.user, SessionImport{SessionId{"session_floor3"}, at - 7'200'000,
+      at - 3'600'000, std::nullopt, {SetWrite{SetId{"set_floor007"}, ExerciseId{"back-squat"}, -2.5, 5, std::nullopt, "", at - 4'000'000}}});
+  REQUIRE_EQ(recorded.error, BatchLogError::none);
+  CHECK_EQ(recorded.sets.at(0).current->weightKg, -2.5);
   CHECK(h.failures.messages.empty());
 }
 

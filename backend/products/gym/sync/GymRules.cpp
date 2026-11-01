@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <functional>
 #include <set>
 
 namespace wm::gym::engine {
@@ -308,6 +309,38 @@ std::optional<std::string> changedLoggedMovement(const Json::Value& before, cons
   return std::nullopt;
 }
 
+// The rows a rule reads a record from: the intent's joined rows during a check, the stored ones in a command.
+using Current = std::function<const Row*(const std::string& type, const Json::Value& id)>;
+
+// A.2's load floor: a barbell or a pair of dumbbells carries 0 kg or more; every other loading keeps its sign, an
+// assisted machine's included. A movement the account cannot name has no floor here.
+bool floored(const GymFacts& facts, const Current& current, const Json::Value& exercise) {
+  const Row* name = current("exerciseName", exercise);
+  const Json::Value seed = exercise.isString() ? facts.books["seeds"][exercise.asString()] : Json::Value();
+  Json::Value equipment = value(name, "equipment");
+  if (equipment.isNull()) equipment = value(current("exercise", exercise), "equipment");
+  if (equipment.isNull()) equipment = seed["equipment"];
+  Json::Value loadCount = value(name, "loadCount");
+  if (loadCount.isNull()) loadCount = seed["loadCount"];
+  const bool single = loadCount.isIntegral() && loadCount.asInt() == 1;
+  return equipment == "barbell" || (equipment == "dumbbell" && !single);
+}
+
+// A.2's load floor over a write of targets: an entry whose sets no `before` entry of its movement holds takes its
+// movement's floor, so a scheme the write leaves as it stood keeps what it held.
+void checkLoadFloor(const GymFacts& facts, const Current& current, const Json::Value& before, const Json::Value& after) {
+  const auto held = [&](const Json::Value& entry) {
+    return std::any_of(before.begin(), before.end(), [&](const Json::Value& line) {
+      return line["exerciseId"] == entry["exerciseId"] && same(line["sets"], entry["sets"]);
+    });
+  };
+  for (const Json::Value& entry : after) {
+    if (held(entry) || !floored(facts, current, entry["exerciseId"])) continue;
+    for (const Json::Value& set : entry["sets"])
+      if (set["weightKg"].isNumeric() && set["weightKg"].asDouble() < 0) throw Refusal(code::invalid);
+  }
+}
+
 // Why a workout proposal cannot apply, first match wins: a newer proposal replaced it, its workout closed, the plan
 // moved past its base, or a movement it changes was logged since. Nothing: it applies.
 std::optional<std::string> workoutReason(const GymFacts& facts, const Row& proposal, Ms now) {
@@ -339,10 +372,15 @@ GymOutcome settleWorkoutProposal(bool apply, const std::string& id, const GymFac
   if (state == "applied" || state == "dismissed") throw Refusal("proposal-settled", object({{"state", state}}));
   if (apply || state == "superseded")
     if (const auto reason = workoutReason(facts, proposal, now)) throw Refusal("proposal-superseded", object({{"reason", *reason}}));
-  append(result.command, fields(proposal, object({{"state", apply ? "applied" : "dismissed"}, {"settledAt", Json::UInt64(now)}})));
-  if (!apply) return result;
+  if (!apply) {
+    append(result.command, fields(proposal, object({{"state", "dismissed"}, {"settledAt", Json::UInt64(now)}})));
+    return result;
+  }
   const Row& session = *facts.row("session", value(&proposal, "sessionId").asString());
   const Json::Value plan = object({{"routine", value(&session, "plan")["routine"]}, {"entries", documentOf(value(&proposal, "changes"))}});
+  const Current stored = [&](const std::string& type, const Json::Value& id) { return id.isString() ? facts.row(type, id.asString()) : nullptr; };
+  checkLoadFloor(facts, stored, planEntries(value(&session, "plan")), plan["entries"]);
+  append(result.command, fields(proposal, object({{"state", "applied"}, {"settledAt", Json::UInt64(now)}})));
   append(result.command, fields(session, object({{"plan", plan}})));
   return result;
 }
@@ -534,6 +572,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       if (proposed.size() > 50 || !same(changes, proposalChanges(base, proposed))) throw Refusal(code::invalid);
       checkPlanShape(base, proposed);
       checkLoggedKept(base, proposed, sessionId);
+      checkLoadFloor(facts, current, base, proposed);
       append(fields(after, object({{"baseRevision", Json::Int64(planRevision(*session))}, {"changeCount", changeCountOf(base, changes)}})));
       for (const Row* other : rowsOf("workoutProposal")) {
         if (other->id == after.id || futureProposals.contains(other->id.column())) continue;
@@ -561,6 +600,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
           if (entry.isMember("sets") && entry["sets"].empty()) throw Refusal(code::invalid);
         }
         for (const Json::Value& entry : entries) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
+        checkLoadFloor(facts, current, value(change.isNew || !change.stored ? nullptr : &*change.stored, "entries"), entries);
       }
       if (created(change) && value(&after, "createdDoor") == "ask") {
         if (current("routineCreation", after.id.json())) throw Refusal(code::invalid);
@@ -653,6 +693,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     }
     if (!same(value(&after, "changes"), proposalChanges(value(routine, "entries"), proposed))) throw Refusal(code::invalid);
     for (const Json::Value& entry : proposed) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
+    checkLoadFloor(facts, current, value(routine, "entries"), proposed);
     append(fields(after, object({{"baseRevision", value(routine, "revision")},
         {"baseName", value(routine, "name")},
         {"changeCount", changeCountOf(value(routine, "entries"), value(&after, "changes")) + (value(routine, "name") == value(&after, "proposedName") ? 0 : 1)}})));
@@ -782,7 +823,10 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
     if (!finish || finish < value(&session, "startedAt").asUInt64()) throw Refusal("bad-instant");
     const Json::Value stored = value(&session, "finishedAt");
     if (!stored.isNull() && value(&session, "closedBy") != "stale") return result;
-    const Ms at = stored.isNull() ? finish : finish > stored.asUInt64() + kStaleMs ? stored.asUInt64() : std::max(stored.asUInt64(), finish);
+    // A finish lands no earlier than the last set: a clamped future finishedAt reads serverNow, which a set stamped by
+    // a clock ahead of the server can outrun.
+    const Ms landing = std::max(finish, lastActivity(facts, session));
+    const Ms at = stored.isNull() ? landing : landing > stored.asUInt64() + kStaleMs ? stored.asUInt64() : std::max(stored.asUInt64(), landing);
     append(outcome, fields(session, object({{"finishedAt", Json::UInt64(at)}, {"closedBy", "finish"}})));
     return result;
   }

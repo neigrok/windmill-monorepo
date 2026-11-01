@@ -117,6 +117,49 @@ struct GymServerRulesTests {
     #expect(state.scopes[scope]?.digest == ScopeDigest(rows: Array((state.rows[scope] ?? [:]).values).map(\.json)))
   }
 
+  @Test func aFinishCountsOnlyTheWorkoutsAliveSets() throws {
+    let early = try vector("a finish before the workout's last set lands at the last set")
+    var state = try ServerState(json: early.input.member("state"))
+    let scope = ScopeKey(.product(account: "A", name: "gym"))
+    let setKey = RecordKey("set", RecordID("set00000005"))
+    var set = try #require(state.rows[scope]?[setKey])
+    set.lattice.life = Life(.dead, try #require(set.lattice.life?.stamp))
+    state.rows[scope]?[setKey] = set
+    state.scopes[scope]?.digest = ScopeDigest(rows: Array((state.rows[scope] ?? [:]).values).map(\.json))
+    let admission = Admission(registry: try Registry(json: Corpus.registryFile("gym")), rules: GymServerRules())
+    let admitted = try admission.admit(early.input.member("intent"), from: .server(account: "A", requestId: nil),
+      at: try early.input.member("serverNow").asInteger(), in: &state)
+    #expect(admitted.result.json["s"] == "ok")
+    let session = try #require(state.rows[scope]?[RecordKey("session", RecordID("session0002"))])
+    #expect(session.lattice.fields["finishedAt"]?.value == 1_760_028_830_000)
+    #expect(session.lattice.fields["closedBy"]?.value == "finish")
+  }
+
+  @Test(arguments: [("barbell", false), ("machine", true)])
+  func theFloorReadsACustomMovementsOwnEquipment(_ equipment: String, admits: Bool) throws {
+    let loaded = try vector("a movement loaded as a barbell in the same intent takes the floor")
+    var state = try ServerState(json: loaded.input.member("state"))
+    let scope = ScopeKey(.product(account: "A", name: "gym"))
+    let exerciseKey = RecordKey("exercise", RecordID("sledpush01"))
+    var exercise = try #require(state.rows[scope]?[exerciseKey])
+    let stamp = try #require(exercise.lattice.fields["equipment"]?.stamp)
+    exercise.lattice.fields["equipment"] = Register(.string(equipment), stamp)
+    state.rows[scope]?[exerciseKey] = exercise
+    state.scopes[scope]?.digest = ScopeDigest(rows: Array((state.rows[scope] ?? [:]).values).map(\.json))
+    let before = state
+    var intent = try loaded.input.member("intent").asObject()
+    intent["d"] = .array(try intent.member("d").asArray().filter { try $0.member("t") == "routine" })
+    let admission = Admission(registry: try Registry(json: Corpus.registryFile("gym")), rules: GymServerRules())
+    let admitted = try admission.admit(.object(intent), from: .replica(account: "A", replica: "r_aaaaaaaaaaaa", n: 1),
+      at: try loaded.input.member("serverNow").asInteger(), in: &state)
+    if admits {
+      #expect(admitted.result.json["s"] == "ok")
+      return
+    }
+    #expect(admitted.result == .refused(Refusal(.invalid)))
+    #expect(state == before)
+  }
+
   @Test(arguments: [
     (Int64(0), "1970-01-01"), (Int64(-1), "1969-12-31"),
     (Int64(1_709_251_199_999), "2024-02-29"), (Int64(1_709_251_200_000), "2024-03-01"),

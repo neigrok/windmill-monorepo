@@ -150,6 +150,7 @@ public struct ProposeWorkout: Action {
     }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.planLogged, subject: id.ref, detail: ["exerciseId": movement.json], path: .predicted)))
     }
+    try RoutineRules.floored(proposal.value.changes, catalogue: loaded.catalogue)
     var plan = Plan()
     plan.create(proposal)
     plan.guardRead(sessionId, fields: ["plan"])
@@ -240,10 +241,11 @@ public struct ApplyWorkoutProposal: Action {
 
   public func decide(_ loaded: WorkoutProposalState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     if let refusal = loaded.refusal(for: id, applying: true) { return .refuse(refusal) }
-    guard let proposal = loaded.proposal, let session = loaded.workout?.session else {
+    guard let proposal = loaded.proposal, let workout = loaded.workout, let session = workout.session else {
       return .refuse(GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted)))
     }
     if proposal.state == "applied" { return .unchanged(()) }
+    try RoutineRules.floored(proposal.changes, catalogue: workout.catalogue)
     let applied = SessionPlan(routine: try WorkoutPlanRules.plan(of: session).routine, entries: proposal.document)
     return .write(try Plan(running: Command(proposalId: id), predicting: [
       .update(WorkoutProposal.self, id, ["state": "applied", "settledAt": JSON(loaded.moment.now.ms)]),

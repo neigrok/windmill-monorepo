@@ -19,6 +19,18 @@ struct SaveSignedOutWorkouts: Action {
   }
 }
 
+// A finish the log took before this phone's sets reached it, written past the phone's own finish rule.
+struct FinishAheadOfSets: Action {
+  let id: ID<Session>
+  let finishedAt: Instant
+  var scope: ScopeRef { Gym.scope }
+  func load(_ read: Reader) throws {}
+  func decide(_ loaded: Void, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    .write(try Plan(running: FinishSessionCommand(id: id, finishedAt: finishedAt),
+                    predicting: [.update(Session.self, id, ["finishedAt": .of(finishedAt), "closedBy": "finish"])]))
+  }
+}
+
 struct WorkoutRecoveryTests {
   static let now = TrainingTests.now
   let squat = ID<Exercise>("recovery-squat")
@@ -263,7 +275,7 @@ struct WorkoutRecoveryTests {
     let late = TrainingSet(id: ID("late-set"), sessionId: id, exerciseId: squat, weightKg: 65, reps: 3, rpe: 8, note: "Private late note", completedAt: Instant(ms: Self.now - 50_000))
     #expect(try h.runner.run(AppendSet(inside)).receipt != nil)
     #expect(try h.runner.run(AppendSet(late)).receipt != nil)
-    #expect(try h.runner.run(FinishSession(id: id, finishedAt: Instant(ms: Self.now - 70_000))).receipt != nil)
+    #expect(try h.runner.run(FinishAheadOfSets(id: id, finishedAt: Instant(ms: Self.now - 70_000))).receipt != nil)
     let saved = SignedOutWorkout(session: Session(id: id, startedAt: start), sets: [inside, late])
     _ = try h.runner.run(SaveSignedOutWorkouts(workouts: [saved]))
     h.server.refuse(next: 2, code: Gym.Codes.sessionFinished)

@@ -129,6 +129,7 @@ StartOutcome GymDoor::start(const UserId& user, const SessionStart& incoming) {
 
 AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, const SetWrite& incoming) {
   AppendOutcome answer{std::nullopt, AppendError::none};
+  std::string refusedCode;
   const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     const auto stored = log_.session(user, session);
     if (!stored) { answer.error = AppendError::notFound; return std::nullopt; }
@@ -157,12 +158,18 @@ AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, cons
     }
     canonical.weightKg = sync::Quantum{0.01}.round(canonical.weightKg);
     if (!std::isfinite(canonical.weightKg)) throw InvalidTraining("weight must be finite");
+    answer.belowFloorOf = movementBelowFloor(canonical, catalog_.catalog(user));
+    if (answer.belowFloorOf) {
+      answer.error = AppendError::belowFloor;
+      refusedCode = "load-floor";
+      return std::nullopt;
+    }
     if (canonical.rpe)
       canonical.rpe = sql.exec("select $1::numeric(3,1)::float8", pqxx::params{*canonical.rpe})[0][0].as<double>();
     auto value = intent();
     value["d"].append(delta("set", incoming.id.str(), setFields(canonical), true));
     return value;
-  });
+  }, &refusedCode);
   const auto code = refusal(result);
   if (code == "id-taken") return {std::nullopt, AppendError::idTaken};
   if (code == "id-spent" || code == "record-dead") return {std::nullopt, AppendError::deleted};
@@ -178,6 +185,7 @@ BatchLogOutcome GymDoor::appendSets(const UserId& user, const SessionId& session
   const SetBatch batch{session, batchSets(session, incoming), clock_.nowMs()};
   BatchLogOutcome answer;
   std::vector<bool> replayed(batch.sets.size(), false);
+  std::string refusedCode;
   const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     answer.session = log_.session(user, session);
     if (!answer.session) { answer.error = BatchLogError::notFound; return std::nullopt; }
@@ -196,6 +204,7 @@ BatchLogOutcome GymDoor::appendSets(const UserId& user, const SessionId& session
     }
     auto value = intent();
     Session standing = *answer.session;
+    const std::vector<Exercise> catalog = catalog_.catalog(user);
     for (std::size_t index = 0; index < batch.sets.size(); ++index) {
       if (replayed[index]) continue;
       const auto& set = batch.sets[index];
@@ -204,6 +213,8 @@ BatchLogOutcome GymDoor::appendSets(const UserId& user, const SessionId& session
       const bool late = standing.finishedAtMs && lateSetLands(standing, set.completedAtMs);
       if (standing.finishedAtMs && !late) { answer.error = BatchLogError::finished; return std::nullopt; }
       if (!visibleMovement(sql, user, set.exercise)) { answer.error = BatchLogError::unknownExercise; return std::nullopt; }
+      answer.belowFloorOf = movementBelowFloor(set, catalog);
+      if (answer.belowFloorOf) { answer.error = BatchLogError::belowFloor; refusedCode = "load-floor"; return std::nullopt; }
       if (late) standing.finishedAtMs = std::max(*standing.finishedAtMs, set.completedAtMs);
       value["d"].append(delta("set", set.id.str(), setFields(set), true));
     }
@@ -211,7 +222,7 @@ BatchLogOutcome GymDoor::appendSets(const UserId& user, const SessionId& session
     answer.replayed = value["d"].empty();
     if (answer.replayed) return std::nullopt;
     return value;
-  });
+  }, &refusedCode);
   const auto code = refusal(result);
   if (!code.empty()) {
     answer.error = batchRefusal(code);
@@ -234,7 +245,8 @@ BatchLogOutcome GymDoor::importSession(const UserId& user, const SessionImport& 
   const auto now = clock_.nowMs();
   Session session{incoming.id, user, incoming.startedAtMs, incoming.finishedAtMs, incoming.routine,
                   std::nullopt, ClosedBy::finish};
-  if (!canFinishAt(session, incoming.finishedAtMs)) throw InvalidTraining("finishedAt must be at or after startedAt");
+  // The import's own sets are held inside its interval by checkInterval below.
+  if (!canFinishAt(session, {}, incoming.finishedAtMs)) throw InvalidTraining("finishedAt must be at or after startedAt");
   if (incoming.finishedAtMs > now) throw InvalidTraining("finishedAt cannot be in the future");
   const SetBatch batch{incoming.id, batchSets(incoming.id, incoming.sets), now, true};
   batch.checkInterval(session, true);
@@ -243,6 +255,7 @@ BatchLogOutcome GymDoor::importSession(const UserId& user, const SessionImport& 
   args["sets"] = toJson(batch.sets);
   for (auto& set : args["sets"]) set.removeMember("setNumber");
   BatchLogOutcome answer;
+  std::string refusedCode;
   const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     auto& sql = sync::sqlOf(txn);
     const auto receipt = sql.exec("select user_id::text,request_hash from gym_write_receipts where kind='session' and id=$1",
@@ -270,15 +283,19 @@ BatchLogOutcome GymDoor::importSession(const UserId& user, const SessionImport& 
         ? BatchLogError::idTaken : BatchLogError::payloadConflict;
       return std::nullopt;
     }
+    const std::vector<Exercise> catalog = catalog_.catalog(user);
     for (std::size_t i = 0; i < batch.sets.size(); ++i) {
       const auto& set = batch.sets[i];
       answer.errorIndex = i;
       if (deletedFromLog(sql, user, set.id)) { answer.error = BatchLogError::deleted; return std::nullopt; }
       if (!visibleMovement(sql, user, set.exercise)) { answer.error = BatchLogError::unknownExercise; return std::nullopt; }
+      if (incoming.origin == ImportOrigin::recorded) continue;
+      answer.belowFloorOf = movementBelowFloor(set, catalog);
+      if (answer.belowFloorOf) { answer.error = BatchLogError::belowFloor; refusedCode = "load-floor"; return std::nullopt; }
     }
     answer.errorIndex.reset();
     return intent("gym.importSession", args);
-  });
+  }, &refusedCode);
   const auto code = refusal(result);
   if (!code.empty()) {
     answer.error = batchRefusal(code);
@@ -300,12 +317,18 @@ FinishOutcome GymDoor::finish(const UserId& user, const SessionId& session, std:
   args["sessionId"] = session.str();
   args["finishedAt"] = Json::UInt64(at);
   FinishOutcome answer{std::nullopt, FinishError::none};
+  std::string refusedCode;
+  const auto refuse = [&](FinishError error, std::string code) -> std::optional<Json::Value> {
+    answer.error = error;
+    refusedCode = std::move(code);
+    return std::nullopt;
+  };
   const auto result = execute(user, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
     const auto stored = log_.session(user, session);
-    if (!stored) { answer.error = FinishError::notFound; return std::nullopt; }
-    if (!canFinishAt(*stored, at)) { answer.error = FinishError::badInstant; return std::nullopt; }
+    if (!stored) return refuse(FinishError::notFound, sync::code::unknownRecord);
+    if (!canFinishAt(*stored, log_.setsOf(stored->id), at)) return refuse(FinishError::badInstant, "bad-instant");
     return intent("gym.finish", args);
-  });
+  }, &refusedCode);
   const auto code = refusal(result);
   if (code == "unknown-record" || code == "record-dead") return {std::nullopt, FinishError::notFound};
   if (code == "bad-instant") return {std::nullopt, FinishError::badInstant};

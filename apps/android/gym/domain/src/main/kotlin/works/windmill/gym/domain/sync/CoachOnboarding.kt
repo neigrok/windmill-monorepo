@@ -64,12 +64,14 @@ class ImportCoachRoutineBatch(val replica: String, val resultId: String, val fin
             plan.createRoutineMovement(Valid(movement, Exercise, at = loaded.moment), loaded.moment)
         }
         val known = loaded.visibleExercises + movements.map { it.id }
+        val brought = movements.map { RoutineMovementChange(null, it) }
         val firstPosition = (loaded.routines.maxOfOrNull { it.position } ?: -1).toLong() + 1
         for ((index, routine) in routines.withIndex()) {
             if (loaded.routines.any { it.id == routine.id })
                 return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.idTaken, routine.id.ref, path = Refused.Path.predicted)))
             if (routine.entries.any { it.exerciseId !in known })
                 return Decision.Refuse(GymRefusal.predicted(Gym.Codes.unknownExercise, routine.id.ref))
+            RoutineRules.floored(routine.entries, emptyList(), brought, loaded.catalogue, Path("routines") + index + "entries")
             val position = firstPosition + index
             if (position > Int.MAX_VALUE)
                 throw Violation("coach.import", Path("routines"), Violation.Reason.Custom("positionExhausted"))

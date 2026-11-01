@@ -860,7 +860,7 @@ TEST(pg_gym_routine_targets_round_trip_canonical_signed_unbounded_loads_and_expl
   const std::vector<SetTarget> targets{{8, std::nullopt}, {8, 0}, {8, .1}, {8, 501}, {8, -501},
       {8, std::numeric_limits<double>::max()}, {8, -std::numeric_limits<double>::max()},
       {8, 35333333333333.34}, {8, 1.005}};
-  const auto day = dayOf(h.user, "routine_loads1", "Loads", {RoutineEntry{1, ExerciseId{"bench-press"}, targets, 120}});
+  const auto day = dayOf(h.user, "routine_loads1", "Loads", {RoutineEntry{1, ExerciseId{"dip"}, targets, 120}});
   const auto created = mcpCreate(h, day);
   REQUIRE(created.routine);
   const auto read = h.repo.program.routine(h.user, day.id);

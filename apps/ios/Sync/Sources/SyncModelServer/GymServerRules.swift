@@ -220,7 +220,10 @@ public struct GymServerRules: ServerRules {
     guard finished > 0, finished >= value(session, "startedAt")!.integerValue else { throw refuse("bad-instant") }
     let stored = value(session, "finishedAt")
     if let stored, !stored.isNull, value(session, "closedBy") != "stale" { return CommandOutcome(product: context.product) }
-    let at = stored.flatMap { $0.isNull ? nil : $0.integerValue }.map { finished > $0 + Self.staleMs ? $0 : max($0, finished) } ?? finished
+    // A finish lands no earlier than the last set: a clamped future finishedAt reads serverNow, which a set stamped by a
+    // clock ahead of the server can outrun.
+    let landing = max(finished, lastActivity(session, in: context))
+    let at = stored.flatMap { $0.isNull ? nil : $0.integerValue }.map { landing > $0 + Self.staleMs ? $0 : max($0, landing) } ?? landing
     return CommandOutcome(deltas: [.serverUpdate(session.key, born: session.lattice.born, fields: ["finishedAt": JSON(at), "closedBy": "finish"])],
       write: [WriteClaim(key: session.key, fields: ["finishedAt", "closedBy"])], product: context.product)
   }
@@ -302,7 +305,11 @@ public struct GymServerRules: ServerRules {
     if state == "dismissed" { throw refuse("proposal-settled", detail: ["state": .string(state)]) }
     if let reason = workoutReason(proposal, in: context) { throw refuse("proposal-superseded", detail: ["reason": .string(reason)]) }
     let session = try alive(key("session", value(proposal, "sessionId")?.stringValue ?? ""), in: context)
-    let plan: JSON = ["routine": value(session, "plan")?["routine"] ?? .null, "entries": .array(try document(value(proposal, "changes")?.arrayValue ?? []))]
+    let entries = try document(value(proposal, "changes")?.arrayValue ?? [])
+    try checkLoadFloor(before: value(session, "plan")?["entries"]?.arrayValue ?? [], after: entries) {
+      hasLoadFloor($0, product: context.product) { context.idState(of: $0).row }
+    }
+    let plan: JSON = ["routine": value(session, "plan")?["routine"] ?? .null, "entries": .array(entries)]
     store(true, table: "workoutProposalApplies", id: id, scope: context.scope, in: &product)
     return CommandOutcome(deltas: [
       .serverUpdate(proposal.key, born: proposal.lattice.born, fields: ["state": "applied", "settledAt": JSON(context.serverNow)]),
@@ -351,6 +358,9 @@ public struct GymServerRules: ServerRules {
     func knownExercise(_ id: JSON?) -> Bool {
       guard let id = id?.stringValue else { return false }
       return context.product["seeds"]?[id] != nil || staged[key("exercise", id)]?.isAlive == true
+    }
+    func floored(_ id: JSON?) -> Bool {
+      hasLoadFloor(id, product: context.product) { staged[$0] }
     }
     for change in changes where change.key.type == "routine" && change.after.isAlive {
       let created = !change.before.isAlive
@@ -455,6 +465,7 @@ public struct GymServerRules: ServerRules {
           guard let entries = value(row, "entries"), case .array(let lines) = entries, !lines.isEmpty,
                 lines.allSatisfy({ $0["sets"].map { !$0.arrayValue.isEmpty } ?? true }) else { throw Refusal(.invalid) }
           guard lines.allSatisfy({ knownExercise($0["exerciseId"]) }) else { throw refuse("unknown-exercise") }
+          try checkLoadFloor(before: created ? [] : value(before, "entries")?.arrayValue ?? [], after: lines, floored: floored)
         }
         if created, value(row, "createdDoor") == "ask" {
           let receipt = key("routineCreation", row.key.id.description)
@@ -534,7 +545,7 @@ public struct GymServerRules: ServerRules {
             }
           }
         }
-        let count = try checkProposal(row, routine: routine, knownExercise: knownExercise)
+        let count = try checkProposal(row, routine: routine, knownExercise: knownExercise, floored: floored)
         append(.serverUpdate(row.key, born: row.lattice.born, fields: ["baseRevision": value(routine, "revision") ?? .null,
           "baseName": value(routine, "name") ?? .null, "changeCount": JSON(count)]))
         for other in records("proposal") {
@@ -567,6 +578,7 @@ public struct GymServerRules: ServerRules {
         guard proposed.count <= 50, lines == diff(base, proposed) else { throw Refusal(.invalid) }
         try checkPlanShape(before: base, after: proposed, knownExercise: knownExercise)
         try checkLoggedKept(before: base, after: proposed, session: session.key.id.json, sets: records("set"))
+        try checkLoadFloor(before: base, after: proposed, floored: floored)
         append(.serverUpdate(row.key, born: row.lattice.born, fields: ["baseRevision": planRevision(session), "changeCount": JSON(changeCount(base, lines))]))
         for other in records("workoutProposal") {
           guard (!newlyCreated.contains(other.key) || checkedProposals.contains(other.key)),
@@ -583,7 +595,7 @@ public struct GymServerRules: ServerRules {
     return appended
   }
 
-  func checkProposal(_ proposal: Row, routine: Row, knownExercise: (JSON?) -> Bool) throws(Refusal) -> Int {
+  func checkProposal(_ proposal: Row, routine: Row, knownExercise: (JSON?) -> Bool, floored: (JSON?) -> Bool) throws(Refusal) -> Int {
     let changes = value(proposal, "changes")!.arrayValue
     let base = value(routine, "entries")!.arrayValue
     let proposed = try document(changes)
@@ -596,6 +608,7 @@ public struct GymServerRules: ServerRules {
     }
     guard changes == diff(base, proposed) else { throw Refusal(.invalid) }
     guard proposed.allSatisfy({ knownExercise($0["exerciseId"]) }) else { throw refuse("unknown-exercise") }
+    try checkLoadFloor(before: base, after: proposed, floored: floored)
     return changeCount(base, changes) + (value(routine, "name") == value(proposal, "proposedName") ? 0 : 1)
   }
 
@@ -661,6 +674,26 @@ public struct GymServerRules: ServerRules {
     guard after.allSatisfy({ knownExercise($0["exerciseId"]) }) else { throw refuse("unknown-exercise") }
     let count = { (entries: [JSON], exerciseId: JSON?) in entries.filter { $0["exerciseId"] == exerciseId }.count }
     if after.contains(where: { count(after, $0["exerciseId"]) > max(count(before, $0["exerciseId"]), 1) }) { throw Refusal(.invalid) }
+  }
+
+  // A.2's load floor over a write of targets: an entry whose sets no `before` entry of its movement holds takes its
+  // movement's floor, so a scheme the write leaves as it stood keeps what it held.
+  func checkLoadFloor(before: [JSON], after: [JSON], floored: (JSON?) -> Bool) throws(Refusal) {
+    for entry in after {
+      let held = before.contains { $0["exerciseId"] == entry["exerciseId"] && ($0["sets"] ?? .null) == (entry["sets"] ?? .null) }
+      guard !held, floored(entry["exerciseId"]) else { continue }
+      if (entry["sets"]?.arrayValue ?? []).contains(where: { ($0["weightKg"]?.doubleValue ?? 0) < 0 }) { throw Refusal(.invalid) }
+    }
+  }
+
+  // A movement's load floor (A.2): a barbell or a pair of dumbbells carries 0 kg or more; every other loading keeps its
+  // sign, an assisted machine's included. A movement the account cannot name has no floor here.
+  func hasLoadFloor(_ exerciseId: JSON?, product: JSON.Object, row: (RecordKey) -> Row?) -> Bool {
+    guard let id = exerciseId?.stringValue else { return false }
+    let name = row(key("exerciseName", id)), seed = product["seeds"]?[id]
+    let equipment = value(name, "equipment")?.stringValue ?? value(row(key("exercise", id)), "equipment")?.stringValue ?? seed?["equipment"]?.stringValue
+    let loadCount = value(name, "loadCount")?.doubleValue ?? seed?["loadCount"]?.doubleValue ?? 2
+    return equipment == "barbell" || (equipment == "dumbbell" && loadCount != 1)
   }
 
   // A.2's logged-movement rule over the intent's joined sets: a net plan change, whatever wrote it, and a workout
@@ -781,6 +814,7 @@ public struct GymServerRules: ServerRules {
 private extension JSON {
   var stringValue: String? { try? asString() }
   var integerValue: Int64 { (try? asInteger()) ?? 0 }
+  var doubleValue: Double? { try? asDouble() }
   var arrayValue: [JSON] { (try? asArray()) ?? [] }
   var objectValue: Object? { try? asObject() }
 }

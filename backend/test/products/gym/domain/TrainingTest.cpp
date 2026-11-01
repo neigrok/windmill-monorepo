@@ -262,20 +262,67 @@ TEST(exercise_name_is_capped_at_the_same_bytes_a_routine_name_is) {
   }));
 }
 
+// A barbell or a pair of dumbbells cannot weigh less than empty; a single dumbbell, a machine and bodyweight work
+// keep their sign, since a negative load there is assistance.
+TEST(an_exercise_load_floor_is_zero_for_a_barbell_or_a_pair_of_dumbbells_and_none_otherwise) {
+  const auto loaded = [](Equipment equipment, int loadCount = 0) {
+    return Exercise{ExerciseId{"ex_11111111"}, "Lift", Pattern::press, equipment, 2.5, true, {}, loadCount}.loadFloorKg();
+  };
+  CHECK_EQ(loaded(Equipment::barbell), std::optional<double>(0.0));
+  CHECK_EQ(loaded(Equipment::dumbbell), std::optional<double>(0.0));
+  CHECK_EQ(loaded(Equipment::dumbbell, 2), std::optional<double>(0.0));
+  CHECK_EQ(loaded(Equipment::dumbbell, 1), std::optional<double>());
+  for (const Equipment equipment : {Equipment::machine, Equipment::cable, Equipment::bodyweight, Equipment::kettlebell, Equipment::other})
+    CHECK_EQ(loaded(equipment), std::optional<double>());
+}
+
+// A logged load is held to its movement's floor as the catalog resolves it; a movement the catalog lacks has none.
+TEST(a_set_below_its_movements_floor_names_the_movement) {
+  const std::vector<Exercise> catalog{
+      Exercise{ExerciseId{"back-squat"}, "Back Squat", Pattern::squat, Equipment::barbell, 2.5, false},
+      Exercise{ExerciseId{"goblet-squat"}, "Goblet Squat", Pattern::squat, Equipment::dumbbell, 2.0, false, {}, 1},
+      Exercise{ExerciseId{"pull-up"}, "Pull Up", Pattern::pull, Equipment::bodyweight, 2.5, false}};
+  const auto setOf = [](const char* exercise, double weightKg) {
+    return Set{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{exercise}, 1, weightKg, 5, std::nullopt, "", 1};
+  };
+  CHECK_EQ(movementBelowFloor(setOf("back-squat", -0.01), catalog), std::optional<Exercise>(catalog[0]));
+  CHECK_EQ(movementBelowFloor(setOf("back-squat", 0), catalog), std::optional<Exercise>());
+  CHECK_EQ(movementBelowFloor(setOf("goblet-squat", -4), catalog), std::optional<Exercise>());
+  CHECK_EQ(movementBelowFloor(setOf("pull-up", -30), catalog), std::optional<Exercise>());
+  CHECK_EQ(movementBelowFloor(setOf("landmine-press", -5), catalog), std::optional<Exercise>());
+}
+
 TEST(can_finish_at_any_instant_from_the_start_onward) {
   Session session = openSession(1'700'000'000'000);
-  CHECK(canFinishAt(session, 1'700'000'000'000));            // a session with one rep in it
-  CHECK(canFinishAt(session, 1'700'003'600'000));            // an hour under the bar
-  CHECK(canFinishAt(session, kMaxInstantMs));
+  CHECK(canFinishAt(session, {}, 1'700'000'000'000));            // a session with one rep in it
+  CHECK(canFinishAt(session, {}, 1'700'003'600'000));            // an hour under the bar
+  CHECK(canFinishAt(session, {}, kMaxInstantMs));
 }
 
 TEST(can_finish_at_refuses_zero_the_ceiling_and_ending_before_beginning) {
   Session session = openSession(1'700'000'000'000);
-  CHECK_FALSE(canFinishAt(session, 0));                      // an unset clock, not an ending
-  CHECK_FALSE(canFinishAt(session, 1'699'999'999'999));       // one ms before it began
-  CHECK_FALSE(canFinishAt(session, 1));
-  CHECK_FALSE(canFinishAt(session, kMaxInstantMs + 1));
-  CHECK_FALSE(canFinishAt(session, 18'446'744'073'709'551'615ull));
+  CHECK_FALSE(canFinishAt(session, {}, 0));                      // an unset clock, not an ending
+  CHECK_FALSE(canFinishAt(session, {}, 1'699'999'999'999));       // one ms before it began
+  CHECK_FALSE(canFinishAt(session, {}, 1));
+  CHECK_FALSE(canFinishAt(session, {}, kMaxInstantMs + 1));
+  CHECK_FALSE(canFinishAt(session, {}, 18'446'744'073'709'551'615ull));
+}
+
+// A clock stepped back behind the last set cannot end the workout before it: the finish lands at or after it.
+TEST(can_finish_at_refuses_a_finish_before_the_workouts_last_set) {
+  const std::uint64_t t = 1'700'000'000'000;
+  const Session session = openSession(t);
+  const auto setAt = [](std::uint64_t completedAtMs, const char* id, const char* sessionId = "ses_00000001") {
+    return Set{SetId{id}, SessionId{sessionId}, ExerciseId{"bench-press"}, 1, 60, 5, std::nullopt, "", completedAtMs};
+  };
+  const std::vector<Set> sets{setAt(t + 3'600'000, "set_00000002"), setAt(t + 60'000, "set_00000001")};
+  CHECK_EQ(lastActivityAt(session, sets), t + 3'600'000);
+  CHECK_EQ(lastActivityAt(session, {}), t);
+  CHECK_FALSE(canFinishAt(session, sets, t + 3'600'000 - 1));    // one ms before the last set
+  CHECK(canFinishAt(session, sets, t + 3'600'000));              // at it
+  CHECK(canFinishAt(session, sets, t + 7'200'000));
+  // Another workout's set is not this one's activity.
+  CHECK(canFinishAt(session, {setAt(t + 3'600'000, "set_00000003", "ses_00000002")}, t + 60'000));
 }
 
 TEST(can_start_at_the_past_now_and_an_honest_clocks_skew) {

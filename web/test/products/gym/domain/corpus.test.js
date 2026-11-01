@@ -253,7 +253,7 @@ const handlers = {
               return { id: value.id.json, fields: value.fields() };
             }
             case 'crosses': return SessionRules.crosses(f.instant('startedAt'), f.instant('finishedAt'), session);
-            case 'canFinishAt': return SessionRules.canFinishAt(session, f.instant('finishedAt'));
+            case 'canFinishAt': return SessionRules.canFinishAt(session, read.repository(TrainingSet).all('stored'), f.instant('finishedAt'));
             default: throw new Error(`unclaimed session rule ${input.operation}`);
           }
         }

@@ -26,6 +26,22 @@ class TrainingFinishTests {
     @Test fun finishBeforeFirstPullPreservesTheAdoptedSet() = runTest { verifyAdoptedFinish(false) }
     @Test fun finishAfterFirstPullBeforeStartReceiptPreservesTheAdoptedSet() = runTest { verifyAdoptedFinish(true) }
 
+    @Test fun aFinishWithTheClockBehindTheLastSetLandsAtTheLastSet() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            room.training.createRoutine(RoutineWrite("routine1", "Push A", 0, listOf(RoutineEntryWrite("bench-press"))))
+            assertTrue(room.store.workout.start("routine1") is GymResult.Ok)
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(80.0, 5)
+            val last = room.store.workout.sets.single()
+            room.now = last.completedAtMs - 600_000
+            val closed = room.store.workout.finish()
+            assertTrue("$closed", closed is FinishOutcome.Closed)
+            assertEquals(last.completedAtMs, (closed as FinishOutcome.Closed).session.finishedAtMs)
+            assertEquals(last.completedAtMs, room.training.session(closed.session.id)!!.session.finishedAtMs)
+        }
+    }
+
     private suspend fun TestScope.verifyAdoptedFinish(pullFirst: Boolean) {
         val directory = tmp.newFolder()
         val server = EngineRoomFixture.server()

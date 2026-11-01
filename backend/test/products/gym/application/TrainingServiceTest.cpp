@@ -453,13 +453,14 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
   CHECK(after.error == AppendError::finished);
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0,
                                           8, std::nullopt, "", t0 + 600'000)});
-  // A finish EARLIER than the stale close keeps the later instant, and still becomes the lifter's word.
+  // A finish EARLIER than the stale close's last set is refused; one at that set becomes the lifter's word.
   h.startAt(h.clock.now, "ses_00000002");
   h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 600'000));
   const std::uint64_t t1 = h.clock.now;
   h.clock.now = t1 + 5 * 3'600'000;
   h.training.detail(h.user, sid("ses_00000002"));
-  FinishOutcome early = h.door.finish(h.user, sid("ses_00000002"), t1 + 60'000);
+  CHECK(h.door.finish(h.user, sid("ses_00000002"), t1 + 60'000).error == FinishError::badInstant);
+  FinishOutcome early = h.door.finish(h.user, sid("ses_00000002"), t1 + 600'000);
   CHECK_EQ(early.session, std::optional<Session>(Session(sid("ses_00000002"), h.user, t1, t1 + 600'000,
                                                          std::nullopt, std::nullopt, ClosedBy::finish)));
   // A tap hours after the last set keeps the end at that set; only the word changes.
@@ -816,13 +817,13 @@ TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_s
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
                              std::nullopt, "", h.clock.now + 1});
   h.door.append(h.user, sid(),
-                    SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, -20.0, 10,
+                    SetWrite{setId("set_00000002"), ExerciseId{"pull-up"}, -20.0, 10,
                              std::nullopt, "", h.clock.now + 2});
   h.door.finish(h.user, sid(), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
   h.door.append(h.user, sid("ses_00000002"),
-                    SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 0.0, 9,
+                    SetWrite{setId("set_00000003"), ExerciseId{"pull-up"}, 0.0, 9,
                              std::nullopt, "", h.clock.now + 1});
   h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
 
@@ -1209,7 +1210,7 @@ TEST(last_time_is_the_newest_session_even_when_an_older_one_holds_a_future_stamp
   const std::uint64_t weekAgo = h.clock.now;
   h.startAt(weekAgo, "ses_00000001");
   h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 60.0, weekAgo + 30 * day));
-  h.door.finish(h.user, sid("ses_00000001"), weekAgo + 1'000);
+  h.door.finish(h.user, sid("ses_00000001"), weekAgo + 30 * day);
   h.clock.now = weekAgo + 7 * day;
   h.startAt(h.clock.now, "ses_00000002");
   AppendOutcome yesterday =
@@ -1592,11 +1593,11 @@ TEST(progress_settles_stale_work_and_reads_only_finished_sessions_for_the_owner)
   h.door.finish(h.other, sid("ses_00000004"), began + 60'000);
   h.startAt(began, "ses_00000001");
   REQUIRE(h.door.append(h.user, sid("ses_00000001"),
-      SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, -10, 8,
+      SetWrite{setId("set_00000001"), ExerciseId{"pull-up"}, -10, 8,
                std::nullopt, "", began + 60'000}).set);
 
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
-      {sid("ses_00000001"), began, {{ExerciseId{"bench-press"}, 1,
+      {sid("ses_00000001"), began, {{ExerciseId{"pull-up"}, 1,
           {setId("set_00000001"), -10, 8, std::nullopt}, std::nullopt}}}}}));
   CHECK_EQ(h.repo.log.session(h.user, sid("ses_00000001")),
            std::optional<Session>(Session(sid("ses_00000001"), h.user, began, began + 60'000, std::nullopt,

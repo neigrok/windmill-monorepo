@@ -292,18 +292,18 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_change_edges` (and unambiguous `change_edges` alias) | `mcp.roadmap_change_edges` | completion; bounded refusal or result | unexpected |
 | `MCP gym_save_note` (and unambiguous `save_note` alias) | `mcp.gym_save_note` | completion; bounded refusal or result | unexpected |
 | `MCP gym_start_session` (and unambiguous `start_session` alias) | `mcp.gym_start_session` | completion; bounded refusal or result | unexpected |
-| `MCP gym_log_set` (and unambiguous `log_set` alias) | `mcp.gym_log_set` | completion; bounded refusal or result | unexpected |
-| `MCP gym_finish_session` (and unambiguous `finish_session` alias) | `mcp.gym_finish_session` | completion; bounded refusal or result | unexpected |
-| `MCP gym_create_routine` (and unambiguous `create_routine` alias) | `mcp.gym_create_routine` | completion; bounded refusal or result | unexpected |
-| `MCP gym_propose_routine_change` (and unambiguous `propose_routine_change` alias) | `mcp.gym_propose_routine_change` | completion; bounded refusal or result | unexpected |
+| `MCP gym_log_set` (and unambiguous `log_set` alias) | `mcp.gym_log_set` | completion; bounded refusal or result (`load-floor` for a load below its movement's load floor) | unexpected |
+| `MCP gym_finish_session` (and unambiguous `finish_session` alias) | `mcp.gym_finish_session` | completion; bounded refusal or result (`bad-instant` for a finish before the start or the last set) | unexpected |
+| `MCP gym_create_routine` (and unambiguous `create_routine` alias) | `mcp.gym_create_routine` | completion; bounded refusal or result (`load-floor` for a target below its movement's load floor) | unexpected |
+| `MCP gym_propose_routine_change` (and unambiguous `propose_routine_change` alias) | `mcp.gym_propose_routine_change` | completion; bounded refusal or result (`load-floor` for a target below its movement's load floor) | unexpected |
 | `MCP gym_update_exercise` (and unambiguous `update_exercise` alias) | `mcp.gym_update_exercise` | completion; bounded refusal or result | unexpected |
 | `MCP gym_create_exercise` (and unambiguous `create_exercise` alias) | `mcp.gym_create_exercise` | completion; bounded refusal or result | unexpected |
 | `MCP gym_share_session` (and unambiguous `share_session` alias) | `mcp.gym_share_session` | completion; bounded refusal or result | unexpected |
 | `MCP gym_discard_session` (and unambiguous `discard_session` alias) | `mcp.gym_discard_session` | completion; bounded refusal or result | unexpected |
 | `MCP gym_propose_routine_removal` (and unambiguous `propose_routine_removal` alias) | `mcp.gym_propose_routine_removal` | completion; bounded refusal or result | unexpected |
 | `MCP gym_revoke_share` (and unambiguous `revoke_share` alias) | `mcp.gym_revoke_share` | completion; bounded refusal or result | unexpected |
-| `MCP gym_log_sets` (and unambiguous `log_sets` alias) | `mcp.gym_log_sets` | completion; bounded refusal or result | unexpected |
-| `MCP gym_import_session` (and unambiguous `import_session` alias) | `mcp.gym_import_session` | completion; bounded refusal or result | unexpected |
+| `MCP gym_log_sets` (and unambiguous `log_sets` alias) | `mcp.gym_log_sets` | completion; bounded refusal or result (`load-floor` for a load below its movement's load floor) | unexpected |
+| `MCP gym_import_session` (and unambiguous `import_session` alias) | `mcp.gym_import_session` | completion; bounded refusal or result (`load-floor` for a load below its movement's load floor) | unexpected |
 | `gym` registry command `gym.start` | `sync.command.gym.start` | completion; command result | unexpected |
 | `gym` registry command `gym.importSession` | `sync.command.gym.importSession` | completion; command result | unexpected |
 | `gym` registry command `gym.correctSession` | `sync.command.gym.correctSession` | completion; command result | unexpected |
@@ -321,7 +321,7 @@ listed separately because their only server writes are authentication refresh or
 | `probe` registry command `probe.tick` | `sync.command.probe.tick` | completion; command result | unexpected |
 | `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 13 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
 | `Admission::commitAndPublish` committed change publication | `sync.publish` | completion; bounded refusal or result | unexpected |
-| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout; `proposeWorkout`, which only the ability corpus calls, included) | `gym.server_call` | completion; actual call result, expected training refusal, and `proposeWorkout`'s refusal before admitting (`unknown-record`, `no-plan`, `id-reused`, `no-change`, `id-taken`) | unexpected |
+| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout; `proposeWorkout`, which only the ability corpus calls, included) | `gym.server_call` | completion; actual call result, expected training refusal, and a door's refusal before admitting: `append`, `appendSets` and an entered `importSession` (`load-floor`), `finish` (`unknown-record`, `bad-instant`), `createRoutine` (`id-taken`, `unknown-exercise`, `load-floor`), `propose` and `proposeRemoval` (`unknown-record`, `no-change`, `id-taken`, `id-reused`, `unknown-exercise`, `load-floor`), `proposeWorkout` (`unknown-record`, `no-plan`, `id-reused`, `no-change`, `id-taken`, `load-floor`) | unexpected |
 | `ServerCall::admit` / `admitBuilt` invalid dedupe id | `sync.server_call.admit` | completion; bounded refusal or result | log only |
 | `ServerCall::finish` dedupe metadata write | `sync.server_call.finish` | completion; bounded refusal or result | unexpected |
 | `Admission::storedAnswer` / `callAnswer` call digest disagreement | `sync.call.digest` | completion; expected digest conflict | log only |

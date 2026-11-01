@@ -54,6 +54,14 @@ export class SetTarget {
     return new SetTarget(reps, weightKg);
   }
 
+  // Each set's load meets its movement's floor: the editor's refusal, which every door that writes targets holds.
+  /** @param {readonly SetTarget[]} sets @param {ExerciseValue} movement @param {Path} path */
+  static floored(sets, movement, path) {
+    sets.forEach((set, at) => {
+      if (set.weightKg !== null) movement.floored(set.weightKg, RoutineRules.loadFloor, path.plus(at).plus('weightKg'));
+    });
+  }
+
   // A straight scheme is one whose sets all agree, loads read on the ladder's grid; an open line is straight.
   /** @param {readonly SetTarget[]} sets */
   static straight(sets) {
@@ -310,10 +318,7 @@ export class SaveRoutinePlan {
         || staged.base.loadCount !== staged.current.loadCount);
       if (!retargeted && !reloaded) return;
       const movement = staged?.current ?? catalogue.find(entry.exerciseId);
-      if (movement === null) return;
-      entry.sets?.forEach((set, at) => {
-        if (set.weightKg !== null) movement.floored(set.weightKg, RoutineRules.loadFloor, new Path('entries').plus(index).plus('sets').plus(at).plus('weightKg'));
-      });
+      if (movement !== null) SetTarget.floored(entry.sets ?? [], movement, new Path('entries').plus(index).plus('sets'));
     });
   }
 }

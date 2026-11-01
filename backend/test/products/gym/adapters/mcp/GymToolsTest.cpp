@@ -1,6 +1,7 @@
 #include "products/gym/adapters/mcp/GymTools.h"
 
 #include "platform/adapters/mcp/CompositeToolHost.h"
+#include "platform/application/WriteObservation.h"
 #include "platform/domain/sync/FractionalIndex.h"
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
@@ -764,8 +765,143 @@ TEST(gym_a_finish_before_the_start_is_refused_and_says_where_to_read_the_start) 
 
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("finish_session: that workout cannot end at that instant — a workout ends at "
-                       "or after it began. Read its `startedAt` with get_session."));
+           std::string("finish_session: that workout cannot end at that instant — a workout ends at or after it "
+                       "began, and at or after its last set. Read its `startedAt` and its sets' `completedAt` with "
+                       "get_session."));
+  CHECK_EQ(toolWriteOutcome(refused), std::string("bad-instant"));
+}
+
+// A finish before the workout's last set is refused as one before its start is, and nothing is closed.
+TEST(gym_a_finish_before_the_last_set_is_refused_and_says_to_finish_at_or_after_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const Agent me{h.tools, h.user};
+  me.start("ses_00000001", h.clock.now);
+  REQUIRE(!me.logSet("ses_00000001", "set_00000001", "bench-press", 60, 5, h.clock.now + 600'000).isError);
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const ToolResult refused = me.finish("ses_00000001", h.clock.now + 599'999);
+  installWriteSink({});
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("finish_session: that workout cannot end at that instant — a workout ends at or after it "
+                       "began, and at or after its last set. Read its `startedAt` and its sets' `completedAt` with "
+                       "get_session."));
+  CHECK_EQ(toolWriteOutcome(refused), std::string("bad-instant"));
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call bad-instant"}));
+  CHECK_EQ(stored("select coalesce(finished_at::text, 'open') from gym_sessions"), std::vector<std::string>{"open"});
+  CHECK(h.failures.messages.empty());
+}
+
+// A target a phone's editor refuses — a barbell or a pair of dumbbells below 0 kg — is refused on every agent door,
+// naming the movement, the set and the floor; nothing is written and the refusal is a log line, never an Issue.
+TEST(gym_create_routine_and_propose_routine_change_refuse_a_target_below_its_load_floor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const Agent me{h.tools, h.user};
+  Json::Value entries(Json::arrayValue);
+  entries.append(entryOf("dip", {SetTarget{8, -20.0}}));
+  entries.append(entryOf("back-squat", {SetTarget{5, 60.0}, SetTarget{5, -10.0}}));
+  createPushA(h);
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const ToolResult created = me.call("create_routine", routineArgs("rt_00000002", "Legs", entries));
+  const ToolResult proposed = me.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", {SetTarget{5, -2.5}}));
+  installWriteSink({});
+
+  CHECK(created.isError);
+  CHECK_EQ(message(created),
+           std::string("create_routine: set 2 of Back Squat targets -10 kg, below its floor: Back Squat is loaded as "
+                       "a barbell, and a barbell takes 0 kg or more. Nothing was saved. Send the whole routine again "
+                       "with that target at the floor or above."));
+  CHECK_EQ(toolWriteOutcome(created), std::string("load-floor"));
+  CHECK(proposed.isError);
+  CHECK_EQ(message(proposed),
+           std::string("propose_routine_change: set 1 of Bench Press targets -2.5 kg, below its floor: Bench Press is "
+                       "loaded as a barbell, and a barbell takes 0 kg or more. Nothing was minted, so the lifter has "
+                       "nothing to apply. Send the whole document again with that target at the floor or above."));
+  CHECK_EQ(toolWriteOutcome(proposed), std::string("load-floor"));
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call load-floor", "sync.admit ok",
+                                            "gym.server_call load-floor"}));
+  CHECK_EQ(stored("select name from gym_routines"), std::vector<std::string>{"Push A"});
+  CHECK_EQ(stored("select id from gym_proposals"), std::vector<std::string>{});
+  CHECK(h.failures.messages.empty());
+}
+
+// A set a phone refuses — a barbell or a pair of dumbbells below 0 kg — is refused by log_set, log_sets and
+// import_session, naming the movement, the load and the floor; nothing lands and each refusal is a log line.
+TEST(gym_log_set_log_sets_and_import_session_refuse_a_load_below_its_movements_floor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const Agent me{h.tools, h.user};
+  me.start("ses_00000001", h.clock.now - 600'000);
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  const ToolResult single = me.logSet("ses_00000001", "set_00000001", "back-squat", -10, 5, h.clock.now - 500'000);
+  const ToolResult batch = me.call("log_sets", parse(R"({"sessionId":"ses_00000001","sets":[)"
+      R"({"id":"set_00000002","exerciseId":"dip","weightKg":-20,"reps":8,"completedAt":)" + std::to_string(h.clock.now - 400'000) + R"(},)"
+      R"({"id":"set_00000003","exerciseId":"bulgarian-split-squat","weightKg":-4,"reps":10,"completedAt":)" + std::to_string(h.clock.now - 300'000) + R"(}]})"));
+  const ToolResult imported = me.call("import_session", parse(R"({"id":"ses_00000002","startedAt":2000,"finishedAt":4000,"sets":[)"
+      R"({"id":"set_00000004","exerciseId":"bench-press","weightKg":-2.5,"reps":5,"completedAt":3000}]})"));
+  installWriteSink({});
+
+  CHECK_EQ(message(single),
+           std::string("log_set: that set logs -10 kg of Back Squat, below its floor: Back Squat is loaded as a barbell, "
+                       "and a barbell takes 0 kg or more. Nothing was logged. Send the load that was lifted."));
+  CHECK_EQ(message(batch),
+           std::string("log_sets: sets[1] (set_00000003): it logs -4 kg of Bulgarian Split Squat, below its floor: "
+                       "Bulgarian Split Squat is loaded as a pair of dumbbells, and a pair of dumbbells takes 0 kg or "
+                       "more. No changes from this batch were committed."));
+  CHECK_EQ(message(imported),
+           std::string("import_session: sets[0] (set_00000004): it logs -2.5 kg of Bench Press, below its floor: Bench "
+                       "Press is loaded as a barbell, and a barbell takes 0 kg or more. No changes from this batch were "
+                       "committed."));
+  for (const ToolResult* refused : {&single, &batch, &imported}) {
+    CHECK(refused->isError);
+    CHECK_EQ(toolWriteOutcome(*refused), std::string("load-floor"));
+  }
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call load-floor", "sync.admit ok",
+                                            "gym.server_call load-floor", "sync.admit ok", "gym.server_call load-floor"}));
+  CHECK_EQ(stored("select id from gym_sets"), std::vector<std::string>{});
+  CHECK_EQ(stored("select id from gym_sessions"), std::vector<std::string>{"ses_00000001"});
+  CHECK(h.failures.messages.empty());
+}
+
+// Coach's workout change takes the same floor: a pair of dumbbells below 0 kg is refused, and the workout keeps its plan.
+TEST(gym_propose_workout_change_refuses_a_target_below_its_load_floor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const Agent me{h.tools, h.user};
+  createPushA(h);
+  Json::Value start(Json::objectValue);
+  start["id"] = "ses_00000001";
+  start["startedAt"] = Json::Value::UInt64(h.clock.now);
+  start["routineId"] = "rt_00000001";
+  REQUIRE(!me.call("start_session", start).isError);
+  Json::Value args(Json::objectValue);
+  args["id"] = "wprop_0000001";
+  args["sessionId"] = "ses_00000001";
+  args["entries"] = Json::Value(Json::arrayValue);
+  args["entries"].append(entryOf("bench-press", benchEntry().sets));
+  args["entries"].append(entryOf("bulgarian-split-squat", {SetTarget{10, 8.0}, SetTarget{10, -4.0}}));
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " " + completion.outcome); });
+  ReadReceipt run;
+  const ToolResult refused = h.tools.callTool("propose_workout_change", args, ToolCaller{h.user, ToolScope::everything()},
+                                              ProposalSource{ProposalDoor::ask, "", "", std::nullopt}, run);
+  installWriteSink({});
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("propose_workout_change: set 2 of Bulgarian Split Squat targets -4 kg, below its floor: "
+                       "Bulgarian Split Squat is loaded as a pair of dumbbells, and a pair of dumbbells takes 0 kg or "
+                       "more. Nothing was minted, and the workout keeps its plan. Send the whole plan again with that "
+                       "target at the floor or above."));
+  CHECK_EQ(toolWriteOutcome(refused), std::string("load-floor"));
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit ok", "gym.server_call load-floor"}));
+  CHECK_EQ(stored("select id from gym_workout_proposals"), std::vector<std::string>{});
+  CHECK(h.failures.messages.empty());
 }
 
 // The domain's own sentence, forwarded verbatim rather than flattened into "could not read that set".

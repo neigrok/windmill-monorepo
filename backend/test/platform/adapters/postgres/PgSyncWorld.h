@@ -79,7 +79,10 @@ public:
     if (gym_) {
       sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_proposal_applies,gym_workout_proposal_applies,gym_correction_receipts,gym_routine_creations,gym_note_saves,gym_exercise_updates,gym_threads,gym_messages cascade");
       for (const auto& id : state["product"]["seeds"].getMemberNames()) {
-        sql.exec("insert into gym_exercises(id,name,pattern,equipment) values($1,$2,'isolation','bodyweight')", pqxx::params{id, state["product"]["seeds"][id]["name"].asString()});
+        const Json::Value& seed = state["product"]["seeds"][id];
+        const std::optional<int> loadCount = seed.isMember("loadCount") ? std::optional(seed["loadCount"].asInt()) : std::nullopt;
+        sql.exec("insert into gym_exercises(id,name,pattern,equipment,load_count) values($1,$2,'isolation',$3,$4)",
+                 pqxx::params{id, seed["name"].asString(), seed.get("equipment", "bodyweight").asString(), loadCount});
       }
       productSeed_ = state["product"];
 

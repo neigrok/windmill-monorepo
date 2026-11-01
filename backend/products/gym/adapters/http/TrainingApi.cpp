@@ -116,8 +116,9 @@ void TrainingApi::importSession(const drogon::HttpRequestPtr& req, HttpCallback&
     case BatchLogError::notFound:
     case BatchLogError::finished:
     case BatchLogError::deleted:
-      // An append's refusals. An import creates its session, and a deleted set's id is still held by
-      // its receipt, which answers set-id-taken first.
+    case BatchLogError::belowFloor:
+      // An append's refusals and an entered import's floor. This import creates its session and replays recorded
+      // loads, and a deleted set's id is still held by its receipt, which answers set-id-taken first.
       cb(error(drogon::k500InternalServerError, "that import failed inside the server"));
       return;
   }

@@ -174,8 +174,13 @@ public enum SessionRules {
     var drawn = session; drawn.finishedAt = finish; drawn.closedBy = "stale"; return drawn
   }
 
-  public static func canFinishAt(_ session: Session, at: Instant) -> Bool {
-    at.ms > 0 && at.ms >= session.startedAt.ms && at.ms <= maxInstantMs
+  // A finish lands after its workout began and after its last set, never before either.
+  public static func canFinishAt(_ session: Session, sets: [TrainingSet], at: Instant) -> Bool {
+    at.ms > 0 && at.ms <= maxInstantMs && at.ms >= session.startedAt.ms && at.ms >= lastActivity(session, sets: sets).ms
+  }
+  // The moment a finish names when the lifter names none: now, or the last set when the clock reads behind it.
+  public static func finishAt(_ session: Session, sets: [TrainingSet], now: Instant) -> Instant {
+    max(now, lastActivity(session, sets: sets))
   }
   public static func canStartAt(_ at: Instant, now: Instant) -> Bool {
     at.ms > 0 && at.ms <= maxInstantMs && (at.ms <= now.ms || at.ms.subtractingReportingOverflow(now.ms).partialValue <= maxClockAheadMs)
@@ -184,8 +189,8 @@ public enum SessionRules {
     guard let finish = session.finishedAt else { return true }
     return session.closedBy == "stale" && completedAt.ms <= finish.ms + staleAfterMs
   }
-  public static func finish(_ session: Session, at: Instant) throws(Violation) -> Session {
-    guard canFinishAt(session, at: at) else { throw Violation(rule: "session.finishedAt", path: "finishedAt", reason: .custom("badInstant")) }
+  public static func finish(_ session: Session, sets: [TrainingSet], at: Instant) throws(Violation) -> Session {
+    guard canFinishAt(session, sets: sets, at: at) else { throw Violation(rule: "session.finishedAt", path: "finishedAt", reason: .custom("badInstant")) }
     if session.finishedAt != nil && session.closedBy != "stale" { return session }
     var result = session
     if let finish = session.finishedAt {

@@ -155,10 +155,25 @@ public enum RoutineRules {
       let retargeted = base.entries.first { $0.exerciseId == entry.exerciseId }?.sets != entry.sets
       let reloaded = staged.map { $0.base == nil || $0.base?.equipment != $0.current.equipment || $0.base?.loadCount != $0.current.loadCount } ?? false
       guard retargeted || reloaded, let movement = staged?.current ?? catalogue.find(entry.exerciseId) else { continue }
-      for (at, target) in (entry.sets ?? []).enumerated() {
-        guard let weightKg = target.weightKg else { continue }
-        try movement.floored(weightKg, rule: loadFloor, at: Path("entries") + index + "sets" + at + "weightKg")
-      }
+      try floored(entry.sets, of: movement, at: Path("entries") + index)
+    }
+  }
+
+  // A proposal's change lines meet their movements' floors where they set new targets: an added line, or a retargeted line
+  // whose sets changed. A kept line or a rest-only change keeps what it held; a movement the catalogue lacks has no floor here.
+  public static func floored(_ changes: [RoutineChange], catalogue: Catalogue) throws(Violation) {
+    for (index, change) in changes.enumerated() {
+      let retargeted = change.kind == "added" || (change.kind == "retargeted" && change.before?.sets != change.after?.sets)
+      guard retargeted, let movement = catalogue.find(change.exerciseId) else { continue }
+      try floored(change.after?.sets, of: movement, at: Path("changes") + index + "after")
+    }
+  }
+
+  // Every target load of one line, at `<line>.sets.<j>.weightKg`, meets its movement's floor.
+  static func floored(_ sets: [SetTarget]?, of movement: Exercise, at line: Path) throws(Violation) {
+    for (at, target) in (sets ?? []).enumerated() {
+      guard let weightKg = target.weightKg else { continue }
+      try movement.floored(weightKg, rule: loadFloor, at: line + "sets" + at + "weightKg")
     }
   }
 }

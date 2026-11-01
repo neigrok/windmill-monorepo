@@ -4,13 +4,17 @@ import { GymProduct } from '../../../../packages/api-contract/sync/reference/gym
 import { Refusal } from '../../../../packages/api-contract/sync/reference/server/admit.js';
 import { hello, pull } from '../../../../packages/api-contract/sync/reference/server/pull.js';
 import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
+import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Id } from '../../../src/platform/domain-kit/entities.js';
+import { Plan } from '../../../src/platform/domain-kit/plans.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
+import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { isVisible } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { registry } from '../../../src/platform/sync/schema.js';
-import { Proposal, ProposeRoutine, REMOVAL_RECEIPTS } from '../../../src/products/gym/domain/proposals.js';
+import { GymRefusals } from '../../../src/products/gym/domain/gymRules.js';
+import { EntryTargets, Proposal, ProposalValue, ProposeRoutine, REMOVAL_RECEIPTS, RoutineChange } from '../../../src/products/gym/domain/proposals.js';
 import { Routine, RoutineEntry, SetTarget } from '../../../src/products/gym/domain/routines.js';
 import { Exercise } from '../../../src/products/gym/domain/catalogue.js';
 import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
@@ -309,6 +313,28 @@ test('receipt acknowledgement from a previous account cannot clear the new accou
   await a.runtime.removalReceiptShown('proposal002', a.engine.activeReplica());
   assert.deepEqual(a.receipts(), {});
   assert.deepEqual(a.engine.device.replicas.find((replica) => replica.id === oldOwner).deviceRows('gym')[REMOVAL_RECEIPTS], oldReceipt);
+});
+
+test('an Apply under the barbell’s load floor is a refusal event naming the floor, never a failure', async (t) => {
+  const a = await open(t, { removing: false });
+  const squat = new Id('back-squat', Exercise);
+  const proposal = new ProposalValue({ id: new Id('proposal002', Proposal), routineId: new Id(routineId, Routine), intent: 'revise',
+    proposedName: 'Lower A', summary: 'Lighter.', changes: [new RoutineChange('retargeted', squat,
+      new EntryTargets([new SetTarget(5, 80)], 120), new EntryTargets([new SetTarget(5, -10)], 120))] });
+  const runner = new ActionRunner(new EngineReplica(a.engine), registry, zone);
+  const stored = await runner.run({ scope, refusals: GymRefusals, load: (read) => read.moment,
+    decide: (moment) => {
+      const plan = new Plan();
+      plan.create(new Valid(proposal, moment));
+      return Decision.write(plan, null);
+    } });
+  assert.equal(stored.kind, 'committed');
+  const owed = a.engine.device.activeReplica.entries().length;
+  await assert.rejects(a.runtime.applyProposal('proposal002'), { name: 'GymRefusal', code: 'load-floor', sentence: 'Load, 0 or more.' });
+  assert.equal(a.engine.device.activeReplica.entries().length, owed, 'nothing is written');
+  assert.equal((await a.runtime.proposal('proposal002')).state, 'pending');
+  assert.deepEqual(a.events, [{ operation: 'proposal-apply', outcome: 'refused' }]);
+  assert.deepEqual(a.failures, []);
 });
 
 for (const method of ['applyProposal', 'dismissProposal']) test(`${method} reports unexpected failures using only its operation`, async (t) => {

@@ -456,7 +456,7 @@ class WorkoutSession(
             training.recoverAcceptedSets(controls)
             refreshWorkout()
             val detail = try {
-                training.finishSession(live.id, now())
+                training.finishSession(live.id)
                 checkNotNull(training.session(live.id)) { "The engine does not hold the workout it just finished." }
             } catch (refused: TrainingRefused) {
                 if (refused.code != "unknown-record") throw refused

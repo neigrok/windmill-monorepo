@@ -112,7 +112,10 @@ class GymServerRules : ServerRules {
         if (finished <= 0 || finished < value(session, "startedAt")!!.long()) throw Refusal("bad-instant")
         val stored = value(session, "finishedAt")?.orNull()?.long()
         if (stored != null && value(session, "closedBy") != Json.of("stale")) return CommandOutcome(product = c.product)
-        val at = stored?.let { if (finished > it + STALE_MS) it else maxOf(it, finished) } ?: finished
+        // A finish lands no earlier than the last set: a clamped future finishedAt reads serverNow, which a set stamped by a
+        // clock ahead of the server can outrun.
+        val landing = maxOf(finished, lastActivity(session, c.storedRecords("set")))
+        val at = stored?.let { if (landing > it + STALE_MS) it else maxOf(it, landing) } ?: landing
         return CommandOutcome(listOf(PlannedDelta.update(session.key, session.lattice.born, mapOf("finishedAt" to Json.of(at), "closedBy" to Json.of("finish")))), listOf(WriteClaim(session.key, fields = listOf("finishedAt", "closedBy"))), product = c.product)
     }
     private fun applyProposal(cmd: CheckedCommand, c: RuleContext): CommandOutcome {
@@ -168,7 +171,9 @@ class GymServerRules : ServerRules {
         if (state == "dismissed") throw Refusal("proposal-settled", Json.objectOf("state" to Json.of(state)))
         workoutReason(proposal, c)?.let { throw superseded(it) }
         val session = alive(key("session", value(proposal, "sessionId")!!.str()), c)
-        val plan = Json.objectOf("entries" to Json.Arr(document(value(proposal, "changes")!!.arr()))).with("routine" to value(session, "plan")?.get("routine"))
+        val proposed = document(value(proposal, "changes")!!.arr())
+        checkLoadFloor(entries(value(session, "plan")), proposed, c) { c.idState(it).row }
+        val plan = Json.objectOf("entries" to Json.Arr(proposed)).with("routine" to value(session, "plan")?.get("routine"))
         c.store("workoutProposalApplies", id, Json.of(true))
         return CommandOutcome(listOf(PlannedDelta.update(proposal.key, proposal.lattice.born, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(c.serverNow))),
             PlannedDelta.update(session.key, session.lattice.born, mapOf("plan" to plan))),
@@ -267,6 +272,7 @@ class GymServerRules : ServerRules {
                         val entries = value(row, "entries")?.arr() ?: throw Refusal("invalid")
                         if (entries.isEmpty() || entries.any { it["sets"]?.arr()?.isEmpty() == true }) throw Refusal("invalid")
                         if (entries.any { !known(it["exerciseId"]) }) throw Refusal("unknown-exercise")
+                        checkLoadFloor(if (created) emptyList() else value(before, "entries")?.arr().orEmpty(), entries, c, staged::get)
                     }
                     if (created && value(row, "createdDoor") == Json.of("ask")) {
                         if (staged[key("routineCreation", row.key.id.toString())] != null) throw Refusal("invalid")
@@ -318,6 +324,7 @@ class GymServerRules : ServerRules {
                     val routineId = value(row, "routineId")?.str() ?: throw Refusal("unknown-record"); val routine = staged[key("routine", routineId)]?.takeIf { it.isAlive } ?: throw Refusal("unknown-record")
                     if (c.origin.isReplica) for (field in listOf("entries", "name")) if (c.guards.none { it.key == routine.key && it.field == field && it.stamp == routine.lattice.fields[field]?.stamp }) throw Refusal("invalid")
                     val count = checkProposal(row, routine, ::known)
+                    checkLoadFloor(value(routine, "entries")!!.arr(), document(value(row, "changes")!!.arr()), c, staged::get)
                     append(PlannedDelta.update(row.key, row.lattice.born, mapOf("baseRevision" to value(routine, "revision")!!,
                         "baseName" to value(routine, "name")!!, "changeCount" to Json.of(count))))
                     records("proposal").filter { (it.key !in newly || it.key in checked) && it.key != row.key && it.isAlive && proposalState(it) == "pending" && value(it, "routineId") == Json.of(routineId) && value(it, "door") == value(row, "door") && (value(it, "connection") ?: Json.of("")) == (value(row, "connection") ?: Json.of("")) }.forEach {
@@ -339,6 +346,7 @@ class GymServerRules : ServerRules {
                     if (proposed.size > 50 || lines != diff(base, proposed)) throw Refusal("invalid")
                     checkPlanShape(base, proposed, ::known)
                     checkLoggedKept(base, proposed, session.key.id.json, records("set"))
+                    checkLoadFloor(base, proposed, c, staged::get)
                     append(PlannedDelta.update(row.key, row.lattice.born, mapOf("baseRevision" to planRevision(session), "changeCount" to Json.of(changeCount(base, lines)))))
                     records("workoutProposal").filter { (it.key !in newly || it.key in checked) && it.key != row.key && it.isAlive && proposalState(it) == "pending" && value(it, "sessionId") == Json.of(sessionId) && value(it, "door") == value(row, "door") && (value(it, "connection") ?: Json.of("")) == (value(row, "connection") ?: Json.of("")) }.forEach {
                         append(PlannedDelta.update(it.key, it.lattice.born, mapOf("state" to Json.of("superseded"), "supersededBy" to row.key.id.json, "settledAt" to Json.of(c.serverNow))))
@@ -387,6 +395,22 @@ class GymServerRules : ServerRules {
         if (after.any { !known(it["exerciseId"]) }) throw Refusal("unknown-exercise")
         fun count(entries: List<Json>, exerciseId: Json?) = entries.count { it["exerciseId"] == exerciseId }
         if (after.any { count(after, it["exerciseId"]) > maxOf(count(before, it["exerciseId"]), 1) }) throw Refusal("invalid")
+    }
+    // A.2's load floor: a barbell or a pair of dumbbells carries 0 kg or more; a movement the account cannot name has none.
+    private fun floored(exerciseId: Json?, c: RuleContext, current: (RecordKey) -> Row?): Boolean {
+        val id = (exerciseId as? Json.Str)?.value ?: return false
+        val name = current(key("exerciseName", id)); val seed = c.product["seeds"]?.get(id)
+        val equipment = value(name, "equipment")?.orNull() ?: value(current(key("exercise", id)), "equipment")?.orNull() ?: seed?.get("equipment")?.orNull()
+        val loadCount = value(name, "loadCount")?.orNull() ?: seed?.get("loadCount")?.orNull() ?: Json.of(2)
+        return equipment == Json.of("barbell") || (equipment == Json.of("dumbbell") && loadCount != Json.of(1))
+    }
+    // An entry whose sets no `before` entry of its movement holds takes its movement's floor.
+    private fun checkLoadFloor(before: List<Json>, after: List<Json>, c: RuleContext, current: (RecordKey) -> Row?) {
+        for (entry in after) {
+            val held = before.any { it["exerciseId"] == entry["exerciseId"] && it["sets"]?.orNull() == entry["sets"]?.orNull() }
+            if (held || !floored(entry["exerciseId"], c, current)) continue
+            if (entry["sets"]?.orNull()?.arr().orEmpty().any { (it["weightKg"] as? Json.Num)?.value?.let { kg -> kg < 0 } == true }) throw Refusal("invalid")
+        }
     }
     private fun checkLoggedKept(before: List<Json>, after: List<Json>, session: Json, sets: List<Row>) {
         changedLoggedMovement(before, after, loggedMovements(sets, session))?.let { throw Refusal("plan-logged", Json.objectOf("exerciseId" to it)) }

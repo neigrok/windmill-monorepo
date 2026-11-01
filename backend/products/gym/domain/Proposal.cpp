@@ -146,6 +146,21 @@ std::vector<RoutineChange> changesBetween(const std::vector<RoutineEntry>& base,
   return changes;
 }
 
+std::optional<BelowFloor> firstBelowFloor(const std::vector<RoutineChange>& changes, const std::vector<Exercise>& catalog) {
+  for (std::size_t at = 0; at < changes.size(); ++at) {
+    const RoutineChange& change = changes[at];
+    const bool schemeMoves = change.kind == ChangeKind::added ||
+                             (change.kind == ChangeKind::retargeted && change.before->sets != change.after->sets);
+    if (!schemeMoves) continue;
+    const auto movement = std::find_if(catalog.begin(), catalog.end(), [&](const Exercise& exercise) { return exercise.id == change.exercise; });
+    if (movement == catalog.end()) continue;
+    const std::vector<SetTarget>& sets = change.after->sets;
+    for (std::size_t set = 0; set < sets.size(); ++set)
+      if (sets[set].weightKg && !movement->takes(*sets[set].weightKg)) return BelowFloor{*movement, at, set, *sets[set].weightKg};
+  }
+  return std::nullopt;
+}
+
 int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<RoutineChange>& changes,
                    const std::string& baseName, const std::string& proposedName) {
   int counted = baseName == proposedName ? 0 : 1;

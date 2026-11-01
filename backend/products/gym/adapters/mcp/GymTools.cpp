@@ -1,6 +1,7 @@
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "platform/application/WriteObservation.h"
 
+#include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
@@ -27,6 +28,22 @@ constexpr char kNoExercise[] = "no movement has that id. Call list_exercises for
                                "create_exercise to add one.";
 constexpr char kNoShare[] = "there is no live share link on that workout, so there is nothing to "
                             "revoke — revoked, expired and never-minted are one answer here.";
+
+// A load in the shortest digits a lifter reads.
+std::string kg(double load) { return sync::jcs(Json::Value(load)) + " kg"; }
+
+// A load under its movement's floor, named as a lifter reads it: what the load is, the movement, and the floor. A
+// phone refuses the same load, and no door takes what a phone refuses.
+std::string belowFloorSentence(const std::string& load, const Exercise& movement) {
+  const std::string loading = movement.equipment == Equipment::barbell ? "a barbell" : "a pair of dumbbells";
+  return load + ", below its floor: " + movement.name + " is loaded as " + loading + ", and " + loading + " takes " +
+         kg(movement.loadFloorKg().value_or(0)) + " or more.";
+}
+
+std::string belowFloorSentence(const BelowFloor& below) {
+  return belowFloorSentence("set " + std::to_string(below.set + 1) + " of " + below.movement.name + " targets " +
+                            kg(below.weightKg), below.movement);
+}
 
 std::string typeName(const Json::Value& value) {
   if (value.isNull()) return "null";
@@ -72,7 +89,8 @@ ToolResult batchLog(GymWriteDoor& door, const UserId& caller, const Json::Value&
   std::vector<SetWrite> sets;
   BatchLogOutcome outcome;
   if (imported) {
-    const SessionImport incoming = parseSessionImport(args);
+    SessionImport incoming = parseSessionImport(args);
+    incoming.origin = ImportOrigin::entered;
     sessionId = incoming.id.str();
     sets = incoming.sets;
     outcome = door.importSession(caller, incoming);
@@ -97,6 +115,10 @@ ToolResult batchLog(GymWriteDoor& door, const UserId& caller, const Json::Value&
       case BatchLogError::deleted: reason = "the set was deleted; do not recreate it with another id"; break;
       case BatchLogError::payloadConflict: reason = "the id was accepted with different data; reuse the original request for retries"; break;
       case BatchLogError::idTaken: reason = "the id is already spent and cannot be used for this request"; break;
+      case BatchLogError::belowFloor:
+        reason = belowFloorSentence("it logs " + kg(sets[*outcome.errorIndex].weightKg) + " of " + outcome.belowFloorOf->name,
+                                    *outcome.belowFloorOf);
+        break;
       case BatchLogError::overlap:
         reason = "those times cross workout " + outcome.overlapping->id.str() +
                  ", already in the log; one visit is one workout, so read it with get_sessions before choosing other times";
@@ -106,7 +128,8 @@ ToolResult batchLog(GymWriteDoor& door, const UserId& caller, const Json::Value&
     if (outcome.errorIndex)
       reason = "sets[" + std::to_string(*outcome.errorIndex) + "] (" + sets[*outcome.errorIndex].id.str() + "): " + reason;
     if (!reason.ends_with('.')) reason += '.';
-    return ToolResult::failure(reason + " No changes from this batch were committed.");
+    return ToolResult::failure(reason + " No changes from this batch were committed.",
+                               outcome.error == BatchLogError::belowFloor ? "load-floor" : "refused");
   }
   Json::Value out(Json::objectValue);
   out["sessionId"] = sessionId;
@@ -435,6 +458,10 @@ ToolResult logSet(GymWriteDoor& door, const UserId& caller, const Json::Value& a
     return ToolResult::failure("that set was deleted from the log. It is not coming back, and a "
                                "fresh id would only log it again — leave it out.");
   if (outcome.error == AppendError::unknownExercise) return ToolResult::failure(kNoExercise);
+  if (outcome.error == AppendError::belowFloor)
+    return ToolResult::failure(belowFloorSentence("that set logs " + kg(args["weightKg"].asDouble()) + " of " +
+                                                  outcome.belowFloorOf->name, *outcome.belowFloorOf) +
+                               " Nothing was logged. Send the load that was lifted.", "load-floor");
   return ToolResult::json(toJson(*outcome.set));
 }
 
@@ -447,8 +474,9 @@ ToolResult finishSession(GymWriteDoor& door, const UserId& caller, const Json::V
   FinishOutcome outcome = door.finish(caller, SessionId{session}, parseFinish(args));
   if (outcome.error == FinishError::notFound) return ToolResult::failure(kNoSession);
   if (outcome.error == FinishError::badInstant)
-    return ToolResult::failure("that workout cannot end at that instant — a workout ends at or "
-                               "after it began. Read its `startedAt` with get_session.");
+    return ToolResult::failure("that workout cannot end at that instant — a workout ends at or after it began, "
+                               "and at or after its last set. Read its `startedAt` and its sets' `completedAt` "
+                               "with get_session.", "bad-instant");
   return ToolResult::json(toJson(*outcome.session));
 }
 
@@ -482,6 +510,9 @@ ToolResult createRoutine(ProgramRepository& program, GymWriteDoor& door, const U
     return ToolResult::failure("an entry names a movement no catalog holds. Call list_exercises for "
                                "the ids, or create_exercise to add one, then send the whole routine "
                                "again.");
+  if (outcome.error == RoutineWriteError::belowFloor)
+    return ToolResult::failure(belowFloorSentence(*outcome.belowFloor) + " Nothing was saved. Send the whole "
+                               "routine again with that target at the floor or above.", "load-floor");
   return ToolResult::json(toJson(*outcome.routine));
 }
 
@@ -538,6 +569,10 @@ ToolResult mintOutcome(const ProposalMintOutcome& outcome, const std::string& ap
                                "not minted rather than minted as something the lifter could not "
                                "apply. Call list_exercises for the ids, or create_exercise to add "
                                "one, then send the whole document again.");
+  if (outcome.error == ProposalMintError::belowFloor)
+    return ToolResult::failure(belowFloorSentence(*outcome.belowFloor) + " Nothing was minted, so the lifter "
+                               "has nothing to apply. Send the whole document again with that target at the "
+                               "floor or above.", "load-floor");
   return proposalReceipt(*outcome.proposal, appBaseUrl);
 }
 
@@ -597,6 +632,10 @@ ToolResult proposeWorkoutChange(GymWriteDoor& door, const UserId& caller, const 
       return ToolResult::failure("the workout cannot take that plan: an entry repeats a movement the workout plans "
                                  "once or not at all, or a target falls outside what a plan holds. Read it with "
                                  "get_session and send the whole plan again.");
+    case WorkoutProposalError::belowFloor:
+      return ToolResult::failure(belowFloorSentence(*outcome.belowFloor) + " Nothing was minted, and the workout "
+                                 "keeps its plan. Send the whole plan again with that target at the floor or above.",
+                                 "load-floor");
     case WorkoutProposalError::noChange:
       return ToolResult::failure("that plan is what the workout already follows, so there is nothing to propose. "
                                  "Read it again with get_session and send back what you mean to change.");

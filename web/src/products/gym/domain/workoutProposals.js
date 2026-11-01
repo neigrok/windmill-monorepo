@@ -99,6 +99,7 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
       const changed = [...stored, ...proposed].map((entry) => entry.exerciseId)
         .find((movement) => loaded.isLogged(movement) && !sameJson(entryOf(stored, movement), entryOf(proposed, movement)));
       if (changed !== undefined) return Decision.refuse(loggedRefusal(changed, id.ref));
+      RoutineChange.floored(proposal.value.changes, loaded.catalogue, new Path('changes'));
       if (sameJson(stored.map((entry) => entry.json), proposed.map((entry) => entry.json))) return Decision.unchanged(id);
       const plan = new Plan();
       plan.create(proposal);
@@ -179,6 +180,7 @@ export function ApplyWorkoutProposal(id) {
       const proposal = loaded.proposal;
       precondition(proposal !== null && loaded.workout !== null, 'an applicable workout proposal exists with its workout');
       if (proposal.state === 'applied') return Decision.unchanged(null);
+      RoutineChange.floored(proposal.changes, loaded.workout.catalogue, new Path('changes'));
       const command = { name: 'gym.applyWorkoutProposal', args: { proposalId: id.json }, specs: [] };
       const settled = Prediction.update(id, { state: 'applied', settledAt: loaded.moment.now.ms });
       const plan = Prediction.update(proposal.sessionId, { plan: new PlanSnapshot(loaded.workout.plan.routine, proposal.document).json });

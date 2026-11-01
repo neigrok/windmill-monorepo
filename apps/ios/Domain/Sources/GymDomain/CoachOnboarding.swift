@@ -157,6 +157,10 @@ public struct ImportCoachRoutineBatch: Action {
       guard routine.entries.allSatisfy({ known.contains($0.exerciseId) }) else {
         return .refuse(GymRefusal(Refused(Gym.Codes.unknownExercise, subject: routine.id.ref, path: .predicted)))
       }
+      for (line, entry) in routine.entries.enumerated() {
+        guard let movement = movements.first(where: { $0.id == entry.exerciseId }) ?? loaded.catalogue.find(entry.exerciseId) else { continue }
+        try RoutineRules.floored(entry.sets, of: movement, at: Path("routines") + index + "entries" + line)
+      }
       let position = firstPosition + Int64(index)
       guard position <= 2_147_483_647 else {
         throw Violation(rule: "coach.import", path: "routines", reason: .custom("positionExhausted"))

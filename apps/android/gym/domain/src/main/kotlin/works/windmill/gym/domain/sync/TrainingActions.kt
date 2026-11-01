@@ -82,9 +82,9 @@ class FinishSession(val id: Id<Session>, val finishedAt: Instant? = null) : Acti
     override fun load(read: Reader) = TrainingState(read)
     override fun decide(loaded: TrainingState, ids: IDSource): Decision<Unit, GymRefusal> {
         val session = loaded.session(id)?.takeIf { loaded.drawn.any { drawn -> drawn.id == id } } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, id.ref, path = Refused.Path.predicted)))
-        val at = finishedAt ?: loaded.moment.now
-        if (!SessionRules.canFinishAt(session, at)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.badInstant, id.ref))
-        val finished = SessionRules.finish(session, at)
+        val at = finishedAt ?: maxOf(loaded.moment.now, SessionRules.lastActivity(session, loaded.sets))
+        if (!SessionRules.canFinishAt(session, loaded.sets, at)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.badInstant, id.ref))
+        val finished = SessionRules.finish(session, loaded.sets, at)
         if (finished == session) return Decision.Unchanged(Unit)
         return Decision.Write(Plan(GymCommand(Gym.Commands.finish, mapOf("sessionId" to id.json, "finishedAt" to Json.of(at.ms))),
             listOf(Prediction.update(Session, id, mapOf("finishedAt" to Json.of(finished.finishedAt!!.ms), "closedBy" to Json.of("finish"))))), Unit)

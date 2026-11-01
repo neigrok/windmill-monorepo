@@ -298,17 +298,21 @@ export const SessionRules = Object.freeze({
     const finish = SessionRules.autoCloseAt(session, sets, now);
     return finish === null ? session : session.with({ finishedAt: finish, closedBy: 'stale' });
   },
-  /** @param {SessionValue} session @param {Instant} at */
-  canFinishAt(session, at) { return at.ms > 0 && at.ms >= session.startedAt.ms && at.ms <= SessionRules.maxInstantMs; },
+  // A finish lands inside the instant bounds and never before the workout's last activity, its start included.
+  /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets @param {Instant} at */
+  canFinishAt(session, sets, at) {
+    return at.ms > 0 && at.ms <= SessionRules.maxInstantMs && at.ms >= session.startedAt.ms
+      && at.ms >= SessionRules.lastActivity(session, sets).ms;
+  },
   /** @param {Instant} at @param {Instant} now */
   canStartAt(at, now) { return at.ms > 0 && at.ms <= SessionRules.maxInstantMs && at.ms - now.ms <= SessionRules.maxClockAheadMs; },
   /** @param {SessionValue} session @param {Instant} completedAt */
   lateSetLands(session, completedAt) {
     return session.finishedAt === null || (session.closedBy === 'stale' && completedAt.ms <= session.finishedAt.ms + SessionRules.staleAfterMs);
   },
-  /** @param {SessionValue} session @param {Instant} at */
-  finish(session, at) {
-    if (!SessionRules.canFinishAt(session, at)) throw new Violation('session.finishedAt', new Path('finishedAt'), { kind: 'custom', custom: 'badInstant' });
+  /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets @param {Instant} at */
+  finish(session, sets, at) {
+    if (!SessionRules.canFinishAt(session, sets, at)) throw new Violation('session.finishedAt', new Path('finishedAt'), { kind: 'custom', custom: 'badInstant' });
     if (session.finishedAt !== null && session.closedBy !== 'stale') return session;
     const finish = session.finishedAt;
     const selected = finish === null ? at : at.ms > finish.ms + SessionRules.staleAfterMs || finish.ms >= at.ms ? finish : at;

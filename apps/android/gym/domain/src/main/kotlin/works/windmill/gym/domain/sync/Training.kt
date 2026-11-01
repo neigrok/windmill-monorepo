@@ -106,14 +106,16 @@ object SessionRules {
     }
     fun drawn(session: Session, sets: List<TrainingSet>, now: Instant): Session =
         autoCloseAt(session, sets, now)?.let { session.copy(finishedAt = it, closedBy = "stale") } ?: session
-    fun canFinishAt(session: Session, at: Instant): Boolean = at.ms in session.startedAt.ms..maxInstantMs && at.ms > 0
+    // A finish lands inside the instant bounds, never before the workout's start or its last set.
+    fun canFinishAt(session: Session, sets: List<TrainingSet>, at: Instant): Boolean =
+        at.ms > 0 && at.ms <= maxInstantMs && at >= session.startedAt && at >= lastActivity(session, sets)
     fun canStartAt(at: Instant, now: Instant): Boolean = at.ms > 0 && at.ms <= maxInstantMs && at.ms - now.ms <= maxClockAheadMs
     fun lateSetLands(session: Session, completedAt: Instant): Boolean {
         val finish = session.finishedAt ?: return true
         return session.closedBy == "stale" && completedAt.ms <= finish.ms + staleAfterMs
     }
-    fun finish(session: Session, at: Instant): Session {
-        if (!canFinishAt(session, at)) throw Violation("session.finishedAt", Path("finishedAt"), Violation.Reason.Custom("badInstant"))
+    fun finish(session: Session, sets: List<TrainingSet>, at: Instant): Session {
+        if (!canFinishAt(session, sets, at)) throw Violation("session.finishedAt", Path("finishedAt"), Violation.Reason.Custom("badInstant"))
         val finish = session.finishedAt
         if (finish == null) return session.copy(finishedAt = at, closedBy = "finish")
         if (session.closedBy != "stale") return session

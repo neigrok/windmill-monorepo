@@ -296,7 +296,7 @@ class CorpusTests {
                     "drawn" -> SessionRules.drawn(Session.fromForm(input.member("session")), read.repository(TrainingSet).all(ViewMode.drawn), read.moment.now).let { entityForm(it.id, it.fields()) }
                     "crosses" -> Json.of(SessionRules.crosses(f.instant("startedAt"), f.instant("finishedAt"), Session.fromForm(input.member("session"))))
                     "canStartAt" -> Json.of(SessionRules.canStartAt(f.instant("startedAt"), read.moment.now))
-                    "canFinishAt" -> Json.of(SessionRules.canFinishAt(Session.fromForm(input.member("session")), f.instant("finishedAt")))
+                    "canFinishAt" -> Json.of(SessionRules.canFinishAt(Session.fromForm(input.member("session")), read.repository(TrainingSet).all(ViewMode.stored), f.instant("finishedAt")))
                     else -> error("unclaimed session rule")
                 }
                 "SetRules" -> nullable(SetRules.nextNumber(read.repository(TrainingSet).all(ViewMode.stored), f.ref("sessionId", Session), f.ref("exerciseId", Exercise)))

@@ -334,6 +334,40 @@ TEST(proposal_refuses_a_removed_line_in_the_middle_of_the_run) {
   CHECK(rejects([&] { RoutineProposal{head(), 1, "Push A", "Push A", scrambled}; }));
 }
 
+// The catalog the floor reads: a barbell, a pair of dumbbells, one dumbbell and an assisted bodyweight movement.
+std::vector<Exercise> flooredCatalog() {
+  return {Exercise{ExerciseId{"back-squat"}, "Back Squat", Pattern::squat, Equipment::barbell, 2.5, false},
+          Exercise{ExerciseId{"split-squat"}, "Split Squat", Pattern::squat, Equipment::dumbbell, 2.0, false, {}, 2},
+          Exercise{ExerciseId{"goblet-squat"}, "Goblet Squat", Pattern::squat, Equipment::dumbbell, 2.0, false, {}, 1},
+          Exercise{ExerciseId{"pull-up"}, "Pull Up", Pattern::pull, Equipment::bodyweight, 2.5, false}};
+}
+
+TEST(first_below_floor_names_the_first_added_or_retargeted_target_under_its_movements_floor) {
+  const std::vector<RoutineEntry> base{line(1, "back-squat", straight(3, 5, 100.0)), line(2, "pull-up", straight(3, 8, -20.0))};
+  const std::vector<RoutineEntry> proposed{line(1, "back-squat", {SetTarget{5, 60.0}, SetTarget{5, -10.0}, SetTarget{5, -20.0}}),
+                                           line(2, "pull-up", straight(3, 8, -30.0)),
+                                           line(3, "split-squat", straight(2, 10, -4.0))};
+  const std::optional<BelowFloor> below = firstBelowFloor(changesBetween(base, proposed), flooredCatalog());
+  CHECK_EQ(below, std::optional<BelowFloor>(BelowFloor{flooredCatalog()[0], 0, 1, -10.0}));
+
+  const std::vector<RoutineEntry> added{line(1, "pull-up", straight(1, 8, -30.0)), line(2, "split-squat", straight(2, 10, -4.0))};
+  CHECK_EQ(firstBelowFloor(changesBetween({}, added), flooredCatalog()),
+           std::optional<BelowFloor>(BelowFloor{flooredCatalog()[1], 1, 0, -4.0}));
+}
+
+TEST(first_below_floor_leaves_kept_schemes_single_dumbbells_assistance_and_unknown_movements_alone) {
+  const std::vector<RoutineEntry> base{line(1, "back-squat", straight(3, 5, -10.0), 120)};
+  // A rest-only retarget keeps the scheme it held, below the floor or not.
+  const std::vector<RoutineEntry> restOnly{line(1, "back-squat", straight(3, 5, -10.0), 180)};
+  CHECK_EQ(firstBelowFloor(changesBetween(base, restOnly), flooredCatalog()), std::optional<BelowFloor>());
+  CHECK_EQ(firstBelowFloor(changesBetween(base, base), flooredCatalog()), std::optional<BelowFloor>());
+  CHECK_EQ(firstBelowFloor(changesBetween(base, {}), flooredCatalog()), std::optional<BelowFloor>());
+  const std::vector<RoutineEntry> keepTheirSign{line(1, "goblet-squat", straight(1, 8, -4.0)), line(2, "pull-up", straight(1, 8, -30.0)),
+                                          line(3, "landmine-press", straight(1, 8, -5.0)), line(4, "back-squat", straight(1, 5, 0.0)),
+                                          line(5, "split-squat", {SetTarget{10, std::nullopt}})};
+  CHECK_EQ(firstBelowFloor(changesBetween({}, keepTheirSign), flooredCatalog()), std::optional<BelowFloor>());
+}
+
 TEST(stored_words_round_trip_and_clamp_toward_the_safe_reading) {
   CHECK_EQ(proposalIntentFromStored(toString(ProposalIntent::remove)), ProposalIntent::remove);
   CHECK_EQ(proposalStateFromStored(toString(ProposalState::applied)), ProposalState::applied);

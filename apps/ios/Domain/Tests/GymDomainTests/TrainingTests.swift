@@ -65,7 +65,7 @@ struct TrainingTests {
       #expect(session.planUnreadable && session.plan == nil && session.name == nil)
       #expect(session.fields == fields)
       #expect(SessionRules.drawn(session, sets: [], now: Instant(ms: Self.now)).fields["plan"] == plan)
-      #expect(try SessionRules.finish(session, at: Instant(ms: 2000)).fields["plan"] == plan)
+      #expect(try SessionRules.finish(session, sets: [], at: Instant(ms: 2000)).fields["plan"] == plan)
       #expect(throws: DecodeError.self) { try SessionPlan.decode(plan) }
     }
     #expect(try !Session(Fields(type: Session.type, id: Self.sessionID.record, values: values)).planUnreadable)
@@ -376,6 +376,19 @@ struct TrainingTests {
     #expect(try a.drawn(TrainingSet.self).first?.weightKg == 80)
   }
 
+  @Test func aFinishAfterTheClockStepsBackLandsAtTheLastSetAndTheLogKeepsIt() throws {
+    let a = Self.phone(); try Self.exercise(a); _ = try Self.start(a)
+    a.clock.jump(ms: 60_000)
+    let last = Self.set(a); _ = try a.runner.run(AppendSet(last)); a.sync()
+    a.clock.jump(ms: -120_000)
+    #expect(try a.runner.run(FinishSession(id: Self.sessionID, finishedAt: Instant(ms: a.clock.nowMs()))).refusal
+      == .badInstant(Refused(Gym.Codes.badInstant, subject: Self.sessionID.ref, path: .predicted)))
+    #expect(try a.runner.run(FinishSession(id: Self.sessionID)).receipt != nil)
+    a.sync()
+    #expect(try a.notices(GymRefusal.self).isEmpty)
+    #expect(try a.stored(Session.self).map(\.finishedAt) == [last.completedAt])
+  }
+
   @Test func finishingAHeldDiscardedStaleSessionRefusesAndUndoKeepsTheSession() throws {
     let a = Self.phone(); _ = try Self.start(a); a.sync()
     a.advance(ms: SessionRules.staleAfterMs)
@@ -478,7 +491,7 @@ struct TrainingTests {
             return ["id": drawn.id.json, "fields": .object(fields: drawn.fields)]
           case "crosses": return .bool(SessionRules.crosses(Instant(ms: try input.member("startedAt").asInteger()), Instant(ms: try input.member("finishedAt").asInteger()), other: try Session(form: input.member("session"))))
           case "canStartAt": return .bool(SessionRules.canStartAt(Instant(ms: try input.member("startedAt").asInteger()), now: reader.moment.now))
-          case "canFinishAt": return .bool(SessionRules.canFinishAt(try Session(form: input.member("session")), at: Instant(ms: try input.member("finishedAt").asInteger())))
+          case "canFinishAt": return .bool(SessionRules.canFinishAt(try Session(form: input.member("session")), sets: try reader.repository(TrainingSet.self).all(in: .stored), at: Instant(ms: try input.member("finishedAt").asInteger())))
           case let operation: throw ContractError("unclaimed session rule \(operation)")
           }
         case "SetRules": return .of(SetRules.nextNumber(try reader.repository(TrainingSet.self).all(in: .stored), sessionId: ID(try RecordID(json: input.member("sessionId"))), exerciseId: ID(try RecordID(json: input.member("exerciseId")))))

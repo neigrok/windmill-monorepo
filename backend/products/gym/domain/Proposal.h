@@ -133,6 +133,22 @@ struct RoutineProposal {
 std::vector<RoutineChange> changesBetween(const std::vector<RoutineEntry>& base,
                                           const std::vector<RoutineEntry>& proposed);
 
+// A target a write sets under its movement's load floor: the movement as the catalog resolves it, the change line
+// and the set within its scheme (both counted from 0), and what the set asks for.
+struct BelowFloor {
+  Exercise movement;
+  std::size_t change;
+  std::size_t set;
+  double weightKg;
+
+  bool operator==(const BelowFloor&) const = default;
+};
+
+// The first target, in change order and then set order, below its movement's floor. An added line takes the floor,
+// and so does a retargeted line whose scheme moves; a scheme the write keeps keeps what it held, and a movement the
+// catalog lacks has no floor here.
+std::optional<BelowFloor> firstBelowFloor(const std::vector<RoutineChange>& changes, const std::vector<Exercise>& catalog);
+
 // Every row that moves, one for a renamed routine, and one for a run the proposal reorders. A
 // `kept` row is not counted, but a reorder of kept rows is.
 int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<RoutineChange>& changes,

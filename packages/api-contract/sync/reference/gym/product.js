@@ -152,6 +152,26 @@ function checkPlanShape(ctx, { before, after, current }) {
   if (after.some((entry) => count(after, entry.exerciseId) > Math.max(count(before, entry.exerciseId), 1))) throw new Refusal('invalid');
 }
 
+// A movement's load floor (A.2): a barbell or a pair of dumbbells carries 0 kg or more; every other loading keeps
+// its sign, an assisted machine's included. A movement the account cannot name has no floor here.
+function floored(ctx, exerciseId, current) {
+  const name = current('exerciseName', exerciseId);
+  const seed = ownValue(ctx.productState.seeds, exerciseId);
+  const equipment = valueOf(name, 'equipment') ?? valueOf(current('exercise', exerciseId), 'equipment') ?? seed?.equipment;
+  const loadCount = valueOf(name, 'loadCount') ?? seed?.loadCount ?? 2;
+  return equipment === 'barbell' || (equipment === 'dumbbell' && loadCount !== 1);
+}
+
+// A.2's load floor over a write of targets: an entry whose sets no `before` entry of its movement holds takes its
+// movement's floor, so a scheme the write leaves as it stood keeps what it held.
+function checkLoadFloor(ctx, { before, after, current }) {
+  const held = (entry) => before.some((line) => line.exerciseId === entry.exerciseId && sameJson(line.sets ?? null, entry.sets ?? null));
+  for (const entry of after) {
+    if (held(entry) || !floored(ctx, entry.exerciseId, current)) continue;
+    if ((entry.sets ?? []).some((set) => set.weightKg !== undefined && set.weightKg < 0)) throw new Refusal('invalid');
+  }
+}
+
 // A.2's logged-movement rule over the intent's joined sets: a net plan change, whatever wrote it, and a
 // workout proposal's document keep every logged movement's entries.
 function checkLoggedKept({ before, after, sessionId, rowsOf }) {
@@ -387,7 +407,10 @@ export class GymProduct {
     if (finishedAt === 0 || finishedAt < valueOf(session, 'startedAt')) throw new Refusal('bad-instant');
     const stored = valueOf(session, 'finishedAt');
     if (isSet(stored) && valueOf(session, 'closedBy') !== 'stale') return { deltas: [], write: [] };
-    const at = !isSet(stored) ? finishedAt : finishedAt > stored + STALE_MS ? stored : Math.max(stored, finishedAt);
+    // A finish lands no earlier than the workout's last set: a clamped future `finishedAt` reads serverNow, which a
+    // set stamped by a clock ahead of the server can outrun.
+    const landing = Math.max(finishedAt, lastActivity(ctx, session));
+    const at = !isSet(stored) ? landing : landing > stored + STALE_MS ? stored : Math.max(stored, landing);
     return {
       deltas: [{ t: 'session', id: sessionId, born: session.born, f: { finishedAt: [at, null], closedBy: ['finish', null] } }],
       write: [{ t: 'session', id: sessionId, f: { finishedAt: null, closedBy: null } }],
@@ -481,6 +504,7 @@ export class GymProduct {
     if (reason !== undefined) throw new Refusal('proposal-superseded', { reason });
     const session = ctx.stored('session', valueOf(proposal, 'sessionId'));
     const plan = { routine: valueOf(session, 'plan').routine, entries: documentOf(valueOf(proposal, 'changes')) };
+    checkLoadFloor(ctx, { before: valueOf(session, 'plan').entries ?? [], after: plan.entries, current: (t, id) => ctx.stored(t, id) });
     setOwn(receipts, proposalId, true);
     return {
       deltas: [
@@ -667,6 +691,7 @@ const RULES = {
       const entries = valueOf(after, 'entries');
       if (!Array.isArray(entries) || entries.length === 0 || entries.some((entry) => entry.sets !== undefined && entry.sets.length === 0)) throw new Refusal('invalid');
       if (entries.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
+      checkLoadFloor(ctx, { before: isNew ? [] : valueOf(record.original, 'entries') ?? [], after: entries, current });
     }
     if (isNew && valueOf(after, 'createdDoor') === 'ask') {
       if (current('routineCreation', after.id)) throw new Refusal('invalid');
@@ -769,6 +794,7 @@ const RULES = {
       || /^\s*$/.test(valueOf(after, 'proposedName') ?? '') || proposed.some((entry) => entry.sets !== undefined && entry.sets.length === 0))
       || !sameJson(changes, proposalChanges(valueOf(routine, 'entries'), proposed))) throw new Refusal('invalid');
     if (proposed.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
+    checkLoadFloor(ctx, { before: valueOf(routine, 'entries'), after: proposed, current });
     const name = valueOf(routine, 'name');
     const count = changeCountOf(valueOf(routine, 'entries'), changes) + (name === valueOf(after, 'proposedName') ? 0 : 1);
     append({ t: 'proposal', id: after.id, born: after.born, f: {
@@ -804,6 +830,7 @@ const RULES = {
     if (proposed.length > 50 || !sameJson(changes, proposalChanges(base, proposed))) throw new Refusal('invalid');
     checkPlanShape(ctx, { before: base, after: proposed, current });
     checkLoggedKept({ before: base, after: proposed, sessionId, rowsOf });
+    checkLoadFloor(ctx, { before: base, after: proposed, current });
     append({ t: 'workoutProposal', id: after.id, born: after.born, f: {
       baseRevision: [valueOf(session, 'planRevision') ?? 1, null], changeCount: [changeCountOf(base, changes), null],
     } });

@@ -258,6 +258,8 @@ bases are captured:
 
 The shape of `admit/*.json`, against gym's registry and binding: `{name, input: {state, origin,
 intent, serverNow}, expect: {result, state}}`. The server states hold `acct:A/gym` and `acct:B/gym`.
+Their product state's `seeds` give each seed exercise its `name` and `equipment`, and `loadCount: 1` for
+a single dumbbell, as the load floor reads them.
 Its R118 vectors pin mixed-intent joined bases, forging refusals, no-op and losing writes, content
 time after reorder and snapshot retention after routine death. `reference/test/gym/product.test.js`
 boots a v4 store on the input state of each R118 admission that writes, then pulls the state it

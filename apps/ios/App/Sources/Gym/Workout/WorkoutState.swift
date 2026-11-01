@@ -244,8 +244,9 @@ struct FinishWorkout: Action {
     guard !loaded.stranded else { return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted))) }
     let action = FinishSession(id: id)
     let decision = try action.decide(loaded.training, ids: ids)
-    guard loaded.serverHeld, case .write = decision else { return decision }
-    return .write(try Plan(running: FinishSessionCommand(id: id, finishedAt: loaded.training.moment.now)))
+    guard loaded.serverHeld, case .write = decision, let session = loaded.training.session(id) else { return decision }
+    let at = SessionRules.finishAt(session, sets: loaded.training.sets, now: loaded.training.moment.now)
+    return .write(try Plan(running: FinishSessionCommand(id: id, finishedAt: at)))
   }
 }
 

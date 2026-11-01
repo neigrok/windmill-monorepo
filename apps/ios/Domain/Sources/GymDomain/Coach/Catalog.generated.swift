@@ -1088,7 +1088,7 @@ extension Catalog {
                         "type": "integer",
                       ],
                       "weightKg": [
-                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
+                        "description": "Load for THIS set in kg. Zero is explicit. A barbell or a pair of dumbbells takes 0 kg or more; on any other movement a negative load is assistance. OMIT to mean what they lifted for the set of the same number last time.",
                         "type": "number",
                       ],
                     ],
@@ -1335,7 +1335,7 @@ extension Catalog {
                         "type": "integer",
                       ],
                       "weightKg": [
-                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
+                        "description": "Load for THIS set in kg. Zero is explicit. A barbell or a pair of dumbbells takes 0 kg or more; on any other movement a negative load is assistance. OMIT to mean what they lifted for the set of the same number last time.",
                         "type": "number",
                       ],
                     ],
@@ -1619,7 +1619,7 @@ extension Catalog {
                         "type": "integer",
                       ],
                       "weightKg": [
-                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
+                        "description": "Load for THIS set in kg. Zero is explicit. A barbell or a pair of dumbbells takes 0 kg or more; on any other movement a negative load is assistance. OMIT to mean what they lifted for the set of the same number last time.",
                         "type": "number",
                       ],
                     ],
@@ -1844,7 +1844,7 @@ extension Catalog {
           "rpe": ["description": "Rated exertion, 1\u{2013}10. Omit if it was not rated.", "type": "number"],
           "sessionId": ["description": "The workout's id \u{2014} list_sessions answers with it.", "type": "string"],
           "weightKg": [
-            "description": "Load in kg. Negative is legal \u{2014} that is band-assisted work.",
+            "description": "Load in kg. A barbell or a pair of dumbbells logs 0 kg or more; on any other movement a negative load is assistance, as on an assisted pull-up.",
             "type": "number",
           ],
         ],
@@ -1922,7 +1922,7 @@ extension Catalog {
                   "type": "number",
                 ],
                 "weightKg": [
-                  "description": "Load in kg, at most two decimal places.",
+                  "description": "Load in kg, at most two decimal places. A barbell or a pair of dumbbells logs 0 kg or more; on any other movement a negative load is assistance.",
                   "multipleOf": 0.01,
                   "type": "number",
                 ],
@@ -2025,7 +2025,7 @@ extension Catalog {
                   "type": "number",
                 ],
                 "weightKg": [
-                  "description": "Load in kg, at most two decimal places.",
+                  "description": "Load in kg, at most two decimal places. A barbell or a pair of dumbbells logs 0 kg or more; on any other movement a negative load is assistance.",
                   "multipleOf": 0.01,
                   "type": "number",
                 ],
@@ -2097,7 +2097,7 @@ extension Catalog {
         "additionalProperties": false,
         "properties": [
           "finishedAt": [
-            "description": "When the workout ended, epoch ms \u{2014} at or after it started.",
+            "description": "When the workout ended, epoch ms \u{2014} at or after it started and at or after its last set.",
             "maximum": 253402300799000,
             "minimum": 1,
             "type": "integer",

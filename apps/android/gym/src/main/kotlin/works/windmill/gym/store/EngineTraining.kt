@@ -300,10 +300,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             }
         }, expectedReplica, expectedAnonymous)
     }
-    suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
+    suspend fun finishSession(sessionId: String, finishedAtMs: Long? = null): Session {
         reconcileImports()
         if (imports.hasUnsubmittedSets(sessionId)) throw TrainingUnanswered
-        apply(FinishSession(Id(sessionId, EngineSession), Instant(finishedAtMs)))
+        apply(FinishSession(Id(sessionId, EngineSession), finishedAtMs?.let(::Instant)))
         return writtenSession(sessionId) ?: throw missing("That workout is no longer on the log.")
     }
     // The workout a write just recorded, read by its id and its own sets; the history is read only

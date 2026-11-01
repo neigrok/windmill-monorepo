@@ -101,9 +101,10 @@ export function FinishSession({ id, finishedAt = null }) {
       if (session === null || !loaded.drawn.some((drawn) => drawn.id.equals(id))) {
         return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', id.ref, null, 'predicted')));
       }
-      const at = finishedAt ?? loaded.moment.now;
-      if (!SessionRules.canFinishAt(session, at)) return Decision.refuse(GymRefusals.ofRefused(new Refused('bad-instant', id.ref, null, 'predicted')));
-      const finished = SessionRules.finish(session, at);
+      const lastActivity = SessionRules.lastActivity(session, loaded.sets);
+      const at = finishedAt ?? (loaded.moment.now.ms < lastActivity.ms ? lastActivity : loaded.moment.now);
+      if (!SessionRules.canFinishAt(session, loaded.sets, at)) return Decision.refuse(GymRefusals.ofRefused(new Refused('bad-instant', id.ref, null, 'predicted')));
+      const finished = SessionRules.finish(session, loaded.sets, at);
       if (sameJson(finished.fields(), session.fields())) return Decision.unchanged(null);
       precondition(finished.finishedAt !== null, 'a finished session has a finish instant');
       const command = { name: 'gym.finish', args: { sessionId: id.json, finishedAt: at.ms }, specs: [] };

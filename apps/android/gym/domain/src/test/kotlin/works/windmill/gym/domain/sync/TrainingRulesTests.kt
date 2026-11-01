@@ -51,7 +51,7 @@ class TrainingRulesTests {
             assertNull(session.name)
             assertEquals(fields, session.fields())
             assertEquals(plan, SessionRules.drawn(session, emptyList(), testMoment.now).fields()["plan"])
-            assertEquals(plan, SessionRules.finish(session, Instant(2000)).fields()["plan"])
+            assertEquals(plan, SessionRules.finish(session, emptyList(), Instant(2000)).fields()["plan"])
             assertThrows(DecodeError::class.java) { PlanSnapshot.decode(plan) }
         }
         assertFalse(Session.decode(Fields(Session.type, sessionId.record, values)).planUnreadable)
@@ -77,8 +77,12 @@ class TrainingRulesTests {
     @Test fun startAndFinishInstantBoundsIncludeEdges() {
         val workout = Session(sessionId, Instant(1000))
         for (at in listOf(Instant(0), Instant(999), Instant(SessionRules.maxInstantMs + 1)))
-            assertFalse(SessionRules.canFinishAt(workout, at))
-        for (at in listOf(workout.startedAt, Instant(SessionRules.maxInstantMs))) assertTrue(SessionRules.canFinishAt(workout, at))
+            assertFalse(SessionRules.canFinishAt(workout, emptyList(), at))
+        for (at in listOf(workout.startedAt, Instant(SessionRules.maxInstantMs))) assertTrue(SessionRules.canFinishAt(workout, emptyList(), at))
+        val last = trainingSet(completedAt = Instant(1500))
+        val other = last.copy(id = Id("set00002", TrainingSet), sessionId = Id("session2", Session), completedAt = Instant(5000))
+        assertFalse(SessionRules.canFinishAt(workout, listOf(last, other), Instant(1499)))
+        assertTrue(SessionRules.canFinishAt(workout, listOf(last, other), Instant(1500)))
         assertTrue(SessionRules.canStartAt(Instant(1), testMoment.now))
         assertTrue(SessionRules.canStartAt(Instant(testMoment.now.ms + SessionRules.maxClockAheadMs), testMoment.now))
         assertFalse(SessionRules.canStartAt(Instant(testMoment.now.ms + SessionRules.maxClockAheadMs + 1), testMoment.now))
@@ -87,18 +91,21 @@ class TrainingRulesTests {
 
     @Test fun finishIsFirstWriterWinsAndOnlyStaleClosureYields() {
         val workout = Session(sessionId, Instant(1000))
-        assertEquals(workout.copy(finishedAt = Instant(2000), closedBy = "finish"), SessionRules.finish(workout, Instant(2000)))
+        assertEquals(workout.copy(finishedAt = Instant(2000), closedBy = "finish"), SessionRules.finish(workout, emptyList(), Instant(2000)))
+        invalidValue("session.finishedAt", "finishedAt", Violation.Reason.Custom("badInstant")) {
+            SessionRules.finish(workout, listOf(trainingSet(completedAt = Instant(2001))), Instant(2000))
+        }
         for (who in listOf<String?>(null, "finish")) {
             val finished = workout.copy(finishedAt = Instant(2000), closedBy = who)
-            assertEquals(finished, SessionRules.finish(finished, Instant(3000)))
+            assertEquals(finished, SessionRules.finish(finished, emptyList(), Instant(3000)))
             assertFalse(SessionRules.lateSetLands(finished, Instant(1500)))
         }
         val stale = workout.copy(finishedAt = Instant(2000), closedBy = "stale")
         for (at in listOf(1500L, 2000L, 2000 + SessionRules.staleAfterMs)) {
-            assertEquals(stale.copy(finishedAt = Instant(maxOf(2000, at)), closedBy = "finish"), SessionRules.finish(stale, Instant(at)))
+            assertEquals(stale.copy(finishedAt = Instant(maxOf(2000, at)), closedBy = "finish"), SessionRules.finish(stale, emptyList(), Instant(at)))
             assertTrue(SessionRules.lateSetLands(stale, Instant(at)))
         }
-        assertEquals(stale.copy(closedBy = "finish"), SessionRules.finish(stale, Instant(2001 + SessionRules.staleAfterMs)))
+        assertEquals(stale.copy(closedBy = "finish"), SessionRules.finish(stale, emptyList(), Instant(2001 + SessionRules.staleAfterMs)))
         assertFalse(SessionRules.lateSetLands(stale, Instant(2001 + SessionRules.staleAfterMs)))
         assertTrue(SessionRules.lateSetLands(workout, Instant(SessionRules.maxInstantMs)))
     }

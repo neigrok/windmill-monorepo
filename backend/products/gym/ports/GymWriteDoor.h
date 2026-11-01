@@ -37,13 +37,19 @@ struct SetWrite {
   std::uint64_t completedAtMs;
 };
 
-// A workout that already happened, written whole: the import route and an agent's import_session.
+// Where an import's loads come from: `recorded` history replays every load as it was logged; a workout an agent
+// `entered` now holds each new set to its movement's load floor, as a phone's set entry does.
+enum class ImportOrigin { recorded, entered };
+
+// A workout that already happened, written whole: the import route replays recorded history, and an agent's
+// import_session enters one.
 struct SessionImport {
   SessionId id;
   std::uint64_t startedAtMs;
   std::uint64_t finishedAtMs;
   std::optional<RoutineId> routine;
   std::vector<SetWrite> sets;
+  ImportOrigin origin = ImportOrigin::recorded;
 };
 
 // A routine travels whole; its entry positions are the order they arrive in.
@@ -86,9 +92,10 @@ struct ProposalWrite {
 // client-minted id is already spent, never by whom. alreadyOpen is reachable only by a caller that
 // said it would not join. unknownRoutine is a creating start naming a plan this account cannot read.
 // `deleted` names a set the lifter took out of the log — never answer it as idTaken, whose repair
-// (mint a fresh id and resend) would bring the deleted set back.
+// (mint a fresh id and resend) would bring the deleted set back. `belowFloor` is a new set's load under its movement's
+// load floor, the movement named by `belowFloorOf`; a set that already landed replays whatever it holds.
 enum class StartError { none, idTaken, alreadyOpen, unknownRoutine, clockAhead };
-enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted };
+enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted, belowFloor };
 enum class FinishError { none, notFound, badInstant };
 // `open` refuses to delete a workout still being logged into, whose queued sets are in flight.
 enum class DiscardOutcome { done, notFound, open };
@@ -102,6 +109,7 @@ struct StartOutcome {
 struct AppendOutcome {
   std::optional<Set> set;
   AppendError error;
+  std::optional<Exercise> belowFloorOf = std::nullopt;
 };
 
 struct FinishOutcome {
@@ -109,8 +117,9 @@ struct FinishOutcome {
   FinishError error;
 };
 
-// `overlap` is an import's alone: its span crosses a finished session, which `overlapping` names.
-enum class BatchLogError { none, notFound, idTaken, unknownExercise, unknownRoutine, finished, deleted, payloadConflict, overlap };
+// `overlap` is an import's alone: its span crosses a finished session, which `overlapping` names. `belowFloor` is an
+// append's or an entered import's, for the set at `errorIndex`.
+enum class BatchLogError { none, notFound, idTaken, unknownExercise, unknownRoutine, finished, deleted, payloadConflict, overlap, belowFloor };
 
 struct RecordedSet {
   SetId id;
@@ -126,26 +135,30 @@ struct BatchLogOutcome {
   bool replayed = false;
   bool sessionDeleted = false;
   std::optional<Session> overlapping;
+  std::optional<Exercise> belowFloorOf;
 };
 
-// idTaken: the id is spent on a row this account does not own, never whose.
-enum class RoutineWriteError { none, idTaken, unknownExercise };
+// idTaken: the id is spent on a row this account does not own, never whose. belowFloor: a target under its movement's
+// load floor, which `belowFloor` names.
+enum class RoutineWriteError { none, idTaken, unknownExercise, belowFloor };
 
 struct RoutineWriteOutcome {
   std::optional<Routine> routine;
   RoutineWriteError error;
+  std::optional<BelowFloor> belowFloor = std::nullopt;
 };
 
 // A spent id splits three ways: `idTaken` is an id spent on a proposal this account cannot see; the
 // caller's own id carrying the SAME document is the replay and reads back the stored proposal
 // untouched; the caller's own id carrying a DIFFERENT document is `idReused`. `unknownRoutine` is
 // absent and another account's alike. `noChange` — a document identical to what the routine already
-// says — is decided before a row is built.
-enum class ProposalMintError { none, idTaken, idReused, unknownRoutine, unknownExercise, noChange };
+// says — is decided before a row is built. `belowFloor` is a changed target under its movement's load floor.
+enum class ProposalMintError { none, idTaken, idReused, unknownRoutine, unknownExercise, noChange, belowFloor };
 
 struct ProposalMintOutcome {
   std::optional<RoutineProposal> proposal;
   ProposalMintError error;
+  std::optional<BelowFloor> belowFloor = std::nullopt;
 };
 
 // The whole plan the open workout would take on, in order; the caller mints the id as for a routine proposal.
@@ -160,13 +173,14 @@ struct WorkoutProposalWrite {
 // The spent-id split of ProposalMintError, and the workout's own refusals: `unknownSession` is absent and another
 // account's alike, `noPlan` a workout started with no routine, `finished` a closed one, `planLogged` a change to a
 // movement with a logged set (`exercise` names it), `invalidPlan` a plan the rules refuse otherwise, as a second entry
-// of a movement the workout plans once.
-enum class WorkoutProposalError { none, idTaken, idReused, unknownSession, noPlan, finished, unknownExercise, planLogged, invalidPlan, noChange };
+// of a movement the workout plans once, `belowFloor` a changed target under its movement's load floor.
+enum class WorkoutProposalError { none, idTaken, idReused, unknownSession, noPlan, finished, unknownExercise, planLogged, invalidPlan, noChange, belowFloor };
 
 struct WorkoutProposalOutcome {
   std::optional<WorkoutProposal> proposal;
   WorkoutProposalError error;
   std::optional<ExerciseId> exercise;
+  std::optional<BelowFloor> belowFloor = std::nullopt;
 };
 
 // A seed's slug and another lifter's custom id are both simply taken.

@@ -1122,6 +1122,20 @@ TEST(gym_import_with_a_spent_set_id_is_409_set_id_taken_and_lands_nothing) {
   CHECK(h.failures.messages.empty());
 }
 
+// The route replays recorded history, whose loads are kept as they were logged: a barbell set below 0 kg lands, where
+// an agent entering it now is held to the floor.
+TEST(gym_import_keeps_a_recorded_load_below_the_floor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  DoorApis h;
+  drogon::HttpResponsePtr response = sendImport(h, importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
+                                                              {setBody("set_import01", "bench-press", -2.5, 1'699'993'400'000)}));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(idsIn("gym_sets"), std::vector<std::string>{"set_import01"});
+  CHECK_EQ(h.repo.log.setOf(h.user, SetId{"set_import01"})->weightKg, -2.5);
+  CHECK(h.failures.messages.empty());
+}
+
 TEST(gym_import_naming_a_routine_the_caller_cannot_read_is_404) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;

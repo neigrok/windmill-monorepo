@@ -106,17 +106,27 @@ object RoutineRules {
         return if (retargeted || reloaded) ExerciseRules.loadFloor(equipment, loadCount) else null
     }
 
-    fun floored(routine: Routine, base: Routine, movements: List<RoutineMovementChange>, catalogue: Catalogue) {
-        routine.entries.forEachIndexed { index, entry ->
+    fun floored(entries: List<RoutineEntry>, base: List<RoutineEntry>, movements: List<RoutineMovementChange>, catalogue: Catalogue, at: Path) {
+        entries.forEachIndexed { index, entry ->
             val staged = movements.firstOrNull { it.current.id == entry.exerciseId }
             val movement = staged?.current ?: catalogue.find(entry.exerciseId) ?: return@forEachIndexed
             val loading = if (staged == null) movement.equipment to movement.loadCount else staged.base?.let { it.equipment to it.loadCount }
-            val retargeted = base.entries.firstOrNull { it.exerciseId == entry.exerciseId }?.sets != entry.sets
+            val retargeted = base.firstOrNull { it.exerciseId == entry.exerciseId }?.sets != entry.sets
             val floor = targetFloor(retargeted, movement.equipment, movement.loadCount, loading) ?: return@forEachIndexed
-            entry.sets?.forEachIndexed { at, set ->
+            entry.sets?.forEachIndexed { number, set ->
                 val weightKg = set.weightKg ?: return@forEachIndexed
-                if (weightKg < floor) throw Violation(loadFloor, Path("entries") + index + "sets" + at + "weightKg", Violation.Reason.Below(floor))
+                if (weightKg < floor) throw Violation(loadFloor, at + index + "sets" + number + "weightKg", Violation.Reason.Below(floor))
             }
+        }
+    }
+
+    // An added change line or a retarget of its sets takes its movement's floor; a rest-only retarget or a kept line keeps what it held.
+    fun floored(changes: List<RoutineChange>, catalogue: Catalogue) = changes.forEachIndexed { index, change ->
+        val sets = change.after?.sets ?: return@forEachIndexed
+        val retargets = change.kind == "added" || (change.kind == "retargeted" && change.before?.sets != sets)
+        val movement = catalogue.find(change.exerciseId)?.takeIf { retargets } ?: return@forEachIndexed
+        sets.forEachIndexed { number, set ->
+            set.weightKg?.let { movement.floored(it, loadFloor, Path("changes") + index + "after" + "sets" + number + "weightKg") }
         }
     }
 }
@@ -149,7 +159,7 @@ class SaveRoutinePlan(val base: Routine, val current: Routine, val isNew: Boolea
             return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, current.id.ref, path = Refused.Path.predicted)))
         val touched = current.fields().keys.filter { isNew || current.fields()[it] != base.fields()[it] }.sorted()
         val valid = Valid(current, Routine, touched, loaded.moment)
-        RoutineRules.floored(valid.value, base, movements, loaded.catalogue)
+        RoutineRules.floored(valid.value.entries, base.entries, movements, loaded.catalogue, Path("entries"))
         val changed = touched.filter { loaded.routine?.fields()?.get(it) != valid.value.fields()[it] }
         if (!isNew && changed.any { loaded.routine?.fields()?.get(it) != base.fields()[it] })
             return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.stale, current.id.ref, path = Refused.Path.predicted)))

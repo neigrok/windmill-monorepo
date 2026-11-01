@@ -185,6 +185,16 @@ Exercise::Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equ
   if (stepKg < kMinStepKg || stepKg > kMaxStepKg) throw InvalidTraining("step out of range");
 }
 
+std::optional<double> Exercise::loadFloorKg() const {
+  if (equipment == Equipment::barbell || (equipment == Equipment::dumbbell && loadCount == 2)) return 0.0;
+  return std::nullopt;
+}
+
+bool Exercise::takes(double weightKg) const {
+  const std::optional<double> floorKg = loadFloorKg();
+  return !floorKg || weightKg >= *floorKg;
+}
+
 SetTarget::SetTarget(std::optional<int> reps, std::optional<double> weightKg)
     : reps(reps), weightKg(weightKg) {
   if (this->reps && (*this->reps < 1 || *this->reps > 100))
@@ -264,9 +274,15 @@ void SetBatch::checkInterval(const Session& session, bool completedSession) cons
   }
 }
 
-bool canFinishAt(const Session& session, std::uint64_t finishedAtMs) {
+std::optional<Exercise> movementBelowFloor(const Set& set, const std::vector<Exercise>& catalog) {
+  const auto movement = std::find_if(catalog.begin(), catalog.end(), [&](const Exercise& exercise) { return exercise.id == set.exercise; });
+  if (movement == catalog.end() || movement->takes(set.weightKg)) return std::nullopt;
+  return *movement;
+}
+
+bool canFinishAt(const Session& session, const std::vector<Set>& sets, std::uint64_t finishedAtMs) {
   if (finishedAtMs == 0 || finishedAtMs > kMaxInstantMs) return false;
-  return finishedAtMs >= session.startedAtMs;
+  return finishedAtMs >= session.startedAtMs && finishedAtMs >= lastActivityAt(session, sets);
 }
 
 bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs) {
@@ -283,10 +299,15 @@ std::optional<ClosedBy> closedByFromStored(std::string_view text) {
   return std::nullopt;
 }
 
-bool isStale(const Session& open, const std::vector<Set>& sets, std::uint64_t nowMs) {
+std::uint64_t lastActivityAt(const Session& session, const std::vector<Set>& sets) {
   std::optional<std::uint64_t> latestSetMs;
-  for (const Set& set : sets) latestSetMs = std::max(latestSetMs.value_or(set.completedAtMs), set.completedAtMs);
-  const std::uint64_t lastActivityMs = latestSetMs.value_or(open.startedAtMs);
+  for (const Set& set : sets)
+    if (set.session == session.id) latestSetMs = std::max(latestSetMs.value_or(set.completedAtMs), set.completedAtMs);
+  return latestSetMs.value_or(session.startedAtMs);
+}
+
+bool isStale(const Session& open, const std::vector<Set>& sets, std::uint64_t nowMs) {
+  const std::uint64_t lastActivityMs = lastActivityAt(open, sets);
   return nowMs >= lastActivityMs && nowMs - lastActivityMs >= kAutoCloseMs;
 }
 

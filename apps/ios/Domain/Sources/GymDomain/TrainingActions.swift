@@ -134,9 +134,9 @@ public struct FinishSession: Action {
   public func load(_ read: Reader) throws -> TrainingState { try TrainingState(read) }
   public func decide(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     guard let session = loaded.session(id), loaded.drawn.contains(where: { $0.id == id }) else { return .refuse(.gone(id.ref, .predicted)) }
-    let at = finishedAt ?? loaded.moment.now
-    guard SessionRules.canFinishAt(session, at: at) else { return .refuse(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted))) }
-    let finished = try SessionRules.finish(session, at: at)
+    let at = finishedAt ?? SessionRules.finishAt(session, sets: loaded.sets, now: loaded.moment.now)
+    guard SessionRules.canFinishAt(session, sets: loaded.sets, at: at) else { return .refuse(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted))) }
+    let finished = try SessionRules.finish(session, sets: loaded.sets, at: at)
     if finished.fields == session.fields { return .unchanged(()) }
     return .write(try Plan(running: FinishSessionCommand(id: id, finishedAt: at), predicting: [
       .update(Session.self, id, ["finishedAt": .of(finished.finishedAt), "closedBy": "finish"])]))
