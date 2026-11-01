@@ -298,29 +298,26 @@ verified commit/ref/version/workflow/run identities, receives the password throu
 the input, signs and checks the certificate and unchanged application contents. Its APK, digest
 and provenance remain unpublished until native acceptance and a same-key update check pass.
 
-The published [0.12.1/code184 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.12.1)
-uses tag `android-v0.12.1` at `ddb82fb86d9307ac59e7082ce21c4deecf39ed29`,
-[Actions run 39076676004](https://github.com/neigrok/windmill-monorepo/actions/runs/39076676004),
+The published [0.14.0/code277 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0)
+uses tag `android-v0.14.0` at `3b136a3dc6d0bb9092e4b5e48581435a8b2d2354`,
+[Actions run 41309989902](https://github.com/neigrok/windmill-monorepo/actions/runs/41309989902),
 attempt 1, from a tag push. Both jobs passed. Local finalization verified the retained certificate,
 non-debuggable package, unchanged application contents and linked provenance. All three anonymously
 downloaded assets are byte-identical to the accepted files. The APK SHA-256 is
-`89c12c59745d9ef941136ce8ec37a21fcbd1e17c4350cbb60a1d4cd1e294f2f2`.
+`9911484fcc85be86830fbdd6b623234903ebcde5bda65a701cb23e048b03a0e8`.
 The release workflow supplies `-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest`;
 the APK contains that destination, which resolves to this release.
 
-Android 14 acceptance ran on the `Pixel_API34_Root` emulator against the production configuration,
-signed out, without TLS interception, a proxy or an added CA, after earlier builds were uninstalled.
-The public 0.12.0/code168 APK's finished two-set workout and live one-set workout survived
-`adb install -r`. The live workout accepted a second 25 kg × 5 set, then a third 30 kg × 5 set in
-airplane mode; all three survived force-stop/restart offline and finished at 375 kg beside the
-original workout in the Log. An independent clean install opened the empty Routines screen.
-
-Account and telemetry checks used debug-key builds against a local backend. A signed-in upgrade from
-0.12.0's source kept the account and the live workout; restore, sync, Finish and sign-out passed, and
-sign-out left no stored account or sync credential. Against a local Sentry collector, a server
-outage in the foreground and lost network in the background filed no error and arrived as
-`sync_engine` events with `failure_kind=unreachable`; two outages of failing pulls filed one error
-each, tagged `http` and `500`. Signed-in acceptance was not repeated on the published-key APK.
+Android 14 acceptance ran on a freshly wiped API 34 Google APIs emulator against the production
+configuration, signed out, with no proxy, TLS interception or added CA. On the release-signed
+APK: the public 0.12.1/code184 APK's finished two-set workout (225 kg) and live one-set routine
+workout survived `adb install -r` in place, and the live workout finished. On an earlier local
+release build of the same commit (code 900, placeholder telemetry DSN), signed with the retained key: the same upgrade kept both
+workouts; a 30 kg × 5 set logged in airplane mode survived force-stop/restart offline and the
+workout finished offline at 275 kg beside the original in the Log; an independent clean install
+opened the empty Routines screen. The offline restart and clean install were not repeated on the
+release-signed APK. Signed-in acceptance against production was not run, and no account or
+telemetry checks ran for this release.
 
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
 cannot update in place with the retained release key. This build reads no device records written

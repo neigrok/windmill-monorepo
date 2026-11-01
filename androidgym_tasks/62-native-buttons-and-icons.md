@@ -1,6 +1,6 @@
 # Real Material buttons, a real disabled Log set, and icons instead of text chevrons
 
-**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Conformance to approved boards and the native-idiom rule (`docs/design/guidelines/system-architecture.md`, ledger 11n); Shell 16b is 🚀 In production.
+**Status:** 🚀 On main (`ef0f05fb`), in Android 0.14.0. Conformance to approved boards and the native-idiom rule (`docs/design/guidelines/system-architecture.md`, ledger 11n); Shell 16b is 🚀 In production.
 
 **Figma:**
 - Disabled state as drawn on 02.16 (Done at 38 %): [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1443-19406)

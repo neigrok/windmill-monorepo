@@ -1,6 +1,6 @@
 # First open: Coach greets in two bubbles; an empty Gym opens on Coach
 
-**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev. 01.1 and 01.2 match natively in Dark, Daylight and 200 % text, and the coach-setup recipe captures all of them; `gym_setup_step` `shown`, `screenshot` and `build_manually` arrive at the local intake. `shown` now fires once per appearance, also across recreation (JVM test); native re-acceptance is pending.
+**Status:** On main with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`), in Android 0.14.0. Its boards are ✅ Ready for dev. 01.1 and 01.2 match natively in Dark, Daylight and 200 % text, and the coach-setup recipe captures all of them; `gym_setup_step` `shown`, `screenshot` and `build_manually` arrive at the local intake. `shown` now fires once per appearance, also across recreation (JVM test); native re-acceptance is pending.
 
 **Figma:**
 - 01.1 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-4776) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39315)

@@ -1,6 +1,6 @@
 # Undo rises above a Weigh-in button that never moves, and lasts the system's accessibility timeout
 
-**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Board 05.17 is 🚀 In production; 05.16 is deleted.
+**Status:** 🚀 On main (`ef0f05fb`), in Android 0.14.0. Board 05.17 is 🚀 In production; 05.16 is deleted.
 
 **Figma:** 05.17 Log, weigh-in Undo: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41789) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41887). Superseded once this ships: 05.16 [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1447-20658).
 

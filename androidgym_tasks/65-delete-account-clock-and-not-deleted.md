@@ -1,6 +1,6 @@
 # Delete account: an honest wrong-clock refusal (27h) and a way out when nothing was deleted (D6)
 
-**Status:** 🚀 On main (`63844df3`). The owner approved the boards on 2026-11-01; 27h and D6 are 🚀 In production. On the local stack, a clock 8 minutes slow showed 27h with no fence left, an offline send checked after more than 5 minutes showed D6 with gym writes working again, and both matched their Dark boards. Daylight and the lost-reply case (27d) were not run there (see Open).
+**Status:** 🚀 On main (`63844df3`), in Android 0.14.0. The owner approved the boards on 2026-11-01; 27h and D6 are 🚀 In production. On the local stack, a clock 8 minutes slow showed 27h with no fence left, an offline send checked after more than 5 minutes showed D6 with gym writes working again, and both matched their Dark boards. Daylight and the lost-reply case (27d) were not run there (see Open).
 
 **Figma** (Shell file, Android page):
 - 27h Couldn't delete, date and time: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=139-2733) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=139-2786), caption `139:2838`

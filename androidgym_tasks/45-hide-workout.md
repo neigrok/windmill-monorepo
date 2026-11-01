@@ -1,6 +1,6 @@
 # Hide workout: the logger can be left, the workout bar brings it back, and the notification's swipe only turns it off
 
-**Status:** On main at `a06d1b54` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+**Status:** On main at `a06d1b54` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. Android 0.14.0 carries it.
 
 **Approved flow:** [Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036) — human-approved 2026-10-25. The management-sheet Add movement entry remains; the main rack has no standalone Add button.
 

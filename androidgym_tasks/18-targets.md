@@ -1,6 +1,6 @@
 # One movement editor for name, equipment and targets; one outer routine Save
 
-**Status:** On main at `95b83e80` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+**Status:** On main at `95b83e80` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. Android 0.14.0 carries it.
 
 **Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — human-approved 2026-10-25.
 
