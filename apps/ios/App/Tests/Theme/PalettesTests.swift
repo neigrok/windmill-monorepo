@@ -22,6 +22,21 @@ import Testing
     return (lighter + 0.05) / (darker + 0.05)
   }
 
+  // A name without a colorset crashes its `UIColor(named:)!` at first use and paints its `Color` clear, so the palettes ask
+  // for exactly the theme catalog's colours, and the app's bundle carries each of them.
+  @Test func thePalettesAskForExactlyTheThemeCatalogsColoursAndTheAppCarriesEach() throws {
+    let theme = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().appending(path: "Sources/Theme")
+    let source = try String(contentsOf: theme.appending(path: "Palettes.swift"), encoding: .utf8)
+    let named = source.matches(of: #/(?:Color|UIColor)\((?:named: )?"([^"]+)"\)/#).map { String($0.1) }
+    let moodRamp = JournalPalette.moodRamp.indices.map { "journal/mood-\($0)" }
+    let asked = Set(named.flatMap { $0 == #"journal/mood-\($0)"# ? moodRamp : [$0] }).sorted()
+    let colorsets = try FileManager.default.subpathsOfDirectory(atPath: theme.appending(path: "Theme.xcassets").path)
+      .filter { $0.hasSuffix(".colorset") }.map { String($0.dropLast(".colorset".count)) }.sorted()
+    #expect(asked == colorsets)
+    #expect(colorsets.filter { UIColor(named: $0) == nil } == [])
+  }
+
   // The 00.2 board and ios-redesign.md §2, role by role, Dark then Daylight.
   @Test func gymRolesResolveToTheirHexInBothAppearances() {
     let roles: [(String, Color)] = [

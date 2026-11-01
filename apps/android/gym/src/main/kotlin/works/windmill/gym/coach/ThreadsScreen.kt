@@ -43,7 +43,7 @@ import works.windmill.gym.R
 import works.windmill.gym.ui.DeleteSwipeRow
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.ui.unit.sp
-import works.windmill.gym.domain.Ids
+import works.windmill.gym.presentation.Ids
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import kotlinx.coroutines.launch

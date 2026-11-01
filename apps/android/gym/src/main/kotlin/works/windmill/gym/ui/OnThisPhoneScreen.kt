@@ -36,10 +36,10 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.*
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open

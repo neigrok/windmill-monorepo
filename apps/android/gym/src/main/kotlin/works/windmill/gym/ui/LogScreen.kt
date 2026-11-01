@@ -31,12 +31,12 @@ import java.time.ZoneId
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.gym.domain.Bodyweight
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.LogReadout
-import works.windmill.gym.domain.LogEntry
-import works.windmill.gym.domain.logTimeline
-import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.presentation.Bodyweight
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.LogReadout
+import works.windmill.gym.presentation.LogEntry
+import works.windmill.gym.presentation.logTimeline
+import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.TrainingStore
@@ -74,7 +74,6 @@ fun LogScreen(
     val days = LogReadout.days(timeline, nowMs, zone)
     val marked = timeline.filterIsInstance<LogEntry.Moment.Best>().mapTo(mutableSetOf()) { it.best.sessionId }
     val logHolds = store.allSessions.any { !it.session.isOpen }
-    val load: () -> Unit = { scope.launch { store.loadOlder() } }
     var weighingIn by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
@@ -163,7 +162,8 @@ fun LogScreen(
                     }
                 }
                 if (store.older != Older.End || logHolds || timeline.isNotEmpty()) {
-                    item("foot") { LogFoot(store.older, store.allSessions.lastOrNull { !it.session.isOpen }, load) }
+                    item("foot") { LogFoot(store.older, store.allSessions.lastOrNull { !it.session.isOpen },
+                        onLoad = { scope.launch { store.loadOlder() } }, onRetry = { scope.launch { store.retryLog() } }) }
                 }
             }
         }
@@ -280,13 +280,13 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
 }
 
 @Composable
-private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
+private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit, onRetry: () -> Unit) {
     val skin = LocalGymColors.current
     if (older == Older.End) {
         if (first != null) Text("First workout · ${Readout.date(first.startedAtMs)}", style = WindmillFont.body(14), color = skin.inkDim)
         return
     }
-    Button(onClick = onLoad, enabled = older != Older.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+    Button(onClick = if (older == Older.Failed) onRetry else onLoad, enabled = older != Older.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         colors = ButtonDefaults.buttonColors(containerColor = skin.raised, contentColor = skin.ink)) {
         Text(when (older) { Older.Failed -> "Retry"; Older.Loading -> "Loading"; else -> "Load older" })
     }

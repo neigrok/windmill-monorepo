@@ -22,6 +22,11 @@ data class SetTarget(val reps: Int? = null, val weightKg: Double? = null) : Valu
     }
     companion object : ValueType<SetTarget> {
         override fun decode(f: Fields) = SetTarget(f.optionalInt("reps"), f.optionalDouble("weightKg"))
+
+        // A straight scheme is one whose sets all agree, loads read on the ladder's grid; an open line is straight.
+        fun straight(sets: List<SetTarget>): Boolean = sets.all { set ->
+            set.reps == sets.first().reps && set.weightKg?.let(WeightLadder::round) == sets.first().weightKg?.let(WeightLadder::round)
+        }
     }
 }
 

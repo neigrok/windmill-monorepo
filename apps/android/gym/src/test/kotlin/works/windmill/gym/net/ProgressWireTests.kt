@@ -3,7 +3,7 @@ package works.windmill.gym.net
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.gym.store.EngineTraining
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*

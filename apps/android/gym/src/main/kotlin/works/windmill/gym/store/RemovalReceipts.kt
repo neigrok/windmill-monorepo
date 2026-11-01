@@ -3,8 +3,8 @@ package works.windmill.gym.store
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import works.windmill.domain.kit.*
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalState
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.domain.sync.ApplyProposal
 import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.domain.sync.Proposal as EngineProposal

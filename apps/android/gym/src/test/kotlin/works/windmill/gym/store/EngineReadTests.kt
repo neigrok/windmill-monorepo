@@ -19,8 +19,8 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.RecordsView
 import works.windmill.platform.User
-import works.windmill.gym.domain.RoutineWrite
-import works.windmill.gym.domain.RoutineEntryWrite
+import works.windmill.gym.presentation.RoutineWrite
+import works.windmill.gym.presentation.RoutineEntryWrite
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -33,11 +33,11 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SessionDetail
-import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetWrite
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionDetail
+import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SetWrite
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.domain.sync.SessionRules
 import works.windmill.platform.Account
 import works.windmill.platform.telemetry.Telemetry
@@ -72,14 +72,17 @@ class EngineReadTests {
             assertEquals(GymResult.Ok(training.session("session1")), store.finishedSession("session1"))
             pause = true
             val pending = async { store.finishedSession("session1") }
-            runCurrent()
-            assertFalse(held.isEmpty())
-            assertTrue(engine.signOut("keep").member("complete").bool())
-            assertTrue(engine.signIn("other", mapOf("gym" to false)).member("complete").bool())
-            pause = false
-            while (held.isNotEmpty()) {
-                val (context, task) = held.removeFirst()
-                delegate.dispatch(context, task)
+            try {
+                runCurrent()
+                assertFalse(held.isEmpty())
+                assertTrue(engine.signOut("keep").member("complete").bool())
+                assertTrue(engine.signIn("other", mapOf("gym" to false)).member("complete").bool())
+            } finally {
+                pause = false
+                while (held.isNotEmpty()) {
+                    val (context, task) = held.removeFirst()
+                    delegate.dispatch(context, task)
+                }
             }
             runCurrent()
             assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), pending.await())
@@ -292,13 +295,16 @@ class EngineReadTests {
             store.connect(Account("http://127.0.0.1:8098", null))
             pause = true
             val consumer = store.observeEngine()
-            runCurrent()
-            assertFalse(held.isEmpty())
-            engine.signIn("other", mapOf("gym" to false))
-            pause = false
-            while (held.isNotEmpty()) {
-                val (context, task) = held.removeFirst()
-                delegate.dispatch(context, task)
+            try {
+                runCurrent()
+                assertFalse(held.isEmpty())
+                engine.signIn("other", mapOf("gym" to false))
+            } finally {
+                pause = false
+                while (held.isNotEmpty()) {
+                    val (context, task) = held.removeFirst()
+                    delegate.dispatch(context, task)
+                }
             }
             runCurrent()
             assertTrue(consumer.isActive)
@@ -437,8 +443,8 @@ class EngineReadTests {
             churn = true
             store.choose("bench-press")
             assertEquals(3, changes)
-            assertNull(store.lastTime)
-            assertTrue(store.editRack(77.0, 7) is works.windmill.gym.domain.WorkoutChange.Saved)
+            assertTrue(store.lastTime!!.isUnread)
+            assertTrue(store.editRack(77.0, 7) is works.windmill.gym.presentation.WorkoutChange.Saved)
             runCurrent()
             assertEquals(listOf(100.0 to 6), store.lastTime!!.sets.map { it.weightKg to it.reps })
             assertEquals(77.0 to 7, store.rack!!.weightKg to store.rack!!.reps)
@@ -487,16 +493,21 @@ class EngineReadTests {
             val connection = async(start = CoroutineStart.UNDISPATCHED) {
                 store.connect(Account("http://127.0.0.1:8098", User("B", "b@example.com")))
             }
-            runCurrent()
-            assertFalse(held.isEmpty())
-            assertNull(store.lastTime)
-            assertEquals("sessionB", store.session!!.id)
-            assertEquals(20.0, store.rack!!.weightKg, 0.0)
-            assertEquals(20.0, store.notification.value!!.offer!!.weightKg, 0.0)
-            pauseAt = 0
-            while (held.isNotEmpty()) {
-                val (context, task) = held.removeFirst()
-                delegate.dispatch(context, task)
+            // A held read is released however the checks end: a read never dispatched can never be cancelled, so a
+            // failed check would otherwise leave runTest waiting on it for good.
+            try {
+                runCurrent()
+                assertFalse(held.isEmpty())
+                assertTrue(store.lastTime!!.isUnread)
+                assertEquals("sessionB", store.session!!.id)
+                assertEquals(20.0, store.rack!!.weightKg, 0.0)
+                assertEquals(20.0, store.notification.value!!.offer!!.weightKg, 0.0)
+            } finally {
+                pauseAt = 0
+                while (held.isNotEmpty()) {
+                    val (context, task) = held.removeFirst()
+                    delegate.dispatch(context, task)
+                }
             }
             connection.await()
             assertEquals(listOf(80.0), store.lastTime!!.sets.map { it.weightKg })
@@ -531,7 +542,8 @@ class EngineReadTests {
             assertFalse(store.isLoading)
             assertEquals("session1", store.session!!.id)
             assertEquals("bench-press", store.exerciseId)
-            assertEquals("bench-press", store.lastTime!!.exerciseId)
+            assertEquals("bench-press", store.lastTime!!.exerciseId.record.string)
+            assertFalse(store.lastTime!!.isUnread)
             assertNotNull(store.notification.value!!.offer)
         }
     }

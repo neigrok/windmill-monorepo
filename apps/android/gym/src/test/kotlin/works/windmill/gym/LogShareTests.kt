@@ -24,7 +24,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.sharing.SessionShare
 import works.windmill.platform.Account

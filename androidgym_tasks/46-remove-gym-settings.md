@@ -27,7 +27,7 @@
 - Screenshots of 16a and 16b match in Dark and Daylight (16b without the Delete account row until 48 lands); the rig (01) adds `16a-you-signed-out-dark/light`, `16b-you-signed-in-dark/light`.
 - `gym_screen_viewed` `settings` no longer fires anywhere; `notes`, `connections` and the shell's You events fire from the You rows. Remove `settings` and the units events from `docs/ANDROID_OBSERVABILITY.md` where they are listed.
 - No string *Gym settings*, *Units* or *lb* remains in the gym or platform UI (a test walks You signed in and out).
-- Tests: `platform/src/test/kotlin/works/windmill/platform/you/YouSheetTests.kt` (rows in order, no one-account line), `ui/AccountRouteTests.kt`, `domain/PreferencesTests.kt`; `ui/SettingsScreenTests.kt` goes with the screen.
+- Tests: `platform/src/test/kotlin/works/windmill/platform/you/YouSheetTests.kt` (rows in order, no one-account line), `ui/AccountRouteTests.kt`, `presentation/PreferencesTests.kt`; `ui/SettingsScreenTests.kt` goes with the screen.
 
 **Depends on:** 03, 25, 45.
 

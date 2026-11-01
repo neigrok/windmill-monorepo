@@ -23,9 +23,10 @@ class GymEventsTests {
     }
 
     @Test fun routineFormAndOuterSaveKeepOnlyBoundedOutcomes() {
-        val allowed = listOf("open" to "ok", "cancel" to "ok", "stage" to "ok", "stage" to "refused")
+        val allowed = listOf("open" to "ok", "cancel" to "ok", "stage" to "ok", "stage" to "refused", "discard" to "ok", "discard" to "cancelled")
             .map { (action, outcome) -> mapOf("screen" to "movement_form", "action" to action, "outcome" to outcome) } +
-            listOf("ok", "refused", "failed").map { mapOf("screen" to "routine_editor", "action" to "save", "outcome" to it) }
+            listOf("ok", "refused", "failed").map { mapOf("screen" to "routine_editor", "action" to "save", "outcome" to it) } +
+            listOf(mapOf("screen" to "movement_form", "action" to "discard", "state" to "shown"))
         val content = mapOf("name" to "private", "targets" to "private", "equipment" to "private", "exercise_id" to "private")
         for (labels in allowed) assertEquals(labels, GymEvents.schemas.properties("gym_action", labels + content))
         for (labels in listOf(

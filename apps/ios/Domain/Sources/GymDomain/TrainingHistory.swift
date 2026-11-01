@@ -34,7 +34,7 @@ public struct TrainingHistory {
   func exerciseDocument(_ value: Exercise) -> JSON {
     .object(omittingNil: ["id": value.id.json, "name": .string(value.name), "pattern": .string(value.pattern),
       "equipment": .string(value.equipment), "stepKg": .of(value.stepKg), "custom": .bool(!SeedExercises.contains(value.id)),
-      "loadCount": value.equipment == "dumbbell" ? JSON(value.loadCount) : nil,
+      "loadCount": Equipment(value.equipment) == .dumbbell ? JSON(value.loadCount) : nil,
       "aliases": value.aliases.isEmpty ? nil : .array(value.aliases.map(JSON.string))])
   }
 
@@ -60,11 +60,6 @@ public struct TrainingHistory {
   public func session(_ id: ID<Session>) -> JSON {
     guard let value = log.drawnSessions.first(where: { $0.id == id }) else { return .null }
     return ["session": sessionDocument(value), "sets": .array(log.sets(session: id).map(setDocument))]
-  }
-
-  static func serialOrder(_ a: TrainingSet, _ b: TrainingSet) -> Bool {
-    let left = a.setNumber ?? 0, right = b.setNumber ?? 0
-    return left == right ? a.id < b.id : left < right
   }
 
   func top(_ sets: [TrainingSet]) -> TrainingSet? {
@@ -104,7 +99,7 @@ public struct TrainingHistory {
   public func lastTime(_ id: ID<Exercise>) -> JSON {
     let last = log.lastTime(for: id)
     return .object(omittingNil: ["exerciseId": id.json, "session": last.session.map(sessionDocument),
-      "sets": last.session == nil ? nil : .array(last.sets.sorted(by: Self.serialOrder).map(setDocument)), "routine": last.routine.map(JSON.string)])
+      "sets": last.session == nil ? nil : .array(last.sets.map(setDocument)), "routine": last.routine.map(JSON.string)])
   }
 
   public func lastSets() -> JSON {
@@ -134,11 +129,10 @@ public struct TrainingHistory {
     let window = series.window(now: read.moment.now, zone: read.moment.zone).estimates
     if !window.isEmpty { result["e1rmSeries"] = .array(window.map { point($0, estimate: true) }) }
     if !series.records.isEmpty { result["records"] = .array(series.records.reversed().map { point($0, estimate: true) }) }
-    let recent = finished.filter { log.sets(session: $0.id).contains { $0.exerciseId == id } }.prefix(10)
+    let recent = log.recentDays(for: id)
     if !recent.isEmpty {
-      result["recentDays"] = .array(recent.map { session in
-        ["sessionId": session.id.json, "startedAt": .of(session.startedAt),
-         "sets": .array(log.sets(session: session.id).filter { $0.exerciseId == id }.sorted(by: Self.serialOrder).map(setDocument))]
+      result["recentDays"] = .array(recent.map { day in
+        ["sessionId": day.session.id.json, "startedAt": .of(day.session.startedAt), "sets": .array(day.sets.map(setDocument))]
       })
     }
     return .object(JSON.Object(uniqueKeysWithValues: result.map { ($0.key, $0.value) }))

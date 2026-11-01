@@ -2,8 +2,11 @@ package works.windmill.gym.domain.sync
 
 import works.windmill.domain.kit.*
 import works.windmill.sync.api.QueuedCommand
+import works.windmill.sync.api.Record
 import works.windmill.sync.api.ViewMode
+import works.windmill.sync.core.Delta
 import works.windmill.sync.core.Json
+import works.windmill.sync.core.RecordKey
 import works.windmill.sync.schema.Gym
 
 // A workout logged signed out and saved on this phone for the account, under the device key `rack:adoption`: its
@@ -37,6 +40,9 @@ class SignedOutWorkout(session: Session, sets: List<TrainingSet>) {
         catch (violation: Violation) { return GymRefusal.Invalid(violation) }
         return null
     }
+
+    // The copy imports exactly as it was saved: a value the set checks would normalise is the person's to correct.
+    fun importsUnchanged(at: Moment): Boolean = sets.all { Valid(it, TrainingSet, at = at).value == it }
 
     // What this phone refuses before a retry asks the account. A finished copy is an import, with the import's checks.
     // An open copy restarts as a start that does not join, with its sets appended: the log refuses that while it
@@ -95,6 +101,47 @@ class SignedOutWorkout(session: Session, sets: List<TrainingSet>) {
             for (copy in replacing) rows[copy.session.id.toString()] = copy.json
             return if (rows.isEmpty()) null else Json.Obj(rows.toList())
         }
+    }
+}
+
+// A signed-out workout's sets as this phone saved them, held against the numbers an import replays and against what
+// the account holds of them.
+object SavedSets {
+    // Each saved set number, where one is given, counts its movement's sets in the order the copy saved them.
+    fun numberedAsSaved(sets: List<TrainingSet>): Boolean {
+        val counted = LinkedHashMap<Id<Exercise>, Int>()
+        for (set in sets) {
+            val next = (counted[set.exerciseId] ?: 0) + 1
+            if (set.setNumber != null && set.setNumber != next) return false
+            counted[set.exerciseId] = next
+        }
+        return true
+    }
+
+    // The account holds exactly these sets as the copy recorded them: each one born, with the copy's values, under the
+    // number the copy saved where it gave one. A record that leaves out rpe or note holds none.
+    fun heldBy(sets: List<TrainingSet>, records: List<Record>): Boolean {
+        if (records.map { it.id }.toSet() != sets.map { it.id.record }.toSet() || records.size != sets.size) return false
+        return sets.all { set ->
+            val record = records.firstOrNull { it.id == set.id.record }
+            val f = record?.values.orEmpty()
+            record?.born != null && f["exerciseId"] == set.exerciseId.json && f["weightKg"] == Json.of(set.weightKg) &&
+                f["reps"] == Json.of(set.reps) && (f["rpe"] ?: Json.Null) == (set.rpe?.let(Json::of) ?: Json.Null) &&
+                (f["note"] ?: Json.of("")) == Json.of(set.note) && f["completedAt"] == Json.of(set.completedAt.ms) &&
+                (set.setNumber == null || (record.serials["setNumber"] ?: f["setNumber"]) == Json.of(set.setNumber))
+        }
+    }
+
+    // The delta created this set, under its workout, as the copy recorded it. A server that kept neither its rpe nor
+    // its note still created it.
+    fun createdBy(set: TrainingSet, delta: Delta): Boolean {
+        val f = delta.lattice.fields.mapValues { it.value.value }
+        val rpe = f["rpe"] ?: Json.Null
+        val note = f["note"] ?: Json.of("")
+        return delta.key == RecordKey(TrainingSet.type, set.id.record) && delta.creates && f["sessionId"] == set.sessionId.json &&
+            f["exerciseId"] == set.exerciseId.json && f["completedAt"] == Json.of(set.completedAt.ms) &&
+            f["weightKg"] == Json.of(set.weightKg) && f["reps"] == Json.of(set.reps) &&
+            (rpe == (set.rpe?.let(Json::of) ?: Json.Null) && note == Json.of(set.note) || rpe == Json.Null && note == Json.of(""))
     }
 }
 

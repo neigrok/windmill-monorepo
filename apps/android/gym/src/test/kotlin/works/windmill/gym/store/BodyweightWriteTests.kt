@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class BodyweightWriteTests {

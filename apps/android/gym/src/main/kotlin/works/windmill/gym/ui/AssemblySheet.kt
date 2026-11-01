@@ -60,8 +60,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlin.math.abs
 import works.windmill.gym.R
-import works.windmill.gym.domain.LiveLines
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.LiveLines
+import works.windmill.gym.presentation.Readout
 import works.windmill.platform.design.WindmillFont
 
 @Composable

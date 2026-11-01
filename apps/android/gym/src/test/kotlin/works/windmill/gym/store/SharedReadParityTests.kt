@@ -10,16 +10,16 @@ import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
-import works.windmill.gym.domain.Against
-import works.windmill.gym.domain.AgainstMovement
-import works.windmill.gym.domain.Effort
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.LastSet
-import works.windmill.gym.domain.MovementProgress
-import works.windmill.gym.domain.PersonalRecord
-import works.windmill.gym.domain.MovementRecord
-import works.windmill.gym.domain.Record
-import works.windmill.gym.domain.Review
+import works.windmill.gym.presentation.Against
+import works.windmill.gym.presentation.AgainstMovement
+import works.windmill.gym.presentation.Effort
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.LastSet
+import works.windmill.gym.presentation.MovementProgress
+import works.windmill.gym.presentation.PersonalRecord
+import works.windmill.gym.presentation.MovementRecord
+import works.windmill.gym.presentation.Record
+import works.windmill.gym.presentation.Review
 import works.windmill.gym.domain.sync.GymEstimate
 import works.windmill.gym.domain.sync.TrainingHistory
 import works.windmill.gym.domain.sync.Session as EngineSession
@@ -42,7 +42,7 @@ import works.windmill.sync.schema.SyncSchema
 class SharedReadParityTests {
     @Test fun everySharedReviewCaseIsTheReceiptsReview() {
         val cases = sharedCases("review")
-        assertEquals(12, cases.size)
+        assertEquals(13, cases.size)
         for (case in cases) Engine.memory(SyncSchema.registry, clock = clock(case.member("input").member("now").long())).use { engine ->
             seed(engine, case.member("input").member("records").member("drawn").arr())
             val id = case.member("input").member("input").member("args").arr().single().str()
@@ -53,7 +53,7 @@ class SharedReadParityTests {
 
     @Test fun everySharedRecordCaseIsTheRecordPagesStanding() {
         val cases = sharedCases("record")
-        assertEquals(4, cases.size)
+        assertEquals(5, cases.size)
         for (case in cases) Engine.memory(SyncSchema.registry, clock = clock(case.member("input").member("now").long())).use { engine ->
             seed(engine, case.member("input").member("records").member("drawn").arr())
             val id = case.member("input").member("input").member("args").arr().single().str()
@@ -74,7 +74,7 @@ class SharedReadParityTests {
         assertEquals(sharedReview(engine, "today").member("record").jcs, sharedForm(training.review("today")).member("record").jcs)
     }
 
-    @Test fun aPhoneThatHasNotReadItsAccountClaimsNoRecordAndShowsNoTiles() = withEngine(signedIn = true) { engine ->
+    @Test fun aPhoneThatHasNotReadItsAccountClaimsNoRecordAndShowsNoTilesEstimateOrCount() = withEngine(signedIn = true) { engine ->
         seedWorkout(engine, "earlier", java.time.Instant.parse("2027-01-04T10:00:00Z").toEpochMilli(), List(4) { 100.0 to 5 })
         seedWorkout(engine, "today", java.time.Instant.parse("2027-01-10T10:00:00Z").toEpochMilli(), List(4) { 110.0 to 5 })
         val training = EngineTraining(engine)
@@ -86,11 +86,12 @@ class SharedReadParityTests {
         assertNull(movement.best)
         assertNull(movement.heaviest)
         assertFalse(movement.hasChart(java.time.ZoneOffset.UTC))
+        assertEquals(2, movement.estimates.size)
         val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
-        val page = Record.page(MovementRecord.of(bench, training.details()), 1_800_000_000_000, movement)
+        val page = Record.page(MovementRecord.of(bench, training.details(), 1_800_000_000_000), 1_800_000_000_000, movement)
         assertEquals(Record.Page("Bench Press", "Barbell", emptyList(), emptyList(),
             listOf(Record.Day("10 Jan", "110 × 5 · 110 × 5 · 110 × 5 · 110 × 5"), Record.Day("4 Jan", "100 × 5 · 100 × 5 · 100 × 5 · 100 × 5")),
-            null, null), page)
+            null, null, false), page)
     }
 
     @Test fun theReceiptCountsEverySetOfTheComparisonAndItsBoundsBesideTheSharedTopSet() = withEngine(signedIn = false) { engine ->

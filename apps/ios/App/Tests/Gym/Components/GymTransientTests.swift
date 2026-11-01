@@ -7,16 +7,76 @@ import SyncSchema
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct GymTransientTests {
+  // Each row: what the screen and the room hold, then the band they resolve to, its control and whether it can be sent away.
+  @Test func theBandSaysOneThingWithOneControlFromWhatTheScreenAndTheRoomHold() {
+    let cap = (id: "notice:refused/0", text: "There is room for 10. Remove one before adding another.")
+    func read(_ name: String, readFailed: Bool = false, error: String? = nil, notices: [(id: String, text: String)] = [], local: String? = nil,
+              retries: Bool = false, dismisses: Bool = false, noticeText: String? = nil) -> String {
+      let band = GymTransient.Band(readFailed: readFailed, error: error, notices: notices, local: local, retries: retries,
+                                   dismisses: dismisses, noticeText: noticeText)
+      guard let band else { return "\(name): nothing" }
+      let control = band.control.map { [$0.title, $0.symbol].compactMap { $0 }.joined(separator: " ") } ?? "no control"
+      return "\(name): \(band) · \(control) · \(band.dismissible ? "dismissible" : "stays")"
+    }
+    let table = [
+      read("read failure, screen message", readFailed: true, error: "The log did not answer.", local: "History could not be read.", dismisses: true),
+      read("read failure, room error", readFailed: true, error: "The log did not answer.", notices: [cap]),
+      read("read failure alone", readFailed: true),
+      read("local with retry", error: "A save failed.", notices: [cap], local: "History could not be read.", retries: true),
+      read("local with retry and dismissal", local: "History could not be read.", retries: true, dismisses: true),
+      read("local with dismissal", local: "Check the weight.", dismisses: true),
+      read("local alone", local: "Check the weight."),
+      read("error", error: "A save failed."),
+      read("newer error over a notice", error: "A save failed.", notices: [cap]),
+      read("error a notice says", error: cap.text, notices: [cap]),
+      read("error the screen's notice words say", error: "This workout is full.", notices: [cap], noticeText: "This workout is full."),
+      read("notice", notices: [(id: "notice:refused/a", text: "Check the values and try again."), cap]),
+      read("notice in the screen's words", notices: [cap], noticeText: "This workout is full."),
+      read("nothing held"),
+    ].joined(separator: "\n")
+    #expect(table == """
+      read failure, screen message: readFailure("History could not be read.") · Try again · stays
+      read failure, room error: readFailure("The log did not answer.") · Try again · stays
+      read failure alone: readFailure("Gym could not be read from this phone. Try again.") · Try again · stays
+      local with retry: local("History could not be read.", retries: true, dismisses: false) · Try again · stays
+      local with retry and dismissal: local("History could not be read.", retries: true, dismisses: true) · Try again · dismissible
+      local with dismissal: local("Check the weight.", retries: false, dismisses: true) · Dismiss message xmark · dismissible
+      local alone: local("Check the weight.", retries: false, dismisses: false) · no control · stays
+      error: error("A save failed.") · Dismiss message xmark · dismissible
+      newer error over a notice: error("A save failed.") · Dismiss message xmark · dismissible
+      error a notice says: notice("notice:refused/0", "There is room for 10. Remove one before adding another.") · Dismiss message xmark · dismissible
+      error the screen's notice words say: notice("notice:refused/0", "This workout is full.") · Dismiss message xmark · dismissible
+      notice: notice("notice:refused/0", "There is room for 10. Remove one before adding another.") · Dismiss message xmark · dismissible
+      notice in the screen's words: notice("notice:refused/0", "This workout is full.") · Dismiss message xmark · dismissible
+      nothing held: nothing
+      """)
+  }
+
   @Test func localValidationAndDismissibleErrorsHaveDistinctActions() throws {
     let (_, gym) = GymModelTests().fixture()
     let validating = GymTransient(gym: gym, message: "Check the weight.")
-    #expect(validating.shown == .local("Check the weight."))
-    #expect(validating.action(.local("Check the weight.")) == nil && validating.dismissal(.local("Check the weight.")) == nil)
+    let local = GymTransient.Band.local("Check the weight.", retries: false, dismisses: false)
+    #expect(validating.shown == local)
+    #expect(validating.action(local) == nil && validating.dismissal(local) == nil)
     gym.error = "An unrelated save failed."
     let band = GymTransient(gym: gym)
     #expect(band.shown == .error("An unrelated save failed."))
     band.dismissal(.error("An unrelated save failed."))?()
-    #expect(band.shown == nil)
+    #expect(band.shown == nil && gym.error == nil)
+  }
+
+  // Sending a screen's message away clears the room's error only while it is the same words; a newer error stays.
+  @Test func dismissingALocalMessageClearsOnlyTheErrorItMirrors() throws {
+    let (_, gym) = GymModelTests().fixture()
+    var dismissed = 0
+    gym.error = "Gym could not save this change. Try again."
+    let mirrored = GymTransient(gym: gym, message: gym.error, dismiss: { dismissed += 1 })
+    mirrored.dismissal(try #require(mirrored.shown))?()
+    #expect(dismissed == 1 && gym.error == nil)
+    gym.error = "A newer failure."
+    let stale = GymTransient(gym: gym, message: "Gym could not save this change. Try again.", dismiss: { dismissed += 1 })
+    stale.action(try #require(stale.shown))?()
+    #expect(dismissed == 2 && gym.error == "A newer failure.")
   }
 
   @Test func everyRemovalPersistsAcrossRelaunchWithoutTransientControls() throws {
@@ -66,10 +126,10 @@ import SyncSchema
     let (_, gym) = GymModelTests().fixture()
     var retried = false
     let failing = GymTransient(gym: gym, message: "History could not be read.", retryMessage: { retried = true })
-    #expect(failing.shown == .local("History could not be read."))
-    #expect(failing.actionTitle(.local("History could not be read.")) == "Try again")
-    failing.action(.local("History could not be read."))?()
-    #expect(retried)
+    let shown = GymTransient.Band.local("History could not be read.", retries: true, dismisses: false)
+    #expect(failing.shown == shown && shown.control == .retry)
+    failing.action(shown)?()
+    #expect(retried && failing.dismissal(shown) == nil)
   }
 
   @Test func failedReadKeepsRetryAvailableAndCannotBeDismissed() throws {
@@ -78,13 +138,12 @@ import SyncSchema
     gym.error = "The log did not answer."
     var retried = false
     let local = GymTransient(gym: gym, message: gym.error, retry: { retried = true })
-    #expect(local.shown == .error("The log did not answer."))
-    local.action(.error("The log did not answer."))?()
-    #expect(retried && local.dismissal(.error("The log did not answer.")) == nil)
+    #expect(local.shown == .readFailure("The log did not answer."))
+    local.action(.readFailure("The log did not answer."))?()
+    #expect(retried && local.dismissal(.readFailure("The log did not answer.")) == nil)
     gym.error = nil
     let fallback = GymTransient(gym: gym)
-    #expect(fallback.shown == .error("Gym could not be read from this phone. Try again."))
-    #expect(fallback.actionTitle(.error("Gym could not be read from this phone. Try again.")) == "Try again")
-    #expect(fallback.shown == .error("Gym could not be read from this phone. Try again."))
+    #expect(fallback.shown == .readFailure("Gym could not be read from this phone. Try again."))
+    #expect(fallback.shown?.control == .retry && fallback.dismissal(.readFailure("Gym could not be read from this phone. Try again.")) == nil)
   }
 }

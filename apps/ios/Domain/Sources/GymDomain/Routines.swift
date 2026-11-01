@@ -27,6 +27,11 @@ public struct SetTarget: ValueObject, Equatable {
     if roundedWeight == 0 && weightKg != 0 { throw Violation(rule: "routine.zeroTarget", path: path + "weightKg", reason: .custom("zeroTarget")) }
     return SetTarget(reps: checkedReps, weightKg: roundedWeight)
   }
+
+  // A straight scheme is one whose sets all agree, loads read on the ladder's grid; an open line is straight.
+  public static func straight(_ sets: [SetTarget]) -> Bool {
+    sets.allSatisfy { $0.reps == sets[0].reps && $0.weightKg.map(WeightLadder.round) == sets[0].weightKg.map(WeightLadder.round) }
+  }
 }
 
 public struct RoutineEntry: ValueObject, Equatable {
@@ -266,7 +271,7 @@ public struct SaveRoutinePlan: Action {
       let seed = SeedExercises.contains(next.id)
       let metadata = ExerciseName(id: ID(next.id.record), name: seed && renamed ? next.name : nil,
                                   equipment: equipped ? next.equipment : nil,
-                                  loadCount: next.equipment == "dumbbell" && (equipped || counted) ? next.loadCount : nil)
+                                  loadCount: Equipment(next.equipment) == .dumbbell && (equipped || counted) ? next.loadCount : nil)
       if renamed {
         former[next.id.record.description] = ["name": .string(next.name), "aliases": .array(ExerciseRules.renamedAliases(previous: stored.name, next: next.name, aliases: stored.aliases).map(JSON.string))]
         if !seed {
@@ -292,7 +297,7 @@ extension Plan {
   mutating func createRoutineMovement(_ value: Valid<Exercise>, at moment: Moment) throws(Violation) {
     create(value)
     let movement = value.value
-    if movement.equipment == "dumbbell", movement.loadCount != 2 {
+    if Equipment(movement.equipment) == .dumbbell, movement.loadCount != 2 {
       create(try Valid(ExerciseName(id: ID(movement.id.record), name: nil, loadCount: movement.loadCount), at: moment), fields: ["loadCount"])
     }
   }

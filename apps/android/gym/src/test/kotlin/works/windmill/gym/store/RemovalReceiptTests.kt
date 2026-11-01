@@ -14,7 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.SQLiteMode
 import works.windmill.domain.kit.*
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.domain.sync.Proposal as EngineProposal
 import works.windmill.gym.domain.sync.Routine as EngineRoutine

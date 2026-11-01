@@ -35,10 +35,10 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Bodyweight
-import works.windmill.gym.domain.LogReadout
-import works.windmill.gym.domain.ChartWindow
-import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.presentation.Bodyweight
+import works.windmill.gym.presentation.LogReadout
+import works.windmill.gym.presentation.ChartWindow
+import works.windmill.gym.presentation.WeighIn
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
@@ -110,7 +110,7 @@ class BodyweightScreenTests {
 
             runBlocking { store.weighIn(today.minusDays(3).toString(), 82.4) }
             compose.onNodeWithText("82.4 kg").assertIsDisplayed()
-            compose.onNodeWithText(works.windmill.gym.domain.LogReadout.day(today.minusDays(3), System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
+            compose.onNodeWithText(works.windmill.gym.presentation.LogReadout.day(today.minusDays(3), System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
             compose.onNodeWithText("82.4 kg").performClick()
             compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         } } finally { scope.cancel() }

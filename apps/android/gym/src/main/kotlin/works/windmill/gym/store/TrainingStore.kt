@@ -21,49 +21,51 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import works.windmill.gym.domain.WorkoutClock
-import works.windmill.gym.domain.WorkoutMoment
-import works.windmill.gym.domain.WorkoutRack
-import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutNotification
-import works.windmill.gym.domain.WorkoutChange
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.AutoClose
-import works.windmill.gym.domain.Blocker
-import works.windmill.gym.domain.Bodyweight
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.ConnectedLogState
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.ExerciseWrite
-import works.windmill.gym.domain.GymPreferences
-import works.windmill.gym.domain.Ids
-import works.windmill.gym.domain.LastSet
-import works.windmill.gym.domain.LastTime
-import works.windmill.gym.domain.LiveOrder
-import works.windmill.gym.domain.StatsProgress
-import works.windmill.gym.domain.MovementRecord
-import works.windmill.gym.domain.Note
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.PlanEntry
-import works.windmill.gym.domain.Prefill
-import works.windmill.gym.domain.Program
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalDecision
-import works.windmill.gym.domain.ProposalIntent
-import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.Review
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SessionDetail
-import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.presentation.WorkoutClock
+import works.windmill.gym.presentation.WorkoutMoment
+import works.windmill.gym.presentation.WorkoutRack
+import works.windmill.gym.presentation.WorkoutKey
+import works.windmill.gym.presentation.WorkoutNotification
+import works.windmill.gym.presentation.WorkoutChange
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.AutoClose
+import works.windmill.gym.presentation.Blocker
+import works.windmill.gym.presentation.Bodyweight
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.ConnectedLogState
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.ExerciseWrite
+import works.windmill.gym.presentation.GymPreferences
+import works.windmill.gym.presentation.Ids
+import works.windmill.gym.presentation.LastSet
+import works.windmill.gym.presentation.LiveOrder
+import works.windmill.gym.presentation.StatsProgress
+import works.windmill.gym.presentation.MovementRecord
+import works.windmill.gym.presentation.Note
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.PlanEntry
+import works.windmill.gym.presentation.Program
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.ProposalDecision
+import works.windmill.gym.presentation.ProposalIntent
+import works.windmill.gym.presentation.ProposalState
+import works.windmill.gym.presentation.Review
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionDetail
+import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.sharing.SessionShare
-import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WeighIn
+import works.windmill.domain.kit.Id
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.LastTime
+import works.windmill.gym.domain.sync.Prefill
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.coach.CoachStore
 import works.windmill.gym.coach.LocalCoach
@@ -106,6 +108,8 @@ class TrainingStore(
     localCoach: LocalCoach? = null,
     coachOnboarding: CoachOnboardingStore? = null,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    // Asks the sync runtime for the account's copy again; false when it is not pulling.
+    private val pullAgain: suspend () -> Boolean = { false },
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds },
@@ -196,12 +200,12 @@ class TrainingStore(
             series = training.weighins()
             val movement = controls.chosenMovement
             val previous = if (owner == null && movement != null) readTraining {
-                try { training.lastTime(movement) } catch (_: TrainingRefused) { null } catch (_: TrainingUnanswered) { null }
+                try { training.lastTime(movement) } catch (_: TrainingRefused) { null }
             } else null
             workoutReady = true
             reconcileWorkoutTime()
             exerciseId = controls.chosenMovement
-            lastTime = previous.takeIf { exerciseId == movement }
+            if (movement != null && previous != null && exerciseId == movement) lastTimes[movement] = previous
             drawFromControls()
         } catch (_: TrainingReadChanged) { return false }
         catch (cancelled: CancellationException) { throw cancelled }
@@ -236,7 +240,6 @@ class TrainingStore(
                 }
                 lastTimes.clear()
                 exerciseId = null
-                lastTime = null
                 drawFromControls()
                 return
             }
@@ -276,7 +279,7 @@ class TrainingStore(
             return LogSetAcceptance.Unavailable(workoutFailure ?: "The workout is not ready.")
         }
         return try {
-            val accepted = controls.accept(command, workoutClock.now(), lastTime, mintSet)
+            val accepted = controls.accept(command, workoutClock.now(), ::lastTimeOf, mintSet)
             if (accepted is LogSetAcceptance.Accepted) {
                 val entry = requireNotNull(controls.entry(accepted.setId))
                 controls.store(training.commitAccepted(controls, entry.set, entry.sessionId), entry.sessionId)
@@ -330,7 +333,7 @@ class TrainingStore(
         }
         val ready = workoutAuthorized && !isFinishing && controls.writable
         val state = try {
-            if (controls.writable && workoutAuthorized) controls.prepare(lastTime, workoutClock.now(), ready, mintSet) else controls.workout
+            if (controls.writable && workoutAuthorized) controls.prepare(::lastTimeOf, workoutClock.now(), ready, mintSet) else controls.workout
         } catch (error: Exception) {
             reportFailure("gym.refreshWorkout", error)
             refuseWorkout()
@@ -574,6 +577,14 @@ class TrainingStore(
         get() = allSessions.filterNot { it.id in withheldIds }
     var older: Older by mutableStateOf(Older.More)
         private set
+    // Before the first pull the phone holds part of the account at most, the same completeness the record page reads:
+    // the log's end is unknown, so a short page leaves the foot unread rather than claiming a first workout.
+    private val logUnread: Boolean get() = !training.anonymous && !training.firstPullComplete
+    private fun footAfter(page: List<SessionSummary>): Older = when {
+        page.size >= logPage -> Older.More
+        logUnread -> Older.Failed
+        else -> Older.End
+    }
     var session: Session? by mutableStateOf(null)                        // the open one, or none
         private set
     var sets: List<TrainingSet> by mutableStateOf(emptyList())           // its sets, performed order
@@ -582,13 +593,13 @@ class TrainingStore(
         private set
     var exerciseId: String? by mutableStateOf(null)                      // the movement in hand
         private set
-    var lastTime: LastTime? by mutableStateOf(null)
-        private set
+    // The movement in hand's last time, as `lastTimeOf` answers it.
+    val lastTime: LastTime? get() = exerciseId?.let(::lastTimeOf)
     // Sparse: the absence of a key is `never logged`. NULL is the map that has not been read; an
     // EMPTY map is an answer, that this lifter has trained nothing.
     var lastSets: Map<String, LastSet>? by mutableStateOf(null)
         private set
-    var prefill: Prefill by mutableStateOf(Prefill(Prefill.EMPTY_BAR_KG, Prefill.EMPTY_BAR_REPS))
+    var prefill: Prefill by mutableStateOf(Prefill())
         private set
     var refusals: List<RefusedWrite> by mutableStateOf(emptyList())      // writes the log refused
         private set
@@ -710,7 +721,6 @@ class TrainingStore(
             sets = emptyList()
             order = emptyList()
             exerciseId = null
-            lastTime = null
             pendingConnection = null
             resumePending = false
             acknowledgeWorkoutRequest()
@@ -763,7 +773,6 @@ class TrainingStore(
             progressFailure = null
             progressLoading = false
             lastTimes.clear()
-            lastTime = null
             lastSets = null
             closedDetails = emptyMap()
             for (clock in clocks.values) clock.cancel()
@@ -947,7 +956,6 @@ class TrainingStore(
         controls.flush()
         order = controls.order
         exerciseId = movement
-        lastTime = lastTimes[movement]
         redial()
 
         readLastTime()
@@ -955,7 +963,7 @@ class TrainingStore(
 
     private suspend fun readLastTime() {
         val movement = exerciseId ?: return
-        if (!workoutAuthorized || lastTimes.containsKey(movement)) return
+        if (!workoutAuthorized || lastTimes[movement]?.isComplete == true) return
         val seat = owner
         val sessionId = session?.id
         val answer = try { readTraining { training.lastTime(movement) } }
@@ -963,13 +971,11 @@ class TrainingStore(
         catch (failure: Exception) { reportFailure("gym.choose", failure); return }
         if (!workoutAuthorized || owner != seat || session?.id != sessionId) return
         lastTimes[movement] = answer
-        if (exerciseId != movement) return
-        lastTime = answer
-        redial()
+        if (exerciseId == movement) redial()
     }
 
-    // A movement's last time as this workout has read it: null until the movement is first chosen and its read answers.
-    fun lastTimeOf(movement: String): LastTime? = lastTimes[movement]
+    // A movement's last time as this workout has read it, unread until the movement is first chosen and its read answers.
+    fun lastTimeOf(movement: String): LastTime = lastTimes[movement] ?: LastTime(Id(movement, DomainExercise), isComplete = false)
 
     // Sets are keyed by movement and never by position, so only the walk order moves.
     fun reorder(from: Int, to: Int) {
@@ -992,7 +998,6 @@ class TrainingStore(
         order = walked
         if (this.exerciseId == exerciseId) {
             this.exerciseId = null
-            lastTime = null
             redial()
         }
         return true
@@ -1038,7 +1043,6 @@ class TrainingStore(
             controls.flush()
             lastTimes.clear()
             exerciseId = null
-            lastTime = null
             drawFromControls()
             if (detail == null) {
                 loadLog()
@@ -1226,6 +1230,9 @@ class TrainingStore(
             }
         }
     }
+
+    val caughtUpTo: Long? get() = training.caughtUpTo
+    fun proposalRecorded(id: String): Boolean = training.proposalRecorded(id)
 
     // Pending removals and unshown receipts remain readable after their synced rows disappear.
     suspend fun proposal(id: String): ProposalRead {
@@ -1946,9 +1953,21 @@ class TrainingStore(
         is Deletion.Bodyweight -> error("weigh-in deletion requires its engine receipt")
     }
 
-    // Doubles as the retry for a first page the replica could not answer: with no rows the cursor is
-    // absent, which is the top of the log. The cursor is BOTH halves of the sort key, because two
-    // sessions can share an instant.
+    // The foot's Retry reads the log again; on an account not pulled yet it also asks for the first pull.
+    suspend fun retryLog() {
+        val unread = logUnread
+        val asked = unread && pullAgain()
+        loadOlder()
+        val outcome = when {
+            unread -> if (asked) "requested" else "refused"
+            older == Older.Failed -> "failed"
+            else -> "ok"
+        }
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "retry", "outcome" to outcome))
+    }
+
+    // Also re-reads a first page the replica could not answer: with no rows the cursor is absent, which is
+    // the top of the log. The cursor is BOTH halves of the sort key, because two sessions can share an instant.
     suspend fun loadOlder(): Unit = logRead.withLock {
         if (older == Older.Loading || older == Older.End) return
         val seat = owner
@@ -1961,7 +1980,7 @@ class TrainingStore(
             return
         }
         logged = logged + page.filter { fresh -> logged.none { it.id == fresh.id } }
-        older = if (page.size < logPage) Older.End else Older.More
+        older = footAfter(page)
     }
 
     suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
@@ -2085,7 +2104,7 @@ class TrainingStore(
         if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.
-        if (deeper.isEmpty()) older = if (rows.size < logPage) Older.End else Older.More
+        if (deeper.isEmpty()) older = footAfter(rows)
 
         val open = try { readTraining { training.openWorkout() } }
         catch (_: TrainingReadChanged) { return }
@@ -2171,7 +2190,7 @@ class TrainingStore(
     }
 
     private fun redial() {
-        prefill = Prefill.of(todaySets, planEntry, lastTime)
+        prefill = Prefill.of(session?.let { live -> todaySets.map { it.domain(live.id) } }.orEmpty(), planEntry?.domain, lastTime)
         refreshWorkout()
     }
 

@@ -2,6 +2,7 @@
 // sentence the room says of its own. Server sentences are shown as sent and never rewritten here.
 
 import { entryLabel, loadBasisLabel, movementOf, nameOfMovement, planOf, planReadingOf, routineNameOf, slotRows, targetLoadOf, timeLabel } from '../log.js';
+import { inLoggedOrder } from '../domain/training.js';
 
 export function coachWorkout(session, sets = [], catalog = []) {
   const plan = planOf(session);
@@ -10,7 +11,7 @@ export function coachWorkout(session, sets = [], catalog = []) {
   const latest = [...sets].sort((left, right) => right.completedAt - left.completedAt)[0]?.exerciseId;
   const groups = ids.map((id) => {
     const entry = planReadingOf(session, id).entry;
-    const logged = sets.filter((set) => set.exerciseId === id).sort((left, right) => left.setNumber - right.setNumber);
+    const logged = sets.filter((set) => set.exerciseId === id).sort(inLoggedOrder);
     const bodyweight = catalog.find((movement) => movement.id === id)?.equipment === 'bodyweight'
       && entry?.sets?.every((set) => set.weightKg == null || set.weightKg === 0);
     return { id, name: nameOfMovement(catalog, id),

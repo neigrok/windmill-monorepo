@@ -6,6 +6,7 @@ import { precondition } from '../../../platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Catalogue, Exercise } from './catalogue.js';
+import { SetTarget } from './routines.js';
 import { EstimateScore, GymEstimate, GymVolume, Session, SessionRules, TrainingSet } from './training.js';
 import { GymUnits, WeightLadder } from './units.js';
 export { GymEstimate, SessionRules, SetRules } from './training.js';
@@ -16,7 +17,6 @@ export { GymEstimate, SessionRules, SetRules } from './training.js';
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('./catalogue.js').ExerciseValue} ExerciseValue */
 /** @typedef {import('./routines.js').RoutineEntry} RoutineEntry */
-/** @typedef {import('./routines.js').SetTarget} SetTarget */
 /** @typedef {import('./training.js').SessionValue} SessionValue */
 /** @typedef {import('./training.js').TrainingSetValue} TrainingSetValue */
 
@@ -71,6 +71,26 @@ export class TrainingLog {
 
   /** @param {Id<ExerciseValue>} exerciseId */
   lastTime(exerciseId) { return LastTime.of(exerciseId, this); }
+
+  /** @param {Id<ExerciseValue>} exerciseId */
+  recentDays(exerciseId) {
+    return Object.freeze(this.drawnSessions.filter((session) => !session.isOpen).flatMap((session) => {
+      const sets = this.setsFor(session.id).filter((set) => set.exerciseId.equals(exerciseId));
+      return sets.length === 0 ? [] : [new RecentDay(session, sets)];
+    }).slice(0, RecentDay.shown));
+  }
+}
+
+// A movement's newest finished days, newest first, each holding its sets of the movement in logged order.
+export class RecentDay {
+  static shown = 10;
+
+  /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets */
+  constructor(session, sets) {
+    this.session = session;
+    this.sets = Object.freeze([...sets]);
+    Object.freeze(this);
+  }
 }
 
 export class SessionReadout {
@@ -100,6 +120,8 @@ export class LastTime {
 
   get routine() { return this.session?.name ?? null; }
   get isFirstTime() { return this.isComplete && this.session === null; }
+  // Not read yet: no workout found, and the account's history is not all here to say there is none.
+  get isUnread() { return !this.isComplete && this.session === null; }
 
   /** @param {Id<ExerciseValue>} exerciseId @param {TrainingLog} log */
   static of(exerciseId, log) {
@@ -134,9 +156,8 @@ export class Prefill {
   /** @param {readonly TrainingSetValue[]} todaySets @param {RoutineEntry | null} planEntry @param {LastTime} lastTime */
   static offeredLoads(todaySets, planEntry, lastTime) {
     const scheme = planEntry?.sets ?? [];
-    const known = lastTime.session !== null || lastTime.isComplete;
     const first = scheme[0];
-    const straight = scheme.every((set) => set.reps === first?.reps && set.weightKg === first?.weightKg);
+    const straight = SetTarget.straight(scheme);
     const last = todaySets.at(-1);
     let offer = last ? new Prefill(last.weightKg, last.reps) : null;
     /** @type {number | null} */
@@ -144,7 +165,7 @@ export class Prefill {
     /** @type {(number | null)[]} */
     const loads = [];
     for (let slot = todaySets.length; slot < scheme.length; slot += 1) {
-      if (known) {
+      if (!lastTime.isUnread) {
         offer = Prefill.at(slot, offer, planEntry, lastTime);
         loads.push(offer.weightKg);
       } else {
@@ -161,8 +182,7 @@ export class Prefill {
     const scheme = planEntry?.sets ?? [];
     const history = lastTime?.sets ?? [];
     const first = scheme[0];
-    const straight = first === undefined || scheme.every((set) => set.reps === first.reps && set.weightKg === first.weightKg);
-    if (scheme.length > 0 && !straight) {
+    if (!SetTarget.straight(scheme)) {
       const target = scheme[slot];
       const lastNth = history[slot];
       return new Prefill(target?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? Prefill.emptyBarKg,
@@ -349,6 +369,11 @@ export class StatsProgress {
 
 export class MovementProgress {
   static gapDays = 21;
+  static windowDays = 84;
+
+  // The first day of the recent window: twelve weeks back from today.
+  /** @param {Instant} now @param {Zone} zone */
+  static windowStart(now, zone) { return LocalDay.in(now, zone).adding(-MovementProgress.windowDays); }
 
   /** @param {Id<ExerciseValue>} exerciseId @param {readonly MovementPoint[]} sessions @param {boolean} isComplete */
   constructor(exerciseId, sessions, isComplete = true) {
@@ -401,7 +426,7 @@ export class MovementProgress {
 
   /** @param {Instant} now @param {Zone} zone */
   chartWindow(now, zone) {
-    const start = LocalDay.in(now, zone).adding(-84);
+    const start = MovementProgress.windowStart(now, zone);
     return new MovementProgress(this.exerciseId, this.sessions.filter((point) =>
       point.startedAt.ms <= now.ms && LocalDay.compare(LocalDay.in(point.startedAt, zone), start) >= 0), this.isComplete);
   }

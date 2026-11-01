@@ -4,8 +4,8 @@ import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import works.windmill.gym.domain.Blocker
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Blocker
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 

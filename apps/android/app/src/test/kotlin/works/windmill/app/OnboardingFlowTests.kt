@@ -32,8 +32,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.WorkoutControls
 import androidx.test.core.app.ActivityScenario
 import works.windmill.platform.telemetry.Telemetry

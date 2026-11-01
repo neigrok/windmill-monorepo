@@ -684,7 +684,7 @@ grouping in first-performed order, assembled client-side from numbered sets.
   never as one separated string — a display name is user text.
 
 **Last-time prefill** — `GET /v1/gym/last?exercise=`: the most recent **finished** session containing
-the exercise, and its sets in order.
+the exercise, and its sets in logged order (`completed_at`, then id): a set number is the arrival serial.
 
 - **The locator walks SESSIONS, newest first** over `gym_sessions_log`, `LIMIT 1` at the first finished
   session holding a set of the movement, on the same `(started_at, id)` key the log pages
@@ -720,7 +720,7 @@ transaction. The first is the catalog's own predicate: no row means `404 no such
 other three never fire. The **sets** are the movement's sets in finished sessions; the tiles,
 the twelve weeks of bars and the record ladder are computed from them by `MovementSeries`. Their window
 is a **lifetime** — only the chart is windowed, by the domain. The **recent days** are a separate
-statement because they print every set, in set-number order. The fourth statement is the days of the program that name
+statement because they print every set, in logged order (`completed_at`, then id). The fourth statement is the days of the program that name
 the movement, by name, deduplicated and in program order — `routineCount` is that list's length.
 Everything is dated by the session's own start. The record **ladder** is every session whose
 estimate beat every session before it by score, newest first, and the first is not on it. Where no set

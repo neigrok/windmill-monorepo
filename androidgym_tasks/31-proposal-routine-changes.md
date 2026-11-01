@@ -8,12 +8,12 @@
 - Components: `Android / Change row` `337:2686` (Renamed, Removed), `Android / Diff field` `337:2531`, `Android / Button` `210:181` (Filled · Tone=Error, Tonal).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Rename: a separate *Routine name* card with a move line *Push A → Push Day* after the movement rows (`ui/ReviewSheet.kt:254-257`), shown when `renames` is true (`domain/Proposal.kt:193`).
+- Rename: a separate *Routine name* card with a move line *Push A → Push Day* after the movement rows (`ui/ReviewSheet.kt:254-257`), shown when `renames` is true (`presentation/Proposal.kt:193`).
 - Removal:
   - The sheet draws *Remove Arms* / *The whole routine is removed from your program. Every set you logged against it stays in the log.* (`ui/ReviewSheet.kt:241-246`).
-  - The card's summary reads *A proposal to remove Arms.* (`domain/Proposal.kt:207`) and its count *a removal* (`:213`).
-  - The apply button reads *Remove Arms* on the accent (`domain/Proposal.kt:228`).
-  - The receipt reads *Applied · Arms · routine removed* (`domain/Proposal.kt:184`).
+  - The card's summary reads *A proposal to remove Arms.* (`presentation/Proposal.kt:207`) and its count *a removal* (`:213`).
+  - The apply button reads *Remove Arms* on the accent (`presentation/Proposal.kt:228`).
+  - The receipt reads *Applied · Arms · routine removed* (`presentation/Proposal.kt:184`).
 
 **Change**
 - Rename (08.15):
@@ -35,7 +35,7 @@
 - Screenshots of 08.15 and 08.16 match in Dark and Daylight on the emulator; the rig (01) adds `08.15-proposal-rename-dark` / `-light` and `08.16-proposal-remove-routine-dark` / `-light`.
 - **Remove routine** emits `gym_proposal_outcome` `{screen: coach, action: apply}`; **Reject** emits action `reject` (30).
 - `gym_proposal_receipt_shown` `{outcome: applied}` still fires once the removal receipt is acknowledged; a failed acknowledgment still reports under `gym.proposal_receipt_shown`.
-- Tests to update: `domain/ProposalTests.kt` (rename block first, removal block), `coach/AskScreenTests.kt`, `store/RemovalReceiptTests.kt`.
+- Tests to update: `presentation/ProposalTests.kt` (rename block first, removal block), `coach/AskScreenTests.kt`, `store/RemovalReceiptTests.kt`.
 
 **Depends on:** 29, 30, 02.
 

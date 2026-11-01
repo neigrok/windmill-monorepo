@@ -14,23 +14,23 @@ import org.junit.AfterClass
 import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runners.MethodSorters
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.PlanEntry
-import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.RoutineEntryWrite
-import works.windmill.gym.domain.RoutineWrite
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetWrite
-import works.windmill.gym.domain.TopSet
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.PlanEntry
+import works.windmill.gym.presentation.RoutineEntry
+import works.windmill.gym.presentation.RoutineEntryWrite
+import works.windmill.gym.presentation.RoutineWrite
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.SetWrite
+import works.windmill.gym.presentation.TopSet
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.TrainingUnanswered
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.WorkoutImports
-import works.windmill.gym.domain.Session
+import works.windmill.gym.presentation.Session
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.schema.Gym
@@ -109,13 +109,13 @@ class LiveWireTests {
         }
         private val rest by lazy { GymHttp(api) }
         // Each write commits to the replica and is then carried through /v1/sync until the log holds it.
-        private suspend fun createRoutine(write: RoutineWrite): works.windmill.gym.domain.Routine {
+        private suspend fun createRoutine(write: RoutineWrite): works.windmill.gym.presentation.Routine {
             adapter.createRoutine(write); drain(RecordKey(Gym.Types.routine, RecordID(write.id))); return checkNotNull(adapter.routine(write.id))
         }
-        private suspend fun replaceRoutine(id: String, write: RoutineWrite): works.windmill.gym.domain.Routine {
+        private suspend fun replaceRoutine(id: String, write: RoutineWrite): works.windmill.gym.presentation.Routine {
             adapter.replaceRoutine(id, write); drain(RecordKey(Gym.Types.routine, RecordID(id))); return checkNotNull(adapter.routine(id))
         }
-        private suspend fun startSession(start: SessionStart): works.windmill.gym.domain.Session {
+        private suspend fun startSession(start: SessionStart): works.windmill.gym.presentation.Session {
             val session = adapter.startSession(start); drain(RecordKey(Gym.Types.session, RecordID(session.id))); return checkNotNull(adapter.session(session.id)).session
         }
         private suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
@@ -124,7 +124,7 @@ class LiveWireTests {
             if (pending(key)) drain(key)
             return checkNotNull(adapter.session(sessionId)).sets.first { it.id == write.id }
         }
-        private suspend fun finishSession(sessionId: String, finishedAtMs: Long): works.windmill.gym.domain.Session {
+        private suspend fun finishSession(sessionId: String, finishedAtMs: Long): works.windmill.gym.presentation.Session {
             adapter.finishSession(sessionId, finishedAtMs); drain(RecordKey(Gym.Types.session, RecordID(sessionId))); return checkNotNull(adapter.session(sessionId)).session
         }
         private suspend fun discardSession(sessionId: String) { adapter.discardSession(sessionId); drain(RecordKey(Gym.Types.session, RecordID(sessionId))) }
@@ -144,7 +144,7 @@ class LiveWireTests {
         private val startB = startA + 1_800_000
         private val finishB = startB + 120_000
 
-        private var openedA: works.windmill.gym.domain.Session? = null
+        private var openedA: works.windmill.gym.presentation.Session? = null
         private var storedFirst: TrainingSet? = null
         private var storedSecond: TrainingSet? = null
 
@@ -278,16 +278,16 @@ class LiveWireTests {
         val trained = adapter.lastTime("bench-press")
         assertEquals("bench-press", trained.exerciseId)
         assertTrue(!trained.isFirstTime)
-        assertEquals(sessionAId, trained.session!!.id)
+        assertEquals(sessionAId, trained.session!!.id.record.string)
         assertEquals("Probe Day A", trained.routine)
-        assertEquals(listOf(storedFirst, storedSecond), trained.sets)
+        assertEquals(listOf(storedFirst, storedSecond).map { it!!.domain(sessionAId) }, trained.sets)
 
         val untouched = adapter.lastTime("suitcase-carry")
         assertEquals("suitcase-carry", untouched.exerciseId)
         assertTrue("no history means session and sets are omitted TOGETHER", untouched.isFirstTime)
         assertNull(untouched.session)
         assertNull(untouched.routine)
-        assertEquals(emptyList<TrainingSet>(), untouched.sets)
+        assertEquals(emptyList<works.windmill.gym.domain.sync.TrainingSet>(), untouched.sets)
 
         try {
             adapter.lastTime("probe-not-a-movement")
@@ -477,7 +477,7 @@ class LiveWireTests {
                 assertEquals(emptyList<String>(), training.imports.refusals().map { it.code })
             }
             drain()
-            assertEquals(works.windmill.gym.domain.SessionDetail(Session(id, at, at + 30_000), listOf(
+            assertEquals(works.windmill.gym.presentation.SessionDetail(Session(id, at, at + 30_000), listOf(
                 TrainingSet(setId, "bench-press", 1, 80.0, 5, null, "", at + 10_000))), adapter.session(id))
             discardSession(id)
         }
@@ -517,7 +517,7 @@ class LiveWireTests {
             assertTrue(training.imports.operations().isEmpty())
         }
         drain()
-        assertEquals(works.windmill.gym.domain.SessionDetail(Session(id, at, at + 30_000), listOf(
+        assertEquals(works.windmill.gym.presentation.SessionDetail(Session(id, at, at + 30_000), listOf(
             TrainingSet(setId, "bench-press", 1, 80.0, 5, null, "", at + 10_000))), adapter.session(id))
         discardSession(id)
     }

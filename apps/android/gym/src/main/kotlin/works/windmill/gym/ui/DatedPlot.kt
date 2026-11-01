@@ -61,10 +61,10 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
-import works.windmill.gym.domain.DatedGeometry
-import works.windmill.gym.domain.DatedPoint
-import works.windmill.gym.domain.DatedSeries
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.DatedGeometry
+import works.windmill.gym.presentation.DatedPoint
+import works.windmill.gym.presentation.DatedSeries
+import works.windmill.gym.presentation.Readout
 import works.windmill.platform.design.WindmillFont
 
 enum class PlotInteraction { Preview, Inspect, Select }

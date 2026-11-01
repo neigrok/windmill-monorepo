@@ -15,8 +15,8 @@
   - *Proposal · Push A*, the summary (*3 changes to Push A.*), the count (*3 changes*, plus * · still waiting*), and a *Review* row.
   - Under a pending card, `Ask.promise` (`coach/Ask.kt:202-203`, drawn at `coach/AskScreen.kt:391`): *Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.*
 - *Review* opens `ReviewSheet` (`ui/ReviewSheet.kt:82`, mounted at `GymRoom.kt:842`):
-  - Rows *Add {m}* / *Remove {m}* / field moves *label · a → b* (`ui/ReviewSheet.kt:325-356`); kept runs *and N lines unchanged* (`domain/Proposal.kt:304-307`).
-  - *Apply* / *Apply all N* (`domain/Proposal.kt:226-231`) stays at 40 % until the sheet is scrolled to the end (`ui/ReviewSheet.kt:446-457`), with *Scroll to the end to apply.* (`domain/Proposal.kt:265`) and the atomic line *All three or none. Nothing is applied until you tap.* (`:233-240`).
+  - Rows *Add {m}* / *Remove {m}* / field moves *label · a → b* (`ui/ReviewSheet.kt:325-356`); kept runs *and N lines unchanged* (`presentation/Proposal.kt:304-307`).
+  - *Apply* / *Apply all N* (`presentation/Proposal.kt:226-231`) stays at 40 % until the sheet is scrolled to the end (`ui/ReviewSheet.kt:446-457`), with *Scroll to the end to apply.* (`presentation/Proposal.kt:265`) and the atomic line *All three or none. Nothing is applied until you tap.* (`:233-240`).
 - **Bug:** a fresh proposal reads *This proposal is no longer available.* (`store/TrainingStore.kt:1763`). `AskScreen` reads each proposal once (`coach/AskScreen.kt:122-132`); if the replica does not hold it yet, the id goes into `missing` and is never read again until the screen is left and re-entered.
 
 **Change**
@@ -35,7 +35,7 @@
 - The first two blocks show. An M3 `TextButton` *Show all 5 changes* expands in place; *Show less* folds it.
 - Buttons, stacked, full width, 56 dp: **Apply** (`Button`, primary) and **Reject** (`FilledTonalButton`). Nothing under them.
 - Delete `Ask.promise`, `Proposal.applyHint`, `atomicLine`, `applyLabel`'s *Apply all N* and the *Review* row.
-- Build the parts in `coach/ChangeCard.kt`: `ChangeCard`, `ChangeRow`, `DiffField`. Field lines come from the existing pure `works.windmill.gym.domain.sync.ProposalDiff` in `apps/android/gym/domain`; adapt the legacy UI model to its inputs and preserve `restSeconds`. Extend that formatter and its shared vectors where necessary rather than creating a second formatter in the app-layer `domain/Proposal.kt`. Tasks 30–35, 41, 42 and 44 reuse them.
+- Build the parts in `coach/ChangeCard.kt`: `ChangeCard`, `ChangeRow`, `DiffField`. Field lines come from the existing pure `works.windmill.gym.domain.sync.ProposalDiff` in `apps/android/gym/domain`; adapt the legacy UI model to its inputs and preserve `restSeconds`. Extend that formatter and its shared vectors where necessary rather than creating a second formatter in the app-layer `presentation/Proposal.kt`. Tasks 30–35, 41, 42 and 44 reuse them.
 - Fix the bug: a proposal id the replica does not hold yet is read again when the replica changes (key the read on the replica's revision, not on `missing`). Show nothing for it until it arrives; *This proposal is no longer available.* only for a proposal the log really dropped.
 - Task 17 establishes the Routines row and its proposal-id/conversation-id navigation payload. This task owns activating that route: a conversation proposal opens its originating chat at the card; a connected-agent proposal without a conversation opens the same `ChangeCard` in the destination specified by 17. Remove `ui/ReviewSheet.kt` and its proposal-only `ConfirmDialog` use only after both routes and return navigation pass. Task 17 can land its list/chrome first; it does not depend on this task.
 
@@ -51,7 +51,7 @@
 - `gym_proposal_outcome` (`store/TrainingStore.kt:1000`) gains `screen: coach`; action `apply` stays. Expanding the card emits nothing. A decision emits one content-free event.
 - `gym_screen_viewed` `proposal` goes with the sheet; the card is part of `coach`.
 - Apply failures still report under `gym.applyProposal`.
-- Tests to update: `ui/ReviewSheetTests.kt` (delete with the sheet), `coach/AskScreenTests.kt`, `coach/CoachAnswerTests.kt`, `domain/ProposalTests.kt` (UI adapter), `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/CorpusTests.kt` (existing ChangeBlocks vectors), `store/TelemetryTests.kt`.
+- Tests to update: `ui/ReviewSheetTests.kt` (delete with the sheet), `coach/AskScreenTests.kt`, `coach/CoachAnswerTests.kt`, `presentation/ProposalTests.kt` (UI adapter), `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/CorpusTests.kt` (existing ChangeBlocks vectors), `store/TelemetryTests.kt`.
 
 **Depends on:** 17, 28, 08.
 

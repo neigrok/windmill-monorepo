@@ -272,7 +272,7 @@ and Android disagree.
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
-  obsolete strings from `ui/NotesScreen.kt` and `domain/Notes.kt`.
+  obsolete strings from `ui/NotesScreen.kt` and `presentation/Notes.kt`.
 - **9t · Connected log with a connection.** Android source (`ConnectedLogScreen.kt`) follows the
   approved connected/empty roots and separate disclosure page in 09.3–09.5. Browser rows use the
   drawn `arrow_forward`; the How door uses the matching Material chevron. Task 51's paired local
@@ -494,6 +494,31 @@ and Android disagree.
   from the lifter's state and never from capability copy — *Build me a routine* with no routines,
   *How did today go?* after a workout today. A tap fills the composer without sending, and the
   capsule leaves with the first message. It waits on the owner and is not drawn.
+- **iOS card radii (build drift, needs a Figma decision).** One card role is drawn at three radii, named in
+  `RoomSpace` (`Theme/TypeScale.swift`): `cardRadius` 16 pt for the room's cards (the transient band, workout
+  ledger and fact tiles, Journal echoes), `coachCardRadius` 22 pt continuous for Coach's conversation cards
+  (`ChangeCard`), and `weighInRadius` 24 pt for the weigh-in sheet's weight, date and Delete weigh-in cards
+  (`Gym/Log/BodyweightScreen.swift`); the share sheet's preview card is 12 pt (`SessionShareSheet.swift`). For the
+  designer: one radius for the card role, or a named role for each that differs. The build changes after the drawing.
+- **Coach card decisions are hand-drawn (build drift, needs a Figma decision).** Apply, Reject and Sign in on Coach's
+  cards (`RoomDecisionStyle` in `Theme/RoomControls.swift`) are full-width 52 pt capsules drawn by hand: the accent
+  with an on-accent label, or the canvas with an ink label (system red on a destructive button), at 50 % while
+  disabled and 98 % while pressed, the same on iOS 18 and iOS 26. Every other primary (`RoomPrimaryStyle`: the
+  routine sheet's Start, the rack's Log set, the receipt's Done) is the system's prominent glass on iOS 26 and the
+  bordered prominent button on iOS 18. For the
+  designer: whether card decisions take the system's prominent and plain glass, or stay a drawn card-decision component.
+- **The weigh-in builds its own form rows (build drift, needs a Figma decision).** The weigh-in sheet
+  (`BodyweightScreen.swift`, `fields`) draws its weight field, date row and Delete weigh-in as separate 52 pt
+  rows on 24 pt card shapes in a scroll view, with its own accent focus stroke, where Fix set, Fix workout, the
+  rename sheet and the movement picker use a native grouped `Form`. For the designer: whether the weigh-in becomes
+  a native grouped form (with the content-sized sheet and graphical calendar of 10y) or keeps its drawn rows.
+- **A machine's load unit has two answers (build drift, needs a design/product decision).** The domain's
+  `Readout.loadUnit` (`apps/ios/Domain/Sources/GymDomain/TrainingReads.swift`, held by the shared `loadUnit` vector)
+  reads a machine's load as *kg total*, like a barbell's, and a workout plan's swap keeps the targets only between
+  movements of one unit. The app's `MovementEquipment.unit` (`Gym/Components/MovementEquipment.swift`) draws a
+  machine's load as plain *kg* on the rack, Fix set, Edit sets and the routine editor, with cable, kettlebell and
+  Other; Gym's 11e names *kg total* for barbell/machine. For the designer and the owner: which unit a machine's load
+  shows, after which both sources speak it.
 
 ## Onboarding
 
@@ -800,7 +825,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   Android decides a proposal in a review sheet
   (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm), its card
   says *Review* under the promise line (`coach/CoachAnswer.kt:327-341`, `Ask.promise`), and receipts
-  say *Turned down* (`domain/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
+  say *Turned down* (`presentation/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
   the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
   the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). 10v covers the words on every surface.
 - **11l · Outside the app.** The native ongoing notification and promoted Live Update show a
@@ -902,12 +927,21 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   subtitle for D4's state.
 - **11u · The log before the first pull (🚧, awaiting owner).** On an account this phone has not
   pulled yet, the log's foot shows **Retry** over *That read failed.* (`ui/LogScreen.kt` `LogFoot`),
-  but nothing failed: the log is waiting for the first pull (task 72). Board 05.18 *Reading your
+  but nothing failed: the log is waiting for the first pull (task 72). It keeps that foot when the
+  phone holds workouts logged here, and claims no first workout until the pull lands. Board 05.18 *Reading your
   log* (Dark `1767:27118`, Daylight `1767:27204`, caption `1767:27286`, in section 05) draws the
   wait: the workouts this phone holds, with no new best, record dot, weekly line or change since,
   and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,
   once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
-  becomes **Retry** · *That read failed.*, which no Android board draws.
+  becomes **Retry** · *That read failed.*, which no Android board draws. A movement's record page
+  before the first pull lists the days this phone holds under *Recent sets* (`ui/RecordScreen.kt`);
+  designer to say whether that heading stays before the pull lands. Two questions for the owner:
+  - *Routines before the first pull.* Routines reads *No routines yet.* (`ui/RoutinesScreen.kt`)
+    while the account it has not pulled holds routines. Owner to say what Routines shows while it
+    waits.
+  - *Set numbers on a workout.* The workout page lists sets in logged order but labels each with its
+    server set number (`ui/SessionScreen.kt`), so sets numbered out of logged order read *2, 3, 1*.
+    Owner to say whether the label counts the rows or names the set.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
@@ -923,10 +957,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     so *Changes to this movement won't be kept.* fits one line where 02.17 wraps it; the Daylight
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
-    the unit (`ui/ReviewSheet.kt:384` over `domain/Proposal.kt`); every other Android readout spaces it.
+    the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
   - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
     (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
     (`web/src/products/gym/log.js`).
+- **11w · An answer's proposal still arriving (designer).** Coach can answer before its proposal
+  reaches the phone; until the miss settles, Android draws nothing in the card's place
+  (`coach/AskScreen.kt`), because no board draws a waiting state for it.
 
 ### Parity rulings (owner, 2026-10-22)
 
@@ -1178,8 +1215,8 @@ iOS. It and the product differ in these places.
 - **Connected-log write disclosure (Android build).** `GymToolCatalog.cpp` exposes append-only
   `save_note` at `gym:write`; the Write level reads *logs sets · saves notes · adds routines · shares
   workouts · proposes changes* on both phones (Android 09.3 `1254:39148`), but Android's copy omits
-  *saves notes* (`domain/ConnectedLog.kt:61`), and its head names *Claude, Cursor or Codex* where both
-  phones now say *Your log, read by ChatGPT or Claude.* (`domain/ConnectedLog.kt:10`).
+  *saves notes* (`presentation/ConnectedLog.kt:61`), and its head names *Claude, Cursor or Codex* where both
+  phones now say *Your log, read by ChatGPT or Claude.* (`presentation/ConnectedLog.kt:10`).
 
 - **2h / 2w / 5k · Refusals.** Set one wording rule for invalid numeric entry, byte-limit errors
   and failed session deletion. A refusal must identify the affected act, retain the user's input
@@ -1202,7 +1239,7 @@ iOS. It and the product differ in these places.
   stays in code and on the wire. The approved Android Workout uses visual position dots and speaks
   *Movement 3 of 5* through accessibility; the count is not a visible pager label. The tab is
   *The log*, and Android uses it for both its tab and root title. Code still differs: Android
-  *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
+  *Exercise {i} / {n}* (`presentation/LiveSession.kt:134`), *Rename movement*,
   *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`); the web's *No sessions yet.*, *no
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).

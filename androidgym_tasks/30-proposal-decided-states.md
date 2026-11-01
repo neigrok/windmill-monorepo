@@ -10,10 +10,10 @@
 - Components: `Android / Change row` `337:2686`, `Android / Diff field` `337:2531`, `Android / Button` `210:181`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- After a decision, `ReceiptLine` (`coach/AskScreen.kt:378-384`) draws the receipt under the unchanged card: *Applied · Push A · 3 changes* in bold accent on `surface` (`domain/Proposal.kt:181-189`).
-- A turned-down proposal reads *Turned down · nothing changed.* (`domain/Proposal.kt:267`), and with a date *Turned down {day} at {time}. Nothing changed.* (`:249`).
-- Out of date: *{routine} changed after this was written, so it was set aside {on}. None of it was applied.* (`domain/Proposal.kt:251`), and in the sheet *This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.* (`ui/ReviewSheet.kt:273-274`).
-- *Turn this down* (`ui/ReviewSheet.kt:491`) opens `ConfirmDialog` (`:434-438`): *Turn this down?* / *Nothing changes.* / **Turn down** (brick) · **Keep it** (`domain/Proposal.kt:271-274`, `ui/ConfirmDialog.kt:22`).
+- After a decision, `ReceiptLine` (`coach/AskScreen.kt:378-384`) draws the receipt under the unchanged card: *Applied · Push A · 3 changes* in bold accent on `surface` (`presentation/Proposal.kt:181-189`).
+- A turned-down proposal reads *Turned down · nothing changed.* (`presentation/Proposal.kt:267`), and with a date *Turned down {day} at {time}. Nothing changed.* (`:249`).
+- Out of date: *{routine} changed after this was written, so it was set aside {on}. None of it was applied.* (`presentation/Proposal.kt:251`), and in the sheet *This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.* (`ui/ReviewSheet.kt:273-274`).
+- *Turn this down* (`ui/ReviewSheet.kt:491`) opens `ConfirmDialog` (`:434-438`): *Turn this down?* / *Nothing changes.* / **Turn down** (brick) · **Keep it** (`presentation/Proposal.kt:271-274`, `ui/ConfirmDialog.kt:22`).
 - History and thread outcomes say *turned down*, *set aside* and *superseded* (`coach/Thread.kt:53-54`, `:77-79`, `:88-90`).
 - The store calls it dismiss: `dismissProposal` (`store/TrainingStore.kt:972`), failure op `gym.dismissProposal` (`:985`), event action `dismiss` (`:989`).
 
@@ -47,7 +47,7 @@
 - A failed reject reports under `gym.rejectProposal` (replaces `gym.dismissProposal`).
 - `gym_proposal_receipt_shown` still fires for a visible removal receipt.
 - Reopen an applied proposal after restart and from another device: its retained change blocks remain truthful; an older record without order evidence does not invent a previous position.
-- Tests to update: `domain/ProposalTests.kt`, `coach/ThreadTests.kt`, `coach/AskScreenTests.kt`, `store/TelemetryTests.kt`, `store/RemovalReceiptTests.kt`.
+- Tests to update: `presentation/ProposalTests.kt`, `coach/ThreadTests.kt`, `coach/AskScreenTests.kt`, `store/TelemetryTests.kt`, `store/RemovalReceiptTests.kt`.
 
 **Depends on:** 29.
 

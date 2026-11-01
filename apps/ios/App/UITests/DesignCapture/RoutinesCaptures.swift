@@ -10,7 +10,7 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
-  // 02.19: Start on the sheet's bottom bar, then the last movement scrolled clear of it.
+  // 02.19: Start across the sheet's foot, then the last movement scrolled clear of it.
   func testRoutineSummary() {
     for look in Look.both + Look.bothAtLargestText {
       let app = launchSignedInCoach(look, arguments: ["-coach-board", "summary"])

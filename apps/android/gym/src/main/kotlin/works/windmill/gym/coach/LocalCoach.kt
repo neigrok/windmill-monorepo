@@ -1,6 +1,6 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.domain.Ids
+import works.windmill.gym.presentation.Ids
 import works.windmill.gym.store.diskJson
 import java.io.File
 import java.io.FileOutputStream

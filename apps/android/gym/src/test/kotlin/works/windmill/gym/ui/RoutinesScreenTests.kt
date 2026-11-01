@@ -46,10 +46,10 @@ import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.SetTarget
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.RoutineEntry
+import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult

@@ -8,7 +8,7 @@
 - iOS model: `apps/ios/App/Sources/Gym/Routines/RoutineBuilder.swift` asks the same question and blocks swipe-dismiss.
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `RoutineDraft.unsaved` (`domain/Program.kt`) says what Back would lose: a new draft holding a name or a movement, or an edit that differs from its routine by the editor's `changed` equality, so a reorder counts.
+- `RoutineDraft.unsaved` (`presentation/Program.kt`) says what Back would lose: a new draft holding a name or a movement, or an edit that differs from its routine by the editor's `changed` equality, so a reorder counts.
 - `ui/RoutineBuilder.kt` registers `BackGuard(enabled = saving || draft.unsaved)`. A Back, the back gesture or the top bar's back arrow on an unsaved draft asks *Discard routine changes?* with *{name} won't be saved.* (*This routine won't be saved.* while the name is blank), **Keep editing** · **Discard**; a clean draft leaves at once. While a save is in flight Back does nothing. The question is saved with the draft, so a recreation keeps both.
 - `GymStage` counts only the standing frame's guard (`LocalFrameStands`), so an editor sliding away after a save or a discard asks nothing.
 - The movement editor's question (02.17) and the draft's share one `DiscardQuestion`: **Keep editing** in the accent, **Discard** in the error colour.

@@ -2,6 +2,7 @@
 
 import { round } from './logger/ladder.js';
 import { inDisplayUnit, LB, weightUnit } from './units.js';
+import { inLoggedOrder } from './domain/training.js';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -547,22 +548,12 @@ export function routineNameOf(session) {
   return typeof routine === 'string' && routine !== '' ? routine : null;
 }
 
-// First-performed order falls out of Map insertion order over sets sorted by completion; inside an
-// exercise the server-assigned number orders them, and an unnumbered set sorts last so the
-// comparator never returns NaN.
+// Each movement's sets in logged order, the movements in the order they were first done.
 export function groupByExercise(sets) {
   const groups = new Map();
-  for (const set of [...sets].sort((a, b) => a.completedAt - b.completedAt)) {
+  for (const set of [...sets].sort(inLoggedOrder)) {
     if (!groups.has(set.exerciseId)) groups.set(set.exerciseId, []);
     groups.get(set.exerciseId).push(set);
-  }
-  for (const group of groups.values()) {
-    group.sort((a, b) => {
-      const left = a.setNumber ?? Number.MAX_SAFE_INTEGER;
-      const right = b.setNumber ?? Number.MAX_SAFE_INTEGER;
-      if (left !== right) return left - right;
-      return a.completedAt - b.completedAt;
-    });
   }
   return [...groups.entries()];
 }

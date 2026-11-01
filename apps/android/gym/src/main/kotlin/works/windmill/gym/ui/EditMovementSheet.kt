@@ -17,8 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.Program
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.Program
 import works.windmill.gym.domain.sync.ExerciseRules
 import works.windmill.platform.design.WindmillFont
 

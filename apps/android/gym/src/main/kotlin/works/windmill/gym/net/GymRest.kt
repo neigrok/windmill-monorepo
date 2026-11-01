@@ -6,8 +6,8 @@ import works.windmill.gym.coach.AskQuestion
 import works.windmill.gym.coach.AskThread
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.CoachRoutineConfirmation
-import works.windmill.gym.domain.McpKey
-import works.windmill.gym.domain.OAuthGrant
+import works.windmill.gym.presentation.McpKey
+import works.windmill.gym.presentation.OAuthGrant
 import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.coach.ThreadPage
 

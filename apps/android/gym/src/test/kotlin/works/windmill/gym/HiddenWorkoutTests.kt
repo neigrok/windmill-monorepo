@@ -34,9 +34,9 @@ import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.coach.AskAnswer
 import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.coach.CoachResult
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.WorkoutChange
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.LocalShellActions

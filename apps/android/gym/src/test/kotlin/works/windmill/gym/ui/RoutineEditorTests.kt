@@ -30,7 +30,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.EngineRoomFixture
 
@@ -301,15 +301,15 @@ class RoutineEditorTests {
         } } finally { scope.cancel() }
     }
 
-    // A signed-out room on Routines, holding `saved` when given, with its routine_editor actions recorded. `back`
+    // A signed-out room on Routines, holding `saved` when given, with the actions of `screen` recorded. `back`
     // is the system Back; `recreate` saves and restores the room's whole state.
-    private fun room(saved: RoutineDraft? = null,
+    private fun room(saved: RoutineDraft? = null, screen: String = "routine_editor",
                      test: (back: () -> Unit, recreate: () -> Unit, actions: List<Map<String, String>>) -> Unit) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val actions = mutableListOf<Map<String, String>>()
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) {
-                if (name == "gym_action" && properties["screen"] == "routine_editor") actions += properties
+                if (name == "gym_action" && properties["screen"] == screen) actions += properties
             }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
         }
@@ -415,5 +415,31 @@ class RoutineEditorTests {
         editorTitle("New routine").assertExists()
         assertEquals("Push Day", typedName())
         assertEquals(listOf("shown", "cancelled"), actions.map { it["state"] ?: it.getValue("outcome") })
+    }
+
+    // The movement form asks before its changes go, and says how the question opened and how it was answered.
+    @Test fun theMovementFormsDiscardQuestionReportsItsOpeningAndEachAnswer() = room(
+        saved = RoutineDraft(name = "Pull", creationId = "routine_pull").adding("bench-press"), screen = "movement_form",
+    ) { _, _, actions ->
+        compose.onNodeWithText("Pull").performClick()
+        compose.onNodeWithText("Edit routine").performClick()
+        compose.onNodeWithText("Bench Press").performClick()
+        compose.onNodeWithContentDescription("Movement name").performTextReplacement("Paused Bench")
+        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+        compose.onNodeWithText("Discard changes?").assertIsDisplayed()
+        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithText("Discard changes?").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+        compose.onNodeWithText("Discard").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Discard changes?").fetchSemanticsNodes().isEmpty() }
+        editorTitle("Edit routine").assertExists()
+        compose.onNodeWithText("Bench Press").assertIsDisplayed()
+        assertEquals(listOf(
+            mapOf("screen" to "movement_form", "action" to "open", "outcome" to "ok"),
+            mapOf("screen" to "movement_form", "action" to "discard", "state" to "shown"),
+            mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "cancelled"),
+            mapOf("screen" to "movement_form", "action" to "discard", "state" to "shown"),
+            mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "ok"),
+        ), actions)
     }
 }

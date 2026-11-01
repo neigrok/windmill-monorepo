@@ -49,11 +49,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.domain.sync.SeedExercises
 import works.windmill.gym.store.RefusedWorkout
 import works.windmill.gym.store.TrainingStore

@@ -13,7 +13,7 @@
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ui/RecordScreen.kt` uses the native More icon and shared menu with one *Edit movement* item.
   It opens task 20's approved editor, retaining its draft, account guard and dismissal behavior.
-- `domain/Record.kt` names Dumbbells in the plural. The header reuses the existing equipment glyphs;
+- `presentation/Record.kt` names Dumbbells in the plural. The header reuses the existing equipment glyphs;
   Cable/Kettlebell labels remain, and Other is text-only. Recent sets contain no set-kind suffix.
 - **Earlier records** lists only superseded bests, newest first. The shared `ProgressRecords` read
   supplies their identities: the first estimate is a baseline, and a new best must beat the previous
@@ -54,7 +54,7 @@
 - Screenshots of 05.6 (menu open) and 05.7 match in Dark and Daylight; the rig (01) adds `05.6-record-overflow-dark/light` and `05.7-record-inspected-dark/light`.
 - `gym_screen_viewed` `movement` still fires.
 - Failures still report as `gym.loadProgress`.
-- Tests: `ui/RecordStateTests.kt`, `domain/RecordTests.kt` (Earlier records without the best), `domain/ProgressTests.kt` (one point per day, refused import left out), `ui/DatedPlotTests.kt` (the new TalkBack labels), `domain/ReadoutTests.kt`.
+- Tests: `ui/RecordStateTests.kt`, `presentation/RecordTests.kt` (Earlier records without the best), `presentation/ProgressTests.kt` (one point per day, refused import left out), `ui/DatedPlotTests.kt` (the new TalkBack labels), `presentation/ReadoutTests.kt`.
 
 **Depends on:** 04, 06, 08, 20.
 

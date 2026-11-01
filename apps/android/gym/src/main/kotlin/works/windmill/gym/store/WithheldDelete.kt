@@ -1,8 +1,8 @@
 package works.windmill.gym.store
 
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WeighIn
 
 sealed interface Deletion {
     sealed interface Recoverable : Deletion

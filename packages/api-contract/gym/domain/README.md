@@ -10,13 +10,15 @@ for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` 
 decodes separately.
 
 The server claims the `training-reads.json` cases that make an estimate, by the one e1RM rule it holds as
-`Estimate` (`backend/products/gym/domain/Progress.h`): every `GymEstimate` and `GymEstimateScore` case in its domain suite
-(`backend/test/products/gym/domain/ProgressTest.cpp`), and every `StatsProgress` case and `TrainingHistory` review and
-stats case over Postgres (`backend/test/products/gym/application/TrainingReadsCorpusTest.cpp`), which seeds each case's
-records into the engine's stores and reads them through `TrainingService`. The server's wire states a review's and the
-statistics' estimates to a tenth, so those expectations are stated the same way before the bytes are compared. That
-test names the cases the server answers otherwise, each by the rule it reads differently, and the one case its
-store cannot hold (a set without its session).
+`Estimate` (`backend/products/gym/domain/Progress.h`), and the cases that list a movement's sets: every `GymEstimate` and
+`GymEstimateScore` case in its domain suite (`backend/test/products/gym/domain/ProgressTest.cpp`), and every
+`StatsProgress` case and `TrainingHistory` review, stats, last-time, last-sets and record case over Postgres
+(`backend/test/products/gym/application/TrainingReadsCorpusTest.cpp`), which seeds each case's records into the engine's
+stores and reads them through `TrainingService`. The server's wire states a review's, the statistics' and a record's
+estimates to a tenth, so those expectations are stated the same way before the bytes are compared, and it numbers every
+set it holds, so a set a case leaves unnumbered is compared without its number. That test names the cases the server
+answers otherwise, each by the one field it reads by another rule, and the one case its store cannot hold (a set
+without its session).
 
 The ability conformance corpus beside this one, `../abilities/` ([README](../../README.md)), is claimed by the Swift replica
 executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`): each case runs through `RunAbility` over its
@@ -225,14 +227,15 @@ sets. `WorkoutFix` opens the review's row (a landed copy edits its stranded sets
 parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-set admission,
 finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
 
-`LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
-last-time rows and today's sets. `OfferedLoads` is the prefill's load at every set the plan still
-holds, the set in hand first, each later set offered as though the one before were logged as
-offered; a load that would come from a last time not read yet is null. `SessionReadout` provides duration, set
+`LastTime` selects the latest finished movement session; it is unread when it found none and the account's history
+is not all here. `Prefill` follows ordered targets, last-time rows and today's sets. A scheme is straight when its
+sets agree, loads compared on the ladder's grid (`SetTarget.straight`); an open line is straight. `OfferedLoads` is
+the prefill's load at every set the plan still holds, the set in hand first, each later set offered as though the
+one before were logged as offered; a load that would come from an unread last time is null. `SessionReadout` provides duration, set
 and movement counts, volume and the session estimate. `StatsProgress` groups
 finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility
-and gaps. All estimates use `GymEstimate`: positive load, 1–10 reps, supplied RPE ≥7;
+and gaps; the twelve-week window starts 84 days before today (`windowStart`). All estimates use `GymEstimate`: positive load, 1–10 reps, supplied RPE ≥7;
 one rep is the load itself, otherwise Epley. Incomplete history does not assert a best or absence.
 Estimate ordering compares exact cent-load scores: load in cents multiplied by 30 for one rep or
 by `30 + reps` otherwise. Equal scores retain the earliest session, then lowest session identity;
@@ -243,7 +246,9 @@ that fact; the all-load `mostReps` read retains its own ordering. Partial histor
 `ProgressRecords` (`input:{}`) is the log's new bests. A movement's first estimate is its baseline, never a new best;
 a later estimate is a new best when, stated to a tenth of a kilogram, it beats the best before it as stated. Each names
 its session, the best it beat (`previous`), its stated `estimate` and its `gain` over that best to a tenth; the read
-also lists the sessions that set one. Partial history has none. It runs in all three; the web's log weaves no new
+also lists the sessions that set one. Partial history has none. A slight workout (fewer than four sets) sets new
+bests and record steps like any other: slightness silences only its review, which states no `record` or `against`,
+and so the session summary's `record`. It runs in all three; the web's log weaves no new
 bests yet.
 
 `PlanChanges` (`{sessionId}` → `{changes,changeCount,offer}`) is the receipt's card, drawn only for a workout whose
@@ -258,7 +263,9 @@ has no routine or does not exist. `WorkoutOutOfDate` (`{id}` →
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
-session summaries, reviews, record details and weekly totals. History filters apply before summary and
+session summaries, reviews, record details and weekly totals. The last-time and record documents list a day's
+sets in logged order (`completedAt`, then identity), as every read does: a set number is the server's serial and
+absent until it answers. A record's `recentDays` are the movement's ten newest finished days (`recentDays`). History filters apply before summary and
 facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
 sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
 loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.

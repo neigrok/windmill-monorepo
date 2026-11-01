@@ -35,14 +35,14 @@ class SyncRuntimeTests {
         override fun delete(account: String) { if (failDelete) error("secret-token/private-content"); values.remove(account) }
         override fun accounts() = values.keys.toSet()
     }
-    private class Identities : IdentitySource {
+    private class Identities(private val drawn: (Int) -> Int = { 0 }) : IdentitySource {
         val bounds = CopyOnWriteArrayList<Int>()
         private var gestures = 0
         private var replicas = 0
         private var actors = 0
         private var guards = 0
         override fun opaqueID() = "g${++gestures}"
-        override fun draw(bound: Int): Int { bounds.add(bound); return 0 }
+        override fun draw(bound: Int): Int { bounds.add(bound); return drawn(bound) }
         override fun replicaID() = "rp_${(++replicas).toString(16).padStart(32, '0')}"
         override fun actorID() = "r_${(++actors).toString(16).padStart(12, '0')}"
         override fun forkGuard() = "fg_${++guards}"
@@ -136,11 +136,11 @@ class SyncRuntimeTests {
         sleeper: EngineSleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() },
         pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() },
         registry: Registry = this@SyncRuntimeTests.registry, activityAllowed: () -> Boolean = { true },
-        signOutDrainAllowed: () -> Boolean = activityAllowed) : AutoCloseable {
+        signOutDrainAllowed: () -> Boolean = activityAllowed, draw: (Int) -> Int = { 0 }) : AutoCloseable {
         val events = CopyOnWriteArrayList<EngineEvent>()
         val tokens = Tokens()
         val clock = Clock()
-        val identities = Identities()
+        val identities = Identities(draw)
         val engine = Engine.memory(registry, snapshot, clock, identities, "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
         val transport = Transport()
         val runtime = SyncRuntime(engine, transport, tokens, "1", sleeper, listOf("probe"), activityAllowed = activityAllowed, signOutDrainAllowed = signOutDrainAllowed)
@@ -1036,6 +1036,61 @@ class SyncRuntimeTests {
         }
     }
 
+    // The clock stands still and every backoff draws half its bound, so only an asked-for pull can come early. A pull
+    // step waits for the one in flight, so each "nothing is due" is read after it.
+    @Test fun pullAgainAsksAtOnceAfterAFailedPullButKeepsTheServersRetryAfter() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            assertFalse("a failed pull waits out its backoff", fixture.runtime.pullerStep())
+            assertTrue(fixture.runtime.pullAgain())
+            fixture.pull().answer.complete(Reply.Failed(SyncResponse(503, Json.objectOf("retryAfterMs" to Json.of(10_000)))))
+            assertFalse(fixture.runtime.pullerStep())
+            assertTrue(fixture.runtime.pullAgain())
+            assertFalse("a server's retry-after outlasts the request", fixture.runtime.pullerStep())
+            assertTrue(fixture.transport.pulls.tryReceive().isFailure)
+            fixture.clock.wall += 10_000
+            assertTrue(fixture.runtime.pullAgain())
+            assertEquals(listOf(product.text), fixture.pull().also { it.answer.complete(Reply.Unreachable) }
+                .request.member("scopes").arr().map { it.member("scope").str() })
+            assertFalse(fixture.runtime.pullerStep())
+            assertEquals(3, fixture.transport.pulling.get())
+            fixture.runtime.connectivity(false)
+            assertFalse("offline, nothing can be asked for", fixture.runtime.pullAgain())
+        }
+    }
+
+    // Each asked-for pull that fails steps the backoff on: the draws climb the ladder rather than restarting it.
+    @Test fun pullAgainKeepsTheBackoffStepAcrossRepeatedFailures() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Failed(SyncResponse(500, Json.objectOf())))
+            assertFalse(fixture.runtime.pullerStep())
+            repeat(2) {
+                assertTrue(fixture.runtime.pullAgain())
+                fixture.pull().answer.complete(Reply.Failed(SyncResponse(500, Json.objectOf())))
+                assertFalse(fixture.runtime.pullerStep())
+            }
+            assertEquals("the backoff draws", listOf(1_000, 2_000, 4_000), fixture.identities.bounds.filter { it >= 1_000 })
+        }
+    }
+
+    // With the account's token gone there is no seat to pull as, so nothing is asked and the tap says so.
+    @Test fun pullAgainAsksNothingWithoutASeat() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            assertFalse(fixture.runtime.pullerStep())
+            fixture.tokens.delete("A")
+            assertFalse(fixture.runtime.pullAgain())
+            assertFalse(fixture.runtime.pullerStep())
+            assertEquals(1, fixture.transport.pulling.get())
+        }
+    }
+
     @Test fun lateLiveFrameAfterAccountChangeCannotPauseTheNewAccount() = runBlocking {
         Fixture().use { fixture ->
             fixture.runtime.enter()
@@ -1139,6 +1194,31 @@ class SyncRuntimeTests {
                             assertNull(tokens.token("A"))
                             assertEquals("token-B", tokens.token("B"))
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // §9.5 on the wire: a server reading `scopes` follows nothing a frame names any other way.
+    @Test fun theLiveSocketFollowsItsScopesInOneSubFrameOfScopes() = runBlocking {
+        val sleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() }
+        MockWebServer().use { server ->
+            val first = CompletableDeferred<String>()
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (request.path?.startsWith("/v1/sync/live") != true) return MockResponse().setResponseCode(503)
+                    return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                        override fun onMessage(webSocket: WebSocket, text: String) { first.complete(text) }
+                    })
+                }
+            }
+            Engine.memory(registry, null, Clock(), Identities(), "r_aaaaaaaaaaaa").use { engine ->
+                engine.signIn("A", mapOf("probe" to false))
+                HTTPTransport("http://127.0.0.1:${server.port}/", registry.version.toInt(), EngineTelemetry { }, okhttp3.OkHttpClient()).use { transport ->
+                    SyncRuntime(engine, transport, Tokens().also { it.save("A", "token:A") }, "1", sleeper, listOf("probe")).use { runtime ->
+                        runtime.enter()
+                        assertEquals("""{"op":"sub","scopes":["self/probe"]}""", withTimeout(5_000) { first.await() })
                     }
                 }
             }

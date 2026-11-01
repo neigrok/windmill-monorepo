@@ -12,10 +12,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.coach.AskThread
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException

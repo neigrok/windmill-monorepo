@@ -17,7 +17,7 @@ import okio.Timeout
 import okio.buffer
 import org.junit.Assert.*
 import org.junit.Test
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.platform.net.WindmillApi
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.platform.net.WindmillApiException

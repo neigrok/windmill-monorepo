@@ -26,11 +26,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineEntry
-import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.SetWrite
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.RoutineEntry
+import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.SetWrite
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 

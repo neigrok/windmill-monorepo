@@ -37,9 +37,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Note
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.Notes
+import works.windmill.gym.presentation.Note
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult

@@ -29,10 +29,10 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
-import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.LoggedSetLimits
-import works.windmill.gym.domain.NumberEntry
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Ladder
+import works.windmill.gym.presentation.LoggedSetLimits
+import works.windmill.gym.presentation.NumberEntry
+import works.windmill.gym.presentation.Readout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 

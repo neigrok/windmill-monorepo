@@ -348,6 +348,16 @@ Json::Value toJson(const std::vector<Exercise>& exercises) {
   return array;
 }
 
+Json::Value toJson(const ExerciseId& exercise, const std::optional<LastTime>& last) {
+  Json::Value body(Json::objectValue);
+  body["exerciseId"] = exercise.str();
+  if (!last) return body;
+  body["session"] = toJson(last->session);
+  if (!last->routineName.empty()) body["routine"] = last->routineName;
+  body["sets"] = toJson(last->sets);
+  return body;
+}
+
 // `at` is the session's start. No movement name: the caller joins on `exerciseId`.
 Json::Value toJson(const std::vector<LastSet>& movements) {
   Json::Value array(Json::arrayValue);

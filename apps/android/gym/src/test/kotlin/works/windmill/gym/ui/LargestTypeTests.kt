@@ -54,10 +54,10 @@ import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.AskCap
 import works.windmill.gym.coach.AskExchange
-import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetTarget
+import works.windmill.gym.presentation.Ladder
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.SetTarget
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -102,9 +102,9 @@ class LargestTypeTests {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
                 GymMaterial {
                     Box(Modifier.width(320.dp).padding(horizontal = 20.dp)) {
-                        WorkoutClockRow(works.windmill.gym.domain.WorkoutClocks(
-                            works.windmill.gym.domain.Session("session", 0),
-                            listOf(works.windmill.gym.domain.TrainingSet("set", "bench", weightKg = 60.0, reps = 5, completedAtMs = 3_600_000)),
+                        WorkoutClockRow(works.windmill.gym.presentation.WorkoutClocks(
+                            works.windmill.gym.presentation.Session("session", 0),
+                            listOf(works.windmill.gym.presentation.TrainingSet("set", "bench", weightKg = 60.0, reps = 5, completedAtMs = 3_600_000)),
                             36_123_000,
                         ))
                     }

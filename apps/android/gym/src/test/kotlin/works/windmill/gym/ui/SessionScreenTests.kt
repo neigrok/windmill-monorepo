@@ -2,11 +2,11 @@ package works.windmill.gym.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.PlanEntry
-import works.windmill.gym.domain.PlanSnapshot
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.SetTarget
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.PlanEntry
+import works.windmill.gym.presentation.PlanSnapshot
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.SetTarget
 
 class SessionScreenTests {
     private val catalog = listOf(

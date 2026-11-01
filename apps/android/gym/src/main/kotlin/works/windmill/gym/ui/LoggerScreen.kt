@@ -61,7 +61,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import works.windmill.gym.R
-import works.windmill.gym.domain.WorkoutClocks
+import works.windmill.gym.presentation.WorkoutClocks
 import works.windmill.platform.design.WindmillFont
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,13 +101,13 @@ import androidx.compose.runtime.SideEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.KeepOnBack
-import works.windmill.gym.domain.Blocker
-import works.windmill.gym.domain.WorkoutChange
-import works.windmill.gym.domain.NumberEntry
-import works.windmill.gym.domain.LoggedSetLimits
-import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.LiveLines
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Blocker
+import works.windmill.gym.presentation.WorkoutChange
+import works.windmill.gym.presentation.NumberEntry
+import works.windmill.gym.presentation.LoggedSetLimits
+import works.windmill.gym.presentation.Ladder
+import works.windmill.gym.presentation.LiveLines
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
@@ -401,7 +401,7 @@ fun LoggerScreen(
                         }
                         val exercise = store.catalog.firstOrNull { it.id == pageMovement }
                         val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
-                        val slots = LiveLines.slots(today, store.session?.plan?.entry(pageMovement), store.lastTimeOf(pageMovement),
+                        val slots = LiveLines.slots(today, store.session?.id.orEmpty(), store.session?.plan?.entry(pageMovement), store.lastTimeOf(pageMovement),
                             store.stalled, unit)
                         var ledgerBottom by remember(pageMovement) { mutableStateOf(0.dp) }
                         val pageSemantics = if (!visible) Modifier.clearAndSetSemantics {}
@@ -455,10 +455,10 @@ fun LoggerScreen(
             onLog = {
                 val offer = store.notification.value?.offer
                 if (offer == null) say(store.workoutFailure ?: "Check the weight and reps before logging.")
-                else when (val accepted = store.acceptSet(works.windmill.gym.domain.LogSetCommand(offer.key, offer.id))) {
-                    is works.windmill.gym.domain.LogSetAcceptance.Unavailable -> say(accepted.reason)
-                    works.windmill.gym.domain.LogSetAcceptance.Stale -> say("The workout changed. Check the current set.")
-                    is works.windmill.gym.domain.LogSetAcceptance.Accepted -> say(null)
+                else when (val accepted = store.acceptSet(works.windmill.gym.presentation.LogSetCommand(offer.key, offer.id))) {
+                    is works.windmill.gym.presentation.LogSetAcceptance.Unavailable -> say(accepted.reason)
+                    works.windmill.gym.presentation.LogSetAcceptance.Stale -> say("The workout changed. Check the current set.")
+                    is works.windmill.gym.presentation.LogSetAcceptance.Accepted -> say(null)
                 }
             },
         )
@@ -786,7 +786,7 @@ private class RackEntry(
 @Composable
 private fun Rack(
     entry: RackEntry,
-    exercise: works.windmill.gym.domain.Exercise?,
+    exercise: works.windmill.gym.presentation.Exercise?,
     finishing: Boolean,
     failure: String?,
     enabled: Boolean,

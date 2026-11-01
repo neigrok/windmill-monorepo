@@ -33,11 +33,11 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowService
 import org.robolectric.util.ReflectionHelpers
 import works.windmill.gym.R
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.WorkoutChange
-import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutNotification
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.WorkoutChange
+import works.windmill.gym.presentation.WorkoutKey
+import works.windmill.gym.presentation.WorkoutNotification
 import works.windmill.gym.store.WorkoutCommands
 import works.windmill.platform.telemetry.Telemetry
 

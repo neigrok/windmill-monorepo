@@ -4,11 +4,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.WorkoutChange
-import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutNotification
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.WorkoutChange
+import works.windmill.gym.presentation.WorkoutKey
+import works.windmill.gym.presentation.WorkoutNotification
 
 interface WorkoutCommands {
     val notification: StateFlow<WorkoutNotification?>

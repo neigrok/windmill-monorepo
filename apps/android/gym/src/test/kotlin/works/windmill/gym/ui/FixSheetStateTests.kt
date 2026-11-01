@@ -31,9 +31,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.NumberEntry
-import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.NumberEntry
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.WriteFailure
 

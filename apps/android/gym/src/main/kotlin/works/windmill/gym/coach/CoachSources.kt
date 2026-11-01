@@ -28,7 +28,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import works.windmill.gym.R
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.ui.LocalGymColors
 import works.windmill.platform.telemetry.LocalTelemetry
 

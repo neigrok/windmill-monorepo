@@ -68,7 +68,7 @@ class TrainingHistory(private val read: Reader) {
         val last = log.lastTime(id)
         return Json.Obj(buildList {
             add("exerciseId" to id.json)
-            last.session?.let { add("session" to sessionDocument(it)); add("sets" to Json.Arr(last.sets.sortedWith(compareBy<TrainingSet> { it.setNumber ?: 0 }.thenBy { it.id }).map(::setDocument))) }
+            last.session?.let { add("session" to sessionDocument(it)); add("sets" to Json.Arr(last.sets.map(::setDocument))) }
             last.routine?.let { add("routine" to Json.of(it)) }
         })
     }
@@ -99,9 +99,9 @@ class TrainingHistory(private val read: Reader) {
             val window = series.window(read.moment.now, read.moment.zone).estimates
             if (window.isNotEmpty()) add("e1rmSeries" to Json.Arr(window.map { point(it, true) }))
             if (series.records.isNotEmpty()) add("records" to Json.Arr(series.records.reversed().map { point(it, true) }))
-            val recent = finished.filter { log.sets(it.id).any { set -> set.exerciseId == id } }.take(10)
-            if (recent.isNotEmpty()) add("recentDays" to Json.Arr(recent.map { session ->
-                Json.objectOf("sessionId" to session.id.json, "startedAt" to Json.of(session.startedAt.ms), "sets" to Json.Arr(log.sets(session.id).filter { it.exerciseId == id }.sortedWith(compareBy<TrainingSet> { it.setNumber ?: 0 }.thenBy { it.id }).map(::setDocument)))
+            val recent = log.recentDays(id)
+            if (recent.isNotEmpty()) add("recentDays" to Json.Arr(recent.map { day ->
+                Json.objectOf("sessionId" to day.session.id.json, "startedAt" to Json.of(day.session.startedAt.ms), "sets" to Json.Arr(day.sets.map(::setDocument)))
             }))
         })
     }

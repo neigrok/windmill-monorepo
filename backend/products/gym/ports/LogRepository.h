@@ -52,7 +52,7 @@ struct LogPage {
 };
 
 // The most recent FINISHED session holding a set of the movement, and its sets of that
-// movement in set_number order; most recent is (startedAt, id). `sets` is never empty. routineName
+// movement in logged order (completedAt, then id); most recent is (startedAt, id). `sets` is never empty. routineName
 // is the historical display override or frozen plan name ("" when ad-hoc), never the routine's name today.
 struct LastTime {
   Session session;

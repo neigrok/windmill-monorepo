@@ -114,7 +114,14 @@ struct RoutineDetail: View {
   var body: some View {
     Group {
       if let routine {
-        movements(routine)
+        List {
+          Section {
+            ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
+              GymRow(title: RoutineLines.movement(index, entry.exerciseId, in: gym.catalogue), meta: Readout.target(entry.sets))
+                .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
+            }
+          }.listRowBackground(GymPalette.card)
+        }.listStyle(.insetGrouped)
       } else if waitsForSync {
         ContentUnavailableView {
           Label("Routine not on this phone yet", systemImage: "arrow.triangle.2.circlepath")
@@ -136,39 +143,22 @@ struct RoutineDetail: View {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Edit") { editing = RoutineEditingSession(gym: gym, routine: routine) }.accessibilityIdentifier("edit-routine")
           }
-          if #available(iOS 26.0, *) {
-            ToolbarItem(placement: .bottomBar) { startButton }.sharedBackgroundVisibility(.hidden)
-          } else {
-            ToolbarItem(placement: .bottomBar) { startButton }
-          }
         }
       }.roomBar(.gym)
-      .reachBand { GymTransient(gym: gym) }
+      // The movements pass under Start on a hard edge over the bar material, so no row reads through it (02.19).
+      .reachBand(onSurface: true) {
+        VStack(spacing: 0) {
+          GymTransient(gym: gym)
+          if routine != nil {
+            ActionBand(title: "Start", room: .gym, disabled: gym.accountTransition || gym.readFailed,
+                       actionIdentifier: "routine-start", action: start)
+          }
+        }
+      }
       // The editor deletes the routine at once, so the detail it leaves behind has nothing to show and goes too.
       .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
       .task(id: id) { if awaitSync, routine == nil { await refreshReceipt() } }
-  }
-
-  // The movements pass under Start's bar, whose edge is hard, so the system frosts the rows beneath it (02.19).
-  @ViewBuilder func movements(_ routine: Routine) -> some View {
-    let list = List {
-      Section {
-        ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
-          GymRow(title: RoutineLines.movement(index, entry.exerciseId, in: gym.catalogue), meta: Readout.target(entry.sets))
-            .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
-        }
-      }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped)
-    if #available(iOS 26.0, *) { list.scrollEdgeEffectStyle(.hard, for: .bottom) } else { list }
-  }
-
-  // Start spans the sheet's bottom bar.
-  var startButton: some View {
-    Button(action: start) { Text("Start").frame(maxWidth: .infinity) }
-      .modifier(RoomPrimaryStyle(room: .gym, onBar: true))
-      .disabled(gym.accountTransition || gym.readFailed)
-      .accessibilityIdentifier("routine-start")
   }
 
   func refreshReceipt() async {

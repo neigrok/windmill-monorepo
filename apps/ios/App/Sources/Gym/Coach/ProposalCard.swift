@@ -157,10 +157,10 @@ struct ProposalCard: View {
           if pending && !decision.retries { ProgressView().tint(removal ? GymPalette.destructive : GymPalette.onAccent) }
           Text(decision.title)
         }
-      }.buttonStyle(ChangeCardButtonStyle(prominent: !removal)).disabled(!decision.applies)
+      }.buttonStyle(RoomDecisionStyle(removal ? .quiet : .prominent)).disabled(!decision.applies)
         .accessibilityIdentifier("coach-apply-proposal")
       Button("Reject") { _ = gym.coachDecideProposal(proposal, apply: false) }
-        .buttonStyle(ChangeCardButtonStyle()).disabled(!decision.rejects).accessibilityIdentifier("coach-reject-proposal")
+        .buttonStyle(RoomDecisionStyle(.quiet)).disabled(!decision.rejects).accessibilityIdentifier("coach-reject-proposal")
     }.padding(.top, 16)
   }
 
@@ -249,9 +249,9 @@ struct WorkoutProposalCard: View {
       if stance == .open {
         VStack(spacing: 10) {
           Button("Apply") { if gym.coachDecideWorkoutProposal(proposal, apply: true) { applied += 1 } }
-            .buttonStyle(ChangeCardButtonStyle(prominent: true)).disabled(!decidable).accessibilityIdentifier("coach-apply-workout-proposal")
+            .buttonStyle(RoomDecisionStyle(.prominent)).disabled(!decidable).accessibilityIdentifier("coach-apply-workout-proposal")
           Button("Reject") { _ = gym.coachDecideWorkoutProposal(proposal, apply: false) }
-            .buttonStyle(ChangeCardButtonStyle()).disabled(!decidable).accessibilityIdentifier("coach-reject-workout-proposal")
+            .buttonStyle(RoomDecisionStyle(.quiet)).disabled(!decidable).accessibilityIdentifier("coach-reject-workout-proposal")
         }.padding(.top, 16)
       }
     }.modifier(ChangeCard(stroke: stance == .open ? GymPalette.accent : outOfDate != nil ? GymPalette.line : nil))

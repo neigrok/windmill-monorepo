@@ -548,8 +548,8 @@ nonisolated struct CoachBoard {
   }
 
   // The movements every board's lifter made: their routines carry them beside the seeded ones.
-  static let yours = [Exercise(id: ID("upright-row"), name: "Upright Row", pattern: "pull", equipment: "barbell", stepKg: 2.5),
-                      Exercise(id: ID("landmine-squat"), name: "Landmine Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)]
+  static let yours = [Exercise(id: ID("upright-row"), name: "Upright Row", pattern: "pull", equipment: .barbell, stepKg: 2.5),
+                      Exercise(id: ID("landmine-squat"), name: "Landmine Squat", pattern: "squat", equipment: .barbell, stepKg: 2.5)]
   static let bench = entry("bench-press", 5, 5, 82.5), heavier = entry("bench-press", 3, 3, 90)
   static let pushA = [bench, entry("cable-fly", 3, 12, 15), entry("triceps-pushdown", 3, 12, 30), entry("overhead-press", 3, 8, 40)]
   static let pushB = [bench, entry("incline-bench-press", 3, 10, 50), entry("overhead-press", 3, 8, 40), entry("triceps-pushdown", 3, 12, 30), entry("lateral-raise", 3, 15, 8)]
@@ -581,7 +581,7 @@ nonisolated struct CoachBoard {
   static func standing(in situation: Situation, _ board: CoachBoard = stalled) -> CoachBoard {
     var next = board; next.situation = situation; return next
   }
-  static let pullUp = Exercise(id: ID("board-pull-up"), name: "Pull-up", pattern: "pull", equipment: "bodyweight", stepKg: 2.5)
+  static let pullUp = Exercise(id: ID("board-pull-up"), name: "Pull-up", pattern: "pull", equipment: .bodyweight, stepKg: 2.5)
   // Upper A's workout in flight (08.55–08.57): bench logged, so it keeps its plan; Coach lightens the row and rests it longer,
   // then, asked again, takes the belt off the pull-ups; one answer may also change Upper A for next time.
   static let upperA = [entry("dumbbell-bench-press", 3, 8, 16, rest: 120), entry("seated-cable-row", 3, 10, 50), entry("pull-up", 3, 8, 10, rest: 120),
@@ -660,7 +660,7 @@ nonisolated struct CoachBoard {
     "movement": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
       turns: [Turn(question: "Add incline dumbbell press to my movements. I go up in 2.5 kg steps.",
                    answer: "Done. Incline Dumbbell Press is in your movements: dumbbells, 2.5 kg steps.",
-                   movement: Exercise(id: ID("board-incline-dumbbell-press"), name: "Incline Dumbbell Press", pattern: "press", equipment: "dumbbell", stepKg: 2.5))]),
+                   movement: Exercise(id: ID("board-incline-dumbbell-press"), name: "Incline Dumbbell Press", pattern: "press", equipment: .dumbbell, stepKg: 2.5))]),
     "truncated": ended("Thursday is still a Push day. Keep the same total work and change the last set to a heavier triple. For the bench, start at", .truncated),
     "declined": CoachBoard(routines: stalled.routines, proposals: [], turns: [Turn(question: stalled.turns[0].question, answer: "", end: .declined)]),
     "failed": ended("Thursday is still a Push day.", .failed("coach-vendor-error")),

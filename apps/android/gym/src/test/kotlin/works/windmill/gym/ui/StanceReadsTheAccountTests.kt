@@ -30,8 +30,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
 import works.windmill.gym.coach.AskThread
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.coach.Threads
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.Deletion
@@ -94,7 +94,7 @@ class StanceReadsTheAccountTests {
     }
 
     // The finish re-reads the log in the room's scope.
-    private fun oneWorkout(room: EngineRoomFixture): works.windmill.gym.domain.Session {
+    private fun oneWorkout(room: EngineRoomFixture): works.windmill.gym.presentation.Session {
         val workout = room.scope.async { room.workout().also { room.store.refreshEngine() } }
         compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idle(); workout.isCompleted }
         return runBlocking { workout.await() }

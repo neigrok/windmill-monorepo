@@ -24,8 +24,8 @@ import java.time.ZoneId
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import works.windmill.gym.domain.*
-import works.windmill.gym.domain.Record
+import works.windmill.gym.presentation.*
+import works.windmill.gym.presentation.Record
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
@@ -172,7 +172,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
             page.tiles.forEach { RecordMetric(it, Modifier.weight(1f)) }
         }
     }
-    if (progress.estimates.isNotEmpty()) StrengthChart(progress, nowMs, zone, focusSessionId)
+    if (page.strength) StrengthChart(progress, nowMs, zone, focusSessionId)
     page.noEstimate?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
     if (page.records.isNotEmpty()) {
         Text("Earlier records", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)

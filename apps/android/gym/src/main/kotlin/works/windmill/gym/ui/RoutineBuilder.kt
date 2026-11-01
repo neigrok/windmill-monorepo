@@ -92,12 +92,12 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
-import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.RoutineMovement
-import works.windmill.gym.domain.Program
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.RoutineMovement
+import works.windmill.gym.presentation.Program
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.RoutineRules
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.GymResult
@@ -180,10 +180,15 @@ fun RoutineBuilder(
     val pickerState = rememberMovementPickerState()
     val telemetry = LocalTelemetry.current
     var closing by remember { mutableStateOf(false) }
+    fun askDiscard(form: BuilderSheet.Target) {
+        if (form.discarding) return
+        sheet = form.copy(discarding = true)
+        telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "discard", "state" to "shown"))
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
         val form = sheet as? BuilderSheet.Target
         if (value == SheetValue.Hidden && !closing && form?.dirty == true) {
-            sheet = form.copy(discarding = true)
+            askDiscard(form)
             false
         } else true
     })
@@ -199,7 +204,6 @@ fun RoutineBuilder(
     }
     fun leaveForm() {
         val form = sheet as? BuilderSheet.Target
-        telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "cancel", "outcome" to "ok"))
         if (form?.adding == true) {
             sheet = BuilderSheet.Picker
             scope.launch { if (sheet == BuilderSheet.Picker) sheetState.show() }
@@ -207,8 +211,14 @@ fun RoutineBuilder(
     }
     fun requestClose() {
         val form = sheet as? BuilderSheet.Target
-        if (form?.dirty == true) sheet = form.copy(discarding = true)
-        else if (form != null) leaveForm() else close()
+        when {
+            form?.dirty == true -> askDiscard(form)
+            form != null -> {
+                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "cancel", "outcome" to "ok"))
+                leaveForm()
+            }
+            else -> close()
+        }
     }
 
     LaunchedEffect((sheet as? BuilderSheet.Target)?.exerciseId, sheet == BuilderSheet.Picker) {
@@ -311,7 +321,7 @@ fun RoutineBuilder(
                     onPick = { id ->
                         val movement = draft.movement(id, store.catalog)
                         if (movement == null) say("That movement is no longer on the log.")
-                        else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.domain.SetTarget>()), movement, adding = true)
+                        else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.presentation.SetTarget>()), movement, adding = true)
                     }, onCreate = null,
                     onCreateDraft = { exercise, scheme ->
                         sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)
@@ -324,7 +334,16 @@ fun RoutineBuilder(
     }
     val form = open as? BuilderSheet.Target
     if (form?.discarding == true) DiscardQuestion("Discard changes?", "Changes to this movement won’t be kept.",
-        onKeepEditing = { sheet = form.copy(discarding = false) }, onDiscard = ::leaveForm)
+        onKeepEditing = {
+            sheet = form.copy(discarding = false)
+            telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "cancelled"))
+        },
+        onDiscard = {
+            if (!closing) {
+                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "ok"))
+                leaveForm()
+            }
+        })
     if (discarding) DiscardQuestion("Discard routine changes?",
         "${Program.named(draft.name) ?: "This routine"} won’t be saved.",
         onKeepEditing = {

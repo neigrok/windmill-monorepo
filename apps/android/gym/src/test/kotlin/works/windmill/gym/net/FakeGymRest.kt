@@ -4,8 +4,8 @@ import java.io.IOException
 import works.windmill.gym.coach.AskAnswer
 import works.windmill.gym.coach.AskQuestion
 import works.windmill.gym.coach.AskThread
-import works.windmill.gym.domain.McpKey
-import works.windmill.gym.domain.OAuthGrant
+import works.windmill.gym.presentation.McpKey
+import works.windmill.gym.presentation.OAuthGrant
 import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.coach.ThreadPage

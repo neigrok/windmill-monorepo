@@ -1,8 +1,8 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.ProposalState
+import works.windmill.gym.presentation.Readout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement

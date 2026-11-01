@@ -10,7 +10,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import works.windmill.gym.domain.Ids
+import works.windmill.gym.presentation.Ids
 
 object CoachPhotos {
     const val maxBytes = 5 * 1024 * 1024

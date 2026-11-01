@@ -261,19 +261,13 @@ ToolResult lastTime(TrainingService& training, const UserId& caller, const Json:
 
   LastTimeOutcome outcome = training.lastTime(caller, ExerciseId{id});
   if (outcome.error == LastTimeError::unknownExercise) return ToolResult::failure(kNoExercise);
-  // A first-ever movement answers with the movement and nothing else.
-  Json::Value out(Json::objectValue);
-  out["exerciseId"] = id;
   if (outcome.lastTime) {
     served.sawSession(outcome.lastTime->session.id, outcome.lastTime->session.startedAtMs);
     for (const Set& set : outcome.lastTime->sets) served.sawSet(set.id, set.completedAtMs);
     served.observed(SessionObservation{"last_time", outcome.lastTime->session, ReadCoverage::movement,
         static_cast<int>(outcome.lastTime->sets.size()), std::nullopt, ExerciseId{id}});
-    out["session"] = toJson(outcome.lastTime->session);
-    if (!outcome.lastTime->routineName.empty()) out["routine"] = outcome.lastTime->routineName;
-    out["sets"] = toJson(outcome.lastTime->sets);
   }
-  return ToolResult::json(out);
+  return ToolResult::json(toJson(ExerciseId{id}, outcome.lastTime));
 }
 
 // A routine's pending proposal rides along as its head alone, never its diff rows, and without the

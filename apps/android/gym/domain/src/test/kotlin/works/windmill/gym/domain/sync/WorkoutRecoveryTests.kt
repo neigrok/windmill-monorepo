@@ -5,8 +5,14 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.domain.kit.*
 import works.windmill.domain.testing.withActionContext
+import works.windmill.sync.core.Delta
 import works.windmill.sync.core.Json
+import works.windmill.sync.core.Lattice
+import works.windmill.sync.core.Life
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.RecordKey
+import works.windmill.sync.core.Register
+import works.windmill.sync.core.Stamp
 import works.windmill.sync.modelserver.GymServerRules
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
@@ -257,5 +263,105 @@ class WorkoutRecoveryTests {
         committed(runner.run(ReconcileAdoptedWorkouts()))
         assertTrue(saved(runner).isEmpty())
         unchanged(runner.run(RecoverStrandedSets(id, RecoverStrandedSets.Placement.intoWorkout)))
+    }
+
+    @Test fun savedNumbersCountEachMovementInTheOrderTheCopySavedThem() {
+        val bench = Id("recovery-bench", Exercise)
+        fun set(index: Int, exercise: Id<Exercise>, number: Int?) =
+            TrainingSet(Id("numbered-$index", TrainingSet), Id("numbered", Session), exercise, 60.0, 5, completedAt = Instant(now - 10_000 + index), setNumber = number)
+        assertEquals(listOf(true, true, false, false), listOf(
+            listOf(set(0, squat, 1), set(1, bench, null), set(2, squat, 2), set(3, bench, 2)),
+            listOf(set(0, squat, null), set(1, squat, 2)),
+            listOf(set(0, squat, 1), set(1, squat, 3)),
+            listOf(set(0, squat, 2), set(1, squat, 1)),
+        ).map(SavedSets::numberedAsSaved))
+    }
+
+    @Test fun aCopyImportsUnchangedOnlyWhileNoCheckWouldNormaliseIt() {
+        val copy = finished("unchanged", now - 100_000, now - 80_000)
+        val unrounded = SignedOutWorkout(copy.session, copy.sets.map { it.copy(weightKg = 60.004) })
+        assertEquals(listOf(true, false), listOf(copy, unrounded).map { it.importsUnchanged(testMoment) })
+    }
+
+    @Test fun theAccountHoldsTheSetsOnlyAsTheCopyRecordedThem() {
+        val copy = finished("held", now - 100_000, now - 80_000, listOf(1_000, 2_000)).sets
+        val numbered = copy.map { it.copy(setNumber = 1) }
+        val records = copy.map(::setRow)
+        val bare = records.map { it.copy(values = it.values - "rpe" - "note") }
+        assertEquals(listOf(true, true, true, false, false, false, false, false, false), listOf(
+            SavedSets.heldBy(copy.map { it.copy(note = "") }, bare),
+            SavedSets.heldBy(numbered, numbered.map(::setRow)),
+            SavedSets.heldBy(copy, records.reversed()),
+            SavedSets.heldBy(copy, bare),
+            SavedSets.heldBy(copy, records.dropLast(1)),
+            SavedSets.heldBy(copy.dropLast(1), records),
+            SavedSets.heldBy(copy, listOf(records[0], setRow(copy[1].copy(weightKg = 62.5)))),
+            SavedSets.heldBy(numbered, numbered.map { setRow(it.copy(setNumber = 2)) }),
+            SavedSets.heldBy(copy, listOf(records[0], records[1].copy(born = null))),
+        ))
+    }
+
+    @Test fun aDeltaCreatedTheSetAsRecordedEvenWhenTheServerDroppedItsRpeAndNote() {
+        val set = finished("created", now - 100_000, now - 80_000).sets.single().copy(rpe = 8.0)
+        val born = Stamp("1800000000000:0:phone")
+        fun delta(fields: Map<String, Json>, life: Stamp = born, id: Id<TrainingSet> = set.id) =
+            Delta(RecordKey(TrainingSet.type, id.record), Lattice(Life("alive", life), born, fields.mapValues { Register(it.value, born) }))
+        val recorded = set.fields()
+        assertEquals(listOf(true, true, false, false, false, false), listOf(
+            delta(recorded),
+            delta(recorded - "rpe" - "note"),
+            delta(recorded - "rpe"),
+            delta(recorded + ("sessionId" to Json.of("another-workout"))),
+            delta(recorded, life = Stamp("1800000000001:0:phone")),
+            delta(recorded, id = Id("another-set", TrainingSet)),
+        ).map { SavedSets.createdBy(set, it) })
+    }
+
+    @Test fun aStrandedSetGoesBackIntoAFinishedWorkoutItFitsAndApartFromAnyOther() {
+        val workout = finished("window", now - 100_000, now - 80_000).session
+        val stranded = StrandedSet(TrainingSet(Id("stranded", TrainingSet), workout.id, squat, 60.0, 5, completedAt = Instant(now - 90_000)))
+        val late = StrandedSet(stranded.set.copy(completedAt = Instant(now - 70_000)))
+        assertEquals(listOf(false, false, true, true, true), listOf(
+            stranded.apart(workout, listOf(Instant(now - 99_000), Instant(now - 80_000))),
+            late.apart(workout.copy(finishedAt = null, closedBy = null), listOf(Instant(now - 99_000))),
+            stranded.apart(workout.copy(closedBy = "stale"), emptyList()),
+            late.apart(workout, emptyList()),
+            stranded.apart(workout, listOf(Instant(now - 101_000))),
+        ))
+    }
+
+    @Test fun aStrandedSetsCorrectionKeepsItsSavedNumberWhileItIsFreeAndOtherwiseFollowsItsMovement() {
+        val bench = Id("recovery-bench", Exercise)
+        val workout = finished("corrected", now - 100_000, now - 80_000).session.copy(displayName = "Private name")
+        fun set(id: String, exercise: Id<Exercise>, number: Int?) =
+            TrainingSet(Id(id, TrainingSet), workout.id, exercise, 60.0, 5, 8.0, "Private note", Instant(now - 90_000), number)
+        fun correction(number: Int?, standing: List<TrainingSet>) = StrandedSet(set("owed", squat, number)).correction(workout, standing, "request")
+        val corrected = correction(2, listOf(set("kept", squat, 1), set("other", bench, 2)))!!
+        assertEquals(listOf<Any?>(workout.id, "request", workout.startedAt, workout.finishedAt, "Private name", true),
+            listOf(corrected.id, corrected.requestId, corrected.startedAt, corrected.finishedAt, corrected.routineName, corrected.preserveOtherSets))
+        assertEquals(listOf(CorrectedSet(Id("owed", TrainingSet), squat, 2, 60.0, 5, Instant(now - 90_000), 8.0, "Private note", rpeNamed = true)), corrected.sets)
+        assertEquals(listOf(4L, 4L, 1L, null), listOf(
+            correction(1, listOf(set("kept", squat, 1), set("later", squat, 3))),
+            correction(null, listOf(set("kept", squat, 3), set("other", bench, 7))),
+            correction(0, listOf(set("other", bench, 1))),
+            correction(null, listOf(set("full", squat, Int.MAX_VALUE))),
+        ).map { it?.sets?.single()?.setNumber })
+        assertNull(StrandedSet(set("owed", squat, 1)).correction(workout.copy(finishedAt = null), emptyList(), "request"))
+    }
+
+    @Test fun aSeparateRestoreStartsAtTheSetAppendsItUnderItsOwnIdentityAndFinishesAtIt() {
+        val stranded = StrandedSet(TrainingSet(Id("owed", TrainingSet), Id("finished", Session), squat, 60.0, 5, 8.0, "Private note", Instant(now - 90_000), 3))
+        val separate = Id("separate", Session)
+        assertEquals(listOf(StrandedSet.Step.start, StrandedSet.Step.set, StrandedSet.Step.finish, StrandedSet.Step.finish),
+            listOf("start", "set", "finish", "a later build's step").map(StrandedSet.Step::of))
+        assertEquals(listOf(StrandedSet.Step.set, StrandedSet.Step.finish, null), StrandedSet.Step.entries.map { it.next })
+        val start = stranded.start(separate)
+        assertEquals(Gym.Commands.start to Json.objectOf("id" to separate.json, "startedAt" to Json.of(now - 90_000), "joinOpenSession" to Json.of(false)),
+            start.name to Json.Obj(start.args.toList()))
+        assertEquals(TrainingSet(Id("restored", TrainingSet), separate, squat, 60.0, 5, 8.0, "Private note", Instant(now - 90_000)),
+            stranded.append(separate, Id("restored", TrainingSet)).value)
+        val finish = stranded.finish(separate)
+        assertEquals(Gym.Commands.finish to Json.objectOf("sessionId" to separate.json, "finishedAt" to Json.of(now - 90_000)),
+            finish.name to Json.Obj(finish.args.toList()))
     }
 }

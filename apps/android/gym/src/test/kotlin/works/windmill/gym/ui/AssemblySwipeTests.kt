@@ -34,7 +34,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.LiveLines
+import works.windmill.gym.presentation.LiveLines
 
 // The walk's swipe-to-drop. `confirmValueChange` is a VETO the framework may ask more than once per
 // gesture, so the drop itself may not live there: a `drop` that is not idempotent would double-apply.

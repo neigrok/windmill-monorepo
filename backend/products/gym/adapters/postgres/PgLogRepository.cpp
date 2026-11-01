@@ -292,7 +292,8 @@ std::vector<Set> PgLogRepository::setsOf(const SessionId& id) {
 LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& exercise) {
   // Walks sessions newest first on (started_at, id) and stops at the first finished one holding a
   // set of the movement: completed_at is the device's wall clock and cannot order sessions. The EXISTS probe
-  // carries the block read's predicates, so a located session always has a non-empty block.
+  // carries the block read's predicates, so a located session always has a non-empty block, read in logged
+  // order (completed_at, then id): a set number is the server's serial, not the order it was done in.
   // Owner-scoped on both halves, never through the invariant that a set row inherits its session's
   // owner. The routine name is type-checked as a string: ->> renders an object or a number as text.
   std::optional<LastTime> found;
@@ -324,7 +325,7 @@ LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& 
     pqxx::result block = txn.exec_params(
         "SELECT " + std::string(kSetColumns) +
             " FROM gym_sets WHERE user_id = $1::uuid AND session_id = $2 AND exercise_id = $3 "
-            "ORDER BY set_number ASC",
+            "ORDER BY completed_at ASC, id COLLATE \"C\" ASC",
         user.str(), sessions[0]["id"].as<std::string>(), exercise.str());
     std::vector<Set> sets;
     for (const auto& row : block) sets.push_back(setFrom(row));
@@ -336,7 +337,7 @@ LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& 
 
 std::vector<LastSet> PgLogRepository::lastSets(const UserId& user) {
   // The DISTINCT ON ORDER BY is the locator's rule: newest finished session on (started_at, id),
-  // then the highest set_number in it. Only movements this account has worked come back; this
+  // then the set logged last in it (completed_at, then id). Only movements this account has worked come back; this
   // must not be driven off the catalog. Owner-scoped on both halves, never through
   // the invariant that a set row inherits its session's owner.
   std::vector<LastSet> out;
@@ -349,7 +350,7 @@ std::vector<LastSet> PgLogRepository::lastSets(const UserId& user) {
         "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
         "WHERE st.user_id = $1::uuid AND s.user_id = $1::uuid "
         "      AND s.finished_at IS NOT NULL "
-        "ORDER BY st.exercise_id, s.started_at DESC, s.id DESC, st.set_number DESC",
+        "ORDER BY st.exercise_id, s.started_at DESC, s.id DESC, st.completed_at DESC, st.id COLLATE \"C\" DESC",
         user.str());
     for (const auto& row : rows)
       out.push_back(LastSet{ExerciseId{row["exercise_id"].as<std::string>()},
@@ -403,7 +404,7 @@ MovementHistory PgLogRepository::movementHistory(const UserId& user,
   // the other three never fire.
   // The sets are this movement's sets in finished sessions over a lifetime, dated by their session; the
   // domain makes every estimate and windows the chart.
-  // The recent days are the last ten training days, set by set.
+  // The recent days are the last ten training days, each with its sets in logged order (completed_at, then id).
   MovementHistory history;
   {
     PgLease conn{*pool_};
@@ -440,7 +441,7 @@ MovementHistory PgLogRepository::movementHistory(const UserId& user,
             std::string(kSetColumns) +
             " FROM ran JOIN gym_sets st ON st.session_id = ran_id "
             "WHERE st.user_id = $1::uuid AND st.exercise_id = $2 "
-            "ORDER BY ran_started DESC, ran_id DESC, st.set_number ASC",
+            "ORDER BY ran_started DESC, ran_id DESC, st.completed_at ASC, st.id COLLATE \"C\" ASC",
         user.str(), exercise.str(), kRecentDays);
     for (const auto& row : recent) {
       const std::string session = row["ran_id"].as<std::string>();

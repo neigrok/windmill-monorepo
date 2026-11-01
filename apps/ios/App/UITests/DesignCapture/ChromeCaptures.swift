@@ -23,7 +23,7 @@ final class ChromeCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 5))
       capture("gym-you-signed-out", look, app)
       closeSheet(app)
-      roomMenuOpen("gym-room-menu-open", look, app, current: "gym")
+      roomMenuOpen("gym-room-menu-open", look, app, current: "Gym")
       open(.log, app)
       capture("gym-log-empty-signed-out", look, app, settle: 1.5)
       app.buttons["gym-weigh-in"].tap()

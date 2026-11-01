@@ -252,14 +252,7 @@ void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
     return;
   }
-  Json::Value body(Json::objectValue);
-  body["exerciseId"] = exercise;
-  if (outcome.lastTime) {
-    body["session"] = toJson(outcome.lastTime->session);
-    if (!outcome.lastTime->routineName.empty()) body["routine"] = outcome.lastTime->routineName;
-    body["sets"] = toJson(outcome.lastTime->sets);
-  }
-  cb(jsonResponse(body));
+  cb(jsonResponse(toJson(ExerciseId{exercise}, outcome.lastTime)));
 }
 
 // A movement absent here has never been logged.

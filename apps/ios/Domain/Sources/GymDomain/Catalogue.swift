@@ -5,6 +5,16 @@ import SyncSchema
 
 public typealias ExerciseAlias = String
 
+// What a movement is lifted with; each case's raw value is the string an exercise record's `equipment` holds.
+public enum Equipment: String, CaseIterable, Sendable {
+  case barbell, dumbbell, machine, cable, bodyweight, kettlebell, other
+
+  public init?(_ recorded: String?) {
+    guard let recorded else { return nil }
+    self.init(rawValue: recorded)
+  }
+}
+
 public struct Exercise: Writable, Equatable {
   public static let type = Gym.Types.exercise
   public static let scope = Gym.scope
@@ -22,9 +32,13 @@ public struct Exercise: Writable, Equatable {
     self.name = name
     self.pattern = pattern
     self.equipment = equipment
-    self.loadCount = equipment == "dumbbell" ? loadCount ?? 2 : 1
+    self.loadCount = Equipment(equipment) == .dumbbell ? loadCount ?? 2 : 1
     self.stepKg = stepKg
     self.aliases = aliases
+  }
+
+  public init(id: ID<Exercise>, name: String, pattern: String, equipment: Equipment, stepKg: Double, loadCount: Int? = nil, aliases: [ExerciseAlias] = []) {
+    self.init(id: id, name: name, pattern: pattern, equipment: equipment.rawValue, stepKg: stepKg, loadCount: loadCount, aliases: aliases)
   }
 
   public init(_ fields: Fields) throws(DecodeError) {
@@ -110,16 +124,18 @@ public enum ExerciseRules {
   public static let name = TextSpec("exercise.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
   public static let seedName = TextSpec("exerciseName.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
   public static let pattern = ChoiceSpec("exercise.pattern", values: ["squat", "hinge", "press", "pull", "carry", "core", "isolation"])
-  public static let equipment = ChoiceSpec("exercise.equipment", values: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"])
-  public static let seedEquipment = ChoiceSpec("exerciseName.equipment", values: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"])
+  public static let equipment = ChoiceSpec("exercise.equipment", values: Equipment.allCases.map(\.rawValue))
+  public static let seedEquipment = ChoiceSpec("exerciseName.equipment", values: Equipment.allCases.map(\.rawValue))
   public static let loadCount = NumberSpec("exerciseName.loadCount", min: 1, max: 2, integer: true)
   public static let stepKg = NumberSpec("exercise.stepKg", min: 0.01, max: 99.99, quantum: 0.01)
   static let rules: [Rule] = [.local(name), .local(seedName), .local(pattern), .local(equipment), .local(seedEquipment), .local(loadCount), .local(stepKg)]
 
   public static func loadingChoice(equipment: String, loadCount: Int) -> String {
-    if equipment == "barbell" { return "barbell" }
-    if equipment == "dumbbell" && loadCount == 2 { return "dumbbell" }
-    return "other"
+    switch Equipment(equipment) {
+    case .barbell: Equipment.barbell.rawValue
+    case .dumbbell where loadCount == 2: Equipment.dumbbell.rawValue
+    case .dumbbell, .machine, .cable, .bodyweight, .kettlebell, .other, nil: Equipment.other.rawValue
+    }
   }
 
   // A barbell or a pair of dumbbells carries 0 or more; every other loading keeps its sign, an assisted machine's included.
@@ -128,11 +144,11 @@ public enum ExerciseRules {
   }
 
   public static func defaultStepKg(equipment: String) -> Double {
-    switch equipment {
-    case "dumbbell": 2
-    case "machine": 5
-    case "kettlebell": 4
-    default: 2.5
+    switch Equipment(equipment) {
+    case .dumbbell: 2
+    case .machine: 5
+    case .kettlebell: 4
+    case .barbell, .cable, .bodyweight, .other, nil: 2.5
     }
   }
 
@@ -158,7 +174,7 @@ public struct Catalogue: Equatable, Sendable {
       let seed = SeedExercises.contains(exercise.id)
       return Exercise(id: exercise.id, name: seed ? override.name ?? exercise.name : exercise.name,
                       pattern: exercise.pattern, equipment: override.equipment ?? exercise.equipment,
-                      stepKg: exercise.stepKg, loadCount: override.loadCount ?? (exercise.equipment == "dumbbell" ? exercise.loadCount : nil),
+                      stepKg: exercise.stepKg, loadCount: override.loadCount ?? (Equipment(exercise.equipment) == .dumbbell ? exercise.loadCount : nil),
                       aliases: seed ? override.aliases : exercise.aliases)
     }
     exercises = resolved.sorted {
@@ -205,7 +221,7 @@ public struct CreateExercise: Action {
     let exercise = try Valid(value, at: loaded)
     var plan = Plan()
     plan.create(exercise)
-    if exercise.value.equipment == "dumbbell", exercise.value.loadCount != 2 {
+    if Equipment(exercise.value.equipment) == .dumbbell, exercise.value.loadCount != 2 {
       plan.create(try Valid(ExerciseName(id: ID(value.id.record), name: nil, loadCount: exercise.value.loadCount), at: loaded), fields: ["loadCount"])
     }
     return .write(plan, value.id)
@@ -247,7 +263,7 @@ public struct UpdateExercise: Action {
       if next != old.equipment { equipped = next }
     }
     var counted: Int?
-    if let loadCount, (equipped ?? old.equipment) == "dumbbell", equipped != nil || loadCount != old.loadCount { counted = loadCount }
+    if let loadCount, Equipment(equipped ?? old.equipment) == .dumbbell, equipped != nil || loadCount != old.loadCount { counted = loadCount }
     let seed = SeedExercises.contains(id)
     let metadata = ExerciseName(id: ID(id.record), name: seed ? renamed : nil, equipment: equipped, loadCount: counted)
     if renamed == nil && metadata.fields.isEmpty { return .unchanged(()) }
@@ -294,7 +310,7 @@ public struct EditExercise: Action {
     }
     let nextName = try ExerciseRules.name.apply(name, at: "name")
     let nextEquipment = try ExerciseRules.equipment.apply(equipment, at: "equipment")
-    let nextCount = nextEquipment == "dumbbell" ? Int(try ExerciseRules.loadCount.apply(Double(loadCount), at: "loadCount")) : 1
+    let nextCount = Equipment(nextEquipment) == .dumbbell ? Int(try ExerciseRules.loadCount.apply(Double(loadCount), at: "loadCount")) : 1
     let renamed = !nextName.utf8.elementsEqual(base.name.utf8) && !nextName.utf8.elementsEqual(old.name.utf8)
     let unitsChanged = nextEquipment != base.equipment || nextCount != base.loadCount
     let unitsSettled = nextEquipment == old.equipment && nextCount == old.loadCount
@@ -303,7 +319,7 @@ public struct EditExercise: Action {
       return .refuse(GymRefusal(Refused(.stale, subject: id.ref, path: .predicted)))
     }
     let equipped = unitsChanged && nextEquipment != old.equipment
-    let counted = unitsChanged && nextEquipment == "dumbbell" && (equipped || nextCount != old.loadCount)
+    let counted = unitsChanged && Equipment(nextEquipment) == .dumbbell && (equipped || nextCount != old.loadCount)
     if !renamed && !equipped && !counted { return .unchanged(old) }
     let seed = SeedExercises.contains(id)
     let metadata = ExerciseName(id: ID(id.record), name: seed && renamed ? nextName : nil,

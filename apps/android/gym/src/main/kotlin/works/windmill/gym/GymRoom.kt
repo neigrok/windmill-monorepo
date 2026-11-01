@@ -50,9 +50,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import works.windmill.platform.net.WindmillJson
-import works.windmill.gym.domain.WorkoutChange
+import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.gym.ui.WorkoutBar
-import works.windmill.gym.domain.SessionDetail
+import works.windmill.gym.presentation.SessionDetail
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
@@ -81,11 +81,11 @@ import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.onboarding.AnonymousCoachAccess
 import works.windmill.gym.sharing.WorkoutSharing
 import works.windmill.gym.sharing.WorkoutShareActions
-import works.windmill.gym.domain.Ids
-import works.windmill.gym.domain.LiveOrder
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.presentation.Ids
+import works.windmill.gym.presentation.LiveOrder
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.Seat
 import works.windmill.gym.store.FinishReceipts
@@ -842,8 +842,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             null
                         },
                         onDecided = { settled ->
-                            if (settled.intent != works.windmill.gym.domain.ProposalIntent.Remove ||
-                                settled.state != works.windmill.gym.domain.ProposalState.Applied) {
+                            if (settled.intent != works.windmill.gym.presentation.ProposalIntent.Remove ||
+                                settled.state != works.windmill.gym.presentation.ProposalState.Applied) {
                                 settled.receipt?.let { landReceipt(open.door, it) }
                                 closeReview()
                             }

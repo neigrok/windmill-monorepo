@@ -3,7 +3,7 @@ package works.windmill.gym.store
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.sync.api.CommitFailure
 import works.windmill.sync.core.ClockReading
 import works.windmill.sync.core.Json
@@ -1130,11 +1130,11 @@ class WorkoutImportsTests {
             engine.onPushResponse(request, SyncResponse(reply.status, reply.body), timing)
             assertEquals("session-overlap", WorkoutImports(engine).refusals().single().code)
             assertEquals(source, sources(engine).single().member("source"))
-            assertEquals(emptyList<works.windmill.gym.domain.ProgressSession>(), EngineTraining(engine).progress().sessions)
+            assertEquals(emptyList<works.windmill.gym.presentation.ProgressSession>(), EngineTraining(engine).progress().sessions)
             assertEquals(listOf("session01"), EngineTraining(engine).details().map { it.session.id })
             engine(engine.snapshot()).use { reopened ->
                 assertEquals("session-overlap", WorkoutImports(reopened).refusals().single().code)
-                assertEquals(emptyList<works.windmill.gym.domain.ProgressSession>(), EngineTraining(reopened).progress().sessions)
+                assertEquals(emptyList<works.windmill.gym.presentation.ProgressSession>(), EngineTraining(reopened).progress().sessions)
                 WorkoutImports(reopened).retry("session01")
                 assertNotEquals(priorGesture, sources(reopened).single().member("gestureId"))
                 assertEquals(source, sources(reopened).single().member("source"))

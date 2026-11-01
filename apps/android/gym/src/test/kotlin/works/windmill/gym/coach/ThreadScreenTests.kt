@@ -30,13 +30,13 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.ChangeKind
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalChange
-import works.windmill.gym.domain.ProposalTargets
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetTarget
+import works.windmill.gym.presentation.ChangeKind
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.ProposalChange
+import works.windmill.gym.presentation.ProposalTargets
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.SetTarget
 import works.windmill.domain.kit.Id
 import works.windmill.gym.domain.sync.ProposalRules
 import works.windmill.gym.net.FakeGymRest
@@ -278,8 +278,9 @@ class ThreadScreenTests {
         scope.cancel()
     }
 
+    // The phone holds no row of the proposal and has not read the account past the miss: nothing claims it is gone.
     @Test
-    fun aPastReceiptWhoseProposalIsGoneKeepsProseWithoutInventingItsOutcomeOrRetry() {
+    fun aPastReceiptWhoseProposalIsNotOnThePhoneKeepsProseWithoutInventingItsOutcomeOrRetry() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val rest = FakeGymRest()
         val thread = AskThread("thr_removed", "What about this routine?",
@@ -292,7 +293,7 @@ class ThreadScreenTests {
             ThreadScreen(thread.id, room.store, emptyList(), emptySet(), "Coach", {}, {}, {})
         }
         compose.onNodeWithText("The original proposal explanation.").assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
         compose.onNodeWithText("Review").assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Read-only").assertDoesNotExist()
@@ -377,7 +378,7 @@ class ThreadScreenTests {
         }
         compose.onNodeWithText("The original answer.").assertIsDisplayed()
         compose.onNodeWithText("Review").assertDoesNotExist()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.runOnIdle { room.pull(server); visit++ }
         compose.onNodeWithText("Heavier triples.").assertIsDisplayed()

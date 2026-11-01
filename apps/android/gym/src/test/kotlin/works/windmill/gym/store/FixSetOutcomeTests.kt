@@ -9,7 +9,7 @@ import kotlinx.coroutines.ThreadContextElement
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.TrainingSet
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -17,7 +17,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.SetFix
+import works.windmill.gym.presentation.SetFix
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 
@@ -203,7 +203,7 @@ class FixSetOutcomeTests {
             assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workoutFailure)
             assertEquals(listOf("gym.fixSet" to failure), telemetry.failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
-            val note = room.training.writeNote("note_after_fix", works.windmill.gym.domain.NoteWrite("Recovery", "Unrelated read"))
+            val note = room.training.writeNote("note_after_fix", works.windmill.gym.presentation.NoteWrite("Recovery", "Unrelated read"))
             repeat(3) { room.store.refreshEngine() }
             room.sync(server)
             runCurrent()
@@ -304,7 +304,7 @@ class FixSetOutcomeTests {
             assertEquals(listOf(corrected), accepted)
             assertNotNull(switched)
             assertEquals(switched, room.engine.snapshot())
-            assertEquals(emptyList<works.windmill.gym.domain.SessionDetail>(), room.training.details())
+            assertEquals(emptyList<works.windmill.gym.presentation.SessionDetail>(), room.training.details())
             assertEquals(listOf(set), room.store.sets)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)

@@ -16,9 +16,9 @@
 - The approved Android flow governs the current chronology and visual separation; do not copy a Bodyweight header from an older layout.
 
 **Current source** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `domain/LogTimeline.kt` keeps every eligible date-keyed weight independently of the decorative weekly selector. Valid same-day timestamps interleave with workouts; unknown, invalid, future-clock and backdated timestamps remain date-only facts.
+- `presentation/LogTimeline.kt` keeps every eligible date-keyed weight independently of the decorative weekly selector. Valid same-day timestamps interleave with workouts; unknown, invalid, future-clock and backdated timestamps remain date-only facts.
 - Date-only weights follow timed entries on their selected local day. Exact instant ties put workouts before record markers before weights, then sort by stable identity. Paging only bounds decorative moments.
-- `domain/LogReadout.kt` uses `StatsProgress.newBests`, projected from shared `ProgressRecords`, for both markers and omitted-marker gold dots. Cards show all-set counts, duration and valid clock time without repeating a date or record sentence.
+- `presentation/LogReadout.kt` uses `StatsProgress.newBests`, projected from shared `ProgressRecords`, for both markers and omitted-marker gold dots. Cards show all-set counts, duration and valid clock time without repeating a date or record sentence.
 - `ui/LogScreen.kt` uses dated sections, filled workout cards, separated weight rows and direct record markers. Month summaries are noninteractive; inline expanded charts are removed.
 - Workout swipe and long-press **Discard workout** request task 14's single room confirmation. Weight swipe enters the existing durable nine-foreground-second Undo path. The existing Share action reports its settled outcome.
 - The 56 dp Material 3 Extended FAB sits at bottom end with 88 dp list clearance. Empty copy says **No workouts yet**; a weight-only Log displays its facts. The separate recovery entry remains room-owned for task 25.

@@ -35,10 +35,10 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.LogLevel
-import works.windmill.gym.domain.McpKey
-import works.windmill.gym.domain.OAuthGrant
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.LogLevel
+import works.windmill.gym.presentation.McpKey
+import works.windmill.gym.presentation.OAuthGrant
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.net.GymRest
 import kotlinx.coroutines.CompletableDeferred

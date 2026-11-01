@@ -1,0 +1,309 @@
+package works.windmill.gym.presentation
+
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+
+// Every type here is read-only on the wire: nothing on this phone mints a proposal, and one does
+// nothing until the lifter taps Apply.
+
+@Serializable(with = ProposalIntentSerializer::class)
+enum class ProposalIntent(val wire: String) {
+    Revise("revise"), Remove("remove");
+
+    companion object {
+        fun parse(raw: String?): ProposalIntent = entries.firstOrNull { it.wire == raw } ?: Revise
+    }
+}
+
+object ProposalIntentSerializer : KSerializer<ProposalIntent> {
+    override val descriptor = PrimitiveSerialDescriptor("ProposalIntent", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: ProposalIntent) = encoder.encodeString(value.wire)
+    override fun deserialize(decoder: Decoder): ProposalIntent = ProposalIntent.parse(decoder.decodeString())
+}
+
+// An unknown word reads as `Superseded`, never as `Pending`; an absent state takes `Pending`.
+@Serializable(with = ProposalStateSerializer::class)
+enum class ProposalState(val wire: String) {
+    Pending("pending"), Applied("applied"), Dismissed("dismissed"), Superseded("superseded");
+
+    companion object {
+        fun parse(raw: String?): ProposalState = entries.firstOrNull { it.wire == raw } ?: Superseded
+    }
+}
+
+object ProposalStateSerializer : KSerializer<ProposalState> {
+    override val descriptor = PrimitiveSerialDescriptor("ProposalState", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: ProposalState) = encoder.encodeString(value.wire)
+    override fun deserialize(decoder: Decoder): ProposalState = ProposalState.parse(decoder.decodeString())
+}
+
+// `door` stays a String where `state` and `kind` are enums; `thread` is absent where there is no
+// conversation to open.
+@Serializable
+data class ProposalSource(
+    val door: String = "mcp",
+    val connection: String? = null,
+    val agent: String? = null,
+    val thread: String? = null,
+) {
+    val conversation: String? get() = thread?.takeIf { it.isNotBlank() && door == askDoor }
+
+    val name: String
+        get() = named ?: if (door == askDoor) "Coach" else "your connected agent"
+
+    // The prose is attributed by who wrote it: the agent by name, Coach for the room's own door, and
+    // an agent that did not name itself is still the lifter's own. The same three on every surface.
+    val kicker: String
+        get() = "${named ?: if (door == askDoor) "Coach" else "Your agent"} wrote:"
+
+    private val named: String?
+        get() = agent?.takeIf { it.isNotBlank() } ?: connection?.takeIf { it.isNotBlank() }
+
+    companion object {
+        const val askDoor = "ask"
+    }
+}
+
+// The absences: no `sets` is an open line, a set's missing reps is `max` and its missing load is
+// last time. Which SIDE is missing is `kind`.
+@Serializable
+data class ProposalTargets(
+    val sets: List<SetTarget> = emptyList(),
+)
+
+@Serializable(with = ChangeKindSerializer::class)
+enum class ChangeKind(val wire: String) {
+    Kept("kept"), Added("added"), Removed("removed"), Retargeted("retargeted");
+
+    companion object {
+        // An unknown kind reads as `Retargeted`, never as `Kept`, so no row is hidden from the count.
+        fun parse(raw: String?): ChangeKind = entries.firstOrNull { it.wire == raw } ?: Retargeted
+    }
+}
+
+object ChangeKindSerializer : KSerializer<ChangeKind> {
+    override val descriptor = PrimitiveSerialDescriptor("ChangeKind", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: ChangeKind) = encoder.encodeString(value.wire)
+    override fun deserialize(decoder: Decoder): ChangeKind = ChangeKind.parse(decoder.decodeString())
+}
+
+// `before` is absent on an added line, `after` on a removed one. `loggedSets` rides on a removed line
+// only, and a zero there is a real answer.
+@Serializable
+data class ProposalChange(
+    val position: Int = 0,
+    val kind: ChangeKind = ChangeKind.Retargeted,
+    val exerciseId: String,
+    val before: ProposalTargets? = null,
+    val after: ProposalTargets? = null,
+    val loggedSets: Int? = null,
+) {
+    fun addedLine(follows: String?): String {
+        val said = mutableListOf("added")
+        after?.let { said += Proposal.asks(it) }
+        said += follows?.let { "after $it" } ?: "first in the routine"
+        return said.joinToString(" · ")
+    }
+
+    // Zero is a real answer and an absent count says neither.
+    val removedLine: String
+        get() {
+            val kept = loggedSets ?: return "removed from the routine"
+            if (kept == 0) return "removed from the routine · never logged"
+            val sets = if (kept == 1) "1 logged set" else "$kept logged sets"
+            return "removed from the routine · $sets kept"
+        }
+
+    val compactLine: String
+        get() {
+            if (kind == ChangeKind.Added) return after?.let { "+ added · ${Proposal.asks(it)}" } ?: "+ added"
+            if (kind == ChangeKind.Removed) return "− $removedLine"
+            // A retarget, and any kind this build cannot name: read off whichever side arrived. Each
+            // move carries its label — `set 4 · 100 × 1 → 102.5 × 1` — the review row's own line.
+            val moved = before?.let { was -> after?.let { now -> Proposal.moves(was, now) } }.orEmpty()
+            if (moved.isNotEmpty()) return moved.joinToString(" · ") { "${it.label} · ${it.before} → ${it.after}" }
+            return (after ?: before)?.let { Proposal.asks(it) } ?: "no targets"
+        }
+}
+
+// Two sizes on one type: a HEAD carries everything above `baseRevision` and no diff. `changeCount` is
+// the server's own count of what Apply does.
+@Serializable
+data class Proposal(
+    val id: String,
+    val routineId: String,
+    val intent: ProposalIntent = ProposalIntent.Revise,
+    val state: ProposalState = ProposalState.Pending,
+    val summary: String = "",
+    val changeCount: Int = 0,
+    @SerialName("createdAt") val createdAtMs: Long = 0,
+    @SerialName("settledAt") val settledAtMs: Long? = null,
+    val source: ProposalSource = ProposalSource(),
+    // Absent on a head, which is what tells the two sizes apart. Nullable and never 0.
+    val baseRevision: Int? = null,
+    val baseName: String = "",
+    val name: String = "",
+    val changes: List<ProposalChange> = emptyList(),
+) {
+    val isPending: Boolean get() = state == ProposalState.Pending
+
+    val drawn: List<ProposalChange> get() = changes.filterNot { it.kind == ChangeKind.Kept }
+
+    // The rows ARE the document as well as the diff: a kept row keeps its place in the run the routine
+    // takes on, and a run of them collapses to one counted row that expands where it stands.
+    val document: List<DocumentRow>
+        get() {
+            val rows = mutableListOf<DocumentRow>()
+            var kept = mutableListOf<ProposalChange>()
+            fun closeRun() {
+                if (kept.isEmpty()) return
+                rows += DocumentRow.Unchanged(kept.toList())
+                kept = mutableListOf()
+            }
+            changes.forEach { change ->
+                if (change.kind == ChangeKind.Kept) kept += change
+                else {
+                    closeRun()
+                    rows += DocumentRow.Changed(change)
+                }
+            }
+            closeRun()
+            return rows
+        }
+
+    // Derived from the SERVER's reply and never from the model's prose: the name the routine now
+    // carries and the server's own count of what moved, or that the routine is gone.
+    val receipt: String?
+        get() = when (state) {
+            ProposalState.Applied -> {
+                if (intent == ProposalIntent.Remove) "Applied · $routineName · routine removed"
+                else "Applied · ${name.ifBlank { baseName }.ifBlank { "this routine" }} · $counted"
+            }
+            ProposalState.Dismissed -> turnedDownReceipt
+            else -> null
+        }
+
+    val kicker: String get() = source.kicker
+
+    val renames: Boolean
+        get() = name.isNotBlank() && baseName.isNotBlank() && name != baseName
+
+    fun landsAfter(added: ProposalChange): String? {
+        val run = changes.takeWhile { it.kind != ChangeKind.Removed }
+        val at = run.indexOf(added)
+        if (at <= 0) return null
+        return run[at - 1].exerciseId
+    }
+
+    fun byline(nowMs: Long): String = "from ${source.name} · ${Readout.whenLogged(createdAtMs, nowMs)}"
+
+    fun summaryLine(routineName: String): String {
+        if (summary.isNotBlank()) return summary
+        if (intent == ProposalIntent.Remove) return "A proposal to remove $routineName."
+        return "$counted to $routineName."
+    }
+
+    val counted: String
+        get() {
+            if (intent == ProposalIntent.Remove) return "a removal"
+            return if (changeCount == 1) "1 change" else "$changeCount changes"
+        }
+
+    // One affordance on a card, and it is Review; the card's counted line says how much.
+    val reviewLabel: String get() = review
+
+    fun cardLine(routineName: String, stillWaiting: Boolean): String {
+        val waiting = if (stillWaiting) Proposal.stillWaiting else "waiting"
+        return "$routineName · $counted · $waiting"
+    }
+
+    // The server's count, never the rows this build drew: apply is atomic against the document.
+    val applyLabel: String
+        get() = when {
+            intent == ProposalIntent.Remove -> "Remove $routineName"
+            changeCount == 1 -> "Apply"
+            else -> "Apply all $changeCount"
+        }
+
+    val atomicLine: String
+        get() {
+            if (intent == ProposalIntent.Remove) {
+                return "The routine goes and your logged sets stay. Nothing is removed until you tap."
+            }
+            if (changeCount <= 1) return "Nothing is applied until you tap."
+            return "All ${Readout.spelled(changeCount)} or none. Nothing is applied until you tap."
+        }
+
+    fun settledNote(nowMs: Long): String? {
+        val at = settledAtMs ?: return null
+        val on = "${Readout.briefDay(at, nowMs)} at ${Readout.time(at)}"
+        return when (state) {
+            ProposalState.Applied ->
+                "Applied to $routineName $on."
+            ProposalState.Dismissed ->
+                "Turned down $on. Nothing changed."
+            ProposalState.Superseded ->
+                "$routineName changed after this was written, so it was set aside $on. None of it was applied."
+            ProposalState.Pending -> null
+        }
+    }
+
+    val routineName: String get() = baseName.ifBlank { "this routine" }
+
+    companion object {
+        const val review = "Review"
+        const val apply = "Apply"
+
+        // Why Apply is shut, said on the screen and on the semantics channel, and it names the way
+        // out. Read off `seen` ALONE: bound to the disabled predicate it would say this while the
+        // apply request is already on the wire.
+        const val applyHint = "Scroll to the end to apply."
+        const val stillWaiting = "still waiting"
+        const val turnedDownReceipt = "Turned down · nothing changed."
+
+        // Turning a proposal down is settled for good — the wire has no path back — so it is confirmed,
+        // in the same words on every surface.
+        const val turnDownVerb = "Turn this down"
+        const val turnDownAsk = "Turn this down?"
+        const val turnDownBody = "Nothing changes."
+        const val turnDown = "Turn down"
+
+        // The row the review sheet unfolds to the ladder on tap.
+        const val setsLabel = "sets"
+
+        // Loads are compared on the LADDER's grid and never on raw doubles. A scheme whose shape held
+        // and whose one set moved prints that set — `set 4 · 100 × 1 → 102.5 × 1`; any other move
+        // of the sets prints both schemes in the readout formula.
+        fun moves(before: ProposalTargets, after: ProposalTargets): List<FieldMove> {
+            val moved = mutableListOf<FieldMove>()
+            if (!Scheme.same(before.sets, after.sets)) {
+                val movedSets = if (before.sets.size != after.sets.size) emptyList()
+                    else before.sets.indices.filterNot { Scheme.same(listOf(before.sets[it]), listOf(after.sets[it])) }
+                moved += movedSets.singleOrNull()?.let { at ->
+                    FieldMove("set ${at + 1}", Readout.setTarget(before.sets[at]), Readout.setTarget(after.sets[at]))
+                } ?: FieldMove(setsLabel, Readout.target(before.sets), Readout.target(after.sets))
+            }
+            return moved
+        }
+
+        fun asks(targets: ProposalTargets): String = Readout.target(targets.sets)
+    }
+}
+
+// The routine is absent when the intent was to remove it.
+data class ProposalDecision(val proposal: Proposal, val routine: Routine? = null)
+
+sealed interface DocumentRow {
+    data class Changed(val change: ProposalChange) : DocumentRow
+    data class Unchanged(val kept: List<ProposalChange>) : DocumentRow {
+        val label: String
+            get() = if (kept.size == 1) "and 1 line unchanged" else "and ${kept.size} lines unchanged"
+    }
+}
+
+data class FieldMove(val label: String, val before: String, val after: String)

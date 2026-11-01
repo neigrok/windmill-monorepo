@@ -6,8 +6,8 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.telemetry.Telemetry

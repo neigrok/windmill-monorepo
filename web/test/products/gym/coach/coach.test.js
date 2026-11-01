@@ -40,6 +40,18 @@ test('extra sets on one movement never consume another movement’s planned slot
   ] });
 });
 
+test('a movement\'s sets fill its slots in the order they were done, a set the server has not numbered included', () => {
+  const session = { startedAt: 0, plan: { entries: [{ exerciseId: 'bench', sets: [{ weightKg: 60, reps: 8 }, { weightKg: 60, reps: 8 }] }] } };
+  const sets = [
+    { id: 'set_b', exerciseId: 'bench', setNumber: 1, completedAt: 2, weightKg: 62.5, reps: 6 },
+    { id: 'set_a', exerciseId: 'bench', completedAt: 1, weightKg: 60, reps: 8 },
+  ];
+  assert.deepEqual(coachWorkout(session, sets).groups[0].rows, [
+    { key: 'set_a', kind: 'lifted', label: '60 × 8' },
+    { key: 'set_b', kind: 'lifted', label: '62.5 × 6' },
+  ]);
+});
+
 test('read receipts preserve the server counts, including a real zero, and never invent missing counts', () => {
   assert.equal(readLine({ sets: 214, sessions: 34, weeks: 12 }), 'read 214 sets · 12 weeks · 34 sessions');
   assert.equal(readLine({ sets: 1, sessions: 1, weeks: 1 }), 'read 1 set · 1 week · 1 session');

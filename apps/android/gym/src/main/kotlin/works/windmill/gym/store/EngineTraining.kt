@@ -16,7 +16,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import works.windmill.domain.kit.*
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.gym.domain.sync.*
 import works.windmill.platform.net.WindmillJson
 import works.windmill.sync.api.ViewMode
@@ -36,21 +36,20 @@ import works.windmill.gym.domain.sync.Proposal as EngineProposal
 import works.windmill.gym.domain.sync.ProposalState as EngineProposalState
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.Note
-import works.windmill.gym.domain.WeighIn
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.PlanSnapshot
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.LastTime
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.Note
+import works.windmill.gym.presentation.WeighIn
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.PlanSnapshot
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
-import works.windmill.gym.domain.StatsProgress
-import works.windmill.gym.domain.PersonalRecord
-import works.windmill.gym.domain.LastSet
+import works.windmill.gym.presentation.StatsProgress
+import works.windmill.gym.presentation.PersonalRecord
+import works.windmill.gym.presentation.LastSet
 import works.windmill.gym.domain.sync.LastSet as EngineLastSet
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
@@ -116,6 +115,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     val imports = WorkoutImports(engine, writeAuthority)
     val anonymous: Boolean get() = read { it.isAnonymous }
     val firstPullComplete: Boolean get() = read { it.firstPullComplete() }
+    // The account's sequence this phone holds every change up to; null while it is behind.
+    val caughtUpTo: Long? get() = read { it.checkpoint().cleanSeq }
     val notesReady: Boolean get() = anonymous || firstPullComplete
     val planUnreadable: Boolean get() = read { reader ->
         reader.repository(EngineSession).all(ViewMode.stored).any { it.planUnreadable } ||
@@ -414,11 +415,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         if (review == null && session(sessionId) == null) throw missing("That workout is no longer on the log.")
         review?.ui() ?: Review()
     }
+    // The shared read, unread while the account's history is not all here and holds no workout of the movement.
     fun lastTime(exerciseId: String): LastTime = read { reader ->
         if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", "That movement is not in the catalog.")
-        val last = TrainingLog(reader).lastTime(Id(exerciseId, EngineExercise))
-        if (last.session == null && !last.isComplete && !reader.isAnonymous) throw TrainingUnanswered
-        LastTime(exerciseId, last.session?.ui(), last.routine, last.sets.map { it.ui() })
+        TrainingLog(reader).lastTime(Id(exerciseId, EngineExercise))
     }
     fun lastSets(): List<LastSet> = read { reader ->
         val known = EngineLastSet.all(TrainingLog(reader)).map { LastSet(it.exerciseId.text, it.weightKg, it.reps, it.at.ms) }
@@ -564,6 +564,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         if (queued) reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }?.let { EngineProposal.decode(Fields(it)).ui(reader) }
         else reader.repository(EngineProposal).find(identity, ViewMode.drawn)?.ui(reader)
     } ?: removalReceipts.proposals()[id]?.takeIf { it.isPending }
+    // Whether this phone holds any row of the proposal, alive or dead.
+    fun proposalRecorded(id: String): Boolean = read { reader -> reader.repository(EngineProposal).record(Id(id, EngineProposal), ViewMode.drawn) != null }
     // The proposals the log would refuse to apply, decided against the routine as the engine holds and confirms it.
     fun outOfDateProposals(): Set<String> = read { reader ->
         reader.repository(EngineProposal).all(ViewMode.drawn).filter { EngineProposalState(reader, it.id).outOfDate }.mapTo(mutableSetOf()) { it.id.text }
@@ -622,7 +624,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }?.let { exercise ->
         val refused = imports.refusals().filter { it.session != null }.mapTo(mutableSetOf()) { it.id }
-        MovementRecord.of(exercise, details().filterNot { it.session.id in refused })
+        MovementRecord.of(exercise, details().filterNot { it.session.id in refused }, engine.physNow())
     }
     fun settings(): GymPreferences = read { reader ->
         val value = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn) ?: Preferences()
@@ -677,7 +679,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     suspend fun putBodyweight(dateLocal: String, weightKg: Double,
         expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): WeighIn {
-        val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", works.windmill.gym.domain.Bodyweight.notAForecast)
+        val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", works.windmill.gym.presentation.Bodyweight.notAForecast)
         val saved = writing { runner ->
             val blank = EngineWeighIn(day)
             val draft = runner.open(EngineWeighIn, blank.id, blank).edit { it.copy(kg = weightKg) }
@@ -929,14 +931,14 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 refusal.violation.rule == NoteRules.title.path && refusal.violation.reason is Violation.Reason.TooLong -> "a title runs to 60 characters"
                 refusal.violation.rule == NoteRules.body.path && refusal.violation.reason is Violation.Reason.TooLong -> "a note runs to 500 bytes"
                 refusal.violation.rule == SetRules.loadFloor || refusal.violation.rule == RoutineRules.loadFloor ->
-                    works.windmill.gym.domain.TargetEntry.belowFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
+                    works.windmill.gym.presentation.TargetEntry.belowFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
                 else -> "Check ${refusal.violation.path.text.substringAfterLast('.')}."
             }
             is GymRefusal.Stale -> "stale" to "That changed. Open it again."
             is GymRefusal.Gone -> "unknown-record" to "That is no longer on the log."
             is GymRefusal.Taken -> "id-taken" to "That identity is already on the log."
             is GymRefusal.Full -> "cap" to "The log has reached its limit. Remove an entry first."
-            is GymRefusal.Future -> "bad-instant" to works.windmill.gym.domain.Bodyweight.notAForecast
+            is GymRefusal.Future -> "bad-instant" to works.windmill.gym.presentation.Bodyweight.notAForecast
             is GymRefusal.SessionFinished -> refusal.refused.code.text to "That workout has finished."
             is GymRefusal.SessionOpen -> refusal.refused.code.text to "Finish the workout first."
             is GymRefusal.SessionOverlap -> refusal.refused.code.text to "This workout overlaps another workout. Correct its times and retry."

@@ -12,10 +12,12 @@ import { setOwn } from '../../../../../packages/api-contract/sync/reference/core
 import { Catalogue, Exercise, ExerciseName, ExerciseNameValue, ExerciseValue, renamedAliases } from './catalogue.js';
 import { GymRefusals, RoutineRules } from './gymRules.js';
 import { SeedExercises } from './seedExercises.js';
+import { inLoggedOrder } from './training.js';
+import { WeightLadder } from './units.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {{ base: ExerciseValue | null, current: ExerciseValue }} RoutineMovementChange */
-/** @typedef {{ exerciseId: string, reps: number | null, weightKg: number | null, completedAt: number, setNumber?: number | null }} PerformedSet */
+/** @typedef {{ id?: string, exerciseId: string, reps: number | null, weightKg: number | null, completedAt: number }} PerformedSet */
 
 export class SetTarget {
   /** @param {number | null} reps @param {number | null} weightKg */
@@ -50,6 +52,14 @@ export class SetTarget {
       throw new Violation('routine.zeroTarget', path.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
     }
     return new SetTarget(reps, weightKg);
+  }
+
+  // A straight scheme is one whose sets all agree, loads read on the ladder's grid; an open line is straight.
+  /** @param {readonly SetTarget[]} sets */
+  static straight(sets) {
+    /** @param {number | null} weightKg */
+    const onGrid = (weightKg) => weightKg === null ? null : WeightLadder.round(weightKg);
+    return sets.every((set) => set.reps === sets[0]?.reps && onGrid(set.weightKg) === onGrid(sets[0]?.weightKg ?? null));
   }
 }
 
@@ -116,17 +126,13 @@ export class RoutineValue {
   static fromSession({ id, name, position = 0, sets }) {
     /** @type {Map<string, PerformedSet[]>} */
     const groups = new Map();
-    for (const set of [...sets].sort((a, b) => a.completedAt - b.completedAt)) {
+    for (const set of [...sets].sort(inLoggedOrder)) {
       const group = groups.get(set.exerciseId);
       if (group) group.push(set);
       else groups.set(set.exerciseId, [set]);
     }
-    const entries = [...groups].map(([exerciseId, performed]) => {
-      const ordered = performed.sort((a, b) => (a.setNumber ?? Number.MAX_SAFE_INTEGER) - (b.setNumber ?? Number.MAX_SAFE_INTEGER)
-        || a.completedAt - b.completedAt);
-      return new RoutineEntry(new Id(exerciseId, Exercise), ordered.slice(0, RoutineRules.targets.sets.max).map((set) =>
-        SetTarget.clampingReps(set.reps, set.weightKg)));
-    });
+    const entries = [...groups].map(([exerciseId, performed]) => new RoutineEntry(new Id(exerciseId, Exercise),
+      performed.slice(0, RoutineRules.targets.sets.max).map((set) => SetTarget.clampingReps(set.reps, set.weightKg))));
     return new RoutineValue(id, name, position, entries);
   }
 }

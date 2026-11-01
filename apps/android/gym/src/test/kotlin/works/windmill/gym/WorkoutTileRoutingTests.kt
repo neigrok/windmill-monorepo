@@ -103,7 +103,7 @@ class WorkoutTileRoutingTests {
         val room = EngineRoomFixture(temporary.newFolder(), scope).apply { now = 1_700_000_000_000L }
         runBlocking {
             room.select(null)
-            val routine = (room.store.saveRoutine(works.windmill.gym.domain.RoutineDraft(name = "Push A")
+            val routine = (room.store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Push A")
                 .adding("bench-press")) as works.windmill.gym.store.GymResult.Ok).value
             room.store.start(routine.id)
             room.store.choose("bench-press")

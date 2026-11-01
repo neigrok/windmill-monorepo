@@ -2,6 +2,7 @@ package works.windmill.gym.domain.sync
 
 import works.windmill.domain.kit.*
 import works.windmill.sync.api.ViewMode
+import works.windmill.sync.core.Json
 import works.windmill.sync.core.JsonError
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.schema.Gym
@@ -221,4 +222,44 @@ class RecoverStrandedSets(val id: Id<Session>, val placement: Placement, val rev
         val correction = CorrectSession(id, ids.opaqueID(), session.startedAt, finish, session.displayName, corrected, preserveOtherSets = true)
         return correction.recorded.decision(state, ids)
     }
+}
+
+// One set a saved copy still owes a workout the account holds, replayed set by set. A finished workout it fits takes
+// it back by one additive correction; otherwise it comes back as a workout of its own, one gesture per step: a start
+// at the set that joins nothing, the set under an identity of its own, then a finish at the set.
+class StrandedSet(val set: TrainingSet) {
+    enum class Step {
+        start, set, finish;
+        val next: Step? get() = when (this) { start -> set; set -> finish; finish -> null }
+        companion object {
+            // A step this build does not know reads as the last one.
+            fun of(saved: String): Step = entries.firstOrNull { it.name == saved } ?: finish
+        }
+    }
+
+    // The set does not fit a finished workout the log closed itself, or one whose window it, or a set the workout
+    // holds, falls outside. An open workout is never one it falls apart from.
+    fun apart(from: Session, standing: List<Instant>): Boolean {
+        val finish = from.finishedAt ?: return false
+        val window = from.startedAt.ms..finish.ms
+        return from.closedBy != "finish" || set.completedAt.ms !in window || standing.any { it.ms !in window }
+    }
+
+    // Into a finished workout after the sets it holds: under the number the copy saved while that number is free, else
+    // after its movement's last. Null for an open workout, or once the movement's numbers are spent.
+    fun correction(into: Session, standing: List<TrainingSet>, requestId: String): CorrectSession? {
+        val finish = into.finishedAt ?: return null
+        val sameMovement = standing.filter { it.exerciseId == set.exerciseId }
+        val number = set.setNumber?.takeIf { wanted -> wanted > 0 && sameMovement.none { it.setNumber == wanted } }?.toLong()
+            ?: ((sameMovement.maxOfOrNull { it.setNumber ?: 0 } ?: 0).toLong() + 1).takeIf { it <= Int.MAX_VALUE }
+            ?: return null
+        return CorrectSession(into.id, requestId, into.startedAt, finish, into.displayName, listOf(CorrectedSet(set.id, set.exerciseId,
+            number, set.weightKg, set.reps, set.completedAt, set.rpe, set.note, rpeNamed = true)), preserveOtherSets = true)
+    }
+
+    fun start(session: Id<Session>): ServerCommand = nonJoiningStart(Session(session, set.completedAt))
+    fun append(session: Id<Session>, id: Id<TrainingSet>): AppendSet =
+        AppendSet(TrainingSet(id, session, set.exerciseId, set.weightKg, set.reps, set.rpe, set.note, set.completedAt))
+    fun finish(session: Id<Session>): ServerCommand =
+        GymCommand(Gym.Commands.finish, mapOf("sessionId" to session.json, "finishedAt" to Json.of(set.completedAt.ms)))
 }

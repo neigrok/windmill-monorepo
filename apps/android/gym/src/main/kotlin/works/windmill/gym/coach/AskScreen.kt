@@ -59,15 +59,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.drop
 import works.windmill.gym.R
-import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.Proposal
+import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.ProposalRead
 import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
@@ -150,20 +152,16 @@ fun AskScreen(
 
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.
-    val minted = remember { mutableStateMapOf<String, Proposal>() }
-    val missing = remember { mutableStateMapOf<String, Boolean>() }
+    val proposals = remember { AnsweredProposals(store, telemetry) }
+    val minted = proposals.minted
+    val waitedHere = remember { mutableSetOf<String>() }
+    thread.forEach { if (it.pending && it.requestId.isNotEmpty()) waitedHere += it.requestId }
+    proposals.fresh = thread.filter { it.requestId in waitedHere }.flatMap { it.answer?.proposals.orEmpty() }.toSet()
     val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
     val headerProposals = proposalIds.filterNot { it in attachedProposals }
     val wanted = (attachedProposals + proposalIds).toList()
-    LaunchedEffect(wanted) {
-        wanted.forEach { id ->
-            if (minted.containsKey(id) || missing.containsKey(id)) return@forEach
-            when (val read = store.proposal(id)) {
-                is ProposalRead.Found -> minted[id] = read.proposal
-                ProposalRead.Gone -> missing[id] = true
-            }
-        }
-    }
+    LaunchedEffect(wanted, store.replicaReadRevision) { proposals.read(wanted) }
+    proposals.missing.keys.forEach { id -> key(id) { LaunchedEffect(Unit) { proposals.settle(id) } } }
 
     GymScreen(
         title = Ask.title,
@@ -233,8 +231,8 @@ fun AskScreen(
                                     }
                                 }
                                 answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
-                                    if (id in missing) Trouble(ProposalRead.Gone.line, null)
-                                    else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
+                                    if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
+                                    else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
                             }
                             if (exchange.refusalCode == "account_required") {
@@ -257,7 +255,7 @@ fun AskScreen(
                     (store.settledProposals[id] ?: minted[id])?.let { proposal ->
                         Minted(proposal, store.catalog, nowMs, id in lookedAt) { onReview(proposal) }
                     }
-                    if (id in missing) Trouble(ProposalRead.Gone.line, null)
+                    if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
                 }
                 val shown = (minted + store.settledProposals).values.mapNotNull { it.receipt }.toSet()
                 receipts.filterNot { it in shown }.forEach { receipt ->
@@ -397,4 +395,53 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
             }
         }
     }
+}
+
+// The proposals a room's answers name. Coach can answer before its proposal reaches this phone, so an id not found is
+// read again each time the replica changes. A proposal the phone holds a dead row of is gone at once. One it holds no
+// row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at or after that miss,
+// has read further into the account. One named by an answer this visit waited for and gone that way is reported once.
+internal class AnsweredProposals(private val store: TrainingStore, private val telemetry: Telemetry) {
+    data class Miss(val recorded: Boolean = false, val caughtUpAt: Long? = null, val readPast: Boolean = false, val waited: Boolean = false) {
+        val settled: Boolean get() = waited && readPast
+        val gone: Boolean get() = recorded || settled
+
+        fun read(recorded: Boolean, caughtUpTo: Long?): Miss = when {
+            caughtUpTo == null -> copy(recorded = recorded)
+            caughtUpAt == null -> copy(recorded = recorded, caughtUpAt = caughtUpTo)
+            else -> copy(recorded = recorded, readPast = readPast || caughtUpTo > caughtUpAt)
+        }
+    }
+
+    val minted = mutableStateMapOf<String, Proposal>()
+    val missing = mutableStateMapOf<String, Miss>()
+    var fresh: Set<String> = emptySet()
+    private val reported = mutableSetOf<String>()
+
+    fun gone(id: String): Boolean = missing[id]?.gone == true
+
+    suspend fun read(wanted: List<String>) {
+        val caughtUpTo = store.caughtUpTo
+        for (id in wanted) {
+            if (minted.containsKey(id)) continue
+            when (val read = store.proposal(id)) {
+                is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
+                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.proposalRecorded(id), caughtUpTo)
+            }
+        }
+        report()
+    }
+
+    suspend fun settle(id: String) {
+        delay(settleMs)
+        missing[id]?.let { missing[id] = it.copy(waited = true) }
+        report()
+    }
+
+    private fun report() {
+        for ((id, miss) in missing.toMap())
+            if (id in fresh && miss.settled && !miss.recorded && reported.add(id)) telemetry.event("gym_proposal_missing")
+    }
+
+    companion object { const val settleMs = 10_000L }
 }

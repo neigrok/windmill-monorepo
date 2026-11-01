@@ -3,6 +3,7 @@ import { Clock3, Timer } from 'lucide-react';
 import {
   clockOf, fmt, nameOfMovement, planReadingOf, recordHref, routineNameOf, slotRows, workoutClocks,
 } from './log.js';
+import { inLoggedOrder } from './domain/training.js';
 
 // The mirror's charter (ledger 0t): it never offers a Finish, it says "Not training now." in words
 // rather than as a greyed control, and every clock on it counts up. Nothing here can drive the
@@ -43,8 +44,7 @@ function TrainingNow({ session, sets, catalog }) {
     : sets.reduce((late, set) => (set.completedAt >= late.completedAt ? set : late));
   const walked = newest === null
     ? []
-    : sets.filter((set) => set.exerciseId === newest.exerciseId)
-      .sort((left, right) => (left.setNumber ?? 0) - (right.setNumber ?? 0));
+    : sets.filter((set) => set.exerciseId === newest.exerciseId).sort(inLoggedOrder);
   // The plan's own slots for the movement in hand: the landed sets fill them in order and the rest
   // stand under them as targets, dim. The mirror starts nothing and changes nothing (R11).
   const reading = newest === null ? null : planReadingOf(session, newest.exerciseId);

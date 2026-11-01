@@ -10,17 +10,17 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
-import works.windmill.gym.domain.LiveLines
-import works.windmill.gym.domain.LastTime
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.Prefill
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.WorkoutEvent
-import works.windmill.gym.domain.WorkoutKey
-import works.windmill.gym.domain.WorkoutMoment
-import works.windmill.gym.domain.WorkoutState
+import works.windmill.gym.presentation.LiveLines
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WorkoutEvent
+import works.windmill.gym.presentation.WorkoutKey
+import works.windmill.gym.presentation.WorkoutMoment
+import works.windmill.gym.presentation.WorkoutState
+import works.windmill.gym.domain.sync.LastTime
+import works.windmill.gym.domain.sync.Prefill
 
 // The phone's controls over the open workout, projected from the engine replica: the session and its
 // sets with the device clock each was logged at, the movement walk, the movement in hand and the
@@ -209,7 +209,7 @@ class WorkoutControls private constructor(
         keep(mine.copy(workout = next))
     }
 
-    fun prepare(lastTime: LastTime?, moment: WorkoutMoment,
+    fun prepare(lastTimeOf: (String) -> LastTime, moment: WorkoutMoment,
         ready: Boolean, mint: () -> String): WorkoutState {
         val live = mine.session ?: return workout
         val entries = mine.entries.mapValues { (_, entry) ->
@@ -218,12 +218,12 @@ class WorkoutControls private constructor(
                 entry.copy(event = WorkoutEvent(entry.event?.id ?: entry.set.id, oldOrigin.reconciled(moment) ?: oldOrigin))
             }
         }
-        val next = prepared(mine.copy(entries = entries), lastTime, moment, ready, mint)
+        val next = prepared(mine.copy(entries = entries), lastTimeOf, moment, ready, mint)
         keep(next)
         return requireNotNull(next.workout)
     }
 
-    private fun prepared(controls: Held, lastTime: LastTime?,
+    private fun prepared(controls: Held, lastTimeOf: (String) -> LastTime,
         moment: WorkoutMoment, ready: Boolean, mint: () -> String): Held {
         val live = controls.session ?: return controls
         val movement = controls.chosenMovement
@@ -235,9 +235,10 @@ class WorkoutControls private constructor(
         if (movement == null) return controls.copy(workout = state.offered(WorkoutKey(seat, live.id), 0, false, ""))
         val today = current.map { it.set }.filter { it.exerciseId == movement }.sortedBy { it.completedAtMs }
         val savedRack = state.rack
-        val unresolvedPrefill = lastTime == null && today.isEmpty() && plan?.sets.isNullOrEmpty()
+        val lastTime = lastTimeOf(movement)
+        val unresolvedPrefill = lastTime.isUnread && today.isEmpty() && plan?.sets.isNullOrEmpty()
         if (!unresolvedPrefill || savedRack?.exerciseId != movement || savedRack.basisSetCount != today.size) {
-            state = state.redial(movement, today.size, Prefill.of(today, plan, lastTime))
+            state = state.redial(movement, today.size, Prefill.of(today.map { it.domain(live.id) }, plan?.domain, lastTime))
         }
         val ordinal = LiveLines.setCount(today) + 1
         state = state.offered(WorkoutKey(seat, live.id), ordinal, ready, state.offer?.id ?: if (ready && !state.editorOpen) mint() else "")
@@ -246,7 +247,7 @@ class WorkoutControls private constructor(
 
     // The offered set is recorded with the moment it was accepted and the offer is consumed in the
     // same write, so a repeated tap or a redelivered command can never log it twice.
-    fun accept(command: LogSetCommand, moment: WorkoutMoment, lastTime: LastTime?,
+    fun accept(command: LogSetCommand, moment: WorkoutMoment, lastTimeOf: (String) -> LastTime,
         mint: () -> String): LogSetAcceptance {
         val live = mine.session ?: return LogSetAcceptance.Stale
         if (command.key != WorkoutKey(seat, live.id) || !workout.accepts(command)) return LogSetAcceptance.Stale
@@ -259,7 +260,7 @@ class WorkoutControls private constructor(
         val entry = Entry(set, live.id, loggedAtMs = moment.wallMs,
             event = WorkoutEvent(offer.id, moment), eventOrder = workout.revision + 1)
         val next = prepared(mine.copy(entries = mine.entries + (set.id to entry), workout = workout.consume(command)),
-            lastTime, moment, true, mint)
+            lastTimeOf, moment, true, mint)
         keep(next)
         return LogSetAcceptance.Accepted(set.id)
     }

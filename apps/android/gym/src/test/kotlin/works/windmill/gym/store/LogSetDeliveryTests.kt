@@ -12,11 +12,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.Blocker
-import works.windmill.gym.domain.LogSetAcceptance
-import works.windmill.gym.domain.LogSetCommand
-import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.presentation.Blocker
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.engine.Reply
 import works.windmill.sync.engine.SessionTokens

@@ -163,7 +163,7 @@ final class GymModel {
       scopeViews = try types.flatMap { type in
         [try runtime.engine.records(Gym.scope, type, .drawn), try runtime.engine.records(Gym.scope, type, .stored)]
       }
-    } catch { readFailed = true; self.error = "Gym could not be read from this phone. Try again."; report("gym_read", error); return }
+    } catch { failRead(error); return }
     observationGeneration += 1
     observeScopes(observationGeneration)
     coachTurns?.start()
@@ -267,10 +267,9 @@ final class GymModel {
       recordAnsweredRecoveries()
       if previousAccount != account || previousAnonymous != isAnonymous { publish(\.coachUnavailable, false) }
       publish(\.readFailed, false)
-      if wasReadFailed, error == "Gym could not be read from this phone. Try again." { error = nil }
+      if wasReadFailed, error == Self.unreadable { error = nil }
     } catch {
-      readFailed = true; readThrough = nil; self.error = "Gym could not be read from this phone. Try again."
-      report("gym_read", error)
+      readThrough = nil; failRead(error)
     }
   }
 
@@ -335,6 +334,12 @@ final class GymModel {
     } catch { self.error = "Gym could not dismiss this message. Try again."; report("gym_action", error) }
   }
 
+  // A band dismisses the error it showed; a newer one stays.
+  func dismissError(_ shown: String) {
+    guard error == shown else { return }
+    error = nil; refusal = nil
+  }
+
   func background() {
     workout.flushRack()
     rest.cancel()
@@ -346,6 +351,14 @@ final class GymModel {
   // nothing: a screen redrawn under an open menu rebuilds the menu and drops the tap on it.
   func publish<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<GymModel, Value>, _ value: Value) {
     if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
+  }
+
+  static let unreadable = "Gym could not be read from this phone. Try again."
+
+  // The room stops on a read it could not make: the band says so and offers only a retry.
+  func failRead(_ failure: any Error) {
+    readFailed = true; error = Self.unreadable
+    report("gym_read", failure)
   }
 
   // A read failure reports once per launch, since views read on every render; every failed write reports.

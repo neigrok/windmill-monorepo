@@ -28,8 +28,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.domain.Bodyweight
-import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.presentation.Bodyweight
+import works.windmill.gym.presentation.WeighIn
 import works.windmill.platform.design.LocalWindmillDark
 
 @RunWith(RobolectricTestRunner::class)

@@ -2,11 +2,11 @@ package works.windmill.gym.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import works.windmill.gym.domain.Exercise
+import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.store.RefusedChange
 import works.windmill.gym.store.RefusedSet
 import works.windmill.gym.store.RefusedWorkout
-import works.windmill.gym.domain.Readout
+import works.windmill.gym.presentation.Readout
 
 class RefusalBannerTests {
     @Test fun workoutFallbackUsesItsKnownDayAndNeverInventsAnInstant() {

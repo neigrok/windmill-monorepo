@@ -32,8 +32,9 @@ apps/
   ios/                      App/ (the journal and gym app), Sync/ (the sync engine client), Domain/ (the
                             domain kit and the gym and journal domains on it), SyncTestingSurface/ and
                             the dev-only SyncProbe/ app
-  android/                  Kotlin/Compose gym app; :app, :platform, :gym and :gym:domain, the sync
-                            engine (:sync-*) and the domain kit (:domain-kit, :domain-kit-testing)
+  android/                  Kotlin/Compose gym app; :app, :platform, :gym (its presentation package
+                            projects :gym:domain for the screens) and :gym:domain, the sync engine
+                            (:sync-*) and the domain kit (:domain-kit, :domain-kit-testing)
 packages/
   api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
 services/

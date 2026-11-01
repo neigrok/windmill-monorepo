@@ -97,6 +97,8 @@ data class LastTime(val exerciseId: Id<Exercise>, val session: Session? = null,
     val sets: List<TrainingSet> = emptyList(), val isComplete: Boolean = true) {
     val routine: String? get() = session?.name
     val isFirstTime: Boolean get() = isComplete && session == null
+    // Not read yet: no workout found, and the account's history is not all here to say there is none.
+    val isUnread: Boolean get() = !isComplete && session == null
 
     companion object {
         fun of(exerciseId: Id<Exercise>, log: TrainingLog): LastTime {
@@ -135,11 +137,11 @@ data class Prefill(val weightKg: Double = emptyBarKg, val reps: Int = emptyBarRe
         fun offeredLoads(todaySets: List<TrainingSet>, planEntry: RoutineEntry?, lastTime: LastTime): List<Double?> {
             val scheme = planEntry?.sets.orEmpty()
             val slots = todaySets.size until scheme.size
-            if (lastTime.session != null || lastTime.isComplete) {
+            if (!lastTime.isUnread) {
                 var sticky = todaySets.lastOrNull()?.let { Prefill(it.weightKg, maxOf(1, it.reps)) }
                 return slots.map { slot -> at(slot, sticky, planEntry, lastTime).also { sticky = it }.weightKg }
             }
-            val straight = scheme.all { it == scheme.first() }
+            val straight = SetTarget.straight(scheme)
             var sticky: Double? = todaySets.lastOrNull()?.weightKg
             return slots.map { slot -> (if (straight) sticky ?: scheme.first().weightKg else scheme[slot].weightKg).also { sticky = it } }
         }
@@ -148,8 +150,7 @@ data class Prefill(val weightKg: Double = emptyBarKg, val reps: Int = emptyBarRe
         fun at(slot: Int, sticky: Prefill?, planEntry: RoutineEntry?, lastTime: LastTime?): Prefill {
             val scheme = planEntry?.sets.orEmpty()
             val history = lastTime?.sets.orEmpty()
-            val straight = scheme.firstOrNull()?.let { first -> scheme.all { it == first } } ?: true
-            if (scheme.isNotEmpty() && !straight) {
+            if (!SetTarget.straight(scheme)) {
                 val target = scheme.getOrNull(slot)
                 val lastNth = history.getOrNull(slot)
                 return Prefill(target?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: emptyBarKg,
@@ -269,7 +270,7 @@ class MovementProgress(val exerciseId: Id<Exercise>, sessions: List<Point>, val 
         return records
     }
     fun window(now: Instant, zone: Zone): MovementProgress {
-        val start = LocalDay.from(now, zone).adding(-84)
+        val start = windowStart(now, zone)
         return MovementProgress(exerciseId, sessions.filter { it.startedAt <= now && LocalDay.from(it.startedAt, zone) >= start }, isComplete)
     }
     fun hasChart(zone: Zone): Boolean {
@@ -281,7 +282,13 @@ class MovementProgress(val exerciseId: Id<Exercise>, sessions: List<Point>, val 
     fun gaps(zone: Zone): List<Gap> = estimates.zipWithNext().mapNotNull { (before, after) ->
         if (LocalDay.from(before.startedAt, zone).daysUntil(LocalDay.from(after.startedAt, zone)) > gapDays) Gap(before, after) else null
     }
-    companion object { const val gapDays = 21 }
+    companion object {
+        const val gapDays = 21
+        const val windowDays = 84L
+
+        // The first day of the recent window: twelve weeks back from today.
+        fun windowStart(now: Instant, zone: Zone): LocalDay = LocalDay.from(now, zone).adding(-windowDays)
+    }
 }
 
 // The log's new bests: a movement's first estimate is its baseline; a new best beats the best before it as stated.
@@ -415,6 +422,15 @@ data class SessionReview(val durationMs: Long, val workingSets: Int, val topE1rm
         }
     }
 }
+
+// A movement's newest finished days, newest first, each holding its sets of the movement in logged order.
+data class RecentDay(val session: Session, val sets: List<TrainingSet>) {
+    companion object { const val shown = 10 }
+}
+
+fun TrainingLog.recentDays(exerciseId: Id<Exercise>): List<RecentDay> = drawnSessions.filter { !it.isOpen }.mapNotNull { session ->
+    sets(session.id).filter { it.exerciseId == exerciseId }.takeIf { it.isNotEmpty() }?.let { RecentDay(session, it) }
+}.take(RecentDay.shown)
 
 fun TrainingLog.readout(session: Id<Session>): SessionReadout? = drawnSessions.firstOrNull { it.id == session }?.let { SessionReadout(it, sets(session), catalogue) }
 fun TrainingLog.lastTime(exerciseId: Id<Exercise>): LastTime = LastTime.of(exerciseId, this)

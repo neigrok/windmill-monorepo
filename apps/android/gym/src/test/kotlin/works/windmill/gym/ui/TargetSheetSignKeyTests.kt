@@ -21,7 +21,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.*
+import works.windmill.gym.presentation.*
 import works.windmill.gym.store.EngineRoomFixture
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -65,7 +65,7 @@ class TargetSheetSignKeyTests {
             assertEquals(List(3) { SetTarget(8, -12.5) }, draft().entry("chin-up")!!.sets)
             assertEquals("bodyweight", draft().movements.single().base!!.equipment)
             assertEquals("bodyweight", draft().movements.single().current.equipment)
-            assertEquals(emptyList<works.windmill.gym.domain.Routine>(), room.training.program())
+            assertEquals(emptyList<works.windmill.gym.presentation.Routine>(), room.training.program())
         } } finally { scope.cancel() }
     }
 

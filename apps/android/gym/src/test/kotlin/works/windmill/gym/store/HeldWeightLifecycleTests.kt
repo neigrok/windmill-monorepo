@@ -14,8 +14,8 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.NoteWrite
-import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.platform.Account
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json

@@ -63,6 +63,18 @@ test('the mirror draws the plan line in the readout formula and the slots as row
   assert.equal(elementsOf(tree).some((each) => each.type === 'button'), false);
 });
 
+test('the landed sets fill the slots in the order they were done, not the order the server numbered them', async (t) => {
+  const logged = [
+    { id: 'set_1', exerciseId: 'back-squat', setNumber: 1, weightKg: 80, reps: 5, completedAt: NOW - 30_000 },
+    { id: 'set_2', exerciseId: 'back-squat', setNumber: 2, weightKg: 60, reps: 5, completedAt: NOW - 200_000 },
+  ];
+  const tree = await mirror(t, { logged });
+  assert.deepEqual(findByClass(tree, 'gym-mirror-slot').map((row) => [row.props.className, textOf(row)]), [
+    ['gym-mirror-slot is-lifted', '60 × 5'],
+    ['gym-mirror-slot is-lifted', '80 × 5'],
+  ]);
+});
+
 test('a free session draws no plan line and only what landed', async (t) => {
   const tree = await mirror(t, {});
   assert.deepEqual(findByClass(tree, 'gym-mirror-plan'), []);

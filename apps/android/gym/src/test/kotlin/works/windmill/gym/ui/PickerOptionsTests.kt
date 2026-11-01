@@ -5,9 +5,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.LastSet
-import works.windmill.gym.domain.TheSix
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.LastSet
+import works.windmill.gym.presentation.TheSix
 
 class PickerOptionsTests {
     private val catalog = listOf(

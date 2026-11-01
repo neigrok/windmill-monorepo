@@ -83,7 +83,7 @@ struct MovementRecordScreen: View {
     return Section {
       VStack(alignment: .leading, spacing: 12) {
         if display.hasChart(in: log.moment.zone), let first = points.first {
-          LogDatedChart(points: points, from: all ? first.date : LogPresentation.date(log.moment.today.adding(days: -84)),
+          LogDatedChart(points: points, from: all ? first.date : LogPresentation.date(MovementProgress.windowStart(now: log.moment.now, zone: log.moment.zone)),
                         through: log.moment.now.date, series: .strength, dates: dates, caption: caption,
                         bestID: progress.best?.id.description, selected: selected?.description)
             .accessibilityIdentifier("gym-record-chart")

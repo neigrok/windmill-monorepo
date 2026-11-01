@@ -34,8 +34,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.store.EngineRoomFixture
 
 @RunWith(RobolectricTestRunner::class)
@@ -157,7 +157,7 @@ class PickerMintTests {
                 nowMs = 0,
                 title = "Add movement",
                 onPick = {},
-                onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.domain.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
+                onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.presentation.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
             )
         }
 
@@ -183,7 +183,7 @@ class PickerMintTests {
                 nowMs = 0,
                 title = "Add movement",
                 onPick = {},
-                onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.domain.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
+                onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.presentation.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
             )
         }
 

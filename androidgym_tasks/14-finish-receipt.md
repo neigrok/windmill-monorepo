@@ -47,7 +47,7 @@
 - `gym_session_finished` still fires; Share with Coach still emits `gym_ask_started` when the question is sent.
 - `gym_action` with `screen` `finish`: `action` `discard` with `state` `shown` when the dialog opens, then `outcome` `ok` / `cancelled` / `refused` / `failed`; `action` `keep` with `outcome` `ok` when **Keep it** opens the sign-in step; `action` `done`. Unexpected discard failures report under `gym.discard`. List the actions in `docs/ANDROID_OBSERVABILITY.md`.
 - A test proves the Keep line shows on the first signed-out receipt only: not on the second, not signed in. Dark/Daylight, small phones and large text keep the receipt readable, crown legible, overflow reachable and both main actions visible/reachable without overlap. Overflow Cancel and discard Cancel preserve the saved workout; repeated confirmation cannot delete twice.
-- Tests: `FinishSheetTests.kt`, `ui/FinishScreenTests.kt`, `ui/FinishLayoutTests.kt` and `ui/SessionDiscardTests.kt` assert the tiles, crowned two-action group, native top-end menu, single confirmation and an immediate confirmed workout discard; `domain/TrainingTests.kt` covers the empty finish; `store/TrainingFinishTests.kt` passes.
+- Tests: `FinishSheetTests.kt`, `ui/FinishScreenTests.kt`, `ui/FinishLayoutTests.kt` and `ui/SessionDiscardTests.kt` assert the tiles, crowned two-action group, native top-end menu, single confirmation and an immediate confirmed workout discard; `presentation/TrainingTests.kt` covers the empty finish; `store/TrainingFinishTests.kt` passes.
 
 **Depends on:** 04, 05, 06, 08, 13.
 

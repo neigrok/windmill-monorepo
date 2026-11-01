@@ -66,9 +66,9 @@ import works.windmill.gym.coach.LocalCoach
 import works.windmill.platform.storage.AtomicDocument
 import java.io.File
 import java.io.IOException
-import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.SessionDetail
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.Routine
+import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult

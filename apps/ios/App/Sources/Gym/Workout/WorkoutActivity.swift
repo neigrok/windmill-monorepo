@@ -125,7 +125,7 @@ extension WorkoutState {
     guard flushRack(), activityIdentityResolved else { return nil }
     do {
       guard var record = try activityRecord() else { return nil }
-      guard canLog, !rackEditing, !gym.workoutHidden, weightKg.isFinite, (1...99).contains(reps),
+      guard canLog, !rackEditing, !gym.workoutHidden, weightKg.isFinite, SetRules.loggedReps.contains(reps),
             let session, session.holdsRack(of: offerSession), LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected else {
         if record.offer != nil { record.offer = nil; _ = keepActivity(record) }
         return nil
@@ -261,7 +261,7 @@ extension WorkoutState {
     let workout = gym.workout, clocks = try self.clocks(session), movement = workout.selected.flatMap { gym.catalogue.find($0) }
     // Before a movement is chosen the card names neither a movement nor a load. A barbell's load is its total, which kg
     // alone already says; a dumbbell's and a bodyweight movement's keep the basis the rack draws.
-    let basis = MovementEquipment(movement), unit = basis.value == "barbell" ? "kg" : basis.unit
+    let basis = MovementEquipment(movement), unit = basis.kind == .barbell ? "kg" : basis.unit
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: movement?.name ?? "", load: movement == nil ? "" : Readout.weight(workout.weightKg) + " " + unit, reps: workout.reps,
       workingSetOrdinal: workout.currentSets.count + 1,
