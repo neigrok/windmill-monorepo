@@ -840,7 +840,12 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   useEffect(() => {
     const onKey = (event) => {
-      if (boardActiveRef.current && graphOnlyKey(event)) return;
+      if (boardActiveRef.current && graphOnlyKey(event)) {
+        const el = document.activeElement;
+        const typingHere = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !typingHere) event.preventDefault();
+        return;
+      }
       if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
