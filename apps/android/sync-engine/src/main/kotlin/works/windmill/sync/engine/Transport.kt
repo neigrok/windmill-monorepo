@@ -84,10 +84,12 @@ internal fun validateFrame(frame: Json) {
     }
     frame["as"]?.orNull()?.str()
 }
-// The statuses the server answers on purpose: a refusal each, never a fault. A push also expects 413, which §7.4 halves or refuses too-large.
+// §9.6 the statuses the server answers on purpose: a refusal each, never a fault. A sync route also expects 503, the server's `unavailable`
+// or an edge's while the server is away, which every route backs off from; a push also expects 413, which §7.4 halves or refuses too-large.
 internal object ExpectedStatuses {
     val all = setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)
-    val push = all + 413
+    val sync = all + 503
+    val push = sync + 413
 }
 // Why a request or live socket failed, by its exception and causes; only `unreachable` (lost network) is no fault. `TelemetryPolicy.networkLoss` copies that rule, pinned by failure-kinds.tsv.
 internal fun failureKind(failure: Throwable): String? {
@@ -139,7 +141,7 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
     private suspend fun exchange(kind: String, body: Json?, token: String?): Reply<SyncResponse> {
         if (closed.get()) return Reply.Unreachable
         val operation = when (kind) { "hello" -> EngineOperation.hello; "push" -> EngineOperation.push; else -> EngineOperation.pull }
-        val expected = if (kind == "push") ExpectedStatuses.push else ExpectedStatuses.all
+        val expected = if (kind == "push") ExpectedStatuses.push else ExpectedStatuses.sync
         val max = if (kind == "pull") Constants.PULL_MAX_SCOPES.toLong() * Constants.PULL_PAGE_BYTES + 65_536 else 4L * 1024 * 1024
         val call = client.newCall(request(kind, body, token)); calls.add(call)
         if (closed.get()) { call.cancel(); calls.remove(call); return Reply.Unreachable }
@@ -253,7 +255,7 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
             // Cancelling an ended socket calls back here, sometimes before cancel returns.
             if (ended.get()) return
             if (status == null) fail { failed(EngineOperation.live, failure) }
-            else fail(Reply.Failed(SyncResponse(status))) { failed(EngineOperation.live, status, ExpectedStatuses.all) }
+            else fail(Reply.Failed(SyncResponse(status))) { failed(EngineOperation.live, status, ExpectedStatuses.sync) }
         }
     }
     override fun close() {

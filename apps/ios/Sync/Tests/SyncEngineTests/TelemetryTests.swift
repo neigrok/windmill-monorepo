@@ -184,6 +184,25 @@ struct TelemetryTests {
     }
   }
 
+  // §9.6: a sync request answered 503 — the server's `unavailable`, or an edge's while the server is away — is a transient
+  // the engine backs off from, so it is a metric on every sync route and never an Issue.
+  @Test func anUnavailableServerIsAMetricWithoutAnIssueOnEverySyncRoute() async throws {
+    let recorder = Recorder()
+    let transport = TransportTests.Stub.transport("telemetry-unavailable.test", telemetry: recorder) { _, _ in
+      (503, #"{"error":"unavailable","retryAfterMs":1000}"#)
+    }
+    _ = await transport.hello(token: SessionToken("secret-session"))
+    _ = await transport.push(TransportTests.request, token: SessionToken("secret-session"))
+    _ = await transport.pull(PullRequest(scopes: [PullRequest.Pulled(scope: .product("probe"), cursor: nil)]),
+                             token: SessionToken("secret-session"))
+    func metric(_ operation: String, _ method: String) -> Recorded {
+      Recorded(name: "api_request_failed", kind: nil,
+               properties: ["operation": operation, "method": method, "route": "/v1/sync", "failure_kind": "http", "status": "503"],
+               durationMs: nil)
+    }
+    #expect(recorder.undated == [metric("sync_hello", "GET"), metric("sync_push", "POST"), metric("sync_pull", "POST")])
+  }
+
   // §7.4 halves a push the server finds too large, or refuses its one intent too-large, so a push's 413 is a metric. No
   // other request answers 413 on purpose: a pull's is an Issue.
   @Test func onlyAPushesTooLargeIsExpected() async throws {
@@ -253,7 +272,7 @@ struct TelemetryTests {
 
   @Test func serverAndMalformedSuccessfulResponsesReportOnlyBoundedDiagnostics() async throws {
     let recorder = Recorder()
-    let server = TransportTests.Stub.transport("telemetry-server.test", telemetry: recorder) { _, _ in (503, "secret response body") }
+    let server = TransportTests.Stub.transport("telemetry-server.test", telemetry: recorder) { _, _ in (500, "secret response body") }
     let malformed = TransportTests.Stub.transport("telemetry-decode.test", telemetry: recorder) { _, _ in (200, "private journal") }
     _ = await server.hello(token: nil)
     _ = await malformed.hello(token: nil)

@@ -2408,8 +2408,13 @@ Frames are at most `LIVE_FRAME_BYTES`.
 A client records every failed request as a metric. A status the server answers on purpose — `400`,
 `401`, `403`, `404`, `409`, `410`, `422`, `426`, `429` — is never a crash-reporter issue: Swift's
 `ExpectedStatuses.all` serves the engine, the app's sign-in and its REST clients, and Kotlin's
-transport counts the same set as refusals. Both engines also expect a push's `413`, which §7.4
-halves or refuses `too-large` (`ExpectedStatuses.push` in each).
+transport counts the same set as refusals. A sync request's `503` — the server's `unavailable` (§6.6),
+or an edge's while the server is away — is a transient every route backs off from, the live socket's
+upgrade included where the client can read it, and is never an issue either: an outage is the
+server's to report, once, not every client's (`ExpectedStatuses.sync` in each engine). Both engines
+also expect a push's `413`, which §7.4 halves or refuses `too-large` (`ExpectedStatuses.push` in each).
+The web engine files an issue for no answered status: only a request that gets no readable answer
+reports.
 
 | Refusal code | Source |
 |---|---|

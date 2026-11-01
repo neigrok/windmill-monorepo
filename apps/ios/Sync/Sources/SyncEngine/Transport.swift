@@ -126,7 +126,7 @@ public final class HTTPTransport: SyncTransport {
   }
 
   func exchange<Body: ResponseBody>(_ method: String, _ path: String, operation: String,
-                                    expected: Set<Int> = ExpectedStatuses.all, body: [UInt8]?,
+                                    expected: Set<Int> = ExpectedStatuses.sync, body: [UInt8]?,
                                     token: SessionToken?) async -> Reply<Body> {
     let start = ContinuousClock.now
     var request = URLRequest(url: baseURL.appending(path: path))
