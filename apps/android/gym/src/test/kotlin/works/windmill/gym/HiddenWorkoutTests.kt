@@ -164,6 +164,23 @@ class HiddenWorkoutTests {
             events.filter { it.first == "gym_action" && it.second["action"] == "hide" }.map { it.second })
     }
 
+    @Test fun systemBackHidesAWorkoutStartedInTheRoomAsTheButtonDoes() = room(withWorkout = false) { phone, _, events ->
+        compose.onNodeWithText("Push A").performClick()
+        compose.onNodeWithText("Start workout").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Finish").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Log set").performClick()
+        compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithContentDescription("Push A, in progress").assertIsDisplayed()
+        compose.onNodeWithText("Finish").assertDoesNotExist()
+        compose.onNodeWithText("The workout is not ready.").assertDoesNotExist()
+        compose.runOnIdle {
+            assertTrue(phone.store.workout.loggerHidden)
+            assertEquals(1, phone.store.workout.sets.size)
+        }
+        assertEquals(listOf(mapOf("screen" to "workout", "action" to "hide", "outcome" to "ok")),
+            events.filter { it.first == "gym_action" && it.second["action"] == "hide" }.map { it.second })
+    }
+
     @Test fun startingFromACoachRoutineDoorReturnsToCoachWhenHidden() {
         val rest = FakeGymRest()
         room(withWorkout = false, rest = rest) { phone, _, _ ->
