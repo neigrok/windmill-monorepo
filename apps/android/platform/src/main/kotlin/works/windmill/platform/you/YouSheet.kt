@@ -80,7 +80,7 @@ fun YouSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), containerColor = palette.surface,
         scrimColor = MaterialTheme.colorScheme.scrim,
         dragHandle = {
-            if (form) BottomSheetDefaults.DragHandle(color = palette.inkFaint)
+            if (form) BottomSheetDefaults.DragHandle(color = palette.inkDim)
             else Box(Modifier.fillMaxWidth().height(24.dp).semantics { contentDescription = "Drag handle" },
                 contentAlignment = Alignment.Center) {
                 Box(Modifier.size(width = 32.dp, height = 4.dp).testTag("you-sheet-handle")

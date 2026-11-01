@@ -139,7 +139,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
             val single = page == AccountDeletionPage.Deleted || page == AccountDeletionPage.Unavailable
             val enabled = !store.busy && (!confirming || store.emailMatches(store.email))
             val fill = if (confirming) scheme.error else palette.accent
-            val ink = if (confirming) { if (dark) Color(0xFF410E0B) else Color.White } else palette.onAccent
+            val ink = if (confirming) scheme.onError else palette.onAccent
             Button(onClick = {
                 focus.clearFocus(); keyboard?.hide()
                 when {

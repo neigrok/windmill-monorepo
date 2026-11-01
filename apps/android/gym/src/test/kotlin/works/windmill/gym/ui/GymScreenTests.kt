@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
@@ -83,8 +84,8 @@ class GymScreenTests {
         compose.setContent {
             view = LocalView.current
             GymMaterial {
-                val skin = LocalGymColors.current
-                ground = skin.canvas to skin.surface
+                val colors = MaterialTheme.colorScheme
+                ground = colors.surface to colors.surfaceContainer
                 GymScreen(title = "Routines") {
                     LazyColumn(Modifier.fillMaxSize().testTag("rows")) {
                         items(60) { Text("Row $it", Modifier.height(56.dp)) }

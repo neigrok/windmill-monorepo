@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -112,7 +113,7 @@ fun RoutinesScreen(
     onReview: (Proposal) -> Unit,
     transient: SnackbarHostState? = null,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val nowMs = System.currentTimeMillis()
     val routines = state.all.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
     val empty = state.all.isEmpty()
@@ -161,7 +162,7 @@ fun RoutinesScreen(
                 if (empty) {
                     item("empty") {
                         Text("No routines yet.", style = TextStyle(fontFamily = GymNativeType.sans,
-                            fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, lineHeight = 32.sp), color = skin.ink)
+                            fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, lineHeight = 32.sp), color = colors.onSurface)
                     }
                 } else {
                     items(routines, key = { it.id }) { routine ->
@@ -186,25 +187,25 @@ private fun RoutineRow(
     onDelete: suspend () -> Boolean,
     onReview: (Proposal) -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val waiting = routine.pendingProposal
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
-        .background(skin.canvas)
+        .background(colors.surface)
         .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) }
         .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(routine.name, style = GymNativeType.button, color = skin.ink)
+            Text(routine.name, style = GymNativeType.button, color = colors.onSurface)
             Text(routine.entries.sortedBy { it.position }.take(2)
                 .joinToString(" · ") { Readout.movement(it.exerciseId, catalog) },
-                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp), color = skin.inkDim)
+                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp), color = colors.onSurfaceVariant)
             waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
         }
         Box {
             IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_more), "More for ${routine.name}", Modifier.size(24.dp), tint = skin.inkDim)
+                Icon(painterResource(R.drawable.gym_more), "More for ${routine.name}", Modifier.size(24.dp), tint = colors.onSurfaceVariant)
             }
             GymMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 GymMenuItem("Delete", painterResource(R.drawable.gym_native_delete), destructive = true,
@@ -225,17 +226,18 @@ fun RoutineSheet(
     starting: Boolean = false,
     failure: String? = null,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val routine = state.routine(routineId)
     WindmillSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = skin.surface,
-        scrimColor = skin.scrim,
+        containerColor = colors.surfaceContainer,
+        scrimColor = colors.scrim,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
             Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
+                Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
             }
         },
         modifier = Modifier.testTag("routine-sheet"),
@@ -251,29 +253,29 @@ fun RoutineSheet(
                     Text(
                         "That routine is no longer in your program. Everything you logged against it is still in the log.",
                         style = WindmillFont.body(16).copy(lineHeight = 24.sp),
-                        color = skin.inkDim,
+                        color = colors.onSurfaceVariant,
                     )
                 } else {
-                    Text(routine.name, style = WindmillFont.display(28), color = skin.ink)
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.raised),
+                    Text(routine.name, style = WindmillFont.display(28), color = colors.onSurface)
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHighest),
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         routine.entries.sortedBy { it.position }.forEach { entry ->
-                            Row(Modifier.fillMaxWidth().heightIn(min = 68.dp).background(skin.surface)
+                            Row(Modifier.fillMaxWidth().heightIn(min = 68.dp).background(colors.surfaceContainer)
                                 .semantics(mergeDescendants = true) {}
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Box(Modifier.size(32.dp).background(skin.raised, RoundedCornerShape(8.dp)),
+                                Box(Modifier.size(32.dp).background(colors.surfaceContainerHighest, RoundedCornerShape(8.dp)),
                                     contentAlignment = Alignment.Center) {
-                                    Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
+                                    Text(entry.position.toString(), style = GymType.numeral(13), color = colors.onSurfaceVariant)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     val name = Readout.movement(entry.exerciseId, state.catalog)
                                     val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
                                     Text(if (yours) "$name · yours" else name,
-                                        style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                                        style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
                                     val target = Readout.targetWithUnit(entry.sets, state.catalog.find { it.id == entry.exerciseId })
-                                    Text(target, style = GymType.numeral(13), color = skin.inkDim)
+                                    Text(target, style = GymType.numeral(13), color = colors.onSurfaceVariant)
                                 }
                             }
                         }
@@ -283,7 +285,7 @@ fun RoutineSheet(
             if (routine != null) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter)
                     .padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    failure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk,
+                    failure?.let { Text(it, style = WindmillFont.body(14), color = gymColors.alarmInk,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
                     Button(onClick = { onStart(routine.id) }, enabled = !starting, shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
@@ -291,7 +293,7 @@ fun RoutineSheet(
                     }
                     TextButton(onClick = { onBuild(RoutineDraft.of(routine, state.catalog)) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                        Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
                     }
                 }
             }

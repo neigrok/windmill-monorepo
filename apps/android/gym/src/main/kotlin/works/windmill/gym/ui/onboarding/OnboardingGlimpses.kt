@@ -52,8 +52,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import works.windmill.gym.R
-import works.windmill.gym.ui.GymColors
-import works.windmill.gym.ui.LocalGymColors
+import androidx.compose.material3.MaterialTheme
+import works.windmill.gym.ui.gymColors
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillColor
 import works.windmill.platform.design.WindmillMotion
@@ -79,7 +79,12 @@ private val easeGlow = CubicBezierEasing(0.45f, 0f, 0.15f, 1f)
 @Composable
 fun OnboardingGlimpse(page: Int, active: Boolean, reducedMotion: Boolean, modifier: Modifier = Modifier) {
     val dark = LocalWindmillDark.current
-    val gym = LocalGymColors.current
+    val scheme = MaterialTheme.colorScheme
+    val gym = GymGlimpse(
+        RoomPalette(scheme.surface, scheme.surfaceContainer, if (dark) scheme.outline else scheme.outlineVariant,
+            scheme.onSurface, scheme.onSurfaceVariant, MaterialTheme.gymColors.inkFaint),
+        accent = scheme.primary, accentSoft = scheme.primaryContainer, onAccent = scheme.onPrimary, setDone = scheme.tertiary,
+    )
     val beat = remember(page) { Animatable(1f) }
     val breath = if (page == 1 && active && !reducedMotion) {
         val transition = rememberInfiniteTransition(label = "Root crown")
@@ -141,7 +146,8 @@ fun OnboardingGlimpse(page: Int, active: Boolean, reducedMotion: Boolean, modifi
     }
 }
 
-private data class GlimpsePalette(
+// One room's colours in a glimpse: its canvas, card and line, and three inks.
+internal data class RoomPalette(
     val canvas: Color,
     val card: Color,
     val line: Color,
@@ -150,25 +156,23 @@ private data class GlimpsePalette(
     val faint: Color,
 )
 
-private class GlimpsePainter(
-    val draw: DrawScope,
-    val measurer: TextMeasurer,
-    val dark: Boolean,
-    val gymColors: GymColors,
-    val workoutClock: Painter,
-    val sinceSetClock: Painter,
-) {
-    val roadmap = if (dark) GlimpsePalette(
+// Gym's own glimpse reads the room's theme roles.
+private class GymGlimpse(val room: RoomPalette, val accent: Color, val accentSoft: Color, val onAccent: Color, val setDone: Color)
+
+// The roadmap and journal rooms and the brand hues as the onboarding draws them, in both modes. This phone carries no
+// theme for those rooms, so their colours live here.
+internal class GlimpsePalette(dark: Boolean) {
+    val roadmap = if (dark) RoomPalette(
         Color(0xFF0B0B0C), Color(0xFF171719), Color(0xFF222224), Color(0xFFF2F0EB),
         Color(0xFFB4B2AC), Color(0xFF7E7C77),
-    ) else GlimpsePalette(
+    ) else RoomPalette(
         WindmillColor.neutral50.light, WindmillColor.neutral0.light, WindmillColor.neutral200.light,
         WindmillColor.neutral900.light, WindmillColor.neutral600.light, WindmillColor.neutral500.light,
     )
-    val journal = if (dark) GlimpsePalette(
+    val journal = if (dark) RoomPalette(
         Color(0xFF0B0E16), Color(0xFF161921), Color(0xFF20232B), Color(0xFFF1F0EC),
         Color(0xFFB6B5B0), Color(0xFF737476),
-    ) else GlimpsePalette(
+    ) else RoomPalette(
         Color(0xFFF7F7F5), Color.White, Color(0xFFE3E0DA), Color(0xFF2A2118),
         Color(0xFF74654F), Color(0xFF8E8272),
     )
@@ -177,8 +181,34 @@ private class GlimpsePainter(
     val olive = if (dark) Color(0xFF9DAF5C) else WindmillColor.olive500
     val sky = if (dark) Color(0xFF9CBCCA) else Color(0xFF5F8494)
     val gold = if (dark) Color(0xFFE2C274) else Color(0xFFC4972F)
-    val accent = gymColors.accent
-    val onAccent = gymColors.onAccent
+    val oliveRim = if (dark) Color(0xFFB6C385) else olive
+    val terracottaRim = if (dark) Color(0xFFE2A887) else terracotta
+    val dormantPath = if (dark) Color(0xFF2E2E32) else WindmillColor.neutral300.light
+    val litPath = if (dark) roadmap.faint else Color(0xFF9C6B44)
+    val clay = Color(0xFFD08A5E)
+}
+
+private class GlimpsePainter(
+    val draw: DrawScope,
+    val measurer: TextMeasurer,
+    val dark: Boolean,
+    gymGlimpse: GymGlimpse,
+    val workoutClock: Painter,
+    val sinceSetClock: Painter,
+) {
+    private val hues = GlimpsePalette(dark)
+    val roadmap = hues.roadmap
+    val journal = hues.journal
+    val gym = gymGlimpse.room
+    val lamp = hues.lamp
+    val terracotta = hues.terracotta
+    val olive = hues.olive
+    val sky = hues.sky
+    val gold = hues.gold
+    val accent = gymGlimpse.accent
+    val accentSoft = gymGlimpse.accentSoft
+    val onAccent = gymGlimpse.onAccent
+    val setDone = gymGlimpse.setDone
 
     fun text(
         content: String, x: Float, y: Float, size: Int, color: Color,
@@ -253,8 +283,8 @@ private class GlimpsePainter(
             val root = Offset(72f, 172f)
             val open = listOf(Offset(176f, 88f), Offset(176f, 172f), Offset(176f, 256f))
             val locked = listOf(Offset(282f, 64f), Offset(282f, 148f), Offset(282f, 232f))
-            val dormant = if (dark) Color(0xFF2E2E32) else WindmillColor.neutral300.light
-            val lit = if (dark) Color(0xFF7E7C77) else Color(0xFF9C6B44)
+            val dormant = hues.dormantPath
+            val lit = hues.litPath
             open.zip(locked).forEach { (from, to) -> edge(from, to, dormant, 1.5f) }
             edge(root, open[0], lit)
             edge(root, open[2], lit)
@@ -269,8 +299,8 @@ private class GlimpsePainter(
             }
             draw.drawCircle(olive.copy(alpha = if (reduced) 0.28f else 0.22f + 0.12f * breath),
                 if (reduced) 26f else 24f + 4f * breath, root)
-            node(root, 15f, olive, if (dark) Color(0xFFB6C385) else olive)
-            node(open[0], 13f, terracotta, if (dark) Color(0xFFE2A887) else terracotta)
+            node(root, 15f, olive, hues.oliveRim)
+            node(open[0], 13f, terracotta, hues.terracottaRim)
             node(open[1], 13f, roadmap.card, sky.copy(alpha = 0.35f + 0.65f * ignite))
             node(open[2], 13f, roadmap.card, gold)
             listOf(terracotta, sky, gold).zip(locked).forEach { (kind, center) ->
@@ -314,33 +344,33 @@ private class GlimpsePainter(
     fun gym(progress: Float, reduced: Boolean) {
         val elapsed = progress * 870f
         val done = if (reduced) 1f else easeStandard.transform(((elapsed - 150f) / 320f).coerceIn(0f, 1f))
-        card(340f, gymColors.canvas, if (dark) gymColors.lineStrong else gymColors.line) {
-            text("Squat", 20f, 18f, 22, gymColors.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 28)
+        card(340f, gym.canvas, gym.line) {
+            text("Squat", 20f, 18f, 22, gym.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 28)
             listOf(workoutClock, sinceSetClock).forEachIndexed { index, icon ->
                 val left = 105f + index * 72f
                 draw.translate(left, 51f) {
-                    with(icon) { draw(Size(12f, 12f), colorFilter = ColorFilter.tint(gymColors.inkDim)) }
+                    with(icon) { draw(Size(12f, 12f), colorFilter = ColorFilter.tint(gym.dim)) }
                 }
-                text("0:22", left + 17f, 49f, 11, gymColors.inkDim, OnboardingMono, lineHeight = 16)
+                text("0:22", left + 17f, 49f, 11, gym.dim, OnboardingMono, lineHeight = 16)
             }
             repeat(3) { index ->
                 val top = 72f + index * 25f
                 val current = index == 2
                 if (current) {
-                    draw.drawRoundRect(gymColors.accentSoft, Offset(20f, top), Size(314f, 26f), CornerRadius(8f))
+                    draw.drawRoundRect(accentSoft, Offset(20f, top), Size(314f, 26f), CornerRadius(8f))
                     draw.drawRoundRect(accent, Offset(20f, top), Size(3f, 26f), CornerRadius(2f))
                 }
                 text(if (current) "Set 3" else "${index + 1}", 32f, top + 5f, 12,
-                    if (current) accent else gymColors.inkDim,
+                    if (current) accent else gym.dim,
                     if (current) OnboardingNunito else OnboardingMono,
                     if (current) FontWeight.Bold else FontWeight.Normal, lineHeight = 16)
-                text("100 kg total × 5", 90f, top + 5f, 12, gymColors.inkDim, OnboardingMono, lineHeight = 16)
-                check(Offset(318f, top + 13f), gymColors.setDone,
+                text("100 kg total × 5", 90f, top + 5f, 12, gym.dim, OnboardingMono, lineHeight = 16)
+                check(Offset(318f, top + 13f), setDone,
                     progress = if (current) done else 1f, alpha = if (current) done else 1f)
             }
-            text("100", 20f, 164f, 64, gymColors.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 72, tracking = -1f)
-            text("kg total", 142f, 204f, 16, gymColors.inkDim, OnboardingNunito, lineHeight = 22)
-            text("5 reps", 20f, 242f, 15, gymColors.ink, weight = FontWeight.Medium, lineHeight = 20)
+            text("100", 20f, 164f, 64, gym.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 72, tracking = -1f)
+            text("kg total", 142f, 204f, 16, gym.dim, OnboardingNunito, lineHeight = 22)
+            text("5 reps", 20f, 242f, 15, gym.ink, weight = FontWeight.Medium, lineHeight = 20)
             val press = if (reduced || elapsed >= 150f) 1f else 1f - 0.03f *
                 (1f - kotlin.math.abs(elapsed - 75f) / 75f)
             draw.scale(press, press, Offset(177f, 298f)) {
@@ -348,7 +378,7 @@ private class GlimpsePainter(
                 text("Log set", 177f, 288f, 15, onAccent, OnboardingNunito, FontWeight.ExtraBold,
                     centered = true, lineHeight = 20)
             }
-            caption(gymColors.inkFaint)
+            caption(gym.faint)
         }
     }
 
@@ -364,8 +394,7 @@ private class GlimpsePainter(
     }
 
     fun rooms(progress: Float, reduced: Boolean) {
-        val palettes = listOf(roadmap, journal, GlimpsePalette(gymColors.canvas, gymColors.surface,
-            if (dark) gymColors.lineStrong else gymColors.line, gymColors.ink, gymColors.inkDim, gymColors.inkFaint))
+        val palettes = listOf(roadmap, journal, gym)
         palettes.forEachIndexed { index, palette ->
             val appear = if (reduced) progress else WindmillMotion.easeSoft.transform(
                 ((progress * 920f - index * 320f) / 280f).coerceIn(0f, 1f))
@@ -383,15 +412,15 @@ private class GlimpsePainter(
                             val root = Offset(258f, 50f)
                             val skyNode = Offset(302f, 32f)
                             val clayNode = Offset(302f, 68f)
-                            val lit = if (dark) roadmap.faint else Color(0xFF9C6B44)
-                            val dormant = if (dark) Color(0xFF2E2E32) else WindmillColor.neutral300.light
+                            val lit = hues.litPath
+                            val dormant = hues.dormantPath
                             edge(root, skyNode, lit, 1.5f); edge(root, clayNode, lit, 1.5f)
                             edge(skyNode, Offset(332f, 20f), dormant, 1f)
                             edge(clayNode, Offset(332f, 80f), dormant, 1f)
                             draw.drawCircle(olive.copy(alpha = 0.28f), 15f, root)
-                            node(root, 9f, olive, if (dark) Color(0xFFB6C385) else olive, 1.5f)
+                            node(root, 9f, olive, hues.oliveRim, 1.5f)
                             node(skyNode, 7f, roadmap.card, sky, 1.5f)
-                            node(clayNode, 7f, terracotta, if (dark) Color(0xFFE2A887) else terracotta, 1.5f)
+                            node(clayNode, 7f, terracotta, hues.terracottaRim, 1.5f)
                             node(Offset(332f, 20f), 6f, sky.copy(alpha = 0.22f).compositeOver(roadmap.canvas), sky.copy(alpha = 0.35f), 1f)
                             node(Offset(332f, 80f), 6f, gold.copy(alpha = 0.22f).compositeOver(roadmap.canvas), gold.copy(alpha = 0.35f), 1f)
                         }
@@ -403,9 +432,9 @@ private class GlimpsePainter(
                             draw.drawRoundRect(lamp, Offset(320f, 56f), Size(2f, 14f), CornerRadius(1f))
                         }
                         2 -> {
-                            text("100", 240f, 26f, 30, gymColors.ink, OnboardingMono, FontWeight.Medium,
+                            text("100", 240f, 26f, 30, gym.ink, OnboardingMono, FontWeight.Medium,
                                 lineHeight = 34, tracking = -1f)
-                            text("kg × 5", 240f, 62f, 11, gymColors.inkDim, OnboardingMono)
+                            text("kg × 5", 240f, 62f, 11, gym.dim, OnboardingMono)
                             draw.drawCircle(accent, 11f, Offset(327f, 50f))
                             check(Offset(327f, 50f), onAccent)
                         }

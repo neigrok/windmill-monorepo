@@ -188,7 +188,7 @@ data class FinishedSession(
 
 @Composable
 fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
         modifier = Modifier.fillMaxWidth(),
@@ -197,7 +197,7 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
             Text(
                 "the log didn’t answer — the session is saved",
                 style = GymType.numeral(13),
-                color = skin.inkDim,
+                color = colors.onSurfaceVariant,
             )
             return@Column
         }
@@ -208,32 +208,33 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
 
 @Composable
 private fun RecordLine(sentence: String) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(skin.prSoft, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, skin.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
+            .background(gymColors.prSoft, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, gymColors.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Text("Personal record", style = GymType.numeral(13).copy(lineHeight = 18.sp), color = skin.prInk)
+        Text("Personal record", style = GymType.numeral(13).copy(lineHeight = 18.sp), color = gymColors.prInk)
         Text(
             sentence,
             style = WindmillFont.body(17).copy(lineHeight = 24.sp),
-            color = skin.ink,
+            color = colors.onSurface,
         )
     }
 }
 
 @Composable
 private fun AgainstBlock(comparison: Finish.Comparison) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(comparison.title, style = GymType.numeral(11), color = skin.inkDim)
+        Text(comparison.title, style = GymType.numeral(11), color = colors.onSurfaceVariant)
         comparison.rows.forEach { row ->
             ReceiptLine(row.movement, row.detail)
         }
@@ -250,15 +251,15 @@ fun FinishScreen(
     onDiscard: (() -> Unit)? = null,
     onKeep: (() -> Unit)? = null,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     if (finished.sets.isEmpty()) {
         val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().coerceAtLeast(24.dp)
         Column(Modifier.fillMaxWidth().heightIn(min = 344.dp)
             .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = bottomPadding),
             verticalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("No sets logged", style = WindmillFont.display(22, FontWeight.ExtraBold).copy(lineHeight = 28.sp), color = skin.ink)
-                Text("This workout has ended.", style = WindmillFont.body(16).copy(lineHeight = 23.sp), color = skin.inkDim)
+                Text("No sets logged", style = WindmillFont.display(22, FontWeight.ExtraBold).copy(lineHeight = 28.sp), color = colors.onSurface)
+                Text("This workout has ended.", style = WindmillFont.body(16).copy(lineHeight = 23.sp), color = colors.onSurfaceVariant)
             }
             ReceiptAction("Done", onDone)
         }
@@ -278,12 +279,12 @@ fun FinishScreen(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (finished.slight) "Ended early." else "Well done.",
                             style = WindmillFont.display(44, FontWeight.ExtraBold).copy(lineHeight = 52.sp),
-                            color = skin.ink, modifier = Modifier.weight(1f))
+                            color = colors.onSurface, modifier = Modifier.weight(1f))
                         onDiscard?.let { discard ->
                             var expanded by rememberSaveable { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
-                                    Icon(painterResource(R.drawable.gym_more), contentDescription = "More", tint = skin.ink)
+                                    Icon(painterResource(R.drawable.gym_more), contentDescription = "More", tint = colors.onSurface)
                                 }
                                 DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
                                     DropdownMenuItem(text = { Text("Discard") }, onClick = { expanded = false; discard() })
@@ -292,7 +293,7 @@ fun FinishScreen(
                         }
                     }
                     Text("${finished.routine ?: Readout.noRoutine} · ${Finish.day(finished.session.startedAtMs)}",
-                        style = WindmillFont.body(18).copy(lineHeight = 24.sp), color = skin.inkDim)
+                        style = WindmillFont.body(18).copy(lineHeight = 24.sp), color = colors.onSurfaceVariant)
                 }
                 val summary = SessionSummary(finished.session, finished.sets, catalog)
                 val duration = ((finished.session.finishedAtMs ?: finished.session.startedAtMs) - finished.session.startedAtMs).coerceAtLeast(0)
@@ -304,7 +305,7 @@ fun FinishScreen(
                         val volume = Finish.volume(summary.tonnageKg)
                         ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
                     }
-                    val tiles = Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))
+                    val tiles = Modifier.fillMaxWidth().background(colors.surfaceContainerHighest, RoundedCornerShape(20.dp))
                     if (largeText || maxWidth < 270.dp) {
                         FlowRow(tiles.padding(vertical = 16.dp), maxItemsInEachRow = 2,
                             verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -317,23 +318,23 @@ fun FinishScreen(
                 onKeep?.let { keep ->
                     Text(buildAnnotatedString {
                         append("Only on this phone · ")
-                        withStyle(SpanStyle(color = skin.accent, fontWeight = FontWeight.Bold)) { append("Keep it") }
-                    }, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim,
+                        withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold)) { append("Keep it") }
+                    }, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = colors.onSurfaceVariant,
                         modifier = Modifier.heightIn(min = 48.dp).fillMaxWidth().clickable(role = Role.Button, onClick = keep))
                 }
                 if (onKeep == null && finished.reviewRead) {
                     Finish.recordSentence(finished.review?.record, catalog)?.let { RecordLine(it) }
                 }
-                Text("Performed", style = GymType.numeral(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                Text("Performed", style = GymType.numeral(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
                 summary.exercises.forEach { id ->
                     val sets = finished.sets.filter { it.exerciseId == id }
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Check, contentDescription = null, tint = skin.setDone, modifier = Modifier.size(24.dp))
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(24.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(Readout.movement(id, catalog), style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
+                            Text(Readout.movement(id, catalog), style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
                             Text(Readout.targetWithUnit(sets.map { SetTarget(it.reps, it.weightKg) }, catalog.find { it.id == id }),
-                                style = GymType.numeral(15).copy(lineHeight = 20.sp), color = skin.inkDim)
+                                style = GymType.numeral(15).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
                         }
                     }
                 }
@@ -352,13 +353,13 @@ fun FinishScreen(
 // wherever one line can hold it.
 @Composable
 private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: String? = null) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         val text = buildAnnotatedString {
             append(value)
             unit?.let { withStyle(SpanStyle(fontSize = 0.5.em, fontWeight = FontWeight.Normal)) { append(" $it") } }
         }
-        val style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp, color = skin.ink, textAlign = TextAlign.Center)
+        val style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp, color = colors.onSurface, textAlign = TextAlign.Center)
         val floor = style.copy(fontSize = 16.sp, lineHeight = 20.sp)
         val measurer = rememberTextMeasurer()
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -368,7 +369,7 @@ private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: 
                 autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 32.sp))
             else BasicText(text, Modifier.fillMaxWidth(), floor)
         }
-        Text(label, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.inkDim,
+        Text(label, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -376,7 +377,7 @@ private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: 
 // 03.36: the label keeps one line, centred, and at large text may run into the side padding rather than wrap.
 @Composable
 private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = false, crown: Boolean = false) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary)
     val shape = RoundedCornerShape(16.dp)
     val padding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
@@ -391,24 +392,24 @@ private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = f
         }
     }
     if (tonal) FilledTonalButton(onClick, modifier, shape = shape, contentPadding = padding, content = content,
-        colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink))
+        colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface))
     else Button(onClick, modifier, shape = shape, contentPadding = padding, content = content,
-        colors = ButtonDefaults.buttonColors(containerColor = skin.accent, contentColor = skin.onAccent))
+        colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary))
 }
 
 @Composable
 private fun ReceiptLine(name: String, detail: String) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (GymTextScale.large || maxWidth < 360.dp || name.length > 22 || detail.length > 24) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(name, style = WindmillFont.body(15), color = skin.ink, modifier = Modifier.fillMaxWidth())
-                Text(detail, style = GymType.numeral(13), color = skin.inkDim, modifier = Modifier.fillMaxWidth())
+                Text(name, style = WindmillFont.body(15), color = colors.onSurface, modifier = Modifier.fillMaxWidth())
+                Text(detail, style = GymType.numeral(13), color = colors.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, style = WindmillFont.body(15), color = skin.ink, modifier = Modifier.weight(1f))
-                Text(detail, style = GymType.numeral(13), color = skin.inkDim)
+                Text(name, style = WindmillFont.body(15), color = colors.onSurface, modifier = Modifier.weight(1f))
+                Text(detail, style = GymType.numeral(13), color = colors.onSurfaceVariant)
             }
         }
     }

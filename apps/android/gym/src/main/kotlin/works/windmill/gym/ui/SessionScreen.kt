@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import works.windmill.gym.sharing.WorkoutShareCard
 import androidx.compose.foundation.background
@@ -249,7 +250,7 @@ fun SessionScreen(
     seed: SessionDetail? = null,
     onDraftOpen: (Boolean) -> Unit = {},
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
     var detail by rememberSaveable(summary.id, stateSaver = remember(telemetry) { sessionDetailSaver(telemetry) }) { mutableStateOf<SessionDetail?>(seed) }
@@ -353,7 +354,7 @@ fun SessionScreen(
                     Text(
                         failure.line("the saved sets are shown"),
                         style = GymType.numeral(13),
-                        color = skin.inkDim,
+                        color = colors.onSurfaceVariant,
                     )
                 }
             }
@@ -363,9 +364,9 @@ fun SessionScreen(
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(16.dp)).background(skin.raised)
+                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainerHighest)
                         .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
-                        Text("Share this workout", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                        Text("Share this workout", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
                     }
                     GymErrorTextButton("Discard workout", onClick = { onDiscard(readId) },
                         modifier = Modifier.fillMaxWidth())
@@ -383,8 +384,8 @@ fun SessionScreen(
         WindmillSheet(
             onDismissRequest = { close() },
             sheetState = sheetState,
-            containerColor = skin.surface,
-            scrimColor = skin.scrim,
+            containerColor = colors.surfaceContainer,
+            scrimColor = colors.scrim,
         ) {
             val (movement, row) = open
             fixStates.SaveableStateProvider(fixing!!) {
@@ -427,7 +428,7 @@ fun SessionScreen(
     }
     if (shareOpen) WindmillSheet(onDismissRequest = { shareOpen = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = skin.surface, scrimColor = skin.scrim) {
+        containerColor = colors.surfaceContainer, scrimColor = colors.scrim) {
         WorkoutShareCard(sharing, readId)
     }
 
@@ -435,16 +436,17 @@ fun SessionScreen(
 
 @Composable
 private fun SessionHead(summary: SessionSummary) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(headLine(summary), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
-        Text("Volume", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
+        Text(headLine(summary), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+        Text("Volume", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = colors.onSurfaceVariant)
         Text(summary.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—",
-            style = WindmillFont.display(34, FontWeight.ExtraBold).copy(lineHeight = 40.sp), color = skin.ink)
+            style = WindmillFont.display(34, FontWeight.ExtraBold).copy(lineHeight = 40.sp), color = colors.onSurface)
         val count = Readout.setCount(summary.workingSetCount ?: summary.setCount)
-        Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
-        if (summary.plan != null) Text("Plan saved at start", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkFaint)
-        if (summary.closedItself) Text("Closed after four hours without a set", style = WindmillFont.body(13), color = skin.inkDim)
+        Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+        if (summary.plan != null) Text("Plan saved at start", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = gymColors.inkFaint)
+        if (summary.closedItself) Text("Closed after four hours without a set", style = WindmillFont.body(13), color = colors.onSurfaceVariant)
     }
 }
 
@@ -455,7 +457,7 @@ private fun MovementCard(
     onFix: (String) -> Unit,
     onDelete: suspend (TrainingSet) -> Boolean,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxWidth(),
@@ -466,13 +468,13 @@ private fun MovementCard(
                 .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(movement.id) },
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                movement.equipment?.let { EquipmentIcon(it, Modifier.size(20.dp), tint = skin.inkDim) }
+                movement.equipment?.let { EquipmentIcon(it, Modifier.size(20.dp), tint = colors.onSurfaceVariant) }
                 Text(movement.movement, style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp),
-                    color = skin.ink, modifier = Modifier.weight(1f))
+                    color = colors.onSurface, modifier = Modifier.weight(1f))
             }
             when (val against = movement.against) {
-                is Performed.Against.Plan -> Text(against.line, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
-                Performed.Against.Unplanned -> Text("not in the plan", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
+                is Performed.Against.Plan -> Text(against.line, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = colors.onSurfaceVariant)
+                Performed.Against.Unplanned -> Text("not in the plan", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = colors.onSurfaceVariant)
                 Performed.Against.Silent -> Unit
             }
         }
@@ -503,14 +505,15 @@ private fun MovementCard(
 // wide for the column, two digits at 200 % text, widens its own row's column rather than clipping.
 @Composable
 private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, onDelete: suspend (TrainingSet) -> Boolean) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val scope = rememberCoroutineScope()
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
     val largeText = GymTextScale.large
     val underLoad = Modifier.padding(start = 24.dp)
     Column(Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).clip(shape)
-        .background(if (pressed) skin.raised else skin.surface)
+        .background(if (pressed) colors.surfaceContainerHighest else colors.surfaceContainer)
         .clickable(interactionSource = pressing, indication = null) { onFix(set.id) }
         .clearAndSetSemantics {
             contentDescription = set.spoken
@@ -522,20 +525,20 @@ private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, on
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f)) {
-                Text(set.position.toString(), style = GymType.numeral(12).copy(lineHeight = 16.sp), color = skin.inkFaint,
+                Text(set.position.toString(), style = GymType.numeral(12).copy(lineHeight = 16.sp), color = gymColors.inkFaint,
                     maxLines = 1, softWrap = false, modifier = Modifier.widthIn(min = 24.dp).alignByBaseline())
                 BasicText(set.effort, maxLines = 1,
                     autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
-                    style = GymType.numeral(18, FontWeight.Medium).copy(color = skin.ink, lineHeight = 24.sp),
+                    style = GymType.numeral(18, FontWeight.Medium).copy(color = colors.onSurface, lineHeight = 24.sp),
                     modifier = Modifier.weight(1f).alignByBaseline())
             }
-            if (!largeText) set.note?.let { Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim) }
+            if (!largeText) set.note?.let { Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = colors.onSurfaceVariant) }
         }
         if (largeText) set.note?.let {
-            Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim, modifier = underLoad)
+            Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = colors.onSurfaceVariant, modifier = underLoad)
         }
         SetEffort.line(set.set.rpe, set.set.note)?.let {
-            Text(it, style = WindmillFont.body(13), color = skin.inkDim, modifier = underLoad)
+            Text(it, style = WindmillFont.body(13), color = colors.onSurfaceVariant, modifier = underLoad)
         }
     }
 }

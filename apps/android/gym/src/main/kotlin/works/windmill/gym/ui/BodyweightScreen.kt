@@ -112,7 +112,7 @@ class BodyweightBinding(private val bodyweight: BodyweightStore, private val del
 @Composable
 internal fun WeighInHandle() {
     Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(32.dp, 4.dp).background(LocalGymColors.current.inkDim, RoundedCornerShape(100.dp)))
+        Box(Modifier.size(32.dp, 4.dp).background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(100.dp)))
     }
 }
 
@@ -128,7 +128,7 @@ fun WeighInSheet(
     onDelete: (() -> Unit)?,
     draftKey: String = fixedDate?.toString() ?: "new",
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val telemetry = LocalTelemetry.current
     val today = Bodyweight.today(nowMs)
     var typed by rememberSaveable(draftKey) { mutableStateOf(initial?.let { Bodyweight.kilograms(it.weightKg) } ?: "") }
@@ -194,18 +194,18 @@ fun WeighInSheet(
         ) { DatePicker(state = picker, modifier = Modifier.testTag("weigh-in-calendar")) }
     }
 
-    Column(Modifier.fillMaxWidth().testTag("weigh-in-form").background(skin.surface).imePadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxWidth().testTag("weigh-in-form").background(colors.surfaceContainer).imePadding().navigationBarsPadding()) {
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp).padding(top = gap, bottom = if (correction) 24.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
             Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                Text(Bodyweight.chip, style = WindmillFont.body(22, FontWeight.ExtraBold).copy(lineHeight = 30.sp), color = skin.ink)
+                Text(Bodyweight.chip, style = WindmillFont.body(22, FontWeight.ExtraBold).copy(lineHeight = 30.sp), color = colors.onSurface)
             }
-            Text("Weight", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = skin.inkDim)
+            Text("Weight", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
             OutlinedTextField(value = typed, onValueChange = { typed = it; edited = true },
                 singleLine = true, enabled = !busy, isError = weightFailure != null,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Default, lineHeight = 24.sp),
-                suffix = { Text(Bodyweight.unit, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = skin.inkDim) },
+                suffix = { Text(Bodyweight.unit, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = colors.onSurfaceVariant) },
                 supportingText = weightFailure?.let { line -> { Text(line, modifier = Modifier.padding(bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
@@ -213,18 +213,18 @@ fun WeighInSheet(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                     disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
-                    focusedTextColor = skin.ink, unfocusedTextColor = skin.ink, disabledTextColor = skin.inkDim,
-                    errorTextColor = skin.ink, cursorColor = skin.accent,
-                    focusedBorderColor = skin.accent, unfocusedBorderColor = skin.lineStrong,
-                    disabledBorderColor = skin.lineStrong, errorBorderColor = MaterialTheme.colorScheme.error),
+                    focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface, disabledTextColor = colors.onSurfaceVariant,
+                    errorTextColor = colors.onSurface, cursorColor = colors.primary,
+                    focusedBorderColor = colors.primary, unfocusedBorderColor = colors.outline,
+                    disabledBorderColor = colors.outline, errorBorderColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
                     .semantics { contentDescription = weightField; weightFailure?.let { error(it) } },
             )
-            if (correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = skin.inkDim)
+            if (correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val stacked = maxWidth < 320.dp || GymTextScale.stacked
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp))
-                    .background(skin.canvas)
+                    .background(colors.surface)
                     .then(if (!correction) Modifier.clickable(enabled = !busy, role = Role.Button,
                         onClickLabel = "Choose date") {
                         focusManager.clearFocus()
@@ -238,13 +238,13 @@ fun WeighInSheet(
                     }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (stacked) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (!correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = skin.inkDim)
-                        Text(Bodyweight.fullDay(date), style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = if (correction) skin.inkDim else skin.ink)
+                        if (!correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                        Text(Bodyweight.fullDay(date), style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = if (correction) colors.onSurfaceVariant else colors.onSurface)
                     } else {
-                        if (!correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = skin.inkDim)
-                        Text(Bodyweight.fullDay(date), modifier = Modifier.weight(1f), textAlign = if (correction) TextAlign.Start else TextAlign.Center, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = if (correction) skin.inkDim else skin.ink)
+                        if (!correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                        Text(Bodyweight.fullDay(date), modifier = Modifier.weight(1f), textAlign = if (correction) TextAlign.Start else TextAlign.Center, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = if (correction) colors.onSurfaceVariant else colors.onSurface)
                     }
-                    if (!correction) Icon(Icons.Default.DateRange, null, Modifier.size(24.dp), tint = skin.ink)
+                    if (!correction) Icon(Icons.Default.DateRange, null, Modifier.size(24.dp), tint = colors.onSurface)
                 }
             }
             otherFailure?.let { Text(it, style = WindmillFont.body(13).copy(lineHeight = 20.sp), color = MaterialTheme.colorScheme.error,
@@ -254,7 +254,7 @@ fun WeighInSheet(
             verticalArrangement = Arrangement.spacedBy(gap)) {
             Button(onClick = ::save, enabled = !busy && parsed is ParsedWeight.Ok && dateFailure == null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = skin.accent, contentColor = skin.onAccent)) {
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary)) {
                 Text(if (busy) "Saving…" else Bodyweight.save, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp))
             }
             onDelete?.let { GymErrorTextButton(Bodyweight.deleteRow, it, Modifier.fillMaxWidth(), enabled = !busy) }
@@ -273,7 +273,7 @@ private val weighInSaver = listSaver<WeighIn?, Any?>(
 @Composable
 fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: String, onBack: () -> Unit, say: (String?) -> Unit,
     onDraftOpen: (Boolean) -> Unit = {}) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     val today = Bodyweight.today(nowMs)
@@ -311,15 +311,15 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (!state.bodyweightRead) {
-                Text("Reading your weigh-ins…", style = WindmillFont.body(16), color = skin.inkDim)
+                Text("Reading your weigh-ins…", style = WindmillFont.body(16), color = colors.onSurfaceVariant)
             }
             if (standing.isEmpty()) {
                 if (state.bodyweightRead) {
-                    Text(Bodyweight.nothingYet, style = WindmillFont.body(16), color = skin.inkDim)
+                    Text(Bodyweight.nothingYet, style = WindmillFont.body(16), color = colors.onSurfaceVariant)
                 }
             } else {
                 if (state.bodyweightRead) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.surface).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 16.dp),
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainer).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             ChartWindow.entries.forEachIndexed { index, option ->
@@ -346,13 +346,13 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                 },
                                 onSelect = { point -> repairing = rows.firstOrNull { it.dateLocal == point.id } })
                         } else if (window == ChartWindow.Ninety && Bodyweight.windowed(standing, window, today).isEmpty()) {
-                            Text(Bodyweight.noneInWindow, style = WindmillFont.body(16), color = skin.inkDim)
+                            Text(Bodyweight.noneInWindow, style = WindmillFont.body(16), color = colors.onSurfaceVariant)
                         }
-                        Text(Bodyweight.windowLine(window, shown.size), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                        Text(Bodyweight.windowLine(window, shown.size), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
                     }
                 }
                 if (rows.isNotEmpty()) {
-                    Text("Every weigh-in", style = WindmillFont.body(18, FontWeight.ExtraBold).copy(lineHeight = 24.sp), color = skin.ink)
+                    Text("Every weigh-in", style = WindmillFont.body(18, FontWeight.ExtraBold).copy(lineHeight = 24.sp), color = colors.onSurface)
                     rows.asReversed().forEach { entry ->
                         key(entry.dateLocal) {
                             DeleteSwipeRow(Bodyweight.deleteRow, onDelete = {
@@ -360,13 +360,13 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                 events.withhold(Deletion.Bodyweight(entry.dateLocal))
                                 false
                             }) {
-                                Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).background(skin.canvas)
+                                Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).background(colors.surface)
                                     .clickable(role = Role.Button, onClickLabel = "Correct weigh-in") { repairing = entry }
                                     .padding(start = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
-                                        Text(Bodyweight.listDay(entry.date), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                                        Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
+                                        Text(Bodyweight.listDay(entry.date), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
                                     }
                                     Chevron()
                                 }
@@ -380,7 +380,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
 
     repairing?.let { open ->
         WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
-            containerColor = skin.surface, scrimColor = skin.scrim,
+            containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
             dragHandle = { WeighInHandle() }, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
             sheetStates.SaveableStateProvider(open.dateLocal) {
                 WeighInSheet(initial = open, fixedDate = open.date, nowMs = nowMs,

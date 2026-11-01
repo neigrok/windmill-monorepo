@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -105,7 +106,7 @@ fun NotesScreen(
     onSignIn: () -> Unit,
     say: (String?) -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var attempt by remember { mutableIntStateOf(0) }
     var read by remember { mutableStateOf(false) }
@@ -147,16 +148,16 @@ fun NotesScreen(
                     problem?.line("that note is still here")
                 },
                 header = {
-                    Text(Notes.honesty, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.ink)
+                    Text(Notes.honesty, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = colors.onSurface)
                     if (isSignedIn) Refusals(state.noteRefusals, state.catalog, events::clearRefusals)
                     when {
-                        !isSignedIn -> Text(Notes.signedOut, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.inkDim)
+                        !isSignedIn -> Text(Notes.signedOut, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = colors.onSurfaceVariant)
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Notes unavailable", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
-                            Text(failure!!, style = WindmillFont.body(16), color = skin.inkDim)
+                            Text("Notes unavailable", style = WindmillFont.body(20, FontWeight.Bold), color = colors.onSurface)
+                            Text(failure!!, style = WindmillFont.body(16), color = colors.onSurfaceVariant)
                             TextButton(onClick = { attempt++ }, enabled = !reading) { Text("Try again") }
                         }
-                        !hasRead -> Text("Reading your notes…", style = WindmillFont.body(16), color = skin.inkDim)
+                        !hasRead -> Text("Reading your notes…", style = WindmillFont.body(16), color = colors.onSurfaceVariant)
                     }
                     if (isSignedIn && hasRead && failure == null && state.noteCount == 0) {
                         Notes.placeholders.forEach { title ->
@@ -165,7 +166,7 @@ fun NotesScreen(
                                 .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
-                                    color = skin.inkDim, modifier = Modifier.weight(1f))
+                                    color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
                                 Chevron()
                             }
                         }
@@ -173,7 +174,7 @@ fun NotesScreen(
                 }, showRows = isSignedIn && hasRead && failure == null,
                 footer = {
                     if (isSignedIn && hasRead && failure == null) {
-                        if (state.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = skin.inkDim)
+                        if (state.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = colors.onSurfaceVariant)
                     }
                 })
             if (!isSignedIn || (hasRead && failure == null && state.noteCount < Notes.maxNotes)) {
@@ -181,7 +182,7 @@ fun NotesScreen(
                     Button(onClick = { if (isSignedIn) onEdit(null, "") else onSignIn() },
                         enabled = !savingOrder, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                         shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = skin.raised, contentColor = skin.ink)) {
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
                         Text(if (isSignedIn) Notes.add else "Sign in", style = GymNativeType.button)
                     }
                 }
@@ -203,7 +204,7 @@ private fun NoteList(
     showRows: Boolean,
     footer: @Composable ColumnScope.() -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val standing by rememberUpdatedState(notes)
@@ -238,20 +239,20 @@ private fun NoteList(
             }, enabled = enabled && dragged == null,
                 modifier = Modifier.zIndex(if (dragged == note.id) 1f else 0f)
                     .graphicsLayer { translationY = if (dragged == note.id) offset else 0f }) {
-                Box(Modifier.fillMaxWidth().background(if (dragged == note.id) skin.raised else skin.surface)) {
+                Box(Modifier.fillMaxWidth().background(if (dragged == note.id) colors.surfaceContainerHighest else colors.surfaceContainer)) {
                     Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
                         .focusRequester(focus).clickable(enabled = enabled, role = Role.Button, onClickLabel = "Open note") { onOpen(note) }
                         .semantics { customActions = actions }.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (notes.size > 1) Spacer(Modifier.size(24.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(note.title, style = GymNativeType.button.copy(fontSize = 15.sp), color = skin.ink)
+                            Text(note.title, style = GymNativeType.button.copy(fontSize = 15.sp), color = colors.onSurface)
                             Text(problem ?: note.firstLine ?: "empty · tap to write",
                                 style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp),
-                                color = if (problem == null) skin.inkDim else skin.error,
+                                color = if (problem == null) colors.onSurfaceVariant else colors.error,
                                 modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite })
                         }
-                        Icon(painterResource(R.drawable.gym_note_chevron), null, Modifier.size(24.dp), tint = skin.inkDim)
+                        Icon(painterResource(R.drawable.gym_note_chevron), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
                     }
                     if (notes.size > 1) Box(Modifier.size(48.dp).align(Alignment.CenterStart)
                         .semantics { contentDescription = "Reorder ${note.title}" }
@@ -310,7 +311,7 @@ private fun NoteList(
                                 }
                             }
                         }, contentAlignment = Alignment.Center) {
-                        Icon(painterResource(R.drawable.gym_note_drag), null, Modifier.size(24.dp), tint = skin.inkDim)
+                        Icon(painterResource(R.drawable.gym_note_drag), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
                     }
                 }
             }
@@ -328,7 +329,7 @@ fun NoteEditorScreen(
     onBack: () -> Unit,
     onDone: () -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val id = rememberSaveable { note?.id ?: Ids.note() }
     var title by rememberSaveable { mutableStateOf(note?.title ?: "") }
@@ -358,16 +359,16 @@ fun NoteEditorScreen(
             NoteField("Title", title, { title = it; said = null }, seedTitle.ifBlank { Notes.titlePlaceholder },
                 enabled = !saving, minimum = 56.dp, problem = said?.takeIf { Notes.titleOver(title) })
             Notes.titleCounter(title)?.let {
-                Text(it, style = WindmillFont.body(14), color = if (Notes.titleOver(title)) skin.error else skin.inkDim)
+                Text(it, style = WindmillFont.body(14), color = if (Notes.titleOver(title)) colors.error else colors.onSurfaceVariant)
             }
             NoteField("Note", body, { body = it; said = null }, Notes.bodyPlaceholder,
                 enabled = !saving, minimum = 240.dp, problem = said?.takeIf { !Notes.titleOver(title) && Notes.over(body) })
             Notes.counter(body)?.let {
-                Text(it, style = WindmillFont.body(14), color = if (Notes.over(body)) skin.error else skin.inkDim)
+                Text(it, style = WindmillFont.body(14), color = if (Notes.over(body)) colors.error else colors.onSurfaceVariant)
             }
-            said?.let { Text(it, style = WindmillFont.body(14), color = skin.error,
+            said?.let { Text(it, style = WindmillFont.body(14), color = colors.error,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-            if (note == null) Text(Notes.honesty, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+            if (note == null) Text(Notes.honesty, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
             if (note != null) GymErrorTextButton(Notes.delete, onClick = { if (!saving) {
                 saving = true
                 scope.launch {
@@ -385,7 +386,7 @@ fun NoteEditorScreen(
 @Composable
 private fun NoteField(label: String, value: String, onValue: (String) -> Unit, placeholder: String,
     enabled: Boolean, minimum: androidx.compose.ui.unit.Dp, problem: String?) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val type = MaterialTheme.typography
     MaterialTheme(typography = type.copy(
         bodyLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
@@ -395,8 +396,8 @@ private fun NoteField(label: String, value: String, onValue: (String) -> Unit, p
             label = { Text(label) }, placeholder = { Text(placeholder) }, isError = problem != null,
             colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Color.Transparent,
                 unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent,
-                focusedBorderColor = skin.accent, unfocusedBorderColor = skin.line,
-                focusedTextColor = skin.ink, unfocusedTextColor = skin.ink, cursorColor = skin.accent),
+                focusedBorderColor = colors.primary, unfocusedBorderColor = colors.outlineVariant,
+                focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface, cursorColor = colors.primary),
             modifier = Modifier.fillMaxWidth().heightIn(min = minimum).semantics {
                 contentDescription = "$label field"
                 problem?.let { error(it) }

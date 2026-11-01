@@ -39,7 +39,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
-import works.windmill.gym.ui.GymSkin
+import works.windmill.gym.ui.gymColors
 import works.windmill.gym.ui.GymTextScale
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
@@ -60,8 +60,9 @@ private val screens = listOf("windmill", "roadmap", "journal", "gym")
 fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean? = null,
     onPageSettled: (Int) -> Unit = {}) {
     val dark = LocalWindmillDark.current
-    val skin = if (dark) GymSkin.Instrument else GymSkin.Daylight
-    val accent = skin.accent
+    val colors = MaterialTheme.colorScheme
+    val glimpse = GlimpsePalette(dark)
+    val accent = colors.primary
     val telemetry = LocalTelemetry.current
     val state = if (replay) "replay" else "first_launch"
     val pager = rememberPagerState { 4 }
@@ -134,7 +135,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
             backPreview = false
         }
     }
-    Column(Modifier.fillMaxSize().background(skin.canvas).safeDrawingPadding()
+    Column(Modifier.fillMaxSize().background(colors.surface).safeDrawingPadding()
         .semantics { isTraversalGroup = true }.testTag("onboarding")) {
         TopAppBar(
             title = {
@@ -145,7 +146,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                     Row(Modifier.padding(start = 4.dp).clearAndSetSemantics { contentDescription = brand; traversalIndex = -1f },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Image(painterResource(R.drawable.onboarding_brand_mark), null, Modifier.size(42.45.dp, 44.dp))
-                    Text(stringResource(R.string.onboarding_brand), color = Color(0xFFD08A5E),
+                    Text(stringResource(R.string.onboarding_brand), color = glimpse.clay,
                         style = TextStyle(fontFamily = FontFamily(Font(R.font.onboarding_baloo_bold, FontWeight.Bold)),
                             fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp))
                 }
@@ -168,7 +169,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
             },
             expandedHeight = 64.dp,
             windowInsets = WindowInsets(0, 0, 0, 0),
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas),
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface),
         )
         HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth().semantics { isTraversalGroup = false },
             key = { it }) { page ->
@@ -192,22 +193,22 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                     if (page > 0) Row(Modifier.semantics(mergeDescendants = true) { traversalIndex = 1f },
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.size(7.dp).background(when (page) {
-                            1 -> Color(0xFFD08A5E); 2 -> if (dark) Color(0xFFE0B972) else Color(0xFF986B1E); else -> accent
+                            1 -> glimpse.clay; 2 -> glimpse.lamp; else -> accent
                         }, CircleShape))
-                        Text(screens[page].uppercase(), color = skin.inkDim,
+                        Text(screens[page].uppercase(), color = colors.onSurfaceVariant,
                             style = WindmillFont.mono(11, FontWeight.Medium).copy(lineHeight = 16.sp, letterSpacing = 2.2.sp))
                     }
-                    Text(stringResource(titles[page]), color = skin.ink,
+                    Text(stringResource(titles[page]), color = colors.onSurface,
                         style = MaterialTheme.typography.headlineLarge.copy(lineHeight = 38.sp),
                         modifier = Modifier.semantics { heading(); traversalIndex = 2f })
-                    Text(stringResource(bodies[page]), color = skin.inkDim,
+                    Text(stringResource(bodies[page]), color = colors.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
                         modifier = Modifier.semantics { traversalIndex = 3f })
                     locations[page]?.let { location ->
-                        Text(stringResource(location), color = if (page == 3) accent else skin.inkDim,
+                        Text(stringResource(location), color = if (page == 3) accent else colors.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp, letterSpacing = .1.sp),
-                            modifier = Modifier.background(if (page == 3) accent.copy(alpha = .12f) else skin.raised, CircleShape)
-                                .border(1.dp, if (page == 3) accent else if (dark) skin.lineStrong else skin.line, CircleShape)
+                            modifier = Modifier.background(if (page == 3) accent.copy(alpha = .12f) else colors.surfaceContainerHighest, CircleShape)
+                                .border(1.dp, if (page == 3) accent else if (dark) colors.outline else colors.outlineVariant, CircleShape)
                                 .padding(horizontal = 10.dp, vertical = 5.dp).semantics { traversalIndex = 4f })
                     }
                 }
@@ -228,7 +229,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                 }
             }, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
             repeat(4) { index ->
-                Box(Modifier.size(8.dp).background(if (index == pager.settledPage) skin.ink else skin.inkFaint.copy(alpha = .55f), CircleShape))
+                Box(Modifier.size(8.dp).background(if (index == pager.settledPage) colors.onSurface else MaterialTheme.gymColors.inkFaint.copy(alpha = .55f), CircleShape))
             }
         }
         Button(onClick = { if (pager.currentPage < 3) move(pager.currentPage + 1, "next") else exit("completed") },
@@ -236,7 +237,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
             modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp).fillMaxWidth()
                 .heightIn(min = 56.dp).semantics { traversalIndex = 7f },
             shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = skin.onAccent)) {
+            colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = colors.onPrimary)) {
             Text(stringResource(if (pager.currentPage < 3) R.string.onboarding_next else if (replay) R.string.onboarding_done else R.string.onboarding_start),
                 style = MaterialTheme.typography.labelLarge.copy(lineHeight = 22.sp))
         }

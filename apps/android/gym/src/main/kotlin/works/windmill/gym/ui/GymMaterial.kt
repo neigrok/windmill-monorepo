@@ -9,6 +9,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -18,15 +21,27 @@ import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillPalette
 
-// Both product content and the account sheet resolve one palette for the current system mode.
+// Both product content and the account sheet resolve one palette for the current system mode: the standard roles
+// in the Material scheme, the room's own beside it, and the shell's palette from the same skin.
 @Composable
 fun GymMaterial(content: @Composable () -> Unit) {
     val dark = LocalWindmillDark.current
     val skin = if (dark) GymSkin.Instrument else GymSkin.Daylight
-    CompositionLocalProvider(LocalGymColors provides skin, LocalWindmillPalette provides gymPalette(skin)) {
+    CompositionLocalProvider(LocalGymExtendedColors provides GymExtendedColors(skin), LocalWindmillPalette provides gymPalette(skin)) {
         MaterialTheme(colorScheme = gymColorScheme(skin, dark), typography = gymTypography, content = content)
     }
 }
+
+// The room's colour roles Material has no slot for.
+@Immutable
+class GymExtendedColors(val inkFaint: Color, val prInk: Color, val prSoft: Color, val alarmInk: Color) {
+    constructor(skin: GymColors) : this(inkFaint = skin.inkFaint, prInk = skin.prInk, prSoft = skin.prSoft, alarmInk = skin.alarmInk)
+}
+
+private val LocalGymExtendedColors = staticCompositionLocalOf { GymExtendedColors(GymSkin.Instrument) }
+
+val MaterialTheme.gymColors: GymExtendedColors
+    @Composable @ReadOnlyComposable get() = LocalGymExtendedColors.current
 
 @Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
@@ -40,7 +55,7 @@ internal fun GymPreview(content: @Composable () -> Unit) {
 
 fun gymPalette(skin: GymColors): WindmillPalette = WindmillPalette(
     canvas = skin.canvas, surface = skin.surface, ink = skin.ink, inkDim = skin.inkDim,
-    inkFaint = skin.inkDim, line = skin.line, lineStrong = skin.lineStrong,
+    line = skin.line, lineStrong = skin.lineStrong,
     accent = skin.accent, onAccent = skin.onAccent, noticeWash = skin.accentSoft, noticeInk = skin.ink,
 )
 

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -77,7 +78,7 @@ fun AssemblySheet(
     notificationOff: Boolean = false,
     onShowNotification: () -> Unit = {},
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val list = rememberLazyListState()
     val currentRows by rememberUpdatedState(rows)
     val move by rememberUpdatedState(onReorder)
@@ -129,12 +130,12 @@ fun AssemblySheet(
         withFrameNanos {}
         addedFocus.requestFocus()
     }
-    Column(Modifier.fillMaxWidth().background(skin.surface).padding(horizontal = 20.dp)
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer).padding(horizontal = 20.dp)
         .padding(bottom = GymLayout.sheetBottom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("This workout", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp), color = skin.ink)
+            Text("This workout", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp), color = colors.onSurface)
             Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged · ${routine ?: Readout.noRoutine}",
-                style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
+                style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = colors.onSurfaceVariant)
         }
         LazyColumn(state = list, modifier = Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = 420.dp)) {
             itemsIndexed(drawn, key = { _, row -> row.id }) { index, row ->
@@ -157,12 +158,12 @@ fun AssemblySheet(
                         ListItem(
                             headlineContent = { Text(row.name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp)) },
                             supportingContent = { Text(problem ?: row.metadata, style = WindmillFont.body(14).copy(lineHeight = 20.sp),
-                                color = if (problem == null) skin.inkDim else skin.error,
+                                color = if (problem == null) colors.onSurfaceVariant else colors.error,
                                 modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
                             leadingContent = { Icon(painterResource(R.drawable.gym_list_reorder), null, Modifier.size(20.dp)) },
                             trailingContent = { Icon(painterResource(R.drawable.gym_forward), null, Modifier.size(20.dp)) },
-                            colors = ListItemDefaults.colors(containerColor = if (held) skin.raised else skin.surface,
-                                headlineColor = skin.ink, supportingColor = skin.inkDim, leadingIconColor = skin.inkDim, trailingIconColor = skin.inkDim),
+                            colors = ListItemDefaults.colors(containerColor = if (held) colors.surfaceContainerHighest else colors.surfaceContainer,
+                                headlineColor = colors.onSurface, supportingColor = colors.onSurfaceVariant, leadingIconColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
                             modifier = Modifier.fillMaxWidth()
                                 .then(if (row.id == added) Modifier.focusRequester(addedFocus) else Modifier)
                                 .clickable(role = Role.Button, onClickLabel = "walk to ${row.name}") { onJump(row.id) }
@@ -214,25 +215,25 @@ fun AssemblySheet(
                             })
                     }
                 }
-                if (index < drawn.lastIndex) HorizontalDivider(color = skin.line)
+                if (index < drawn.lastIndex) HorizontalDivider(color = colors.outlineVariant)
             }
         }
         Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(16.dp))
-            .background(skin.raised).clickable(role = Role.Button, onClick = onAdd), contentAlignment = Alignment.Center) {
-            Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+            .background(colors.surfaceContainerHighest).clickable(role = Role.Button, onClick = onAdd), contentAlignment = Alignment.Center) {
+            Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
         }
         Column {
             ListItem(
                 headlineContent = { Text("Hide workout", style = WindmillFont.body(17, FontWeight.Bold)) },
                 leadingContent = { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(20.dp)) },
-                colors = ListItemDefaults.colors(containerColor = skin.surface, headlineColor = skin.ink, leadingIconColor = skin.inkDim),
+                colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer, headlineColor = colors.onSurface, leadingIconColor = colors.onSurfaceVariant),
                 modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onHide),
             )
             if (notificationOff) ListItem(
                 headlineContent = { Text("Notification off", style = WindmillFont.body(17, FontWeight.Bold)) },
                 leadingContent = { Icon(Icons.Outlined.Notifications, null, Modifier.size(20.dp)) },
-                trailingContent = { TextButton(onClick = onShowNotification) { Text("Show", style = WindmillFont.body(16, FontWeight.Bold), color = skin.accent) } },
-                colors = ListItemDefaults.colors(containerColor = skin.surface, headlineColor = skin.ink, leadingIconColor = skin.inkDim),
+                trailingContent = { TextButton(onClick = onShowNotification) { Text("Show", style = WindmillFont.body(16, FontWeight.Bold), color = colors.primary) } },
+                colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer, headlineColor = colors.onSurface, leadingIconColor = colors.onSurfaceVariant),
                 modifier = Modifier.fillMaxWidth(),
             )
         }

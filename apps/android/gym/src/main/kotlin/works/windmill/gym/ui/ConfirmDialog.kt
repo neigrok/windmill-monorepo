@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -19,19 +20,20 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onKeep: () -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     AlertDialog(
         onDismissRequest = onKeep,
-        containerColor = skin.surface,
-        titleContentColor = skin.ink,
-        textContentColor = skin.inkDim,
+        containerColor = colors.surfaceContainer,
+        titleContentColor = colors.onSurface,
+        textContentColor = colors.onSurfaceVariant,
         title = { Text(title, style = WindmillFont.display(19)) },
         text = body?.let { { Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp)) } },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = if (destructive) skin.alarmInk else skin.accent,
+                    contentColor = if (destructive) gymColors.alarmInk else colors.primary,
                 ),
             ) {
                 Text(confirm, style = WindmillFont.body(15, FontWeight.Bold))
@@ -40,7 +42,7 @@ fun ConfirmDialog(
         dismissButton = {
             TextButton(
                 onClick = onKeep,
-                colors = ButtonDefaults.textButtonColors(contentColor = skin.inkDim),
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
             ) {
                 Text(keep, style = WindmillFont.body(15, FontWeight.SemiBold))
             }
@@ -58,23 +60,23 @@ data class WorkoutDiscardPrompt(
 
 @Composable
 fun WorkoutDiscardDialog(setCount: Int, onDiscard: () -> Unit, onCancel: () -> Unit, busy: Boolean = false) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val native = androidx.compose.ui.text.font.FontFamily.Default
     AlertDialog(
         onDismissRequest = { if (!busy) onCancel() },
-        containerColor = skin.surface,
-        title = { Text("Discard this workout?", fontFamily = native, fontSize = 24.sp, lineHeight = 32.sp, color = skin.ink) },
+        containerColor = colors.surfaceContainer,
+        title = { Text("Discard this workout?", fontFamily = native, fontSize = 24.sp, lineHeight = 32.sp, color = colors.onSurface) },
         text = { Text("This deletes the workout and its $setCount ${if (setCount == 1) "set" else "sets"}. You can’t undo this.",
-            fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, color = skin.inkDim) },
+            fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, color = colors.onSurfaceVariant) },
         confirmButton = {
             TextButton(onClick = onDiscard, enabled = !busy,
-                colors = ButtonDefaults.textButtonColors(contentColor = skin.error)) {
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.error)) {
                 Text("Discard", fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
             }
         },
         dismissButton = {
             TextButton(onClick = onCancel, enabled = !busy,
-                colors = ButtonDefaults.textButtonColors(contentColor = skin.inkDim)) {
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant)) {
                 Text("Cancel", fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
             }
         },

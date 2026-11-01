@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import works.windmill.gym.BackGuard
@@ -215,7 +216,7 @@ fun RoutineBuilder(
     // What Back returns to, named for its description: the routine, the tab or the screen beneath.
     backTo: String,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var sheet by rememberSaveable(stateSaver = builderSheetSaver) { mutableStateOf<BuilderSheet?>(null) }
     val pickerState = rememberMovementPickerState()
@@ -318,11 +319,11 @@ fun RoutineBuilder(
     val open = sheet
     if (open != null) {
         WindmillSheet(onDismissRequest = ::requestClose, onBack = ::requestClose, sheetState = sheetState,
-            containerColor = skin.surface, scrimColor = skin.scrim,
+            containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             dragHandle = {
                 Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
+                    Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
                 }
             }) {
             val sheetKeyboard = LocalSoftwareKeyboardController.current
@@ -401,18 +402,18 @@ fun RoutineBuilder(
 // The editor's two questions before work is let go: the movement form's and the whole draft's.
 @Composable
 private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val native = FontFamily.Default
     @Composable
     fun Action(label: String, colour: Color, onClick: () -> Unit) = TextButton(onClick = onClick) {
         Text(label, color = colour, fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
     }
     AlertDialog(onDismissRequest = onKeepEditing,
-        title = { Text(title, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp, color = skin.ink) },
-        text = { Text(text, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, color = skin.inkDim) },
-        confirmButton = { Action("Discard", skin.error, onDiscard) },
-        dismissButton = { Action("Keep editing", skin.accent, onKeepEditing) },
-        containerColor = skin.surface)
+        title = { Text(title, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp, color = colors.onSurface) },
+        text = { Text(text, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, color = colors.onSurfaceVariant) },
+        confirmButton = { Action("Discard", colors.error, onDiscard) },
+        dismissButton = { Action("Keep editing", colors.primary, onKeepEditing) },
+        containerColor = colors.surfaceContainer)
 }
 
 @Composable
@@ -431,7 +432,7 @@ private fun BuildStep(
     onCancel: () -> Unit,
     backTo: String,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val ordered = draft.entries.sortedBy { it.position }
@@ -484,7 +485,7 @@ private fun BuildStep(
         navigation = {
             IconButton(onClick = onCancel, enabled = editable, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to $backTo",
-                    tint = if (editable) skin.ink else skin.inkDim, modifier = Modifier.size(24.dp))
+                    tint = if (editable) colors.onSurface else colors.onSurfaceVariant, modifier = Modifier.size(24.dp))
             }
         },
         actions = { TopAction(if (editable) "Save" else "Saving…", enabled = savable, onClick = onSave) },
@@ -506,16 +507,16 @@ private fun BuildStep(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
                             .semantics { contentDescription = "Routine name" })
                 }
-                Program.counter(draft.name)?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
+                Program.counter(draft.name)?.let { Text(it, style = WindmillFont.body(13), color = colors.onSurfaceVariant) }
             }
             if (draft.name.isBlank() && (editing || draft.entries.isNotEmpty())) {
-                Text(Program.nameItToSaveIt, style = WindmillFont.body(14), color = skin.inkDim)
+                Text(Program.nameItToSaveIt, style = WindmillFont.body(14), color = colors.onSurfaceVariant)
             }
             if (draft.name.isNotBlank() && draft.entries.isEmpty()) {
-                Text(Program.atLeastOneMovement, style = WindmillFont.body(14), color = skin.inkDim)
+                Text(Program.atLeastOneMovement, style = WindmillFont.body(14), color = colors.onSurfaceVariant)
             }
             Column {
-                Text("Movements", style = WindmillFont.body(18, FontWeight.Bold), color = skin.ink,
+                Text("Movements", style = WindmillFont.body(18, FontWeight.Bold), color = colors.onSurface,
                     modifier = Modifier.padding(bottom = 8.dp))
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
@@ -526,7 +527,7 @@ private fun BuildStep(
                             Row(Modifier.fillMaxWidth().heightIn(min = 72.dp)
                                 .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
                                 .shadow(if (dragged == entry.exerciseId) 6.dp else 0.dp, RoundedCornerShape(12.dp), clip = false)
-                                .background(if (dragged == entry.exerciseId) skin.raised else skin.canvas, RoundedCornerShape(12.dp))
+                                .background(if (dragged == entry.exerciseId) colors.surfaceContainerHighest else colors.surface, RoundedCornerShape(12.dp))
                                 .clickable(enabled = editable, role = Role.Button, onClickLabel = "edit this movement") { onOpenTarget(entry.exerciseId) }
                                 .semantics { customActions = if (!editable) emptyList() else buildList {
                                     if (index > 0) add(CustomAccessibilityAction("Move up") { move(index, index - 1); true })
@@ -552,43 +553,43 @@ private fun BuildStep(
                                             },
                                         )
                                     }) {
-                                    Icon(painterResource(R.drawable.gym_reorder), null, Modifier.size(48.dp), tint = skin.inkDim)
+                                    Icon(painterResource(R.drawable.gym_reorder), null, Modifier.size(48.dp), tint = colors.onSurfaceVariant)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
-                                    Text(Readout.targetWithUnit(entry.sets, movement), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = skin.inkDim)
+                                    Text(name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
+                                    Text(Readout.targetWithUnit(entry.sets, movement), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = colors.onSurfaceVariant)
                                 }
                             }
                         }
-                        HorizontalDivider(color = skin.line)
+                        HorizontalDivider(color = colors.outlineVariant)
                     }
                 }
                 if (!draft.full) TextButton(onClick = onAdd, enabled = editable, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                    Icon(Icons.Filled.Add, null, tint = skin.ink)
+                    Icon(Icons.Filled.Add, null, tint = colors.onSurface)
                     Spacer(Modifier.width(8.dp))
-                    Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                    Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
                 }
             }
             if (history.isNotEmpty()) Column(Modifier.fillMaxWidth().testTag("routine-history"),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("History", style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = skin.ink)
+                Text("History", style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = colors.onSurface)
                 Column(Modifier.fillMaxWidth()) {
                     val dates = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.getDefault())
                     history.forEachIndexed { index, workout ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 7.dp).testTag("routine-history-row"),
                             verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(dates.format(java.time.Instant.ofEpochMilli(workout.startedAtMs).atZone(java.time.ZoneId.systemDefault())),
-                                style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = skin.ink)
+                                style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = colors.onSurface)
                             val sets = if (workout.setCount == 1) "set" else "sets"
                             val movements = if (workout.exercises.size == 1) "movement" else "movements"
                             Text("${workout.setCount} $sets · ${workout.exercises.size} $movements",
-                                style = GymType.numeral(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                                style = GymType.numeral(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
                         }
-                        if (index != history.lastIndex) HorizontalDivider(color = skin.line)
+                        if (index != history.lastIndex) HorizontalDivider(color = colors.outlineVariant)
                     }
                 }
             }
-            Text(said, style = WindmillFont.body(13), color = skin.inkDim,
+            Text(said, style = WindmillFont.body(13), color = colors.onSurfaceVariant,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
     }

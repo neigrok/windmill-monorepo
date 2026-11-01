@@ -66,10 +66,10 @@ fun GymSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
 
 @Composable
 fun GymFab(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     FloatingActionButton(onClick, modifier.size(56.dp).semantics { contentDescription = label },
-        shape = RoundedCornerShape(16.dp), containerColor = skin.accentSoft.compositeOver(skin.surface),
-        contentColor = skin.accent) {
+        shape = RoundedCornerShape(16.dp), containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer),
+        contentColor = colors.primary) {
         Icon(painterResource(R.drawable.gym_native_add), null, Modifier.size(24.dp))
     }
 }
@@ -77,7 +77,7 @@ fun GymFab(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
 // Collapsed to its icon while the list beneath it is scrolled; the label stays its accessible name.
 @Composable
 fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: Modifier = Modifier, expanded: Boolean = true) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     ExtendedFloatingActionButton(
         text = { Text(label, style = GymNativeType.button.copy(lineHeight = 24.sp)) },
         icon = { Icon(icon, null, Modifier.size(24.dp)) },
@@ -85,8 +85,8 @@ fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: 
         modifier = modifier.semantics { contentDescription = label },
         expanded = expanded,
         shape = RoundedCornerShape(16.dp),
-        containerColor = skin.accentSoft.compositeOver(skin.surface),
-        contentColor = skin.accent,
+        containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer),
+        contentColor = colors.primary,
     )
 }
 
@@ -118,13 +118,13 @@ fun GymErrorTextButton(label: String, onClick: () -> Unit, modifier: Modifier = 
 fun GymMenu(expanded: Boolean, onDismissRequest: () -> Unit, modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit) {
     DropdownMenu(expanded, onDismissRequest, modifier, shape = RoundedCornerShape(16.dp),
-        containerColor = LocalGymColors.current.surface, tonalElevation = 0.dp, content = content)
+        containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp, content = content)
 }
 
 @Composable
 fun GymMenuItem(label: String, icon: Painter, onClick: () -> Unit, modifier: Modifier = Modifier,
     destructive: Boolean = false, enabled: Boolean = true) {
-    val ink = if (destructive) MaterialTheme.colorScheme.error else LocalGymColors.current.ink
+    val ink = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     DropdownMenuItem(text = {
         Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically) {

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.coach.ThreadsBinding
 import works.windmill.gym.coach.ThreadsScreen
 import androidx.compose.foundation.background
@@ -79,7 +80,7 @@ class RowSwipeAccessibilityTests {
         compose.setContent {
             GymMaterial {
                 DeleteSwipeRow("Delete routine", { requests++; true }, Modifier.testTag("swipe-row")) {
-                    Box(Modifier.fillMaxWidth().height(68.dp).background(LocalGymColors.current.surface)) { Text("Push A") }
+                    Box(Modifier.fillMaxWidth().height(68.dp).background(MaterialTheme.colorScheme.surfaceContainer)) { Text("Push A") }
                 }
             }
         }
@@ -96,7 +97,7 @@ class RowSwipeAccessibilityTests {
         compose.setContent {
             GymMaterial {
                 DeleteSwipeRow("Remove movement", { requests++; false }, Modifier.testTag("swipe-row")) {
-                    Box(Modifier.fillMaxWidth().height(56.dp).background(LocalGymColors.current.surface)) { Text("Bench Press") }
+                    Box(Modifier.fillMaxWidth().height(56.dp).background(MaterialTheme.colorScheme.surfaceContainer)) { Text("Bench Press") }
                 }
             }
         }

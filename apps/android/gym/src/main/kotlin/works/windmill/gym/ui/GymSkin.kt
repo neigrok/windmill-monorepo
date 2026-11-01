@@ -21,7 +21,6 @@ data class GymColors(
     val canvas: Color,
     val surface: Color,
     val raised: Color,
-    val sunken: Color,
     val line: Color,
     val lineStrong: Color,
     val accent: Color,
@@ -37,15 +36,12 @@ data class GymColors(
     val error: Color,
     val onError: Color,
     val scrim: Color,
-) {
-    val targetInk = accent
-    val unsyncedInk = inkFaint
-}
+)
 
 object GymSkin {
     val Instrument = GymColors(
         canvas = Color(0xFF0B1111), surface = Color(0xFF161C1D), raised = Color(0xFF202627),
-        sunken = Color(0xFF060C0C), line = Color(0xFF202627), lineStrong = Color(0xFF2A3133),
+        line = Color(0xFF202627), lineStrong = Color(0xFF2A3133),
         accent = Color(0xFF5FCDB4),
         onAccent = Color(0xFF1B1408), ink = Color(0xFFF1F0EB), inkDim = Color(0xFFB6B5AF),
         inkFaint = Color(0xFF727771), setDone = Color(0xFF9AA859),
@@ -54,7 +50,7 @@ object GymSkin {
     )
     val Daylight = GymColors(
         canvas = Color(0xFFEBE7E3), surface = Color(0xFFF8F6F4), raised = Color(0xFFDFDAD5),
-        sunken = Color(0xFFDFDAD5), line = Color(0xFFD0CAC5), lineStrong = Color(0xFFB6AFA9),
+        line = Color(0xFFD0CAC5), lineStrong = Color(0xFFB6AFA9),
         accent = Color(0xFF137A6C),
         onAccent = Color.White, ink = Color(0xFF1A1918), inkDim = Color(0xFF4C4744),
         inkFaint = Color(0xFF625C58), setDone = Color(0xFF7D8C43),
@@ -62,8 +58,6 @@ object GymSkin {
         alarmInk = Color(0xFFA84E35), error = Color(0xFFB3261E), onError = Color.White, scrim = Color(0x731A1918),
     )
 }
-
-val LocalGymColors = staticCompositionLocalOf { GymSkin.Instrument }
 
 // Every numeral in gym is TABULAR, or a column of sets shimmers. The weight is the exception to mono.
 object GymType {

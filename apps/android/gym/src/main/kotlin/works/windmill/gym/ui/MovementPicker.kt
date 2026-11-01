@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -262,7 +263,7 @@ fun MovementPicker(
     onCreateDraft: ((Exercise, TargetEntry.Draft) -> Unit)? = null,
     onAdded: () -> Unit = {},
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -292,11 +293,11 @@ fun MovementPicker(
     Column(modifier.fillMaxWidth().imePadding(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = WindmillFont.body(24, FontWeight.Bold), color = skin.ink,
+                Text(title, style = WindmillFont.body(24, FontWeight.Bold), color = colors.onSurface,
                     modifier = Modifier.weight(1f))
                 onClose?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") } }
             }
-            subtitle?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
+            subtitle?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant) }
         }
         OutlinedTextField(
             value = state.query, onValueChange = { state.query = it }, singleLine = true,
@@ -306,27 +307,27 @@ fun MovementPicker(
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, autoCorrectEnabled = false),
             shape = RoundedCornerShape(28.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = skin.canvas, unfocusedContainerColor = skin.canvas,
-                focusedBorderColor = skin.accent, unfocusedBorderColor = Color.Transparent,
-                focusedTextColor = skin.ink, unfocusedTextColor = skin.ink,
-                focusedLeadingIconColor = skin.inkDim, unfocusedLeadingIconColor = skin.inkDim,
-                focusedPlaceholderColor = skin.inkDim, unfocusedPlaceholderColor = skin.inkDim,
-                cursorColor = skin.accent),
+                focusedContainerColor = colors.surface, unfocusedContainerColor = colors.surface,
+                focusedBorderColor = colors.primary, unfocusedBorderColor = Color.Transparent,
+                focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface,
+                focusedLeadingIconColor = colors.onSurfaceVariant, unfocusedLeadingIconColor = colors.onSurfaceVariant,
+                focusedPlaceholderColor = colors.onSurfaceVariant, unfocusedPlaceholderColor = colors.onSurfaceVariant,
+                cursorColor = colors.primary),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         )
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-            options.unread?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim, lineHeight = 20.sp) }
+            options.unread?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant, lineHeight = 20.sp) }
             if (options.six.isNotEmpty()) {
-                Text("The six", style = WindmillFont.body(14, FontWeight.Bold), color = skin.inkDim,
+                Text("The six", style = WindmillFont.body(14, FontWeight.Bold), color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp))
                 options.six.forEach { MovementRow(it, onPick) }
             }
             if (options.six.isNotEmpty() && options.matches.isNotEmpty()) {
-                Text("All movements", style = WindmillFont.body(14, FontWeight.Bold), color = skin.inkDim,
+                Text("All movements", style = WindmillFont.body(14, FontWeight.Bold), color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
             }
             options.matches.forEach { MovementRow(it, onPick) }
-            options.empty?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim, lineHeight = 20.sp) }
+            options.empty?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant, lineHeight = 20.sp) }
         }
         TextButton(
             onClick = {
@@ -350,7 +351,7 @@ fun MovementPicker(
                 }
             },
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-        ) { Text("Create movement", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink) }
+        ) { Text("Create movement", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface) }
     }
     if (state.createOpen && createReady) {
         val createSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
@@ -362,11 +363,11 @@ fun MovementPicker(
         }
         WindmillSheet(
             onDismissRequest = ::cancelCreate, onBack = ::cancelCreate, sheetState = createSheet,
-            containerColor = skin.surface, scrimColor = skin.scrim,
+            containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             dragHandle = {
                 Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
+                    Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
                 }
             },
         ) {
@@ -420,18 +421,18 @@ fun MovementPicker(
 
 @Composable
 private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
         .clickable(enabled = !row.selected, role = Role.Button, onClickLabel = "add ${row.name}") { onPick(row.id) }
         .semantics { selected = row.selected }.padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(row.name, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-            Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13), color = skin.inkDim)
-            row.alias?.let { Text("was “$it”", style = WindmillFont.body(13), color = skin.inkDim) }
-            row.meta?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
+            Text(row.name, style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
+            Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13), color = colors.onSurfaceVariant)
+            row.alias?.let { Text("was “$it”", style = WindmillFont.body(13), color = colors.onSurfaceVariant) }
+            row.meta?.let { Text(it, style = WindmillFont.body(13), color = colors.onSurfaceVariant) }
         }
         Icon(if (row.selected) Icons.Filled.Check else Icons.Filled.Add, null,
-            tint = skin.inkDim, modifier = Modifier.size(24.dp))
+            tint = colors.onSurfaceVariant, modifier = Modifier.size(24.dp))
     }
 }

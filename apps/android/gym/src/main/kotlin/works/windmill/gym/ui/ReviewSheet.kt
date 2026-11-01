@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.coach.CoachProposalCard
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -131,7 +132,7 @@ fun ReviewSheet(
     onDecided: (Proposal) -> Unit,
     onBusy: (Boolean) -> Unit = {},
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var proposal by remember(proposalId) { mutableStateOf<Proposal?>(null) }
     var gone by remember(proposalId) { mutableStateOf(false) }
@@ -226,8 +227,8 @@ fun ReviewSheet(
                 .padding(horizontal = WindmillSpace.x5)
                 .padding(bottom = WindmillSpace.x4),
         ) {
-            if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
-            if (state.workoutOpen) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
+            if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = colors.onSurfaceVariant)
+            if (state.workoutOpen) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = colors.onSurface)
             if (!state.workoutOpen) standing?.let { Body(it, state.catalog, outOfDate) }
             standing?.let { proposal ->
                 onAsk?.let { ask ->
@@ -238,11 +239,11 @@ fun ReviewSheet(
                             .heightIn(min = GymTap.minimum)
                             .clickable(enabled = !deciding, role = Role.Button) { ask(proposal.routineName) },
                     ) {
-                        Text("Ask Coach", style = WindmillFont.body(16, FontWeight.Bold), color = skin.accent)
+                        Text("Ask Coach", style = WindmillFont.body(16, FontWeight.Bold), color = colors.primary)
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
-                            tint = skin.accent,
+                            tint = colors.primary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -264,9 +265,9 @@ fun ReviewSheet(
 
 @Composable
 private fun Head(proposal: Proposal?) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Text(proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
-        style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = skin.ink,
+        style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = colors.onSurface,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp))
 }
 
@@ -276,16 +277,16 @@ private fun Body(
     catalog: List<Exercise>,
     outOfDate: Boolean,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (proposal.summary.isNotBlank()) Text(proposal.kicker, style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim)
-        Text(proposal.summaryLine(proposal.routineName), style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+        if (proposal.summary.isNotBlank()) Text(proposal.kicker, style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+        Text(proposal.summaryLine(proposal.routineName), style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = colors.onSurface)
     }
     if (proposal.intent == ProposalIntent.Remove) {
         ChangeCard() {
-            Text("Remove ${proposal.routineName}", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+            Text("Remove ${proposal.routineName}", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
             Text("The whole routine is removed from your program. Every set you logged against it stays in the log.",
-                style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
         }
     } else {
         proposal.document.forEach { row ->
@@ -295,7 +296,7 @@ private fun Body(
             }
         }
         if (proposal.renames) ChangeCard() {
-            Text("Routine name", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+            Text("Routine name", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
             MoveLine("", proposal.baseName, proposal.name)
         }
     }
@@ -304,10 +305,10 @@ private fun Body(
         Text(
             it,
             style = WindmillFont.body(13).copy(lineHeight = 20.sp),
-            color = skin.inkDim,
+            color = colors.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(skin.raised, RoundedCornerShape(WindmillRadius.md))
+                .background(colors.surfaceContainerHighest, RoundedCornerShape(WindmillRadius.md))
                 .padding(GymLayout.cardInset),
         )
     }
@@ -320,7 +321,8 @@ private const val supersededLine =
 // the document.
 @Composable
 private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     var open by remember(row) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Row(
@@ -333,11 +335,11 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 .clickable(role = Role.Button) { open = !open }
                 .padding(horizontal = GymLayout.rowInset),
         ) {
-            Text(row.label, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+            Text(row.label, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
             Icon(
                 if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = null,
-                tint = skin.inkFaint,
+                tint = gymColors.inkFaint,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -350,13 +352,13 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                     Text(
                         Readout.movement(change.exerciseId, catalog),
                         style = WindmillFont.body(16).copy(lineHeight = 22.sp),
-                        color = skin.inkDim,
+                        color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
                         (change.after ?: change.before)?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget,
                         style = WindmillFont.body(14).copy(lineHeight = 20.sp),
-                        color = skin.inkDim,
+                        color = colors.onSurfaceVariant,
                     )
                 }
             }
@@ -366,7 +368,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
 
 @Composable
 private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<Exercise>) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val name = Readout.movement(change.exerciseId, catalog)
     ChangeCard() {
         val title = when (change.kind) {
@@ -374,20 +376,20 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
             ChangeKind.Removed -> "Remove $name"
             else -> name
         }
-        Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+        Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
         when (change.kind) {
             ChangeKind.Added -> {
                 val target = change.after?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget
                 val after = proposal.landsAfter(change)?.let { "after ${Readout.movement(it, catalog)}" } ?: "first in the routine"
-                Text("$target · $after", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                Text("$target · $after", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
             }
-            ChangeKind.Removed -> Text(change.removedLine, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+            ChangeKind.Removed -> Text(change.removedLine, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
             else -> {
                 val before = change.before
                 val after = change.after
                 val moved = if (before == null || after == null) emptyList() else Proposal.moves(before, after)
                 if (moved.isEmpty()) Text((after ?: before)?.let { Readout.targetWithUnit(it.sets) } ?: "No targets",
-                    style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                    style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
                 moved.forEach { move ->
                     if (move.label == Proposal.setsLabel && before != null && after != null) {
                         SchemeMove(move.copy(before = Readout.targetWithUnit(before.sets), after = Readout.targetWithUnit(after.sets)), before.sets, after.sets, change)
@@ -427,19 +429,19 @@ private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: Lis
 
 @Composable
 private fun MoveLine(label: String, before: String, after: String, modifier: Modifier = Modifier) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Text((if (label.isBlank() || label == Proposal.setsLabel) "" else "$label · ") + "$before → $after",
-        style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim,
+        style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant,
         modifier = modifier.semantics(mergeDescendants = true) {})
 }
 
 @Composable
 private fun ChangeCard(content: @Composable () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().heightIn(min = 70.dp).padding(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
-        Box(Modifier.fillMaxWidth().heightIn(min = 1.dp).background(skin.line))
+        Box(Modifier.fillMaxWidth().heightIn(min = 1.dp).background(colors.outlineVariant))
     }
 }
 
@@ -453,7 +455,7 @@ private fun Foot(
     onDecide: (Boolean) -> Unit,
     receiptModifier: Modifier,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
@@ -461,9 +463,9 @@ private fun Foot(
             .padding(horizontal = WindmillSpace.x5)
             .padding(vertical = 12.dp),
     ) {
-        said?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
+        said?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant) }
         if (!decidable) {
-            proposal.receipt?.let { Text(it, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.accent,
+            proposal.receipt?.let { Text(it, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.primary,
                 modifier = receiptModifier) }
             return@Column
         }
@@ -492,10 +494,10 @@ private fun Foot(
                 .semantics { if (!seen) stateDescription = Proposal.applyHint },
             shape = RoundedCornerShape(WindmillRadius.lg),
             colors = ButtonDefaults.buttonColors(
-                containerColor = skin.accent,
-                contentColor = skin.onAccent,
-                disabledContainerColor = skin.accent.copy(alpha = .4f),
-                disabledContentColor = skin.onAccent.copy(alpha = .4f),
+                containerColor = colors.primary,
+                contentColor = colors.onPrimary,
+                disabledContainerColor = colors.primary.copy(alpha = .4f),
+                disabledContentColor = colors.onPrimary.copy(alpha = .4f),
             ),
         ) {
             Text(proposal.applyLabel, style = WindmillFont.body(16, FontWeight.Bold))
@@ -507,7 +509,7 @@ private fun Foot(
         Text(
             Proposal.applyHint,
             style = GymType.numeral(12),
-            color = skin.inkDim,
+            color = colors.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
                 .alpha(if (seen) 0f else 1f)
@@ -516,7 +518,7 @@ private fun Foot(
         Text(
             proposal.atomicLine,
             style = WindmillFont.body(12).copy(lineHeight = 17.sp),
-            color = skin.inkDim,
+            color = colors.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
         )
         TextButton(
@@ -524,7 +526,7 @@ private fun Foot(
             enabled = !deciding,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             shape = RoundedCornerShape(WindmillRadius.lg),
-            colors = ButtonDefaults.textButtonColors(contentColor = skin.ink),
+            colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
         ) {
             Text(Proposal.turnDownVerb, style = WindmillFont.body(16, FontWeight.Bold))
         }
@@ -546,7 +548,7 @@ fun ProposalCard(
 
 @Composable
 fun ProposalChip(onReview: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
@@ -555,8 +557,8 @@ fun ProposalChip(onReview: () -> Unit) {
             .clickable(role = Role.Button, onClick = onReview)
             .padding(horizontal = WindmillSpace.x1),
     ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(skin.accent))
-        Text("1 proposal", style = WindmillFont.body(12, FontWeight.SemiBold), color = skin.accent)
+        Box(Modifier.size(6.dp).clip(CircleShape).background(colors.primary))
+        Text("1 proposal", style = WindmillFont.body(12, FontWeight.SemiBold), color = colors.primary)
     }
 }
 
@@ -593,7 +595,7 @@ private fun PendingProposalPreview() {
         ),
     )
     GymPreview {
-        Box(Modifier.background(LocalGymColors.current.surface)) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surfaceContainer)) {
             ReviewSheet(pending.id, PreviewReviewState(), PreviewReviewEvents(pending), onAsk = {}, onDecided = {})
         }
     }

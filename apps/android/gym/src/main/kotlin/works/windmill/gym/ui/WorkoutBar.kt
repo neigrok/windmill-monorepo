@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,7 +39,7 @@ import works.windmill.platform.design.WindmillFont
 
 @Composable
 fun WorkoutBar(session: Session, onOpen: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val routine = session.plan?.routine ?: Readout.noRoutine
     var nowMs by remember(session.id) { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(session.id) {
@@ -47,8 +48,8 @@ fun WorkoutBar(session: Session, onOpen: () -> Unit) {
             delay(1_000)
         }
     }
-    Surface(onClick = onOpen, color = skin.surface, modifier = Modifier.fillMaxWidth()
-        .drawWithContent { drawContent(); drawLine(skin.line, Offset(0f, 0.5.dp.toPx()), Offset(size.width, 0.5.dp.toPx()), 1.dp.toPx()) }
+    Surface(onClick = onOpen, color = colors.surfaceContainer, modifier = Modifier.fillMaxWidth()
+        .drawWithContent { drawContent(); drawLine(colors.outlineVariant, Offset(0f, 0.5.dp.toPx()), Offset(size.width, 0.5.dp.toPx()), 1.dp.toPx()) }
         .clearAndSetSemantics {
             contentDescription = "$routine, in progress"
             role = Role.Button
@@ -56,14 +57,14 @@ fun WorkoutBar(session: Session, onOpen: () -> Unit) {
         }) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(painterResource(R.drawable.gym_workout_notification), null, Modifier.size(24.dp), tint = skin.accent)
+            Icon(painterResource(R.drawable.gym_workout_notification), null, Modifier.size(24.dp), tint = colors.primary)
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(routine, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink,
+                Text(routine, style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text(" · ${Readout.clock(nowMs - session.startedAtMs)}", style = GymType.numeral(14), color = skin.inkDim,
+                Text(" · ${Readout.clock(nowMs - session.startedAtMs)}", style = GymType.numeral(14), color = colors.onSurfaceVariant,
                     maxLines = 1)
             }
-            Icon(Icons.Rounded.KeyboardArrowUp, null, Modifier.size(48.dp).padding(12.dp), tint = skin.inkDim)
+            Icon(Icons.Rounded.KeyboardArrowUp, null, Modifier.size(48.dp).padding(12.dp), tint = colors.onSurfaceVariant)
         }
     }
 }

@@ -1,5 +1,6 @@
 package works.windmill.gym
 
+import androidx.compose.material3.MaterialTheme
 import android.app.Activity
 import android.content.ClipData
 import android.content.Context
@@ -69,7 +70,6 @@ import works.windmill.gym.ui.ConnectedLogScreen
 import works.windmill.gym.ui.ConnectionsBinding
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.gym.ui.GymScreen
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.PhoneRecovery
 import works.windmill.gym.ui.OnThisPhoneScreen
 import works.windmill.gym.ui.WorkoutInspectScreen
@@ -139,7 +139,7 @@ class GymModule(private val store: TrainingStore, private val notifications: Wor
 fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null,
     routineSaveContext: CoroutineContext = EmptyCoroutineContext) {
     val telemetry = LocalTelemetry.current
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val shell = LocalShellActions.current
@@ -954,7 +954,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 RoomFrame(frame, standing = frame.key == standingKey)
             }
         } else {
-            Box(Modifier.fillMaxSize().background(skin.canvas))
+            Box(Modifier.fillMaxSize().background(colors.surface))
         }
     }
 }

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -59,7 +60,7 @@ internal fun MovementForm(
     movementEditable: Boolean = true,
     floor: Double? = movement.current.loadFloor,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val problem = Program.nameProblem(movement.current.name)
     val valid = problem == null && scheme?.reading(floor) !is TargetEntry.Reading.Refused
     val input = remember {
@@ -80,7 +81,7 @@ internal fun MovementForm(
                 Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(title, style = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 28.sp),
-                        color = skin.ink, modifier = Modifier.weight(1f))
+                        color = colors.onSurface, modifier = Modifier.weight(1f))
                     TextButton(onClick = onCancel, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text("Cancel", style = WindmillFont.body(16, FontWeight.Bold))
                     }
@@ -91,15 +92,15 @@ internal fun MovementForm(
                         onName = { onMovement(movement.named(it)) }, onEquipment = { onMovement(movement.equipped(it)) },
                         enabled = !busy && movementEditable, problem = problem.takeIf { movement.current.name.isNotEmpty() })
                     scheme?.let { RoutineTargets(it, movement, floor, onScheme, enabled = !busy, creating = creating) }
-                    refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.error,
+                    refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.error,
                         modifier = Modifier.semantics { error(it) }) }
                 }
             }
             Button(onClick = onCommit, enabled = valid && !busy,
                 modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp)
                     .fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(disabledContainerColor = skin.accent.copy(alpha = .38f),
-                    disabledContentColor = skin.onAccent.copy(alpha = .38f))) {
+                colors = ButtonDefaults.buttonColors(disabledContainerColor = colors.primary.copy(alpha = .38f),
+                    disabledContentColor = colors.onPrimary.copy(alpha = .38f))) {
                 Text(commitLabel, style = WindmillFont.body(16, FontWeight.Bold))
             }
         }
@@ -116,7 +117,7 @@ private fun RoutineTargets(
     enabled: Boolean,
     creating: Boolean,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val shown = TargetEntry.shown(scheme.rows, scheme.sets)
     val reading = scheme.reading(floor)
     val refused = reading as? TargetEntry.Reading.Refused
@@ -143,8 +144,8 @@ private fun RoutineTargets(
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Target", style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.weight(1f))
-            Text(summary, style = GymType.numeral(13), color = skin.inkDim)
+            Text("Target", style = WindmillFont.body(13), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(summary, style = GymType.numeral(13), color = colors.onSurfaceVariant)
         }
         if (!perSet) {
             RoutineStepper("Sets", scheme.sets, "sets", TargetEntry.setsPlaceholder,
@@ -165,7 +166,7 @@ private fun RoutineTargets(
                 onTyped = { update(scheme.copy(rows = TargetEntry.withWeight(scheme.rows, it))) },
                 onStep = { stepped(TargetEntry.Field.Weight, it) }, reading = reading)
             if (!creating && shown.all { it.weight.isBlank() }) Text("kg blank: pick it at the rack the first time; after that, last time fills it.",
-                style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
         }
         if (!creating || scheme.varyBySet) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -180,7 +181,7 @@ private fun RoutineTargets(
         }
         if (perSet) {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(TargetEntry.setBySet, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink, modifier = Modifier.weight(1f))
+                Text(TargetEntry.setBySet, style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface, modifier = Modifier.weight(1f))
                 Box {
                     TextButton(onClick = { fill = true }, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(TargetEntry.fill, style = WindmillFont.body(14, FontWeight.Bold))
@@ -194,9 +195,9 @@ private fun RoutineTargets(
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Set", style = WindmillFont.body(12), color = skin.inkDim, modifier = Modifier.width(32.dp))
-                Text("Reps", style = WindmillFont.body(12), color = skin.inkDim, modifier = Modifier.weight(1f))
-                Text(unit, style = WindmillFont.body(12), color = skin.inkDim, modifier = Modifier.weight(1f))
+                Text("Set", style = WindmillFont.body(12), color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
+                Text("Reps", style = WindmillFont.body(12), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text(unit, style = WindmillFont.body(12), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
             }
             shown.forEachIndexed { index, row -> key(removals, index) {
                 val fault = refused?.takeIf { it.row == index && headFault == null }
@@ -206,9 +207,9 @@ private fun RoutineTargets(
                     removals += 1
                     true
                 }) {
-                    Row(Modifier.fillMaxWidth().background(skin.surface), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Row(Modifier.fillMaxWidth().background(colors.surfaceContainer), horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("${index + 1}", style = GymType.numeral(13), color = skin.inkDim, modifier = Modifier.width(32.dp))
+                        Text("${index + 1}", style = GymType.numeral(13), color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
                         RoutineTargetField(row.reps, TargetEntry.repsPlaceholder, "Set ${index + 1} reps", false,
                             fault?.takeIf { it.field == TargetEntry.Field.Reps }?.said, enabled, Modifier.weight(1f)) {
                             update(scheme.copy(rows = scheme.rows.mapIndexed { at, value -> if (at == index) value.copy(reps = it) else value }))
@@ -228,7 +229,7 @@ private fun RoutineTargets(
                 Spacer(Modifier.width(8.dp))
                 Text(TargetEntry.addSet)
             }
-            if (ceiling) Text(TargetEntry.outsideSets, color = skin.error, style = WindmillFont.body(14))
+            if (ceiling) Text(TargetEntry.outsideSets, color = colors.error, style = WindmillFont.body(14))
         }
     }
 }
@@ -257,7 +258,7 @@ private fun RoutineTargetField(
     value: String, placeholder: String, description: String, decimal: Boolean, refusal: String?,
     enabled: Boolean, modifier: Modifier, onTyped: (String) -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val intoView = remember { BringIntoViewRequester() }
     var focused by remember { mutableStateOf(false) }
     var editor by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -281,6 +282,6 @@ private fun RoutineTargetField(
                 autoCorrectEnabled = false, imeAction = ImeAction.Done),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).onFocusChanged { focused = it.isFocused }
                 .semantics { contentDescription = description; refusal?.let { error(it) } })
-        refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.error) }
+        refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.error) }
     }
 }

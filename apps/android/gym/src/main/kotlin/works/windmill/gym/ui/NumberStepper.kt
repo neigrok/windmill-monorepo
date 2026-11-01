@@ -148,7 +148,7 @@ fun NumberStepper(
     placeholder: String = "",
     onFocusChange: (Boolean) -> Unit = {},
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val interaction = remember { MutableInteractionSource() }
@@ -204,15 +204,15 @@ fun NumberStepper(
     val baseStyle = TextStyle(fontFamily = if (display) GymNativeType.sans else GymNativeType.mono,
         fontWeight = if (display) FontWeight.ExtraBold else FontWeight.Medium,
         fontSize = if (display) 88.sp else 20.sp, lineHeight = if (display) 92.sp else 24.sp,
-        fontFeatureSettings = "tnum", color = if (flash) skin.accent else skin.ink)
+        fontFeatureSettings = "tnum", color = if (flash) colors.primary else colors.onSurface)
     val unitStyle = TextStyle(fontFamily = GymNativeType.sans, fontSize = if (display) 22.sp else 16.sp,
         lineHeight = if (display) 28.sp else 24.sp)
-    val fill = if (flash) skin.accentSoft.compositeOver(skin.raised) else skin.raised
+    val fill = if (flash) colors.primaryContainer.compositeOver(colors.surfaceContainerHighest) else colors.surfaceContainerHighest
     val fieldShape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
-    val colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+    val fieldColors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
         disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
-        focusedIndicatorColor = skin.accent, unfocusedIndicatorColor = if (flash) skin.accent else skin.inkDim,
-        errorIndicatorColor = skin.accent)
+        focusedIndicatorColor = colors.primary, unfocusedIndicatorColor = if (flash) colors.primary else colors.onSurfaceVariant,
+        errorIndicatorColor = colors.primary)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val gap = with(density) { 4.dp.roundToPx() }
@@ -280,7 +280,7 @@ fun NumberStepper(
                             CustomAccessibilityAction("Increase") { step(NumberStep.Increase) },
                         )
                     }, enabled = enabled, singleLine = true, textStyle = valueStyle,
-                        interactionSource = interaction, cursorBrush = SolidColor(skin.accent),
+                        interactionSource = interaction, cursorBrush = SolidColor(colors.primary),
                         keyboardOptions = KeyboardOptions(keyboardType = if (input == NumberStepperInput.Count) KeyboardType.Number else KeyboardType.Decimal,
                             autoCorrectEnabled = false, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = {
@@ -298,12 +298,12 @@ fun NumberStepper(
                                 display -> 120.dp
                                 else -> 56.dp
                             }).background(fill, fieldShape)) {
-                                TextFieldDefaults.Container(enabled, false, interaction, Modifier.matchParentSize(), colors,
+                                TextFieldDefaults.Container(enabled, false, interaction, Modifier.matchParentSize(), fieldColors,
                                     fieldShape, focusedIndicatorLineThickness = 3.dp)
                                 Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp,
                                     bottom = if (display && fieldLayout == NumberFieldLayout.Inline) 4.dp else 8.dp)) {
                                     Text(label, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp),
-                                        color = if (focused || flash) skin.accent else skin.inkDim, modifier = Modifier.clearAndSetSemantics { testTag = "stepper-label" })
+                                        color = if (focused || flash) colors.primary else colors.onSurfaceVariant, modifier = Modifier.clearAndSetSemantics { testTag = "stepper-label" })
                                     Layout(content = {
                                         Box(Modifier.clipToBounds()) {
                                             Box(Modifier.fillMaxWidth().graphicsLayer {
@@ -312,11 +312,11 @@ fun NumberStepper(
                                                 translationY = (1f - progress) * valueStyle.fontSize.toPx() / 4 *
                                                     (if (feedback.direction == NumberStep.Increase) 1 else -1)
                                             }) {
-                                                if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, style = valueStyle, color = skin.inkDim)
+                                                if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, style = valueStyle, color = colors.onSurfaceVariant)
                                                 innerTextField()
                                             }
                                         }
-                                        Text(unit, color = if (flash) skin.accent else skin.inkDim, style = unitStyle, maxLines = 1,
+                                        Text(unit, color = if (flash) colors.primary else colors.onSurfaceVariant, style = unitStyle, maxLines = 1,
                                             modifier = Modifier.clearAndSetSemantics { testTag = "stepper-unit" })
                                     }) { children, limits ->
                                         val unitPlaceable = children[1].measure(limits.copy(minWidth = 0, minHeight = 0))
@@ -366,14 +366,14 @@ fun NumberStepper(
 private fun StepperButton(step: NumberStep, label: String, enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val ink = LocalGymColors.current.inkDim
+    val ink = MaterialTheme.colorScheme.onSurfaceVariant
     Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.size(40.dp).background(if (pressed) ink.copy(alpha = 0.08f) else Color.Transparent,
             if (pressed) RoundedCornerShape(8.dp) else CircleShape))
         CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = ink,
             rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.08f, hoveredAlpha = 0.08f, pressedAlpha = 0.08f))) {
             IconButton(onClick, modifier = Modifier.size(48.dp), enabled = enabled, interactionSource = interaction,
-                colors = IconButtonDefaults.iconButtonColors(contentColor = LocalGymColors.current.ink)) {
+                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
                 Icon(painterResource(if (step == NumberStep.Decrease) R.drawable.gym_native_remove else R.drawable.gym_native_add),
                     "${if (step == NumberStep.Decrease) "Decrease" else "Increase"} $label", Modifier.size(24.dp))
             }

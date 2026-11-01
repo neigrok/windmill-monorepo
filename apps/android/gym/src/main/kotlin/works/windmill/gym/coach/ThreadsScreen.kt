@@ -1,8 +1,9 @@
 package works.windmill.gym.coach
 
+import androidx.compose.material3.MaterialTheme
+import works.windmill.gym.ui.gymColors
 import works.windmill.gym.ui.GymLayout
 import works.windmill.gym.ui.GymScreen
-import works.windmill.gym.ui.LocalGymColors
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -89,7 +90,8 @@ fun ThreadsScreen(
     onOpen: (String) -> Unit,
     onAskNew: () -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val telemetry = LocalTelemetry.current
     val nowMs = System.currentTimeMillis()
     val scope = rememberCoroutineScope()
@@ -124,11 +126,11 @@ fun ThreadsScreen(
             PullToRefreshBox(isRefreshing = loading, onRefresh = { attempt++ }) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
                     failure?.let { line -> item("failure") {
-                        Text(line, style = CoachType.body(14), color = skin.inkDim, modifier = Modifier.padding(16.dp))
+                        Text(line, style = CoachType.body(14), color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                     } }
                     val held = state.threads.filterNot { it.id in deleting }
                     if (!loading && held.isEmpty() && failure == null) item("none") {
-                        Text(Threads.none, style = CoachType.body(15), color = skin.inkDim, modifier = Modifier.padding(16.dp))
+                        Text(Threads.none, style = CoachType.body(15), color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                     }
                     items(held, key = { it.id }) { thread ->
                         DeleteSwipeRow(actionLabel = "Delete conversation", onDelete = { requestDelete(thread.id); false }) {
@@ -143,8 +145,8 @@ fun ThreadsScreen(
                                 headlineContent = { Text(thread.title, style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp)) },
                                 supportingContent = preview.takeIf { it.isNotBlank() }?.let { { Text(it, style = CoachType.body(14).copy(lineHeight = 20.sp), maxLines = 2) } },
                                 trailingContent = { thread.day(nowMs)?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = CoachType.body(14).copy(lineHeight = 20.sp)) } },
-                                colors = ListItemDefaults.colors(containerColor = skin.canvas, headlineColor = skin.ink,
-                                    supportingColor = skin.inkDim, trailingIconColor = skin.inkDim),
+                                colors = ListItemDefaults.colors(containerColor = colors.surface, headlineColor = colors.onSurface,
+                                    supportingColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
                                 modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open conversation") { onOpen(thread.id) },
                             )
                         }
@@ -166,7 +168,7 @@ fun ThreadsScreen(
             ExtendedFloatingActionButton(
                 onClick = onAskNew, icon = { Icon(painterResource(R.drawable.gym_coach_new_chat), null, Modifier.size(24.dp)) },
                 text = { Text(Threads.open, style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp)) },
-                containerColor = skin.surface, contentColor = skin.accent,
+                containerColor = colors.surfaceContainer, contentColor = colors.primary,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).semantics { contentDescription = Threads.open },
             )
         }
@@ -176,9 +178,9 @@ fun ThreadsScreen(
             onDismissRequest = ::cancelDelete,
             title = { Text("Delete this conversation?", style = CoachType.body(24, FontWeight.Bold).copy(lineHeight = 32.sp)) },
             text = { Text("You can’t undo this.", style = CoachType.body(14).copy(lineHeight = 20.sp)) },
-            containerColor = skin.surface, titleContentColor = skin.ink, textContentColor = skin.inkDim,
+            containerColor = colors.surfaceContainer, titleContentColor = colors.onSurface, textContentColor = colors.onSurfaceVariant,
             dismissButton = { TextButton(onClick = ::cancelDelete) { Text("Cancel", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp, letterSpacing = 0.1.sp)) } },
-            confirmButton = { TextButton(colors = ButtonDefaults.textButtonColors(contentColor = skin.alarmInk), onClick = {
+            confirmButton = { TextButton(colors = ButtonDefaults.textButtonColors(contentColor = gymColors.alarmInk), onClick = {
                 confirming = null
                 deleting = deleting + id
                 scope.launch {
@@ -249,7 +251,7 @@ fun ThreadScreen(
     if (chat == null || (failure != null && chat.history == null && chat.exchanges.isEmpty())) {
         GymScreen(title = Threads.conversation, onBack = onBack, backTo = backTo) {
             Column(Modifier.padding(GymLayout.gutter)) {
-                Text(failure ?: "Reading conversation…", color = LocalGymColors.current.inkDim)
+                Text(failure ?: "Reading conversation…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (failure != null) CoachAction("Try again", { attempt++ })
             }
         }

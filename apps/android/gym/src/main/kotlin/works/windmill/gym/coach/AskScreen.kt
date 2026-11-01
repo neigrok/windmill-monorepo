@@ -1,8 +1,8 @@
 package works.windmill.gym.coach
 
+import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.GymTap
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.ProposalCard
 import works.windmill.gym.ui.YouSeat
 import androidx.compose.runtime.getValue
@@ -154,7 +154,7 @@ fun AskScreen(
     onSignIn: (() -> Unit)? = null,
     onBuildRoutine: (() -> Unit)? = null,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val coach = state.coach
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
     val savedPosition = coach.chat(conversationId)
@@ -209,7 +209,7 @@ fun AskScreen(
         title = Ask.title,
         actions = {
             IconButton(onClick = onThreads, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_history), "History", tint = skin.ink, modifier = Modifier.size(24.dp))
+                Icon(painterResource(R.drawable.gym_coach_history), "History", tint = colors.onSurface, modifier = Modifier.size(24.dp))
             }
             seat?.let { YouSeat(it) }
         },
@@ -241,7 +241,7 @@ fun AskScreen(
                         onBuildRoutine?.invoke()
                     })
                 onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
-                (historyFailure ?: draftFailure ?: coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
+                (historyFailure ?: draftFailure ?: coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant) }
                 thread.forEachIndexed { index, exchange ->
                     if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
                     key(messageKeys[index]) {
@@ -274,12 +274,12 @@ fun AskScreen(
                                 }
                                 answer.proposals.filter { it !in minted && it !in state.settledProposals }.forEach { id ->
                                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
-                                    else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
+                                    else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillFont.body(14), color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
                             }
                             if (exchange.refusalCode == "account_required") {
                                 CoachBubble(copyText = { Ask.accountRequired }) {
-                                    Text(Ask.accountRequired, style = CoachType.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+                                    Text(Ask.accountRequired, style = CoachType.body(16).copy(lineHeight = 22.sp), color = colors.onSurface)
                                 }
                                 onSignIn?.let { CoachAction("Sign in", it, primary = true) }
                             }
@@ -326,7 +326,7 @@ fun AskScreen(
                 telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "jump_latest", "outcome" to "ok"))
                 scope.launch { presentation.jumpToLatest() }
             }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).heightIn(min = 40.dp),
-                colors = ButtonDefaults.elevatedButtonColors(containerColor = skin.surface, contentColor = skin.accent),
+                colors = ButtonDefaults.elevatedButtonColors(containerColor = colors.surfaceContainer, contentColor = colors.primary),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
                 Icon(painterResource(R.drawable.gym_coach_down), null, Modifier.size(20.dp))
                 Text("Jump to latest", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), modifier = Modifier.padding(start = 8.dp))
@@ -335,8 +335,8 @@ fun AskScreen(
         coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Reply pending", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
-                    Text(pending.title, style = CoachType.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                    Text("Reply pending", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
+                    Text(pending.title, style = CoachType.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
                 }
                 TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null) { Text("View chat") }
             }
@@ -348,7 +348,7 @@ fun AskScreen(
         ) {
             when {
                 Ask.needsNew(thread) -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(thread.lastOrNull()?.takeIf { it.needsNew }?.trouble ?: Ask.threadFull, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                    Text(thread.lastOrNull()?.takeIf { it.needsNew }?.trouble ?: Ask.threadFull, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
                     CoachAction("Ask new", onClick = {
                         onNewDraft(thread.lastOrNull()?.takeIf { it.answer == null && !it.pending }?.question.orEmpty())
                     })
@@ -402,38 +402,38 @@ private fun Answer(
 // draw it again, and nothing here pretends otherwise.
 @Composable
 fun ReceiptLine(line: String) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val applied = line.startsWith("Applied")
     Text(line, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
-        color = if (applied) skin.accent else skin.ink,
-        modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
+        color = if (applied) colors.primary else colors.onSurface,
+        modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
 }
 
 @Composable
 private fun Minted(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, stillWaiting: Boolean, onReview: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         ProposalCard(proposal, proposal.routineName, nowMs, stillWaiting, onReview)
-        if (proposal.isPending) Text(Ask.promise, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+        if (proposal.isPending) Text(Ask.promise, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
         proposal.receipt?.let { ReceiptLine(it) }
     }
 }
 
 @Composable
 private fun Trouble(said: String, onRetry: (() -> Unit)?) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Text(
             said,
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = skin.inkDim,
+            color = colors.onSurfaceVariant,
         )
         onRetry?.let { retry ->
             Box(
                 Modifier.heightIn(min = GymTap.minimum).clickable(role = Role.Button, onClick = retry),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Text("Try again", style = WindmillFont.body(14, FontWeight.SemiBold), color = skin.accent)
+                Text("Try again", style = WindmillFont.body(14, FontWeight.SemiBold), color = colors.primary)
             }
         }
     }

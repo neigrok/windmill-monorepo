@@ -1,9 +1,10 @@
 package works.windmill.gym.sharing
 
+import androidx.compose.material3.MaterialTheme
+import works.windmill.gym.ui.gymColors
 import android.content.ClipData
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
-import works.windmill.gym.ui.LocalGymColors
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
@@ -42,7 +43,8 @@ import works.windmill.platform.telemetry.LocalTelemetry
 
 @Composable
 fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val telemetry = LocalTelemetry.current
@@ -97,11 +99,11 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp).padding(bottom = 20.dp),
     ) {
-        Text(card.title, style = WindmillFont.display(26, FontWeight.ExtraBold), color = skin.ink)
+        Text(card.title, style = WindmillFont.display(26, FontWeight.ExtraBold), color = colors.onSurface)
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             card.body.split('\n').forEach { paragraph ->
-                Text(paragraph, style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
+                Text(paragraph, style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = colors.onSurfaceVariant)
             }
         }
 
@@ -110,12 +112,12 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 Text(
                     link,
                     style = GymType.numeral(11),
-                    color = skin.accent,
+                    color = colors.primary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(skin.raised, RoundedCornerShape(WindmillRadius.md))
+                        .background(colors.surfaceContainerHighest, RoundedCornerShape(WindmillRadius.md))
                         .padding(WindmillSpace.x3),
                 )
             }
@@ -125,7 +127,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             Text(
                 note,
                 style = WindmillFont.body(16).copy(lineHeight = 21.sp),
-                color = skin.alarmInk,
+                color = gymColors.alarmInk,
             )
         }
 
@@ -135,10 +137,10 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = skin.accent,
-                contentColor = skin.onAccent,
-                disabledContainerColor = skin.accent.copy(alpha = .38f),
-                disabledContentColor = skin.onAccent.copy(alpha = .38f),
+                containerColor = colors.primary,
+                contentColor = colors.onPrimary,
+                disabledContainerColor = colors.primary.copy(alpha = .38f),
+                disabledContentColor = colors.onPrimary.copy(alpha = .38f),
             ),
         ) {
             Text(card.action, style = WindmillFont.body(16, FontWeight.Bold))
@@ -149,7 +151,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 onClick = ::revokeLink,
                 modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.textButtonColors(contentColor = skin.accent),
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.primary),
             ) {
                 Text(revoke, style = WindmillFont.body(15, FontWeight.SemiBold))
             }

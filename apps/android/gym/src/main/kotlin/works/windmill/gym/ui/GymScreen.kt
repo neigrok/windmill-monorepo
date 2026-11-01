@@ -108,17 +108,17 @@ fun GymScreen(
     transient: SnackbarHostState? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scrolledUnder = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
         modifier = modifier.nestedScroll(scrolledUnder.nestedScrollConnection),
-        containerColor = skin.canvas,
+        containerColor = colors.surface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
                     Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = GymChrome.title, textAlign = titleAlignment, color = skin.ink,
+                        style = GymChrome.title, textAlign = titleAlignment, color = colors.onSurface,
                         modifier = Modifier.fillMaxWidth().semantics { heading() })
                 },
                 navigationIcon = {
@@ -127,14 +127,14 @@ fun GymScreen(
                         IconButton(onClick = back, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = backTo?.let { "Back to $it" } ?: "Back",
-                                tint = skin.ink, modifier = Modifier.size(24.dp))
+                                tint = colors.onSurface, modifier = Modifier.size(24.dp))
                         }
                     }
                 },
                 actions = actions,
                 expandedHeight = 64.dp,
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas, scrolledContainerColor = skin.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface, scrolledContainerColor = colors.surfaceContainer),
                 scrollBehavior = scrolledUnder,
                 modifier = Modifier.testTag("gym-top-bar"),
             )
@@ -161,15 +161,16 @@ fun NativeFieldType(content: @Composable () -> Unit) {
 // room's accent.
 @Composable
 fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     TextButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.heightIn(min = 48.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         colors = ButtonDefaults.textButtonColors(
-            contentColor = skin.accent,
-            disabledContentColor = skin.inkFaint,
+            contentColor = colors.primary,
+            disabledContentColor = gymColors.inkFaint,
         ),
     ) {
         Text(label, style = GymChrome.action)
@@ -180,14 +181,14 @@ fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
 // in carries the label — so it has no description of its own.
 @Composable
 fun Chevron(modifier: Modifier = Modifier) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Icon(painterResource(R.drawable.gym_chevron), contentDescription = null,
-        tint = skin.inkDim, modifier = modifier.width(10.1771.dp).height(15.5052.dp))
+        tint = colors.onSurfaceVariant, modifier = modifier.width(10.1771.dp).height(15.5052.dp))
 }
 
 @Composable
 fun YouSeat(initial: String) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val shell = LocalShellActions.current
     Box(
         Modifier.size(48.dp).clip(CircleShape)
@@ -195,8 +196,8 @@ fun YouSeat(initial: String) {
             .semantics(mergeDescendants = true) { contentDescription = "Your account" },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(36.dp).clip(CircleShape).background(skin.raised), contentAlignment = Alignment.Center) {
-            Text(initial.uppercase().ifEmpty { "•" }, style = GymChrome.account, color = skin.ink,
+        Box(Modifier.size(36.dp).clip(CircleShape).background(colors.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+            Text(initial.uppercase().ifEmpty { "•" }, style = GymChrome.account, color = colors.onSurface,
                 modifier = Modifier.clearAndSetSemantics {})
         }
     }
