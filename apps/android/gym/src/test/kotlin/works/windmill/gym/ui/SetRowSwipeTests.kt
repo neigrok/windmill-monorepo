@@ -137,17 +137,18 @@ class SetRowSwipeTests {
     }
 
     @Test
-    fun testTheRowDeclaresDeleteAsACustomActionAndItDoesTheSameThing() {
+    fun testTheFocusedRowItselfDeclaresDeleteAsACustomActionAndItDoesTheSameThing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
             screen(room, session(room))
 
             val row = compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").fetchSemanticsNode()
-            val declared = generateSequence(row) { it.parent }
-                .mapNotNull { it.config.getOrNull(SemanticsActions.CustomActions) }
-                .flatten()
-                .toList()
-            assertEquals(listOf("Delete"), declared.map { it.label })
+            val declared = row.config[SemanticsActions.CustomActions]
+            assertEquals("TalkBack offers the actions of the node it focuses, and that node is the row",
+                listOf("Delete"), declared.map { it.label })
+            assertEquals("the swipe around the row declares it nowhere else", listOf("Delete"),
+                generateSequence(row) { it.parent }.mapNotNull { it.config.getOrNull(SemanticsActions.CustomActions) }
+                    .flatten().map { it.label }.toList())
 
             compose.runOnIdle { assertTrue(declared.single().action?.invoke() == true) }
             compose.runOnIdle {

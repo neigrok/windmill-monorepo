@@ -69,6 +69,9 @@ fun DeleteSwipeRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     shape: Shape = RoundedCornerShape(16.dp),
+    // False when the content is its own TalkBack stop and declares the action there: an action on this box is
+    // offered only while the box itself holds focus.
+    declaresAction: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -84,7 +87,7 @@ fun DeleteSwipeRow(
     val scale by animateFloatAsState(if (pastThreshold) 1.2f else 1f, label = "Delete threshold")
     SwipeToDismissBox(state = swipe, enableDismissFromStartToEnd = false, enableDismissFromEndToStart = enabled,
         modifier = modifier.clip(shape).semantics {
-            if (enabled) customActions = listOf(CustomAccessibilityAction(actionLabel) {
+            if (enabled && declaresAction) customActions = listOf(CustomAccessibilityAction(actionLabel) {
                 scope.launch { delete() }
                 true
             })

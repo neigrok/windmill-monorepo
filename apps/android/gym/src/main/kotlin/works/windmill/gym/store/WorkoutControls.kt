@@ -299,7 +299,7 @@ class WorkoutControls private constructor(
     fun sets(sessionId: String): List<TrainingSet> = mine.entries.values
         .filter { it.sessionId == sessionId }
         .map { it.set }
-        .sortedBy { it.completedAtMs }
+        .sortedWith(compareBy({ it.completedAtMs }, { it.id }))
 
     // The set as the engine holds it, keeping the moment this phone logged it.
     fun store(set: TrainingSet, sessionId: String, moment: WorkoutMoment? = null) {

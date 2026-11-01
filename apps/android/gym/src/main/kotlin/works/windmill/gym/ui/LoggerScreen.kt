@@ -465,8 +465,10 @@ fun LoggerScreen(
       }
     }
 
-    // A fix for a set that has since left the ledger has nothing to stand on.
-    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == fix.setId } }
+    // Fix set stands on a row the ledger draws and is titled by that row's count. A fix for a set that has since left
+    // the ledger, held or deleted, has nothing to stand on.
+    val drawnToday = store.todaySets.filter { it.id !in store.withheldIds && it.id !in store.deletedSets }
+    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> drawnToday.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
         // The picker steps back to the workout sheet. Fix set's own handlers answer Back first: a busy save
@@ -548,9 +550,7 @@ fun LoggerScreen(
                         exercise = store.catalog.firstOrNull { it.id == set.exerciseId },
                         origin = FixOrigin.Workout,
                         movement = Readout.movement(set.exerciseId, store.catalog),
-                        // The rack's own count of the row it opened from, never the log's `setNumber`.
-                        position = store.todaySets.filter { it.id !in store.withheldIds && it.id !in store.deletedSets }
-                            .indexOfFirst { it.id == set.id } + 1,
+                        position = drawnToday.indexOf(set) + 1,
                         routine = store.session?.plan?.routine,
                         onSave = { fix ->
                             if (sessionId == null) {

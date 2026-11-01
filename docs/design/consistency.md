@@ -950,7 +950,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     sets. Revisions 05.14b (`1793:27005`, `1793:27113`, caption `1793:27221`), 05.4b (`1793:27226`,
     `1793:27317`, caption `1793:27408`; the swipe, rows renumber), 05.5b (`1793:27413`,
     `1793:27501`, caption `1793:27589`) and 05.13b (`1793:27594`, `1793:27683`, caption
-    `1793:27772`) carry the same rows.
+    `1793:27772`) carry the same rows. At 200 % text a two-digit count widens its row's column past
+    24 dp, so that row's load starts further in; no board draws it.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves

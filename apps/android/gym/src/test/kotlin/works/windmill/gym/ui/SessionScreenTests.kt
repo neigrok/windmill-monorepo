@@ -203,6 +203,17 @@ class SessionScreenTests {
     }
 
     @Test
+    fun setsLoggedAtTheSameInstantCountInTheOrderOfTheirIds() {
+        val movements = Performed.movements(listOf(
+            set("s3", "bench-press", 82.5, 5, at = 1_000),
+            set("s1", "bench-press", 40.0, 8, at = 1_000),
+            set("s2", "bench-press", 80.0, 5, at = 1_000),
+        ), catalog)
+
+        assertEquals(listOf("s1" to 1, "s2" to 2, "s3" to 3), movements.single().rows.map { it.id to it.position })
+    }
+
+    @Test
     fun theSetsThatRemainAfterADeleteCountAgainFromOne() {
         val movements = Performed.movements(listOf(
             set("s1", "bench-press", 40.0, 8, at = 1_000).copy(setNumber = 1),

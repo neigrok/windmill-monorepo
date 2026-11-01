@@ -72,6 +72,26 @@ class OnThisPhoneScreenTests {
         } } finally { scope.cancel() }
     }
 
+    // The refusal names the copy's saved set numbers, so the copy is inspected and fixed by them, not by a count.
+    @Test fun aCopyRefusedForItsNumberingShowsTheSetNumbersItSaved() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            runBlocking {
+                room.select(null)
+                val start = room.now - 200_000
+                room.training.imports.prepare(SavedWorkout(Session("session01", start, start + 90_000, plan = null),
+                    listOf(TrainingSet("set00001", "bench-press", weightKg = 80.0, reps = 5, completedAtMs = start + 1_000, setNumber = 2))))
+                room.select("A"); room.pull(EngineRoomFixture.server()); room.store.refreshEngine()
+            }
+            assertEquals(listOf("source-numbering"), room.training.imports.refusals().map { it.code })
+            inspect(room)
+            compose.onNodeWithText("This workout’s saved set numbers cannot be imported unchanged. The original stays on this phone.")
+                .assertIsDisplayed()
+            compose.onNode(hasTestTag("recovery-set:set00001") and hasAnyDescendant(hasText("2"))).assertIsDisplayed()
+            compose.onAllNodesWithText("1").assertCountEquals(1)
+        } } finally { scope.cancel() }
+    }
+
     @Test fun failedDiscardReportsAndKeepsTheExactCopyForAnExplicitSecondAttempt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         try { phone(scope).use { room ->

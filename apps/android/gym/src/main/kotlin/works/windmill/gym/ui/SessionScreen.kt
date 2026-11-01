@@ -44,8 +44,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
@@ -86,10 +88,13 @@ object Performed {
     }
 
     // `position` counts the movement's sets 1..N in logged order, so the rows that remain after a delete count again.
-    // It is never the log's own `setNumber`, which keeps a delete's gap and can read 2, 3, 1.
+    // The workout page draws it and never the log's own `setNumber`, which keeps a delete's gap and can read 2, 3, 1.
     data class Row(val set: TrainingSet, val position: Int, val note: Note?, val unit: String) {
         val id: String get() = set.id
         val effort: String get() = Readout.effort(set.weightKg, set.reps)
+
+        // A copy kept on this phone is inspected by the numbers it saved, the ones a `source-numbering` refusal names.
+        val savedNumber: Int get() = set.setNumber ?: position
 
         // The quiet digit is drawn bare; TalkBack hears it named, with the load's unit and the reps spelled out.
         val spoken: String
@@ -110,7 +115,8 @@ object Performed {
         catalog: List<Exercise>,
         plan: PlanSnapshot? = null,
     ): List<Movement> {
-        val performed = sets.sortedBy { it.completedAtMs }
+        // Logged order; two sets logged at the same instant keep one order by their ids.
+        val performed = sets.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
         val order = mutableListOf<String>()
         for (set in performed) if (set.exerciseId !in order) order.add(set.exerciseId)
 
@@ -422,7 +428,12 @@ private fun MovementCard(
         // up into a deleted row's slot the dismissed state that belongs to the row that left.
         Column(verticalArrangement = Arrangement.spacedBy(GymSegment.gap), modifier = Modifier.fillMaxWidth()) {
             movement.rows.forEachIndexed { index, performed ->
-                key(performed.id) { SwipeableSetRow(performed, GymSegment.shape(index, movement.rows.size), onFix, onDelete) }
+                key(performed.id) {
+                    val shape = GymSegment.shape(index, movement.rows.size)
+                    DeleteSwipeRow(actionLabel = "Delete", onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
+                        SetRow(performed, shape, onFix, onDelete)
+                    }
+                }
             }
         }
     }
@@ -432,25 +443,16 @@ private fun MovementCard(
 // actions would push the set's count and load off the row a lifter is deciding about.
 //
 // LAW 1, and on Android it is the half that is easy to forget: TalkBack sees a drag, so the same
-// action is declared again BY HAND on the row. This row carries no overflow to inherit it from.
-@OptIn(ExperimentalMaterial3Api::class)
+// action is declared again BY HAND on the row. This row carries no overflow to inherit it from, and it
+// is its own TalkBack stop, so the action sits on it rather than on the swipe around it.
+//
+// The row says itself once, as `Performed.Row.spoken`. The count sits on the load's baseline in a column at
+// least 24 dp wide, so the load starts 40 dp in on every row and a second line starts under it; a count too
+// wide for the column, two digits at 200 % text, widens its own row's column rather than clipping.
 @Composable
-private fun SwipeableSetRow(
-    set: Performed.Row,
-    shape: Shape,
-    onFix: (String) -> Unit,
-    onDelete: suspend (TrainingSet) -> Boolean,
-) {
-    DeleteSwipeRow(actionLabel = "Delete", onDelete = { onDelete(set.set) }, shape = shape) {
-        SetRow(set, shape, onFix)
-    }
-}
-
-// The count sits in a 24 dp column on the load's baseline, so every row's load starts at the same 40 dp, and a
-// second line starts under the load. The row says itself once, as `Performed.Row.spoken`.
-@Composable
-private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit) {
+private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, onDelete: suspend (TrainingSet) -> Boolean) {
     val skin = LocalGymColors.current
+    val scope = rememberCoroutineScope()
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
     val largeText = GymTextScale.large
@@ -462,6 +464,7 @@ private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit) {
             contentDescription = set.spoken
             role = Role.Button
             onClick("fix this set") { onFix(set.id); true }
+            customActions = listOf(CustomAccessibilityAction("Delete") { scope.launch { onDelete(set.set) }; true })
         }
         .padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
