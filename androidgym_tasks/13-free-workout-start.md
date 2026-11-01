@@ -3,7 +3,7 @@
 **Figma:** none. Board 03.9 is deleted: app workouts start from a routine (02.2's **Start workout**). Routines (02.1, 02.7) draw no *Start logging*, and the receipt has no *Save a routine* (03.7, 03.8). The Quick Settings tile entry is task 16.
 
 **Implementation status**
-- Routines opens saved routines and the routine editor. `TrainingStore.start` requires a routine ID. Its action decision refuses a missing routine or intervening open workout before creating another workout or intent.
+- Routines opens saved routines and the routine editor. `WorkoutSession.start` requires a routine ID. Its action decision refuses a missing routine or intervening open workout before creating another workout or intent.
 - Receipts contain no routine-save form, draft, save callback or implicit routine write. Receipt restoration uses the completed workout's session ID.
 - A workout started elsewhere without a routine still arrives through the engine, opens on the existing **What are you lifting?** picker, and can log and reopen. Its shared title is `Readout.noRoutine`: **Free workout**.
 - All 233 targeted tests pass; the integrated gym Debug suite passes 1,167 tests with 17 opt-in live-wire cases skipped. Native acceptance verifies no free-start or receipt routine-save control, an external no-routine workout restored through the existing picker, and no additional start event. See [implementation status](../docs/engineering/android-implementation.md).

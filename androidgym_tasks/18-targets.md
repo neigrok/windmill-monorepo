@@ -18,7 +18,7 @@
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ui/RoutineBuilder.kt` opens `MovementForm` for uniform/per-set targets, name and equipment. Routine creation stages stable movement identities in the owning draft.
-- `TrainingStore.saveRoutine` admits one store-owned save and calls the existing domain `SaveRoutinePlan` through `EngineTraining`. It writes routine entries, new movement metadata, overrides and aliases together with the domain stale/visibility guards.
+- `RoutinesStore.saveRoutine` admits one store-owned save and calls the existing domain `SaveRoutinePlan` through `EngineTraining`. It writes routine entries, new movement metadata, overrides and aliases together with the domain stale/visibility guards.
 - `GymRoom` pins the caller owner, identity revision, replica and exact save attempt. An invalidated result cannot close a newer form or leave its own busy flag stuck. The admitted store-owned save survives caller disposal.
 
 **Contract**

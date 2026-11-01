@@ -4,7 +4,7 @@
 
 **Current implementation**
 - `apps/android/tools/design_capture.py` builds and validates a local-only debug APK, creates an isolated fixture database and Pixel emulator, and captures the current board states in both appearances. The [runbook](../apps/android/tools/DESIGN_CAPTURE.md) documents recipes, deterministic model responses, private debug sign-in, readiness, profiling and cleanup.
-- History, session, progress and program reads use `TrainingStore`'s injected background dispatcher. The engine lock protects a parsed-log cache keyed by replica and complete engine revision; auto-close deadlines also invalidate it.
+- History, session, progress and program reads use the training stores' injected background dispatcher. The engine lock protects a parsed-log cache keyed by replica and complete engine revision; auto-close deadlines also invalidate it.
 - The workout's pending-status getter uses a published read and current local set values. Recomposition performs no engine query. Superseded reads cannot publish into another account; the observer resumes pending connections and manual reads retain a retryable state.
 - The debug-only, non-exported readiness provider measures process start through a rendered frame with the fixture routines loaded. The rig independently verifies body content, preserves the APK hash and source state, enforces the 3-second budget, and records ANR/fatal failures in its manifest.
 
@@ -33,7 +33,7 @@
 - The script runs green on a Pixel emulator (API 36 or newer) in Dark and Daylight, with one PNG per capture named with its board number.
 - A cold start with the fixture account reaches Routines in under 3 s, and an appearance switch shows no ANR.
 - No event changes. A failed background read still reports under its existing operation (`gym.loadLog`, `gym.loadProgress`, `gym.refreshWorkout`).
-- `store/EngineLifecycleStoreTests.kt` and `store/TrainingStoreTests.kt` pass, with a new test that a read does not run on the main thread.
+- `store/EngineLifecycleStoreTests.kt` and the training store suites pass, with a test that a read does not run on the main thread.
 
 **Depends on:** none.
 

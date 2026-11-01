@@ -13,7 +13,7 @@ SHA-256, source revision, dirty status, readiness measurements, idle trace and f
 Recipe board names include dotted, suffixed and letter-prefixed canonical IDs. The
 [runbook](../../apps/android/tools/DESIGN_CAPTURE.md) documents recipes and cleanup.
 
-TrainingStore publishes background read results only while their account, replica, revision and
+The training stores publish background read results only while their account, replica, revision and
 workout still own the request. EngineTraining caches the parsed log by complete engine revision and
 auto-close deadline under the engine lock. Pending delivery status reads published state during
 recomposition. Bounded retries retain connection and selected-history intent; an abandoned read

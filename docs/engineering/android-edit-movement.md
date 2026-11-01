@@ -82,7 +82,7 @@ account switches/adoption and a successful commit followed by owner transition o
 ## Review and simplification
 
 Integration with main's Notes editor preserves both note_editor save/delete and record edit event
-allowlists. The complete TrainingStore, Notes screen and Edit movement sheet suites and six
+allowlists. The complete training store, Notes screen and Edit movement sheet suites and six
 telemetry checks pass together; the integrated write boundary differs from the native source only
 by Notes' already verified save event and typed deletion origin. No visual source changes during
 integration.

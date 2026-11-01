@@ -15,7 +15,7 @@
 - Out of date: *{routine} changed after this was written, so it was set aside {on}. None of it was applied.* (`presentation/Proposal.kt:251`), and in the sheet *This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.* (`ui/ReviewSheet.kt:273-274`).
 - *Turn this down* (`ui/ReviewSheet.kt:491`) opens `ConfirmDialog` (`:434-438`): *Turn this down?* / *Nothing changes.* / **Turn down** (brick) · **Keep it** (`presentation/Proposal.kt:271-274`, `ui/ConfirmDialog.kt:22`).
 - History and thread outcomes say *turned down*, *set aside* and *superseded* (`coach/Thread.kt:53-54`, `:77-79`, `:88-90`).
-- The store calls it dismiss: `dismissProposal` (`store/TrainingStore.kt:972`), failure op `gym.dismissProposal` (`:985`), event action `dismiss` (`:989`).
+- The store calls it dismiss: `RoutinesStore.dismissProposal`, failure op `gym.dismissProposal`, event action `dismiss`.
 
 **Change**
 - **Reject** settles without a confirmation dialog only while no Apply/Reject command is unresolved. Persist its decision identity and reconcile the result; a timeout is not a settled rejection. Task 34 owns unknown outcomes and disables contradictory decisions. Delete the confirmation dialog and its four strings.

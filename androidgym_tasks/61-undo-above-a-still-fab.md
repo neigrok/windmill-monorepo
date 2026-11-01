@@ -6,8 +6,8 @@
 
 **Current implementation**
 - The Log and Routines screens host the room's transient in their own `GymScreen` Scaffold (`snackbarHost` and `floatingActionButton` slots), so the snackbar sits above *Weigh in* and *New routine* and neither button moves. Other frames keep the transient in the room's bottom bar.
-- `GymRoom` reads `accessibleUndoWindowMs`, which is `AccessibilityManager.getRecommendedTimeoutMillis(9_000, FLAG_CONTENT_CONTROLS | FLAG_CONTENT_TEXT)` floored at `Withheld.windowMs = 9_000L`, on every resume and sets it as `TrainingStore.undoWindowMs`.
-- `TrainingStore.withhold` passes that window to `EngineTraining.holdBodyweight`, whose engine gesture carries it as `Gesture.holdMs`; the engine stamps `releaseAt` from its own clock. The store keeps its injected clock.
+- `GymRoom` reads `accessibleUndoWindowMs`, which is `AccessibilityManager.getRecommendedTimeoutMillis(9_000, FLAG_CONTENT_CONTROLS | FLAG_CONTENT_TEXT)` floored at `Withheld.windowMs = 9_000L`, on every resume and sets it as `DeletionsStore.undoWindowMs`.
+- `DeletionsStore.withhold` passes that window to `EngineTraining.holdBodyweight`, whose engine gesture carries it as `Gesture.holdMs`; the engine stamps `releaseAt` from its own clock. The store keeps its injected clock.
 - A log read from its top stays at its top when Undo brings a newer day back above the first row drawn, so the restored row is in view (`LogScreen`).
 - The capture rig's `log.json` weight-undo recipe sets a 30 s accessibility timeout (`accessibility_timeout_ms`), so its Undo tap lands after the screenshot.
 - Tests: `LogTransientTests` (the FAB's bounds with and without the snackbar in Dark and Daylight at 200% text; a 20 s timeout keeps Undo past nine seconds and restores the weigh-in), `LogWeightRowsTests` (a restored newest day returns into view), `HarnessTests` (a gesture's own hold length).

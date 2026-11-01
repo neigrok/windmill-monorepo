@@ -13,7 +13,7 @@
 - A failure is one line in the sheet (`ui/ReviewSheet.kt:163-165`):
   - *the log didn’t answer — nothing was applied*
   - for a removal still in flight, *Still waiting for the log. Retry to check this removal.*
-- Store: `decide` reports `gym.applyProposal` and maps the outcome to *decided*, *moved*, *gone*, *settled* or *failed* (`store/TrainingStore.kt:974-1001`).
+- Store: `decide` reports `gym.applyProposal` and maps the outcome to *decided*, *moved*, *gone*, *settled* or *failed* (`RoutinesStore.decide`).
 
 **Change**
 - Long card, expanded (08.27): every block in model order (*Renamed*, *Moved*, *Changed*, *Removed*, *Added*), then *Show less*, then the buttons. The buttons follow the list; they are not pinned.

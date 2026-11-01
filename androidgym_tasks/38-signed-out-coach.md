@@ -27,7 +27,7 @@
   - Poll once a second while pending. Bind each result, draft and failure to its original chat; navigation/fresh entry must not cancel it or deliver into the newly selected chat.
   - Use mode `conversation`, with up to 12 earlier turns from that chat as context. `message` supplies Coach's bubble; completed `routines` become the drafts in 41.
   - Local turns, drafts, pending input and photos stay in the owner-scoped archive. The server stores no prompt/photo. Signed-out History is local-only; no account history endpoint is called.
-- This task owns the **atomic anonymous import** used by 41, not a loop over `TrainingStore.saveRoutine`.
+- This task owns the **atomic anonymous import** used by 41, not a loop over `RoutinesStore.saveRoutine`.
   - Add a Gym-domain batch action taking the complete validated draft set, catalogue facts and preassigned record identities. It returns one Plan for all routines and required custom movements; reuse existing routine validation/plan composition rather than calling `SaveRoutinePlan` separately per routine.
   - The adapter commits that Plan and a local replay receipt for the installation result in one engine storage transaction. The receipt is scoped to the anonymous owner/replica and `resultId`, and holds a payload fingerprint plus the resulting record identities. Persist neither the receipt before its records nor the records before the receipt.
   - Use the engine's existing device-value/commit boundary for local metadata; extend the product-neutral commit contract only if needed to prove the shared transaction. Keep Gym mapping in Gym. `WorkoutImports` is an existing example of committing product records and recovery metadata through that boundary.

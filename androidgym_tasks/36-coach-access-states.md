@@ -16,7 +16,7 @@
 Daily/Ceiling notice. The cap keeps the native composer and uses the persisted actual retry deadline;
 missing/invalid timing uses the nonnumeric fallback. `CoachStore` projects task 38's retained request
 into its original anonymous chat and keeps accepted photo metadata after the composer clears.
-The application injects the existing onboarding coordinator through `TrainingStore`; installation
+The application injects the existing onboarding coordinator through `TrainingStore` into `CoachStore`; installation
 binding and AuthStore's handoff remain separate collaborators. `AnthropicOnboarding.cpp` validates
 conversation-only `errorCode:null|account_required`, preserving the public durable POST/GET shape
 and existing routine decoder. Exact typed policy results use the fixed approved bubble and Sign in.

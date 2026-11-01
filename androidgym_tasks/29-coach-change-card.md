@@ -17,7 +17,7 @@
 - *Review* opens `ReviewSheet` (`ui/ReviewSheet.kt:82`, mounted at `GymRoom.kt:842`):
   - Rows *Add {m}* / *Remove {m}* / field moves *label · a → b* (`ui/ReviewSheet.kt:325-356`); kept runs *and N lines unchanged* (`presentation/Proposal.kt:304-307`).
   - *Apply* / *Apply all N* (`presentation/Proposal.kt:226-231`) stays at 40 % until the sheet is scrolled to the end (`ui/ReviewSheet.kt:446-457`), with *Scroll to the end to apply.* (`presentation/Proposal.kt:265`) and the atomic line *All three or none. Nothing is applied until you tap.* (`:233-240`).
-- **Bug:** a fresh proposal reads *This proposal is no longer available.* (`store/TrainingStore.kt:1763`). `AskScreen` reads each proposal once (`coach/AskScreen.kt:122-132`); if the replica does not hold it yet, the id goes into `missing` and is never read again until the screen is left and re-entered.
+- **Bug:** a fresh proposal reads *This proposal is no longer available.* (`RoutinesStore.proposal`). `AskScreen` reads each proposal once (`coach/AskScreen.kt:122-132`); if the replica does not hold it yet, the id goes into `missing` and is never read again until the screen is left and re-entered.
 
 **Change**
 - Delete the review sheet from Coach. The card is decided where it stands.
@@ -48,7 +48,7 @@
 **Done when**
 - Screenshots of 08.2 and 08.3 match in Dark and Daylight on the emulator; the rig (01) adds `08.2-proposal-pending-dark` / `-light` and `08.3-proposal-expanded-dark` / `-light`. At the largest font both buttons stay reachable.
 - A proposal minted in this turn shows its card without leaving the screen (a test in `coach/AskScreenTests.kt`).
-- `gym_proposal_outcome` (`store/TrainingStore.kt:1000`) gains `screen: coach`; action `apply` stays. Expanding the card emits nothing. A decision emits one content-free event.
+- `gym_proposal_outcome` (`RoutinesStore.reportProposal`) gains `screen: coach`; action `apply` stays. Expanding the card emits nothing. A decision emits one content-free event.
 - `gym_screen_viewed` `proposal` goes with the sheet; the card is part of `coach`.
 - Apply failures still report under `gym.applyProposal`.
 - Tests to update: `ui/ReviewSheetTests.kt` (delete with the sheet), `coach/AskScreenTests.kt`, `coach/CoachAnswerTests.kt`, `presentation/ProposalTests.kt` (UI adapter), `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/CorpusTests.kt` (existing ChangeBlocks vectors), `store/TelemetryTests.kt`.
