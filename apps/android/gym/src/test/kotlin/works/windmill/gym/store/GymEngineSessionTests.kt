@@ -233,6 +233,30 @@ class GymEngineSessionTests {
         assertEquals(emptyList<String>(), events)
     }
 
+    @Test fun anUnaskedSignOutTellsNoOutcomeAndARecoveredChoiceTellsItsOwn() = runBlocking {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        val engine = Engine.memory(SyncSchema.registry)
+        localMovement(engine)
+        engine.signIn("A", mapOf("gym" to false))
+        val tokens = Tokens().apply { save("A", "token-A"); save("B", "token-B") }
+        val runtime = SyncRuntime(engine, transport(false), tokens, "test", activityAllowed = { false })
+        GymEngineSession(engine, runtime, telemetry, clearAccountCredential = tokens::delete).use { session ->
+            session.signOut()
+            assertEquals("anon", active(engine).member("meta").member("state").str())
+            assertEquals(listOf("A"), engine.dormantReplicas().map { it.account })
+            assertNull(tokens.token("A"))
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), events)
+            engine.signIn("B", mapOf("gym" to false))
+            session.recoverSignOut("B", AuthSignOutChoice.Discard)
+            assertEquals("anon", active(engine).member("meta").member("state").str())
+        }
+        assertEquals(listOf("gym_sign_out" to mapOf("action" to "discard", "outcome" to "completed")), events)
+    }
+
     @Test fun signOutRecoveryRefusesANewerActiveAccount() = runBlocking {
         val engine = Engine.memory(SyncSchema.registry)
         engine.signIn("B", mapOf("gym" to false))

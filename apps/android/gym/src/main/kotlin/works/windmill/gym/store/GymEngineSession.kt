@@ -170,6 +170,10 @@ class GymEngineSession(
     }
 
     override suspend fun recoverSignOut(account: String, choice: AuthSignOutChoice) = signOutAction(choice.name.lowercase()) {
+        endAccount(account, choice)
+    }
+
+    private suspend fun endAccount(account: String, choice: AuthSignOutChoice) {
         val active = activeAccount()
         check(active == null || active == account) { "The account changed." }
         if (active == account) {
@@ -222,9 +226,10 @@ class GymEngineSession(
         clearAccountCredential(account)
     }
 
+    // A sign-out nobody was asked about, as when the session expires, tells no sign-out outcome.
     override suspend fun signOut() {
         val account = activeAccount() ?: return
-        recoverSignOut(account, AuthSignOutChoice.Keep)
+        endAccount(account, AuthSignOutChoice.Keep)
         cleanupSignOut(account)
     }
 
