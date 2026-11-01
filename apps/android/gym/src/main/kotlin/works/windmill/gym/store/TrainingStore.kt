@@ -108,6 +108,8 @@ class TrainingStore(
     localCoach: LocalCoach? = null,
     coachOnboarding: CoachOnboardingStore? = null,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    // Asks the sync runtime for the account's copy again; false when it is not pulling.
+    private val pullAgain: suspend () -> Boolean = { false },
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds },
@@ -1221,6 +1223,9 @@ class TrainingStore(
         }
     }
 
+    val caughtUpTo: Long? get() = training.caughtUpTo
+    fun proposalRecorded(id: String): Boolean = training.proposalRecorded(id)
+
     // Pending removals and unshown receipts remain readable after their synced rows disappear.
     suspend fun proposal(id: String): ProposalRead {
         return (training.proposal(id) ?: training.removalReceipts()[id] ?: settledProposals[id])?.let { ProposalRead.Found(it) } ?: ProposalRead.Gone
@@ -1940,9 +1945,21 @@ class TrainingStore(
         is Deletion.Bodyweight -> error("weigh-in deletion requires its engine receipt")
     }
 
-    // Doubles as the retry for a first page the replica could not answer: with no rows the cursor is
-    // absent, which is the top of the log. The cursor is BOTH halves of the sort key, because two
-    // sessions can share an instant.
+    // The foot's Retry reads the log again; on an account not pulled yet it also asks for the first pull.
+    suspend fun retryLog() {
+        val unread = !training.anonymous && !training.firstPullComplete
+        val asked = unread && pullAgain()
+        loadOlder()
+        val outcome = when {
+            unread -> if (asked) "requested" else "refused"
+            older == Older.Failed -> "failed"
+            else -> "ok"
+        }
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "retry", "outcome" to outcome))
+    }
+
+    // Also re-reads a first page the replica could not answer: with no rows the cursor is absent, which is
+    // the top of the log. The cursor is BOTH halves of the sort key, because two sessions can share an instant.
     suspend fun loadOlder(): Unit = logRead.withLock {
         if (older == Older.Loading || older == Older.End) return
         val seat = owner

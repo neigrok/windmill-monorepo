@@ -45,6 +45,7 @@ internal class EngineRoomFixture(
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
     private val readDispatcher: CoroutineDispatcher? = null,
+    private val pullAgain: suspend () -> Boolean = { false },
 ) : AutoCloseable {
     val scope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
     companion object {
@@ -96,7 +97,7 @@ internal class EngineRoomFixture(
             mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
             undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
             workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-            readDispatcher = reads, coachOnboarding = coachOnboarding)
+            readDispatcher = reads, coachOnboarding = coachOnboarding, pullAgain = pullAgain)
     }
     suspend fun seedFeedback(document: GymPreferences) {
         val fields = mapOf("confirmHaptic" to Json.of(document.confirmHaptic), "confirmSound" to Json.of(document.confirmSound))

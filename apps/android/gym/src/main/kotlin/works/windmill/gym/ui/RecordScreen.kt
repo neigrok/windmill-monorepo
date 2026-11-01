@@ -172,7 +172,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
             page.tiles.forEach { RecordMetric(it, Modifier.weight(1f)) }
         }
     }
-    if (progress.estimates.isNotEmpty()) StrengthChart(progress, nowMs, zone, focusSessionId)
+    if (page.strength) StrengthChart(progress, nowMs, zone, focusSessionId)
     page.noEstimate?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
     if (page.records.isNotEmpty()) {
         Text("Earlier records", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)

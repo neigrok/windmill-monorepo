@@ -115,6 +115,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     val imports = WorkoutImports(engine, writeAuthority)
     val anonymous: Boolean get() = read { it.isAnonymous }
     val firstPullComplete: Boolean get() = read { it.firstPullComplete() }
+    // The account's sequence this phone holds every change up to; null while it is behind.
+    val caughtUpTo: Long? get() = read { it.checkpoint().cleanSeq }
     val notesReady: Boolean get() = anonymous || firstPullComplete
     val planUnreadable: Boolean get() = read { reader ->
         reader.repository(EngineSession).all(ViewMode.stored).any { it.planUnreadable } ||
@@ -562,6 +564,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         if (queued) reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }?.let { EngineProposal.decode(Fields(it)).ui(reader) }
         else reader.repository(EngineProposal).find(identity, ViewMode.drawn)?.ui(reader)
     } ?: removalReceipts.proposals()[id]?.takeIf { it.isPending }
+    // Whether this phone holds any row of the proposal, alive or dead.
+    fun proposalRecorded(id: String): Boolean = read { reader -> reader.repository(EngineProposal).record(Id(id, EngineProposal), ViewMode.drawn) != null }
     // The proposals the log would refuse to apply, decided against the routine as the engine holds and confirms it.
     fun outOfDateProposals(): Set<String> = read { reader ->
         reader.repository(EngineProposal).all(ViewMode.drawn).filter { EngineProposalState(reader, it.id).outOfDate }.mapTo(mutableSetOf()) { it.id.text }

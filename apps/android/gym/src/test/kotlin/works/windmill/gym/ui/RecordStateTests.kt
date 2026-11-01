@@ -86,6 +86,28 @@ class RecordStateTests {
         } } finally { scope.cancel() }
     }
 
+    // A workout logged on this phone before its account is pulled is part of the account: the strength card, with its
+    // latest estimate and workout count, waits for the pull.
+    @Test
+    fun anAccountNotYetPulledShowsNoEstimateOrCountUntilThePullLands() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val server = EngineRoomFixture.server()
+            runBlocking { room.select("a"); room.workout(); room.store.observeEngine() }
+            compose.runOnIdle { assertFalse(room.training.firstPullComplete) }
+            compose.setContent { GymMaterial { RecordScreen("bench-press", room.store, "The log", {}, now = { room.now }) } }
+            compose.onNodeWithText("Recent sets").assertIsDisplayed()
+            compose.onNodeWithText("Estimated strength").assertDoesNotExist()
+            compose.onNodeWithText("Last 12 weeks · 1 workout").assertDoesNotExist()
+            compose.onNodeWithText("kg est", substring = true).assertDoesNotExist()
+            compose.runOnIdle { room.sync(server) }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Last 12 weeks · 1 workout").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Estimated strength").assertExists()
+            compose.onNodeWithText("96.3 kg est · today · 82.5 × 5").assertExists()
+            compose.onNodeWithText("Best e1RM").assertExists()
+        } } finally { scope.cancel() }
+    }
+
     @Test
     fun aLaterWeakerWorkoutDoesNotReplaceTheDailyChartReadoutOrGainAnInspectionRing() {
         val now = java.time.Instant.parse("2026-10-22T15:00:00Z").toEpochMilli()

@@ -22,6 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.store.*
+import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -77,6 +78,35 @@ class LogStateTests {
                 assertTrue("recorded at the save", current.bodyweight.single().recordedAt!! in saving..room.now)
                 assertEquals("as the replica holds it", room.training.weighins(), current.bodyweight)
             }
+        } } finally { scope.cancel() }
+    }
+
+    // Signed in to an account this phone has not pulled, Retry asks for the first pull, and the log reads itself once it lands.
+    @Test
+    fun retryOnAnAccountNotYetPulledAsksForTheFirstPullAgain() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        var pulls = 0
+        val actions = mutableListOf<Map<String, String>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_action" && properties["screen"] == "log") actions += properties
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, pullAgain = { pulls++; true }).use { room ->
+            runBlocking { room.select("a"); room.store.observeEngine() }
+            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.onNodeWithText("That read failed.").assertIsDisplayed()
+            compose.onNodeWithText("Retry").performClick()
+            compose.waitUntil(5_000) { compose.runOnIdle { pulls == 1 } }
+            compose.onNodeWithText("Retry").assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(listOf(mapOf("screen" to "log", "action" to "retry", "outcome" to "requested")), actions)
+                room.pull(EngineRoomFixture.server())
+            }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Retry").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("That read failed.").assertDoesNotExist()
+            compose.runOnIdle { assertEquals(1, pulls) }
         } } finally { scope.cancel() }
     }
 }
