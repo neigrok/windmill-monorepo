@@ -122,6 +122,7 @@ WriteObservation::~WriteObservation() {
 const std::string& WriteObservation::requestId() const { return completion_.requestId; }
 std::uint64_t WriteObservation::writeCount() const { return state_->writes.load(); }
 void WriteObservation::wrote() { ++state_->writes; }
+bool WriteObservation::reportedFailure() const { return failed_ || state_->reported; }
 
 void WriteObservation::ownInfo() {
   if (state_->infoEmitted) return;

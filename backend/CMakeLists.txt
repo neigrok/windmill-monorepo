@@ -605,6 +605,7 @@ add_executable(windmill_adapters_tests
   test/platform/application/WriteObservationTest.cpp
   test/platform/adapters/http/WriteRoutesTest.cpp
   test/platform/adapters/http/AccessLogTest.cpp
+  test/platform/adapters/ws/SyncSocketTest.cpp
   test/platform/adapters/http/LogFormatTest.cpp
   test/third_party/drogon/PatchesTest.cpp
   test/platform/adapters/crypto/OpenSslTokenGeneratorTest.cpp

@@ -5,6 +5,7 @@
 #include "test/testing.h"
 
 #include <atomic>
+#include <chrono>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -130,6 +131,41 @@ TEST(worker_pool_with_every_worker_busy_queues_exactly_its_ceiling) {
     release.set_value();
   }
   CHECK_EQ(ran.load(), 5);
+}
+
+// A full queue is an outage the server reports itself, once per window and never per refused job; a stopping pool is not.
+TEST(worker_pool_reports_a_full_queue_once_per_window_and_a_stopping_pool_never) {
+  struct Reports : FailureReporter {
+    std::mutex mutex;
+    std::vector<std::string> lines;
+    void report(const std::string& kind, const std::string& where, const std::string& detail) override {
+      std::lock_guard lock(mutex);
+      lines.push_back(kind + " " + where + " " + detail);
+    }
+  } reports;
+  auto now = std::chrono::steady_clock::time_point{};
+  auto saturated = std::make_shared<FailureWindow>(reports, "worker_pool.saturated", std::chrono::minutes(5), [&now] { return now; });
+  WorkerPool pool{"sync", 1, 1, saturated};
+  std::promise<void> busy;
+  std::future<void> started = busy.get_future();
+  std::promise<void> release;
+  std::shared_future<void> released = release.get_future().share();
+  CHECK(pool.post([&busy, released] { busy.set_value(); released.wait(); }));
+  started.wait();
+  CHECK(pool.post([] {}));
+
+  CHECK_FALSE(pool.post([] {}));
+  now += std::chrono::minutes(4);
+  CHECK_FALSE(pool.post([] {}));
+  now += std::chrono::minutes(1);
+  CHECK_FALSE(pool.post([] {}));
+  release.set_value();
+  pool.stopAndJoin();
+  now += std::chrono::minutes(10);
+  CHECK_FALSE(pool.post([] {}));
+
+  CHECK_EQ(reports.lines, (std::vector<std::string>{"platform worker_pool.saturated pool=sync",
+                                                    "platform worker_pool.saturated pool=sync"}));
 }
 
 TEST(worker_pool_shutdown_runs_every_queued_job_and_each_sees_stopping) {

@@ -269,7 +269,7 @@ TEST(ai_installation_issue_completes_once_under_its_route) {
   const auto [refusing, refused] = issue(disabled);
   REQUIRE(refused);
   CHECK_EQ(refused->getStatusCode(), drogon::k503ServiceUnavailable);
-  CHECK(accessSeverity(refused, writeOperation(refusing)) == Severity::warn);
+  CHECK(accessSeverity(refusing, refused) == Severity::warn);
   REQUIRE_EQ(lines.size(), std::size_t{1});
   CHECK_EQ(lines[0].operation, std::string{"ai.installation.issue"});
   CHECK_EQ(lines[0].product, std::string{"platform"});
@@ -284,7 +284,7 @@ TEST(ai_installation_issue_completes_once_under_its_route) {
   const auto [failing, failed] = issue(enabled);
   REQUIRE(failed);
   CHECK_EQ(failed->getStatusCode(), drogon::k503ServiceUnavailable);
-  CHECK(accessSeverity(failed, writeOperation(failing)) == Severity::error);
+  CHECK(accessSeverity(failing, failed) == Severity::error);
   REQUIRE_EQ(lines.size(), std::size_t{2});
   CHECK_EQ(lines[1].operation, std::string{"ai.installation.issue"});
   CHECK_EQ(lines[1].door, std::string{"rest"});

@@ -12,6 +12,7 @@ namespace wm {
 namespace {
 std::mutex routesMutex;
 std::vector<WriteRoute> routes;
+std::vector<WriteRoute> readRoutes;
 
 bool routeMatches(std::string_view pattern, std::string_view path) {
   while (!pattern.empty()) {
@@ -114,6 +115,11 @@ std::vector<WriteRoute> registeredWriteRoutes() {
   return routes;
 }
 
+void declareReadRoute(WriteRoute route) {
+  std::lock_guard<std::mutex> lock(routesMutex);
+  readRoutes.push_back(std::move(route));
+}
+
 bool retiredRoute(const drogon::HttpRequestPtr& request) {
   return request->attributes()->get<bool>("wm.retired_route");
 }
@@ -189,15 +195,25 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   return "failed";
 }
 
-std::string writeOperation(const drogon::HttpRequestPtr& request) {
-  if (!request->attributes()->find("wm.write_operation")) return {};
-  return request->attributes()->get<std::string>("wm.write_operation");
+std::string httpOperation(const drogon::HttpRequestPtr& request) {
+  if (request->attributes()->find("wm.write_operation")) return request->attributes()->get<std::string>("wm.write_operation");
+  std::lock_guard<std::mutex> lock(routesMutex);
+  for (const WriteRoute& route : readRoutes) {
+    if (std::find(route.methods.begin(), route.methods.end(), request->method()) == route.methods.end()) continue;
+    if (routeMatches(route.path, request->path())) return route.operation;
+  }
+  return {};
+}
+
+bool writeFailureReported(const drogon::HttpRequestPtr& request) {
+  if (!request->attributes()->find(kWriteObservationAttribute)) return false;
+  return request->attributes()->get<std::shared_ptr<WriteObservation>>(kWriteObservationAttribute)->reportedFailure();
 }
 
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
   const auto observation = beginWriteRequest(request);
   if (!observation) return;
-  const std::string outcome = writeHttpOutcome(response, writeOperation(request));
+  const std::string outcome = writeHttpOutcome(response, httpOperation(request));
   if (outcome == "failed") {
     observation->fail(HttpWriteFailure{});
     return;

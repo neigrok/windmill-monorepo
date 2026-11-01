@@ -4,6 +4,8 @@
 #include "platform/application/LiveSessions.h"
 #include "platform/application/WorkerPool.h"
 #include "platform/application/sync/SyncLive.h"
+#include "platform/application/sync/SyncService.h"
+#include "platform/domain/sync/Credentials.h"
 #include "platform/ports/Clock.h"
 
 #include <drogon/HttpFilter.h>
@@ -11,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -34,6 +37,14 @@ struct SyncSocketDeps {
 void installSyncSocket(SyncSocketDeps deps);
 // Stop the session heartbeat and release its dependencies after the app's IO loops stop.
 void uninstallSyncSocket();
+
+// The gate's step 3 on a worker: the principal the upgrade's credentials prove now, or the refusal it answers — 401
+// for credentials that fail, 503 for ones that cannot be resolved, which reports under `sync.live.upgrade`.
+struct UpgradeProof {
+  std::optional<UserId> principal;
+  std::optional<SyncReply> refusal;
+};
+UpgradeProof proveUpgrade(AuthService& auth, const SentCredentials& sent, const Json::Value& envelope);
 
 // The upgrade to /v1/sync/live?schema=<version>, before the connection upgrades, in this order:
 // 1. a stated origin off the allow-list → 403, since a WebSocket upgrade gets no CORS preflight;

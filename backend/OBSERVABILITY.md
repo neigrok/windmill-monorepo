@@ -29,9 +29,14 @@ configuration, a busy gym engine, rate limits, invalid tool arguments and every 
 410 included — never create Issues.
 AI allowance, funding, pricing and closed-checkout 503 refusals keep their bounded codes on the
 matching HTTP routes. Accounting failures and unknown 503 responses remain Issues.
-The access log writes one `http …` line per request at the same split: INFO for traffic, WARN for every
-4xx and for a 5xx the write boundary reads as an expected refusal (`writeHttpOutcome`), ERROR for every
-other 5xx.
+The access log writes one `http …` line per request at the same split: ERROR once the request's write
+observation failed or reported a failure, whatever it answered; otherwise INFO for traffic, WARN for every
+4xx and for a 5xx its route reads as an expected refusal (`writeHttpOutcome` under the route's static
+operation, a read route's included), ERROR for every other 5xx.
+A full worker-pool queue answers 503 `unavailable` and files one `worker_pool.saturated` Issue per five
+minutes per pool (`FailureWindow`), the pool named in its detail; a stopping pool files none. A push whose
+bind fails transiently answers 503 `unavailable` and files one `sync.push.bind_unavailable` Issue per five
+minutes, with the exception type.
 Unexpected exceptions and unclassified 5xx create Issues grouped by static operation and compiled
 exception type; the Issue's `tags.request_id` matches its completion. Nested boundaries share the
 request state and report its first unexpected failure once. Admission, command and postcommit
@@ -323,6 +328,9 @@ listed separately because their only server writes are authentication refresh or
 | `ReplicaPush::storedAnswer` replay intent digest disagreement | `sync.intent.digest` | completion; expected digest conflict | log only |
 | `ScopePull::page` each requested scope including reset/re-pull | `sync.scope.pull` | completion; scope result/reset | unexpected |
 | `SyncApi::onWorker` async exception boundary | route operation `sync.hello`, `sync.push`, `sync.pull` | completion; bounded refusal or result | unexpected |
+| `SyncUpgradeGate` credential resolution on a worker (`proveUpgrade`) | `sync.live.upgrade` | ERROR completion, door `websocket`, only when the credential cannot be resolved; the upgrade answers 503 | unexpected, with the exception type |
+| `WorkerPool::post` refused for a full queue (`sync`, `ai-installation-http`) | `worker_pool.saturated` | none; the caller answers 503 | once per five minutes per pool |
+| `ReplicaPush::bind` transient failure | `sync.push.bind_unavailable` | none; the push answers 503 `unavailable` | once per five minutes |
 | `products/gym/application/AskService.cpp ask admission + generation/thread persistence` (coach) | `ask.run` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp stop` (coach) | `ask.stop` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.create_routine` | completion; draft prepared, catalog or slot refusal, `refused` when the asking client does not review drafts | unexpected |
@@ -391,8 +399,8 @@ listed separately because their only server writes are authentication refresh or
 | Durable alert worker | `ai.budget.alert.claim`, `ai.budget.alert.delivered`, `ai.budget.alert.retry`, `ai.budget.alert_send` | claim/delivery/retry outcome; no recipient, identifiers or amounts in telemetry | unexpected outbox or delivery failure |
 | `AiCallBudget` | `ai.call.admit`, `ai.call.account`; `ai_output_admission` diagnostic | admission refusal or settlement/uncertainty; diagnostic carries only input nanos, output-token nanos, minimum/maximum/selected tokens and static code; no prompt, image, account or provider body | unexpected boundary failure, shared request deduplication |
 | `POST /v1/ai/installations` | `ai.installation.issue` | bounded issue or rate-limit outcome | unexpected storage/credential failures |
-| `GET /v1/ai/installations/current` | `ai.installation.read` | HTTP status; no credential, balance or identifier | unexpected read failures |
-| `POST /v1/ai/installations/bind` | `ai.installation.bind`, `ai.budget.bind_device` | bounded success, replay or binding conflict | unexpected binding/accounting failures |
+| `GET /v1/ai/installations/current` | `ai.installation.read` | HTTP status via access log, WARN for its `anonymous_ai_unavailable` 503; no credential, balance or identifier | unexpected read failures |
+| `POST /v1/ai/installations/bind` | `ai.installation.bind`, `ai.budget.bind_device` | `ok` (a replay included) or bounded binding refusal | unexpected binding/accounting failures |
 | Anonymous generation network admission | `ai.installation.admit` | bounded success, replay, disabled, rate limit or bound refusal | unexpected counter failures |
 | Expired network-key sweep | `ai.installation.prune` | committed deletion only | unexpected retention failures |
 | `POST /v1/gym/coach/onboarding` | `gym.coach.onboarding.start` | acceptance, replay or bounded refusal | unexpected request/storage failures |
@@ -405,7 +413,7 @@ listed separately because their only server writes are authentication refresh or
 | Phone Coach vendor round (`platform/adapters/llm/AiCallBudget.cpp finish`) | `ai.call.account` | `settled` (actual usage), `unconsumed` (a vendor error before `message_start`: zero usage, the slot opens), `uncertain` (an ambiguous send: the hold stays) | an accounting transition the ledger refused |
 | Phone Coach model round | `ai.call.admit`, `ai.call.account` under operation `turn` | the shared admission and settlement rows; a refused round ends the turn with the refusal's code as an `error` frame | unexpected boundary failures, as for every round |
 | Anonymous Coach result expiry | `background.gym-coach-onboarding-retention` | committed expiry writes only | unexpected retention failures |
-| `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log; no balance in telemetry | static failure detail on unavailable accounting |
+| `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log, WARN for its `ai_allowance_disabled` 503; no balance in telemetry | static failure detail on unavailable accounting |
 | Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted`, `funding_required` or `debt_outstanding` | expected refusals create no Issue |
 
 Standalone MCP accepts unprefixed tool aliases; completions use canonical operations
