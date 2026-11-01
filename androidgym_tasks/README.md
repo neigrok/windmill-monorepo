@@ -64,7 +64,7 @@ The 2026-10-31 review of the Android app (native experience on the emulator, cod
 | B | [54](54-nav-labels-and-top-bar.md), [56](56-routine-editor-asks-before-discard.md), [58](58-planned-rows-offered-load.md), [60](60-receipt-at-large-text.md), [61](61-undo-above-a-still-fab.md), [62](62-native-buttons-and-icons.md), [64](64-accessibility-pass.md), [71](71-one-gym-domain.md), [72](72-honest-reads-before-first-pull.md) |
 | C | [67](67-theme-roles.md), [68](68-split-the-store-and-the-room.md), [65](65-delete-account-clock-and-not-deleted.md) once its boards are approved |
 
-Stage A, except 70, is on main (`70ec2dbe`); its boards 00.5, 00.6, 02.21, 03.33, 03.34 and 03.35 are 🚀 In production. Stage B's visual tasks (54, 56, 58, 60, 61, 62, 64) are on main (`ef0f05fb`); their boards 00.7, 02.20, 02.17, 03.36, 05.17 and Shell 16b are 🚀 In production, and 05.16 is deleted. 71, 72 and 70 are next. 56 uses 53's back guard; 68 follows 53 so the room is not rewritten twice; 67 and 68 are wide refactors best done when the visual tasks have landed.
+Stage A, except 70, is on main (`70ec2dbe`); its boards 00.5, 00.6, 02.21, 03.33, 03.34 and 03.35 are 🚀 In production. Stage B's visual tasks (54, 56, 58, 60, 61, 62, 64) are on main (`ef0f05fb`); their boards 00.7, 02.20, 02.17, 03.36, 05.17 and Shell 16b are 🚀 In production, and 05.16 is deleted. 71 is on main (`33848694`), and so is 72 except the parts waiting for design (its log foot's waiting copy, board 05.18, and Routines' empty line). 70 is next. 56 uses 53's back guard; 68 follows 53 so the room is not rewritten twice; 67 and 68 are wide refactors best done when the visual tasks have landed.
 
 ### Working on a native-wave task
 

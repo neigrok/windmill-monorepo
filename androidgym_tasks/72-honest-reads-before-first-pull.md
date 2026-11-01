@@ -1,6 +1,6 @@
 # Before the first pull, nothing counts or claims from partial history
 
-**Status:** The record page, the log foot's Retry and the shared *new best* rule are built. The log foot's waiting copy waits for 05.18 to be approved.
+**Status:** On main (`33848694`): the record page, the log foot's Retry, the foot's unread state and the shared *new best* rule are built. The log foot's waiting copy waits for 05.18 to be approved; Routines' empty line before the first pull waits for a design.
 
 **Figma:** 05.18 The log, reading before the first pull (🚧 In progress, awaiting owner approval; ledger 11u): [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1767-27118) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1767-27204). Build the log-foot part only once it is ✅ Ready for dev.
 
