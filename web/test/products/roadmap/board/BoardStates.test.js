@@ -99,7 +99,7 @@ test('BoardStates — an empty roadmap pins New step as its one primary, with no
 });
 
 test('BoardStates — with every step done, Up next rests on Roadmap complete: Share it and New step for the owner, the count alone for a reader', () => {
-  const upNext = (props) => /st-board-columns-column--upNext">.*?<\/h2>(.*?)<\/section>/.exec(frame({ tree: sail(twoSteps), completed: new Set(['course', 'parts']), ...props }))[1]
+  const upNext = (props) => /st-board-columns-column--upNext"[^>]*>.*?<\/h2>(.*?)<\/section>/.exec(frame({ tree: sail(twoSteps), completed: new Set(['course', 'parts']), ...props }))[1]
     .replace(/<button type="button"(?! class)[^>]*>/g, '<button>');
   assert.equal(upNext({ onShare: () => {}, onNewStep: () => {} }), [
     '<div class="st-board-complete"><h3 class="st-board-complete-title">All 2 steps done</h3>',
