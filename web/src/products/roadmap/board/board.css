@@ -299,15 +299,11 @@
   100% { transform: scale(1); }
 }
 @keyframes st-board-card-settle {
-  0% {
+  0%, 50% {
     border-color: var(--st-board-arrived-edge);
     box-shadow: inset 0 0 0 var(--st-board-arrived-inset) var(--st-board-arrived-edge), 0 0 0 3px var(--kind-terracotta-glow), 0 0 8px var(--kind-terracotta-glow);
   }
-  30% {
-    border-color: var(--st-board-arrived-edge);
-    box-shadow: inset 0 0 0 var(--st-board-arrived-inset) var(--st-board-arrived-edge), 0 0 0 0 transparent, 0 0 0 transparent;
-  }
-  55% {
+  25%, 75% {
     border-color: var(--st-board-arrived-edge);
     box-shadow: inset 0 0 0 var(--st-board-arrived-inset) var(--st-board-arrived-edge), 0 0 0 1px var(--kind-terracotta-glow), 0 0 4px var(--kind-terracotta-glow);
   }
