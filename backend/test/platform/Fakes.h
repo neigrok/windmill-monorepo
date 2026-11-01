@@ -156,8 +156,9 @@ struct FakeAuthRepository : AuthRepository {
     return row.receipt;
   }
   AccountCloseResult closeWithReceipt(const UserId& userId, const AccountClosure& operation,
-      const std::string& sessionDigest, UnixMs now) override {
+      const std::string& sessionDigest, Clock& clock) override {
     if (failClosure) throw std::runtime_error("private closure storage failure");
+    const UnixMs now = clock.nowMs();
     if (closures.contains(operation.operationId)) return {closureReceipt(userId, operation, now), {}};
     if (!operation.freshAt(now))
       return {{operation.requestedAt > now ? ClosureOutcome::clockAhead : ClosureOutcome::unavailable}, {}};

@@ -30,7 +30,8 @@ class SyncRuntimeTests {
         val values = ConcurrentHashMap<String, String>()
         var failSave = false
         var failDelete = false
-        override fun token(account: String) = values[account]
+        @Volatile var failToken = false
+        override fun token(account: String) = if (failToken) error("secret-token/private-content") else values[account]
         override fun save(account: String, token: String) { if (failSave) error("secret-token/private-content"); values[account] = token }
         override fun delete(account: String) { if (failDelete) error("secret-token/private-content"); values.remove(account) }
         override fun accounts() = values.keys.toSet()
@@ -52,6 +53,28 @@ class SyncRuntimeTests {
         @Volatile var beforeReading: () -> Unit = {}
         override fun now() = wall
         override fun reading(): ClockReading { beforeReading(); return ClockReading(wall, wall, "boot-1") }
+    }
+    // Time the test moves: an engine sleep ends once the clock has passed its end. The clock moves only to the end of a sleep
+    // the test names, once that sleep is pending, so each step lands exactly where the engine scheduled it.
+    private class VirtualTime(private val clock: Clock) : EngineSleeper {
+        private class Sleep(val ms: Long, val until: Long) { val woken = CompletableDeferred<Unit>() }
+        private val sleeping = CopyOnWriteArrayList<Sleep>()
+        override suspend fun sleep(ms: Long) {
+            val sleep = Sleep(ms, clock.wall + ms)
+            sleeping.add(sleep)
+            try { sleep.woken.await() } finally { sleeping.remove(sleep) }
+        }
+        // Waits for a pending sleep of exactly `ms`, and answers when it ends.
+        suspend fun pending(ms: Long): Long = withTimeout(2_000) {
+            var found = sleeping.firstOrNull { it.ms == ms }
+            while (found == null) { delay(2); found = sleeping.firstOrNull { it.ms == ms } }
+            found.until
+        }
+        // Moves the clock to the end of the pending sleep of `ms`, and wakes every sleep due by then.
+        suspend fun passSleep(ms: Long) {
+            clock.wall = pending(ms)
+            sleeping.filter { it.until <= clock.wall }.forEach { it.woken.complete(Unit) }
+        }
     }
     private class Push(val request: Json, val token: String) {
         val answer = CompletableDeferred<Reply<SyncResponse>>()
@@ -95,7 +118,9 @@ class SyncRuntimeTests {
         var helloAnswer: CompletableDeferred<Reply<SyncResponse>>? = null
         @Volatile var refuseReopen = false
         @Volatile var liveRefusal: SyncResponse? = null
+        @Volatile var freshSockets = false
         val socket = Socket()
+        val sockets = CopyOnWriteArrayList<Socket>()
         override suspend fun hello(token: String?): Reply<SyncResponse> {
             hellos.send(token)
             return helloAnswer?.await() ?: Reply.Answer(SyncResponse(200, Json.objectOf(
@@ -129,6 +154,7 @@ class SyncRuntimeTests {
             liveAnswer?.let { return it.await() }
             liveRefusal?.let { return Reply.Failed(it) }
             if (refuseReopen && opened.isCompleted) return Reply.Unreachable
+            if (freshSockets) return Reply.Answer(Socket().also(sockets::add))
             opened.complete(socket); return Reply.Answer(socket)
         }
     }
@@ -136,10 +162,9 @@ class SyncRuntimeTests {
         sleeper: EngineSleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() },
         pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() },
         registry: Registry = this@SyncRuntimeTests.registry, activityAllowed: () -> Boolean = { true },
-        signOutDrainAllowed: () -> Boolean = activityAllowed, draw: (Int) -> Int = { 0 }) : AutoCloseable {
+        signOutDrainAllowed: () -> Boolean = activityAllowed, draw: (Int) -> Int = { 0 }, val clock: Clock = Clock()) : AutoCloseable {
         val events = CopyOnWriteArrayList<EngineEvent>()
         val tokens = Tokens()
-        val clock = Clock()
         val identities = Identities(draw)
         val engine = Engine.memory(registry, snapshot, clock, identities, "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
         val transport = Transport()
@@ -1077,6 +1102,73 @@ class SyncRuntimeTests {
         }
     }
 
+    // A pull answered with every scope's page complete, or with `more` on each: rows-free pages from the epoch's start.
+    private fun pages(request: Json, more: Boolean) = Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000),
+        "epoch" to Json.of("ep-1"), "as" to Json.of("A"), "pages" to Json.Arr(request.member("scopes").arr().map { asked ->
+            Json.objectOf("scope" to asked.member("scope"), "kind" to Json.of("rows"), "rows" to Json.array(),
+                "cursor" to Json.of(WireCursor("ep-1", "live", 0).text), "more" to Json.of(more), "seq" to Json.of(0),
+                "digest" to Json.of(ScopeDigest.ZERO.hex))
+        }))))
+
+    // Every pull sent is numbered and ends once: an unanswered or refused one fails, a page with more to read lands without
+    // catching up, and the pull that reads the rest lands caught up under its own number.
+    @Test fun pullsNumberEachPullAndSayHowTheLatestEnded() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            val replica = fixture.engine.activeReplica()
+            fun pulls() = fixture.runtime.pulls.value.copy(blocked = false)
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            until { pulls().ended == 1L }
+            assertEquals(Pulls(replica, sent = 1, ended = 1, caughtUp = 0, failed = true), pulls())
+            assertTrue(fixture.runtime.pullAgain())
+            val paged = fixture.pull()
+            assertEquals("a pull in flight is sent, not ended", Pulls(replica, sent = 2, ended = 1, failed = true), pulls())
+            paged.answer.complete(pages(paged.request, more = true))
+            until { pulls().ended == 2L }
+            val step = async { fixture.runtime.pullerStep() }
+            val rest = fixture.pull()
+            assertEquals("a page with more lands without catching up", Pulls(replica, sent = 3, ended = 2, caughtUp = 0), pulls())
+            rest.answer.complete(pages(rest.request, more = false))
+            step.await()
+            assertEquals(Pulls(replica, sent = 3, ended = 3, caughtUp = 3), pulls())
+        }
+    }
+
+    // No pull can be attempted off the network or without a token, and the pulls say so beside their count.
+    @Test fun pullsSayWhenNoPullCanBeAttempted() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            until { fixture.runtime.pulls.value.ended == 1L }
+            assertFalse(fixture.runtime.pulls.value.blocked)
+            fixture.runtime.connectivity(false)
+            until { fixture.runtime.pulls.value.blocked }
+            assertFalse(fixture.runtime.pullAgain())
+            fixture.runtime.connectivity(true)
+            until { !fixture.runtime.pulls.value.blocked }
+            fixture.tokens.delete("A")
+            fixture.runtime.enter()
+            until { fixture.runtime.pulls.value.blocked }
+        }
+    }
+
+    // The arithmetic the readers rely on: a pull from another replica starts afresh, an end for a replica no longer
+    // current changes nothing, and a reader who asked sees a failure only once a pull ends after the ask.
+    @Test fun pullsStallOnlyWhenNothingMoreIsComing() {
+        val one = Pulls("one").sending("one").ending("one", 1, landed = false, caughtUp = false)
+        assertEquals(Pulls("one", sent = 1, ended = 1, failed = true), one)
+        assertEquals(Pulls("two", sent = 1), one.sending("two"))
+        assertEquals(one, one.ending("two", 2, landed = true, caughtUp = true))
+        assertTrue(one.stalled(null))
+        assertFalse("asked after it ended", one.stalled(one))
+        assertTrue("asked on another replica", one.stalled(Pulls("two", ended = 5)))
+        assertFalse("a pull in flight", one.sending("one").stalled(null))
+        assertTrue("nothing can run", Pulls("one", blocked = true).stalled(Pulls("one")))
+        assertEquals(1L, Pulls("one").sending("one").ending("one", 1, landed = true, caughtUp = true).caughtUp)
+    }
+
     // With the account's token gone there is no seat to pull as, so nothing is asked and the tap says so.
     @Test fun pullAgainAsksNothingWithoutASeat() = runBlocking {
         Fixture(draw = { it / 2 }).use { fixture ->
@@ -1368,6 +1460,128 @@ class SyncRuntimeTests {
             until { pauses().size > before.size }
             assertTrue("$before", before.last() >= 2_000)
             assertEquals(1_000, pauses()[before.size])
+        }
+    }
+
+    // §7.5: every refused open is a reconnect, so the puller pulls once at once, but the next open waits out the socket's own
+    // ladder, and a pull landing in between never cuts that wait short: a minute of a server refusing live is six opens.
+    @Test fun aRefusedLiveSocketReopensOnItsOwnLadderAndThePullsItRunsNeverHurryIt() = runBlocking {
+        val clock = Clock()
+        val time = VirtualTime(clock)
+        Fixture(sleeper = time, draw = { it - 1 }, clock = clock).use { fixture ->
+            val start = clock.wall
+            fixture.transport.liveRefusal = SyncResponse(503)
+            fixture.runtime.enter()
+            until { fixture.transport.opening.get() == 1 }
+            time.pending(999)
+            // The foreground's own pull may carry the first refusal's.
+            delay(100)
+            var pulls = fixture.transport.pulling.get()
+            val opens = mutableListOf(clock.wall - start)
+            for (step in listOf(999L, 1_999, 3_999, 7_999, 15_999)) {
+                time.passSleep(step)
+                until { fixture.transport.opening.get() == opens.size + 1 }
+                opens.add(clock.wall - start)
+                pulls++
+                until { fixture.transport.pulling.get() == pulls }
+            }
+            // The seventh open waits for the 30 s ceiling, past the minute.
+            assertEquals(start + 30_995 + 29_999, time.pending(29_999))
+            delay(200)
+            assertEquals(listOf(0L, 999, 2_998, 6_997, 14_996, 30_995), opens)
+            assertEquals(6, fixture.transport.opening.get())
+            assertEquals(pulls, fixture.transport.pulling.get())
+        }
+    }
+
+    // §7.5: a socket nobody wanted (the app away) opens at once when wanted again and keeps its step; a re-authentication opens it at
+    // once from the first step.
+    @Test fun aForegroundReopensTheRefusedSocketAtOnceKeepingItsStepAndAReauthenticationFromTheFirst() = runBlocking {
+        val clock = Clock()
+        val time = VirtualTime(clock)
+        Fixture(sleeper = time, draw = { it - 1 }, clock = clock).use { fixture ->
+            val start = clock.wall
+            fixture.transport.liveRefusal = SyncResponse(503)
+            fixture.runtime.enter()
+            until { fixture.transport.opening.get() == 1 }
+            time.passSleep(999)
+            until { fixture.transport.opening.get() == 2 }
+            time.passSleep(1_999)
+            until { fixture.transport.opening.get() == 3 }
+            time.pending(3_999)
+            fixture.runtime.leave()
+            fixture.runtime.enter()
+            until { fixture.transport.opening.get() == 4 }
+            assertEquals(start + 2_998, clock.wall)
+            time.pending(7_999)
+            fixture.runtime.reauthenticate("token:A")
+            until { fixture.transport.opening.get() == 5 }
+            time.pending(999)
+            assertEquals(start + 2_998, clock.wall)
+        }
+    }
+
+    // §7.5: the open that follows a refused one pulls every scope once it follows them, for what changed while no socket did.
+    @Test fun anOpenAfterARefusedOneCatchesUpWithOnePull() = runBlocking {
+        val clock = Clock()
+        val time = VirtualTime(clock)
+        Fixture(sleeper = time, draw = { it - 1 }, clock = clock).use { fixture ->
+            fixture.transport.liveRefusal = SyncResponse(503)
+            fixture.runtime.enter()
+            until { fixture.transport.opening.get() == 1 }
+            time.pending(999)
+            delay(100)
+            val pulls = fixture.transport.pulling.get()
+            fixture.transport.liveRefusal = null
+            time.passSleep(999)
+            val socket = withTimeout(2_000) { fixture.transport.opened.await() }
+            until { socket.sends.isNotEmpty() }
+            until { fixture.transport.pulling.get() == pulls + 1 }
+            delay(200)
+            assertEquals(pulls + 1, fixture.transport.pulling.get())
+        }
+    }
+
+    // §7.5: a close the client makes while live stays wanted opens the next socket at once and leaves the step where it was; a
+    // socket the server then drops backs off from that step.
+    @Test fun aCloseTheClientMakesReopensAtOnceWithoutRaisingTheStep() = runBlocking {
+        val clock = Clock()
+        val time = VirtualTime(clock)
+        Fixture(sleeper = time, draw = { it - 1 }, clock = clock).use { fixture ->
+            fixture.transport.liveRefusal = SyncResponse(503)
+            fixture.transport.freshSockets = true
+            fixture.runtime.enter()
+            until { fixture.transport.opening.get() == 1 }
+            fixture.transport.liveRefusal = null
+            time.passSleep(999)
+            until { fixture.transport.sockets.size == 1 && fixture.transport.sockets[0].sends.isNotEmpty() }
+            val opened = clock.wall
+            // A re-identify ends the socket's seat while the account still wants live.
+            fixture.engine.reidentify()
+            withTimeout(3_000) { while (fixture.transport.sockets.size < 2 || fixture.transport.sockets[1].sends.isEmpty()) delay(5) }
+            assertTrue(fixture.transport.sockets[0].closed.isCompleted)
+            assertEquals(opened, clock.wall)
+            fixture.transport.sockets[1].fail()
+            time.pending(1_999)
+            assertEquals(2, fixture.transport.sockets.size)
+        }
+    }
+
+    // A seat that cannot be read (its token's storage failing) never ends the live worker: reported once while it lasts, it
+    // backs off, and the socket opens once the seat reads again.
+    @Test fun anUnreadableSeatBacksTheLiveWorkerOffAndReportsOnce() = runBlocking {
+        val clock = Clock()
+        val time = VirtualTime(clock)
+        Fixture(sleeper = time, draw = { it - 1 }, clock = clock).use { fixture ->
+            fixture.tokens.failToken = true
+            fixture.runtime.enter()
+            time.passSleep(999)
+            time.pending(1_999)
+            fixture.tokens.failToken = false
+            time.passSleep(1_999)
+            withTimeout(2_000) { fixture.transport.opened.await() }
+            assertEquals(listOf(EngineEvent(EngineOperation.live, EngineOutcome.failure)),
+                fixture.events.filter { it.operation == EngineOperation.live })
         }
     }
 

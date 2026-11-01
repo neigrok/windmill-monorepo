@@ -84,10 +84,12 @@ public final class BoundedTelemetry: Telemetry {
 // The HTTP statuses the server answers on purpose — a refusal the client handles, an app it finds too old (426), a
 // session or ticket gone (410) — which every boundary (sync, auth, the REST clients, the event queue) records as an
 // `api_request_failed` metric and never as a Sentry Issue. A push also expects 413, which §7.4 halves or refuses
-// too-large; no other request answers it on purpose.
+// too-large; no other request answers it on purpose. A sync request expects the server's own 503 (`isUnavailable`), and
+// the live socket's upgrade any 503, whose body it cannot read (§9.6).
 public enum ExpectedStatuses {
   public static let all: Set<Int> = [400, 401, 403, 404, 409, 410, 422, 426, 429]
   static let push = all.union([413])
+  static let liveUpgrade = all.union([503])
 
   public static func contains(_ status: Int?) -> Bool {
     status.map(all.contains) ?? false

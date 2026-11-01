@@ -26,6 +26,8 @@ import works.windmill.gym.domain.sync.TrainingLog as DomainTrainingLog
 // window and chart threshold is the shared read's own, completeness gate included; nothing here decides one.
 class StatsProgress(private val read: DomainStatsProgress) {
     val asOf: Long get() = read.asOf.ms
+    // Whether the account's history has been read; before the first pull nothing may claim a best, a full month or a change.
+    val isComplete: Boolean get() = read.isComplete
     val sessions: List<ProgressSession> = read.sessions.map(::ProgressSession)
 
     fun movement(exerciseId: String): MovementProgress {

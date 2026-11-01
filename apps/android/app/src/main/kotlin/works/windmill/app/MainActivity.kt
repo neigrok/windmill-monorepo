@@ -5,7 +5,7 @@ import android.os.Bundle
 import android.app.KeyguardManager
 import android.content.Intent
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.whenResumed
+import androidx.lifecycle.withResumed
 import works.windmill.gym.notification.WorkoutRoute
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -87,10 +86,11 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) route(intent)
         setContent {
             val dark = isSystemInDarkTheme()
-            SideEffect {
+            DisposableEffect(dark) {
                 val bars = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
                     else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
+                onDispose { }
             }
             CompositionLocalProvider(LocalWindmillDark provides dark) {
                 Root(runtime, introduction, onIntroductionExit = { introduction = false },
@@ -162,7 +162,7 @@ class MainActivity : ComponentActivity() {
         }
         if (!keyguard.isDeviceLocked) { accept(); return }
         lifecycleScope.launch {
-            lifecycle.whenResumed {
+            withResumed {
                 window.decorView.post {
                     if (!isFinishing && !isDestroyed) keyguard.requestDismissKeyguard(this@MainActivity,
                         object : KeyguardManager.KeyguardDismissCallback() {

@@ -1215,7 +1215,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAFailedLogReadIsSaidAtTheFootAndRetriedFromWhereItStopped() = runTest {
+    fun testAnUnreadLogReadsAtTheFootAndLoadsFromWhereItStoppedOnceThePullLands() = runTest {
         val server = EngineRoomFixture.server()
         val held = anotherPhone(server, 1_800_000_000_000L) { phone ->
             phone.workout().also { phone.sync(server) }
@@ -1224,7 +1224,7 @@ class TrainingStoreTests {
             room.now = 1_800_000_100_000L
             room.select("alice")
 
-            assertEquals(Older.Failed, room.store.older)
+            assertEquals(Older.Reading, room.store.older)
             assertTrue(room.store.logged.isEmpty())
 
             room.pull(server)

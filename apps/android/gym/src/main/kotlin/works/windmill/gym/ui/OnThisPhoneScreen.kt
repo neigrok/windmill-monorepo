@@ -292,7 +292,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
                     Row(Modifier.fillMaxWidth().testTag("recovery-set:${row.id}").then(if (onSet == null) Modifier else Modifier.clickable(role = Role.Button) { onSet(row.set) })
                         .heightIn(min = if (times) 59.dp else 42.dp).padding(vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(row.number.toString(), style = GymType.numeral(14), color = skin.inkDim)
+                        Text(row.savedNumber.toString(), style = GymType.numeral(14), color = skin.inkDim)
                         Column(Modifier.weight(1f)) {
                             Text(row.effort, style = GymType.numeral(14), color = skin.ink)
                             if (times) Text(Readout.time(row.set.completedAtMs), style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
@@ -460,7 +460,7 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             WindmillSheet(onDismissRequest = { editing = null }, sheetState = sheet, containerColor = skin.canvas) {
                 FixSheet(set, Readout.movement(set.exerciseId, store.catalog),
-                    Performed.movements(draft.copy.sets, store.catalog).flatMap { it.rows }.first { it.id == set.id }.number,
+                    Performed.movements(draft.copy.sets, store.catalog).flatMap { it.rows }.first { it.id == set.id }.savedNumber,
                     draft.copy.session.plan?.routine,
                     onSave = { fix ->
                         val changed = set.copy(weightKg = fix.weightKg ?: set.weightKg, reps = fix.reps ?: set.reps,

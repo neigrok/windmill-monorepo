@@ -75,6 +75,11 @@ class WorkoutRecoveryTests {
         compose.waitUntil(10_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
     }
 
+    // A workout's set row says itself once, so it is found by what TalkBack hears.
+    private fun awaitRow(spoken: String) {
+        compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription(spoken, substring = true)).fetchSemanticsNodes().isNotEmpty() }
+    }
+
     // A finished workout off the routine `name`, one set of it, on this phone's own log.
     private fun pastWorkout(room: EngineRoomFixture, name: String, weightKg: Double, reps: Int) {
         runBlocking {
@@ -118,8 +123,8 @@ class WorkoutRecoveryTests {
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             awaitText("Push A")
             compose.onNodeWithText("Push A").performClick()
-            awaitText("40 × 8")
-            compose.onNodeWithText("40 × 8").performClick()
+            awaitRow("Set 1, 40 kg total, 8 reps")
+            compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).performClick()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("Set note").performTextInput("controlled tempo")
             compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("1e999")
@@ -146,7 +151,7 @@ class WorkoutRecoveryTests {
             }
             compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
             compose.onNodeWithText("Fix set").assertDoesNotExist()
-            compose.onNodeWithText("40 × 8").assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).assertIsDisplayed()
             assertEquals(2, instances)
             assertEquals("nothing was corrected", listOf(historical), runBlocking { room.training.details() }.single().sets)
         } finally {
@@ -256,10 +261,10 @@ class WorkoutRecoveryTests {
             awaitText("480 kg")
             compose.onAllNodesWithText("480 kg").onLast().assertIsDisplayed()
             compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-            awaitText("60 × 8")
+            awaitRow("Set 1, 60 kg total, 8 reps")
             compose.onNodeWithText("480 kg").assertIsDisplayed()
-            compose.onNodeWithText("60 × 8").assertIsDisplayed()
-            compose.onNodeWithText("60 × 8").performClick()
+            compose.onNode(hasContentDescription("Set 1, 60 kg total, 8 reps", substring = true)).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 1, 60 kg total, 8 reps", substring = true)).performClick()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             val closed = runBlocking { room.training.session(live.id) }!!
             assertEquals(listOf(60.0 to 8), closed.sets.map { it.weightKg to it.reps })
@@ -311,8 +316,8 @@ class WorkoutRecoveryTests {
             assertEquals(listOf(setId), room.training.session(localId)!!.sets.map { it.id })
         } }
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-        awaitText("60 × 8")
-        compose.onNodeWithText("60 × 8").performClick()
+        awaitRow("Set 1, 60 kg total, 8 reps")
+        compose.onNode(hasContentDescription("Set 1, 60 kg total, 8 reps", substring = true)).performClick()
         compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithText("Not rated").performClick()
@@ -365,8 +370,8 @@ class WorkoutRecoveryTests {
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             awaitText("Push A")
             compose.onNodeWithText("Push A").performClick()
-            awaitText("40 × 8")
-            compose.onNodeWithText("40 × 8").performClick()
+            awaitRow("Set 1, 40 kg total, 8 reps")
+            compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).performClick()
             compose.onNodeWithText("Set note").performTextInput("private note")
             restored.emulateSavedInstanceStateRestore()
             compose.runOnIdle { account = Account(signedIn.origin, null, resolved = false) }
@@ -420,8 +425,8 @@ class WorkoutRecoveryTests {
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             awaitText("A workout")
             compose.onNodeWithText("A workout").performClick()
-            awaitText("40 × 8")
-            compose.onNodeWithText("40 × 8").performClick()
+            awaitRow("Set 1, 40 kg total, 8 reps")
+            compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).performClick()
             compose.onNodeWithText("Set note").performTextInput("A private note")
             compose.runOnIdle { account = Account(account.origin, null, resolved = false) }
             restored.emulateSavedInstanceStateRestore()
@@ -441,10 +446,10 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("B workout").performClick()
             compose.onNodeWithText("A workout").assertDoesNotExist()
             compose.onNodeWithText("A private note").assertDoesNotExist()
-            compose.onNodeWithText("40 × 8").assertDoesNotExist()
-            awaitText("70 × 5")
-            compose.onNodeWithText("70 × 5").assertIsDisplayed()
-            compose.onNodeWithText("70 × 5").performClick()
+            compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).assertDoesNotExist()
+            awaitRow("Set 1, 70 kg total, 5 reps")
+            compose.onNode(hasContentDescription("Set 1, 70 kg total, 5 reps", substring = true)).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 1, 70 kg total, 5 reps", substring = true)).performClick()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("A private note").assertDoesNotExist()
         } finally {

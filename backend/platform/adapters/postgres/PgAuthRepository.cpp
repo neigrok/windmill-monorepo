@@ -87,11 +87,12 @@ UnixMs PgAuthRepository::markUserDeleted(const UserId& userId, UnixMs now, UnixM
 }
 
 AccountCloseResult PgAuthRepository::closeWithReceipt(const UserId& userId, const AccountClosure& operation,
-    const std::string& sessionDigest, UnixMs now) {
+    const std::string& sessionDigest, Clock& clock) {
   if (!oauth_) throw std::logic_error("Account closure requires OAuth revocation");
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   const auto account = txn.exec_params("SELECT deleted_at IS NULL AS live FROM users WHERE id = $1::uuid FOR UPDATE", userId.str());
+  const UnixMs now = clock.nowMs();
   const auto previous = txn.exec_params(
       "SELECT proof_hash, requested_ms, closes_ms, expires_ms FROM account_closures WHERE account_id = $1::uuid AND operation_id = $2::uuid",
       userId.str(), operation.operationId);

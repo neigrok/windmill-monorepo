@@ -118,8 +118,7 @@ class ThreadTests {
         assertEquals("1 conversation · yours to delete", Threads.counted(1))
         assertEquals("0 conversations · yours to delete", Threads.counted(0))
         assertTrue("nothing on this screen speaks of unread anything",
-            listOf(Threads.counted(9), Threads.none, Threads.past, Threads.open,
-                Threads.outOfReach)
+            listOf(Threads.counted(9), Threads.none, Threads.open, Threads.outOfReach)
                 .none { it.contains("unread", ignoreCase = true) || it.contains("new message", ignoreCase = true) })
         assertTrue("no member of Threads is named for an unread anything",
             Threads::class.java.declaredFields.map { it.name }
@@ -146,7 +145,7 @@ class ThreadTests {
     @Test
     fun nothingOnThisScreenLecturesAboutADeleteThatIsMadeSomewhereElse() {
         val everything = listOf(Threads.title, Threads.open, Threads.door, Threads.conversation,
-            Threads.none, Threads.past, Threads.outOfReach, Threads.counted(2))
+            Threads.none, Threads.outOfReach, Threads.counted(2))
         assertTrue("no standing caption survives about deleting",
             everything.none { it.contains("Deleting", ignoreCase = true) })
         assertFalse("and nothing here claims finality the undo has made false",

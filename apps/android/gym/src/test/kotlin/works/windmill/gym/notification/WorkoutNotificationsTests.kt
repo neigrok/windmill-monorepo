@@ -8,7 +8,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -105,7 +104,6 @@ class WorkoutNotificationsTests {
         assertEquals(listOf(true), f.posts.mainThread)
         assertEquals(WorkoutCapabilities(true, true, true, null, null, null), f.adapter.capabilities.value)
     }
-
 
     @Test
     @Config(sdk = [26, 30, 31, 34, 35])
@@ -341,14 +339,6 @@ class WorkoutNotificationsTests {
         assertNull(f.adapter.capabilities.value!!.promoted)
         assertEquals(emptyList<String>(), f.commands.accepted)
     }
-
-
-
-
-
-
-
-
 
     @Test fun obsoleteRestCallbacksAreIgnoredWithoutPostingOrWriting() = runTest {
         val f = Fixture(this)

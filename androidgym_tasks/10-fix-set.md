@@ -12,6 +12,7 @@
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `FixSheet` opens from a landed rack row or workout detail. Its equipment subtitle and load unit use the same catalogue reading as the rack.
+- The subtitle's *Set {n}* is the count of the row it opened from, never the log's `setNumber`: the rack's *Set {n}* in the logger, the quiet count on workout detail (23, 05.3b). A copy kept on this phone (25) is fixed by the set numbers it saved.
 - Load uses the 88 sp Display `NumberStepper`, the established ladder bands and native signed input; reps use the regular stepper. Raw buffers, caret, refusal and cancellation follow 07.
 - Effort is a filled exposed menu with *Not rated* and *RPE 6* … *RPE 10* in half steps.
 - Set note uses the native text editor with the M3 filled container, a fixed small label and *Add a note* placeholder. It preserves raw bytes and the spoken state *A record for you — not an instruction to Coach.*

@@ -2,6 +2,7 @@
 
 #include "platform/domain/Auth.h"
 #include "platform/domain/Ids.h"
+#include "platform/ports/Clock.h"
 
 #include <optional>
 #include <string>
@@ -72,8 +73,9 @@ struct AuthRepository {
   virtual void updateName(const UserId& userId, const std::string& name) = 0;
   // Stamps a new close; an active close keeps and returns its original deadline.
   virtual UnixMs markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) = 0;
+  // Reads `clock` only once the account is locked, so a request judged after a stale one is never fresher.
   virtual AccountCloseResult closeWithReceipt(const UserId& userId, const AccountClosure& operation,
-      const std::string& sessionDigest, UnixMs now) = 0;
+      const std::string& sessionDigest, Clock& clock) = 0;
   virtual ClosureReceipt closureReceipt(const UserId& userId, const AccountClosure& operation, UnixMs now) = 0;
   // Clears a close that is not final at `now`, and only such a close; true when it did.
   virtual bool reviveUser(const UserId& userId, UnixMs now) = 0;

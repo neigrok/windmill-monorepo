@@ -44,6 +44,8 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
 - Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- The app's lint reads `:platform`, `:gym` and `:sync-engine` with it, so an unused resource in any
+  of them fails the build.
 - Sync foundation checks read the shared registries and corpora directly; the schema generator and
   independent JCS oracle checks also require Python 3 and Node.js.
 - `-Pwindmill.apiBase=http://10.0.2.2:8088` targets the host's local backend from an emulator.
@@ -77,7 +79,11 @@ after the engine accepts the decision; cancelling a proposal keeps the previous 
 
 Account deletion has a separate sealed operation record, read before ordinary auth restore and
 sync startup. An unknown result keeps the exact account, proof and request instant fenced until
-session-independent result recovery proves closure. Known closure persists cleanup owed before
+session-independent result recovery proves closure, or until the operation is proven to have changed
+nothing: a refusal for this phone's date and time (409 `clock-ahead`, or 404 `unavailable` for a send
+that left at least 90 seconds inside the five minutes after its stamp by the monotonic clock), or an
+unavailable receipt followed by the identical close, still accepted by its session, answering 404.
+Either clears the record and lifts the fence without a restart. Known closure persists cleanup owed before
 Discard, removes the original replica, owner workout controls and Coach archive/photos, and clears
 only the captured credentials. Decryption or storage ambiguity fails closed. Coach owner epochs
 reject late writes after cleanup, including after a fresh verified sign-in restores the same account

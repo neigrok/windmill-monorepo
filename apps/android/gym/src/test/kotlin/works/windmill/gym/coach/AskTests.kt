@@ -60,7 +60,6 @@ class AskTests {
     private fun answered(question: String, said: String) =
         AskExchange(question = question, answer = AskAnswer(answer = said, read = ReadTally()))
 
-
     @Test
     fun theAllowanceIsOneLineAboveTheComposerAndTheCapReachedMomentSaysWhatToDoNext() {
         assertEquals("Ten questions a day, three back to back.", Ask.allowance)
@@ -96,7 +95,6 @@ class AskTests {
         assertEquals("the ceiling is bytes, not characters",
             false, Ask.sendable("é".repeat(Ask.maxTurnBytes / 2 + 1)))
     }
-
 
     @Test
     fun theReceiptSpellsWhatWasServedAndLeavesOutWhatWasNot() {

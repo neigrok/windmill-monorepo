@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/application/FailureWindow.h"
 #include "platform/application/sync/Admission.h"
 #include "platform/application/sync/SyncCatalog.h"
 #include "platform/domain/Ids.h"
@@ -12,6 +13,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -60,7 +62,9 @@ private:
 // Every method runs on a blocking thread (§6).
 class SyncService {
 public:
-  SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock);
+  // `bindUnavailable`, when given, hears a push's bind failing transiently (its 503) once per its window.
+  SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock,
+              std::shared_ptr<FailureWindow> bindUnavailable = nullptr);
 
   SyncReply hello(const Credential& credential);
   SyncReply push(const Credential& credential, std::string_view body, PushBudget& budget);
@@ -71,6 +75,7 @@ private:
   SyncStore& store_;
   Admission& admission_;
   Clock& clock_;
+  std::shared_ptr<FailureWindow> bindUnavailable_;
 };
 
 }

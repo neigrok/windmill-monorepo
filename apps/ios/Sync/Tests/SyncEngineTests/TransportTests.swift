@@ -390,6 +390,19 @@ struct TransportTests {
     ])
   }
 
+  // §9.6: an upgrade refused 503 is a metric and never an Issue: its body cannot be read, and the pull the failed open
+  // runs hears the server's own verdict.
+  @Test(.timeLimit(.minutes(1))) func anUpgradeRefused503IsAMetricWithoutAnIssue() async throws {
+    let recorder = TelemetryTests.Recorder()
+    let server = try RefusingServer(status: 503)
+    let port = try await server.loopback.start()
+    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3, telemetry: recorder)
+    for _ in 0..<2 { _ = await transport.openLive(token: SessionToken("secret")) }
+    let properties = ["operation": "sync_live", "method": "GET", "route": "/v1/sync", "failure_kind": "http", "status": "503"]
+    let metric = TelemetryTests.Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: nil)
+    #expect(recorder.undated == [metric, metric])
+  }
+
   // An upgrade answered with a status opens no socket, and answers that status.
   @Test(.timeLimit(.minutes(1)), arguments: [401, 426])
   func aRefusedUpgradeAnswersItsStatus(_ status: Int) async throws {

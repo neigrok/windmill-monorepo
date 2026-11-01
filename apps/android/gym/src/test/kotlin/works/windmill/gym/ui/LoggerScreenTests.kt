@@ -53,6 +53,7 @@ import works.windmill.gym.presentation.GymPreferences
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
@@ -77,6 +78,7 @@ class LoggerScreenTests {
         scope: CoroutineScope,
         history: Boolean = false,
         logged: Boolean = false,
+        loggedTwice: Boolean = false,
         lastTimeDown: Boolean = false,
         unanswered: Boolean = false,
         haptics: HapticFeedback? = null,
@@ -111,12 +113,13 @@ class LoggerScreenTests {
             room.store.choose("cable-fly")
             room.store.choose("bench-press")
             if (unanswered) room.sync(server)
-            if (logged) room.store.logSet(60.0, 5)
+            if (logged || loggedTwice) room.store.logSet(60.0, 5)
+            if (loggedTwice) room.store.logSet(65.0, 5)
             // The set's send went out and never came back, so it may already be on the log.
             if (unanswered) {
                 room.engine.releaseHeld(true)
                 room.engine.nextPush()
-            } else if (logged || history) room.sync(server)
+            } else if (logged || loggedTwice || history) room.sync(server)
             room.store.refreshEngine()
         }
         room.store.observeEngine()
@@ -744,6 +747,20 @@ class LoggerScreenTests {
             assertTrue("the row is a whole touch target", row.getBoundsInRoot().height >= GymTap.minimum)
             row.performClick()
             compose.onNodeWithText("Fix set").assertIsDisplayed()
+        } } finally { scope.cancel() }
+    }
+
+    // Fix set names the row it opened from by the rack's count, never by the number the log gave the set.
+    @Test
+    fun fixSetIsTitledByTheRacksCountOnceAnEarlierSetIsDeleted() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { logger(scope, loggedTwice = true).use { room ->
+            val (first, second) = room.store.todaySets.sortedBy { it.completedAtMs }
+            assertEquals(listOf(1, 2), listOf(first.setNumber, second.setNumber))
+            runBlocking { assertNull(room.store.delete(Deletion.Set(room.store.session!!.id, first))) }
+
+            compose.onNode(hasContentDescription("Set 1, logged, 65 kg total, 5 reps")).performClick()
+            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

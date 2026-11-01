@@ -179,7 +179,7 @@ object LiveLines {
         val next = order.firstOrNull { id -> sets.none { it.exerciseId == id } }
         return order.map { exerciseId ->
             val exercise = catalog.firstOrNull { it.id == exerciseId }
-            val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+            val unit = Readout.loadUnit(exercise)
             val performed = sets.filter { it.exerciseId == exerciseId }
             val done = setCount(performed)
             val entry = plan?.entry(exerciseId)
@@ -229,7 +229,6 @@ object LiveLines {
         return "$subject saved on this device only. $why"
     }
 }
-
 
 class WorkoutClocks(session: Session, sets: List<TrainingSet>, nowMs: Long) {
     val latestSetAtMs: Long? = sets.maxOfOrNull { it.completedAtMs }

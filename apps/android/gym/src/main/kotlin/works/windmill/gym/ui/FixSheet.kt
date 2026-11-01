@@ -57,6 +57,7 @@ import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.LoggedSetLimits
 import works.windmill.gym.presentation.NumberEntry
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SetEffort
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
@@ -74,7 +75,7 @@ import androidx.compose.runtime.setValue
 fun FixSheet(
     set: TrainingSet,
     movement: String,
-    setNumber: Int,
+    position: Int,
     routine: String?,
     onSave: suspend (SetFix) -> FixOutcome,
     onDelete: () -> Unit,
@@ -89,7 +90,7 @@ fun FixSheet(
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
-    val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+    val unit = Readout.loadUnit(exercise)
     val noteInteraction = remember(draftKey) { MutableInteractionSource() }
     val noteFocused by noteInteraction.collectIsFocusedAsState()
     val fieldColors = TextFieldDefaults.colors(
@@ -209,7 +210,7 @@ fun FixSheet(
                     color = skin.ink, modifier = Modifier.semantics { heading() })
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     exercise?.let { EquipmentIcon(it.equipment, tint = skin.inkDim) }
-                    Text("$movement · Set $setNumber", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
+                    Text("$movement · Set $position", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
                 }
             }
             SetNumbers(load, count, unit,

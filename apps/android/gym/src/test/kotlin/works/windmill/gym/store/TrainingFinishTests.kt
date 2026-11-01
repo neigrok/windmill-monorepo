@@ -1,17 +1,13 @@
 package works.windmill.gym.store
 
-import works.windmill.gym.coach.AskThread
 import java.io.File
 import java.io.IOException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -20,7 +16,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.presentation.*
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.GymRest
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.*
 

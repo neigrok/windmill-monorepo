@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import android.content.ClipData
 import android.text.format.DateFormat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,13 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +31,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.gym.ui.LocalGymColors
 import works.windmill.platform.design.LocalWindmillDark
@@ -51,8 +55,9 @@ internal fun CoachBubble(
     content: @Composable () -> Unit,
 ) {
     val skin = LocalGymColors.current
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val telemetry = LocalTelemetry.current
+    val scope = rememberCoroutineScope()
     val latestCopy by rememberUpdatedState(copyText)
     val ownMenu = rememberSaveable { mutableStateOf(false) }
     val menu = if (copyMenu == null) ownMenu.value else copyMenu.selected?.coerceIn(0, copyLastIndex) == copyIndex
@@ -60,16 +65,22 @@ internal fun CoachBubble(
         if (copyMenu == null) ownMenu.value = open else copyMenu.selected = if (open) copyIndex else null
     }
     val label = if (fromLifter) "Copy question" else "Copy answer"
-    val copy: () -> Boolean = copy@{
-        try { clipboard.setText(AnnotatedString(latestCopy())) }
-        catch (failure: Exception) {
-            telemetry.failure("gym.copyMessage", failure)
-            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed"))
-            return@copy false
+    // The platform clipboard answers without suspending, so the undispatched copy has finished when this returns.
+    val copy: () -> Boolean = {
+        var copied = false
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", latestCopy()))) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                telemetry.failure("gym.copyMessage", failure)
+                telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed"))
+                return@launch
+            }
+            changeMenu(false)
+            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok"))
+            copied = true
         }
-        changeMenu(false)
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok"))
-        true
+        copied
     }
     val first = group == CoachGroup.First || group == CoachGroup.Middle
     val last = group == CoachGroup.Last || group == CoachGroup.Middle

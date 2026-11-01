@@ -42,7 +42,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -80,10 +87,19 @@ object Performed {
         data object Silent : Against
     }
 
-    // `setNumber` is the log's own; after a delete the log keeps the gap and the next set mints max+1.
-    data class Row(val set: TrainingSet, val number: Int, val note: Note?) {
+    // `position` counts the movement's sets 1..N in logged order, so the rows that remain after a delete count again.
+    // The workout page draws it and never the log's own `setNumber`, which keeps a delete's gap and can read 2, 3, 1.
+    data class Row(val set: TrainingSet, val position: Int, val note: Note?, val unit: String) {
         val id: String get() = set.id
         val effort: String get() = Readout.effort(set.weightKg, set.reps)
+
+        // A copy kept on this phone is inspected by the numbers it saved, the ones a `source-numbering` refusal names.
+        val savedNumber: Int get() = set.setNumber ?: position
+
+        // The quiet digit is drawn bare; TalkBack hears it named, with the load's unit and the reps spelled out.
+        val spoken: String
+            get() = listOfNotNull("Set $position", "${Readout.weight(set.weightKg)} $unit", Readout.repCount(set.reps),
+                note?.text, set.rpe?.let(SetEffort::rpeReading), set.note.trim().takeIf { it.isNotEmpty() }).joinToString(", ")
     }
 
     data class Movement(
@@ -99,7 +115,8 @@ object Performed {
         catalog: List<Exercise>,
         plan: PlanSnapshot? = null,
     ): List<Movement> {
-        val performed = sets.sortedBy { it.completedAtMs }
+        // Logged order; two sets logged at the same instant keep one order by their ids.
+        val performed = sets.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
         val order = mutableListOf<String>()
         for (set in performed) if (set.exerciseId !in order) order.add(set.exerciseId)
 
@@ -107,18 +124,18 @@ object Performed {
             val mine = performed.filter { it.exerciseId == exerciseId }
             val exercise = catalog.find { it.id == exerciseId }
             val against = planned(plan, exerciseId, exercise)
-            val opening = mine.firstOrNull()?.id
+            val unit = Readout.loadUnit(exercise)
             Movement(
                 id = exerciseId,
                 movement = Readout.movement(exerciseId, catalog),
                 against = against,
                 equipment = exercise?.equipment,
-                rows = mine.mapIndexed { index, set ->
-                    val slot = index
+                rows = mine.mapIndexed { slot, set ->
                     Row(
                         set = set,
-                        number = set.setNumber ?: (index + 1),
-                        note = note(set, against, opening = set.id == opening, slot = slot),
+                        position = slot + 1,
+                        note = note(set, against, opening = slot == 0, slot = slot),
+                        unit = unit,
                     )
                 },
             )
@@ -324,7 +341,7 @@ fun SessionScreen(
                 exercise = store.catalog.firstOrNull { it.id == row.set.exerciseId },
                 origin = FixOrigin.Session,
                 movement = movement,
-                setNumber = row.number,
+                position = row.position,
                 routine = standing.plan?.routine,
                 onSave = { fix ->
                     val ended = store.fixSet(readId, row.id, fix, FixOrigin.Session)
@@ -407,56 +424,66 @@ private fun MovementCard(
                 Performed.Against.Silent -> Unit
             }
         }
-        // KEYED by the set: a swipe box remembered by its POSITION would hand the row that moves
+        // One group of sets. KEYED by the set: a swipe box remembered by its POSITION would hand the row that moves
         // up into a deleted row's slot the dismissed state that belongs to the row that left.
-        movement.rows.forEach { performed ->
-            key(performed.id) { SwipeableSetRow(performed, onFix, onDelete) }
+        Column(verticalArrangement = Arrangement.spacedBy(GymSegment.gap), modifier = Modifier.fillMaxWidth()) {
+            movement.rows.forEachIndexed { index, performed ->
+                key(performed.id) {
+                    val shape = GymSegment.shape(index, movement.rows.size)
+                    DeleteSwipeRow(actionLabel = "Delete", onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
+                        SetRow(performed, shape, onFix, onDelete)
+                    }
+                }
+            }
         }
     }
 }
 
 // Tap to fix, swipe to delete — one trailing action and nothing on the leading edge, because two
-// actions would push the set's own number and load off the row a lifter is deciding about.
+// actions would push the set's count and load off the row a lifter is deciding about.
 //
 // LAW 1, and on Android it is the half that is easy to forget: TalkBack sees a drag, so the same
-// action is declared again BY HAND on the row. This row carries no overflow to inherit it from.
-@OptIn(ExperimentalMaterial3Api::class)
+// action is declared again BY HAND on the row. This row carries no overflow to inherit it from, and it
+// is its own TalkBack stop, so the action sits on it rather than on the swipe around it.
+//
+// The row says itself once, as `Performed.Row.spoken`. The count sits on the load's baseline in a column at
+// least 24 dp wide, so the load starts 40 dp in on every row and a second line starts under it; a count too
+// wide for the column, two digits at 200 % text, widens its own row's column rather than clipping.
 @Composable
-private fun SwipeableSetRow(
-    set: Performed.Row,
-    onFix: (String) -> Unit,
-    onDelete: suspend (TrainingSet) -> Boolean,
-) {
-    DeleteSwipeRow(actionLabel = "Delete", onDelete = { onDelete(set.set) }) {
-        SetRow(set, onFix)
-    }
-}
-
-@Composable
-private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
+private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, onDelete: suspend (TrainingSet) -> Boolean) {
     val skin = LocalGymColors.current
+    val scope = rememberCoroutineScope()
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
     val largeText = GymTextScale.large
-    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
+    val underLoad = Modifier.padding(start = 24.dp)
+    Column(Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).clip(shape)
         .background(if (pressed) skin.raised else skin.surface)
-        .clickable(interactionSource = pressing, indication = null, role = Role.Button,
-            onClickLabel = "fix this set") { onFix(set.id) }
+        .clickable(interactionSource = pressing, indication = null) { onFix(set.id) }
+        .clearAndSetSemantics {
+            contentDescription = set.spoken
+            role = Role.Button
+            onClick("fix this set") { onFix(set.id); true }
+            customActions = listOf(CustomAccessibilityAction("Delete") { scope.launch { onDelete(set.set) }; true })
+        }
         .padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Text(set.number.toString(), style = GymType.numeral(12).copy(lineHeight = 16.sp), color = skin.inkFaint,
-                modifier = Modifier.widthIn(min = 8.dp))
-            BasicText(set.effort, maxLines = 1,
-                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
-                style = GymType.numeral(18).copy(color = skin.ink, lineHeight = 24.sp), modifier = Modifier.weight(1f))
+            Row(Modifier.weight(1f)) {
+                Text(set.position.toString(), style = GymType.numeral(12).copy(lineHeight = 16.sp), color = skin.inkFaint,
+                    maxLines = 1, softWrap = false, modifier = Modifier.widthIn(min = 24.dp).alignByBaseline())
+                BasicText(set.effort, maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
+                    style = GymType.numeral(18, FontWeight.Medium).copy(color = skin.ink, lineHeight = 24.sp),
+                    modifier = Modifier.weight(1f).alignByBaseline())
+            }
             if (!largeText) set.note?.let { Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim) }
         }
         if (largeText) set.note?.let {
-            Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim, modifier = Modifier.padding(start = 24.dp))
+            Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim, modifier = underLoad)
         }
         SetEffort.line(set.set.rpe, set.set.note)?.let {
-            Text(it, style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.padding(start = 24.dp))
+            Text(it, style = WindmillFont.body(13), color = skin.inkDim, modifier = underLoad)
         }
     }
 }

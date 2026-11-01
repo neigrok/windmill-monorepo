@@ -190,21 +190,52 @@ class SessionScreenTests {
     }
 
     @Test
-    fun aSetIsNamedByTheLogsOwnNumberAndFallsBackToItsPositionOnly() {
-        val numbered = Performed.movements(listOf(
+    fun setsNumberedOutOfLoggedOrderCountOneTwoThreeInEachMovement() {
+        val movements = Performed.movements(listOf(
+            set("b2", "bench-press", 82.5, 5, at = 3_000).copy(setNumber = 1),
+            set("r1", "row", 60.0, 10, at = 2_000).copy(setNumber = 7),
+            set("b0", "bench-press", 40.0, 8, at = 1_000).copy(setNumber = 2),
+            set("b1", "bench-press", 80.0, 5, at = 2_500).copy(setNumber = 3),
+        ), catalog)
+
+        assertEquals(listOf(listOf("b0" to 1, "b1" to 2, "b2" to 3), listOf("r1" to 1)),
+                     movements.map { movement -> movement.rows.map { it.id to it.position } })
+    }
+
+    @Test
+    fun setsLoggedAtTheSameInstantCountInTheOrderOfTheirIds() {
+        val movements = Performed.movements(listOf(
+            set("s3", "bench-press", 82.5, 5, at = 1_000),
+            set("s1", "bench-press", 40.0, 8, at = 1_000),
+            set("s2", "bench-press", 80.0, 5, at = 1_000),
+        ), catalog)
+
+        assertEquals(listOf("s1" to 1, "s2" to 2, "s3" to 3), movements.single().rows.map { it.id to it.position })
+    }
+
+    @Test
+    fun theSetsThatRemainAfterADeleteCountAgainFromOne() {
+        val movements = Performed.movements(listOf(
             set("s1", "bench-press", 40.0, 8, at = 1_000).copy(setNumber = 1),
             set("s3", "bench-press", 82.5, 5, at = 3_000).copy(setNumber = 3),
             set("s4", "bench-press", 82.5, 5, at = 4_000).copy(setNumber = 4),
         ), catalog)
-        assertEquals("the gap a delete left is the log's own and stands",
-                     listOf(1, 3, 4), numbered[0].rows.map { it.number })
 
-        val shelved = Performed.movements(listOf(
-            set("s1", "bench-press", 40.0, 8, at = 1_000),
-            set("s2", "bench-press", 82.5, 5, at = 2_000),
-        ), catalog)
-        assertEquals("a session no account has numbered counts from one",
-                     listOf(1, 2), shelved[0].rows.map { it.number })
+        assertEquals(listOf(1, 2, 3), movements.single().rows.map { it.position })
+    }
+
+    @Test
+    fun aRowSaysItsCountLoadRepsNoteAndEffortInOneSentence() {
+        val catalogue = listOf(Exercise(id = "bench-press", name = "Bench press", equipment = "barbell"))
+        val movements = Performed.movements(listOf(
+            set("s1", "bench-press", 75.0, 8, at = 1_000),
+            set("s2", "bench-press", 75.0, 6, at = 2_000).copy(rpe = 9.5, note = "left shoulder"),
+        ), catalogue, plan(PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(8, 75.0) })))
+
+        assertEquals(listOf(
+            "Set 1, 75 kg total, 8 reps, on plan",
+            "Set 2, 75 kg total, 6 reps, two short, RPE 9.5, left shoulder",
+        ), movements.single().rows.map { it.spoken })
     }
 
     @Test

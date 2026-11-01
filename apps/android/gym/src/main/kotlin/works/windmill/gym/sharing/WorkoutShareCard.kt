@@ -1,5 +1,6 @@
 package works.windmill.gym.sharing
 
+import android.content.ClipData
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LocalGymColors
@@ -24,31 +25,44 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.telemetry.LocalTelemetry
 
 @Composable
 fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val telemetry = LocalTelemetry.current
     var state by remember(sessionId) { mutableStateOf<WorkoutSharing.State>(WorkoutSharing.State.Closed()) }
     val card = WorkoutSharing.card(state, sharing.origin)
 
     fun act() {
         val standing = state
         if (standing is WorkoutSharing.State.Live) {
-            clipboard.setText(AnnotatedString(WorkoutSharing.link(standing.share, sharing.origin)))
-            state = state.after(WorkoutSharing.Event.Copied)
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                try { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", WorkoutSharing.link(standing.share, sharing.origin)))) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    telemetry.failure("gym.share", failure)
+                    telemetry.event("gym_action", mapOf("screen" to "session", "action" to "share", "outcome" to "failed"))
+                    return@launch
+                }
+                telemetry.event("gym_action", mapOf("screen" to "session", "action" to "share", "outcome" to "ok"))
+                state = state.after(WorkoutSharing.Event.Copied)
+            }
             return
         }
         scope.launch {

@@ -17,6 +17,11 @@ namespace wm {
 // loggableField() encodes anything else a caller can steer.
 void installAccessLog(drogon::HttpAppFramework& app);
 
+// The line's level: ERROR once the request's write observation failed or reported a failure, whatever it answered;
+// otherwise by status, but for a 5xx its route reads as an expected refusal (writeHttpOutcome under httpOperation),
+// which is WARN as every refusal is.
+Severity accessSeverity(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response);
+
 // The line's body, without the timestamp trantor prepends.
 std::string accessLine(const std::string& method, const std::string& path, int status,
                        long long micros, const std::string& caller);

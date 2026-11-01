@@ -8,7 +8,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import works.windmill.platform.net.WindmillJson
 
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
@@ -52,7 +51,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -71,9 +69,7 @@ import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
-import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.ui.Finish
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.telemetry.Telemetry
@@ -312,8 +308,8 @@ class FinishSheetTests {
                 assertEquals(listOf(live.id), store.allSessions.map { it.id })
             }
             compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-            compose.onNodeWithText("100 × 5").assertIsDisplayed()
-            compose.onNodeWithText("110 × 3").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Set 1, 100 kg total, 5 reps").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Set 2, 110 kg total, 3 reps").assertIsDisplayed()
             assertEquals(SessionDetail(closed.session, performed), store.retainedSession(SessionDetail(closed.session, emptyList())))
         }
     }
@@ -326,7 +322,7 @@ class FinishSheetTests {
             compose.onAllNodesWithText("Done").assertCountEquals(1)
             compose.onAllNodesWithText("Just keep the session").assertCountEquals(0)
             compose.onAllNodesWithText("Keep it").assertCountEquals(0)
-            assertEquals(0, onTheReceipt(Finish.discard))
+            assertEquals(0, onTheReceipt("Discard"))
             assertEquals(0, onTheReceipt("Share this workout"))
         }
     }
@@ -567,7 +563,7 @@ class FinishSheetTests {
             compose.onNodeWithText("Volume").assertDoesNotExist()
             compose.onNodeWithText("0 kg").assertDoesNotExist()
             compose.onNodeWithText("Share this workout").assertDoesNotExist()
-            compose.onNodeWithText(Finish.discard).assertDoesNotExist()
+            compose.onNodeWithText("Discard").assertDoesNotExist()
             compose.onNodeWithText("Done").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("No sets logged").fetchSemanticsNodes().isEmpty() }
             compose.onAllNodesWithText("Routines").onLast().assertIsDisplayed()

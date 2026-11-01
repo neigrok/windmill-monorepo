@@ -94,6 +94,12 @@ android {
     }
 
     testOptions { unitTests.isIncludeAndroidResources = true }
+
+    // Library modules skip UnusedResources on their own; the app's lint reads them as one program.
+    lint {
+        checkDependencies = true
+        error += "UnusedResources"
+    }
 }
 
 kotlin {

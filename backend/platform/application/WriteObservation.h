@@ -62,6 +62,8 @@ public:
   void ownInfo();
   void wrote();
   std::uint64_t writeCount() const;
+  // Whether this observation failed, or its request reported a failure through any observation.
+  bool reportedFailure() const;
   void fail(const std::exception& error);
   void reportFailure(const std::exception& error);
   void reportUnknownFailure();

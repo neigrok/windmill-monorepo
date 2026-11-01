@@ -78,14 +78,16 @@ class LogTimelineTests {
     fun aMonthMustFinishAndEveryIntersectingWeekMustHoldTrainingInsideThatMonth() {
         val zone = ZoneId.of("UTC")
         fun at(day: String) = LocalDate.parse(day).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
-        fun stats(days: List<String>) = StatsProgress.of(days.map { day -> SessionDetail(Session(day, at(day), at(day) + 1),
-            listOf(TrainingSet("set-$day", "bench", weightKg = 80.0, reps = 12, completedAtMs = at(day)))) }, at("2026-03-01"))
+        fun stats(days: List<String>, complete: Boolean = true) = StatsProgress.of(days.map { day -> SessionDetail(Session(day, at(day), at(day) + 1),
+            listOf(TrainingSet("set-$day", "bench", weightKg = 80.0, reps = 12, completedAtMs = at(day)))) }, at("2026-03-01"), complete)
         val days = listOf("2026-02-01", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23")
         assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats(days), emptyList(), at("2026-02-28"), zone))
         assertEquals(listOf(LogEntry.Moment.Month(YearMonth.of(2026, 2), 5,
             LocalDate.parse("2026-02-28").atStartOfDay(zone).toInstant().toEpochMilli())),
             logTimeline(emptyList(), stats(days), emptyList(), at("2026-03-01"), zone))
         assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats(days.drop(1) + "2026-01-31"), emptyList(), at("2026-03-01"), zone))
+        assertEquals("a partial history claims no full month", emptyList<LogEntry>(),
+            logTimeline(emptyList(), stats(days, complete = false), emptyList(), at("2026-03-01"), zone))
     }
 
     @Test
@@ -183,7 +185,7 @@ class LogTimelineTests {
         val before = WeighIn("1969-12-31", 82.3, -60_000)
         assertEquals(listOf(LogEntry.Weight(epoch, 0), LogEntry.Weight(before, -60_000)),
             logTimeline(emptyList(), null, listOf(before, epoch), 86_400_000, zone))
-        assertEquals(LogReadout.Weight("82.4 kg", null, "00:00"), LogReadout.weight(LogEntry.Weight(epoch, 0), listOf(epoch), zone))
-        assertEquals(LogReadout.Weight("82.3 kg", null, "23:59"), LogReadout.weight(LogEntry.Weight(before, -60_000), listOf(before), zone))
+        assertEquals(LogReadout.Weight("82.4 kg", null, "00:00"), LogReadout.weight(LogEntry.Weight(epoch, 0), listOf(epoch), zone, complete = true))
+        assertEquals(LogReadout.Weight("82.3 kg", null, "23:59"), LogReadout.weight(LogEntry.Weight(before, -60_000), listOf(before), zone, complete = true))
     }
 }

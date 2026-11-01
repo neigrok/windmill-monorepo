@@ -224,12 +224,11 @@ and Android disagree.
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from
   other tabs (iOS section 07 `1116:1705`; Android 07.7 `1283:42660`, 07.1 `1283:42787`, 07.2
-  `1284:16798`, 07.3 `1284:16888`, 07.8 `1284:17208`). Android builds none of it: it shows *Saved
-  workouts need review (N)* above the bar on every tab (`GymRoom.kt:980-982`), puts the cards in Gym
-  settings (`ui/SettingsScreen.kt:182-442`) with a dialog Inspect, a typed-format fix sheet
-  (*Renumber sets for import*, *import limit 200*), *Choose set kind* and no Discard, and a refusal
-  banner on Routines (`ui/RefusalBanner.kt`). iOS's discard question still says *This permanently
-  removes the copy saved on this phone.* (`WorkoutInspectScreen.swift:52-58`); see 12g.
+  `1284:16798`, 07.3 `1284:16888`, 07.8 `1284:17208`). Android builds it: the row heads The log
+  (`ui/LogScreen.kt:113`), the list, Inspect, Fix workout and ⋯ *Discard workout* live in
+  `ui/OnThisPhoneScreen.kt`, and the badge in `GymRoom.kt:1296`. iOS's discard question for a landed
+  workout's stranded sets still says *This permanently removes the copy saved on this phone.*
+  (`WorkoutInspectScreen.swift:49-53`); see 12g.
 - **9m · Iteration-1 boards outside the Gym page.** The Gym iOS page was redrawn to the app on
   2026-10-22 (10o). Iteration-1 drawings of You's native sections and the update-required alert
   predate the native chrome; redraw them from the app.
@@ -259,16 +258,17 @@ and Android disagree.
 - **9q · Where Weigh in sits (owner rulings, 2026-10-22; build).** Both phones float *Weigh in*
   bottom-end over The log: iOS as the labelled glass capsule (target 05.1), Android as the M3
   extended FAB (Android 05.1). iOS builds it, the list's bottom inset keeping its last row clear;
-  Android pins a full-width button under the list (`LogScreen.kt:148-150`, `BodyweightScreen.kt:83-90`).
+  Android builds it as `GymExtendedFab` over The log (`ui/LogScreen.kt:105`), the list's bottom
+  padding keeping its last row clear.
 - **9r · No Gym settings anywhere (owner ruling, 2026-10-22; Android build).** Neither phone has a
   Gym settings page. On iOS, Notes and Connected log are reached from You's Settings
   (`AccountSheet.swift:419-431`) and a hidden workout from the tab bar's accessory on iOS 26 and the
   **Hidden** row at the head of The log on iOS 18 (board 03.5). Android draws the same: You holds
   *Notes*, *Connected log*, *About Windmill* (Shell · Android 16a/16b), the workout bar's trailing
-  action is *Hide*, and Units go. Android still ships Gym settings (`ui/SettingsScreen.kt:81-129`)
-  with a kg/lb toggle that draws nothing in lb,
-  and Coach's ⋮ More with Notes, Connected log, New chat and Account (`coach/AskScreen.kt`).
-  The workout bar has no settings action; its trailing slot awaits task 45's Hide behaviour.
+  action is *Hide*, and Units go. Android builds this: the room gives You its *Notes* and
+  *Connected log* rows (`GymRoom.kt:375-376`) beside *About Windmill* (`app/MainActivity.kt:282`),
+  the workout's top bar trails *Hide workout* (`ui/LoggerScreen.kt:331-332`), no units control
+  remains, and Coach's top bar holds History and the account seat (`coach/AskScreen.kt:164-167`).
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
@@ -758,33 +758,33 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   ask once. The approved Log/Weigh-in flow keeps a held weight deletion and Undo for the system's
   accessibility timeout, never less than nine seconds (05.17), so
   `WithheldDelete.kt` remains while that path uses it. Do not remove all holds as shared-row cleanup.
-  Android routine/editor/detail-set rows use the shared ground. Immediate actions are application-owned;
-  weights project exact durable receipts. The remaining row migrations belong to their screen tasks.
+  Every Android record row uses the shared ground (`ui/RowSwipe.kt` `DeleteSwipeRow`). Immediate
+  actions are application-owned; weights project exact durable receipts.
 
   | Place | Code today | Board | Build work |
   |---|---|---|---|
-  | Routines list | `ui/RoutinesScreen.kt`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
+  | Routines list | `ui/RoutinesScreen.kt:128`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
   | Routine ⋮ Delete | `ui/RoutinesScreen.kt`, shared error-role menu, immediate | 02.12 `1253:29480` | verified in Dark/Daylight |
-  | Editor movement | `ui/RoutineBuilder.kt`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
-  | Target set row | `ui/MovementForm.kt`, shared row | 02.11 `1253:29263` | shared row |
-  | This workout row | `ui/AssemblySheet.kt:163-195`, both directions, *Remove* on raised | 03.4 `1253:29834` | end-to-start, shared row |
-  | Workout detail set | `ui/SessionScreen.kt`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
-  | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
-  | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
+  | Editor movement | `ui/RoutineBuilder.kt:482`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
+  | Target set row | `ui/MovementForm.kt:203`, shared row | 02.11 `1253:29263` | shared row |
+  | This workout row | `ui/AssemblySheet.kt:141`, shared row, *Remove movement* | 03.4 `1253:29834` | shared row |
+  | Workout detail set | `ui/SessionScreen.kt:430`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
+  | The log row | `ui/LogScreen.kt:138`, shared row *Discard workout*, and the long-press menu's *Discard workout* (`:276`); both ask *Discard this workout?* (`ui/ConfirmDialog.kt:60`) | 05.2 `1252:27527` | swipe + *Discard this workout?* |
+  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:301`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
+  | Bodyweight | `ui/BodyweightScreen.kt:328` and the log's weigh-in row (`ui/LogScreen.kt:146`), shared row; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
-  | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
+  | Coach History | `coach/ThreadsScreen.kt:143-160`, asks *Delete this conversation?*, then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
 
   The refusal notice's swipe (`ui/RefusalBanner.kt:52-89`) dismisses a notice, not a record, and
   keeps its *Dismiss*.
 - **11c · Destructive actions use the M3 error role (owner ruling, 2026-10-22).** Library Theme
   `android/system/error` (#E46962 dark · #B3261E light) and `on-error` (#410E0B · #FFFFFF). The app
-  maps M3 `error` and `onError` to those roles in `ui/GymMaterial.kt`. Direct destructive
-  controls still use other roles: brick (*Discard session* `ui/SessionScreen.kt:322-326`, *Delete
-  note*), ink (*Delete set* `ui/FixSheet.kt:277-281`, *Delete weigh-in*, the log menu's *Discard
-  session* `ui/LogScreen.kt:263`, the routine menu's *Delete*), accent (*Discard* in the sign-in
-  decision `app/MainActivity.kt:290,303`, *Remove set* `ui/SettingsScreen.kt:344,359`). Boards 00.2
-  `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
+  maps M3 `error` and `onError` to those roles in `ui/GymMaterial.kt`, and the workout's *Discard
+  workout*, *Delete set*, the swipe deletes, the routine menu's *Delete* and the sign-in decision's
+  *Discard* use them. Three destructive controls are still off the error role: the log row menu's
+  *Discard workout* (`ui/LogScreen.kt:276`) and the receipt overflow's *Discard*
+  (`ui/FinishScreen.kt:289`) draw in ink, and History's *Delete* confirm draws in `alarmInk`
+  (`coach/ThreadsScreen.kt:149`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
 - **11d · Number entry is a stepper (owner ruling, 2026-10-22).** Load and reps are M3 icon buttons
   − / + (48 dp) around a numeric text field; tapping the value opens the decimal keyboard, − / +
   nudge by the movement's step, and the plate ladder stays for bigger jumps. Pressing shows the M3
@@ -944,23 +944,27 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   drawn only for an unknown result (*Deletion unconfirmed*); Android still shows it while the
   confirmed closure waits for local cleanup, where it is no longer true. Designer to draw the
   subtitle for D4's state.
-- **11u · The log before the first pull (🚧, awaiting owner).** On an account this phone has not
-  pulled yet, the log's foot shows **Retry** over *That read failed.* (`ui/LogScreen.kt` `LogFoot`),
-  but nothing failed: the log is waiting for the first pull (task 72). It keeps that foot when the
-  phone holds workouts logged here, and claims no first workout until the pull lands. Board 05.18 *Reading your
-  log* (Dark `1767:27118`, Daylight `1767:27204`, caption `1767:27286`, in section 05) draws the
-  wait: the workouts this phone holds, with no new best, record dot, weekly line or change since,
-  and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,
-  once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
-  becomes **Retry** · *That read failed.*, which no Android board draws. A movement's record page
-  before the first pull lists the days this phone holds under *Recent sets* (`ui/RecordScreen.kt`);
-  designer to say whether that heading stays before the pull lands. Two questions for the owner:
-  - *Routines before the first pull.* Routines reads *No routines yet.* (`ui/RoutinesScreen.kt`)
-    while the account it has not pulled holds routines. Owner to say what Routines shows while it
-    waits.
-  - *Set numbers on a workout.* The workout page lists sets in logged order but labels each with its
-    server set number (`ui/SessionScreen.kt`), so sets numbered out of logged order read *2, 3, 1*.
-    Owner to say whether the label counts the rows or names the set.
+- **11u · Before the first pull.** The log builds 05.18 (task 72): when the first pull fails or none
+  can run (offline), its foot becomes **Retry** · *That read failed.*, which the caption names for a
+  failed pull and no Android board draws.
+  A movement's record page before the first pull lists the days this phone holds under *Recent sets*
+  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands.
+  - *Routines before the first pull (owner ruling, 2026-11-01).* Routines reads *No routines yet.*
+    (`ui/RoutinesScreen.kt`) while the account it has not pulled holds routines; the owner keeps
+    that line for now.
+  - *Set numbers on a workout (owner ruling, 2026-11-01).* Each set row on a workout page leads
+    with a quiet count: a bare digit with no *Set* word, the set's position within its movement
+    counted 1..N in logged order, never the server's set number, so it never reads *2, 3, 1*;
+    after a delete the rows that remain renumber. Fix set keeps *Set N* in its title, N by the
+    same count. Built on Android (`ui/SessionScreen.kt` `Performed.Row.position`, passed to
+    `ui/FixSheet.kt`). Board 05.3b *Quiet set count* (Dark `1782:26943`, Daylight `1782:27019`,
+    caption `1782:27095`, in section 05, 🚀 In production) draws the count in JetBrains Mono 12/16 in
+    text/tertiary, in a 24 dp column on the load's baseline, inside each movement's one group of
+    sets. Revisions 05.14b (`1793:27005`, `1793:27113`, caption `1793:27221`), 05.4b (`1793:27226`,
+    `1793:27317`, caption `1793:27408`; the swipe, rows renumber), 05.5b (`1793:27413`,
+    `1793:27501`, caption `1793:27589`) and 05.13b (`1793:27594`, `1793:27683`, caption
+    `1793:27772`) carry the same rows. At 200 % text a two-digit count widens its row's column past
+    24 dp, so that row's load starts further in; no board draws it.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
@@ -982,7 +986,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     (`web/src/products/gym/log.js`).
 - **11w · An answer's proposal still arriving (designer).** Coach can answer before its proposal
   reaches the phone; until the miss settles, Android draws nothing in the card's place
-  (`coach/AskScreen.kt`), because no board draws a waiting state for it.
+  (`coach/AskScreen.kt`), because no board draws a waiting state for it. A miss settles 10 s after it,
+  once the phone reads further into the account or a pull asked after its wait lands caught up; the
+  wait's end asks for that pull, so an idle account settles too, and the place then reads *This
+  proposal is no longer available.* `gym_proposal_missing` counts only answers this visit waited
+  for: a proposal deleted before the visit, as on a reopened thread, draws the line and sends
+  nothing.
 
 ### Parity rulings (owner, 2026-10-22)
 
@@ -1003,9 +1012,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 - **12c · Hide workout on Android.** The logger's *Hide* (and system Back) leaves a running workout,
   which waits in `Android / Workout bar` (*Push A · 12:34*) above the navigation bar on every tab root
   (Android 03.4 `1253:29834`, 03.5 `1283:41318`). Swiping the notification away only turns it off:
-  This workout shows *Notification off* · *Show*. Android today cannot leave the logger before Finish
-  (`GymRoom.kt:163,180`), and a swiped notification sets *Workout hidden* / *Show workout* in Gym
-  settings (`ui/SettingsScreen.kt:113-118`, `notification/WorkoutNotifications.kt:211`).
+  This workout shows *Notification off* · *Show*. Android builds this: *Hide workout* in the
+  logger's top bar (`ui/LoggerScreen.kt:331-332`), the bar (`ui/WorkoutBar.kt`), and the swipe's
+  delete intent (`notification/WorkoutNotifications.kt:258`) feeding This workout's *Notification
+  off* · *Show* row (`ui/AssemblySheet.kt:225-228`).
 - **12d · The approved Finish receipt.** Android Finish (03.7 `1254:32362`, 03.8 `1254:32441`)
   has a readable receipt and two main actions: crowned *Share with Coach* and *Done*, each 56 dp
   with 12 dp between. *Discard* is in the native top-end overflow and asks once. Task 14 implements
@@ -1074,17 +1084,17 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
   iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
   never reaches a room the question did not name; designer to rule.
-- **12o · Delete account: two proven no-close states, proposed for Android (🚧, awaiting owner).**
+- **12o · Delete account: two proven no-close states on Android (owner approved 2026-11-01).**
   Android's recoverable close (`backend/AUTH.md`, Recoverable deletion) can be refused for a wrong
-  phone clock, and approved 27e then says *Check your connection*, which is false; approved D3 is a
-  dead end when the close never reached the server: the account is live, but the phone keeps its
-  pending record, fences every gym write and offers only *Check deletion*. Two boards, Shell Android:
+  phone clock, or never reach the server while the account stays live. Android draws both
+  (`platform/you/DeleteAccount.kt`, `AccountDeletion.kt`, task 65). Two boards, Shell Android:
   - **27h Couldn’t delete — date and time** (Dark `139:2733`, Daylight `139:2786`, beside 27g in
     `33:1568`): error line *Your account wasn’t deleted. This phone’s date and time look wrong. Fix
     them, then try again.*, an inline *Date & time* text button (Android date settings), **Try again**,
     **Cancel**. Condition: a send of the operation answers 409 `clock-ahead`, or 404 `unavailable`
-    while the session is still accepted and the phone's monotonic clock puts that send under 5 minutes
-    after the operation's stamp. Either proves the operation changed nothing.
+    while the session is still accepted and the phone's monotonic clock puts that send at least 90 s
+    inside the 5 minutes after the operation's stamp (Android allows that margin for transit and server
+    lag; a later send goes the D6 way). Either proves the operation changed nothing.
   - **D6 Not deleted** (Dark `139:2867`, Daylight `139:2896`, in section D `116:754`): *Your account
     wasn’t deleted* / *The request didn’t reach Windmill in time, so nothing changed. Your account
     works as before.* / **Try again** (opens 27a; a new confirm mints a new operation) · **Back to
@@ -1093,6 +1103,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
     server's clock, no receipt). A close revokes every session, so the accepted session proves no
     closure. On that proof the phone clears the pending record and releases the fence before drawing.
     A refused session (401) or a request 35 or more days old stays on D3.
+  - After a restart the phone has no monotonic stamp, so a slow clock's refusal reads D6 (*didn't reach Windmill in time*), not 27h; Try again then shows 27h. Designer to rule whether D6's words should cover that case.
   iOS sends the body-only close (`AppRuntime.swift` `deleteAccount`), so it has no clock refusal and no
   pending record; its 27e stays as drawn. If iOS adopts the recoverable close, it takes both states.
 - **12p · iOS receipt *Save to ‹routine›* and a load under 0 (needs words).** A barbell or two-dumbbell
@@ -1192,6 +1203,10 @@ iOS. It and the product differ in these places.
 - **Coach Markdown.** Android renders answer Markdown blocks and paces streamed text; web
   `CoachRoom.jsx` renders plain text. Decide the shared block typography and pacing, then align the
   other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.
+- **Shared workout set numbers.** The web single-workout share page prints each set's server set
+  number (`web/src/products/gym/share/SharedSession.jsx`, `gym-set-number`), so sets numbered out
+  of logged order read *2, 3, 1*. The owner's ruling (11u) counts each movement's sets 1..N in
+  logged order as a quiet digit.
 - **Workout display names.** The API's optional `routineName` changes a corrected workout's
   display name independently of its frozen plan. Native session readers need to prefer it,
   including an explicitly empty name for a free session.

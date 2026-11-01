@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/application/FailureWindow.h"
+
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
@@ -21,13 +23,15 @@ struct WorkerPoolStopping : std::runtime_error {
 // The threads push, pull and server-origin admission block on (engine.md §6), apart from every IO loop.
 class WorkerPool {
 public:
-  WorkerPool(std::string name, std::size_t threads, std::size_t queueCeiling);
+  // `saturated`, when given, hears a refusal for a full queue once per its window, the pool named in its detail.
+  WorkerPool(std::string name, std::size_t threads, std::size_t queueCeiling, std::shared_ptr<FailureWindow> saturated = nullptr);
   // Stops accepting, runs every job already queued (each sees stopping()), then joins.
   ~WorkerPool();
   WorkerPool(const WorkerPool&) = delete;
   WorkerPool& operator=(const WorkerPool&) = delete;
 
-  // False when queueCeiling jobs are already waiting or the pool is stopping: the caller answers 503.
+  // False when queueCeiling jobs are already waiting or the pool is stopping: the caller answers 503. A full queue is
+  // reported to `saturated`; stopping is not.
   bool post(std::function<void()> job);
   bool stopping() const;
   std::size_t queued() const;
@@ -54,6 +58,7 @@ private:
 
   std::string name_;
   std::size_t queueCeiling_;
+  std::shared_ptr<FailureWindow> saturated_;
   mutable std::mutex mutex_;
   std::condition_variable wake_;
   std::deque<std::function<void()>> jobs_;

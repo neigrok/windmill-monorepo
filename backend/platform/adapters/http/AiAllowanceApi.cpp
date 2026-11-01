@@ -14,7 +14,7 @@ AiAllowanceApi::AiAllowanceApi(std::shared_ptr<AuthService> auth, std::shared_pt
 
 void AiAllowanceApi::get(const drogon::HttpRequestPtr& request,
                          std::function<void(const drogon::HttpResponsePtr&)>&& reply) {
-  WriteObservation observation{"ai.allowance.read", "platform", "REST", "", failures_.get()};
+  WriteObservation observation{"ai.allowance.read", "platform", "rest", "", failures_.get()};
   WriteContext context{observation};
   const auto answer = [reply = std::move(reply), &observation](const drogon::HttpResponsePtr& response) {
     observation.skip();

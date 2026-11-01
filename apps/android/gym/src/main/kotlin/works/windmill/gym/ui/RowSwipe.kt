@@ -1,12 +1,8 @@
 package works.windmill.gym.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,7 +14,6 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxDefaults
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,18 +24,16 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 
 // A returning row starts settled; saving its dismissal state would repeat deletion after Undo.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +68,10 @@ fun DeleteSwipeRow(
     onDelete: suspend () -> Boolean,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    shape: Shape = RoundedCornerShape(16.dp),
+    // False when the content is its own TalkBack stop and declares the action there: an action on this box is
+    // offered only while the box itself holds focus.
+    declaresAction: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -89,8 +86,8 @@ fun DeleteSwipeRow(
     }
     val scale by animateFloatAsState(if (pastThreshold) 1.2f else 1f, label = "Delete threshold")
     SwipeToDismissBox(state = swipe, enableDismissFromStartToEnd = false, enableDismissFromEndToStart = enabled,
-        modifier = modifier.clip(RoundedCornerShape(16.dp)).semantics {
-            if (enabled) customActions = listOf(CustomAccessibilityAction(actionLabel) {
+        modifier = modifier.clip(shape).semantics {
+            if (enabled && declaresAction) customActions = listOf(CustomAccessibilityAction(actionLabel) {
                 scope.launch { delete() }
                 true
             })
@@ -106,19 +103,3 @@ fun DeleteSwipeRow(
         }) { content() }
 }
 
-// Legacy consumers migrate in their screen tasks; bidirectional rows keep their own ground.
-@Composable
-internal fun RowDeleteGround() {
-    val skin = LocalGymColors.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.row)
-            .background(skin.alarmInk.copy(alpha = 0.18f), RoundedCornerShape(WindmillRadius.lg))
-            .padding(horizontal = WindmillSpace.x4),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Delete", style = GymType.numeral(13, FontWeight.Bold), color = skin.alarmInk)
-    }
-}

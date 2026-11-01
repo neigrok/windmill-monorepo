@@ -174,7 +174,6 @@ fun ThreadScreen(
     onAskNew: () -> Unit = onBack,
     origin: String = "https://windmill.works",
     onThreads: () -> Unit = onBack,
-    onNotes: () -> Unit = {},
     onConnections: (() -> Unit)? = null,
     onOpenRoutine: ((String) -> Unit)? = null,
     onOpenWorkout: ((String) -> Unit)? = null,
@@ -233,7 +232,7 @@ fun ThreadScreen(
         composerVisible = !coach.anonymous || coach.anonymousAccess == works.windmill.gym.coach.onboarding.AnonymousCoachAccess.Available,
         onSignIn = onSignIn,
         onBuildRoutine = onBuildRoutine,
-        onThreads = onThreads, onNotes = onNotes, onConnections = onConnections, onOpenRoutine = onOpenRoutine,
+        onThreads = onThreads, onConnections = onConnections, onOpenRoutine = onOpenRoutine,
         onOpenWorkout = onOpenWorkout, onOpenChat = onOpenChat,
         onReview = { onReview(ThreadProposal(it.id, it.state, it.changeCount, it.routineId, it.routineName, it.createdAtMs)) },
         onOlder = history?.nextCursor?.let { cursor -> {

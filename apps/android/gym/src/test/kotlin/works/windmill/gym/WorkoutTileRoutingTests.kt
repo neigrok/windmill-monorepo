@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -119,8 +120,8 @@ class WorkoutTileRoutingTests {
         try {
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             compose.onNodeWithText("Push A").performClick()
-            compose.waitUntil(10_000) { compose.onAllNodes(hasText("40 × 8")).fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("40 × 8").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).performClick()
             compose.onNodeWithText("Set note").performTextInput("Unfinished set note")
             compose.runOnIdle { room.store.requestRoutines() }
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()

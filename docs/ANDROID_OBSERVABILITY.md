@@ -155,7 +155,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `session_seal` | platform | Sealing a secret fails |
 | `session_sign_out_decode` | platform | The saved sign-out choice cannot be decoded |
 | `session_user_decode` | platform | The saved user cannot be decoded |
-| `sync_<operation>` | app | The sync engine files a fault, by engine operation: `commit`, `read`, `undo`, `release`, `dismiss`, `storage`, `writer`, `shutdown`, `sync`, `hello`, `push`, `pull`, `live`, `lifecycle` or `subscription` |
+| `sync_<operation>` | app | The sync engine files a fault, by engine operation: `commit`, `read`, `undo`, `release`, `dismiss`, `storage`, `writer`, `shutdown`, `sync`, `hello`, `push`, `pull`, `live`, `lifecycle` or `subscription`. A request's fault that repeats its operation's last files none until the operation is answered; lost network and the statuses the server answers on purpose (400, 401, 403, 404, 409, 410, 422, 426, 429, a push's 413, the server's own 503 `unavailable` in the sync envelope, and any 503 at the live upgrade, whose body is not read) file none; a bare or foreign 503 (an edge, a maintenance page) is a fault |
 | `telemetry_credential` | platform | The credential for event delivery cannot be read |
 | `telemetry_delivery` | platform | An event batch fails to reach the intake, other than by lost network; once until a batch lands |
 | `telemetry_enqueue` | platform | An event cannot be queued |
@@ -183,7 +183,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 
 | Event | Module | Properties |
 |---|---|---|
-| `account_delete` | platform | `state`: `shown`; `action`: `confirm`, `check`, `cleanup`, `back`, `done`; `outcome`: `started`, `cancelled`, `refused`, `failed`, `ok`, `cleanup_pending`, `pending_confirmation` |
+| `account_delete` | platform | `state`: `shown`; `action`: `confirm`, `check`, `cleanup`, `back`, `done`, `retry` (Try again on Not deleted), `date_time` (with `outcome`: `failed` when date settings cannot open); `outcome`: `started`, `cancelled`, `refused`, `clock_refused` (the phone's date and time are wrong), `not_deleted` (the close never reached Windmill in time), `failed`, `ok`, `cleanup_pending`, `pending_confirmation`. Refusals file no Issue. |
 | `ai_installation_outcome` | platform | `action`: `bind`; `outcome`: `refused`, `failed` |
 | `api_request_failed` | platform | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase` |
 | `app_backgrounded` | app | none |
@@ -205,7 +205,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_coach_routine_confirm` | gym | `outcome`: `started`, `saved`, `refused`, `failed` |
 | `gym_import_recovery` | gym | `action`: `inspect`, `keep`, `retry`, `fix`, `discard`; `state`: `opened`, `started`, `shown`, `date_opened`, `time_opened`, `date_confirmed`, `time_confirmed`, `date_cancelled`, `time_cancelled`, `marked_finished`, `link_changed`, `set_opened`, `set_staged`, `set_removed`; `outcome`: `ok`, `completed`, `refused`, `failed`, `cancelled` |
 | `gym_note_moved` | gym | none |
-| `gym_proposal_missing` | gym | none. A proposal named by an answer the Coach room waited for has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account; once per proposal while the room stays composed |
+| `gym_proposal_missing` | gym | none. Counts only answers this visit of the Coach room waited for; a proposal deleted before the visit, as on a reopened thread, draws the line and sends nothing. A proposal named by such an answer has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account or a pull sent after the wait ended has landed caught up (the wait's end asks for one); once per proposal while the room stays composed |
 | `gym_proposal_outcome` | gym | `action`: `apply`, `dismiss`; `outcome`: `decided`, `moved`, `gone`, `settled`, `failed` |
 | `gym_proposal_receipt_shown` | gym | `outcome`: `applied` |
 | `gym_routine_saved` | gym | `action`: `create`, `update` |
@@ -220,13 +220,15 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `onboarding_exited` | gym, app | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `outcome`: `skipped`, `completed`, `back`, `closed` |
 | `onboarding_opened` | gym | `state`: `first_launch`, `replay` |
 | `onboarding_page_viewed` | gym | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym` |
-| `sync_connectivity` | app | `state`: `online`, `offline` |
+| `sync_connectivity` | app | `state`: `online`, `offline`, as the default network's own callback reports it: offline once that network is lost |
 | `sync_engine` | app | A sync engine result other than success: `operation` (the engine operation), `outcome`: `refused`, `failure`, `timeout`; `failure_kind` (the engine's code); `status` |
 
 ### gym_action labels
 
 `GymActions` in `gym/telemetry/GymEvents.kt` is the allowlist. A row marked *asks first* also
-sends `state`: `shown` when its question opens.
+sends `state`: `shown` when its question opens. The log's `first_pull` sends `state`: `shown` when the
+reading bar shows before the first pull, then once `read` when the pull lands or `failed` when the
+foot turns to Retry.
 
 | Screen | Action | Outcomes | Asks first |
 |---|---|---|---|
@@ -250,6 +252,7 @@ sends `state`: `shown` when its question opens.
 | `finish` | `done` | `ok` | |
 | `finish` | `keep` | `ok` | |
 | `log` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
+| `log` | `first_pull` | `read`, `failed` | yes |
 | `log` | `open_bodyweight` | `ok` | |
 | `log` | `open_record` | `ok` | |
 | `log` | `open_workout` | `ok` | |
@@ -273,6 +276,7 @@ sends `state`: `shown` when its question opens.
 | `session` | `delete` | `ok`, `refused`, `failed` | |
 | `session` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
 | `session` | `fix` | `ok`, `refused`, `failed` | |
+| `session` | `share` | `ok`, `failed` | |
 | `threads` | `delete` | `ok`, `refused`, `failed`, `cancelled` | yes |
 | `tile` | `open` | `ok`, `failed` | |
 | `tile` | `routines` | `ok`, `failed` | |

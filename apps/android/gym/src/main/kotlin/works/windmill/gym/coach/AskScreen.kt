@@ -1,7 +1,5 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.ui.Chevron
-import works.windmill.gym.ui.GymLayout
 import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.LocalGymColors
@@ -25,7 +23,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -92,7 +89,6 @@ fun AskScreen(
     onBack: (() -> Unit)? = null,
     seat: String? = null,
     onThreads: () -> Unit,
-    onNotes: () -> Unit,
     onReview: (Proposal) -> Unit,
     onConnections: (() -> Unit)? = null,
     onNewDraft: (String) -> Unit = { onAskNew() },
@@ -149,7 +145,6 @@ fun AskScreen(
     val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
 
-
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.
     val proposals = remember { AnsweredProposals(store, telemetry) }
@@ -160,7 +155,7 @@ fun AskScreen(
     val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
     val headerProposals = proposalIds.filterNot { it in attachedProposals }
     val wanted = (attachedProposals + proposalIds).toList()
-    LaunchedEffect(wanted, store.replicaReadRevision) { proposals.read(wanted) }
+    LaunchedEffect(wanted, store.replicaReadRevision, store.pulled.caughtUp) { proposals.read(wanted) }
     proposals.missing.keys.forEach { id -> key(id) { LaunchedEffect(Unit) { proposals.settle(id) } } }
 
     GymScreen(
@@ -398,18 +393,23 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
 }
 
 // The proposals a room's answers name. Coach can answer before its proposal reaches this phone, so an id not found is
-// read again each time the replica changes. A proposal the phone holds a dead row of is gone at once. One it holds no
-// row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at or after that miss,
-// has read further into the account. One named by an answer this visit waited for and gone that way is reported once.
+// read again each time the replica changes or a pull lands caught up. A proposal the phone holds a dead row of is gone at
+// once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at
+// or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The
+// wait's end asks for that pull once. One named by an answer this visit waited for and gone that way is reported once.
 internal class AnsweredProposals(private val store: TrainingStore, private val telemetry: Telemetry) {
-    data class Miss(val recorded: Boolean = false, val caughtUpAt: Long? = null, val readPast: Boolean = false, val waited: Boolean = false) {
-        val settled: Boolean get() = waited && readPast
+    data class Miss(val recorded: Boolean = false, val caughtUpAt: Long? = null, val readPast: Boolean = false,
+        val waitedAt: Long? = null, val pulledPast: Boolean = false) {
+        val settled: Boolean get() = waitedAt != null && (readPast || pulledPast)
         val gone: Boolean get() = recorded || settled
 
-        fun read(recorded: Boolean, caughtUpTo: Long?): Miss = when {
-            caughtUpTo == null -> copy(recorded = recorded)
-            caughtUpAt == null -> copy(recorded = recorded, caughtUpAt = caughtUpTo)
-            else -> copy(recorded = recorded, readPast = readPast || caughtUpTo > caughtUpAt)
+        fun read(recorded: Boolean, caughtUpTo: Long?, caughtUpPull: Long): Miss {
+            val pulled = pulledPast || waitedAt != null && caughtUpPull > waitedAt
+            return when {
+                caughtUpTo == null -> copy(recorded = recorded, pulledPast = pulled)
+                caughtUpAt == null -> copy(recorded = recorded, caughtUpAt = caughtUpTo, pulledPast = pulled)
+                else -> copy(recorded = recorded, readPast = readPast || caughtUpTo > caughtUpAt, pulledPast = pulled)
+            }
         }
     }
 
@@ -422,11 +422,12 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
 
     suspend fun read(wanted: List<String>) {
         val caughtUpTo = store.caughtUpTo
+        val caughtUpPull = store.pulled.caughtUp
         for (id in wanted) {
             if (minted.containsKey(id)) continue
             when (val read = store.proposal(id)) {
                 is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
-                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.proposalRecorded(id), caughtUpTo)
+                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.proposalRecorded(id), caughtUpTo, caughtUpPull)
             }
         }
         report()
@@ -434,8 +435,10 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
 
     suspend fun settle(id: String) {
         delay(settleMs)
-        missing[id]?.let { missing[id] = it.copy(waited = true) }
+        val miss = missing[id] ?: return
+        missing[id] = miss.copy(waitedAt = store.pulled.sent)
         report()
+        if (missing[id]?.gone == false) store.pullAgain()
     }
 
     private fun report() {

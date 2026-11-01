@@ -179,8 +179,6 @@ object Threads {
 
     const val outOfReach = "the log didn’t answer — your conversations are out of reach"
 
-    const val past = "A conversation you had. Ask something new to start another."
-
     // Sorted by the SERVER's instants and never by arrival order.
     fun months(threads: List<AskThread>, nowMs: Long): List<ThreadMonth> =
         threads.sortedByDescending { it.askedAtMs }

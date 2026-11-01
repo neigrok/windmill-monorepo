@@ -3,11 +3,15 @@ package works.windmill.gym.ui
 import androidx.compose.material3.Text
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -29,10 +33,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.presentation.SessionSummary
-import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
-import works.windmill.sync.core.Json
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -101,14 +103,14 @@ class SetRowSwipeTests {
         try { store(scope).use { room ->
             screen(room, session(room))
 
-            compose.onNodeWithText("82.5 × 5").assertIsDisplayed()
-            compose.onNodeWithText("82.5 × 5").performTouchInput { swipeRight() }
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput { swipeRight() }
             compose.runOnIdle {
                 assertEquals("nothing on the leading edge", emptySet<String>(), room.store.withheldIds)
             }
-            compose.onNodeWithText("82.5 × 5").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").assertIsDisplayed()
 
-            compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput { swipeLeft() }
             compose.runOnIdle {
                 assertEquals(emptyList<Any>(), room.store.withheld)
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
@@ -123,7 +125,7 @@ class SetRowSwipeTests {
         try { store(scope).use { room ->
             screen(room, session(room))
 
-            compose.onNodeWithText("82.5 × 5").performTouchInput {
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput {
                 swipeLeft(startX = right - 1f, endX = left + 1f)
             }
 
@@ -135,17 +137,18 @@ class SetRowSwipeTests {
     }
 
     @Test
-    fun testTheRowDeclaresDeleteAsACustomActionAndItDoesTheSameThing() {
+    fun testTheFocusedRowItselfDeclaresDeleteAsACustomActionAndItDoesTheSameThing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
             screen(room, session(room))
 
-            val row = compose.onNodeWithText("82.5 × 5").fetchSemanticsNode()
-            val declared = generateSequence(row) { it.parent }
-                .mapNotNull { it.config.getOrNull(SemanticsActions.CustomActions) }
-                .flatten()
-                .toList()
-            assertEquals(listOf("Delete"), declared.map { it.label })
+            val row = compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").fetchSemanticsNode()
+            val declared = row.config[SemanticsActions.CustomActions]
+            assertEquals("TalkBack offers the actions of the node it focuses, and that node is the row",
+                listOf("Delete"), declared.map { it.label })
+            assertEquals("the swipe around the row declares it nowhere else", listOf("Delete"),
+                generateSequence(row) { it.parent }.mapNotNull { it.config.getOrNull(SemanticsActions.CustomActions) }
+                    .flatten().map { it.label }.toList())
 
             compose.runOnIdle { assertTrue(declared.single().action?.invoke() == true) }
             compose.runOnIdle {
@@ -156,19 +159,40 @@ class SetRowSwipeTests {
     }
 
     @Test
-    fun theRowThatMovesUpIntoADeletedRowsPlaceIsAWholeRowAgain() {
+    fun theRowThatMovesUpIntoADeletedRowsPlaceIsAWholeRowAgainAndCountsAgain() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { store(scope).use { room ->
+            screen(room, session(room))
+            compose.runOnIdle {
+                assertEquals("the log numbered both sets", listOf(1, 2),
+                    room.training.details().single().sets.sortedBy { it.completedAtMs }.map { it.setNumber })
+            }
+            compose.onNodeWithContentDescription("Set 2, 90 kg total, 3 reps").assertIsDisplayed()
+
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput { swipeLeft() }
+            compose.runOnIdle { assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() }) }
+
+            val survivor = compose.onNodeWithContentDescription("Set 1, 90 kg total, 3 reps").fetchSemanticsNode().boundsInRoot
+            assertTrue("the survivor is drawn where a row belongs, not parked off the leading edge: " +
+                "left was ${survivor.left}", survivor.left >= 0f)
+            compose.onNodeWithContentDescription("Set 1, 90 kg total, 3 reps").performClick()
+            compose.onNodeWithText("Fix set").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun theRowSaysItselfOnceAsAButtonThatFixesTheSet() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
             screen(room, session(room))
 
-            compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
-            compose.runOnIdle { assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() }) }
-
-            val survivor = compose.onNodeWithText("90 × 3").fetchSemanticsNode().boundsInRoot
-            assertTrue("the survivor is drawn where a row belongs, not parked off the leading edge: " +
-                "left was ${survivor.left}", survivor.left >= 0f)
-            compose.onNodeWithText("90 × 3").performClick()
-            compose.onNodeWithText("Fix set").assertIsDisplayed()
+            val row = compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").fetchSemanticsNode()
+            assertEquals(Role.Button, row.config[SemanticsProperties.Role])
+            assertEquals("fix this set", row.config[SemanticsActions.OnClick].label)
+            assertNull("nothing drawn on the row is said a second time", row.config.getOrNull(SemanticsProperties.Text))
+            assertEquals(emptyList<Any>(), row.children)
+            assertEquals(emptyList<Any>(), compose.onAllNodesWithText("82.5 × 5").fetchSemanticsNodes())
         } } finally { scope.cancel() }
     }
 
@@ -178,7 +202,7 @@ class SetRowSwipeTests {
         try { store(scope).use { room ->
             screen(room, session(room))
 
-            compose.onNodeWithText("82.5 × 5").performClick()
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performClick()
 
             compose.onNodeWithText("Fix set").assertIsDisplayed()
             compose.onNodeWithText("Set note").assertIsDisplayed()
@@ -193,7 +217,7 @@ class SetRowSwipeTests {
             val summary = session(room)
             val standing = screen(room, summary)
 
-            compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput { swipeLeft() }
             compose.runOnIdle { assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() }) }
 
             standing.value = false
@@ -214,15 +238,15 @@ class SetRowSwipeTests {
         try { store(scope).use { room ->
             val standing = screen(room, session(room))
 
-            compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
+            compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput { swipeLeft() }
             compose.runOnIdle { assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() }) }
             standing.value = false
             compose.runOnIdle { }
 
             compose.runOnIdle { assertNull(room.store.keepWithheld()) }
             standing.value = true
-            compose.onNodeWithText("90 × 3").assertIsDisplayed()
-            assertEquals(emptyList<Any>(), compose.onAllNodesWithText("82.5 × 5").fetchSemanticsNodes())
+            compose.onNodeWithContentDescription("Set 1, 90 kg total, 3 reps").assertIsDisplayed()
+            assertEquals(emptyList<Any>(), compose.onAllNodesWithContentDescription("82.5 kg", substring = true).fetchSemanticsNodes())
         } } finally { scope.cancel() }
     }
 }

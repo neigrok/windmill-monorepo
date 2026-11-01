@@ -321,21 +321,37 @@ TEST(sync_service_push_answers_503_when_the_bind_fails_transiently_and_binds_not
   BlockingThread::Mark blocking;
   test::FakeWorld world;
   const Json::Value untouched = world.dump();
-  // Read 1 is the bind's read of the replica row under its lock.
+  // Read 1 is the bind's read of the replica row under its lock; each push here meets its own failing store.
   BeforeReplicaLock store(world.store(), 1, [](SyncTxn&) { throw sync::fake::InjectedTransient("lock_timeout on sync_replicas"); });
+  BeforeReplicaLock later(world.store(), 1, [](SyncTxn&) { throw sync::fake::InjectedTransient("lock_timeout on sync_replicas"); });
   Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
-  SyncService service(world.catalog(), store, admission, clock);
+  struct Reports : FailureReporter {
+    std::vector<std::string> lines;
+    void report(const std::string& kind, const std::string& where, const std::string& detail) override {
+      lines.push_back(kind + " " + where + " " + detail);
+    }
+  } reports;
+  const auto bindUnavailable = std::make_shared<FailureWindow>(reports, "sync.push.bind_unavailable");
+  SyncService service(world.catalog(), store, admission, clock, bindUnavailable);
+  SyncService laterService(world.catalog(), later, admission, clock, bindUnavailable);
   Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(cardIntent(1, "card0001"));
   TimeBudget budget(60'000);
 
   const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
+  const SyncReply again = laterService.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 503);
   CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "error": "unavailable", "retryAfterMs": 1000})")));
+  CHECK_EQ(jcs(again.body), jcs(reply.body));
   CHECK_EQ(jcs(world.dump()), jcs(untouched));
+  // The outage is one Issue for its window, with the exception's type and none of its message.
+  REQUIRE_EQ(reports.lines.size(), std::size_t{1});
+  CHECK_EQ(reports.lines[0].rfind("platform sync.push.bind_unavailable exception_type=", 0), std::size_t{0});
+  CHECK(reports.lines[0].find("InjectedTransient") != std::string::npos);
+  CHECK(reports.lines[0].find("lock_timeout") == std::string::npos);
 }
 
 TEST(sync_service_push_answers_the_results_so_far_with_a_retry_when_step_4_s_read_times_out) {

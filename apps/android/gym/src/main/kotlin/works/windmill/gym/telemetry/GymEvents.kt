@@ -5,7 +5,7 @@ import works.windmill.platform.telemetry.EventSchemas
 import works.windmill.platform.telemetry.LabelSchema
 
 // gym_action: each screen's actions with the outcomes each may report. An action that asks first also reports
-// state=shown, without an outcome, when its question opens.
+// state=shown, without an outcome, when its question opens; the log's first_pull does so when its reading bar shows.
 object GymActions : EventSchema {
     val screens: Map<String, Map<String, Set<String>>> = mapOf(
         "routines" to mapOf("delete" to setOf("ok", "refused", "failed")),
@@ -15,12 +15,14 @@ object GymActions : EventSchema {
             "open_workout" to setOf("ok"), "open_bodyweight" to setOf("ok"), "open_record" to setOf("ok"),
             "share" to setOf("ok", "refused", "failed"),
             "retry" to setOf("requested", "refused", "ok", "failed"),
+            "first_pull" to setOf("read", "failed"),
         ),
         "finish" to mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"), "keep" to setOf("ok"), "done" to setOf("ok")),
         "session" to mapOf(
             "discard" to setOf("ok", "cancelled", "refused", "failed"),
             "delete" to setOf("ok", "refused", "failed"),
             "fix" to setOf("ok", "refused", "failed"),
+            "share" to setOf("ok", "failed"),
         ),
         "note_editor" to mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed")),
         "record" to mapOf("edit" to setOf("ok", "refused", "failed")),
@@ -51,7 +53,7 @@ object GymActions : EventSchema {
         "tile" to mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed")),
     )
     val asking: Map<String, Set<String>> = mapOf(
-        "threads" to setOf("delete"), "finish" to setOf("discard"), "session" to setOf("discard"), "log" to setOf("discard"),
+        "threads" to setOf("delete"), "finish" to setOf("discard"), "session" to setOf("discard"), "log" to setOf("discard", "first_pull"),
         "routine_editor" to setOf("discard"), "movement_form" to setOf("discard"),
     )
 

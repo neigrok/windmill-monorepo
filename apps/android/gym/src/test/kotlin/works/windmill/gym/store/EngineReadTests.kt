@@ -391,7 +391,7 @@ class EngineReadTests {
             engine.signIn("other", mapOf("gym" to false))
             runCurrent()
             page.await()
-            assertEquals(Older.Failed, store.older)
+            assertEquals("the account it now reads is unread", Older.Reading, store.older)
             assertEquals(GymResult.Failed(WriteFailure.NoAnswer), detail.await())
             engine.signOut("keep")
             store.loadOlder()

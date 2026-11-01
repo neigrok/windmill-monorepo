@@ -18,7 +18,6 @@ import androidx.compose.ui.test.assertTextContains
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import okhttp3.HttpUrl.Companion.toHttpUrl
