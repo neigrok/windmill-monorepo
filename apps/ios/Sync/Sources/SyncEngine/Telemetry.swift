@@ -98,6 +98,7 @@ public enum ExpectedStatuses {
 
 // One reporter's sync failures, the transport's or the engine's: each is an `api_request_failed` metric, and one no one
 // expects is an Issue once per outage, so a failure like its operation's last files none until the operation succeeds.
+// Offline and a refusal (kind `refused`, the server ending a live socket's session) are never Issues.
 final class TransportDiagnostics: Sendable {
   final class Invocation: Sendable {
     let kind = Mutex<String?>(nil)
@@ -165,7 +166,7 @@ final class TransportDiagnostics: Sendable {
       defer { lastFailures[operation] = failure }
       return lastFailures[operation] == failure
     }
-    guard kind != "offline", !(status.map(expected.contains) ?? false), !repeated else { return }
+    guard kind != "offline", kind != "refused", !(status.map(expected.contains) ?? false), !repeated else { return }
     telemetry.failure(operation, kind: kind, properties: properties, durationMs: durationMs)
   }
 

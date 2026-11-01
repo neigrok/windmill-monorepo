@@ -96,7 +96,7 @@ internal fun Reply<SyncResponse>.pushFailure(account: String?): PushFailure? {
     return if (response.status in setOf(200, 400, 409, 413) && !response.malformedConflict(account)) null else PushFailure.answered
 }
 
-// What the person may need to know about sync. `failedPushes` names the records of each scope's unsent entries while its last push failed; `unansweredPushes`, the scopes among them whose last push got no answer, so it never reached the server.
+// What the person may need to know about sync. `failedPushes` names the records of each scope's unsent entries while its last push failed; `unansweredPushes`, the scopes among them whose last push got no answer the engine could read.
 class SyncStatus internal constructor(initial: Snapshot = Snapshot()) {
     data class Snapshot(val account: String? = null, val authPaused: Boolean = false, val upgradeRequired: Boolean = false,
         val online: Boolean = true, val pendingSignIn: String? = null, val ready: Int = 0, val sent: Int = 0, val serverSchema: Long? = null,

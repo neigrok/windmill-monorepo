@@ -247,6 +247,13 @@ final class WebSocketConnection: LiveConnection {
       switch task.closeCode {
       case .normalClosure, .goingAway:
         return nil
+      case .policyViolation:
+        // The server closes with 1008 once the socket's session stops resolving: a refusal metric, never an Issue.
+        if !Task.isCancelled {
+          diagnostics.report(operation: "sync_live_receive", method: "GET", kind: "refused",
+                             durationMs: TransportDiagnostics.elapsed(since: start))
+        }
+        return nil
       case .invalid:
         report(error, operation: "sync_live_receive", since: start)
         throw error

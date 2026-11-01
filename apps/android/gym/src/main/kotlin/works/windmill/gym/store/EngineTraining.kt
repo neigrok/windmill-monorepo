@@ -23,8 +23,6 @@ import works.windmill.sync.api.ViewMode
 import works.windmill.sync.api.CommitReceipt
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.Engine
-import works.windmill.sync.engine.Reply
-import works.windmill.sync.engine.SyncResponse
 import works.windmill.sync.schema.Gym
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
 import works.windmill.gym.domain.sync.Routine as EngineRoutine
@@ -75,22 +73,17 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     fun removalProposals(): Map<String, Proposal> = removalReceipts.proposals()
     fun removalPending(id: String): Boolean = removalReceipts.pending(id)
     fun removalReceiptShown(proposal: Proposal, replica: String) = removalReceipts.shown(proposal, replica)
-    private val deliveryBlockers = mutableMapOf<String, Blocker>()
-    val deliveryBlocker: Blocker? get() = synchronized(deliveryBlockers) { deliveryBlockers[engine.activeReplica()] }
-    fun reportDelivery(replica: String, reply: Reply<SyncResponse>): Boolean = synchronized(deliveryBlockers) {
-        if (engine.activeReplica() != replica) return@synchronized false
-        val response = when (reply) {
-            Reply.Unreachable -> null
-            is Reply.Failed -> reply.response
-            is Reply.Answer -> reply.value
+    // What keeps the selected replica's gym work from the log, as the engine observes it: a paused session; no network, or
+    // a last push that got no answer the engine could read; or a last push the log answered with a failure.
+    val deliveryBlocker: Blocker? get() {
+        val status = engine.status.state.value
+        val gym = ScopeRef.product("gym")
+        return when {
+            status.authPaused -> Blocker.SignInLapsed
+            !status.online || gym in status.unansweredPushes -> Blocker.Offline
+            gym in status.failedPushes -> Blocker.LogFailed
+            else -> null
         }
-        when {
-            response == null -> deliveryBlockers[replica] = Blocker.Offline
-            response.status == 401 -> deliveryBlockers[replica] = Blocker.SignInLapsed
-            response.status >= 500 -> deliveryBlockers[replica] = Blocker.LogFailed
-            response.status == 200 -> deliveryBlockers.remove(replica)
-        }
-        true
     }
     private val zone = Zone { at ->
         ZoneId.systemDefault().rules.getOffset(java.time.Instant.ofEpochMilli(at.ms)).totalSeconds

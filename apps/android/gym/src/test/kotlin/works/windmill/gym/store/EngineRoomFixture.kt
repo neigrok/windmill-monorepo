@@ -8,6 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.coroutines.ContinuationInterceptor
@@ -23,6 +26,7 @@ import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.RecordID
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
+import works.windmill.sync.engine.Reply
 import works.windmill.sync.modelserver.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
@@ -157,6 +161,39 @@ internal class EngineRoomFixture(
             pull(server)
         }
         pull(server)
+    }
+    // One push of the unsent work by the engine's own sender, as the application sends it, answered `reply`; it returns
+    // once the engine's status has taken the answer.
+    suspend fun push(reply: Reply<SyncResponse>) = push(server()) { reply }
+    suspend fun push(server: ModelServer) = push(server) { request ->
+        server.push(request, Credential.Account(selected!!), now).let { Reply.Answer(SyncResponse(it.status, it.body)) }
+    }
+    private suspend fun push(log: ModelServer, answer: (Json) -> Reply<SyncResponse>) {
+        val account = selected!!
+        var answered: SyncResponse? = null
+        val transport = object : SyncTransport {
+            override suspend fun hello(token: String?) = log.hello(Credential.Account(account), now).let { Reply.Answer(SyncResponse(it.status, it.body)) }
+            override suspend fun push(request: Json, token: String) = answer(request).also { answered = (it as? Reply.Answer)?.value ?: (it as? Reply.Failed)?.response }
+            override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
+            override suspend fun openLive(token: String) = Reply.Unreachable
+        }
+        val tokens = object : SessionTokens {
+            override fun token(account: String) = "token-$account"
+            override fun save(account: String, token: String) = Unit
+            override fun delete(account: String) = Unit
+            override fun accounts() = setOf(account)
+        }
+        SyncRuntime(engine, transport, tokens, "test").use { assertTrue("nothing went out", it.senderStep(leaving = true)) }
+        val gym = ScopeRef(Gym.scope)
+        withContext(Dispatchers.IO) { withTimeout(2_000) { engine.status.state.first { status ->
+            val response = answered
+            when {
+                response == null -> gym in status.unansweredPushes
+                response.status == 401 -> status.authPaused
+                response.status in setOf(200, 400, 409, 413) -> gym !in status.failedPushes
+                else -> gym in status.failedPushes && gym !in status.unansweredPushes
+            }
+        } } }
     }
     fun outbox() = engine.snapshot().member("replicas").arr().flatMap { it["outbox"]?.arr().orEmpty() }
     // The selected replica's refusal notices as the engine holds them. `engine.notices(...)` is an

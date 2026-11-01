@@ -60,6 +60,31 @@ test('source10 retains exact ready work against server8 and delivers once after 
   engine.close();
 });
 
+test('only a 200 hello says the app is too old by its minSchema', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  const request = env.transport.request.bind(env.transport);
+  env.transport.request = async (endpoint, ...args) => {
+    const result = await request(endpoint, ...args);
+    if (endpoint === 'hello') result.response = { status: 503, body: { minSchema: 99 } };
+    return result;
+  };
+  await engine.send(); await until(() => !engine.sending);
+  assert.equal(engine.upgradeRequired, false);
+  assert.equal(env.requests.filter(({ endpoint }) => endpoint === 'push').length, 0);
+  env.transport.request = async (endpoint, ...args) => {
+    const result = await request(endpoint, ...args);
+    if (endpoint === 'hello') result.response.body.minSchema = 99;
+    return result;
+  };
+  env.timers.advance(60_000);
+  await engine.send(); await until(() => !engine.sending);
+  assert.equal(engine.upgradeRequired, true);
+  assert.equal(env.requests.filter(({ endpoint }) => endpoint === 'push').length, 0);
+  engine.close();
+});
+
 test('a delayed hello cannot number work after the account credential generation changes', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);

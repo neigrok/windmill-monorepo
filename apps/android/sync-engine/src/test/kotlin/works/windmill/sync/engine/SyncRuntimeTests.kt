@@ -1154,6 +1154,47 @@ class SyncRuntimeTests {
         }
     }
 
+    // §7.5 step 4: a scope whose digest checks stopped is pulled as any other, so a phone with nothing to push whose every
+    // scope stopped still hears the server's 426 on its next foreground, and the status says so with nothing written.
+    @Test fun aDigestStoppedScopeIsStillPulledAndHearsTheServersUpgrade() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            for (number in 1L..2L) {
+                if (number > 1) assertTrue(fixture.runtime.pullAgain())
+                val pull = fixture.pull()
+                pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                    "as" to Json.of("A"), "pages" to Json.array(Json.objectOf("scope" to Json.of(product.text), "kind" to Json.of("rows"),
+                        "rows" to Json.array(), "cursor" to Json.of(WireCursor("ep-1", "live", 1).text), "more" to Json.of(false),
+                        "seq" to Json.of(1), "digest" to Json.of("1".padStart(64, '0'))))))))
+                until { fixture.runtime.pulls.value.ended == number }
+            }
+            assertEquals(Json.of("1"), fixture.engine.device.current().cursors[product.text]?.get("digestStop"))
+            fixture.runtime.leave()
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Failed(upgradeRequired))
+            withTimeout(2_000) { fixture.engine.status.state.first { it.upgradeRequired } }
+            assertTrue(fixture.transport.hellos.tryReceive().isFailure)
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            assertEquals(emptyList<Json>(), fixture.engine.device.current().entries().map { it.json })
+        }
+    }
+
+    // §9.6: only a 200 hello's `minSchema` says this app is too old; another answer that carries one is no such verdict.
+    @Test fun onlyASuccessfulHellosMinimumRequiresAnUpgrade() = runBlocking {
+        Fixture().use { fixture ->
+            for (status in listOf(401, 503)) {
+                fixture.transport.helloAnswer = CompletableDeferred(Reply.Failed(SyncResponse(status, Json.objectOf("serverTime" to Json.of(5_000),
+                    "epoch" to Json.of("ep-1"), "minSchema" to Json.of(99)))))
+                fixture.runtime.hello("token:A")
+                assertFalse("$status", fixture.runtime.upgradeRequired)
+            }
+            fixture.transport.helloAnswer = CompletableDeferred(Reply.Answer(helloResponse().value.let { it.copy(body = it.body!!.with("minSchema" to Json.of(99))) }))
+            fixture.runtime.hello("token:A")
+            assertTrue(fixture.runtime.upgradeRequired)
+        }
+    }
+
     // The arithmetic the readers rely on: a pull from another replica starts afresh, an end for a replica no longer
     // current changes nothing, and a reader who asked sees a failure only once a pull ends after the ask.
     @Test fun pullsStallOnlyWhenNothingMoreIsComing() {

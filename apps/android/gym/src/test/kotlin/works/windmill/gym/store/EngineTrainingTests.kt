@@ -9,8 +9,6 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import works.windmill.gym.presentation.*
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
@@ -19,6 +17,7 @@ import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock
+import works.windmill.sync.engine.Reply
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
 import works.windmill.sync.engine.nextPush
@@ -317,30 +316,18 @@ class EngineTrainingTests {
         room.sync(server)
     }
 
-    @Test fun deliveryFailureCopyMatchesTheBoundaryAndAStaleAccountCompletionCannotChangeIt() = runTest {
+    // The workout's delivery copy reads how the engine saw its last push end: no answer is offline, a failure the log
+    // answered is the log's, and a lapsed session asks for sign-in.
+    @Test fun deliveryCopyReadsHowTheEnginesLastPushEnded() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("A"); room.workout(finish = false)
-            val a = room.engine.activeReplica()
-            assertTrue(room.training.reportDelivery(a, works.windmill.sync.engine.Reply.Unreachable))
-            room.store.refreshEngine()
-            assertEquals(Blocker.Offline, room.store.workout.strandedBy)
-            assertEquals(SaveState.Blocked(Blocker.Offline), room.store.workout.saveState)
-            assertTrue(room.training.reportDelivery(a, works.windmill.sync.engine.Reply.Failed(SyncResponse(503, Json.objectOf()))))
-            room.store.refreshEngine()
-            assertEquals(Blocker.LogFailed, room.store.workout.strandedBy)
-            assertEquals(SaveState.Blocked(Blocker.LogFailed), room.store.workout.saveState)
-            assertTrue(room.training.reportDelivery(a, works.windmill.sync.engine.Reply.Answer(SyncResponse(200, Json.objectOf()))))
-            room.store.refreshEngine()
-            assertNull(room.store.workout.strandedBy)
-            assertEquals(SaveState.OnThisDevice, room.store.workout.saveState)
-            room.select("B"); room.workout(finish = false)
-            val b = room.engine.activeReplica()
-            room.training.reportDelivery(b, works.windmill.sync.engine.Reply.Failed(SyncResponse(401, Json.objectOf())))
-            assertFalse(room.training.reportDelivery(a, works.windmill.sync.engine.Reply.Answer(SyncResponse(200, Json.objectOf()))))
-            assertFalse(room.training.reportDelivery(a, works.windmill.sync.engine.Reply.Unreachable))
-            room.store.refreshEngine()
-            assertEquals(Blocker.SignInLapsed, room.store.workout.strandedBy)
-            assertEquals(SaveState.Blocked(Blocker.SignInLapsed), room.store.workout.saveState)
+            for ((reply, blocker) in listOf(Reply.Unreachable to Blocker.Offline,
+                Reply.Answer(SyncResponse(503, Json.objectOf())) to Blocker.LogFailed,
+                Reply.Answer(SyncResponse(401, Json.objectOf())) to Blocker.SignInLapsed)) {
+                room.push(reply); room.store.refreshEngine()
+                assertEquals(blocker, room.store.workout.strandedBy)
+                assertEquals(SaveState.Blocked(blocker), room.store.workout.saveState)
+            }
         }
     }
 
@@ -362,14 +349,12 @@ class EngineTrainingTests {
             assertEquals(0, room.store.workout.strandedCount)
             assertNull(room.store.workout.strandedBy)
 
-            room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Unreachable)
-            room.store.refreshEngine()
+            room.push(Reply.Unreachable); room.store.refreshEngine()
             assertEquals(1, room.store.workout.strandedCount)
             assertEquals(Blocker.Offline, room.store.workout.strandedBy)
             assertEquals(SaveState.Blocked(Blocker.Offline), room.store.workout.saveState)
 
-            room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Answer(SyncResponse(200, Json.objectOf())))
-            room.store.refreshEngine()
+            room.push(server); room.store.refreshEngine()
             assertEquals(pending, room.store.workout.stalled)
             assertEquals(0, room.store.workout.strandedCount)
             assertNull(room.store.workout.strandedBy)
@@ -379,33 +364,6 @@ class EngineTrainingTests {
             assertEquals(0, room.store.workout.strandedCount)
             assertEquals(SaveState.OnTheLog, room.store.workout.saveState)
         }
-    }
-
-    @Test fun aRealHttp503And401DisplayTheSameDeliveryFailureAsFailedReplies() = runTest {
-        val server = MockWebServer()
-        server.start()
-        try {
-            works.windmill.sync.engine.HTTPTransport(server.url("/").toString(), SyncSchema.registry.version.toInt()).use { http ->
-                EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-                    room.select("A"); room.workout(finish = false)
-                    val request = checkNotNull(room.engine.nextPush())
-                    for ((status, blocker) in listOf(503 to Blocker.LogFailed, 401 to Blocker.SignInLapsed)) {
-                        server.enqueue(MockResponse().setResponseCode(status).setBody("{}"))
-                        val reply = http.push(request, "test")
-                        val response = (reply as works.windmill.sync.engine.Reply.Answer<SyncResponse>).value
-                        assertEquals(status, response.status)
-                        assertEquals("/v1/sync/push", server.takeRequest().path)
-                        assertTrue(room.training.reportDelivery(room.engine.activeReplica(), reply))
-                        room.store.refreshEngine()
-                        assertEquals(blocker, room.store.workout.strandedBy)
-                        assertEquals(SaveState.Blocked(blocker), room.store.workout.saveState)
-                        assertTrue(room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Failed(response)))
-                        room.store.refreshEngine()
-                        assertEquals(SaveState.Blocked(blocker), room.store.workout.saveState)
-                    }
-                }
-            }
-        } finally { server.shutdown() }
     }
 
     @Test fun proposalDecisionsReturnOnlyTheConfirmedServerReceiptAndLeaveTheCardWhileWaiting() = runTest {

@@ -309,7 +309,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 }
             }
             else response.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.hello) { engine.offset(it, time.long(), RequestTiming(send, recv)) } }
-            if (response.requiresUpgrade || response.body?.get("minSchema")?.long()?.let { it > engine.registry.version } == true) requireUpgrade()
+            // §9.6: the server's own 426, or a 200 hello whose minimum is past this registry, says the app is too old.
+            if (response.requiresUpgrade || response.status == 200 && response.body?.get("minSchema")?.long()?.let { it > engine.registry.version } == true) requireUpgrade()
         }
         return reply
     }
@@ -538,15 +539,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         return if (draining) again else true
     }
     private fun pulling() = activityAllowed() && !closed && foreground && online && !upgradeRequired
-    // Whether a pull could be attempted at all: on the network, no upgrade required, a seat to pull as, and a subscribed
-    // scope not stopped at this version's digest. Re-read each turn of the puller and published beside the pulls.
+    // Whether a pull could be attempted at all: on the network, no upgrade required and a seat to pull as. Re-read each
+    // turn of the puller and published beside the pulls.
     private fun publishPullable() {
         val replica = engine.lock.withLock { engine.device.current().id }
-        val blocked = !activityAllowed() || closed || !online || upgradeRequired || pullSeat() == null ||
-            engine.lock.withLock {
-                val cursors = engine.device.current().cursors
-                engine.subscriptions(products).all { cursors[it.text]?.get("digestStop") == Json.of(appVersion) }
-            }
+        val blocked = !activityAllowed() || closed || !online || upgradeRequired || pullSeat() == null
         endedPulls.update { it.of(replica).copy(blocked = blocked) }
     }
     suspend fun pullerStep(): Boolean = pullerTurn.withLock {
@@ -557,10 +554,10 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         pullWaits.keys.retainAll(scopes); nextPull.keys.retainAll(scopes)
         val dueDoubts = engine.lock.withLock { engine.doubts.due(mono()) }
         pullWanted.addAll(dueDoubts)
+        // §7.5 step 4: a scope whose digest checks stopped is pulled as any other; only its check is skipped.
         val due = scopes.sorted().filter { target ->
-            val stopped = engine.lock.withLock { engine.device.current().cursors[target.text]?.get("digestStop") == Json.of(appVersion) }
             val cooldown = pullWaits.getOrPut(target, ::SenderWait)
-            !stopped && (target in dueDoubts || cooldown.due(mono())) && (target in pullWanted || socket == null && (nextPull[target] ?: 0) <= mono())
+            (target in dueDoubts || cooldown.due(mono())) && (target in pullWanted || socket == null && (nextPull[target] ?: 0) <= mono())
         }
         if (due.isEmpty()) return@withLock false
         val batches = mutableListOf<List<ScopeRef>>()
@@ -655,7 +652,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             val incoming = Channel<Json?>(1)
             val reader = launch { try { while (isActive) { val frame = connection.receive(); incoming.send(frame); if (frame == null) break } } finally { incoming.close() } }
             try { while (isActive && activityAllowed() && current(seat) && foreground && online && !closed) {
-                val scopes = engine.subscriptions(products).filter { engine.lock.withLock { (it in following || engine.doubts.mayFollow(it)) && !engine.awaitsGoverningCreate(engine.device.current(), it) && engine.device.current().cursors[it.text]?.get("digestStop") != Json.of(appVersion) } }.toSet()
+                val scopes = engine.subscriptions(products).filter { engine.lock.withLock { (it in following || engine.doubts.mayFollow(it)) && !engine.awaitsGoverningCreate(engine.device.current(), it) } }.toSet()
                 // §9.5: `sub` and `unsub` name their scopes as an array, at most a pull's worth to a frame.
                 for (batch in (following - scopes).chunked(Constants.PULL_MAX_SCOPES)) {
                     connection.send(Json.objectOf("op" to Json.of("unsub"), "scopes" to Json.Arr(batch.map { it.json })))

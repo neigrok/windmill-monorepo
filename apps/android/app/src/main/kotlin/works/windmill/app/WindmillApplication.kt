@@ -30,7 +30,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.withContext
 import androidx.compose.runtime.snapshotFlow
 import works.windmill.gym.notification.AndroidWorkoutClock
 import works.windmill.gym.notification.WorkoutNotificationHost
@@ -58,10 +57,6 @@ import works.windmill.sync.engine.AndroidSqlite
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.HTTPTransport
 import works.windmill.sync.engine.SyncRuntime
-import works.windmill.sync.engine.SyncTransport
-import works.windmill.sync.engine.SyncResponse
-import works.windmill.sync.engine.Reply
-import works.windmill.sync.core.Json
 import works.windmill.sync.schema.SyncSchema
 
 class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileHost {
@@ -123,19 +118,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         val engineStorage = EngineStorage(this, vault)
         if (accountWritable() && owner != null) sessions.read()?.let { engineStorage.save(owner, it) }
         val transport = HTTPTransport(baseUrl.toString(), SyncSchema.version.toInt(), engineTelemetry)
-        var delivery: suspend (String, Reply<SyncResponse>) -> Unit = { _, _ -> }
-        val reportedTransport = object : SyncTransport by transport {
-            override suspend fun push(request: Json, token: String): Reply<SyncResponse> {
-                val replica = engine.activeReplica()
-                val account = request.member("account").str()
-                val reply = transport.push(request, token)
-                withContext(Dispatchers.Main.immediate) {
-                    if (engineStorage.token(account) == token) delivery(replica, reply)
-                }
-                return reply
-            }
-        }
-        val syncRuntime = SyncRuntime(engine, reportedTransport,
+        val syncRuntime = SyncRuntime(engine, transport,
             engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"), activityAllowed = ::accountWritable,
             signOutDrainAllowed = { !sessions.signOutPending && !deletionStorage.blocked })
         val training = EngineTraining(engine, writeAuthority = ::accountWritable)
@@ -209,7 +192,6 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { telemetry.failure("gym.coachOnboarding", java.io.IOException("Coach recovery could not be read.")) }
         }
-        delivery = { replica, reply -> if (training.reportDelivery(replica, reply)) store.refreshEngine() }
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },
             authorityAvailable = { accountWritable() && sessions.localSession !is LocalSession.Unresolved },
             authorityRevision = { auth.identityRevision })
