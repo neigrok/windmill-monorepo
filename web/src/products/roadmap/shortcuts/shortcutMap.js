@@ -83,3 +83,11 @@ export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = f
   if (metaKey || ctrlKey) return key.toLowerCase() === 'a';
   return !altKey && (key === 'a' || key.toLowerCase() === 'f' || key === '0');
 }
+
+// The Board's own keys, unmodified and never while typing in a field: / for Find a step, G for Board ⇄ Graph.
+export function boardKey({ key, metaKey = false, ctrlKey = false, altKey = false }, typing = false) {
+  if (metaKey || ctrlKey || altKey || typing) return null;
+  if (key === '/') return 'find';
+  if (key.toLowerCase() === 'g') return 'switch';
+  return null;
+}

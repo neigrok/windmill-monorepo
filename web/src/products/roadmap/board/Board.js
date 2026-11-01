@@ -38,9 +38,61 @@ class BoardColumn {
   get count() { return this.cards.length; }
 }
 
+// What narrows and orders the Board: the sort, the kinds on (OR), the search text and the branch in scope. Every change
+// returns a new query. Clearing filters takes the kinds and the search and leaves the branch, which clears on its own.
+export class BoardQuery {
+  constructor({ sort = 'roadmap', kinds = [], search = '', branch = null } = {}) {
+    if (!BOARD_SORTS.includes(sort)) throw new Error(`Unknown board sort "${sort}"`);
+    this.sort = sort;
+    this.kinds = kinds;
+    this.search = search;
+    this.branch = branch;
+    Object.freeze(this);
+  }
+
+  get searching() { return this.search.trim() !== ''; }
+
+  // The way out an emptied column names: the search, the kinds, both, or none while only the branch narrows.
+  get recovery() {
+    const kinds = this.kinds.length > 0;
+    if (this.searching && kinds) return 'both';
+    if (this.searching) return 'search';
+    if (kinds) return 'kinds';
+    return null;
+  }
+
+  with(change) {
+    return new BoardQuery({ ...this, ...change });
+  }
+
+  sortedBy(sort) { return this.with({ sort }); }
+  searchingFor(search) { return this.with({ search }); }
+  inBranch(branch) { return this.with({ branch }); }
+
+  toggledKind(hue) {
+    return this.with({ kinds: this.kinds.includes(hue) ? this.kinds.filter((kind) => kind !== hue) : [...this.kinds, hue] });
+  }
+
+  // `what` is 'search', 'kinds', 'both', 'sort' or 'branch'.
+  without(what) {
+    if (what === 'search') return this.with({ search: '' });
+    if (what === 'kinds') return this.with({ kinds: [] });
+    if (what === 'both') return this.with({ search: '', kinds: [] });
+    if (what === 'sort') return this.with({ sort: 'roadmap' });
+    if (what === 'branch') return this.with({ branch: null });
+    throw new Error(`Unknown board query part "${what}"`);
+  }
+
+  // Kinds narrow only among the hues a filter offers, so a kind with no control left on screen never hides a step.
+  among(hues) {
+    const kinds = this.kinds.filter((kind) => hues.includes(kind));
+    return kinds.length === this.kinds.length ? this : this.with({ kinds });
+  }
+}
+
 // Comparators return 0 on a tie and the sort is stable, so ties keep the projection's authored order.
 export class Board {
-  constructor(tree, progress, { sort = 'roadmap', kinds = [], query = '', branch = null } = {}) {
+  constructor(tree, progress, { sort = 'roadmap', kinds = [], search = '', branch = null } = {}) {
     if (!BOARD_SORTS.includes(sort)) throw new Error(`Unknown board sort "${sort}"`);
 
     this.states = UnlockRules.derive(tree, progress);
@@ -55,7 +107,7 @@ export class Board {
       ? null
       : new Set([branch, ...tree.ancestorsOf(branch).map((step) => step.id), ...tree.descendantsOf(branch).map((step) => step.id)]);
     const hues = new Set(kinds);
-    const needle = query.trim().toLowerCase();
+    const needle = search.trim().toLowerCase();
     const shown = tree.nodes.filter((step) =>
       (scope === null || scope.has(step.id))
       && (hues.size === 0 || hues.has(step.color ?? DEFAULT_NODE_COLOR))

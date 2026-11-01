@@ -88,15 +88,23 @@ a rail swapped because a selected step sat in it emits nothing. Show all on a fo
 with only `band` (`phone`, `tablet` or `desktop`) when a reader presses it; Done unfolding to reveal a selected step emits
 nothing. A press on an action of the Board's states emits
 `roadmap_board_state_action` with only `state` and `action`: `error` with `retry` (Try again after a failed load),
-`empty` with `newStep`, and `complete` with `share` or `newStep`. A state showing emits nothing. Opening a step from the
-Board emits `roadmap_board_step_open` with only `surface` (`modal` or `page`), `column` (`locked`, `upNext` or `done`) and
+`empty` with `newStep`, and `complete` with `share` or `newStep`. A state showing emits nothing. The Board's controls
+emit only what a reader changes: `roadmap_board_sort` with only `sort` (`roadmap`, `newest` or `oldest`) when another
+order is picked from the menu or a phone's order chip is removed; `roadmap_board_filter` with only `count` (the kinds now
+on, 0–6) when a kind swatch, All or a phone's kind chip changes the kinds; `roadmap_board_search` with no properties when
+a search is committed (Enter, or leaving the field with a new search), never the text; `roadmap_board_clear` with only
+`what` (`search`, `kinds` or `both`) and `from` (`field` for × or Escape in *Find a step*, `empty` for an emptied column's
+way out, `sheet` for the filter sheet's Clear filters); `roadmap_board_branch` with only `action` (`anchor` when the
+branch scope's title returns to its step, `clear` for its ×); and `roadmap_board_menu` with only `menu` (`sort` or
+`filter`) when the sort menu or a phone sheet opens. Dismissing a menu, a sheet or a re-pick of the order in force emits
+nothing, and no kind name, step, title or search text is reported. Opening a step from the Board emits `roadmap_board_step_open` with only `surface` (`modal` or `page`), `column` (`locked`, `upNext` or `done`) and
 `door` (`card`, `step` for a row inside another step, or `link` for a step link the page arrived at); going back to a step
 already open emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
 and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
 (which also emits `roadmap_view_switch`), `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
 write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
-static Sentry operation `roadmap-board-step` and closes it. The switch, the tabs, the rail, Show all, the states and the
-step's page and modal exist only while the Board's development gate
+static Sentry operation `roadmap-board-step` and closes it. The switch, the tabs, the rail, Show all, the controls, the states and
+the step's page and modal exist only while the Board's development gate
 (`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
 storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
 drops the Board until that roadmap is opened again and shows the Graph. Loading a roadmap reports to Sentry whatever the

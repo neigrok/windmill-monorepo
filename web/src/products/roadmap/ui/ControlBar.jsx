@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useRef } from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, viewSwitch = null, board = false, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity, onBottom }) {
+export function ControlBar({ title, titleSlot, viewSwitch = null, find = null, board = false, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity, onBottom }) {
   const barRef = useRef(null);
   const activityHint = keyHint('Activity feed');
   const focusHint = keyHint('Focus on a step');
@@ -29,6 +29,7 @@ export function ControlBar({ title, titleSlot, viewSwitch = null, board = false,
       </div>
 
       <div className="st-controls">
+        {find}
         {onTend && (
           <Tooltip label="Tell your tree what to change · ⌘K" side="bottom">
             <button type="button" className="st-tend-chip" onClick={onTend}>

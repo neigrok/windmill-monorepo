@@ -1,9 +1,11 @@
-// The Board view layer: the identity row where no chrome carries one, the device notice, then the frame — the columns
-// for the band, or the skeleton, the load error or the empty roadmap in their place.
+// The Board view layer: the identity row where no chrome carries one, the device notice, then the frame — the strip and
+// the columns for the band, or the skeleton, the load error or the empty roadmap in their place. The host owns the query.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './board.css';
-import { Board } from './Board.js';
+import { Board, BoardQuery } from './Board.js';
+import { kindOptions } from '../model/Legend.js';
+import { FilterStrip, FindStep } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
@@ -12,6 +14,7 @@ import { progressFigure, progressLabel } from './copy.js';
 
 // Where focus lands once a retried load settles: the columns' tab stop, or the state's own button.
 const FOCUS_AFTER_LOAD = '[data-column] [tabindex="0"], [data-column][tabindex="0"], .st-board-state button';
+const EVERY_STEP = new BoardQuery();
 
 // Everything painted beneath the opaque Board leaves the tab order and the accessibility tree while it is shown: the
 // layer's siblings stacked under it, the Graph's own overlays among them, and any that mount while it stays.
@@ -54,11 +57,16 @@ function BoardView({
   onNewStep,
   topInset = 0,
   bottomInset = 0,
+  query: asked = EVERY_STEP,
+  onQuery,
+  legend = [],
 }) {
   const frame = boardFrame({ tree, loading, failed });
+  const worn = useMemo(() => (frame === 'columns' ? kindOptions(tree, legend) : []), [frame, tree, legend]);
+  const query = useMemo(() => asked.among(worn.map((kind) => kind.hue)), [asked, worn]);
   const board = useMemo(
-    () => (frame === 'columns' ? new Board(tree, { completed, completedAt }) : null),
-    [frame, tree, completed, completedAt],
+    () => (frame === 'columns' ? new Board(tree, { completed, completedAt }, query) : null),
+    [frame, tree, completed, completedAt, query],
   );
   const [doneExpanded, setDoneExpanded] = useState(false);
   const [railed, setRailed] = useState(DEFAULT_RAIL);
@@ -66,6 +74,7 @@ function BoardView({
   const [wasRevealing, setWasRevealing] = useState(false);
   const boardRef = useRef(null);
   const retried = useRef(false);
+  const lastFocus = useRef(null);
   const phone = breakpoint === 'phone';
   const revealing = active && board !== null;
 
@@ -93,6 +102,16 @@ function BoardView({
     boardRef.current?.querySelector(frame === 'loading' ? '[aria-busy="true"]' : FOCUS_AFTER_LOAD)?.focus();
   }, [frame]);
 
+  // A control the query took away (a cleared chip, an emptied column's way out) hands focus to the columns' tab stop, or
+  // to Find a step while no column has one.
+  useEffect(() => {
+    const lost = lastFocus.current;
+    if (lost === null || lost.isConnected) return;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    const layer = boardRef.current;
+    (layer?.querySelector('[data-column] [tabindex="0"]') ?? layer?.querySelector('.st-board-find-input'))?.focus();
+  }, [query]);
+
   const retry = () => {
     retried.current = true;
     onRetry();
@@ -104,6 +123,7 @@ function BoardView({
   return (
     <div
       ref={boardRef}
+      onFocus={(event) => { lastFocus.current = event.target; }}
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
       style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + var(--space-3))` : undefined, paddingBottom: bottomInset }}
     >
@@ -117,6 +137,7 @@ function BoardView({
             </span>
           )}
           <ViewSwitch view="board" onSwitch={onSwitchView} phone={phone} />
+          {board && !phone && <FindStep query={query} onQuery={onQuery} />}
         </header>
       )}
       {notice}
@@ -137,19 +158,27 @@ function BoardView({
                 onSelect={onSelect}
                 doneExpanded={doneExpanded}
                 onExpandDone={onExpandDone}
+                query={query}
+                worn={worn}
+                onQuery={onQuery}
               />
             )
             : (
-              <BoardColumns
-                board={board}
-                band={breakpoint}
-                railed={railed}
-                onShowRail={() => setRailed(swapRail)}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                doneExpanded={doneExpanded}
-                onExpandDone={onExpandDone}
-              />
+              <>
+                <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onSelect={onSelect} />
+                <BoardColumns
+                  board={board}
+                  band={breakpoint}
+                  railed={railed}
+                  onShowRail={() => setRailed(swapRail)}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  doneExpanded={doneExpanded}
+                  onExpandDone={onExpandDone}
+                  query={query}
+                  onQuery={onQuery}
+                />
+              </>
             )}
         </UpNextRest.Provider>
       )}

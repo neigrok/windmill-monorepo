@@ -5,6 +5,7 @@ import {
   STATE_WORDS,
   COLUMN_TITLES,
   SORT_LABELS,
+  SORT_MENU,
   LABELS,
   LINK_COPIED,
   EMPTY_ROADMAP,
@@ -40,6 +41,8 @@ import {
   notDone,
   roadmapComplete,
   searchEmpty,
+  emptyColumn,
+  removeChip,
 } from '../../../../src/products/roadmap/board/copy.js';
 
 test('copy — one word per state, one title per column, one label per sort', () => {
@@ -56,6 +59,17 @@ test('copy — one word per state, one title per column, one label per sort', ()
     undo: 'Undo',
     show: 'Show',
     allSubtasksDone: 'All subtasks done · Complete step',
+    sort: 'Sort',
+    branch: 'Branch',
+    clearBranch: 'Clear branch',
+    clearSearch: 'Clear search',
+    close: 'Close',
+  });
+  assert.deepEqual(SORT_MENU, {
+    title: 'Sort',
+    created: 'Created',
+    options: { roadmap: 'Roadmap order', newest: 'Newest first', oldest: 'Oldest first' },
+    roadmapDetail: 'Closest to start, then most unlocks',
   });
 });
 
@@ -148,6 +162,15 @@ test('copy — sync and session lines', () => {
   assert.deepEqual(REFUSED_SYNC, { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' });
   assert.equal(ANONYMOUS_OWNER, 'Saved on this device — sign in to keep it');
   assert.equal(LAPSED_SESSION, 'Signed out — saved on this device');
+});
+
+test('copy — an emptied column names its way out: the search, the kinds or both; a chip names what it removes', () => {
+  assert.deepEqual(['search', 'kinds', 'both'].map((recovery) => emptyColumn({ recovery, search: ' wind ' })), [
+    { title: 'No steps match “wind”', action: 'Clear search' },
+    { title: 'No steps match', action: 'Clear filters' },
+    { title: 'No steps match “wind”', action: 'Clear both' },
+  ]);
+  assert.equal(removeChip({ label: 'Created · newest' }), 'Remove Created · newest');
 });
 
 test('copy — the step page and modal', async () => {
