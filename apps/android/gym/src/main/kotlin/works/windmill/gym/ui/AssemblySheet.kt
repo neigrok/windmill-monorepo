@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,15 +57,12 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlin.math.abs
 import works.windmill.gym.R
 import works.windmill.gym.presentation.LiveLines
 import works.windmill.gym.presentation.Readout
-import works.windmill.platform.design.WindmillFont
 
 @Composable
 fun AssemblySheet(
@@ -133,9 +131,9 @@ fun AssemblySheet(
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer).padding(horizontal = 20.dp)
         .padding(bottom = GymLayout.sheetBottom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("This workout", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp), color = colors.onSurface)
+            Text("This workout", style = GymType.sheetHeadline, color = colors.onSurface)
             Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged · ${routine ?: Readout.noRoutine}",
-                style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = colors.onSurfaceVariant)
+                style = GymType.subtitle, color = colors.onSurfaceVariant)
         }
         LazyColumn(state = list, modifier = Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = 420.dp)) {
             itemsIndexed(drawn, key = { _, row -> row.id }) { index, row ->
@@ -156,8 +154,8 @@ fun AssemblySheet(
                     }) {
                     Box {
                         ListItem(
-                            headlineContent = { Text(row.name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp)) },
-                            supportingContent = { Text(problem ?: row.metadata, style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                            headlineContent = { Text(row.name, style = GymType.movementRow) },
+                            supportingContent = { Text(problem ?: row.metadata, style = WindmillType.supportingParagraph,
                                 color = if (problem == null) colors.onSurfaceVariant else colors.error,
                                 modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
                             leadingContent = { Icon(painterResource(R.drawable.gym_list_reorder), null, Modifier.size(20.dp)) },
@@ -220,19 +218,19 @@ fun AssemblySheet(
         }
         Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(16.dp))
             .background(colors.surfaceContainerHighest).clickable(role = Role.Button, onClick = onAdd), contentAlignment = Alignment.Center) {
-            Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
+            Text("Add movement", style = WindmillType.label, color = colors.onSurface)
         }
         Column {
             ListItem(
-                headlineContent = { Text("Hide workout", style = WindmillFont.body(17, FontWeight.Bold)) },
+                headlineContent = { Text("Hide workout", style = GymType.sheetAction) },
                 leadingContent = { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(20.dp)) },
                 colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer, headlineColor = colors.onSurface, leadingIconColor = colors.onSurfaceVariant),
                 modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onHide),
             )
             if (notificationOff) ListItem(
-                headlineContent = { Text("Notification off", style = WindmillFont.body(17, FontWeight.Bold)) },
+                headlineContent = { Text("Notification off", style = GymType.sheetAction) },
                 leadingContent = { Icon(Icons.Outlined.Notifications, null, Modifier.size(20.dp)) },
-                trailingContent = { TextButton(onClick = onShowNotification) { Text("Show", style = WindmillFont.body(16, FontWeight.Bold), color = colors.primary) } },
+                trailingContent = { TextButton(onClick = onShowNotification) { Text("Show", style = WindmillType.label, color = colors.primary) } },
                 colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer, headlineColor = colors.onSurface, leadingIconColor = colors.onSurfaceVariant),
                 modifier = Modifier.fillMaxWidth(),
             )

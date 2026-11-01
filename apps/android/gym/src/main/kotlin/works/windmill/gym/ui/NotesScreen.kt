@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -24,13 +25,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
@@ -47,7 +45,6 @@ import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.WindmillFont
 
 // What the notes list draws: the seat's notes, how many, whether they are read, and the writes the log refused.
 @Stable
@@ -148,16 +145,16 @@ fun NotesScreen(
                     problem?.line("that note is still here")
                 },
                 header = {
-                    Text(Notes.honesty, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = colors.onSurface)
+                    Text(Notes.honesty, style = GymType.nativeBody, color = colors.onSurface)
                     if (isSignedIn) Refusals(state.noteRefusals, state.catalog, events::clearRefusals)
                     when {
-                        !isSignedIn -> Text(Notes.signedOut, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = colors.onSurfaceVariant)
+                        !isSignedIn -> Text(Notes.signedOut, style = GymType.nativeBody, color = colors.onSurfaceVariant)
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Notes unavailable", style = WindmillFont.body(20, FontWeight.Bold), color = colors.onSurface)
-                            Text(failure!!, style = WindmillFont.body(16), color = colors.onSurfaceVariant)
+                            Text("Notes unavailable", style = GymType.cardTitle, color = colors.onSurface)
+                            Text(failure!!, style = WindmillType.body, color = colors.onSurfaceVariant)
                             TextButton(onClick = { attempt++ }, enabled = !reading) { Text("Try again") }
                         }
-                        !hasRead -> Text("Reading your notes…", style = WindmillFont.body(16), color = colors.onSurfaceVariant)
+                        !hasRead -> Text("Reading your notes…", style = WindmillType.body, color = colors.onSurfaceVariant)
                     }
                     if (isSignedIn && hasRead && failure == null && state.noteCount == 0) {
                         Notes.placeholders.forEach { title ->
@@ -165,7 +162,7 @@ fun NotesScreen(
                                 .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) }
                                 .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
+                                Text(title, style = WindmillType.labelParagraph,
                                     color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
                                 Chevron()
                             }
@@ -174,7 +171,7 @@ fun NotesScreen(
                 }, showRows = isSignedIn && hasRead && failure == null,
                 footer = {
                     if (isSignedIn && hasRead && failure == null) {
-                        if (state.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = colors.onSurfaceVariant)
+                        if (state.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillType.supporting, color = colors.onSurfaceVariant)
                     }
                 })
             if (!isSignedIn || (hasRead && failure == null && state.noteCount < Notes.maxNotes)) {
@@ -183,7 +180,7 @@ fun NotesScreen(
                         enabled = !savingOrder, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
-                        Text(if (isSignedIn) Notes.add else "Sign in", style = GymNativeType.button)
+                        Text(if (isSignedIn) Notes.add else "Sign in", style = GymType.button)
                     }
                 }
             }
@@ -246,9 +243,9 @@ private fun NoteList(
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (notes.size > 1) Spacer(Modifier.size(24.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(note.title, style = GymNativeType.button.copy(fontSize = 15.sp), color = colors.onSurface)
+                            Text(note.title, style = GymType.noteTitle, color = colors.onSurface)
                             Text(problem ?: note.firstLine ?: "empty · tap to write",
-                                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp),
+                                style = GymType.nativeDetail,
                                 color = if (problem == null) colors.onSurfaceVariant else colors.error,
                                 modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite })
                         }
@@ -359,16 +356,16 @@ fun NoteEditorScreen(
             NoteField("Title", title, { title = it; said = null }, seedTitle.ifBlank { Notes.titlePlaceholder },
                 enabled = !saving, minimum = 56.dp, problem = said?.takeIf { Notes.titleOver(title) })
             Notes.titleCounter(title)?.let {
-                Text(it, style = WindmillFont.body(14), color = if (Notes.titleOver(title)) colors.error else colors.onSurfaceVariant)
+                Text(it, style = WindmillType.supporting, color = if (Notes.titleOver(title)) colors.error else colors.onSurfaceVariant)
             }
             NoteField("Note", body, { body = it; said = null }, Notes.bodyPlaceholder,
                 enabled = !saving, minimum = 240.dp, problem = said?.takeIf { !Notes.titleOver(title) && Notes.over(body) })
             Notes.counter(body)?.let {
-                Text(it, style = WindmillFont.body(14), color = if (Notes.over(body)) colors.error else colors.onSurfaceVariant)
+                Text(it, style = WindmillType.supporting, color = if (Notes.over(body)) colors.error else colors.onSurfaceVariant)
             }
-            said?.let { Text(it, style = WindmillFont.body(14), color = colors.error,
+            said?.let { Text(it, style = WindmillType.supporting, color = colors.error,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-            if (note == null) Text(Notes.honesty, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+            if (note == null) Text(Notes.honesty, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
             if (note != null) GymErrorTextButton(Notes.delete, onClick = { if (!saving) {
                 saving = true
                 scope.launch {
@@ -387,11 +384,7 @@ fun NoteEditorScreen(
 private fun NoteField(label: String, value: String, onValue: (String) -> Unit, placeholder: String,
     enabled: Boolean, minimum: androidx.compose.ui.unit.Dp, problem: String?) {
     val colors = MaterialTheme.colorScheme
-    val type = MaterialTheme.typography
-    MaterialTheme(typography = type.copy(
-        bodyLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
-        bodySmall = TextStyle(fontFamily = FontFamily.Default, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .4.sp),
-    )) {
+    MaterialTheme(typography = MaterialTheme.typography.withStockFields(FontFamily.Default)) {
         OutlinedTextField(value, onValueChange = onValue, enabled = enabled,
             label = { Text(label) }, placeholder = { Text(placeholder) }, isError = problem != null,
             colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Color.Transparent,

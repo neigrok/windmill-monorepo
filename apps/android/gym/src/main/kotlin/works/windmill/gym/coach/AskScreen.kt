@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.design.WindmillType
+import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.GymTap
@@ -55,9 +57,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.drop
@@ -75,7 +75,6 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.ui.DarkAndDaylight
 import works.windmill.gym.ui.GymPreview
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
 // What a conversation draws: Coach's own store, and the training its answers name.
@@ -241,7 +240,7 @@ fun AskScreen(
                         onBuildRoutine?.invoke()
                     })
                 onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
-                (historyFailure ?: draftFailure ?: coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant) }
+                (historyFailure ?: draftFailure ?: coach.archiveFailure)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                 thread.forEachIndexed { index, exchange ->
                     if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
                     key(messageKeys[index]) {
@@ -274,12 +273,12 @@ fun AskScreen(
                                 }
                                 answer.proposals.filter { it !in minted && it !in state.settledProposals }.forEach { id ->
                                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
-                                    else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillFont.body(14), color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
+                                    else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillType.supporting, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
                             }
                             if (exchange.refusalCode == "account_required") {
                                 CoachBubble(copyText = { Ask.accountRequired }) {
-                                    Text(Ask.accountRequired, style = CoachType.body(16).copy(lineHeight = 22.sp), color = colors.onSurface)
+                                    Text(Ask.accountRequired, style = GymType.coachParagraph, color = colors.onSurface)
                                 }
                                 onSignIn?.let { CoachAction("Sign in", it, primary = true) }
                             }
@@ -329,14 +328,14 @@ fun AskScreen(
                 colors = ButtonDefaults.elevatedButtonColors(containerColor = colors.surfaceContainer, contentColor = colors.primary),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
                 Icon(painterResource(R.drawable.gym_coach_down), null, Modifier.size(20.dp))
-                Text("Jump to latest", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), modifier = Modifier.padding(start = 8.dp))
+                Text("Jump to latest", style = GymType.coachStrong, modifier = Modifier.padding(start = 8.dp))
             }
         }
         coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Reply pending", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
-                    Text(pending.title, style = CoachType.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                    Text("Reply pending", style = GymType.coachTitle, color = colors.onSurface)
+                    Text(pending.title, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
                 }
                 TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null) { Text("View chat") }
             }
@@ -348,7 +347,7 @@ fun AskScreen(
         ) {
             when {
                 Ask.needsNew(thread) -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(thread.lastOrNull()?.takeIf { it.needsNew }?.trouble ?: Ask.threadFull, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                    Text(thread.lastOrNull()?.takeIf { it.needsNew }?.trouble ?: Ask.threadFull, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                     CoachAction("Ask new", onClick = {
                         onNewDraft(thread.lastOrNull()?.takeIf { it.answer == null && !it.pending }?.question.orEmpty())
                     })
@@ -404,7 +403,7 @@ private fun Answer(
 fun ReceiptLine(line: String) {
     val colors = MaterialTheme.colorScheme
     val applied = line.startsWith("Applied")
-    Text(line, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
+    Text(line, style = WindmillType.labelParagraph,
         color = if (applied) colors.primary else colors.onSurface,
         modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
 }
@@ -414,7 +413,7 @@ private fun Minted(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, sti
     val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         ProposalCard(proposal, proposal.routineName, nowMs, stillWaiting, onReview)
-        if (proposal.isPending) Text(Ask.promise, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+        if (proposal.isPending) Text(Ask.promise, style = WindmillType.detail, color = colors.onSurfaceVariant)
         proposal.receipt?.let { ReceiptLine(it) }
     }
 }
@@ -425,7 +424,7 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Text(
             said,
-            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
+            style = GymType.quietParagraph,
             color = colors.onSurfaceVariant,
         )
         onRetry?.let { retry ->
@@ -433,7 +432,7 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
                 Modifier.heightIn(min = GymTap.minimum).clickable(role = Role.Button, onClick = retry),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Text("Try again", style = WindmillFont.body(14, FontWeight.SemiBold), color = colors.primary)
+                Text("Try again", style = GymType.retry, color = colors.primary)
             }
         }
     }

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
@@ -79,13 +80,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
@@ -111,7 +109,6 @@ import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.net.WindmillJson
 import androidx.compose.runtime.setValue
 
@@ -403,14 +400,13 @@ fun RoutineBuilder(
 @Composable
 private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val native = FontFamily.Default
     @Composable
     fun Action(label: String, colour: Color, onClick: () -> Unit) = TextButton(onClick = onClick) {
-        Text(label, color = colour, fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = colour, style = GymType.discardAction)
     }
     AlertDialog(onDismissRequest = onKeepEditing,
-        title = { Text(title, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp, color = colors.onSurface) },
-        text = { Text(text, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, color = colors.onSurfaceVariant) },
+        title = { Text(title, style = GymType.discardRoutineTitle, color = colors.onSurface) },
+        text = { Text(text, style = GymType.discardText, color = colors.onSurfaceVariant) },
         confirmButton = { Action("Discard", colors.error, onDiscard) },
         dismissButton = { Action("Keep editing", colors.primary, onKeepEditing) },
         containerColor = colors.surfaceContainer)
@@ -507,16 +503,16 @@ private fun BuildStep(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
                             .semantics { contentDescription = "Routine name" })
                 }
-                Program.counter(draft.name)?.let { Text(it, style = WindmillFont.body(13), color = colors.onSurfaceVariant) }
+                Program.counter(draft.name)?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
             }
             if (draft.name.isBlank() && (editing || draft.entries.isNotEmpty())) {
-                Text(Program.nameItToSaveIt, style = WindmillFont.body(14), color = colors.onSurfaceVariant)
+                Text(Program.nameItToSaveIt, style = WindmillType.supporting, color = colors.onSurfaceVariant)
             }
             if (draft.name.isNotBlank() && draft.entries.isEmpty()) {
-                Text(Program.atLeastOneMovement, style = WindmillFont.body(14), color = colors.onSurfaceVariant)
+                Text(Program.atLeastOneMovement, style = WindmillType.supporting, color = colors.onSurfaceVariant)
             }
             Column {
-                Text("Movements", style = WindmillFont.body(18, FontWeight.Bold), color = colors.onSurface,
+                Text("Movements", style = GymType.headingCompact, color = colors.onSurface,
                     modifier = Modifier.padding(bottom = 8.dp))
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
@@ -556,8 +552,8 @@ private fun BuildStep(
                                     Icon(painterResource(R.drawable.gym_reorder), null, Modifier.size(48.dp), tint = colors.onSurfaceVariant)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
-                                    Text(Readout.targetWithUnit(entry.sets, movement), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = colors.onSurfaceVariant)
+                                    Text(name, style = GymType.movementRow, color = colors.onSurface)
+                                    Text(Readout.targetWithUnit(entry.sets, movement), style = GymType.movementTarget, color = colors.onSurfaceVariant)
                                 }
                             }
                         }
@@ -567,29 +563,29 @@ private fun BuildStep(
                 if (!draft.full) TextButton(onClick = onAdd, enabled = editable, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                     Icon(Icons.Filled.Add, null, tint = colors.onSurface)
                     Spacer(Modifier.width(8.dp))
-                    Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
+                    Text("Add movement", style = WindmillType.label, color = colors.onSurface)
                 }
             }
             if (history.isNotEmpty()) Column(Modifier.fillMaxWidth().testTag("routine-history"),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("History", style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = colors.onSurface)
+                Text("History", style = GymType.historyTitle, color = colors.onSurface)
                 Column(Modifier.fillMaxWidth()) {
                     val dates = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.getDefault())
                     history.forEachIndexed { index, workout ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 7.dp).testTag("routine-history-row"),
                             verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(dates.format(java.time.Instant.ofEpochMilli(workout.startedAtMs).atZone(java.time.ZoneId.systemDefault())),
-                                style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = colors.onSurface)
+                                style = GymType.historyTitle, color = colors.onSurface)
                             val sets = if (workout.setCount == 1) "set" else "sets"
                             val movements = if (workout.exercises.size == 1) "movement" else "movements"
                             Text("${workout.setCount} $sets · ${workout.exercises.size} $movements",
-                                style = GymType.numeral(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                                style = GymType.numeralDetail, color = colors.onSurfaceVariant)
                         }
                         if (index != history.lastIndex) HorizontalDivider(color = colors.outlineVariant)
                     }
                 }
             }
-            Text(said, style = WindmillFont.body(13), color = colors.onSurfaceVariant,
+            Text(said, style = WindmillType.detailCompact, color = colors.onSurfaceVariant,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
     }

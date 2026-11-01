@@ -1,5 +1,6 @@
 package works.windmill.gym.sharing
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.gymColors
 import android.content.ClipData
@@ -28,15 +29,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import works.windmill.gym.store.GymResult
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -99,11 +97,11 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp).padding(bottom = 20.dp),
     ) {
-        Text(card.title, style = WindmillFont.display(26, FontWeight.ExtraBold), color = colors.onSurface)
+        Text(card.title, style = GymType.shareTitle, color = colors.onSurface)
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             card.body.split('\n').forEach { paragraph ->
-                Text(paragraph, style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = colors.onSurfaceVariant)
+                Text(paragraph, style = GymType.subtitle, color = colors.onSurfaceVariant)
             }
         }
 
@@ -111,7 +109,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             SelectionContainer {
                 Text(
                     link,
-                    style = GymType.numeral(11),
+                    style = GymType.numeralTiny,
                     color = colors.primary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -126,7 +124,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
         card.note?.let { note ->
             Text(
                 note,
-                style = WindmillFont.body(16).copy(lineHeight = 21.sp),
+                style = GymType.subtitle,
                 color = gymColors.alarmInk,
             )
         }
@@ -143,7 +141,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 disabledContentColor = colors.onPrimary.copy(alpha = .38f),
             ),
         ) {
-            Text(card.action, style = WindmillFont.body(16, FontWeight.Bold))
+            Text(card.action, style = WindmillType.label)
         }
 
         card.revoke?.let { revoke ->
@@ -153,7 +151,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.primary),
             ) {
-                Text(revoke, style = WindmillFont.body(15, FontWeight.SemiBold))
+                Text(revoke, style = GymType.quietAction)
             }
         }
     }

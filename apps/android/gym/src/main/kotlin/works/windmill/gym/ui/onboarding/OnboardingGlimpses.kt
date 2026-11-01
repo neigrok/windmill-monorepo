@@ -43,7 +43,6 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -53,25 +52,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import works.windmill.gym.R
 import androidx.compose.material3.MaterialTheme
+import works.windmill.gym.ui.GymFonts
 import works.windmill.gym.ui.gymColors
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillColor
 import works.windmill.platform.design.WindmillMotion
 
-val OnboardingNunito = FontFamily(
-    Font(R.font.onboarding_nunito_regular, FontWeight.Normal),
-    Font(R.font.onboarding_nunito_bold, FontWeight.Bold),
-    Font(R.font.onboarding_nunito_extrabold, FontWeight.ExtraBold),
-)
-val OnboardingInter = FontFamily(
-    Font(R.font.onboarding_inter_regular, FontWeight.Normal),
-    Font(R.font.onboarding_inter_medium, FontWeight.Medium),
-    Font(R.font.onboarding_inter_semibold, FontWeight.SemiBold),
-)
-val OnboardingMono = FontFamily(
-    Font(R.font.onboarding_mono_regular, FontWeight.Normal),
-    Font(R.font.onboarding_mono_medium, FontWeight.Medium),
-)
 
 private val easeStandard = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 private val easeGlow = CubicBezierEasing(0.45f, 0f, 0.15f, 1f)
@@ -212,7 +198,7 @@ private class GlimpsePainter(
 
     fun text(
         content: String, x: Float, y: Float, size: Int, color: Color,
-        family: FontFamily = OnboardingInter, weight: FontWeight = FontWeight.Normal,
+        family: FontFamily = GymFonts.inter, weight: FontWeight = FontWeight.Normal,
         width: Int = 354, lineHeight: Int = size + 4, tracking: Float = 0f,
         centered: Boolean = false, right: Boolean = false,
     ) {
@@ -229,7 +215,7 @@ private class GlimpsePainter(
             right -> x - layout.size.width
             else -> x
         }
-        val monoInset = if (family == OnboardingMono) maxOf(0f, (size * 1.32f - lineHeight) / 2f) else 0f
+        val monoInset = if (family == GymFonts.jetBrainsMono) maxOf(0f, (size * 1.32f - lineHeight) / 2f) else 0f
         draw.drawText(layout, color = color, topLeft = Offset(left, y - monoInset))
     }
 
@@ -273,7 +259,7 @@ private class GlimpsePainter(
     }
 
     fun caption(color: Color) {
-        text("EXAMPLE", 338f, 14f, 10, color, OnboardingMono, FontWeight.Medium, tracking = 1.2f, right = true)
+        text("EXAMPLE", 338f, 14f, 10, color, GymFonts.jetBrainsMono, FontWeight.Medium, tracking = 1.2f, right = true)
     }
 
     fun roadmap(progress: Float, breath: Float, reduced: Boolean) {
@@ -321,11 +307,11 @@ private class GlimpsePainter(
         card(340f, journal.canvas, journal.line) {
             glow(Offset(177f, 371f), 220f, (if (dark) 0.18f else 0.12f) *
                 if (reduced) progress else easeGlow.transform(progress))
-            text("YESTERDAY", 24f, 22f, 10, journal.faint, OnboardingMono, FontWeight.Medium, tracking = 1.2f)
+            text("YESTERDAY", 24f, 22f, 10, journal.faint, GymFonts.jetBrainsMono, FontWeight.Medium, tracking = 1.2f)
             text("Walked before work. Slept better than the week before.", 24f, 43f,
                 15, journal.dim, width = 306, lineHeight = 22)
             draw.drawCircle(lamp, 3f, Offset(27f, 125f))
-            text("Tonight", 38f, 117f, 14, journal.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 18)
+            text("Tonight", 38f, 117f, 14, journal.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 18)
             text("Finished the chapter I kept avoiding.\nLighter than expected", 24f, 144f,
                 17, journal.ink, width = 306, lineHeight = 25)
             if (caret) draw.drawRoundRect(lamp, Offset(203f, 169f), Size(2f, 22f), CornerRadius(1f))
@@ -336,7 +322,7 @@ private class GlimpsePainter(
                         Offset(85f + dot * 18f, 243f + index * 24f), style = Stroke(0.8f))
                 }
             }
-            text("saved", 338f, 310f, 10, journal.faint, OnboardingMono, tracking = 0.6f, right = true)
+            text("saved", 338f, 310f, 10, journal.faint, GymFonts.jetBrainsMono, tracking = 0.6f, right = true)
             caption(journal.faint)
         }
     }
@@ -345,13 +331,13 @@ private class GlimpsePainter(
         val elapsed = progress * 870f
         val done = if (reduced) 1f else easeStandard.transform(((elapsed - 150f) / 320f).coerceIn(0f, 1f))
         card(340f, gym.canvas, gym.line) {
-            text("Squat", 20f, 18f, 22, gym.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 28)
+            text("Squat", 20f, 18f, 22, gym.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 28)
             listOf(workoutClock, sinceSetClock).forEachIndexed { index, icon ->
                 val left = 105f + index * 72f
                 draw.translate(left, 51f) {
                     with(icon) { draw(Size(12f, 12f), colorFilter = ColorFilter.tint(gym.dim)) }
                 }
-                text("0:22", left + 17f, 49f, 11, gym.dim, OnboardingMono, lineHeight = 16)
+                text("0:22", left + 17f, 49f, 11, gym.dim, GymFonts.jetBrainsMono, lineHeight = 16)
             }
             repeat(3) { index ->
                 val top = 72f + index * 25f
@@ -362,20 +348,20 @@ private class GlimpsePainter(
                 }
                 text(if (current) "Set 3" else "${index + 1}", 32f, top + 5f, 12,
                     if (current) accent else gym.dim,
-                    if (current) OnboardingNunito else OnboardingMono,
+                    if (current) GymFonts.nunito else GymFonts.jetBrainsMono,
                     if (current) FontWeight.Bold else FontWeight.Normal, lineHeight = 16)
-                text("100 kg total × 5", 90f, top + 5f, 12, gym.dim, OnboardingMono, lineHeight = 16)
+                text("100 kg total × 5", 90f, top + 5f, 12, gym.dim, GymFonts.jetBrainsMono, lineHeight = 16)
                 check(Offset(318f, top + 13f), setDone,
                     progress = if (current) done else 1f, alpha = if (current) done else 1f)
             }
-            text("100", 20f, 164f, 64, gym.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 72, tracking = -1f)
-            text("kg total", 142f, 204f, 16, gym.dim, OnboardingNunito, lineHeight = 22)
+            text("100", 20f, 164f, 64, gym.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 72, tracking = -1f)
+            text("kg total", 142f, 204f, 16, gym.dim, GymFonts.nunito, lineHeight = 22)
             text("5 reps", 20f, 242f, 15, gym.ink, weight = FontWeight.Medium, lineHeight = 20)
             val press = if (reduced || elapsed >= 150f) 1f else 1f - 0.03f *
                 (1f - kotlin.math.abs(elapsed - 75f) / 75f)
             draw.scale(press, press, Offset(177f, 298f)) {
                 draw.drawRoundRect(accent, Offset(20f, 276f), Size(314f, 44f), CornerRadius(16f))
-                text("Log set", 177f, 288f, 15, onAccent, OnboardingNunito, FontWeight.ExtraBold,
+                text("Log set", 177f, 288f, 15, onAccent, GymFonts.nunito, FontWeight.ExtraBold,
                     centered = true, lineHeight = 20)
             }
             caption(gym.faint)
@@ -404,7 +390,7 @@ private class GlimpsePainter(
                     val dot = when (index) { 0 -> terracotta; 1 -> lamp; else -> accent }
                     draw.drawCircle(dot, 3.5f, Offset(24f, 33f))
                     text(listOf("Roadmap", "Journal", "Gym")[index], 36f, 22f, 18, palette.ink,
-                        OnboardingNunito, FontWeight.ExtraBold, lineHeight = 22)
+                        GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 22)
                     text(listOf("Map what you're learning", "Notice what happened", "Keep a training log")[index],
                         36f, 50f, 13, palette.dim, lineHeight = 18)
                     when (index) {
@@ -432,9 +418,9 @@ private class GlimpsePainter(
                             draw.drawRoundRect(lamp, Offset(320f, 56f), Size(2f, 14f), CornerRadius(1f))
                         }
                         2 -> {
-                            text("100", 240f, 26f, 30, gym.ink, OnboardingMono, FontWeight.Medium,
+                            text("100", 240f, 26f, 30, gym.ink, GymFonts.jetBrainsMono, FontWeight.Medium,
                                 lineHeight = 34, tracking = -1f)
-                            text("kg × 5", 240f, 62f, 11, gym.dim, OnboardingMono)
+                            text("kg × 5", 240f, 62f, 11, gym.dim, GymFonts.jetBrainsMono)
                             draw.drawCircle(accent, 11f, Offset(327f, 50f))
                             check(Offset(327f, 50f), onAccent)
                         }

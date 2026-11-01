@@ -1,5 +1,6 @@
 package works.windmill.gym.ui.onboarding
 
+import works.windmill.gym.ui.GymType
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
@@ -20,20 +21,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -42,7 +37,6 @@ import works.windmill.gym.R
 import works.windmill.gym.ui.gymColors
 import works.windmill.gym.ui.GymTextScale
 import works.windmill.platform.design.LocalWindmillDark
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
 
 private val titles = listOf(R.string.onboarding_title_windmill, R.string.onboarding_title_roadmap,
@@ -146,25 +140,23 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                     Row(Modifier.padding(start = 4.dp).clearAndSetSemantics { contentDescription = brand; traversalIndex = -1f },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Image(painterResource(R.drawable.onboarding_brand_mark), null, Modifier.size(42.45.dp, 44.dp))
-                    Text(stringResource(R.string.onboarding_brand), color = glimpse.clay,
-                        style = TextStyle(fontFamily = FontFamily(Font(R.font.onboarding_baloo_bold, FontWeight.Bold)),
-                            fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp))
+                    Text(stringResource(R.string.onboarding_brand), color = glimpse.clay, style = GymType.wordmark)
                 }
                     }
                 }
             },
             navigationIcon = {
                 if (replay) TextButton(onClick = { exit("closed") }, modifier = Modifier.semantics { traversalIndex = -2f }) {
-                    Text("‹", color = accent, fontSize = 32.sp, modifier = Modifier.clearAndSetSemantics { })
+                    Text("‹", color = accent, style = GymType.onboardingBackGlyph, modifier = Modifier.clearAndSetSemantics { })
                     Text(stringResource(R.string.onboarding_back), color = accent,
-                        style = MaterialTheme.typography.labelLarge.copy(lineHeight = 22.sp))
+                        style = GymType.actionLabel)
                 }
             },
             actions = {
                 if (!replay && pager.currentPage < 3) TextButton(onClick = { exit("skipped") },
                     modifier = Modifier.semantics { traversalIndex = 0f }) {
                     Text(stringResource(R.string.onboarding_skip), color = accent,
-                        style = MaterialTheme.typography.labelLarge.copy(lineHeight = 22.sp))
+                        style = GymType.actionLabel)
                 }
             },
             expandedHeight = 64.dp,
@@ -196,17 +188,17 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                             1 -> glimpse.clay; 2 -> glimpse.lamp; else -> accent
                         }, CircleShape))
                         Text(screens[page].uppercase(), color = colors.onSurfaceVariant,
-                            style = WindmillFont.mono(11, FontWeight.Medium).copy(lineHeight = 16.sp, letterSpacing = 2.2.sp))
+                            style = GymType.onboardingKicker)
                     }
                     Text(stringResource(titles[page]), color = colors.onSurface,
-                        style = MaterialTheme.typography.headlineLarge.copy(lineHeight = 38.sp),
+                        style = GymType.onboardingTitle,
                         modifier = Modifier.semantics { heading(); traversalIndex = 2f })
                     Text(stringResource(bodies[page]), color = colors.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                        style = GymType.onboardingBody,
                         modifier = Modifier.semantics { traversalIndex = 3f })
                     locations[page]?.let { location ->
                         Text(stringResource(location), color = if (page == 3) accent else colors.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp, letterSpacing = .1.sp),
+                            style = GymType.onboardingChip,
                             modifier = Modifier.background(if (page == 3) accent.copy(alpha = .12f) else colors.surfaceContainerHighest, CircleShape)
                                 .border(1.dp, if (page == 3) accent else if (dark) colors.outline else colors.outlineVariant, CircleShape)
                                 .padding(horizontal = 10.dp, vertical = 5.dp).semantics { traversalIndex = 4f })
@@ -239,7 +231,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
             shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = colors.onPrimary)) {
             Text(stringResource(if (pager.currentPage < 3) R.string.onboarding_next else if (replay) R.string.onboarding_done else R.string.onboarding_start),
-                style = MaterialTheme.typography.labelLarge.copy(lineHeight = 22.sp))
+                style = GymType.actionLabel)
         }
     }
 }

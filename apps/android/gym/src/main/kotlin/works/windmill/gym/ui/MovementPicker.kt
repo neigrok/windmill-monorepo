@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
@@ -58,11 +59,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
@@ -79,7 +78,6 @@ import works.windmill.gym.presentation.TargetEntry
 import works.windmill.platform.net.WindmillJson
 import works.windmill.gym.store.MovementCreateOutcome
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
 
 // A movement is a stable identity and never a typed string, so the only way to lift something the
@@ -293,16 +291,16 @@ fun MovementPicker(
     Column(modifier.fillMaxWidth().imePadding(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = WindmillFont.body(24, FontWeight.Bold), color = colors.onSurface,
+                Text(title, style = GymType.screenHeading, color = colors.onSurface,
                     modifier = Modifier.weight(1f))
                 onClose?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") } }
             }
-            subtitle?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant) }
+            subtitle?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
         }
         OutlinedTextField(
             value = state.query, onValueChange = { state.query = it }, singleLine = true,
-            textStyle = WindmillFont.body(16),
-            placeholder = { Text("Search movements", style = WindmillFont.body(16)) },
+            textStyle = WindmillType.body,
+            placeholder = { Text("Search movements", style = WindmillType.body) },
             leadingIcon = { Icon(painterResource(R.drawable.gym_search), null, Modifier.size(24.dp)) },
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, autoCorrectEnabled = false),
             shape = RoundedCornerShape(28.dp),
@@ -316,18 +314,18 @@ fun MovementPicker(
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         )
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-            options.unread?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant, lineHeight = 20.sp) }
+            options.unread?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
             if (options.six.isNotEmpty()) {
-                Text("The six", style = WindmillFont.body(14, FontWeight.Bold), color = colors.onSurfaceVariant,
+                Text("The six", style = GymType.groupLabel, color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp))
                 options.six.forEach { MovementRow(it, onPick) }
             }
             if (options.six.isNotEmpty() && options.matches.isNotEmpty()) {
-                Text("All movements", style = WindmillFont.body(14, FontWeight.Bold), color = colors.onSurfaceVariant,
+                Text("All movements", style = GymType.groupLabel, color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
             }
             options.matches.forEach { MovementRow(it, onPick) }
-            options.empty?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant, lineHeight = 20.sp) }
+            options.empty?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
         }
         TextButton(
             onClick = {
@@ -351,7 +349,7 @@ fun MovementPicker(
                 }
             },
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-        ) { Text("Create movement", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface) }
+        ) { Text("Create movement", style = WindmillType.label, color = colors.onSurface) }
     }
     if (state.createOpen && createReady) {
         val createSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
@@ -427,10 +425,10 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
         .semantics { selected = row.selected }.padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(row.name, style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
-            Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13), color = colors.onSurfaceVariant)
-            row.alias?.let { Text("was “$it”", style = WindmillFont.body(13), color = colors.onSurfaceVariant) }
-            row.meta?.let { Text(it, style = WindmillFont.body(13), color = colors.onSurfaceVariant) }
+            Text(row.name, style = WindmillType.label, color = colors.onSurface)
+            Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
+            row.alias?.let { Text("was “$it”", style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
+            row.meta?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
         }
         Icon(if (row.selected) Icons.Filled.Check else Icons.Filled.Add, null,
             tint = colors.onSurfaceVariant, modifier = Modifier.size(24.dp))

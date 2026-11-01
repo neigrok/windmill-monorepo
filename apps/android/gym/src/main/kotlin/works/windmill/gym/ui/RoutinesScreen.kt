@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.background
@@ -46,10 +47,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.Readout
@@ -65,7 +63,6 @@ import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutSession
-import works.windmill.platform.design.WindmillFont
 
 // What the routines home and a routine's sheet draw.
 @Stable
@@ -161,8 +158,7 @@ fun RoutinesScreen(
 
                 if (empty) {
                     item("empty") {
-                        Text("No routines yet.", style = TextStyle(fontFamily = GymNativeType.sans,
-                            fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, lineHeight = 32.sp), color = colors.onSurface)
+                        Text("No routines yet.", style = GymType.emptyRoutinesTitle, color = colors.onSurface)
                     }
                 } else {
                     items(routines, key = { it.id }) { routine ->
@@ -197,10 +193,10 @@ private fun RoutineRow(
         .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(routine.name, style = GymNativeType.button, color = colors.onSurface)
+            Text(routine.name, style = GymType.nativeRowTitle, color = colors.onSurface)
             Text(routine.entries.sortedBy { it.position }.take(2)
                 .joinToString(" · ") { Readout.movement(it.exerciseId, catalog) },
-                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                style = GymType.nativeDetail, color = colors.onSurfaceVariant)
             waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
         }
         Box {
@@ -252,11 +248,11 @@ fun RoutineSheet(
                 if (routine == null) {
                     Text(
                         "That routine is no longer in your program. Everything you logged against it is still in the log.",
-                        style = WindmillFont.body(16).copy(lineHeight = 24.sp),
+                        style = WindmillType.paragraphLoose,
                         color = colors.onSurfaceVariant,
                     )
                 } else {
-                    Text(routine.name, style = WindmillFont.display(28), color = colors.onSurface)
+                    Text(routine.name, style = GymType.routineSheetTitle, color = colors.onSurface)
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHighest),
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         routine.entries.sortedBy { it.position }.forEach { entry ->
@@ -267,15 +263,15 @@ fun RoutineSheet(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Box(Modifier.size(32.dp).background(colors.surfaceContainerHighest, RoundedCornerShape(8.dp)),
                                     contentAlignment = Alignment.Center) {
-                                    Text(entry.position.toString(), style = GymType.numeral(13), color = colors.onSurfaceVariant)
+                                    Text(entry.position.toString(), style = GymType.numeral, color = colors.onSurfaceVariant)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     val name = Readout.movement(entry.exerciseId, state.catalog)
                                     val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
                                     Text(if (yours) "$name · yours" else name,
-                                        style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
+                                        style = WindmillType.label, color = colors.onSurface)
                                     val target = Readout.targetWithUnit(entry.sets, state.catalog.find { it.id == entry.exerciseId })
-                                    Text(target, style = GymType.numeral(13), color = colors.onSurfaceVariant)
+                                    Text(target, style = GymType.numeral, color = colors.onSurfaceVariant)
                                 }
                             }
                         }
@@ -285,15 +281,15 @@ fun RoutineSheet(
             if (routine != null) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter)
                     .padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    failure?.let { Text(it, style = WindmillFont.body(14), color = gymColors.alarmInk,
+                    failure?.let { Text(it, style = WindmillType.supporting, color = gymColors.alarmInk,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
                     Button(onClick = { onStart(routine.id) }, enabled = !starting, shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))
+                        Text("Start workout", style = WindmillType.label)
                     }
                     TextButton(onClick = { onBuild(RoutineDraft.of(routine, state.catalog)) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
+                        Text("Edit routine", style = WindmillType.label, color = colors.onSurface)
                     }
                 }
             }

@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.design.WindmillType
+import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -41,7 +43,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +50,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
-import works.windmill.platform.design.WindmillFont
 import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -118,7 +118,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "Saved only in this chat.",
-                    style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = colors.onSurfaceVariant,
+                    style = WindmillType.caption, color = colors.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
                     CoachPhoto(store, key, photo, Modifier.offset(y = 12.dp).size(72.dp))
@@ -132,11 +132,11 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
                 }
             }
         }
-        if (preparing) Text("Preparing photo…", style = WindmillFont.body(12), color = colors.onSurfaceVariant)
+        if (preparing) Text("Preparing photo…", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
         upload?.let {
             LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Photo upload" })
         }
-        editor.trouble?.let { Text(it, style = WindmillFont.body(13), color = colors.onSurfaceVariant) }
+        editor.trouble?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)) {
             IconButton(onClick = ::pickPhoto,
@@ -152,14 +152,14 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
                     focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
                     cursorColor = colors.primary)
             BasicTextField(state = editor.field,
-                textStyle = CoachType.body(16).copy(lineHeight = 24.sp, letterSpacing = 0.5.sp,
+                textStyle = GymType.coachComposer.copy(
                     color = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = 0.38f)),
                 enabled = inputEnabled, cursorBrush = SolidColor(colors.primary), interactionSource = interaction,
                 decorator = { input ->
                     TextFieldDefaults.DecorationBox(value = editor.field.text.toString(), innerTextField = input,
                         enabled = inputEnabled, singleLine = false, visualTransformation = VisualTransformation.None,
                         interactionSource = interaction, shape = RoundedCornerShape(28.dp), colors = fieldColors,
-                        placeholder = { Text(Ask.placeholder, style = CoachType.body(16).copy(lineHeight = 24.sp, letterSpacing = 0.5.sp)) })
+                        placeholder = { Text(Ask.placeholder, style = GymType.coachComposer) })
                 }, modifier = Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).semantics { contentDescription = "Question" })
             val ready = enabled && !asking && !preparing && canSend(editor.draft.copy(text = editor.field.text.toString()))
             if (asking || editor.field.text.isNotEmpty() || editor.draft.photo != null) {
@@ -270,7 +270,7 @@ internal fun CoachPhoto(store: CoachStore, threadId: String, photo: CoachAttachm
         }.semantics { contentDescription = if (failure) "Photo unavailable. Retry photo" else "Attached photo" }, contentAlignment = Alignment.Center) {
         val image = bitmap
         if (image != null) Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Text(if (failure) "Retry photo" else "Photo", style = WindmillFont.body(12), color = colors.onSurfaceVariant)
+        else Text(if (failure) "Retry photo" else "Photo", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
     }
     if (expanded && bitmap != null) Dialog(onDismissRequest = { expanded = false }) {
         Column(Modifier.background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(12.dp)) {

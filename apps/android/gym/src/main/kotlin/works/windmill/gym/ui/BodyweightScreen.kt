@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -59,12 +60,9 @@ import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -81,7 +79,6 @@ import works.windmill.gym.store.DeletionsStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
-import works.windmill.platform.design.WindmillFont
 
 // What the bodyweight page draws: the drawn series, the series a held delete still stands on, and whether it is read.
 @Stable
@@ -199,13 +196,13 @@ fun WeighInSheet(
             .padding(horizontal = 16.dp).padding(top = gap, bottom = if (correction) 24.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
             Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                Text(Bodyweight.chip, style = WindmillFont.body(22, FontWeight.ExtraBold).copy(lineHeight = 30.sp), color = colors.onSurface)
+                Text(Bodyweight.chip, style = GymType.weighInTitle, color = colors.onSurface)
             }
-            Text("Weight", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+            Text("Weight", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
             OutlinedTextField(value = typed, onValueChange = { typed = it; edited = true },
                 singleLine = true, enabled = !busy, isError = weightFailure != null,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Default, lineHeight = 24.sp),
-                suffix = { Text(Bodyweight.unit, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = colors.onSurfaceVariant) },
+                textStyle = GymType.weighInInput,
+                suffix = { Text(Bodyweight.unit, style = WindmillType.paragraphLoose, color = colors.onSurfaceVariant) },
                 supportingText = weightFailure?.let { line -> { Text(line, modifier = Modifier.padding(bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
@@ -220,7 +217,7 @@ fun WeighInSheet(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
                     .semantics { contentDescription = weightField; weightFailure?.let { error(it) } },
             )
-            if (correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+            if (correction) Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val stacked = maxWidth < 320.dp || GymTextScale.stacked
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp))
@@ -238,16 +235,16 @@ fun WeighInSheet(
                     }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (stacked) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (!correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
-                        Text(Bodyweight.fullDay(date), style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = if (correction) colors.onSurfaceVariant else colors.onSurface)
+                        if (!correction) Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
+                        Text(Bodyweight.fullDay(date), style = WindmillType.paragraph, color = if (correction) colors.onSurfaceVariant else colors.onSurface)
                     } else {
-                        if (!correction) Text("Date", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
-                        Text(Bodyweight.fullDay(date), modifier = Modifier.weight(1f), textAlign = if (correction) TextAlign.Start else TextAlign.Center, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = if (correction) colors.onSurfaceVariant else colors.onSurface)
+                        if (!correction) Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
+                        Text(Bodyweight.fullDay(date), modifier = Modifier.weight(1f), textAlign = if (correction) TextAlign.Start else TextAlign.Center, style = WindmillType.paragraph, color = if (correction) colors.onSurfaceVariant else colors.onSurface)
                     }
                     if (!correction) Icon(Icons.Default.DateRange, null, Modifier.size(24.dp), tint = colors.onSurface)
                 }
             }
-            otherFailure?.let { Text(it, style = WindmillFont.body(13).copy(lineHeight = 20.sp), color = MaterialTheme.colorScheme.error,
+            otherFailure?.let { Text(it, style = GymType.smallParagraph, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = if (correction) 10.dp else 16.dp),
@@ -255,7 +252,7 @@ fun WeighInSheet(
             Button(onClick = ::save, enabled = !busy && parsed is ParsedWeight.Ok && dateFailure == null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary)) {
-                Text(if (busy) "Saving…" else Bodyweight.save, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp))
+                Text(if (busy) "Saving…" else Bodyweight.save, style = WindmillType.labelParagraph)
             }
             onDelete?.let { GymErrorTextButton(Bodyweight.deleteRow, it, Modifier.fillMaxWidth(), enabled = !busy) }
         }
@@ -311,11 +308,11 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (!state.bodyweightRead) {
-                Text("Reading your weigh-ins…", style = WindmillFont.body(16), color = colors.onSurfaceVariant)
+                Text("Reading your weigh-ins…", style = WindmillType.body, color = colors.onSurfaceVariant)
             }
             if (standing.isEmpty()) {
                 if (state.bodyweightRead) {
-                    Text(Bodyweight.nothingYet, style = WindmillFont.body(16), color = colors.onSurfaceVariant)
+                    Text(Bodyweight.nothingYet, style = WindmillType.body, color = colors.onSurfaceVariant)
                 }
             } else {
                 if (state.bodyweightRead) {
@@ -326,7 +323,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                 SegmentedButton(selected = window == option, onClick = { window = option },
                                     modifier = Modifier.heightIn(min = 48.dp),
                                     shape = SegmentedButtonDefaults.itemShape(index, ChartWindow.entries.size),
-                                    label = { Text(option.label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, lineHeight = 20.sp)) })
+                                    label = { Text(option.label, style = GymType.windowOption) })
                             }
                         }
                         if (shown.isNotEmpty()) {
@@ -346,13 +343,13 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                 },
                                 onSelect = { point -> repairing = rows.firstOrNull { it.dateLocal == point.id } })
                         } else if (window == ChartWindow.Ninety && Bodyweight.windowed(standing, window, today).isEmpty()) {
-                            Text(Bodyweight.noneInWindow, style = WindmillFont.body(16), color = colors.onSurfaceVariant)
+                            Text(Bodyweight.noneInWindow, style = WindmillType.body, color = colors.onSurfaceVariant)
                         }
-                        Text(Bodyweight.windowLine(window, shown.size), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                        Text(Bodyweight.windowLine(window, shown.size), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                     }
                 }
                 if (rows.isNotEmpty()) {
-                    Text("Every weigh-in", style = WindmillFont.body(18, FontWeight.ExtraBold).copy(lineHeight = 24.sp), color = colors.onSurface)
+                    Text("Every weigh-in", style = GymType.weighInListTitle, color = colors.onSurface)
                     rows.asReversed().forEach { entry ->
                         key(entry.dateLocal) {
                             DeleteSwipeRow(Bodyweight.deleteRow, onDelete = {
@@ -365,8 +362,8 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                     .padding(start = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
-                                        Text(Bodyweight.listDay(entry.date), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                                        Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillType.labelParagraph, color = colors.onSurface)
+                                        Text(Bodyweight.listDay(entry.date), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                                     }
                                     Chevron()
                                 }

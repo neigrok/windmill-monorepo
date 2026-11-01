@@ -29,10 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
 
 @Composable
@@ -118,7 +115,7 @@ fun NativePartsSpecimen(specimen: String) {
 private fun SpecimenGroup(caption: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(caption, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
-            style = TextStyle(fontFamily = GymNativeType.mono, fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.sp))
+            style = GymType.specimenCaption)
         content()
     }
 }
@@ -151,10 +148,9 @@ private fun SpecimenSwipe(label: String) {
         Modifier.width(372.dp).semantics { contentDescription = label }) {
         Column(Modifier.fillMaxWidth().height(68.dp).background(colors.surfaceContainer, RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Text("Push A", color = colors.onSurface, style = TextStyle(fontFamily = GymNativeType.sans,
-                fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold))
+            Text("Push A", color = colors.onSurface, style = GymType.nativeRowTitle)
             Text("Bench Press · Overhead Press", color = colors.onSurfaceVariant,
-                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp))
+                style = GymType.nativeDetail)
         }
     }
 }

@@ -4,7 +4,6 @@ import android.content.res.Configuration
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -13,12 +12,9 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.LocalWindmillPalette
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillPalette
 
 // Both product content and the account sheet resolve one palette for the current system mode: the standard roles
@@ -80,30 +76,3 @@ fun gymColorScheme(skin: GymColors, dark: Boolean): ColorScheme {
         outline = skin.lineStrong, outlineVariant = skin.line, scrim = skin.scrim,
     )
 }
-
-// Native system faces with tabular figures keep changing weights and clocks steady.
-val gymTypography: Typography = Typography(
-    displayLarge = display(44),
-    displayMedium = display(38),
-    displaySmall = display(32),
-    headlineLarge = display(30),
-    headlineMedium = display(26),
-    headlineSmall = display(22),
-    titleLarge = display(24),
-    titleMedium = display(17),
-    titleSmall = display(15),
-    bodyLarge = body(16),
-    bodyMedium = body(15),
-    bodySmall = body(13),
-    labelLarge = body(16, FontWeight.Bold),
-    labelMedium = body(14, FontWeight.Bold),
-    labelSmall = body(12, FontWeight.Bold),
-)
-
-private fun display(size: Int): TextStyle =
-    WindmillFont.display(size).copy(fontFeatureSettings = tabular)
-
-private fun body(size: Int, weight: FontWeight = FontWeight.Normal): TextStyle =
-    WindmillFont.body(size, weight).copy(fontFeatureSettings = tabular)
-
-private const val tabular = "tnum"

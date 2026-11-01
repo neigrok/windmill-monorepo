@@ -44,14 +44,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -82,14 +78,6 @@ fun ReadsAgainOnReturn(onReturn: () -> Unit) {
     }
 }
 
-internal object GymChrome {
-    private val font = FontFamily(Font(R.font.onboarding_nunito_bold, FontWeight.Bold))
-    val title = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 28.sp)
-    val action = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp)
-    val account = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 20.sp)
-    val tab = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp)
-}
-
 // The room owns system insets; each screen owns its native title and actions. The bar tints to the
 // card ground once the screen's content scrolls under it (00.1), and stays pinned.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -118,7 +106,7 @@ fun GymScreen(
             TopAppBar(
                 title = {
                     Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = GymChrome.title, textAlign = titleAlignment, color = colors.onSurface,
+                        style = GymType.topBarTitle, textAlign = titleAlignment, color = colors.onSurface,
                         modifier = Modifier.fillMaxWidth().semantics { heading() })
                 },
                 navigationIcon = {
@@ -151,10 +139,7 @@ fun GymScreen(
 // body-small for the label once it floats.
 @Composable
 fun NativeFieldType(content: @Composable () -> Unit) {
-    MaterialTheme(typography = MaterialTheme.typography.copy(
-        bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
-        bodySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .4.sp),
-    ), content = content)
+    MaterialTheme(typography = MaterialTheme.typography.withStockFields(FontFamily.SansSerif), content = content)
 }
 
 // A top bar action whose verb has no icon worth the guess. Material's own text action, in the
@@ -173,7 +158,7 @@ fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
             disabledContentColor = gymColors.inkFaint,
         ),
     ) {
-        Text(label, style = GymChrome.action)
+        Text(label, style = GymType.topBarAction)
     }
 }
 
@@ -197,7 +182,7 @@ fun YouSeat(initial: String) {
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(colors.surfaceContainerHighest), contentAlignment = Alignment.Center) {
-            Text(initial.uppercase().ifEmpty { "•" }, style = GymChrome.account, color = colors.onSurface,
+            Text(initial.uppercase().ifEmpty { "•" }, style = GymType.accountInitial, color = colors.onSurface,
                 modifier = Modifier.clearAndSetSemantics {})
         }
     }

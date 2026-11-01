@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -60,10 +61,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import works.windmill.gym.R
 import works.windmill.gym.presentation.WorkoutClocks
-import works.windmill.platform.design.WindmillFont
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,7 +91,6 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.RectangleShape
@@ -719,7 +717,7 @@ internal fun WorkoutClockRow(clocks: WorkoutClocks) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.clearAndSetSemantics { contentDescription = "$name, $value" }) {
                 Icon(painterResource(icon), contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                Text(value, style = GymType.numeral(14), color = colors.onSurfaceVariant)
+                Text(value, style = GymType.numeralRow, color = colors.onSurfaceVariant)
             }
         }
     }
@@ -752,7 +750,7 @@ private fun MovementHead(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
             EquipmentIcon(equipment)
-            Text(name, style = WindmillFont.body(22, FontWeight.Bold), color = colors.onSurface,
+            Text(name, style = GymType.movementName, color = colors.onSurface,
                 textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
         }
         val markers = place?.markers.orEmpty()
@@ -781,8 +779,7 @@ private fun StrandedBand(count: Int, by: Blocker?) {
     ) {
         Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = gymColors.inkFaint,
              modifier = Modifier.size(16.dp).padding(top = 1.dp))
-        Text(line, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant,
-             lineHeight = 17.sp, modifier = Modifier.weight(1f))
+        Text(line, style = GymType.strandedLine, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
     }
 }
 
@@ -804,7 +801,7 @@ private fun Ledger(
     val measurer = rememberTextMeasurer()
     val indexWidth = remember(slots.size, density, measurer) {
         with(density) {
-            maxOf(64.dp, (measurer.measure("Set ${slots.size}", GymType.numeral(16)).size.width + measurer.measure("✓", WindmillFont.body(16)).size.width + 4.dp.roundToPx()).toDp())
+            maxOf(64.dp, (measurer.measure("Set ${slots.size}", GymType.numeralLarge).size.width + measurer.measure("✓", WindmillType.body).size.width + 4.dp.roundToPx()).toDp())
         }
     }
     // The window holds three whole rows however tall large text makes them; its rows scroll inside it.
@@ -850,11 +847,11 @@ private fun Ledger(
                 ) {
                     Row(Modifier.width(indexWidth).align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("Set $index", style = if (active) WindmillFont.body(16, FontWeight.Bold) else GymType.numeral(16),
+                        Text("Set $index", style = if (active) WindmillType.label else GymType.numeralLarge,
                             color = if (active) colors.primary else colors.onSurface)
-                        if (row != null) Text("✓", style = WindmillFont.body(16), color = colors.tertiary)
+                        if (row != null) Text("✓", style = WindmillType.body, color = colors.tertiary)
                     }
-                    slot.line?.let { Text(it, style = GymType.numeral(16), color = if (active) colors.onSurfaceVariant else colors.onSurface,
+                    slot.line?.let { Text(it, style = GymType.numeralLarge, color = if (active) colors.onSurfaceVariant else colors.onSurface,
                         modifier = Modifier.align(Alignment.CenterVertically)) }
                     if (row?.isOnThisDevice == true) Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = gymColors.inkFaint,
                         modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
@@ -1002,7 +999,7 @@ private fun LogBand(lifted: Boolean, finishing: Boolean, enabled: Boolean, onLog
                 disabledContentColor = if (finishing) colors.onSurfaceVariant else colors.onPrimary.copy(alpha = .38f),
             ),
         ) {
-            Text("Log set", style = GymType.primary)
+            Text("Log set", style = GymType.logSet)
         }
     }
 }

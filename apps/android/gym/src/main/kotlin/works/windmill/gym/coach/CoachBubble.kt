@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import android.content.ClipData
 import android.text.format.DateFormat
@@ -25,9 +26,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -100,7 +99,7 @@ internal fun CoachBubble(
         DropdownMenu(expanded = menu, onDismissRequest = { changeMenu(false) }, containerColor = colors.surfaceContainer,
             shape = RoundedCornerShape(16.dp), modifier = Modifier.width(208.dp),
         ) {
-            DropdownMenuItem(text = { Text(label, style = CoachType.body(14).copy(lineHeight = 20.sp), color = colors.onSurface) }, onClick = { copy() })
+            DropdownMenuItem(text = { Text(label, style = GymType.coachSupporting, color = colors.onSurface) }, onClick = { copy() })
         }
     }
 }
@@ -109,7 +108,7 @@ internal fun CoachBubble(
 internal fun CoachQuestion(question: String, group: CoachGroup = CoachGroup.Single) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         CoachBubble(fromLifter = true, group = group, copyText = { question }) {
-            Text(question, style = CoachType.body(16).copy(lineHeight = 22.sp), color = MaterialTheme.colorScheme.onPrimary)
+            Text(question, style = GymType.coachParagraph, color = MaterialTheme.colorScheme.onPrimary)
         }
     }
 }
@@ -137,6 +136,6 @@ internal fun coachTimestamp(atMs: Long, nowMs: Long, clock24: Boolean, zone: Zon
 internal fun ChatTimestamp(atMs: Long, nowMs: Long) {
     val label = coachTimestamp(atMs, nowMs, DateFormat.is24HourFormat(LocalContext.current)) ?: return
     Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-        Text(label, style = CoachType.body(12, FontWeight.Bold).copy(lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = GymType.coachBubbleLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

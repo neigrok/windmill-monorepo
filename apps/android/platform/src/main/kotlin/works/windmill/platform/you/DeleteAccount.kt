@@ -1,5 +1,6 @@
 package works.windmill.platform.you
 
+import works.windmill.platform.design.WindmillType
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -23,12 +24,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -37,7 +36,6 @@ import kotlinx.coroutines.launch
 import works.windmill.platform.R
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.LocalWindmillPalette
-import works.windmill.platform.design.WindmillFont
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,7 +62,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
     Column(Modifier.fillMaxSize().background(palette.canvas).statusBarsPadding().navigationBarsPadding().imePadding()
         .testTag("account-deletion-page")) {
         if (page != AccountDeletionPage.Deleted) TopAppBar(
-            title = { Text("Delete account", style = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 28.sp), color = palette.ink) },
+            title = { Text("Delete account", style = WindmillType.headline, color = palette.ink) },
             navigationIcon = { IconButton(onClick = ::exit, enabled = !store.busy, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(if (dark) R.drawable.account_delete_back else R.drawable.account_delete_back_light),
                     "Back", Modifier.size(24.dp), tint = if (store.busy) palette.ink.copy(alpha = .38f) else palette.ink)
@@ -72,7 +70,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
             colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.canvas))
         if (confirming) Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 8.dp)) {
-            Text("Delete your account?", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = palette.ink)
+            Text("Delete your account?", style = WindmillType.sheetTitle, color = palette.ink)
             Column(Modifier.padding(top = 12.dp, bottom = 8.dp)) {
                 DeletionFact(if (dark) R.drawable.account_delete_delete else R.drawable.account_delete_delete_light,
                     "This deletes your Windmill account and its copy in the cloud: your roadmaps, journal pages and gym log.")
@@ -86,7 +84,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                     if (store.count == 1) "1 change on this phone hasn’t been confirmed by your account. It is deleted too."
                     else "${store.count} changes on this phone haven’t been confirmed by your account. They are deleted too.")
             }
-            Text("Type your email to confirm", style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = palette.inkDim)
+            Text("Type your email to confirm", style = WindmillType.detailLabel, color = palette.inkDim)
             Spacer(Modifier.height(10.dp))
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
                 OutlinedTextField(store.email, store::type, modifier = Modifier.fillMaxWidth().testTag("deletion-email"),
@@ -97,7 +95,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
             val failure = store.failure
             Text(failure?.sentence.orEmpty(), (if (failure == null) Modifier.height(0.dp) else Modifier.padding(top = 10.dp))
                 .testTag("deletion-failure").semantics { liveRegion = LiveRegionMode.Polite },
-                style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = scheme.error)
+                style = WindmillType.detail, color = scheme.error)
             if (failure == AccountDeletionFailure.Clock) TextButton(
                     onClick = { store.openDateSettings { context.startActivity(Intent(Settings.ACTION_DATE_SETTINGS)) } },
                     enabled = !store.busy, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp),
@@ -111,13 +109,13 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                 Icon(painterResource(if (dark) R.drawable.account_delete_check else R.drawable.account_delete_check_light),
                     null, Modifier.size(48.dp), tint = Color.Unspecified)
                 Spacer(Modifier.height(12.dp))
-                Text("Your account is deleted", style = WindmillFont.body(22, FontWeight.ExtraBold).copy(lineHeight = 28.sp),
+                Text("Your account is deleted", style = WindmillType.outcomeTitle,
                     color = palette.ink, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(12.dp))
                 store.deletedReceipt?.let { receipt ->
                     val deadline = remember(receipt) { DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
                         .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(receipt.closesMs)) }
-                    Text("Sign in before $deadline to bring it back.", style = WindmillFont.body(15).copy(lineHeight = 22.sp),
+                    Text("Sign in before $deadline to bring it back.", style = WindmillType.paragraphSmall,
                         color = palette.inkDim, textAlign = TextAlign.Center)
                 }
             } else Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
@@ -130,8 +128,8 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                     AccountDeletionPage.Cleanup -> "Finishing deletion" to "Your account is closed. This phone still needs to remove its local copy."
                     else -> "Checking deletion" to "Your account may already be closed. We’re waiting for confirmation."
                 }
-                Text(message.first, style = WindmillFont.body(22, FontWeight.ExtraBold).copy(lineHeight = 28.sp), color = palette.ink)
-                Text(message.second, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = palette.inkDim)
+                Text(message.first, style = WindmillType.outcomeTitle, color = palette.ink)
+                Text(message.second, style = WindmillType.paragraphSmall, color = palette.inkDim)
             }
         }
         Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
@@ -164,7 +162,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                     AccountDeletionPage.Unavailable -> "Back to You"
                     AccountDeletionPage.Cleanup -> "Retry cleanup"
                     else -> "Check again"
-                }, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp))
+                }, style = WindmillType.labelParagraph)
             }
             if (!single) TextButton(onClick = ::exit, enabled = !store.busy, modifier = Modifier.heightIn(min = 48.dp),
                 colors = ButtonDefaults.textButtonColors(contentColor = palette.ink)) {
@@ -179,6 +177,6 @@ private fun DeletionFact(icon: Int, text: String) {
     val palette = LocalWindmillPalette.current
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Icon(painterResource(icon), null, Modifier.size(24.dp), tint = Color.Unspecified)
-        Text(text, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = palette.ink, modifier = Modifier.weight(1f))
+        Text(text, style = WindmillType.paragraphSmall, color = palette.ink, modifier = Modifier.weight(1f))
     }
 }

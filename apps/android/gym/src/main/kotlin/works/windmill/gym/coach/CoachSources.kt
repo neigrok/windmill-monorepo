@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.clickable
@@ -22,7 +23,6 @@ import androidx.compose.ui.platform.testTag
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.Instant
@@ -85,7 +85,7 @@ internal fun CoachReadSources(
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
         }.heightIn(min = 48.dp).padding(start = 12.dp),
     ) {
-        Text(line, style = CoachType.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+        Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
         Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
     }
     if (!expanded) return
@@ -103,8 +103,8 @@ internal fun CoachReadSources(
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("What Coach read", style = CoachType.body(28, FontWeight.ExtraBold).copy(lineHeight = 36.sp), color = colors.onSurface)
-            if (counted.isNotEmpty()) Text(counted, style = CoachType.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+            Text("What Coach read", style = GymType.coachSourcesTitle, color = colors.onSurface)
+            if (counted.isNotEmpty()) Text(counted, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             receipt?.observed.orEmpty().groupBy { it.sessionId }.values.forEach { observations ->
                 val observation = observations.lastOrNull { it.wholeWorkout } ?: observations.last()
                 Row(verticalAlignment = Alignment.CenterVertically,
@@ -115,15 +115,15 @@ internal fun CoachReadSources(
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine,
-                            style = CoachType.body(15, FontWeight.Bold).copy(lineHeight = 20.sp), color = colors.onSurface)
-                        Text(CoachSources.facts(observation), style = CoachType.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                            style = GymType.coachSourceTitle, color = colors.onSurface)
+                        Text(CoachSources.facts(observation), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
                     }
                     Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
                 }
             }
-            if (notesRead) Text("Also read your notes.", style = CoachType.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+            if (notesRead) Text("Also read your notes.", style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             TextButton(onClick = { expanded = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                Text("Close", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.primary)
+                Text("Close", style = GymType.coachTitle, color = colors.primary)
             }
         }
     }

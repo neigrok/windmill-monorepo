@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -49,9 +50,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Ladder
@@ -64,7 +63,6 @@ import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.runtime.getValue
@@ -183,7 +181,7 @@ fun FixSheet(
                 containerColor = colors.primary, contentColor = colors.onPrimary,
                 disabledContainerColor = colors.primary.copy(alpha = 0.4f), disabledContentColor = colors.onPrimary,
             ),
-        ) { Text(if (busy) "Saving…" else "Save fix", style = WindmillFont.body(16, FontWeight.Bold)) }
+        ) { Text(if (busy) "Saving…" else "Save fix", style = WindmillType.label) }
     }
 
     @Composable
@@ -191,7 +189,7 @@ fun FixSheet(
         GymErrorTextButton("Delete set", onClick = onDelete, enabled = !busy,
             modifier = Modifier.fillMaxWidth(), minimumHeight = 48.dp)
         routine?.let {
-            Text("$it keeps its planned targets.", style = WindmillFont.body(14).copy(lineHeight = 18.sp),
+            Text("$it keeps its planned targets.", style = GymType.supportingTight,
                 color = colors.onSurfaceVariant)
         }
     }
@@ -207,11 +205,11 @@ fun FixSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Fix set", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp),
+                Text("Fix set", style = GymType.sheetHeadline,
                     color = colors.onSurface, modifier = Modifier.semantics { heading() })
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     exercise?.let { EquipmentIcon(it.equipment, tint = colors.onSurfaceVariant) }
-                    Text("$movement · Set $position", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = colors.onSurfaceVariant)
+                    Text("$movement · Set $position", style = GymType.subtitle, color = colors.onSurfaceVariant)
                 }
             }
             SetNumbers(load, count, unit,
@@ -231,25 +229,25 @@ fun FixSheet(
                 TextField(value = rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
                     onValueChange = {}, readOnly = true, enabled = !busy, singleLine = true,
                     modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
-                    label = { Text("Effort", style = WindmillFont.body(12).copy(lineHeight = 16.sp)) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(effortOpen) },
+                    textStyle = GymType.noteInput,
+                    label = { Text("Effort", style = WindmillType.caption) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(effortOpen) },
                     colors = fieldColors)
                 ExposedDropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false }, containerColor = colors.surfaceContainerHighest) {
                     (listOf<Double?>(null) + SetEffort.rpeBand).forEach { value ->
                         val label = value?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated
-                        DropdownMenuItem(text = { Text(label, style = WindmillFont.body(16), color = colors.onSurface) },
+                        DropdownMenuItem(text = { Text(label, style = WindmillType.body, color = colors.onSurface) },
                             onClick = { rpe = value; effortOpen = false },
                             modifier = Modifier.heightIn(min = 48.dp).semantics { selected = rpe == value })
                     }
                 }
             }
             refusal?.let { message ->
-                Text(message, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = gymColors.alarmInk,
+                Text(message, style = GymType.supportingTight, color = gymColors.alarmInk,
                     modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
             }
             BasicTextField(
                 value = note, onValueChange = { note = it }, enabled = !busy,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface, lineHeight = 24.sp),
+                textStyle = GymType.noteInput.copy(color = colors.onSurface),
                 cursorBrush = SolidColor(colors.primary), maxLines = 6, interactionSource = noteInteraction,
                 modifier = Modifier.fillMaxWidth().semantics {
                     stateDescription = SetEffort.noteCaption
@@ -259,10 +257,10 @@ fun FixSheet(
                     Box(Modifier.heightIn(min = 56.dp)) {
                         TextFieldDefaults.Container(!busy, tooLong, noteInteraction, Modifier.matchParentSize(), fieldColors)
                         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            Text(SetEffort.noteLabel, style = WindmillFont.body(12).copy(lineHeight = 16.sp),
+                            Text(SetEffort.noteLabel, style = WindmillType.caption,
                                 color = if (tooLong) colors.error else if (noteFocused) colors.primary else colors.onSurfaceVariant)
                             Box {
-                                if (note.isEmpty()) Text("Add a note", style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp), color = colors.onSurfaceVariant)
+                                if (note.isEmpty()) Text("Add a note", style = GymType.noteInput, color = colors.onSurfaceVariant)
                                 field()
                             }
                         }
@@ -270,11 +268,11 @@ fun FixSheet(
                 },
             )
             if (tooLong) {
-                Text(SetEffort.noteTooLong, style = WindmillFont.body(14), color = gymColors.alarmInk,
+                Text(SetEffort.noteTooLong, style = WindmillType.supporting, color = gymColors.alarmInk,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
             SetEffort.noteCounter(note)?.let { counter ->
-                Text(counter, style = GymType.numeral(12), color = if (tooLong) gymColors.alarmInk else colors.onSurfaceVariant)
+                Text(counter, style = GymType.numeralSmall, color = if (tooLong) gymColors.alarmInk else colors.onSurfaceVariant)
             }
             if (typing) DeleteAndPlanNote()
         }

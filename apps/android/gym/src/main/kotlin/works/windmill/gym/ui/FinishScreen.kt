@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -81,7 +81,6 @@ import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.Session
 import works.windmill.gym.domain.sync.SessionReview
 import works.windmill.gym.presentation.TrainingSet
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
@@ -196,7 +195,7 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
         if (review == null) {
             Text(
                 "the log didn’t answer — the session is saved",
-                style = GymType.numeral(13),
+                style = GymType.numeral,
                 color = colors.onSurfaceVariant,
             )
             return@Column
@@ -218,10 +217,10 @@ private fun RecordLine(sentence: String) {
             .border(1.dp, gymColors.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Text("Personal record", style = GymType.numeral(13).copy(lineHeight = 18.sp), color = gymColors.prInk)
+        Text("Personal record", style = GymType.numeralDetail, color = gymColors.prInk)
         Text(
             sentence,
-            style = WindmillFont.body(17).copy(lineHeight = 24.sp),
+            style = GymType.finishSentence,
             color = colors.onSurface,
         )
     }
@@ -234,7 +233,7 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(comparison.title, style = GymType.numeral(11), color = colors.onSurfaceVariant)
+        Text(comparison.title, style = GymType.numeralTiny, color = colors.onSurfaceVariant)
         comparison.rows.forEach { row ->
             ReceiptLine(row.movement, row.detail)
         }
@@ -258,8 +257,8 @@ fun FinishScreen(
             .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = bottomPadding),
             verticalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("No sets logged", style = WindmillFont.display(22, FontWeight.ExtraBold).copy(lineHeight = 28.sp), color = colors.onSurface)
-                Text("This workout has ended.", style = WindmillFont.body(16).copy(lineHeight = 23.sp), color = colors.onSurfaceVariant)
+                Text("No sets logged", style = WindmillType.outcomeTitle, color = colors.onSurface)
+                Text("This workout has ended.", style = GymType.emptyFinishLine, color = colors.onSurfaceVariant)
             }
             ReceiptAction("Done", onDone)
         }
@@ -278,7 +277,7 @@ fun FinishScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (finished.slight) "Ended early." else "Well done.",
-                            style = WindmillFont.display(44, FontWeight.ExtraBold).copy(lineHeight = 52.sp),
+                            style = GymType.finishHeadline,
                             color = colors.onSurface, modifier = Modifier.weight(1f))
                         onDiscard?.let { discard ->
                             var expanded by rememberSaveable { mutableStateOf(false) }
@@ -293,7 +292,7 @@ fun FinishScreen(
                         }
                     }
                     Text("${finished.routine ?: Readout.noRoutine} · ${Finish.day(finished.session.startedAtMs)}",
-                        style = WindmillFont.body(18).copy(lineHeight = 24.sp), color = colors.onSurfaceVariant)
+                        style = GymType.finishSubhead, color = colors.onSurfaceVariant)
                 }
                 val summary = SessionSummary(finished.session, finished.sets, catalog)
                 val duration = ((finished.session.finishedAtMs ?: finished.session.startedAtMs) - finished.session.startedAtMs).coerceAtLeast(0)
@@ -319,22 +318,22 @@ fun FinishScreen(
                     Text(buildAnnotatedString {
                         append("Only on this phone · ")
                         withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold)) { append("Keep it") }
-                    }, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = colors.onSurfaceVariant,
+                    }, style = WindmillType.paragraphSmall, color = colors.onSurfaceVariant,
                         modifier = Modifier.heightIn(min = 48.dp).fillMaxWidth().clickable(role = Role.Button, onClick = keep))
                 }
                 if (onKeep == null && finished.reviewRead) {
                     Finish.recordSentence(finished.review?.record, catalog)?.let { RecordLine(it) }
                 }
-                Text("Performed", style = GymType.numeral(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                Text("Performed", style = GymType.numeralDetail, color = colors.onSurfaceVariant)
                 summary.exercises.forEach { id ->
                     val sets = finished.sets.filter { it.exerciseId == id }
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Check, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(24.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(Readout.movement(id, catalog), style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
+                            Text(Readout.movement(id, catalog), style = GymType.heading, color = colors.onSurface)
                             Text(Readout.targetWithUnit(sets.map { SetTarget(it.reps, it.weightKg) }, catalog.find { it.id == id }),
-                                style = GymType.numeral(15).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                                style = GymType.numeralReadout, color = colors.onSurfaceVariant)
                         }
                     }
                 }
@@ -359,17 +358,17 @@ private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: 
             append(value)
             unit?.let { withStyle(SpanStyle(fontSize = 0.5.em, fontWeight = FontWeight.Normal)) { append(" $it") } }
         }
-        val style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp, color = colors.onSurface, textAlign = TextAlign.Center)
-        val floor = style.copy(fontSize = 16.sp, lineHeight = 20.sp)
+        val style = GymType.finishStat.copy(color = colors.onSurface)
+        val floor = GymType.finishStatFloor.copy(color = colors.onSurface)
         val measurer = rememberTextMeasurer()
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val oneLine = !measurer.measure(text, floor, maxLines = 1,
                 constraints = Constraints(maxWidth = constraints.maxWidth)).hasVisualOverflow
             if (oneLine) BasicText(text, Modifier.fillMaxWidth(), style, maxLines = 1,
-                autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 32.sp))
+                autoSize = GymType.finishStatFit)
             else BasicText(text, Modifier.fillMaxWidth(), floor)
         }
-        Text(label, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant,
+        Text(label, style = GymType.supportingTight, color = colors.onSurfaceVariant,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -388,7 +387,7 @@ private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = f
                     contentScale = ContentScale.Fit, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             }
-            Text(label, style = MaterialTheme.typography.labelLarge.copy(lineHeight = 22.sp))
+            Text(label, style = GymType.actionLabel)
         }
     }
     if (tonal) FilledTonalButton(onClick, modifier, shape = shape, contentPadding = padding, content = content,
@@ -403,13 +402,13 @@ private fun ReceiptLine(name: String, detail: String) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (GymTextScale.large || maxWidth < 360.dp || name.length > 22 || detail.length > 24) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(name, style = WindmillFont.body(15), color = colors.onSurface, modifier = Modifier.fillMaxWidth())
-                Text(detail, style = GymType.numeral(13), color = colors.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
+                Text(name, style = GymType.performedName, color = colors.onSurface, modifier = Modifier.fillMaxWidth())
+                Text(detail, style = GymType.numeral, color = colors.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, style = WindmillFont.body(15), color = colors.onSurface, modifier = Modifier.weight(1f))
-                Text(detail, style = GymType.numeral(13), color = colors.onSurfaceVariant)
+                Text(name, style = GymType.performedName, color = colors.onSurface, modifier = Modifier.weight(1f))
+                Text(detail, style = GymType.numeral, color = colors.onSurfaceVariant)
             }
         }
     }

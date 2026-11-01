@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -28,14 +29,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Session
-import works.windmill.platform.design.WindmillFont
 
 @Composable
 fun WorkoutBar(session: Session, onOpen: () -> Unit) {
@@ -59,9 +58,9 @@ fun WorkoutBar(session: Session, onOpen: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(painterResource(R.drawable.gym_workout_notification), null, Modifier.size(24.dp), tint = colors.primary)
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(routine, style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface,
+                Text(routine, style = WindmillType.label, color = colors.onSurface,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text(" · ${Readout.clock(nowMs - session.startedAtMs)}", style = GymType.numeral(14), color = colors.onSurfaceVariant,
+                Text(" · ${Readout.clock(nowMs - session.startedAtMs)}", style = GymType.numeralRow, color = colors.onSurfaceVariant,
                     maxLines = 1)
             }
             Icon(Icons.Rounded.KeyboardArrowUp, null, Modifier.size(48.dp).padding(12.dp), tint = colors.onSurfaceVariant)

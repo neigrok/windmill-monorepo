@@ -67,10 +67,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Constraints
@@ -201,12 +198,9 @@ fun NumberStepper(
     val display = size == NumberStepperSize.Display
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
-    val baseStyle = TextStyle(fontFamily = if (display) GymNativeType.sans else GymNativeType.mono,
-        fontWeight = if (display) FontWeight.ExtraBold else FontWeight.Medium,
-        fontSize = if (display) 88.sp else 20.sp, lineHeight = if (display) 92.sp else 24.sp,
-        fontFeatureSettings = "tnum", color = if (flash) colors.primary else colors.onSurface)
-    val unitStyle = TextStyle(fontFamily = GymNativeType.sans, fontSize = if (display) 22.sp else 16.sp,
-        lineHeight = if (display) 28.sp else 24.sp)
+    val baseStyle = (if (display) GymType.stepperDisplay else GymType.stepperInline)
+        .copy(color = if (flash) colors.primary else colors.onSurface)
+    val unitStyle = if (display) GymType.stepperUnitDisplay else GymType.stepperUnitInline
     val fill = if (flash) colors.primaryContainer.compositeOver(colors.surfaceContainerHighest) else colors.surfaceContainerHighest
     val fieldShape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
     val fieldColors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
@@ -302,7 +296,7 @@ fun NumberStepper(
                                     fieldShape, focusedIndicatorLineThickness = 3.dp)
                                 Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp,
                                     bottom = if (display && fieldLayout == NumberFieldLayout.Inline) 4.dp else 8.dp)) {
-                                    Text(label, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp),
+                                    Text(label, style = GymType.stepperLabel,
                                         color = if (focused || flash) colors.primary else colors.onSurfaceVariant, modifier = Modifier.clearAndSetSemantics { testTag = "stepper-label" })
                                     Layout(content = {
                                         Box(Modifier.clipToBounds()) {
@@ -356,7 +350,7 @@ fun NumberStepper(
         }
         refusal?.let {
             Text(it, color = MaterialTheme.colorScheme.error,
-                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 14.sp, lineHeight = 20.sp))
+                style = GymType.stepperRefusal)
         }
     }
 }

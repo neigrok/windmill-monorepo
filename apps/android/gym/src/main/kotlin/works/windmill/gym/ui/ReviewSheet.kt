@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.coach.CoachProposalCard
 import androidx.compose.material.icons.Icons
@@ -48,9 +49,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.awaitCancellation
@@ -73,7 +72,6 @@ import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutSession
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
@@ -227,8 +225,8 @@ fun ReviewSheet(
                 .padding(horizontal = WindmillSpace.x5)
                 .padding(bottom = WindmillSpace.x4),
         ) {
-            if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = colors.onSurfaceVariant)
-            if (state.workoutOpen) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = colors.onSurface)
+            if (gone) Text(ProposalRead.Gone.line, style = WindmillType.paragraphSmall, color = colors.onSurfaceVariant)
+            if (state.workoutOpen) Text("Finish this session", style = GymType.cardTitle, color = colors.onSurface)
             if (!state.workoutOpen) standing?.let { Body(it, state.catalog, outOfDate) }
             standing?.let { proposal ->
                 onAsk?.let { ask ->
@@ -239,7 +237,7 @@ fun ReviewSheet(
                             .heightIn(min = GymTap.minimum)
                             .clickable(enabled = !deciding, role = Role.Button) { ask(proposal.routineName) },
                     ) {
-                        Text("Ask Coach", style = WindmillFont.body(16, FontWeight.Bold), color = colors.primary)
+                        Text("Ask Coach", style = WindmillType.label, color = colors.primary)
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
@@ -267,7 +265,7 @@ fun ReviewSheet(
 private fun Head(proposal: Proposal?) {
     val colors = MaterialTheme.colorScheme
     Text(proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
-        style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = colors.onSurface,
+        style = GymType.proposalTitle, color = colors.onSurface,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp))
 }
 
@@ -279,14 +277,14 @@ private fun Body(
 ) {
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (proposal.summary.isNotBlank()) Text(proposal.kicker, style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
-        Text(proposal.summaryLine(proposal.routineName), style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = colors.onSurface)
+        if (proposal.summary.isNotBlank()) Text(proposal.kicker, style = WindmillType.kicker, color = colors.onSurfaceVariant)
+        Text(proposal.summaryLine(proposal.routineName), style = WindmillType.paragraph, color = colors.onSurface)
     }
     if (proposal.intent == ProposalIntent.Remove) {
         ChangeCard() {
-            Text("Remove ${proposal.routineName}", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
+            Text("Remove ${proposal.routineName}", style = WindmillType.labelParagraph, color = colors.onSurface)
             Text("The whole routine is removed from your program. Every set you logged against it stays in the log.",
-                style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
         }
     } else {
         proposal.document.forEach { row ->
@@ -296,7 +294,7 @@ private fun Body(
             }
         }
         if (proposal.renames) ChangeCard() {
-            Text("Routine name", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
+            Text("Routine name", style = WindmillType.labelParagraph, color = colors.onSurface)
             MoveLine("", proposal.baseName, proposal.name)
         }
     }
@@ -304,7 +302,7 @@ private fun Body(
     note?.let {
         Text(
             it,
-            style = WindmillFont.body(13).copy(lineHeight = 20.sp),
+            style = GymType.smallParagraph,
             color = colors.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
@@ -335,7 +333,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 .clickable(role = Role.Button) { open = !open }
                 .padding(horizontal = GymLayout.rowInset),
         ) {
-            Text(row.label, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+            Text(row.label, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
             Icon(
                 if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = null,
@@ -351,13 +349,13 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 ) {
                     Text(
                         Readout.movement(change.exerciseId, catalog),
-                        style = WindmillFont.body(16).copy(lineHeight = 22.sp),
+                        style = WindmillType.paragraph,
                         color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
                         (change.after ?: change.before)?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget,
-                        style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                        style = WindmillType.supportingParagraph,
                         color = colors.onSurfaceVariant,
                     )
                 }
@@ -376,20 +374,20 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
             ChangeKind.Removed -> "Remove $name"
             else -> name
         }
-        Text(title, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
+        Text(title, style = WindmillType.labelParagraph, color = colors.onSurface)
         when (change.kind) {
             ChangeKind.Added -> {
                 val target = change.after?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget
                 val after = proposal.landsAfter(change)?.let { "after ${Readout.movement(it, catalog)}" } ?: "first in the routine"
-                Text("$target · $after", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                Text("$target · $after", style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
             }
-            ChangeKind.Removed -> Text(change.removedLine, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+            ChangeKind.Removed -> Text(change.removedLine, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
             else -> {
                 val before = change.before
                 val after = change.after
                 val moved = if (before == null || after == null) emptyList() else Proposal.moves(before, after)
                 if (moved.isEmpty()) Text((after ?: before)?.let { Readout.targetWithUnit(it.sets) } ?: "No targets",
-                    style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                    style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                 moved.forEach { move ->
                     if (move.label == Proposal.setsLabel && before != null && after != null) {
                         SchemeMove(move.copy(before = Readout.targetWithUnit(before.sets), after = Readout.targetWithUnit(after.sets)), before.sets, after.sets, change)
@@ -431,7 +429,7 @@ private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: Lis
 private fun MoveLine(label: String, before: String, after: String, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     Text((if (label.isBlank() || label == Proposal.setsLabel) "" else "$label · ") + "$before → $after",
-        style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant,
+        style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant,
         modifier = modifier.semantics(mergeDescendants = true) {})
 }
 
@@ -463,9 +461,9 @@ private fun Foot(
             .padding(horizontal = WindmillSpace.x5)
             .padding(vertical = 12.dp),
     ) {
-        said?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant) }
+        said?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
         if (!decidable) {
-            proposal.receipt?.let { Text(it, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.primary,
+            proposal.receipt?.let { Text(it, style = WindmillType.labelParagraph, color = colors.primary,
                 modifier = receiptModifier) }
             return@Column
         }
@@ -500,7 +498,7 @@ private fun Foot(
                 disabledContentColor = colors.onPrimary.copy(alpha = .4f),
             ),
         ) {
-            Text(proposal.applyLabel, style = WindmillFont.body(16, FontWeight.Bold))
+            Text(proposal.applyLabel, style = WindmillType.label)
         }
         // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree in
         // BOTH: the reason Apply is refusing belongs to Apply, which says it above, and a reader
@@ -508,7 +506,7 @@ private fun Foot(
         // sighted reader; `ReviewSheetTests` counts the nodes that carry the screen reader.
         Text(
             Proposal.applyHint,
-            style = GymType.numeral(12),
+            style = GymType.numeralSmall,
             color = colors.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
@@ -517,7 +515,7 @@ private fun Foot(
         )
         Text(
             proposal.atomicLine,
-            style = WindmillFont.body(12).copy(lineHeight = 17.sp),
+            style = GymType.captionLoose,
             color = colors.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -528,7 +526,7 @@ private fun Foot(
             shape = RoundedCornerShape(WindmillRadius.lg),
             colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
         ) {
-            Text(Proposal.turnDownVerb, style = WindmillFont.body(16, FontWeight.Bold))
+            Text(Proposal.turnDownVerb, style = WindmillType.label)
         }
     }
 }
@@ -558,7 +556,7 @@ fun ProposalChip(onReview: () -> Unit) {
             .padding(horizontal = WindmillSpace.x1),
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(colors.primary))
-        Text("1 proposal", style = WindmillFont.body(12, FontWeight.SemiBold), color = colors.primary)
+        Text("1 proposal", style = GymType.proposalBadge, color = colors.primary)
     }
 }
 

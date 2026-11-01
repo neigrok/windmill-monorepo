@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.RefusedChange
@@ -86,7 +85,7 @@ private fun DismissGround() {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = colors.onSurfaceVariant) }
-        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = colors.onSurfaceVariant) }
+        Box { Text("Dismiss", style = GymType.dismiss, color = colors.onSurfaceVariant) }
+        Box { Text("Dismiss", style = GymType.dismiss, color = colors.onSurfaceVariant) }
     }
 }

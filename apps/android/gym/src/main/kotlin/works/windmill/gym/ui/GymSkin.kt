@@ -1,19 +1,10 @@
 package works.windmill.gym.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
 import works.windmill.platform.design.WindmillSpace
 
 @Immutable
@@ -57,51 +48,6 @@ object GymSkin {
         accentSoft = Color(0x1F137A6C), prInk = Color(0xFF6E5217), prSoft = Color(0x24A17822),
         alarmInk = Color(0xFFA84E35), error = Color(0xFFB3261E), onError = Color.White, scrim = Color(0x731A1918),
     )
-}
-
-// Every numeral in gym is TABULAR, or a column of sets shimmers. The weight is the exception to mono.
-object GymType {
-    val weight = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 104.sp,
-        lineHeight = 92.sp,
-        letterSpacing = (-0.04).em,
-        fontFeatureSettings = "tnum",
-    )
-
-    // The logger's reps numeral and its one primary — sans, tabular, like every role in
-    // `gymTypography`.
-    val reps = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 56.sp,
-        lineHeight = 60.sp,
-        fontFeatureSettings = "tnum",
-    )
-
-    val primary = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 16.sp,
-        fontFeatureSettings = "tnum",
-    )
-
-    fun numeral(size: Int, weight: FontWeight = FontWeight.Normal) = TextStyle(
-        fontFamily = FontFamily.Monospace,
-        fontWeight = weight,
-        fontSize = size.sp,
-        fontFeatureSettings = "tnum",
-    )
-
-    val readout = numeral(15)
-}
-
-// Where the room's layouts reflow for the system text size: past its 130 % step a layout opens up (the receipt fills
-// its sheet, a set row stacks its readout), and from 150 % side-by-side parts stack.
-object GymTextScale {
-    val large: Boolean @Composable @ReadOnlyComposable get() = LocalDensity.current.fontScale > 1.3f
-    val stacked: Boolean @Composable @ReadOnlyComposable get() = LocalDensity.current.fontScale >= 1.5f
 }
 
 // Native action sizes; the rack keeps its larger logging target.

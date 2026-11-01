@@ -53,7 +53,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -66,7 +65,6 @@ import works.windmill.gym.presentation.DatedGeometry
 import works.windmill.gym.presentation.DatedPoint
 import works.windmill.gym.presentation.DatedSeries
 import works.windmill.gym.presentation.Readout
-import works.windmill.platform.design.WindmillFont
 
 enum class PlotInteraction { Preview, Inspect, Select }
 private enum class PlotGesture { Hold, Pan, Yield }
@@ -83,7 +81,7 @@ fun DatedPlot(
     gapLabel: ((DatedPoint, DatedPoint) -> String)? = null,
     initialPointId: String? = null,
     minHeight: Dp = 220.dp,
-    labelStyle: TextStyle = WindmillFont.body(12).copy(lineHeight = 17.sp),
+    labelStyle: TextStyle = GymType.captionLoose,
 ) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors

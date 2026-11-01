@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
@@ -26,9 +27,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.time.Instant
@@ -50,7 +49,6 @@ import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.*
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
 
 // What the recovery journal draws: a copy kept on this phone, inspected and fixed.
@@ -155,9 +153,9 @@ fun OnThisPhoneSection(read: RecoveryRead?, onList: () -> Unit, onInspect: (Stri
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val counted = rows.all { it.workout != null }
-                Text(if (counted) "${rows.size} workouts" else "Saved training", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 25.sp), color = colors.onSurface)
+                Text(if (counted) "${rows.size} workouts" else "Saved training", style = GymType.listHeading, color = colors.onSurface)
                 val needs = PhoneRecovery.needsYou(rows)
-                Text(if (needs == 0) "Adding…" else if (counted) "$needs need you" else "Needs you", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                Text(if (needs == 0) "Adding…" else if (counted) "$needs need you" else "Needs you", style = WindmillType.detail, color = colors.onSurfaceVariant)
             }
             RecoveryChevron()
         }
@@ -183,7 +181,7 @@ fun OnThisPhoneScreen(read: RecoveryRead, onBack: () -> Unit, onInspect: (String
 
 @Composable
 private fun RecoveryHeading(text: String) {
-    Text(text, style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Text(text, style = WindmillType.detailLabel, color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 4.dp))
 }
 
@@ -205,8 +203,8 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             val facts = listOfNotNull(PhoneRecovery.title(row), date, row.workout?.let { Readout.setCount(PhoneRecovery.sets(row).size) })
-            Text(facts.joinToString(" · "), style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
-            Text(PhoneRecovery.reason(row), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+            Text(facts.joinToString(" · "), style = WindmillType.rowLabel, color = colors.onSurface)
+            Text(PhoneRecovery.reason(row), style = WindmillType.detail, color = colors.onSurfaceVariant)
         }
         if (row.adding) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
         else RecoveryChevron()
@@ -260,18 +258,18 @@ fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: Rec
             message?.let { RecoveryBand(it, failed = true) }
             if (primary != null) Button(onClick = { act(primary) }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp)) {
-                Text(PhoneRecovery.label(primary), style = WindmillFont.body(15, FontWeight.Bold))
+                Text(PhoneRecovery.label(primary), style = GymType.strongAction)
             }
         }
     }) {
         LazyColumn(Modifier.fillMaxSize().testTag("recovery-inspect"), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             row.workout?.let { copy ->
-                item("date") { Text(Readout.day(copy.session.startedAtMs), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)) }
+                item("date") { Text(Readout.day(copy.session.startedAtMs), style = WindmillType.detail, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)) }
                 item("facts") { RecoveryFacts(row, state.catalog) }
             }
             item("reason") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(PhoneRecovery.reason(row), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Text(PhoneRecovery.reason(row), style = WindmillType.detail, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
                 if (row.refusals.any { it.code in setOf("source-needs-update", "source-unreadable") }) RecoveryUpdate()
             } }
             if (!row.operationsOnly) row.workout?.let { copy -> item("times") { RecoveryTimes(copy.session) } }
@@ -307,8 +305,8 @@ private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
     val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { "${Readout.weight(it)} kg" } ?: "—"
     Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         for ((value, caption) in listOf(duration to "Duration", sets.size.toString() to "Sets", volume to "Volume")) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, style = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 30.sp), color = colors.onSurface)
-            Text(caption, style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = colors.onSurfaceVariant)
+            Text(value, style = GymType.statValue, color = colors.onSurface)
+            Text(caption, style = GymType.captionLoose, color = colors.onSurfaceVariant)
         }
     }
 }
@@ -316,7 +314,7 @@ private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
 @Composable
 private fun RecoveryBand(line: String, failed: Boolean = false) {
     val colors = MaterialTheme.colorScheme
-    Text(line, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = if (failed) colors.error else colors.onSurfaceVariant,
+    Text(line, style = WindmillType.detail, color = if (failed) colors.error else colors.onSurfaceVariant,
         modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 12.dp)
             .semantics { liveRegion = LiveRegionMode.Polite; if (failed) error(line) })
 }
@@ -333,10 +331,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
                     Row(Modifier.fillMaxWidth().testTag("recovery-set:${row.id}").then(if (onSet == null) Modifier else Modifier.clickable(role = Role.Button) { onSet(row.set) })
                         .heightIn(min = if (times) 59.dp else 42.dp).padding(vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(row.savedNumber.toString(), style = GymType.numeral(14), color = colors.onSurfaceVariant)
+                        Text(row.savedNumber.toString(), style = GymType.numeralRow, color = colors.onSurfaceVariant)
                         Column(Modifier.weight(1f)) {
-                            Text(row.effort, style = GymType.numeral(14), color = colors.onSurface)
-                            if (times) Text(Readout.time(row.set.completedAtMs), style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = colors.onSurfaceVariant)
+                            Text(row.effort, style = GymType.numeralRow, color = colors.onSurface)
+                            if (times) Text(Readout.time(row.set.completedAtMs), style = GymType.captionLoose, color = colors.onSurfaceVariant)
                         }
                     }
                     if (index < movement.rows.lastIndex) HorizontalDivider(color = colors.onSurfaceVariant.copy(alpha = .12f))
@@ -357,23 +355,23 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
             val values: @Composable () -> Unit = {
                 val instant = field.second
                 if (instant == null) {
-                    Text("Not finished", style = WindmillFont.body(14), color = colors.onSurfaceVariant)
+                    Text("Not finished", style = WindmillType.supporting, color = colors.onSurfaceVariant)
                     if (markFinished != null) TextButton(onClick = markFinished) { Text("Mark finished") }
                 } else if (onPick == null) {
                     val otherDay = Instant.ofEpochMilli(instant).atZone(ZoneId.systemDefault()).toLocalDate() !=
                         Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()).toLocalDate()
                     Text(if (otherDay) "${Readout.date(instant)} · ${Readout.time(instant)}" else Readout.time(instant),
-                        style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+                        style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                 } else {
                     AssistChip(onClick = { onPick("${field.first}:date") }, label = { Text(Readout.date(instant)) })
                     AssistChip(onClick = { onPick("${field.first}:time") }, label = { Text(Readout.time(instant)) })
                 }
             }
             if (largeText) Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(field.first, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurface)
+                Text(field.first, style = WindmillType.supportingParagraph, color = colors.onSurface)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { values() }
             } else Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(field.first, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurface, modifier = Modifier.weight(1f))
+                Text(field.first, style = WindmillType.supportingParagraph, color = colors.onSurface, modifier = Modifier.weight(1f))
                 values()
             }
         }
@@ -450,7 +448,7 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                     draft.row.workout?.session?.plan?.let { plan -> item("link") {
                         Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Linked to ${plan.routine}", style = WindmillFont.body(14), color = colors.onSurface, modifier = Modifier.weight(1f))
+                            Text("Linked to ${plan.routine}", style = WindmillType.supporting, color = colors.onSurface, modifier = Modifier.weight(1f))
                             Switch(checked = draft.copy.session.routineId != null, enabled = !busy, onCheckedChange = { linked ->
                                 val original = requireNotNull(draft.row.workout).session
                                 change(draft.copy.copy(session = draft.copy.session.copy(routineId = original.routineId.takeIf { linked }, plan = original.plan.takeIf { linked })))

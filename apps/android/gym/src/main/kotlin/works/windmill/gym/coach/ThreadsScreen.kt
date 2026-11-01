@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.gymColors
 import works.windmill.gym.ui.GymLayout
@@ -37,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
@@ -46,7 +46,6 @@ import works.windmill.gym.ui.DeleteSwipeRow
 import works.windmill.gym.ui.DarkAndDaylight
 import works.windmill.gym.ui.GymPreview
 import works.windmill.platform.telemetry.LocalTelemetry
-import androidx.compose.ui.unit.sp
 import works.windmill.gym.presentation.Ids
 import works.windmill.gym.store.GymResult
 import kotlinx.coroutines.launch
@@ -126,11 +125,11 @@ fun ThreadsScreen(
             PullToRefreshBox(isRefreshing = loading, onRefresh = { attempt++ }) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
                     failure?.let { line -> item("failure") {
-                        Text(line, style = CoachType.body(14), color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                        Text(line, style = GymType.coachLine, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                     } }
                     val held = state.threads.filterNot { it.id in deleting }
                     if (!loading && held.isEmpty() && failure == null) item("none") {
-                        Text(Threads.none, style = CoachType.body(15), color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                        Text(Threads.none, style = GymType.coachNone, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                     }
                     items(held, key = { it.id }) { thread ->
                         DeleteSwipeRow(actionLabel = "Delete conversation", onDelete = { requestDelete(thread.id); false }) {
@@ -142,9 +141,9 @@ fun ThreadsScreen(
                                     ?: CoachMarkdown.plain(thread.answerPreview)
                             }
                             ListItem(
-                                headlineContent = { Text(thread.title, style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp)) },
-                                supportingContent = preview.takeIf { it.isNotBlank() }?.let { { Text(it, style = CoachType.body(14).copy(lineHeight = 20.sp), maxLines = 2) } },
-                                trailingContent = { thread.day(nowMs)?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = CoachType.body(14).copy(lineHeight = 20.sp)) } },
+                                headlineContent = { Text(thread.title, style = GymType.coachTitle) },
+                                supportingContent = preview.takeIf { it.isNotBlank() }?.let { { Text(it, style = GymType.coachSupporting, maxLines = 2) } },
+                                trailingContent = { thread.day(nowMs)?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = GymType.coachSupporting) } },
                                 colors = ListItemDefaults.colors(containerColor = colors.surface, headlineColor = colors.onSurface,
                                     supportingColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
                                 modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open conversation") { onOpen(thread.id) },
@@ -167,7 +166,7 @@ fun ThreadsScreen(
             }
             ExtendedFloatingActionButton(
                 onClick = onAskNew, icon = { Icon(painterResource(R.drawable.gym_coach_new_chat), null, Modifier.size(24.dp)) },
-                text = { Text(Threads.open, style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp)) },
+                text = { Text(Threads.open, style = GymType.coachTitle) },
                 containerColor = colors.surfaceContainer, contentColor = colors.primary,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).semantics { contentDescription = Threads.open },
             )
@@ -176,10 +175,10 @@ fun ThreadsScreen(
     confirming?.let { id ->
         AlertDialog(
             onDismissRequest = ::cancelDelete,
-            title = { Text("Delete this conversation?", style = CoachType.body(24, FontWeight.Bold).copy(lineHeight = 32.sp)) },
-            text = { Text("You can’t undo this.", style = CoachType.body(14).copy(lineHeight = 20.sp)) },
+            title = { Text("Delete this conversation?", style = GymType.coachDeleteTitle) },
+            text = { Text("You can’t undo this.", style = GymType.coachSupporting) },
             containerColor = colors.surfaceContainer, titleContentColor = colors.onSurface, textContentColor = colors.onSurfaceVariant,
-            dismissButton = { TextButton(onClick = ::cancelDelete) { Text("Cancel", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp, letterSpacing = 0.1.sp)) } },
+            dismissButton = { TextButton(onClick = ::cancelDelete) { Text("Cancel", style = GymType.coachAction) } },
             confirmButton = { TextButton(colors = ButtonDefaults.textButtonColors(contentColor = gymColors.alarmInk), onClick = {
                 confirming = null
                 deleting = deleting + id
@@ -190,7 +189,7 @@ fun ThreadsScreen(
                     }
                     deleting = deleting - id
                 }
-            }) { Text("Delete", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp, letterSpacing = 0.1.sp)) } },
+            }) { Text("Delete", style = GymType.coachAction) } },
         )
     }
 }

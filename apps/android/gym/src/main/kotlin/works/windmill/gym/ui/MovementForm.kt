@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
@@ -27,21 +28,16 @@ import works.windmill.gym.R
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import works.windmill.gym.presentation.Program
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineMovement
 import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
-import works.windmill.platform.design.WindmillFont
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -80,10 +76,10 @@ internal fun MovementForm(
                 .testTag("movement-form-body")) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 28.sp),
+                    Text(title, style = WindmillType.headline,
                         color = colors.onSurface, modifier = Modifier.weight(1f))
                     TextButton(onClick = onCancel, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("Cancel", style = WindmillFont.body(16, FontWeight.Bold))
+                        Text("Cancel", style = WindmillType.label)
                     }
                 }
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp),
@@ -92,7 +88,7 @@ internal fun MovementForm(
                         onName = { onMovement(movement.named(it)) }, onEquipment = { onMovement(movement.equipped(it)) },
                         enabled = !busy && movementEditable, problem = problem.takeIf { movement.current.name.isNotEmpty() })
                     scheme?.let { RoutineTargets(it, movement, floor, onScheme, enabled = !busy, creating = creating) }
-                    refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.error,
+                    refusal?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.error,
                         modifier = Modifier.semantics { error(it) }) }
                 }
             }
@@ -101,7 +97,7 @@ internal fun MovementForm(
                     .fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(disabledContainerColor = colors.primary.copy(alpha = .38f),
                     disabledContentColor = colors.onPrimary.copy(alpha = .38f))) {
-                Text(commitLabel, style = WindmillFont.body(16, FontWeight.Bold))
+                Text(commitLabel, style = WindmillType.label)
             }
         }
     }
@@ -144,8 +140,8 @@ private fun RoutineTargets(
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Target", style = WindmillFont.body(13), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Text(summary, style = GymType.numeral(13), color = colors.onSurfaceVariant)
+            Text("Target", style = WindmillType.detailCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(summary, style = GymType.numeral, color = colors.onSurfaceVariant)
         }
         if (!perSet) {
             RoutineStepper("Sets", scheme.sets, "sets", TargetEntry.setsPlaceholder,
@@ -166,25 +162,25 @@ private fun RoutineTargets(
                 onTyped = { update(scheme.copy(rows = TargetEntry.withWeight(scheme.rows, it))) },
                 onStep = { stepped(TargetEntry.Field.Weight, it) }, reading = reading)
             if (!creating && shown.all { it.weight.isBlank() }) Text("kg blank: pick it at the rack the first time; after that, last time fills it.",
-                style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                style = WindmillType.detail, color = colors.onSurfaceVariant)
         }
         if (!creating || scheme.varyBySet) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SuggestionChip(onClick = { update(scheme.copy(
                     rows = TargetEntry.rampUp(shown) + scheme.rows.drop(shown.size), varyBySet = true)) },
-                    label = { Text(TargetEntry.rampUp, style = WindmillFont.body(14)) },
+                    label = { Text(TargetEntry.rampUp, style = WindmillType.supporting) },
                     enabled = enabled && TargetEntry.canRamp(shown), modifier = Modifier.heightIn(min = 48.dp))
                 FilterChip(selected = scheme.varyBySet, onClick = { update(scheme.copy(varyBySet = !scheme.varyBySet)) },
-                    label = { Text("Vary by set", style = WindmillFont.body(14, if (scheme.varyBySet) FontWeight.Bold else FontWeight.Normal)) },
+                    label = { Text("Vary by set", style = if (scheme.varyBySet) GymType.groupLabel else WindmillType.supporting) },
                     enabled = enabled && scheme.sets.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp))
             }
         }
         if (perSet) {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(TargetEntry.setBySet, style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface, modifier = Modifier.weight(1f))
+                Text(TargetEntry.setBySet, style = WindmillType.label, color = colors.onSurface, modifier = Modifier.weight(1f))
                 Box {
                     TextButton(onClick = { fill = true }, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(TargetEntry.fill, style = WindmillFont.body(14, FontWeight.Bold))
+                        Text(TargetEntry.fill, style = GymType.groupLabel)
                     }
                     DropdownMenu(expanded = fill && enabled, onDismissRequest = { fill = false }) {
                         DropdownMenuItem(text = { Text(TargetEntry.rampUp) }, enabled = TargetEntry.canRamp(shown),
@@ -195,9 +191,9 @@ private fun RoutineTargets(
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Set", style = WindmillFont.body(12), color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
-                Text("Reps", style = WindmillFont.body(12), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                Text(unit, style = WindmillFont.body(12), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text("Set", style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
+                Text("Reps", style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text(unit, style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
             }
             shown.forEachIndexed { index, row -> key(removals, index) {
                 val fault = refused?.takeIf { it.row == index && headFault == null }
@@ -209,7 +205,7 @@ private fun RoutineTargets(
                 }) {
                     Row(Modifier.fillMaxWidth().background(colors.surfaceContainer), horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("${index + 1}", style = GymType.numeral(13), color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
+                        Text("${index + 1}", style = GymType.numeral, color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
                         RoutineTargetField(row.reps, TargetEntry.repsPlaceholder, "Set ${index + 1} reps", false,
                             fault?.takeIf { it.field == TargetEntry.Field.Reps }?.said, enabled, Modifier.weight(1f)) {
                             update(scheme.copy(rows = scheme.rows.mapIndexed { at, value -> if (at == index) value.copy(reps = it) else value }))
@@ -229,7 +225,7 @@ private fun RoutineTargets(
                 Spacer(Modifier.width(8.dp))
                 Text(TargetEntry.addSet)
             }
-            if (ceiling) Text(TargetEntry.outsideSets, color = colors.error, style = WindmillFont.body(14))
+            if (ceiling) Text(TargetEntry.outsideSets, color = colors.error, style = WindmillType.supporting)
         }
     }
 }
@@ -277,11 +273,11 @@ private fun RoutineTargetField(
             if (accepted.text != previous.text) onTyped(accepted.text)
         }, enabled = enabled, singleLine = true,
             placeholder = { Text(placeholder) }, isError = refusal != null, shape = RoundedCornerShape(4.dp),
-            textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
+            textStyle = GymType.stockFieldInput,
             keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,
                 autoCorrectEnabled = false, imeAction = ImeAction.Done),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).onFocusChanged { focused = it.isFocused }
                 .semantics { contentDescription = description; refusal?.let { error(it) } })
-        refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.error) }
+        refusal?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.error) }
     }
 }

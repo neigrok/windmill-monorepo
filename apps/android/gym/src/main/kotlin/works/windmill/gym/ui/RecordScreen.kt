@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
@@ -17,10 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.async
@@ -34,7 +32,6 @@ import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.WindmillFont
 
 // What a movement's record page draws: the account's progress, the catalogue it names movements from, and whose seat it is.
 @Stable
@@ -145,12 +142,12 @@ fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, b
             .padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when {
                 failure != null || state.progressFailure != null -> {
-                    Text("Record unavailable", style = WindmillFont.body(24, FontWeight.Bold), color = colors.onSurface)
-                    Text((failure ?: state.progressFailure)!!.line("Your record could not be read."), style = WindmillFont.body(16), color = colors.onSurfaceVariant)
+                    Text("Record unavailable", style = GymType.screenHeading, color = colors.onSurface)
+                    Text((failure ?: state.progressFailure)!!.line("Your record could not be read."), style = WindmillType.body, color = colors.onSurfaceVariant)
                     TextButton(onClick = { asked += 1 }) { Text("Try again") }
                 }
                 ready -> RecordBody(Record.page(record!!, nowMs, progress!!), record!!.exercise.equipment, progress, nowMs, zone, focusSessionId)
-                else -> Text("Reading your log…", style = WindmillFont.body(16), color = colors.onSurfaceVariant)
+                else -> Text("Reading your log…", style = WindmillType.body, color = colors.onSurfaceVariant)
             }
         }
     }
@@ -203,9 +200,9 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
     val colors = MaterialTheme.colorScheme
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         EquipmentIcon(equipment, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
-        Text(page.subhead, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+        Text(page.subhead, style = WindmillType.detail, color = colors.onSurfaceVariant)
     }
-    page.nothingYet?.let { Text(it, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = colors.onSurfaceVariant); return }
+    page.nothingYet?.let { Text(it, style = WindmillType.paragraph, color = colors.onSurfaceVariant); return }
     if (page.tiles.isNotEmpty()) {
         if (GymTextScale.stacked) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             page.tiles.forEach { RecordMetric(it, Modifier.fillMaxWidth()) }
@@ -214,23 +211,23 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
         }
     }
     if (page.strength) StrengthChart(progress, nowMs, zone, focusSessionId)
-    page.noEstimate?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant) }
+    page.noEstimate?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
     if (page.records.isNotEmpty()) {
-        Text("Earlier records", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
+        Text("Earlier records", style = GymType.heading, color = colors.onSurface)
         page.records.forEach { mark ->
             Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp))
                 .padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("${mark.effort} · ${mark.estimate}", style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
-                Text(mark.day, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                Text("${mark.effort} · ${mark.estimate}", style = WindmillType.rowLabel, color = colors.onSurface)
+                Text(mark.day, style = WindmillType.detail, color = colors.onSurfaceVariant)
             }
         }
     }
     if (page.days.isNotEmpty()) {
-        Text("Recent sets", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 25.sp), color = colors.onSurface)
+        Text("Recent sets", style = GymType.listHeading, color = colors.onSurface)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             page.days.forEach { day -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(day.day.replaceFirstChar { it.titlecase() }, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
-                Text(day.sets, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = colors.onSurface)
+                Text(day.day.replaceFirstChar { it.titlecase() }, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
+                Text(day.sets, style = WindmillType.paragraph, color = colors.onSurface)
             } }
         }
     }
@@ -242,9 +239,9 @@ private fun RecordMetric(tile: Record.Tile, modifier: Modifier) {
     val gymColors = MaterialTheme.gymColors
     Column(modifier.background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(tile.label, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
-        Text(tile.value, style = WindmillFont.body(30, FontWeight.ExtraBold).copy(lineHeight = 36.sp), color = if (tile.loud) gymColors.prInk else colors.onSurface)
-        Text(tile.caption, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+        Text(tile.label, style = WindmillType.detail, color = colors.onSurfaceVariant)
+        Text(tile.value, style = GymType.recordTile, color = if (tile.loud) gymColors.prInk else colors.onSurface)
+        Text(tile.caption, style = WindmillType.detail, color = colors.onSurfaceVariant)
     }
 }
 
@@ -265,7 +262,7 @@ internal fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId
     val point = window.estimates.firstOrNull { it.id == shown?.id }
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Estimated strength", style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = colors.onSurface)
+        Text("Estimated strength", style = GymType.heading, color = colors.onSurface)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf(false to "12 weeks", true to "All").forEach { (value, label) ->
                 SegmentedButton(selected = all == value, onClick = { all = value },
@@ -274,21 +271,20 @@ internal fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId
                     modifier = Modifier.heightIn(min = 48.dp),
                     colors = SegmentedButtonDefaults.colors(activeContainerColor = colors.surfaceContainerHighest, activeContentColor = colors.onSurface,
                         inactiveContainerColor = androidx.compose.ui.graphics.Color.Transparent, inactiveContentColor = colors.onSurface),
-                    label = { Text(label, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 14.sp,
-                        lineHeight = 20.sp, letterSpacing = .1.sp, fontWeight = FontWeight.Medium)) })
+                    label = { Text(label, style = GymType.segmentLabel) })
             }
         }
         point?.let {
-            Text(progressReading(it, nowMs), style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp),
+            Text(progressReading(it, nowMs), style = WindmillType.kicker,
                 color = if (it.id == progress.best?.id) gymColors.prInk else colors.onSurface)
         }
         if (window.hasChart(zone)) DatedPlot(series, minHeight = 168.dp,
-            labelStyle = WindmillFont.body(11).copy(lineHeight = 14.sp), initialPointId = initial?.id,
+            labelStyle = GymType.chartAxis, initialPointId = initial?.id,
             interaction = PlotInteraction.Inspect, standingBestId = progress.best?.id,
             onInspect = { inspected = it }, gapLabel = { a, b -> "No workout · ${Readout.date(a.atMs)} – ${Readout.date(b.atMs)}" })
         Text("${if (all) "All" else "Last 12 weeks"} · ${Readout.sessionCount(window.sessions.size)}",
-            style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
-        if (window.estimatesComplete && window.estimates.isEmpty()) Text("No eligible estimate in this window.", style = WindmillFont.body(14), color = colors.onSurfaceVariant)
+            style = WindmillType.detail, color = colors.onSurfaceVariant)
+        if (window.estimatesComplete && window.estimates.isEmpty()) Text("No eligible estimate in this window.", style = WindmillType.supporting, color = colors.onSurfaceVariant)
     }
 }
 

@@ -1,5 +1,6 @@
 package works.windmill.gym
 
+import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
@@ -36,8 +37,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.ceil
 import works.windmill.gym.presentation.Session
-import works.windmill.gym.ui.GymChrome
-import works.windmill.gym.ui.GymNativeType
 import works.windmill.gym.ui.GymSnackbarHost
 import works.windmill.gym.ui.WorkoutBar
 
@@ -68,7 +67,7 @@ internal fun FrameChrome(
                     line?.let {
                         Text(
                             it,
-                            style = GymNativeType.note,
+                            style = GymType.statusLine,
                             color = colors.onSurfaceVariant,
                             maxLines = 2,
                             // Said as it changes, so TalkBack hears the line the eye reads.
@@ -131,7 +130,7 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
             val barWidth = constraints.maxWidth
             val labelWidths = remember(barWidth, density) {
                 with(density) {
-                    fun width(text: String) = measurer.measure(text, GymChrome.tab, softWrap = false).size.width.toFloat()
+                    fun width(text: String) = measurer.measure(text, GymType.navigationLabel, softWrap = false).size.width.toFloat()
                     val side = 12.dp.toPx()
                     // NavigationBar's own spacing between its items.
                     val spacing = 8.dp.toPx()
@@ -156,7 +155,7 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
                             if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
                         }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
                         label = {
-                            Text(entry.title, style = GymChrome.tab, textAlign = TextAlign.Center,
+                            Text(entry.title, style = GymType.navigationLabel, textAlign = TextAlign.Center,
                                 modifier = Modifier.requiredWidth(labelWidths[index]))
                         },
                         colors = NavigationBarItemDefaults.colors(

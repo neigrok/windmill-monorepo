@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.design.WindmillType
+import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.foundation.background
@@ -37,7 +39,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -47,10 +48,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Readout
-import works.windmill.platform.design.WindmillFont
 
 @Composable
 internal fun CoachAnswer(
@@ -85,8 +84,8 @@ internal fun CoachAnswer(
                 var closed by remember { mutableStateOf(false) }
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
-                    Text("Review routine", style = WindmillFont.body(14), color = colors.onSurfaceVariant)
-                    Text(draft.name, style = WindmillFont.body(20, FontWeight.Bold), color = colors.onSurface)
+                    Text("Review routine", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                    Text(draft.name, style = GymType.routineDraftTitle, color = colors.onSurface)
                     draft.entries.forEach { entry ->
                         val exercise = catalog.firstOrNull { it.id == entry.exerciseId }
                         val equipment = when (exercise?.equipment) {
@@ -104,11 +103,11 @@ internal fun CoachAnswer(
                         val scheme = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg$basis" else ""
                         val rest = entry.restSeconds?.let { " · ${it}s rest" }.orEmpty()
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(Readout.movement(entry.exerciseId, catalog), style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface)
-                            Text("$scheme · $equipment$rest", style = WindmillFont.body(14), color = colors.onSurfaceVariant)
+                            Text(Readout.movement(entry.exerciseId, catalog), style = WindmillType.label, color = colors.onSurface)
+                            Text("$scheme · $equipment$rest", style = WindmillType.supporting, color = colors.onSurfaceVariant)
                         }
                     }
-                    note?.let { Text(it, style = WindmillFont.body(14), color = colors.onSurfaceVariant) }
+                    note?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                     if (!closed) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onConfirmRoutine != null, onClick = {
                         if (!busy && onConfirmRoutine != null) {
                             busy = true
@@ -130,8 +129,8 @@ internal fun CoachAnswer(
         results.filter { it.kind == "routine-created" }.distinctBy { it.operationId }.forEach { result ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
-                Text("Routine created", style = WindmillFont.body(14), color = colors.onSurfaceVariant)
-                Text(result.routineName, style = WindmillFont.body(18, FontWeight.Bold), color = colors.onSurface)
+                Text("Routine created", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                Text(result.routineName, style = GymType.headingCompact, color = colors.onSurface)
                 onOpenRoutine?.let { open -> CoachAction("Open routine", { open(result.routineId) }) }
             }
         }
@@ -143,7 +142,7 @@ internal fun CoachAnswer(
             }
         } else {
             val focus = evidence?.workouts?.singleOrNull()
-            if (focus != null) Text("From your log", style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = receiptInset))
+            if (focus != null) Text("From your log", style = WindmillType.kicker, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = receiptInset))
             listOfNotNull(focus).forEach { observation ->
                 val workout = requireNotNull(observation.workout)
                 Column(
@@ -152,7 +151,7 @@ internal fun CoachAnswer(
                 ) {
                     Text(
                         "${observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine} · ${Readout.shortDate(observation.startedAtMs, nowMs)}",
-                        style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant,
+                        style = WindmillType.kicker, color = colors.onSurfaceVariant,
                     )
                     val facts = listOfNotNull(
                         "Sets" to workout.workingSetCount.toString(),
@@ -161,8 +160,8 @@ internal fun CoachAnswer(
                     )
                     facts.forEach { (label, value) ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                            Text(label, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                            Text(value, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = colors.onSurface)
+                            Text(label, style = WindmillType.paragraph, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(value, style = WindmillType.labelParagraph, color = colors.onSurface)
                         }
                     }
                 }
@@ -183,7 +182,7 @@ internal fun CoachAnswer(
                             }.clickable(role = Role.Button) { expanded = !expanded },
                         ),
                     ) {
-                        Text(Ask.receipt(tally).replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Text(Ask.receipt(tally).replaceFirstChar { it.uppercase() }, style = WindmillType.detail, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
                         if (expandable) Text(if (expanded) "−" else "+", color = colors.onSurfaceVariant)
                     }
                     if (expanded) {
@@ -196,10 +195,10 @@ internal fun CoachAnswer(
                             }
                             val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)}" +
                                 (it.tonnageKg?.let { kg -> " · ${Readout.weight(kg)}kg" } ?: "") }.orEmpty()
-                            Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                            Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillType.detail, color = colors.onSurfaceVariant)
                         }
                         phrases.forEach { phrase ->
-                            Text(phrase.replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = colors.onSurfaceVariant)
+                            Text(phrase.replaceFirstChar { it.uppercase() }, style = WindmillType.detail, color = colors.onSurfaceVariant)
                         }
                     }
                 }
@@ -231,7 +230,7 @@ private fun CoachText(text: String, copyText: String, copyMenu: CoachCopyMenu) {
                 else -> CoachGroup.Middle
             }
             CoachBubble(group = group, copyText = { CoachMarkdown.plain(copyText) }, copyMenu = copyMenu, copyIndex = index, copyLastIndex = blocks.lastIndex) {
-                Text(block.spans.styled(colors), style = AnswerType.paragraph, color = colors.onSurface)
+                Text(block.spans.styled(colors), style = GymType.coachParagraph, color = colors.onSurface)
             }
         }
     }
@@ -263,8 +262,8 @@ private fun CoachBlockView(block: CoachBlock, gapAbove: Dp) {
     val colors = MaterialTheme.colorScheme
     val slot = Modifier.fillMaxWidth().padding(top = gapAbove)
     when (block) {
-        is CoachBlock.Paragraph -> Text(block.spans.styled(colors), style = AnswerType.paragraph, color = colors.onSurface, modifier = slot)
-        is CoachBlock.Heading -> Text(block.spans.styled(colors), style = AnswerType.heading(block.level), color = colors.onSurface, modifier = slot)
+        is CoachBlock.Paragraph -> Text(block.spans.styled(colors), style = GymType.coachParagraph, color = colors.onSurface, modifier = slot)
+        is CoachBlock.Heading -> Text(block.spans.styled(colors), style = if (block.level <= 2) GymType.coachHeading else GymType.coachTitle, color = colors.onSurface, modifier = slot)
         is CoachBlock.ListItem -> Row(
             modifier = slot.padding(start = 20.dp * block.depth),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -272,10 +271,10 @@ private fun CoachBlockView(block: CoachBlock, gapAbove: Dp) {
         ) {
             Text(
                 block.ordinal?.let { "$it." } ?: "•",
-                style = AnswerType.marker, color = colors.onSurfaceVariant,
+                style = GymType.coachListMarker, color = colors.onSurfaceVariant,
                 softWrap = false, overflow = TextOverflow.Visible, modifier = Modifier.width(if (block.ordinal == null) 8.dp else 24.dp),
             )
-            Text(block.spans.styled(colors), style = AnswerType.paragraph, color = colors.onSurface, modifier = Modifier.weight(1f))
+            Text(block.spans.styled(colors), style = GymType.coachParagraph, color = colors.onSurface, modifier = Modifier.weight(1f))
         }
         is CoachBlock.Table -> BoxWithConstraints(slot) {
             val columns = block.header.cells.size
@@ -289,7 +288,7 @@ private fun CoachBlockView(block: CoachBlock, gapAbove: Dp) {
                         Row(Modifier.fillMaxWidth().then(if (rowIndex == 0) Modifier.background(colors.surfaceContainerHighest) else Modifier)
                             .padding(horizontal = 12.dp, vertical = 8.dp)) {
                             row.cells.forEachIndexed { column, cell ->
-                                Text(cell.styled(colors), style = CoachType.body(14, if (rowIndex == 0) FontWeight.Bold else FontWeight.Normal).copy(lineHeight = 20.sp),
+                                Text(cell.styled(colors), style = if (rowIndex == 0) GymType.coachStrong else GymType.coachSupporting,
                                     color = if (rowIndex == 0) colors.onSurfaceVariant else colors.onSurface, modifier = Modifier.width(widths[column]))
                             }
                         }
@@ -298,7 +297,7 @@ private fun CoachBlockView(block: CoachBlock, gapAbove: Dp) {
             }
         }
         is CoachBlock.Code -> Text(
-            block.text, style = AnswerType.code, color = colors.onSurface,
+            block.text, style = GymType.coachCode, color = colors.onSurface,
             modifier = slot.background(colors.surfaceContainer, RoundedCornerShape(12.dp)).padding(12.dp),
         )
         CoachBlock.Rule -> Box(slot.height(1.dp).background(colors.outlineVariant))
@@ -315,19 +314,11 @@ private fun List<CoachSpan>.styled(colors: ColorScheme): AnnotatedString = build
             fontWeight = FontWeight.Bold.takeIf { span.bold },
             fontStyle = FontStyle.Italic.takeIf { span.italic },
             fontFamily = FontFamily.Monospace.takeIf { span.code },
-            fontSize = if (span.code) 15.sp else TextUnit.Unspecified,
+            fontSize = if (span.code) GymType.coachCode.fontSize else TextUnit.Unspecified,
             background = if (span.code) colors.surfaceContainerHighest else Color.Unspecified,
         )
         withStyle(style) { append(span.text) }
     }
-}
-
-private object AnswerType {
-    val paragraph = CoachType.body(16).copy(lineHeight = 22.sp)
-    val marker = paragraph.copy(fontFeatureSettings = "tnum")
-    val code = WindmillFont.mono(15)
-
-    fun heading(level: Int): TextStyle = CoachType.body(if (level <= 2) 17 else 16, FontWeight.Bold).copy(lineHeight = 24.sp)
 }
 
 @Composable
@@ -339,7 +330,7 @@ internal fun CoachAction(label: String, onClick: () -> Unit, primary: Boolean = 
             .background(if (primary) colors.primary else colors.surfaceContainerHighest, RoundedCornerShape(16.dp))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        Text(label, style = WindmillFont.body(16, FontWeight.Bold), color = if (primary) colors.onPrimary else colors.onSurface)
+        Text(label, style = WindmillType.label, color = if (primary) colors.onPrimary else colors.onSurface)
     }
 }
 
@@ -350,12 +341,12 @@ internal fun CoachProposalCard(routine: String, summary: String, count: String, 
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp),
     ) {
-        Text("Proposal · $routine", style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
-        Text(summary, style = WindmillFont.body(20, FontWeight.Bold).copy(lineHeight = 28.sp), color = colors.onSurface)
-        Text(count, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = colors.onSurfaceVariant)
+        Text("Proposal · $routine", style = WindmillType.kicker, color = colors.onSurfaceVariant)
+        Text(summary, style = GymType.proposalSummary, color = colors.onSurface)
+        Text(count, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onReview).padding(12.dp),
-        ) { Text("Review", style = WindmillFont.body(16, FontWeight.Bold), color = colors.onSurface) }
+        ) { Text("Review", style = WindmillType.label, color = colors.onSurface) }
     }
 }

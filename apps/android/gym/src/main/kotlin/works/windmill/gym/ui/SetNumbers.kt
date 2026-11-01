@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,10 +26,8 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.LoggedSetLimits
@@ -147,7 +146,7 @@ private fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, e
     val colors = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val labels = Ladder.labels(weightKg)
-    val style = WindmillFont.body(16, FontWeight.Bold)
+    val style = WindmillType.label
     CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = colors.onSurface,
         rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.12f, hoveredAlpha = 0.08f, pressedAlpha = 0.12f))) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
