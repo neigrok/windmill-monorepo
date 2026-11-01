@@ -264,7 +264,7 @@ class RemovalReceiptTests {
             runCurrent()
             val original = room.outbox().single()
             server.refuse(code = "stale"); room.sync(server); advanceTimeBy(25); runCurrent()
-            assertTrue(first.await() is ProposalOutcome.Settled)
+            assertTrue(first.await() is ProposalOutcome.Refused)
             val retry = async { room.store.routines.applyProposal("proposal1") }
             runCurrent()
             assertEquals(1, room.outbox().size)
@@ -349,7 +349,7 @@ class RemovalReceiptTests {
                     room.engine.onPushResponse(request, SyncResponse(status), RequestTiming(clock, clock))
                 }
                 advanceTimeBy(25); runCurrent()
-                assertTrue(apply.await() is ProposalOutcome.Settled)
+                assertTrue(apply.await() is ProposalOutcome.Refused)
                 assertTrue(room.store.routines.unseenRemovalReceipts.isEmpty())
                 assertEquals(ProposalState.Pending, room.training.proposal("proposal1")!!.state)
                 assertEquals("Original", room.training.routine("routine1")!!.name)

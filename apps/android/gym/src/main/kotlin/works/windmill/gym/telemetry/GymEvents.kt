@@ -80,6 +80,9 @@ object GymEvents {
                 "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in"),
             )),
             "gym_coach_import" to LabelSchema(mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed"))),
+            "gym_proposal_outcome" to LabelSchema(mapOf(
+                "action" to setOf("apply", "dismiss"), "outcome" to setOf("decided", "moved", "gone", "settled", "refused", "failed"),
+            )),
             "gym_sign_out" to LabelSchema(mapOf(
                 "state" to setOf("shown"), "action" to setOf("keep", "discard", "cancel"), "outcome" to setOf("completed", "failed"),
             )),

@@ -293,6 +293,44 @@ class RoutinesStoreTests {
         }
     }
 
+    // A decision the rules refuse is reported as refused, never as the other decision taken first: here the movement
+    // became a barbell after Coach asked an assisted load of it, so the load floor refuses the Apply.
+    @Test
+    fun testAnApplyTheLoadFloorRefusesIsReportedRefused() = runTest {
+        val server = EngineRoomFixture.server()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {}
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select("alice"); room.pull(server)
+            val pushA = (room.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
+            room.sync(server)
+            anotherPhone(server, room.now) { coach ->
+                val runner = ActionRunner(coach.engine, coach.engine.registry, FixedZone(0),
+                    object : ActionContext { override var insideRun = false })
+                val bench = works.windmill.gym.domain.sync.SeedExercises.all.single { it.id.record.toString() == "bench-press" }
+                assertTrue(runner.run(works.windmill.gym.domain.sync.EditExercise(bench, bench.name, "machine", 1)) is Outcome.Committed)
+                assertTrue(runner.run(ProposeRoutine(Id("proposal1", EngineProposal), Id(pushA.id, EngineRoutine), "Push A",
+                    listOf(EngineEntry(Id("bench-press", EngineExercise), listOf(EngineTarget(5, -10.0)))), "Assisted.")) is Outcome.Committed)
+                assertTrue(runner.run(works.windmill.gym.domain.sync.EditExercise(bench.copy(equipment = "machine"), bench.name, "barbell", 1)) is Outcome.Committed)
+                coach.sync(server)
+            }
+            room.pull(server); room.store.refreshEngine()
+            events.clear()
+
+            val refused = deciding(room, server) { room.store.routines.applyProposal("proposal1") }
+
+            assertEquals(ProposalOutcome.Refused("Load, 0 or more."), refused)
+            assertEquals(listOf("gym_proposal_outcome" to mapOf("action" to "apply", "outcome" to "refused")),
+                events.filter { it.first == "gym_proposal_outcome" })
+            assertEquals(ProposalState.Pending, room.training.proposal("proposal1")?.state)
+            runCurrent()
+        }
+    }
+
     @Test
     fun testDecidingWhatWasAlreadyDecidedTheOtherWayIsTerminal() = runTest {
         val server = EngineRoomFixture.server()

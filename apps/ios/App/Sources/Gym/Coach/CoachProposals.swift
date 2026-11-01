@@ -193,7 +193,7 @@ extension GymModel {
     // A removal's answer is its receipt; any other queued decision waits for updateCoachProposals to see the log's answer.
     if queued && !removal { awaitedCoachDecisions[proposal.id] = decision }
     else if !ok || !removal {
-      telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "target": "routine", "action": decision.rawValue, "outcome": ok ? "decided" : "failed"])
+      telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "target": "routine", "action": decision.rawValue, "outcome": proposalOutcome(outcome?.refusal, ok: ok)])
     }
     if ok, let runtime { Task { await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh() } }
     return ok
@@ -294,9 +294,16 @@ extension GymModel {
       }
     } catch { report("gym_read", error); queuedIn = nil }
     if ok, let queuedIn { awaitedWorkoutDecisions[queuedIn, default: [:]][proposal.id] = decision }
-    else { telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "target": "workout", "action": decision.rawValue, "outcome": ok ? "decided" : "failed"]) }
+    else { telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "target": "workout", "action": decision.rawValue, "outcome": proposalOutcome(outcome?.refusal, ok: ok)]) }
     if ok, let runtime { Task { await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh() } }
     return ok
+  }
+  // A decision's outcome label: decided when the phone queued it, refused when the rules refuse it (a target under its
+  // movement's load floor), failed otherwise (out of date, gone, or not saved).
+  func proposalOutcome(_ refusal: GymRefusal?, ok: Bool) -> String {
+    if ok { return "decided" }
+    if case .invalid = refusal { return "refused" }
+    return "failed"
   }
   func coachWorkout(_ proposal: WorkoutProposal) -> Session? { sessions.first { $0.id == proposal.sessionId } }
   // A workout proposal as its card reads it: against the workout's plan while it waits, a dumbbell pair's load said per hand.

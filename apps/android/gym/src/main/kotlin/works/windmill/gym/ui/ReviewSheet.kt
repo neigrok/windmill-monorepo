@@ -198,6 +198,11 @@ fun ReviewSheet(
                         overtaken = true
                         asked += 1
                     }
+                    is ProposalOutcome.Refused -> {
+                        said = outcome.said
+                        overtaken = true
+                        asked += 1
+                    }
                     is ProposalOutcome.Gone -> {
                         proposal = null
                         gone = true

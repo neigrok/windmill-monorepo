@@ -206,6 +206,7 @@ class RoutinesStore(
             is ProposalOutcome.Moved -> "moved"
             is ProposalOutcome.Gone -> "gone"
             is ProposalOutcome.Settled -> "settled"
+            is ProposalOutcome.Refused -> "refused"
             is ProposalOutcome.Failed -> "failed"
         }
         telemetry.event("gym_proposal_outcome", mapOf("action" to action, "outcome" to result))
@@ -240,7 +241,8 @@ class RoutinesStore(
         return when (refusal.code) {
             Gym.Codes.proposalSuperseded -> ProposalOutcome.Moved(refusal.line)
             "unknown-record" -> ProposalOutcome.Gone("that proposal is no longer on the log")
-            else -> ProposalOutcome.Settled(refusal.line)
+            Gym.Codes.proposalSettled -> ProposalOutcome.Settled(refusal.line)
+            else -> ProposalOutcome.Refused(refusal.line)
         }
     }
 

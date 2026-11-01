@@ -52,11 +52,13 @@ sealed interface FixOutcome {
 
 // `Decided` is the answer either tap gets, including the REPLAY of a decision already taken. `Moved`
 // is the routine having changed under the diff; `Settled` is the other decision having been taken
-// first; `Gone` leaves nothing to draw. Only `Failed` is worth another tap.
+// first; `Refused` is a decision the rules refuse, as a target under its movement's load floor; `Gone`
+// leaves nothing to draw. Only `Failed` is worth another tap.
 sealed interface ProposalOutcome {
     data class Decided(val proposal: Proposal) : ProposalOutcome
     data class Moved(val said: String) : ProposalOutcome
     data class Settled(val said: String) : ProposalOutcome
+    data class Refused(val said: String) : ProposalOutcome
     data class Gone(val said: String) : ProposalOutcome
     data class Failed(val why: WriteFailure) : ProposalOutcome
 }

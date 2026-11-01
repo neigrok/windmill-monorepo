@@ -603,7 +603,8 @@ import SyncTesting
   // An Apply the load floor refuses says the routine editor's line: here the movement became a barbell after the proposal
   // asked an assisted load of it, so nothing is applied and the proposal still waits.
   @Test func anApplyTheLoadFloorRefusesSaysTheEditorsLine() throws {
-    let (h, gym) = fixture()
+    let (h, _) = fixture(), telemetry = TelemetryRecorder()
+    let gym = GymModel(runner: h.runner, telemetry: telemetry); gym.account = "coach-owner"
     #expect(gym.run(CreateExercise(Exercise(id: ID("floor-press"), name: "Press", pattern: "press", equipment: "machine", stepKg: 2.5)))?.receipt != nil)
     var routine = Draft(new: Routine(id: ID("floor-routine"), name: "Push", entries: [RoutineEntry(exerciseId: ID("floor-press"), sets: [SetTarget(reps: 5, weightKg: 40)])]))
     #expect(saved(gym.save(&routine)))
@@ -615,6 +616,8 @@ import SyncTesting
     let proposal = try #require(gym.proposals.first)
     #expect(!gym.coachDecideProposal(proposal, apply: true))
     #expect(gym.error == "Load, 0 or more." && gym.proposals.first?.state == "pending")
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) }
+            == [["screen": "coach", "target": "routine", "action": "apply", "outcome": "refused"]])
   }
   // An edit the log has not confirmed moves the routine under a waiting proposal: it is out of date at once, Apply is not
   // offered, and the lifter's edit stands after the log answers.
