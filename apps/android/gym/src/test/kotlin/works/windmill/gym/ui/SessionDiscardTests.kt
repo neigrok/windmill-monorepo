@@ -64,6 +64,7 @@ class SessionDiscardTests {
 
     private fun screen(room: EngineRoomFixture) {
         val summary = room.store.history.recent.single()
+        val sessionPage = SessionBinding(room.store)
         compose.setContent {
             var pending by remember { mutableStateOf(false) }
             var busy by remember { mutableStateOf(false) }
@@ -71,7 +72,7 @@ class SessionDiscardTests {
             GymMaterial {
             SessionScreen(
                 summary = summary,
-                store = room.store,
+                state = sessionPage, events = sessionPage,
                 sharing = doors,
                 backTo = "The log",
                 onBack = {},

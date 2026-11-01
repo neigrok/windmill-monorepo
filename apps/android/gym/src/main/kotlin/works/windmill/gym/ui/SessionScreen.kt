@@ -31,7 +31,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -51,7 +54,9 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.presentation.Exercise
@@ -62,20 +67,71 @@ import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.Scheme
 import works.windmill.gym.presentation.SessionDetail
+import works.windmill.gym.presentation.Session
 import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.SetEffort
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.DeletionsStore
+import works.windmill.gym.store.HeldDeletes
+import works.windmill.gym.store.HistoryReads
+import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WorkoutSession
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+
+// What the workout page draws.
+@Stable
+interface SessionState {
+    val catalog: List<Exercise>
+    val recent: List<SessionSummary>
+    val deletedSets: Set<String>
+    val withheldIds: Set<String>
+    fun retainedSession(detail: SessionDetail): SessionDetail
+}
+
+// What the workout page asks of the stores.
+interface SessionEvents {
+    suspend fun sessionDetail(sessionId: String, seed: SessionDetail?): GymResult<SessionDetail>
+    suspend fun review(of: String): Review?
+    suspend fun delete(deletion: Deletion): WriteFailure?
+    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome
+}
+
+// The workout page over the room's stores.
+class SessionBinding(
+    private val history: HistoryReads,
+    private val held: HeldDeletes,
+    private val routines: RoutinesStore,
+    private val workout: WorkoutSession,
+    private val deletions: DeletionsStore,
+) : SessionState, SessionEvents {
+    constructor(store: TrainingStore) : this(store.history, store.held, store.routines, store.workout, store.deletions)
+
+    override val catalog: List<Exercise> get() = routines.catalog
+    override val recent: List<SessionSummary> get() = history.recent
+    override val deletedSets: Set<String> get() = held.deletedSets
+    override val withheldIds: Set<String> get() = held.withheldIds
+    override fun retainedSession(detail: SessionDetail): SessionDetail = history.retainedSession(detail)
+    override suspend fun sessionDetail(sessionId: String, seed: SessionDetail?): GymResult<SessionDetail> =
+        history.sessionDetail(sessionId, seed)
+    override suspend fun review(of: String): Review? = history.review(of)
+    override suspend fun delete(deletion: Deletion): WriteFailure? = deletions.delete(deletion)
+    override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome =
+        workout.fixSet(sessionId, setId, fix, origin)
+}
 
 // The frozen plan beside these rows is a snapshot and is the ONLY source for what the plan said.
 object Performed {
@@ -187,7 +243,8 @@ private fun sessionDetailSaver(telemetry: Telemetry) = Saver<SessionDetail?, Str
 @Composable
 fun SessionScreen(
     summary: SessionSummary,
-    store: TrainingStore,
+    state: SessionState,
+    events: SessionEvents,
     sharing: WorkoutShareActions,
     backTo: String,
     onBack: () -> Unit,
@@ -212,7 +269,7 @@ fun SessionScreen(
     }
     val fixStates = rememberSaveableStateHolder()
     // Half of the review's key — the session's id does not change when its sets do.
-    var corrected by remember(summary.id) { mutableStateOf(0) }
+    var corrected by remember(summary.id) { mutableIntStateOf(0) }
     var fixBusy by remember { mutableStateOf(false) }
     var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { destination ->
@@ -226,17 +283,17 @@ fun SessionScreen(
             }
         })
 
-    val currentDetail = detail?.let(store.history::retainedSession)
+    val currentDetail = detail?.let(state::retainedSession)
     val readId = currentDetail?.session?.id ?: summary.id
-    val visibleSets = currentDetail?.sets?.filterNot { it.id in store.held.deletedSets || it.id in store.held.withheldIds }
-    val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), store.routines.catalog) }
-        ?: store.history.recent.firstOrNull { it.id == summary.id } ?: summary
+    val visibleSets = currentDetail?.sets?.filterNot { it.id in state.deletedSets || it.id in state.withheldIds }
+    val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), state.catalog) }
+        ?: state.recent.firstOrNull { it.id == summary.id } ?: summary
     var shareOpen by rememberSaveable(summary.id) { mutableStateOf(false) }
     // Null until the read lands, distinct from a workout with no sets.
     val movements = currentDetail?.let { held ->
         Performed.movements(
-            held.sets.filterNot { it.id in store.held.deletedSets || it.id in store.held.withheldIds },
-            store.routines.catalog,
+            held.sets.filterNot { it.id in state.deletedSets || it.id in state.withheldIds },
+            state.catalog,
             held.session.plan,
         )
     }
@@ -246,15 +303,15 @@ fun SessionScreen(
     }
 
     LaunchedEffect(readId) {
-        when (val found = store.history.sessionDetail(readId, currentDetail)) {
+        when (val found = events.sessionDetail(readId, currentDetail)) {
             is GymResult.Ok -> { detail = found.value; setsFailure = null }
             is GymResult.Failed -> setsFailure = found.why
         }
     }
 
     // A deleted or restored row changes the review as well as the set list.
-    LaunchedEffect(readId, corrected, store.held.deletedSets) {
-        review = store.history.review(readId)
+    LaunchedEffect(readId, corrected, state.deletedSets) {
+        review = events.review(readId)
         read = true
     }
 
@@ -289,7 +346,7 @@ fun SessionScreen(
                         onOpenMovement = onOpenMovement,
                         onFix = { fixing = it },
                         onDelete = { row ->
-                            val failure = store.deletions.delete(Deletion.Set(readId, row))
+                            val failure = events.delete(Deletion.Set(readId, row))
                             say(failure?.line("that set is still on the log"))
                             failure == null
                         },
@@ -305,9 +362,9 @@ fun SessionScreen(
                     )
                 }
             }
-            if (read && (review == null || Finish.recordSentence(review?.record, store.routines.catalog) != null ||
-                    Finish.comparison(review?.against, store.routines.catalog) != null)) {
-                item("review") { ReviewRemarks(review, store.routines.catalog) }
+            if (read && (review == null || Finish.recordSentence(review?.record, state.catalog) != null ||
+                    Finish.comparison(review?.against, state.catalog) != null)) {
+                item("review") { ReviewRemarks(review, state.catalog) }
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -338,13 +395,13 @@ fun SessionScreen(
             fixStates.SaveableStateProvider(fixing!!) {
             FixSheet(
                 set = row.set,
-                exercise = store.routines.catalog.firstOrNull { it.id == row.set.exerciseId },
+                exercise = state.catalog.firstOrNull { it.id == row.set.exerciseId },
                 origin = FixOrigin.Session,
                 movement = movement,
                 position = row.position,
                 routine = standing.plan?.routine,
                 onSave = { fix ->
-                    val ended = store.workout.fixSet(readId, row.id, fix, FixOrigin.Session)
+                    val ended = events.fixSet(readId, row.id, fix, FixOrigin.Session)
                     when (ended) {
                         is FixOutcome.Corrected -> {
                             detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {
@@ -367,7 +424,7 @@ fun SessionScreen(
                 onDelete = {
                     close()
                     say(null)
-                    scope.launch { say(store.deletions.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
+                    scope.launch { say(events.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
                 },
             )
             }
@@ -492,3 +549,55 @@ private fun headLine(summary: SessionSummary): String = listOfNotNull(
     Readout.day(summary.startedAtMs),
     summary.finishedAtMs?.let { Readout.duration(it - summary.startedAtMs) },
 ).joinToString(" · ")
+
+private data class PreviewSessionState(
+    override val catalog: List<Exercise> = TheSix.movements,
+    override val recent: List<SessionSummary> = emptyList(),
+    override val deletedSets: Set<String> = emptySet(),
+    override val withheldIds: Set<String> = emptySet(),
+) : SessionState {
+    override fun retainedSession(detail: SessionDetail): SessionDetail = detail
+}
+
+// Nothing answers, so the seeded workout stands.
+private object PreviewSessionEvents : SessionEvents {
+    override suspend fun sessionDetail(sessionId: String, seed: SessionDetail?): GymResult<SessionDetail> = awaitCancellation()
+    override suspend fun review(of: String): Review? = awaitCancellation()
+    override suspend fun delete(deletion: Deletion): WriteFailure? = awaitCancellation()
+    override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome = awaitCancellation()
+}
+
+@Composable
+private fun FinishedWorkoutPreview(dark: Boolean) {
+    val started = 1_761_984_000_000L
+    val plan = PlanSnapshot("Push Day", listOf(
+        PlanEntry("bench-press", List(3) { SetTarget(8, 75.0) }),
+        PlanEntry("overhead-press", List(2) { SetTarget(6, 47.5) }),
+    ))
+    val workout = SessionDetail(Session("session-push", started, started + 52 * 60_000L, "routine-push", plan), listOf(
+        TrainingSet("set-1", "bench-press", 1, 75.0, 8, completedAtMs = started + 6 * 60_000L),
+        TrainingSet("set-2", "bench-press", 2, 75.0, 6, rpe = 9.0, completedAtMs = started + 10 * 60_000L),
+        TrainingSet("set-3", "bench-press", 3, 80.0, 8, completedAtMs = started + 14 * 60_000L),
+        TrainingSet("set-4", "overhead-press", 1, 47.5, 6, completedAtMs = started + 24 * 60_000L),
+        TrainingSet("set-5", "overhead-press", 2, 47.5, 5, note = "Left shoulder tight", completedAtMs = started + 28 * 60_000L),
+    ))
+    CompositionLocalProvider(LocalWindmillDark provides dark) {
+        GymMaterial {
+            SessionScreen(
+                summary = SessionSummary(workout.session, workout.sets, TheSix.movements),
+                state = PreviewSessionState(),
+                events = PreviewSessionEvents,
+                sharing = WorkoutShareActions("https://windmill.works", { awaitCancellation() }, { awaitCancellation() }),
+                backTo = "The log", onBack = {}, say = {}, onOpenMovement = {}, onDiscard = {}, seed = workout,
+            )
+        }
+    }
+}
+
+@Preview(name = "Finished workout · Dark")
+@Composable
+private fun FinishedWorkoutDarkPreview() = FinishedWorkoutPreview(dark = true)
+
+@Preview(name = "Finished workout · Daylight")
+@Composable
+private fun FinishedWorkoutDaylightPreview() = FinishedWorkoutPreview(dark = false)

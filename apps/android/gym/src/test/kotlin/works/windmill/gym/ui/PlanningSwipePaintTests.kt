@@ -65,11 +65,12 @@ class PlanningSwipePaintTests {
             val store = store(room)
             runBlocking { store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
             var dark by mutableStateOf(true)
+            val routinesHome = RoutinesBinding(store)
             compose.setContent {
                 contentView = LocalView.current
                 CompositionLocalProvider(LocalWindmillDark provides dark) {
                     GymMaterial {
-                        RoutinesScreen(store, emptySet(), "S", {}, {},
+                        RoutinesScreen(routinesHome, routinesHome, emptySet(), "S", {}, {},
                             { false }, {})
                     }
                 }
@@ -102,9 +103,10 @@ class PlanningSwipePaintTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
             var draft by mutableStateOf(RoutineDraft(name = "Push Day").adding("bench-press"))
+            val builder = RoutineBuilderBinding(store)
             compose.setContent {
                 contentView = LocalView.current
-                GymMaterial { RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines") }
+                GymMaterial { RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines") }
             }
             val row = compose.onNode(hasText("Bench Press") and hasClickAction())
             val bounds = row.fetchSemanticsNode().boundsInRoot

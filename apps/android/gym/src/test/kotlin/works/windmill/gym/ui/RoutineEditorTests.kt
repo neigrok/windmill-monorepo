@@ -46,10 +46,11 @@ class RoutineEditorTests {
     // A store never connected, so its catalog is empty and every row reads the movement's id.
     private fun editor(room: EngineRoomFixture, opening: RoutineDraft): () -> RoutineDraft {
         var draft by mutableStateOf(opening)
+        val builder = RoutineBuilderBinding(room.store)
         compose.setContent {
             RoutineBuilder(
                 draft = draft,
-                store = room.store,
+                state = builder, events = builder,
                 saving = false,
                 onDraft = { draft = it },
                 onSave = {},

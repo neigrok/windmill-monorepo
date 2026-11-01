@@ -42,6 +42,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
@@ -82,29 +84,75 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
+import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.presentation.RoutineMovement
 import works.windmill.gym.presentation.Program
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.RoutineRules
-import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.HeldDeletes
+import works.windmill.gym.store.HistoryReads
+import works.windmill.gym.store.RoutinesStore
+import works.windmill.gym.store.TrainingSeat
+import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.net.WindmillJson
 import androidx.compose.runtime.setValue
+
+// What the routine builder draws: the draft's movements by name, and the routine's workouts for the seat in hand.
+@Stable
+interface RoutineBuilderState {
+    val catalog: List<Exercise>
+    val recent: List<SessionSummary>
+    val accountKey: String
+    val replica: String?
+    val replicaReadRevision: Long
+    val accountReady: Boolean
+    val withheldIds: Set<String>
+}
+
+// What the routine builder asks of the stores.
+interface RoutineBuilderEvents {
+    suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>>
+}
+
+// The routine builder over the room's stores.
+class RoutineBuilderBinding(
+    private val seat: TrainingSeat,
+    private val held: HeldDeletes,
+    private val routines: RoutinesStore,
+    private val history: HistoryReads,
+) : RoutineBuilderState, RoutineBuilderEvents {
+    constructor(store: TrainingStore) : this(store.seat, store.held, store.routines, store.history)
+
+    override val catalog: List<Exercise> get() = routines.catalog
+    override val recent: List<SessionSummary> get() = history.recent
+    override val accountKey: String get() = seat.accountKey
+    override val replica: String? get() = seat.replica
+    override val replicaReadRevision: Long get() = seat.replicaReadRevision
+    override val accountReady: Boolean get() = seat.accountReady
+    override val withheldIds: Set<String> get() = held.withheldIds
+    override suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> = history.routineHistory(routineId)
+}
 
 // Save enables when the draft is savable — named and holding at least one movement — and for an edit
 // only once something actually changed: a Save that rewrote a document with itself would move the
@@ -164,7 +212,8 @@ internal val builderSheetSaver = Saver<BuilderSheet?, String>(
 @Composable
 fun RoutineBuilder(
     draft: RoutineDraft,
-    store: TrainingStore,
+    state: RoutineBuilderState,
+    events: RoutineBuilderEvents,
     saving: Boolean,
     onDraft: (RoutineDraft) -> Unit,
     onSave: () -> Unit,
@@ -227,18 +276,18 @@ fun RoutineBuilder(
         val form = sheet as? BuilderSheet.Target ?: return@LaunchedEffect
         telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "open", "outcome" to "ok"))
         if (form.movement == null) {
-            draft.movement(form.exerciseId, store.routines.catalog)?.let { movement ->
+            draft.movement(form.exerciseId, state.catalog)?.let { movement ->
                 sheet = form.copy(movement = movement, opening = movement,
                     initialScheme = TargetEntry.Draft(draft.entry(form.exerciseId)?.sets.orEmpty()))
             }
         }
     }
 
-    var history by remember(store.seat.accountKey, store.seat.replica, draft.id) { mutableStateOf(emptyList<SessionSummary>()) }
-    LaunchedEffect(store.seat.accountKey, store.seat.replica, store.seat.replicaReadRevision, store.seat.accountReady, store.held.withheldIds, draft.id) {
+    var history by remember(state.accountKey, state.replica, draft.id) { mutableStateOf(emptyList<SessionSummary>()) }
+    LaunchedEffect(state.accountKey, state.replica, state.replicaReadRevision, state.accountReady, state.withheldIds, draft.id) {
         val id = draft.id ?: return@LaunchedEffect
-        if (!store.seat.accountReady) { history = emptyList(); return@LaunchedEffect }
-        history = when (val read = store.history.routineHistory(id)) {
+        if (!state.accountReady) { history = emptyList(); return@LaunchedEffect }
+        history = when (val read = events.routineHistory(id)) {
             is GymResult.Ok -> read.value
             is GymResult.Failed -> emptyList()
         }
@@ -261,11 +310,11 @@ fun RoutineBuilder(
     }
 
     BuildStep(
-        draft = draft, store = store, history = history, editing = editing, editable = !saving, backTo = backTo,
+        draft = draft, state = state, history = history, editing = editing, editable = !saving, backTo = backTo,
         savable = draft.savable && draft.changed && !saving,
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
-            val movement = draft.movement(id, store.routines.catalog)
+            val movement = draft.movement(id, state.catalog)
             if (movement == null) say("That movement is no longer on the log.")
             else sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()), movement)
         },
@@ -287,7 +336,7 @@ fun RoutineBuilder(
             BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
             when (open) {
                 is BuilderSheet.Target -> {
-                    val movement = open.movement ?: draft.movement(open.exerciseId, store.routines.catalog)
+                    val movement = open.movement ?: draft.movement(open.exerciseId, state.catalog)
                     if (movement != null) MovementForm(movement, open.scheme,
                         title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
                         commitLabel = if (open.adding) "Add" else "Done",
@@ -315,10 +364,10 @@ fun RoutineBuilder(
                         }, creating = open.creating, busy = closing, floor = open.floor(movement))
                 }
                 BuilderSheet.Picker -> MovementPicker(
-                    catalog = store.routines.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
-                    nowMs = 0, sessions = store.history.recent, title = "Add movement",
+                    catalog = state.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
+                    nowMs = 0, sessions = state.recent, title = "Add movement",
                     onPick = { id ->
-                        val movement = draft.movement(id, store.routines.catalog)
+                        val movement = draft.movement(id, state.catalog)
                         if (movement == null) say("That movement is no longer on the log.")
                         else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.presentation.SetTarget>()), movement, adding = true)
                     }, onCreate = null,
@@ -376,7 +425,7 @@ private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Un
 @Composable
 private fun BuildStep(
     draft: RoutineDraft,
-    store: TrainingStore,
+    state: RoutineBuilderState,
     history: List<SessionSummary>,
     editing: Boolean,
     editable: Boolean,
@@ -408,7 +457,7 @@ private fun BuildStep(
         val rows = currentDraft.entries.sortedBy { it.position }
         if (!editable || from !in rows.indices || to !in rows.indices || from == to) return
         changeDraft(currentDraft.moving(from, to))
-        said = "${Readout.movement(rows[from].exerciseId, store.routines.catalog)}, ${to + 1} of ${rows.size}"
+        said = "${Readout.movement(rows[from].exerciseId, state.catalog)}, ${to + 1} of ${rows.size}"
     }
     fun placeDragged() {
         val id = dragged ?: return
@@ -477,8 +526,8 @@ private fun BuildStep(
                     modifier = Modifier.padding(bottom = 8.dp))
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
-                        val movement = draft.movement(entry.exerciseId, store.routines.catalog)?.current
-                        val name = movement?.name ?: Readout.movement(entry.exerciseId, store.routines.catalog)
+                        val movement = draft.movement(entry.exerciseId, state.catalog)?.current
+                        val name = movement?.name ?: Readout.movement(entry.exerciseId, state.catalog)
                         DeleteSwipeRow(actionLabel = "Remove movement", enabled = editable,
                             onDelete = { onRemove(entry.exerciseId); true }) {
                             Row(Modifier.fillMaxWidth().heightIn(min = 72.dp)
@@ -551,3 +600,40 @@ private fun BuildStep(
         }
     }
 }
+
+private data class PreviewRoutineBuilderState(
+    override val catalog: List<Exercise> = TheSix.movements,
+    override val recent: List<SessionSummary> = emptyList(),
+    override val accountKey: String = "preview",
+    override val replica: String? = "replica-preview",
+    override val replicaReadRevision: Long = 1,
+    override val accountReady: Boolean = true,
+    override val withheldIds: Set<String> = emptySet(),
+) : RoutineBuilderState
+
+// A new draft has no history to read, and nothing answers.
+private object PreviewRoutineBuilderEvents : RoutineBuilderEvents {
+    override suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> = awaitCancellation()
+}
+
+// A new routine, named and holding two movements.
+@Composable
+private fun DraftPreview(dark: Boolean) {
+    val draft = RoutineDraft(name = "Push Day")
+        .adding("bench-press", List(3) { SetTarget(8, 75.0) })
+        .adding("overhead-press", List(3) { SetTarget(6, 47.5) })
+    CompositionLocalProvider(LocalWindmillDark provides dark) {
+        GymMaterial {
+            RoutineBuilder(draft, PreviewRoutineBuilderState(), PreviewRoutineBuilderEvents, saving = false, onDraft = {},
+                onSave = {}, onClose = {}, say = {}, backTo = "Routines")
+        }
+    }
+}
+
+@Preview(name = "Draft · Dark")
+@Composable
+private fun DraftDarkPreview() = DraftPreview(dark = true)
+
+@Preview(name = "Draft · Daylight")
+@Composable
+private fun DraftDaylightPreview() = DraftPreview(dark = false)

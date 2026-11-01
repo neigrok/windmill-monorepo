@@ -61,10 +61,11 @@ class TargetSheetTests {
     private fun editor(room: EngineRoomFixture, opening: RoutineDraft): () -> RoutineDraft {
         runBlocking { room.select(null) }
         var draft by mutableStateOf(opening)
+        val builder = RoutineBuilderBinding(room.store)
         compose.setContent {
             RoutineBuilder(
                 draft = draft,
-                store = room.store,
+                state = builder, events = builder,
                 saving = false,
                 onDraft = { draft = it },
                 onSave = {},

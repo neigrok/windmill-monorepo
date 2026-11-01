@@ -112,9 +112,10 @@ class RowSwipeAccessibilityTests {
         try { store(scope).use { room ->
             runBlocking { room.store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
             val deleted = mutableListOf<String>()
+            val routinesHome = RoutinesBinding(room.store)
             compose.setContent {
                 RoutinesScreen(
-                    store = room.store, lookedAt = emptySet(), seat = "s", onBuild = {}, onOpenRoutine = {},
+                    state = routinesHome, events = routinesHome, lookedAt = emptySet(), seat = "s", onBuild = {}, onOpenRoutine = {},
                     onDeleteRoutine = { deleted += it; true }, onReview = {},
                 )
             }

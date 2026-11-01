@@ -29,6 +29,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +48,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
@@ -54,14 +57,55 @@ import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.RoutineEntry
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.domain.sync.SeedExercises
 import works.windmill.gym.store.RefusedWorkout
+import works.windmill.gym.store.RefusedWrite
+import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WorkoutSession
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
+
+// What the routines home and a routine's sheet draw.
+@Stable
+interface RoutinesState {
+    val all: List<Routine>
+    val catalog: List<Exercise>
+    val pendingProposals: List<Proposal>
+    val unseenRemovalReceipts: Map<String, Proposal>
+    val refusals: List<RefusedWrite>
+    fun routine(id: String): Routine?
+}
+
+// What the routines home asks of the stores.
+interface RoutinesEvents {
+    fun clearRefusals()
+}
+
+// The routines home over the room's stores.
+class RoutinesBinding(
+    private val routines: RoutinesStore,
+    private val workout: WorkoutSession,
+    private val dismissRefusals: () -> Unit,
+) : RoutinesState, RoutinesEvents {
+    constructor(store: TrainingStore) : this(store.routines, store.workout, store::clearRefusals)
+
+    override val all: List<Routine> get() = routines.all
+    override val catalog: List<Exercise> get() = routines.catalog
+    override val pendingProposals: List<Proposal> get() = routines.pendingProposals
+    override val unseenRemovalReceipts: Map<String, Proposal> get() = routines.unseenRemovalReceipts
+    override val refusals: List<RefusedWrite> get() = workout.refusals
+    override fun routine(id: String): Routine? = routines.routine(id)
+    override fun clearRefusals() = dismissRefusals()
+}
 
 @Composable
 fun RoutinesScreen(
-    store: TrainingStore,
+    state: RoutinesState,
+    events: RoutinesEvents,
     // Reviews opened and closed with nothing decided: those cards read `still waiting`.
     lookedAt: Set<String>,
     seat: String,
@@ -73,16 +117,16 @@ fun RoutinesScreen(
 ) {
     val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
-    val routines = store.routines.all.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
-    val empty = store.routines.all.isEmpty()
-    val standing = store.routines.pendingProposals.firstOrNull()
-    val refusals = store.workout.refusals.filterNot { it is RefusedWorkout }
+    val routines = state.all.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
+    val empty = state.all.isEmpty()
+    val standing = state.pendingProposals.firstOrNull()
+    val refusals = state.refusals.filterNot { it is RefusedWorkout }
 
     GymScreen(
         title = "Routines",
         actions = { YouSeat(seat) },
         transient = transient,
-        floatingActionButton = { GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.routines.all.size)) }) },
+        floatingActionButton = { GymFab("New routine", onClick = { onBuild(RoutineDraft(position = state.all.size)) }) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -96,10 +140,10 @@ fun RoutinesScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (refusals.isNotEmpty()) item("refusals") {
-                    Refusals(refusals, store.routines.catalog, onDismiss = { store.clearRefusals() })
+                    Refusals(refusals, state.catalog, onDismiss = { events.clearRefusals() })
                 }
 
-                items(store.routines.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
+                items(state.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
                     ProposalCard(receipt, receipt.routineName, nowMs, false) { onReview(receipt) }
                 }
 
@@ -109,7 +153,7 @@ fun RoutinesScreen(
                     item("proposal") {
                         ProposalCard(
                             proposal = waiting,
-                            routineName = store.routines.routine(waiting.routineId)?.name ?: waiting.routineName,
+                            routineName = state.routine(waiting.routineId)?.name ?: waiting.routineName,
                             nowMs = nowMs,
                             stillWaiting = waiting.id in lookedAt,
                             onReview = { onReview(waiting) },
@@ -126,7 +170,7 @@ fun RoutinesScreen(
                     items(routines, key = { it.id }) { routine ->
                         val delete: suspend () -> Boolean = { onDeleteRoutine(routine.id) }
                         DeleteSwipeRow(actionLabel = "Delete ${routine.name}", onDelete = delete) {
-                            RoutineRow(routine, standing?.id, store.routines.catalog, onOpenRoutine, delete, onReview)
+                            RoutineRow(routine, standing?.id, state.catalog, onOpenRoutine, delete, onReview)
                         }
                     }
                 }
@@ -177,7 +221,7 @@ private fun RoutineRow(
 @Composable
 fun RoutineSheet(
     routineId: String,
-    store: TrainingStore,
+    state: RoutinesState,
     onDismiss: () -> Unit,
     onStart: (String) -> Unit,
     onBuild: (RoutineDraft) -> Unit,
@@ -185,7 +229,7 @@ fun RoutineSheet(
     failure: String? = null,
 ) {
     val skin = LocalGymColors.current
-    val routine = store.routines.routine(routineId)
+    val routine = state.routine(routineId)
     WindmillSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -227,11 +271,11 @@ fun RoutineSheet(
                                     Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    val name = Readout.movement(entry.exerciseId, store.routines.catalog)
+                                    val name = Readout.movement(entry.exerciseId, state.catalog)
                                     val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
                                     Text(if (yours) "$name · yours" else name,
                                         style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-                                    val target = Readout.targetWithUnit(entry.sets, store.routines.catalog.find { it.id == entry.exerciseId })
+                                    val target = Readout.targetWithUnit(entry.sets, state.catalog.find { it.id == entry.exerciseId })
                                     Text(target, style = GymType.numeral(13), color = skin.inkDim)
                                 }
                             }
@@ -248,7 +292,7 @@ fun RoutineSheet(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))
                     }
-                    TextButton(onClick = { onBuild(RoutineDraft.of(routine, store.routines.catalog)) }, enabled = !starting,
+                    TextButton(onClick = { onBuild(RoutineDraft.of(routine, state.catalog)) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                     }
@@ -257,3 +301,60 @@ fun RoutineSheet(
         }
     }
 }
+
+private data class PreviewRoutinesState(
+    override val all: List<Routine> = emptyList(),
+    override val catalog: List<Exercise> = TheSix.movements,
+    override val pendingProposals: List<Proposal> = emptyList(),
+    override val unseenRemovalReceipts: Map<String, Proposal> = emptyMap(),
+    override val refusals: List<RefusedWrite> = emptyList(),
+) : RoutinesState {
+    override fun routine(id: String): Routine? = all.firstOrNull { it.id == id }
+}
+
+private object PreviewRoutinesEvents : RoutinesEvents {
+    override fun clearRefusals() = Unit
+}
+
+@Composable
+private fun RoutinesPreview(dark: Boolean, state: PreviewRoutinesState) {
+    CompositionLocalProvider(LocalWindmillDark provides dark) {
+        GymMaterial {
+            RoutinesScreen(state, PreviewRoutinesEvents, lookedAt = emptySet(), seat = "A", onBuild = {}, onOpenRoutine = {},
+                onDeleteRoutine = { false }, onReview = {})
+        }
+    }
+}
+
+// Three routines, the most recently trained first.
+@Composable
+private fun ProgramPreview(dark: Boolean) {
+    val day = 86_400_000L
+    val today = 1_761_984_000_000L
+    fun entry(position: Int, exerciseId: String, reps: Int, weightKg: Double) =
+        RoutineEntry(position, exerciseId, List(3) { SetTarget(reps, weightKg) })
+    RoutinesPreview(dark, PreviewRoutinesState(all = listOf(
+        Routine("routine-push", "Push Day", 0, today - 2 * day,
+            listOf(entry(1, "bench-press", 8, 75.0), entry(2, "overhead-press", 6, 47.5))),
+        Routine("routine-pull", "Pull Day", 1, today - day,
+            listOf(entry(1, "barbell-row", 8, 60.0), entry(2, "chin-up", 6, 0.0))),
+        Routine("routine-legs", "Legs", 2, null,
+            listOf(entry(1, "back-squat", 5, 100.0), entry(2, "deadlift", 5, 120.0))),
+    )))
+}
+
+@Preview(name = "Routines · Dark")
+@Composable
+private fun RoutinesDarkPreview() = ProgramPreview(dark = true)
+
+@Preview(name = "Routines · Daylight")
+@Composable
+private fun RoutinesDaylightPreview() = ProgramPreview(dark = false)
+
+@Preview(name = "No routines · Dark")
+@Composable
+private fun NoRoutinesDarkPreview() = RoutinesPreview(dark = true, PreviewRoutinesState())
+
+@Preview(name = "No routines · Daylight")
+@Composable
+private fun NoRoutinesDaylightPreview() = RoutinesPreview(dark = false, PreviewRoutinesState())

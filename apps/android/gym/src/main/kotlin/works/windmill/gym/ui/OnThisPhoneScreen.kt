@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -34,17 +35,58 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.PlanEntry
+import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Session
 import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.*
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
+
+// What the recovery journal draws: a copy kept on this phone, inspected and fixed.
+@Stable
+interface RecoveryState {
+    val busy: Boolean
+    val fixDraft: RecoveryDraft?
+    val catalog: List<Exercise>
+}
+
+// What the recovery journal asks of the stores.
+interface RecoveryEvents {
+    fun beginFix(read: RecoveryRead, row: ImportRecovery): Boolean
+    fun changeFix(opening: RecoveryDraft, copy: SavedWorkout, markFinished: Boolean)
+    fun closeFix()
+    suspend fun fixRefusal(draft: RecoveryDraft): String?
+    suspend fun recover(read: RecoveryRead, row: ImportRecovery, action: RecoveryAction, draft: RecoveryDraft?,
+        currentOwner: () -> Boolean): RecoveryResult?
+}
+
+// The recovery journal over the room's stores.
+class RecoveryBinding(private val recovery: RecoveryStore, private val routines: RoutinesStore) : RecoveryState, RecoveryEvents {
+    constructor(store: TrainingStore) : this(store.recovery, store.routines)
+
+    override val busy: Boolean get() = recovery.busy
+    override val fixDraft: RecoveryDraft? get() = recovery.fixDraft
+    override val catalog: List<Exercise> get() = routines.catalog
+    override fun beginFix(read: RecoveryRead, row: ImportRecovery): Boolean = recovery.beginFix(read, row)
+    override fun changeFix(opening: RecoveryDraft, copy: SavedWorkout, markFinished: Boolean) =
+        recovery.changeFix(opening, copy, markFinished)
+    override fun closeFix() = recovery.closeFix()
+    override suspend fun fixRefusal(draft: RecoveryDraft): String? = recovery.fixRefusal(draft)
+    override suspend fun recover(read: RecoveryRead, row: ImportRecovery, action: RecoveryAction, draft: RecoveryDraft?,
+        currentOwner: () -> Boolean): RecoveryResult? = recovery.recover(read, row, action, draft, currentOwner)
+}
 
 class PhoneSignInCopy(decisions: Map<String, Map<String, Int>>) {
     private val items = buildList {
@@ -173,20 +215,20 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
 }
 
 @Composable
-fun WorkoutInspectScreen(store: TrainingStore, read: RecoveryRead, row: ImportRecovery,
+fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: RecoveryRead, row: ImportRecovery,
     onBack: () -> Unit, currentOwner: () -> Boolean) {
     val skin = LocalGymColors.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     var submitted by remember(row.sourceKey) { mutableStateOf(false) }
-    val busy = store.recovery.busy || submitted
+    val busy = state.busy || submitted
     var menu by rememberSaveable(row.id) { mutableStateOf(false) }
     var discardSource by rememberSaveable { mutableStateOf<String?>(null) }
     var message by rememberSaveable(row.sourceKey) { mutableStateOf<String?>(null) }
     val primary = PhoneRecovery.primary(row)
     fun fix() {
         menu = false
-        if (store.recovery.beginFix(read, row)) telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "opened"))
+        if (events.beginFix(read, row)) telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "opened"))
     }
     fun act(action: RecoveryAction) {
         if (busy) return
@@ -194,7 +236,7 @@ fun WorkoutInspectScreen(store: TrainingStore, read: RecoveryRead, row: ImportRe
         submitted = true; message = null
         telemetry.event("gym_import_recovery", mapOf("action" to action.wire, "state" to "started"))
         scope.launch {
-            try { when (val result = store.recovery.recover(read, row, action, currentOwner = currentOwner)) {
+            try { when (val result = events.recover(read, row, action, draft = null, currentOwner = currentOwner)) {
                 RecoveryResult.Accepted -> { discardSource = null; if (action == RecoveryAction.Discard) onBack() }
                 is RecoveryResult.Refused -> { discardSource = null; message = result.line }
                 RecoveryResult.Failed -> { discardSource = null; message = "The original workout is still saved on this phone. ${PhoneRecovery.label(action)} could not be completed." }
@@ -227,14 +269,14 @@ fun WorkoutInspectScreen(store: TrainingStore, read: RecoveryRead, row: ImportRe
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             row.workout?.let { copy ->
                 item("date") { Text(Readout.day(copy.session.startedAtMs), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp)) }
-                item("facts") { RecoveryFacts(row, store) }
+                item("facts") { RecoveryFacts(row, state.catalog) }
             }
             item("reason") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(PhoneRecovery.reason(row), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim, modifier = Modifier.padding(horizontal = 16.dp))
                 if (row.refusals.any { it.code in setOf("source-needs-update", "source-unreadable") }) RecoveryUpdate()
             } }
             if (!row.operationsOnly) row.workout?.let { copy -> item("times") { RecoveryTimes(copy.session) } }
-            recoveryMovements(PhoneRecovery.sets(row), store, times = false)
+            recoveryMovements(PhoneRecovery.sets(row), state.catalog, times = false)
         }
     }
     if (discardSource == row.sourceKey && PhoneRecovery.canDiscard(row)) WorkoutDiscardDialog(PhoneRecovery.sets(row).size, onDiscard = { act(RecoveryAction.Discard) },
@@ -257,11 +299,11 @@ private fun RecoveryUpdate() {
 }
 
 @Composable
-private fun RecoveryFacts(row: ImportRecovery, store: TrainingStore) {
+private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
     val skin = LocalGymColors.current
     val copy = requireNotNull(row.workout)
     val sets = PhoneRecovery.sets(row)
-    val summary = SessionSummary(copy.session, sets, store.routines.catalog)
+    val summary = SessionSummary(copy.session, sets, catalog)
     val duration = if (row.operationsOnly) "—" else copy.session.finishedAtMs?.let { finish -> runCatching { Math.subtractExact(finish, copy.session.startedAtMs) }.getOrNull()?.takeIf { it >= 0 }?.let(Readout::duration) } ?: "—"
     val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { "${Readout.weight(it)} kg" } ?: "—"
     Row(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp)).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -280,9 +322,9 @@ private fun RecoveryBand(line: String, failed: Boolean = false) {
             .semantics { liveRegion = LiveRegionMode.Polite; if (failed) error(line) })
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(sets: List<TrainingSet>, store: TrainingStore,
+private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(sets: List<TrainingSet>, catalog: List<Exercise>,
     times: Boolean, onSet: ((TrainingSet) -> Unit)? = null) {
-    val movements = Performed.movements(sets, store.routines.catalog)
+    val movements = Performed.movements(sets, catalog)
     movements.forEach { movement ->
         item("movement:${movement.id}") { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             RecoveryHeading(movement.movement)
@@ -341,8 +383,8 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
-    val draft = store.recovery.fixDraft ?: return
+fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner: () -> Boolean) {
+    val draft = state.fixDraft ?: return
     val skin = LocalGymColors.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
@@ -352,21 +394,21 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
     var held by remember(draft.row.sourceKey) { mutableStateOf<String?>(null) }
     var checking by remember(draft.row.sourceKey) { mutableStateOf(true) }
     var submitted by remember(draft.row.sourceKey) { mutableStateOf(false) }
-    val busy = store.recovery.busy || submitted
+    val busy = state.busy || submitted
     LaunchedEffect(draft) {
         checking = true
-        held = store.recovery.fixRefusal(draft)
+        held = events.fixRefusal(draft)
         checking = false
     }
     fun close() {
         if (busy) return
         telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "cancelled"))
-        store.recovery.closeFix()
+        events.closeFix()
     }
     fun change(copy: SavedWorkout, markFinished: Boolean = draft.markFinished) {
         if (busy) return
         failure = null; checking = true
-        store.recovery.changeFix(draft, copy, markFinished)
+        events.changeFix(draft, copy, markFinished)
     }
     Dialog(onDismissRequest = ::close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(skin.canvas).systemBarsPadding()) {
@@ -380,7 +422,7 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
                     telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "started"))
                     scope.launch {
                         try {
-                            when (val result = store.recovery.recover(draft.read, draft.row, RecoveryAction.Fix, draft, currentOwner)) {
+                            when (val result = events.recover(draft.read, draft.row, RecoveryAction.Fix, draft, currentOwner)) {
                                 RecoveryResult.Accepted -> Unit
                                 is RecoveryResult.Refused -> failure = result.line
                                 RecoveryResult.Failed -> failure = "The original workout is still saved on this phone. Fix workout could not be completed."
@@ -417,7 +459,7 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
                             })
                         }
                     } }
-                    recoveryMovements(draft.copy.sets, store, times = true, onSet = { if (!busy) { editing = it.id
+                    recoveryMovements(draft.copy.sets, state.catalog, times = true, onSet = { if (!busy) { editing = it.id
                         telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "set_opened")) } })
                 }
             }
@@ -438,19 +480,19 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
                     telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to if (target.endsWith(":date")) "date_cancelled" else "time_cancelled"))
                 }
                 if (target.endsWith(":date")) {
-                    val state = rememberDatePickerState(initialSelectedDateMillis = local.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+                    val picker = rememberDatePickerState(initialSelectedDateMillis = local.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
                     DatePickerDialog(onDismissRequest = ::cancel, confirmButton = {
-                        TextButton(enabled = state.selectedDateMillis != null, onClick = {
-                            state.selectedDateMillis?.let { selected ->
+                        TextButton(enabled = picker.selectedDateMillis != null, onClick = {
+                            picker.selectedDateMillis?.let { selected ->
                                 val date = Instant.ofEpochMilli(selected).atZone(ZoneOffset.UTC).toLocalDate()
                                 use(date.atTime(local.toLocalTime()).atZone(local.zone).toInstant().toEpochMilli())
                             }
                         }) { Text("Use date") }
-                    }, dismissButton = { TextButton(onClick = ::cancel) { Text("Cancel") } }) { DatePicker(state) }
+                    }, dismissButton = { TextButton(onClick = ::cancel) { Text("Cancel") } }) { DatePicker(picker) }
                 } else {
-                    val state = rememberTimePickerState(local.hour, local.minute, is24Hour = true)
-                    AlertDialog(onDismissRequest = ::cancel, title = { Text(fieldTitle(target)) }, text = { TimePicker(state) },
-                        confirmButton = { TextButton(onClick = { use(local.withHour(state.hour).withMinute(state.minute).toInstant().toEpochMilli()) }) { Text("Use time") } },
+                    val picker = rememberTimePickerState(local.hour, local.minute, is24Hour = true)
+                    AlertDialog(onDismissRequest = ::cancel, title = { Text(fieldTitle(target)) }, text = { TimePicker(picker) },
+                        confirmButton = { TextButton(onClick = { use(local.withHour(picker.hour).withMinute(picker.minute).toInstant().toEpochMilli()) }) { Text("Use time") } },
                         dismissButton = { TextButton(onClick = ::cancel) { Text("Cancel") } })
                 }
             }
@@ -459,8 +501,8 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
         if (set != null) {
             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             WindmillSheet(onDismissRequest = { editing = null }, sheetState = sheet, containerColor = skin.canvas) {
-                FixSheet(set, Readout.movement(set.exerciseId, store.routines.catalog),
-                    Performed.movements(draft.copy.sets, store.routines.catalog).flatMap { it.rows }.first { it.id == set.id }.savedNumber,
+                FixSheet(set, Readout.movement(set.exerciseId, state.catalog),
+                    Performed.movements(draft.copy.sets, state.catalog).flatMap { it.rows }.first { it.id == set.id }.savedNumber,
                     draft.copy.session.plan?.routine,
                     onSave = { fix ->
                         val changed = set.copy(weightKg = fix.weightKg ?: set.weightKg, reps = fix.reps ?: set.reps,
@@ -473,10 +515,68 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
                         editing = null
                         telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "set_removed"))
                     }, onSaved = { editing = null }, draftKey = "recovery:${draft.row.sourceKey}:${set.id}",
-                    exercise = store.routines.catalog.firstOrNull { it.id == set.exerciseId })
+                    exercise = state.catalog.firstOrNull { it.id == set.exerciseId })
             }
         }
     }
 }
 
 private fun fieldTitle(target: String): String = "${target.substringBefore(':')} time"
+
+private data class PreviewRecoveryState(
+    override val busy: Boolean = false,
+    override val fixDraft: RecoveryDraft? = null,
+    override val catalog: List<Exercise> = TheSix.movements,
+) : RecoveryState
+
+// Nothing is refused while fixing and no recovery answers.
+private object PreviewRecoveryEvents : RecoveryEvents {
+    override fun beginFix(read: RecoveryRead, row: ImportRecovery): Boolean = false
+    override fun changeFix(opening: RecoveryDraft, copy: SavedWorkout, markFinished: Boolean) = Unit
+    override fun closeFix() = Unit
+    override suspend fun fixRefusal(draft: RecoveryDraft): String? = null
+    override suspend fun recover(read: RecoveryRead, row: ImportRecovery, action: RecoveryAction, draft: RecoveryDraft?,
+        currentOwner: () -> Boolean): RecoveryResult? = awaitCancellation()
+}
+
+// A workout this phone kept that overlaps one already on the account.
+@Composable
+private fun OverlappingWorkoutPreview(dark: Boolean, fixing: Boolean) {
+    val started = 1_761_984_000_000L
+    val copy = SavedWorkout(
+        Session("session-phone", started, started + 48 * 60_000L, "routine-push",
+            PlanSnapshot("Push Day", listOf(PlanEntry("bench-press", List(3) { SetTarget(8, 75.0) })))),
+        listOf(
+            TrainingSet("set-1", "bench-press", 1, 75.0, 8, completedAtMs = started + 8 * 60_000L),
+            TrainingSet("set-2", "bench-press", 2, 75.0, 8, completedAtMs = started + 12 * 60_000L),
+            TrainingSet("set-3", "bench-press", 3, 75.0, 7, completedAtMs = started + 16 * 60_000L),
+        ),
+    )
+    val row = ImportRecovery("import-phone", copy,
+        listOf(ImportRefusal("refusal-phone", copy.session, copy.sets, emptyList(), "session-overlap", "Overlaps another workout.")),
+        listOf(ImportOpening("import-phone", "replica-phone", anonymous = true, sources = mapOf("session-phone" to "phone"))))
+    val read = RecoveryRead("https://windmill.works", "user-preview", 1, "replica-phone", listOf(row))
+    val state = PreviewRecoveryState(fixDraft = if (fixing) RecoveryDraft(read, row, copy) else null)
+    CompositionLocalProvider(LocalWindmillDark provides dark) {
+        GymMaterial {
+            if (fixing) WorkoutFixScreen(state, PreviewRecoveryEvents, currentOwner = { true })
+            else WorkoutInspectScreen(state, PreviewRecoveryEvents, read, row, onBack = {}, currentOwner = { true })
+        }
+    }
+}
+
+@Preview(name = "Inspect · Dark")
+@Composable
+private fun InspectDarkPreview() = OverlappingWorkoutPreview(dark = true, fixing = false)
+
+@Preview(name = "Inspect · Daylight")
+@Composable
+private fun InspectDaylightPreview() = OverlappingWorkoutPreview(dark = false, fixing = false)
+
+@Preview(name = "Fix · Dark")
+@Composable
+private fun FixDarkPreview() = OverlappingWorkoutPreview(dark = true, fixing = true)
+
+@Preview(name = "Fix · Daylight")
+@Composable
+private fun FixDaylightPreview() = OverlappingWorkoutPreview(dark = false, fixing = true)

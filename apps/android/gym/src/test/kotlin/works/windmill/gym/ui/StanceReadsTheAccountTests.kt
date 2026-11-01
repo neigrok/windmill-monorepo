@@ -147,8 +147,9 @@ class StanceReadsTheAccountTests {
             val store = room(scope).store
             runBlocking { store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
             val drafts = mutableListOf<RoutineDraft>()
+            val routinesHome = RoutinesBinding(store)
             compose.setContent {
-                RoutinesScreen(store = store, lookedAt = emptySet(), seat = "s",
+                RoutinesScreen(state = routinesHome, events = routinesHome, lookedAt = emptySet(), seat = "s",
                     onBuild = { drafts += it }, onOpenRoutine = {}, onDeleteRoutine = { true }, onReview = {})
             }
             val id = store.routines.all.single().id

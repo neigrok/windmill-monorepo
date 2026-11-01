@@ -25,6 +25,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,10 +49,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import works.windmill.gym.presentation.ChangeKind
 import works.windmill.gym.presentation.DocumentRow
@@ -59,14 +63,61 @@ import works.windmill.gym.presentation.FieldMove
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalChange
 import works.windmill.gym.presentation.ProposalIntent
+import works.windmill.gym.presentation.ProposalSource
+import works.windmill.gym.presentation.ProposalTargets
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
+import works.windmill.gym.store.RoutinesStore
+import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WorkoutSession
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
+
+// What the review draws.
+@Stable
+interface ReviewState {
+    val catalog: List<Exercise>
+    val settledProposals: Map<String, Proposal>
+    val outOfDateProposals: Set<String>
+    // A workout is open: no proposal is decided until it is finished.
+    val workoutOpen: Boolean
+    val accountKey: String
+}
+
+// What the review asks of the stores.
+interface ReviewEvents {
+    suspend fun proposal(id: String): ProposalRead
+    suspend fun applyProposal(id: String): ProposalOutcome
+    suspend fun dismissProposal(id: String): ProposalOutcome
+    fun removalPending(id: String): Boolean
+    fun proposalReceiptShown(proposal: Proposal, seatKey: String)
+}
+
+// The review over the room's stores.
+class ReviewBinding(
+    private val seat: TrainingSeat,
+    private val routines: RoutinesStore,
+    private val workout: WorkoutSession,
+) : ReviewState, ReviewEvents {
+    constructor(store: TrainingStore) : this(store.seat, store.routines, store.workout)
+
+    override val catalog: List<Exercise> get() = routines.catalog
+    override val settledProposals: Map<String, Proposal> get() = routines.settledProposals
+    override val outOfDateProposals: Set<String> get() = routines.outOfDateProposals
+    override val workoutOpen: Boolean get() = workout.session != null
+    override val accountKey: String get() = seat.accountKey
+    override suspend fun proposal(id: String): ProposalRead = routines.proposal(id)
+    override suspend fun applyProposal(id: String): ProposalOutcome = routines.applyProposal(id)
+    override suspend fun dismissProposal(id: String): ProposalOutcome = routines.dismissProposal(id)
+    override fun removalPending(id: String): Boolean = routines.removalPending(id)
+    override fun proposalReceiptShown(proposal: Proposal, seatKey: String) = routines.proposalReceiptShown(proposal, seatKey)
+}
 
 // The review, drawn INSIDE a modal bottom sheet over the conversation or the routines home — never a
 // push, because a lifter deciding is coming back. Nothing is applied until the tap, Apply is atomic
@@ -75,7 +126,8 @@ import works.windmill.platform.design.WindmillSpace
 @Composable
 fun ReviewSheet(
     proposalId: String,
-    store: TrainingStore,
+    state: ReviewState,
+    events: ReviewEvents,
     // Null where Coach is not offered. Nothing on the wire says whether a deployment has Coach, so the
     // room learns it from the first bare 404 and takes both doors down for the life of the room.
     onAsk: ((String) -> Unit)?,
@@ -104,10 +156,10 @@ fun ReviewSheet(
     }
     val seen = seenDocument == document
 
-    LaunchedEffect(proposalId, asked, store.routines.settledProposals[proposalId]) {
+    LaunchedEffect(proposalId, asked, state.settledProposals[proposalId]) {
         gone = false
         proposal = null
-        when (val read = store.routines.proposal(proposalId)) {
+        when (val read = events.proposal(proposalId)) {
             is ProposalRead.Found -> {
                 proposal = read.proposal
                 if (read.proposal.receipt != null) said = null
@@ -121,8 +173,8 @@ fun ReviewSheet(
     // routine moved on the log, was edited here and not yet confirmed, or left sight, and the log
     // will refuse the tap. A window taking the row off the routines home changes none of it.
     val standing = proposal
-    val outOfDate = proposalId in store.routines.outOfDateProposals
-    val decidable = standing != null && standing.isPending && !outOfDate && !overtaken && store.workout.session == null
+    val outOfDate = proposalId in state.outOfDateProposals
+    val decidable = standing != null && standing.isPending && !outOfDate && !overtaken && !state.workoutOpen
 
     fun decide(apply: Boolean) {
         val open = proposal ?: return
@@ -132,7 +184,7 @@ fun ReviewSheet(
         scope.launch {
             try {
                 said = null
-                val outcome = if (apply) store.routines.applyProposal(open.id) else store.routines.dismissProposal(open.id)
+                val outcome = if (apply) events.applyProposal(open.id) else events.dismissProposal(open.id)
                 when (outcome) {
                     is ProposalOutcome.Decided -> {
                         proposal = outcome.proposal
@@ -154,7 +206,7 @@ fun ReviewSheet(
                         proposal = null
                         gone = true
                     }
-                    is ProposalOutcome.Failed -> said = if (apply && store.routines.removalPending(open.id))
+                    is ProposalOutcome.Failed -> said = if (apply && events.removalPending(open.id))
                         "Still waiting for the log. Retry to check this removal."
                         else outcome.why.line(if (apply) "nothing was applied" else "it is still waiting")
                 }
@@ -178,8 +230,8 @@ fun ReviewSheet(
                 .padding(bottom = WindmillSpace.x4),
         ) {
             if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
-            if (store.workout.session != null) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
-            if (store.workout.session == null) standing?.let { Body(it, store.routines.catalog, outOfDate) }
+            if (state.workoutOpen) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
+            if (!state.workoutOpen) standing?.let { Body(it, state.catalog, outOfDate) }
             standing?.let { proposal ->
                 onAsk?.let { ask ->
                     Row(
@@ -203,9 +255,9 @@ fun ReviewSheet(
         standing?.let { proposal ->
             var receiptVisible by remember(proposal.id) { mutableStateOf(false) }
             val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
-            val seat = store.seat.accountKey
+            val seat = state.accountKey
             LaunchedEffect(proposal, receiptVisible, lifecycle, seat) {
-                if (receiptVisible && lifecycle == Lifecycle.State.RESUMED) store.routines.proposalReceiptShown(proposal, seat)
+                if (receiptVisible && lifecycle == Lifecycle.State.RESUMED) events.proposalReceiptShown(proposal, seat)
             }
             Foot(proposal, decidable, deciding, seen, said, onDecide = ::decide,
                 receiptModifier = Modifier.onGloballyPositioned { receiptVisible = !it.boundsInWindow().isEmpty })
@@ -510,3 +562,51 @@ fun ProposalChip(onReview: () -> Unit) {
         Text("1 proposal", style = WindmillFont.body(12, FontWeight.SemiBold), color = skin.accent)
     }
 }
+
+private data class PreviewReviewState(
+    override val catalog: List<Exercise> = TheSix.movements,
+    override val settledProposals: Map<String, Proposal> = emptyMap(),
+    override val outOfDateProposals: Set<String> = emptySet(),
+    override val workoutOpen: Boolean = false,
+    override val accountKey: String = "preview",
+) : ReviewState
+
+// Reads the one proposal it holds; no decision answers.
+private class PreviewReviewEvents(private val pending: Proposal) : ReviewEvents {
+    override suspend fun proposal(id: String): ProposalRead = ProposalRead.Found(pending)
+    override suspend fun applyProposal(id: String): ProposalOutcome = awaitCancellation()
+    override suspend fun dismissProposal(id: String): ProposalOutcome = awaitCancellation()
+    override fun removalPending(id: String): Boolean = false
+    override fun proposalReceiptShown(proposal: Proposal, seatKey: String) = Unit
+}
+
+@Composable
+private fun PendingProposalPreview(dark: Boolean) {
+    val pending = Proposal(
+        id = "proposal-push", routineId = "routine-push",
+        summary = "Bench went up clean for three sessions, so it moves up 2.5 kg.",
+        changeCount = 1, source = ProposalSource(door = ProposalSource.askDoor),
+        baseRevision = 4, baseName = "Push Day", name = "Push Day",
+        changes = listOf(
+            ProposalChange(1, ChangeKind.Retargeted, "bench-press",
+                ProposalTargets(List(3) { SetTarget(8, 75.0) }), ProposalTargets(List(3) { SetTarget(8, 77.5) })),
+            ProposalChange(2, ChangeKind.Kept, "overhead-press",
+                ProposalTargets(List(3) { SetTarget(6, 47.5) }), ProposalTargets(List(3) { SetTarget(6, 47.5) })),
+        ),
+    )
+    CompositionLocalProvider(LocalWindmillDark provides dark) {
+        GymMaterial {
+            Box(Modifier.background(LocalGymColors.current.surface)) {
+                ReviewSheet(pending.id, PreviewReviewState(), PreviewReviewEvents(pending), onAsk = {}, onDecided = {})
+            }
+        }
+    }
+}
+
+@Preview(name = "Pending proposal · Dark")
+@Composable
+private fun PendingProposalDarkPreview() = PendingProposalPreview(dark = true)
+
+@Preview(name = "Pending proposal · Daylight")
+@Composable
+private fun PendingProposalDaylightPreview() = PendingProposalPreview(dark = false)

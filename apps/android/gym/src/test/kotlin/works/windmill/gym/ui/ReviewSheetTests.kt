@@ -198,11 +198,12 @@ class ReviewSheetTests {
     }
 
     private fun sheet(store: TrainingStore, decided: MutableList<Proposal>, heightDp: Int = 900) {
+        val review = ReviewBinding(store)
         compose.setContent {
             Box(Modifier.height(heightDp.dp)) {
                 ReviewSheet(
                     proposalId = "proposal1",
-                    store = store,
+                    state = review, events = review,
                     onAsk = null,
                     onDecided = { decided += it },
                 )
@@ -305,9 +306,10 @@ class ReviewSheetTests {
         propose(room, server, routine, shortChanges, summary = "")
         val opened = mutableStateOf("proposal1")
         val decided = mutableListOf<Proposal>()
+        val review = ReviewBinding(room.store)
         compose.setContent {
             Box(Modifier.height(540.dp)) {
-                ReviewSheet(opened.value, room.store, null, { decided += it })
+                ReviewSheet(opened.value, review, review, null, { decided += it })
             }
         }
         compose.onNodeWithText("Apply").assertIsEnabled()
@@ -668,10 +670,11 @@ class ReviewSheetTests {
         val program = room.store.routines.all
         val decided = mutableListOf<Proposal>()
         val visit = mutableStateOf(0)
+        val review = ReviewBinding(room.store)
         compose.setContent {
             key(visit.value) {
                 Box(Modifier.height(900.dp)) {
-                    ReviewSheet("proposal1", room.store, null, { decided += it })
+                    ReviewSheet("proposal1", review, review, null, { decided += it })
                 }
             }
         }
@@ -720,7 +723,7 @@ class ReviewSheetTests {
         compose.setContent {
             key(displayed.value) {
                 Box(Modifier.height(900.dp)) {
-                    ReviewSheet(pending.id, displayed.value, null, { decided += it })
+                    ReviewBinding(displayed.value).let { review -> ReviewSheet(pending.id, review, review, null, { decided += it }) }
                 }
             }
         }
@@ -779,10 +782,11 @@ class ReviewSheetTests {
         owner.lifecycle.currentState = Lifecycle.State.STARTED
         val offscreen = mutableStateOf(false)
         var busy = false
+        val review = ReviewBinding(room.store)
         compose.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
                 Box(Modifier.height(900.dp).offset(y = if (offscreen.value) 2000.dp else 0.dp)) {
-                    ReviewSheet(pending.id, room.store, null, {}, onBusy = { busy = it })
+                    ReviewSheet(pending.id, review, review, null, {}, onBusy = { busy = it })
                 }
             }
         }
