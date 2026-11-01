@@ -594,9 +594,19 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
   384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six
   hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
-- **Board · no Complete offer after the last subtask.** Checking the last subtask on web fills the
-  gauge and nothing else. The proposal offers *All subtasks done · Complete step* there (phone 07.06
-  231:1174, desktop 03.09 399:19282); no web surface draws it yet.
+- **Board · no Complete offer after the last subtask in the Graph.** The Board's step page and modal
+  offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
+  desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`ui/StepPanel.jsx`)
+  fills the gauge and nothing else; no drawing covers the Graph.
+- **Board · the Step workspace note says the last subtask completes the step.** The Step workspace
+  component description (228:911) says *Last completion marks the step complete after 600ms*.
+  Canon and the build say subtasks never complete a step; correct the description.
+- **Board · where the modal's status row sits.** The step modal 03.01 (184:1693) draws *Up next* under
+  the step links' divider; the core-loop modals (02.01–02.04) and every phone step page draw the status
+  row under the description. `board/StepDetail.jsx` follows the core loop. Redraw 03.01 or rule.
+- **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
+  prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
+  lists it plainly. The build follows each drawing. Choose one.
 - **Board · `/` has two owners.** `shortcuts/shortcutMap.js` lists `/` as Ask AI's second chord and
   `SkillTreeView.jsx` binds it. The proposal gives `/` to *Find a step* and leaves Ask AI on ⌘K
   (desktop 10.03 386:13666).

@@ -53,12 +53,27 @@ rail's Show. Tab enters on the stop last focused while it still stands, else the
 held (Up next's before the others'), else the first Up next card, else the first stop of any column. Up and
 Down move within a column, Home and End to its ends, and Left and Right to the neighbouring column's
 stop at the nearest height, skipping an empty column; a rail offers only its Show. Enter is the stop's
-own button, so a card selects its step. A focused stop that unmounts hands focus to the new stop, and
+own button, so a card opens its step. A focused stop that unmounts hands focus to the new stop, and
 after Try again focus rests on the skeleton until the roadmap loads. On phones each pane is one tab stop
 of its own with the same Up, Down, Home and End, and the tabs keep their own arrow keys. A step that
 becomes up next, or a new step that is not done, wakes once while the Board stays mounted (`arrivals` in
 `Board.js`); reduced motion fades it in, and focus landing on it ends the wake. While hidden the Board
 skips the host's renders and catches up when shown, so a step that arrived meanwhile wakes then.
+
+A card opens its step (`StepDetail.jsx`): from 744px a modal over the scrimmed roadmap (`StepModal.jsx`), 760px wide
+and 24px in from the window below that; below 744px a page pushed over the Board (`StepPage.jsx`), which stays mounted
+beneath it with its pane and scroll. The open step rides the hash as `?step=<id>` (`stepAddress.js`). Each step opened
+from a card or from another step is a history entry, so Back steps out one step at a time and the page's back row names
+the screen it returns to; closing pops the whole visit, and a link lands owner and visitor alike on the Board with that
+step open. While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape closes the modal or
+steps the page back, and closing returns focus to the card the visit began on. `StepFacts.js` reads the step off the
+whole roadmap, whatever the Board filters: its column, its prerequisites and the steps it unlocks with their columns, what
+Complete would open and how many steps Reset would lock. Complete and Reset act in place through the Graph's progress
+writes and toast nothing: the status row flips with an inline Undo for six seconds and a line names what moved, and
+hovering or focusing Reset previews what it returns to Locked. On the Workspace section, a step whose every subtask is
+checked offers Complete step; subtasks never complete it. The ⋯ menu copies the step's link (the roadmap's share address
+plus its step), opens the step in the Graph, and for the owner deletes it through the Graph's delete with its Undo toast.
+A visitor gets the overview and the menu without Delete. The detail offers no Edit step or View branch yet.
 
 The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
 would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap
@@ -77,7 +92,7 @@ saved view.
 | Area | Responsibility |
 |---|---|
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. |
-| `board/` | The Board view behind its development gate: derived columns, cards, the Board/Graph switch and every Board string. |
+| `board/` | The Board view behind its development gate: derived columns, cards, the step page and modal, the Board/Graph switch and every Board string. |
 | `layout/` | Deterministic layout engines behind `index.js`. |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |

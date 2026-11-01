@@ -23,6 +23,8 @@ import ViewPill from './list/ViewPill.jsx';
 import { SwitcherSheet } from './list/SwitcherSheet.jsx';
 import BoardView, { coverBeneath } from './board/BoardView.jsx';
 import { ViewSwitch } from './board/ViewSwitch.jsx';
+import { StepDetail } from './board/StepDetail.jsx';
+import { useStepAddress, hashWithStep } from './board/stepAddress.js';
 import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
@@ -31,7 +33,7 @@ import { markDoneTargets } from './selection/bulkSelection.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
-import { ShareDialog } from './share/ShareDialog.jsx';
+import { ShareDialog, treeShareUrl } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
@@ -1236,8 +1238,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The initial view is decided ONCE, the moment the tree is ready: on phones, and on every band while the Board is open.
   const phone = breakpoint === 'phone';
   const owner = treeMine && !shared && !demo && !demotion;
+  const stepAddress = useStepAddress();
   if (view === null && (phone || BOARD_OPEN) && tree) {
-    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN }));
+    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id }));
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
@@ -1246,7 +1249,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // Until the tree arrives, the Board's skeleton or load error stands where the Board would open: the saved choice, or
   // the owner's default anywhere but a share or the demo.
   const openingView = view ?? (BOARD_OPEN && !tree
-    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, empty: false, born: peekBorn(treeId), boardOpen: true })
+    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, empty: false, born: peekBorn(treeId), boardOpen: true, linkedStep: stepAddress.id })
     : null);
   const boardFacts = {
     crashed: boardCrashed,
@@ -1316,6 +1319,37 @@ export function SkillTreeView({ treeId, demo = false }) {
     setBoardCrashed(true);
     setView('tree');
   }, []);
+
+  // A card opens its step: the modal from 744px, the pushed page below. The step rides the URL, so a link lands on it and
+  // Back leaves it; selection follows the open step and, on close, returns to the card the visit began on.
+  const detailId = boardActive && tree && stepAddress.id !== null && tree.nodesById.has(stepAddress.id) ? stepAddress.id : null;
+  useEffect(() => {
+    if (detailId !== null) setSelectedId(detailId);
+  }, [detailId, setSelectedId]);
+  const openStepFromBoard = useCallback((id) => {
+    setSelectedId(id);
+    stepAddress.open(id, 'card');
+  }, [setSelectedId, stepAddress.open]);
+  const closeStep = () => {
+    const origin = stepAddress.trail[0];
+    stepAddress.close();
+    if (origin && nodesById.has(origin)) setSelectedId(origin);
+  };
+  const openStepInGraph = (id) => {
+    stepAddress.close();
+    setSelectedId(id);
+    switchView('tree');
+    sceneRef.current?.revealNode(id);
+  };
+  const deleteStepFromDetail = (id) => {
+    stepAddress.close();
+    deleteNodeAt(id);
+  };
+  const handleStepCrash = () => {
+    captureError('roadmap', 'roadmap-board-step', '', '#/app');
+    stepAddress.close();
+  };
+  const stepShareUrl = demo ? null : treeShareUrl(treeId);
 
   useEffect(() => {
     if (!switcherOpen) return undefined;
@@ -1460,7 +1494,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
   }
 
-  function completeStep(id) {
+  // `quiet` is the step page and modal's door: they say the outcome in place, so no ceremony or milestone toast speaks.
+  function completeStep(id, { quiet = false } = {}) {
     const node = nodesById.get(id);
     const next = advanceProgress({ completed, completedAt }, [id], 'complete', Date.now());
     setCompleted(next.completed);
@@ -1473,6 +1508,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       const unlocked = nodesById.get(otherId);
       emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
+    if (quiet) return;
     const opened = changes.unlocked.length;
     const label = node?.label?.trim() || 'Step';
     const stepSummary = demo && id === COACHED_NODE_ID
@@ -1746,7 +1782,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               loading={loading}
               failed={loadError}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={openStepFromBoard}
               title={tree?.title}
               notice={deviceNotice}
               identity={readOnly}
@@ -1761,6 +1797,33 @@ export function SkillTreeView({ treeId, demo = false }) {
             />
           </ErrorBoundary>
         </div>
+      )}
+
+      {detailId !== null && (
+        <ErrorBoundary fallback={null} onCrash={handleStepCrash}>
+          <StepDetail
+            tree={tree}
+            completed={completed}
+            completedAt={completedAt}
+            address={stepAddress}
+            breakpoint={breakpoint}
+            roadmapTitle={tree.title}
+            editable={owner}
+            deletable={detailId !== singleRootId}
+            stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
+            workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
+            workspaceActions={{ onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }}
+            history={selectedHistory}
+            onOpenStep={(id) => stepAddress.open(id, 'step')}
+            onBack={stepAddress.back}
+            onClose={closeStep}
+            onComplete={(id) => completeStep(id, { quiet: true })}
+            onReset={resetStep}
+            onOpenInGraph={openStepInGraph}
+            onDelete={deleteStepFromDetail}
+            onNotify={showToast}
+          />
+        </ErrorBoundary>
       )}
 
       {readOnly ? (

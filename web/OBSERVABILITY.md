@@ -88,7 +88,15 @@ a rail swapped because a selected step sat in it emits nothing. Show all on a fo
 with only `band` (`phone`, `tablet` or `desktop`) when a reader presses it; Done unfolding to reveal a selected step emits
 nothing. A press on an action of the Board's states emits
 `roadmap_board_state_action` with only `state` and `action`: `error` with `retry` (Try again after a failed load),
-`empty` with `newStep`, and `complete` with `share` or `newStep`. A state showing emits nothing. The switch, the tabs, the rail, Show all and the states exist only while the Board's development gate
+`empty` with `newStep`, and `complete` with `share` or `newStep`. A state showing emits nothing. Opening a step from the
+Board emits `roadmap_board_step_open` with only `surface` (`modal` or `page`), `column` (`locked`, `upNext` or `done`) and
+`door` (`card`, `step` for a row inside another step, or `link` for a step link the page arrived at); going back to a step
+already open emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
+and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
+(which also emits `roadmap_view_switch`), `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
+write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
+static Sentry operation `roadmap-board-step` and closes it. The switch, the tabs, the rail, Show all, the states and the
+step's page and modal exist only while the Board's development gate
 (`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
 storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
 drops the Board until that roadmap is opened again and shows the Graph. Loading a roadmap reports to Sentry whatever the

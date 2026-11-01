@@ -49,11 +49,13 @@ export class ViewPrefs {
   }
 }
 
-// Empty or just planted opens the canvas, then a saved choice wins, then owners work and visitors look; the Board, while open, is the List's stand-in.
-export function initialView({ saved, owner, empty, born = false, boardOpen = false }) {
+// Empty or just planted opens the canvas, then a step's link opens the Board for everyone, then a saved choice wins, then
+// owners work and visitors look; the Board, while open, is the List's stand-in.
+export function initialView({ saved, owner, empty, born = false, boardOpen = false, linkedStep = null }) {
   const working = boardOpen ? 'board' : 'list';
   if (born) return 'tree';
   if (empty) return 'tree';
+  if (boardOpen && linkedStep !== null) return 'board';
   if (saved === 'tree') return 'tree';
   if (saved === 'list' || saved === 'board') return working;
   return owner ? working : 'tree';

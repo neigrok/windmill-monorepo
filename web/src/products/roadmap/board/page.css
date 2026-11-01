@@ -1,0 +1,117 @@
+/* The pushed step page below 744px (01.04–01.11, 07.01–07.06): the back row, the details scrolling, the sections and
+   the actions pinned under the thumb. */
+
+.st-board-step-page {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-canvas);
+}
+
+.st-board-step-page-nav {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 68px;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top, 0px) 8px 0;
+}
+.st-board-step-page-back {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px 0 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.st-board-step-page-back-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  color: var(--text-secondary);
+}
+.st-board-step-page-back-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--text-primary);
+}
+
+.st-board-step-page-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px 24px;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.st-board-step-page-pinned {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-canvas);
+}
+
+.st-board-step-page .st-board-step-identity {
+  flex: none;
+}
+.st-board-step-page .st-board-step-panel {
+  gap: 16px;
+}
+.st-board-step-page .st-board-step-status-row {
+  min-height: 24px;
+}
+.st-board-step-page .st-board-step-status-label {
+  flex: 1;
+  font-weight: 700;
+}
+.st-board-step-page .st-board-step-status-dot {
+  display: none;
+}
+.st-board-step-page .st-board-step-undo {
+  min-width: 60px;
+  text-align: right;
+}
+.st-board-step-page .st-board-step-outcome {
+  font-size: 13px;
+}
+.st-board-step-page .st-board-step-row--need {
+  padding: 0 12px;
+  background: var(--surface-sunken);
+}
+.st-board-step-page .st-board-step-row--need .st-board-step-row-glyph {
+  color: var(--text-primary);
+}
+.st-board-step-page .st-board-step-buttons {
+  justify-content: stretch;
+}
+.st-board-step-page .st-board-step-action {
+  flex: 1;
+  padding: 0 26px;
+  font-size: 18px;
+  line-height: 27px;
+}
+.st-board-step-page .st-board-step-preview {
+  text-align: center;
+}
+.st-board-step-page .st-board-step-menu-list {
+  width: 208px;
+}

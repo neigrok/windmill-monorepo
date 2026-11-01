@@ -151,3 +151,31 @@ export function searchEmpty({ query }) {
   const asked = query.trim();
   return { title: `No steps match “${asked}”`, clear: 'Clear search', create: `New step “${asked}”` };
 }
+
+// The step page and modal.
+export const STEP_DETAIL = {
+  sections: { overview: 'Overview', workspace: 'Workspace', history: 'History' },
+  stepLinks: 'Step links',
+  prerequisites: 'Prerequisites',
+  unlocks: 'Unlocks',
+  complete: 'Complete',
+  reset: 'Reset',
+  close: 'Close',
+  more: 'More',
+  back: 'Back',
+  copyLink: 'Copy link',
+  openInGraph: 'Open in Graph',
+  deleteStep: 'Delete step',
+  subtasks: 'Subtasks',
+  addSubtask: 'Add subtask',
+  subtaskOffer: { body: 'All subtasks done', action: 'Complete step' },
+  unnamed: 'Unnamed step',
+};
+
+export function prerequisitesTally({ done, total }) {
+  return `${formatCount(done)} / ${formatCount(total)}`;
+}
+
+export function backTo({ screen }) {
+  return `${STEP_DETAIL.back} to ${screen}`;
+}

@@ -149,3 +149,27 @@ test('copy — sync and session lines', () => {
   assert.equal(ANONYMOUS_OWNER, 'Saved on this device — sign in to keep it');
   assert.equal(LAPSED_SESSION, 'Signed out — saved on this device');
 });
+
+test('copy — the step page and modal', async () => {
+  const { STEP_DETAIL, prerequisitesTally, backTo } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(STEP_DETAIL, {
+    sections: { overview: 'Overview', workspace: 'Workspace', history: 'History' },
+    stepLinks: 'Step links',
+    prerequisites: 'Prerequisites',
+    unlocks: 'Unlocks',
+    complete: 'Complete',
+    reset: 'Reset',
+    close: 'Close',
+    more: 'More',
+    back: 'Back',
+    copyLink: 'Copy link',
+    openInGraph: 'Open in Graph',
+    deleteStep: 'Delete step',
+    subtasks: 'Subtasks',
+    addSubtask: 'Add subtask',
+    subtaskOffer: { body: 'All subtasks done', action: 'Complete step' },
+    unnamed: 'Unnamed step',
+  });
+  assert.deepEqual([prerequisitesTally({ done: 1, total: 2 }), prerequisitesTally({ done: 1200, total: 3200 }), backTo({ screen: 'Learn to sail' })],
+    ['1 / 2', '1,200 / 3,200', 'Back to Learn to sail']);
+});
