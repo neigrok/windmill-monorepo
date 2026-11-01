@@ -33,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.key
@@ -41,8 +42,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.Stable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -54,6 +57,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -63,16 +67,60 @@ import works.windmill.gym.R
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Proposal
-import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.ProposalRead
+import works.windmill.gym.store.RoutinesStore
+import works.windmill.gym.store.TrainingSeat
+import works.windmill.gym.store.TrainingStore
+import works.windmill.sync.engine.Pulls
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.gym.ui.GymMaterial
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
+// What a conversation draws: Coach's own store, and the training its answers name.
+@Stable
+interface AskState {
+    val coach: CoachStore
+    val catalog: List<Exercise>
+    val settledProposals: Map<String, Proposal>
+    val replicaReadRevision: Long
+    val caughtUpTo: Long?
+    val pulled: Pulls
+    fun proposalRecorded(id: String): Boolean
+}
+
+// What a conversation asks of the training stores.
+interface AskEvents {
+    suspend fun proposal(id: String): ProposalRead
+    suspend fun pullAgain(): Boolean
+}
+
+// A conversation over the room's stores.
+class AskBinding(
+    override val coach: CoachStore,
+    private val seat: TrainingSeat,
+    private val routines: RoutinesStore,
+    private val history: HistoryReads,
+) : AskState, AskEvents {
+    constructor(store: TrainingStore) : this(store.coach, store.seat, store.routines, store.history)
+
+    override val catalog: List<Exercise> get() = routines.catalog
+    override val settledProposals: Map<String, Proposal> get() = routines.settledProposals
+    override val replicaReadRevision: Long get() = seat.replicaReadRevision
+    override val caughtUpTo: Long? get() = routines.caughtUpTo
+    override val pulled: Pulls get() = history.pulled
+    override fun proposalRecorded(id: String): Boolean = routines.proposalRecorded(id)
+    override suspend fun proposal(id: String): ProposalRead = routines.proposal(id)
+    override suspend fun pullAgain(): Boolean = history.pullAgain()
+}
+
 @Composable
 fun AskScreen(
-    store: TrainingStore,
+    state: AskState,
+    events: AskEvents,
     thread: List<AskExchange>,
     // Ephemeral lines derived from the server's apply reply; they die with the conversation.
     receipts: List<String>,
@@ -109,28 +157,29 @@ fun AskScreen(
     onBuildRoutine: (() -> Unit)? = null,
 ) {
     val skin = LocalGymColors.current
+    val coach = state.coach
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
-    val savedPosition = store.coach.chat(conversationId)
-    val account = store.coach.accountKey
-    val keptDrafts = store.coach.keptDrafts(conversationId)
+    val savedPosition = coach.chat(conversationId)
+    val account = coach.accountKey
+    val keptDrafts = coach.keptDrafts(conversationId)
     val greeting = savedPosition?.setup == true && thread.isEmpty() && composerVisible && keptDrafts.isEmpty()
     var syncDraft by remember(account, conversationId) { mutableStateOf<(() -> Boolean)?>(null) }
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    var photoRequest by remember(account, conversationId) { mutableStateOf(0) }
+    var photoRequest by remember(account, conversationId) { mutableIntStateOf(0) }
     val presentation = rememberCoachPresentation(conversationId, thread, account, savedPosition?.scroll ?: 0, savedPosition?.followEnd ?: true)
     var sourcesTop by remember(conversationId) { mutableStateOf<Int?>(null) }
-    var viewportBottom by remember(conversationId) { mutableStateOf(0) }
+    var viewportBottom by remember(conversationId) { mutableIntStateOf(0) }
     val overlap = (viewportBottom - (sourcesTop ?: viewportBottom)).coerceAtLeast(0)
     val sourcesSpace = with(LocalDensity.current) { overlap.toDp() } + if (sourcesTop != null) 16.dp else 0.dp
     DisposableEffect(presentation, account) {
         onDispose {
-            if (store.coach.accountKey == account) store.coach.keepPosition(conversationId, presentation.scroll.value, presentation.followEnd)
+            if (coach.accountKey == account) coach.keepPosition(conversationId, presentation.scroll.value, presentation.followEnd)
         }
     }
     LaunchedEffect(presentation, account) {
         snapshotFlow { presentation.scroll.isScrollInProgress }.drop(1).collect { scrolling ->
-            if (!scrolling && store.coach.accountKey == account)
-                store.coach.keepPosition(conversationId, presentation.scroll.value, presentation.followEnd)
+            if (!scrolling && coach.accountKey == account)
+                coach.keepPosition(conversationId, presentation.scroll.value, presentation.followEnd)
         }
     }
     val messageKeys = presentation.keys
@@ -147,7 +196,7 @@ fun AskScreen(
 
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.
-    val proposals = remember { AnsweredProposals(store, telemetry) }
+    val proposals = remember { AnsweredProposals(state, events, telemetry) }
     val minted = proposals.minted
     val waitedHere = remember { mutableSetOf<String>() }
     thread.forEach { if (it.pending && it.requestId.isNotEmpty()) waitedHere += it.requestId }
@@ -155,7 +204,7 @@ fun AskScreen(
     val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
     val headerProposals = proposalIds.filterNot { it in attachedProposals }
     val wanted = (attachedProposals + proposalIds).toList()
-    LaunchedEffect(wanted, store.seat.replicaReadRevision, store.history.pulled.caughtUp) { proposals.read(wanted) }
+    LaunchedEffect(wanted, state.replicaReadRevision, state.pulled.caughtUp) { proposals.read(wanted) }
     proposals.missing.keys.forEach { id -> key(id) { LaunchedEffect(Unit) { proposals.settle(id) } } }
 
     GymScreen(
@@ -185,7 +234,7 @@ fun AskScreen(
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 8.dp + sourcesSpace),
             ) {
-                if (greeting) CoachGreeting(!store.coach.anonymous, composerEnabled && !asking,
+                if (greeting) CoachGreeting(!coach.anonymous, composerEnabled && !asking,
                     onScreenshot = {
                         telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "screenshot"))
                         photoRequest++
@@ -194,16 +243,16 @@ fun AskScreen(
                         onBuildRoutine?.invoke()
                     })
                 onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
-                (historyFailure ?: draftFailure ?: store.coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
+                (historyFailure ?: draftFailure ?: coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
                 thread.forEachIndexed { index, exchange ->
                     if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             val heldInComposer = cap != null && index == thread.lastIndex && exchange.answer == null &&
-                                exchange.question == store.coach.draft(conversationId.ifEmpty { "new" }).text
+                                exchange.question == coach.draft(conversationId.ifEmpty { "new" }).text
                             if (!heldInComposer || exchange.attachments.isNotEmpty() || exchange.generation != null) ChatTimestamp(exchange.atMs, nowMs)
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                exchange.attachments.forEach { CoachPhoto(store.coach, conversationId, it, Modifier.size(160.dp)) }
+                                exchange.attachments.forEach { CoachPhoto(coach, conversationId, it, Modifier.size(160.dp)) }
                                 if (exchange.question.isNotEmpty() && !heldInComposer) CoachQuestion(exchange.question, if (exchange.attachments.isEmpty()) CoachGroup.Single else CoachGroup.Last)
                             }
                             val answered = exchange.answer ?: exchange.generation?.response()
@@ -214,18 +263,18 @@ fun AskScreen(
                                 val setupOnly = clarification != null && CoachSources.choicesAlone(answer.receipt?.steps ?: answer.steps,
                                     answer.receipt?.read ?: answer.read,
                                     acted = answer.proposals.isNotEmpty() || answer.results.isNotEmpty() || answer.routineDrafts.isNotEmpty())
-                                if (setupOnly) CoachAnswer(text.ifEmpty { requireNotNull(clarification).question }, null, store.routines.catalog, nowMs,
+                                if (setupOnly) CoachAnswer(text.ifEmpty { requireNotNull(clarification).question }, null, state.catalog, nowMs,
                                     copyText = answer.answer.ifEmpty { requireNotNull(clarification).question })
-                                else Answer(answer, text, exchange.answer != null, minted + store.routines.settledProposals, store.routines.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
+                                else Answer(answer, text, exchange.answer != null, minted + state.settledProposals, state.catalog, nowMs, lookedAt, onReview, onOpenRoutine, coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
                                 if (clarification != null) CoachChoices(clarification,
-                                    store.coach.choices(conversationId, exchange.requestId, clarification.id),
+                                    coach.choices(conversationId, exchange.requestId, clarification.id),
                                     enabled = composerVisible && composerEnabled && !asking && syncDraft != null) { group, option ->
-                                    if (store.coach.accountKey == account && store.coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
-                                        try { store.coach.choose(conversationId, exchange.requestId, clarification, group, option); draftFailure = null }
+                                    if (coach.accountKey == account && coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
+                                        try { coach.choose(conversationId, exchange.requestId, clarification, group, option); draftFailure = null }
                                         catch (_: Exception) { draftFailure = "Your draft couldn’t be saved. Try again." }
                                     }
                                 }
-                                answer.proposals.filter { it !in minted && it !in store.routines.settledProposals }.forEach { id ->
+                                answer.proposals.filter { it !in minted && it !in state.settledProposals }.forEach { id ->
                                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
                                     else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
@@ -247,25 +296,25 @@ fun AskScreen(
                     }
                 }
                 headerProposals.forEach { id ->
-                    (store.routines.settledProposals[id] ?: minted[id])?.let { proposal ->
-                        Minted(proposal, store.routines.catalog, nowMs, id in lookedAt) { onReview(proposal) }
+                    (state.settledProposals[id] ?: minted[id])?.let { proposal ->
+                        Minted(proposal, state.catalog, nowMs, id in lookedAt) { onReview(proposal) }
                     }
                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
                 }
-                val shown = (minted + store.routines.settledProposals).values.mapNotNull { it.receipt }.toSet()
+                val shown = (minted + state.settledProposals).values.mapNotNull { it.receipt }.toSet()
                 receipts.filterNot { it in shown }.forEach { receipt ->
                     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { ReceiptLine(receipt) }
                 }
                 keptDrafts.forEach { kept ->
                     key(kept.id) { CoachKeptDraft(kept.draft, composerVisible && composerEnabled && !asking && syncDraft != null) {
-                        if (store.coach.accountKey == account && store.coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
-                            try { store.coach.continueDraft(conversationId, kept.id); draftFailure = null }
+                        if (coach.accountKey == account && coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
+                            try { coach.continueDraft(conversationId, kept.id); draftFailure = null }
                             catch (_: Exception) { draftFailure = "Your draft couldn’t be saved. Try again." }
                         }
                     } }
                 }
                 cap?.let {
-                    CoachCapNotice(it, thread.lastOrNull(), anonymous = store.coach.anonymous,
+                    CoachCapNotice(it, thread.lastOrNull(), anonymous = coach.anonymous,
                         onSignIn = onSignIn?.let { signIn -> {
                             telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "sign_in"))
                             signIn()
@@ -285,7 +334,7 @@ fun AskScreen(
                 Text("Jump to latest", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), modifier = Modifier.padding(start = 8.dp))
             }
         }
-        store.coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
+        coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Reply pending", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
@@ -306,12 +355,12 @@ fun AskScreen(
                         onNewDraft(thread.lastOrNull()?.takeIf { it.answer == null && !it.pending }?.question.orEmpty())
                     })
                 }
-                else -> if (composerVisible) CoachComposer(store.coach, conversationId.ifEmpty { "new" }, seed, asking,
+                else -> if (composerVisible) CoachComposer(coach, conversationId.ifEmpty { "new" }, seed, asking,
                     onSend = { text, photo ->
                         val last = thread.lastOrNull()
                         if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry(last)
                         else if (onPhotoAsk != null) onPhotoAsk(text, photo)
-                        else { onAsk(text); store.coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
+                        else { onAsk(text); coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
                     }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy, photoRequest = photoRequest, onDraftSync = { syncDraft = it })
             }
         }
@@ -397,7 +446,7 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
 // once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at
 // or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The
 // wait's end asks for that pull once. One named by an answer this visit waited for and gone that way is reported once.
-internal class AnsweredProposals(private val store: TrainingStore, private val telemetry: Telemetry) {
+internal class AnsweredProposals(private val state: AskState, private val events: AskEvents, private val telemetry: Telemetry) {
     data class Miss(val recorded: Boolean = false, val caughtUpAt: Long? = null, val readPast: Boolean = false,
         val waitedAt: Long? = null, val pulledPast: Boolean = false) {
         val settled: Boolean get() = waitedAt != null && (readPast || pulledPast)
@@ -421,13 +470,13 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
     fun gone(id: String): Boolean = missing[id]?.gone == true
 
     suspend fun read(wanted: List<String>) {
-        val caughtUpTo = store.routines.caughtUpTo
-        val caughtUpPull = store.history.pulled.caughtUp
+        val caughtUpTo = state.caughtUpTo
+        val caughtUpPull = state.pulled.caughtUp
         for (id in wanted) {
             if (minted.containsKey(id)) continue
-            when (val read = store.routines.proposal(id)) {
+            when (val read = events.proposal(id)) {
                 is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
-                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.routines.proposalRecorded(id), caughtUpTo, caughtUpPull)
+                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(state.proposalRecorded(id), caughtUpTo, caughtUpPull)
             }
         }
         report()
@@ -436,9 +485,9 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
     suspend fun settle(id: String) {
         delay(settleMs)
         val miss = missing[id] ?: return
-        missing[id] = miss.copy(waitedAt = store.history.pulled.sent)
+        missing[id] = miss.copy(waitedAt = state.pulled.sent)
         report()
-        if (missing[id]?.gone == false) store.history.pullAgain()
+        if (missing[id]?.gone == false) events.pullAgain()
     }
 
     private fun report() {
@@ -448,3 +497,63 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
 
     companion object { const val settleMs = 10_000L }
 }
+
+private data class PreviewAsk(
+    override val coach: CoachStore,
+    override val catalog: List<Exercise> = emptyList(),
+    override val settledProposals: Map<String, Proposal> = emptyMap(),
+    override val replicaReadRevision: Long = 0,
+    override val caughtUpTo: Long? = null,
+    override val pulled: Pulls = Pulls(),
+) : AskState {
+    override fun proposalRecorded(id: String): Boolean = false
+}
+
+private object PreviewAskEvents : AskEvents {
+    override suspend fun proposal(id: String): ProposalRead = ProposalRead.Gone
+    override suspend fun pullAgain(): Boolean = false
+}
+
+@Composable
+private fun AskPreview(dark: Boolean, setup: Boolean, thread: List<AskExchange>) {
+    val scope = rememberCoroutineScope()
+    val coach = remember {
+        CoachStore({ "preview-lifter" }, { emptySet() }, {}, { null }, null, Telemetry.None, { 0L }, scope)
+            .also { it.freshChat(id = "preview-chat", setup = setup) }
+    }
+    CompositionLocalProvider(LocalWindmillDark provides dark) {
+        GymMaterial {
+            AskScreen(PreviewAsk(coach), PreviewAskEvents, thread, receipts = emptyList(), lookedAt = emptySet(), asking = false,
+                cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works", seat = "M",
+                onThreads = {}, onReview = {}, conversationId = "preview-chat")
+        }
+    }
+}
+
+private val previewConversation: List<AskExchange> get() {
+    val now = System.currentTimeMillis()
+    return listOf(
+        AskExchange("How should I come back to squats after a deload week?", requestId = "preview-1", atMs = now - 360_000,
+            answer = AskAnswer("Start at about 90% of your last top set for the first week. Then add 2.5 kg a session while every set still leaves two reps in reserve.",
+                ReadTally(sets = 24, sessions = 6, weeks = 3))),
+        AskExchange("And if a session feels heavy?", requestId = "preview-2", atMs = now - 120_000,
+            answer = AskAnswer("Repeat the weight next time instead of adding. One heavy day is noise; two in a row means stay put for a week.",
+                ReadTally())),
+    )
+}
+
+@Preview(name = "Ask · conversation · Dark")
+@Composable
+private fun AskConversationDark() = AskPreview(dark = true, setup = false, thread = previewConversation)
+
+@Preview(name = "Ask · conversation · Daylight")
+@Composable
+private fun AskConversationDaylight() = AskPreview(dark = false, setup = false, thread = previewConversation)
+
+@Preview(name = "Ask · greeting · Dark")
+@Composable
+private fun AskGreetingDark() = AskPreview(dark = true, setup = true, thread = emptyList())
+
+@Preview(name = "Ask · greeting · Daylight")
+@Composable
+private fun AskGreetingDaylight() = AskPreview(dark = false, setup = true, thread = emptyList())

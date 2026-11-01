@@ -80,7 +80,8 @@ class ThreadScreenTests {
         rest.conversations["thread-ordinary"] = AskThread("thread-ordinary", "How was my workout?", askedAtMs = today,
             outcome = ThreadOutcome("read-only"))
         val store = signedIn(scope, rest).store
-        compose.setContent { ThreadsScreen(store, "Coach", {}, {}, {}) }
+        val threads = ThreadsBinding(store.coach)
+        compose.setContent { ThreadsScreen(threads, threads, "Coach", {}, {}, {}) }
 
         compose.onNodeWithText("Created Push A").assertIsDisplayed()
         compose.onAllNodes(hasText("Today")).assertCountEquals(2)
@@ -96,7 +97,8 @@ class ThreadScreenTests {
         val turns = (1..4).flatMap { listOf(AskTurn("lifter", "Question $it"), AskTurn("coach", "Answer $it")) }
         rest.conversations["thread-old"] = AskThread("thread-old", "Question 1", turns = turns)
         val store = signedIn(scope, rest).store
-        compose.setContent { ThreadScreen("thread-old", store, emptyList(), emptySet(), "History", {}, {}, {}) }
+        val ask = AskBinding(store)
+        compose.setContent { ThreadScreen(ask, ask, "thread-old", emptyList(), emptySet(), "History", {}, {}, {}) }
         compose.onNodeWithContentDescription("Question").performTextReplacement("Question 5")
         compose.onNodeWithContentDescription("Send").performClick()
         compose.waitUntil(10_000) { compose.onNodeWithText("nothing has moved in three weeks.").isDisplayed() }
@@ -162,9 +164,10 @@ class ThreadScreenTests {
         propose(room, server, routine)
         rest.conversations["thread0001"] = aThread(routine.id)
         val doors = mutableListOf<String>()
+        val ask = AskBinding(room.store)
         compose.setContent {
             ThreadScreen(
-                threadId = "thread0001", store = room.store, receipts = emptyList(), lookedAt = setOf("proposal1"),
+                threadId = "thread0001", state = ask, events = ask, receipts = emptyList(), lookedAt = setOf("proposal1"),
                 backTo = "Coach", onBack = {}, onReview = { doors += it.id }, say = {},
             )
         }
@@ -189,7 +192,8 @@ class ThreadScreenTests {
             AskTurn("coach", "Keep the proposal review here.", requestId = "legacy-request",
                 receipt = AnswerReceipt(1, ReadTally(sessions = 1, weeks = 1), steps = listOf(AskStep("list_sessions")))),
         ))
-        compose.setContent { ThreadScreen("thread0001", room.store, emptyList(), emptySet(), "Coach", {}, {}, {}) }
+        val ask = AskBinding(room.store)
+        compose.setContent { ThreadScreen(ask, ask, "thread0001", emptyList(), emptySet(), "Coach", {}, {}, {}) }
         compose.onNodeWithText("Read 1 week · 1 session").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Read 1 workout · 1 week").assertDoesNotExist()
         compose.onNodeWithText("Proposal · Push Day").performScrollTo().assertIsDisplayed()
@@ -208,9 +212,10 @@ class ThreadScreenTests {
         val routine = pushDay(room, server)
         propose(room, server, routine, summary = "")
         rest.conversations["thread0001"] = aThread(routine.id)
+        val ask = AskBinding(room.store)
         compose.setContent {
             ThreadScreen(
-                threadId = "thread0001", store = room.store, receipts = emptyList(), lookedAt = emptySet(),
+                threadId = "thread0001", state = ask, events = ask, receipts = emptyList(), lookedAt = emptySet(),
                 backTo = "Coach", onBack = {}, onReview = {}, say = {},
             )
         }
@@ -231,9 +236,10 @@ class ThreadScreenTests {
         propose(room, server, routine)
         rest.conversations["thread0001"] = aThread(routine.id)
         var receipts by mutableStateOf<List<String>>(emptyList())
+        val ask = AskBinding(room.store)
         compose.setContent {
             ThreadScreen(
-                threadId = "thread0001", store = room.store, receipts = receipts, lookedAt = emptySet(),
+                threadId = "thread0001", state = ask, events = ask, receipts = receipts, lookedAt = emptySet(),
                 backTo = "Coach", onBack = {}, onReview = {}, say = {},
             )
         }
@@ -261,8 +267,9 @@ class ThreadScreenTests {
         val thread = AskThread("thr_retry", "My question", turns = listOf(AskTurn("coach", "The original answer.")))
         rest.conversations[thread.id] = thread
         rest.online = false
+        val ask = AskBinding(store)
         compose.setContent {
-            ThreadScreen(thread.id, store, emptyList(), emptySet(), "Coach", {}, {}, {})
+            ThreadScreen(ask, ask, thread.id, emptyList(), emptySet(), "Coach", {}, {}, {})
         }
         compose.onNodeWithText("the log didn’t answer — that conversation didn’t open").assertIsDisplayed()
         compose.onNodeWithText("The original answer.").assertDoesNotExist()
@@ -288,8 +295,9 @@ class ThreadScreenTests {
                 receipt = AnswerReceipt(1, ReadTally(0, 0, 0), proposals = listOf("prop_removed")))))
         rest.conversations[thread.id] = thread
         val room = signedIn(scope, rest)
+        val ask = AskBinding(room.store)
         compose.setContent {
-            ThreadScreen(thread.id, room.store, emptyList(), emptySet(), "Coach", {}, {}, {})
+            ThreadScreen(ask, ask, thread.id, emptyList(), emptySet(), "Coach", {}, {}, {})
         }
         compose.onNodeWithText("The original proposal explanation.").assertIsDisplayed()
         compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
@@ -330,8 +338,9 @@ class ThreadScreenTests {
         var receipts by mutableStateOf<List<String>>(emptyList())
         var visit by mutableStateOf(0)
         val reviewed = mutableListOf<String>()
+        val ask = AskBinding(room.store)
         compose.setContent {
-            key(visit) { ThreadScreen(thread.id, room.store, receipts, emptySet(), "Coach", {}, { reviewed += it.id }, {}) }
+            key(visit) { ThreadScreen(ask, ask, thread.id, receipts, emptySet(), "Coach", {}, { reviewed += it.id }, {}) }
         }
         compose.onNodeWithText("Remove this routine.").assertIsDisplayed()
         compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
@@ -372,8 +381,9 @@ class ThreadScreenTests {
                 receipt = AnswerReceipt(1, ReadTally(0, 0, 0), proposals = listOf("proposal1")))))
         rest.conversations[thread.id] = thread
         var visit by mutableStateOf(0)
+        val ask = AskBinding(room.store)
         compose.setContent {
-            key(visit) { ThreadScreen(thread.id, room.store, emptyList(), emptySet(), "Coach", {}, {}, {}) }
+            key(visit) { ThreadScreen(ask, ask, thread.id, emptyList(), emptySet(), "Coach", {}, {}, {}) }
         }
         compose.onNodeWithText("The original answer.").assertIsDisplayed()
         compose.onNodeWithText("Review").assertDoesNotExist()

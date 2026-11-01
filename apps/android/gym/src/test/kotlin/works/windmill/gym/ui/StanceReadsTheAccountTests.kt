@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.ThreadsBinding
 import works.windmill.gym.coach.ThreadsScreen
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
@@ -170,7 +171,8 @@ class StanceReadsTheAccountTests {
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         val store = room(scope, server).store
-        compose.setContent { ThreadsScreen(store, "Coach", {}, {}, {}) }
+        val threads = ThreadsBinding(store.coach)
+        compose.setContent { ThreadsScreen(threads, threads, "Coach", {}, {}, {}) }
         compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
         val deleted = compose.runOnIdle { scope.async { store.coach.deleteThread("thr_1") } }
         compose.waitUntil(5_000) { deleted.isCompleted }
@@ -233,8 +235,9 @@ class StanceReadsTheAccountTests {
         runBlocking { store.coach.readThreads() }
         server.refuseThreads = IOException("offline")
 
+        val threads = ThreadsBinding(store.coach)
         compose.setContent {
-            ThreadsScreen(store = store, backTo = "Coach", onBack = {}, onOpen = {},
+            ThreadsScreen(state = threads, events = threads, backTo = "Coach", onBack = {}, onOpen = {},
                 onAskNew = {})
         }
 

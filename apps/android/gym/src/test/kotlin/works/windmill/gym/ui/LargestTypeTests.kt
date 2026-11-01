@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.AskBinding
 import works.windmill.gym.coach.AskScreen
 import androidx.compose.foundation.layout.Box
 import kotlinx.coroutines.launch
@@ -141,10 +142,11 @@ class LargestTypeTests {
         val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will " +
             "answer again as that window rolls on"
         try { store(scope).use { room ->
+            val ask = AskBinding(room.store)
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
                     AskScreen(
-                        store = room.store,
+                        state = ask, events = ask,
                         thread = listOf(AskExchange(question = "what’s stalled?", trouble = ceiling)),
                         receipts = emptyList(), lookedAt = emptySet(), asking = false,
                         cap = AskCap.Ceiling, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",

@@ -26,9 +26,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,22 +38,54 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
 import works.windmill.gym.R
 import works.windmill.gym.ui.DeleteSwipeRow
+import works.windmill.gym.ui.GymMaterial
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.presentation.Ids
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.TrainingStore
 import kotlinx.coroutines.launch
+
+// What the conversation list draws.
+@Stable
+interface ThreadsState {
+    val accountKey: String
+    val threads: List<AskThread>
+    val nextThreadCursor: String?
+    fun draft(id: String): CoachDraft
+    fun draftSaved(id: String): Boolean
+    fun isAsking(id: String): Boolean
+}
+
+// What the conversation list asks of Coach.
+interface ThreadsEvents {
+    suspend fun readThreads(cursor: String? = null): GymResult<List<AskThread>>
+    suspend fun deleteThread(id: String): GymResult<Unit>
+}
+
+// The conversation list over Coach's store.
+class ThreadsBinding(private val coach: CoachStore) : ThreadsState, ThreadsEvents {
+    override val accountKey: String get() = coach.accountKey
+    override val threads: List<AskThread> get() = coach.threads
+    override val nextThreadCursor: String? get() = coach.nextThreadCursor
+    override fun draft(id: String): CoachDraft = coach.draft(id)
+    override fun draftSaved(id: String): Boolean = coach.draftSaved(id)
+    override fun isAsking(id: String): Boolean = coach.isAsking(id)
+    override suspend fun readThreads(cursor: String?): GymResult<List<AskThread>> = coach.readThreads(cursor)
+    override suspend fun deleteThread(id: String): GymResult<Unit> = coach.deleteThread(id)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ThreadsScreen(
-    store: TrainingStore,
+    state: ThreadsState,
+    events: ThreadsEvents,
     backTo: String,
     onBack: () -> Unit,
     onOpen: (String) -> Unit,
@@ -63,13 +97,13 @@ fun ThreadsScreen(
     val scope = rememberCoroutineScope()
     var attempt by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
-    var failure by remember(store.coach.accountKey) { mutableStateOf<String?>(null) }
-    var confirming by remember(store.coach.accountKey) { mutableStateOf<String?>(null) }
-    var deleting by remember(store.coach.accountKey) { mutableStateOf(emptySet<String>()) }
+    var failure by remember(state.accountKey) { mutableStateOf<String?>(null) }
+    var confirming by remember(state.accountKey) { mutableStateOf<String?>(null) }
+    var deleting by remember(state.accountKey) { mutableStateOf(emptySet<String>()) }
 
-    LaunchedEffect(store.coach.accountKey, attempt) {
+    LaunchedEffect(state.accountKey, attempt) {
         loading = true
-        failure = when (val read = store.coach.readThreads()) {
+        failure = when (val read = events.readThreads()) {
             is GymResult.Ok -> null
             is GymResult.Failed -> read.why.line("your conversations are out of reach")
         }
@@ -94,16 +128,16 @@ fun ThreadsScreen(
                     failure?.let { line -> item("failure") {
                         Text(line, style = CoachType.body(14), color = skin.inkDim, modifier = Modifier.padding(16.dp))
                     } }
-                    val held = store.coach.threads.filterNot { it.id in deleting }
+                    val held = state.threads.filterNot { it.id in deleting }
                     if (!loading && held.isEmpty() && failure == null) item("none") {
                         Text(Threads.none, style = CoachType.body(15), color = skin.inkDim, modifier = Modifier.padding(16.dp))
                     }
                     items(held, key = { it.id }) { thread ->
                         DeleteSwipeRow(actionLabel = "Delete conversation", onDelete = { requestDelete(thread.id); false }) {
-                            val draft = store.coach.draft(thread.id)
+                            val draft = state.draft(thread.id)
                             val preview = when {
-                                store.coach.isAsking(thread.id) || thread.generation?.status == "running" -> "Answering…"
-                                draft.text.isNotBlank() || draft.photo != null -> if (store.coach.draftSaved(thread.id)) "Draft · saved on this device" else "Draft"
+                                state.isAsking(thread.id) || thread.generation?.status == "running" -> "Answering…"
+                                draft.text.isNotBlank() || draft.photo != null -> if (state.draftSaved(thread.id)) "Draft · saved on this device" else "Draft"
                                 else -> thread.outcome.detail?.replaceFirstChar { it.uppercase() }
                                     ?: CoachMarkdown.plain(thread.answerPreview)
                             }
@@ -117,11 +151,11 @@ fun ThreadsScreen(
                             )
                         }
                     }
-                    store.coach.nextThreadCursor?.let { cursor -> item("older") {
+                    state.nextThreadCursor?.let { cursor -> item("older") {
                         CoachAction(if (loading) "Reading conversations…" else "Earlier conversations", enabled = !loading, onClick = {
                             loading = true
                             scope.launch {
-                                failure = when (val read = store.coach.readThreads(cursor)) {
+                                failure = when (val read = events.readThreads(cursor)) {
                                     is GymResult.Ok -> null
                                     is GymResult.Failed -> read.why.line("your conversations are out of reach")
                                 }
@@ -150,7 +184,7 @@ fun ThreadsScreen(
                 confirming = null
                 deleting = deleting + id
                 scope.launch {
-                    when (val result = store.coach.deleteThread(id)) {
+                    when (val result = events.deleteThread(id)) {
                         is GymResult.Ok -> failure = null
                         is GymResult.Failed -> failure = result.why.line("that conversation is still here")
                     }
@@ -163,8 +197,9 @@ fun ThreadsScreen(
 
 @Composable
 fun ThreadScreen(
+    state: AskState,
+    events: AskEvents,
     threadId: String,
-    store: TrainingStore,
     receipts: List<String>,
     lookedAt: Set<String>,
     backTo: String,
@@ -184,7 +219,7 @@ fun ThreadScreen(
     onBuildRoutine: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
-    val coach = store.coach
+    val coach = state.coach
     val chat = coach.chat(threadId)
     val history = chat?.history
     val conversation = chat?.exchanges.orEmpty()
@@ -223,7 +258,7 @@ fun ThreadScreen(
         return
     }
     AskScreen(
-        store = store, thread = conversation, conversationId = threadId,
+        state = state, events = events, thread = conversation, conversationId = threadId,
         receipts = receipts, lookedAt = lookedAt, asking = asking, cap = cap,
         onAsk = { ask(it) }, onPhotoAsk = { text, photo -> ask(text, photo = photo) },
         onStop = if (coach.anonymous) null else ({ coach.stopChat(threadId) }), upload = upload,
@@ -251,3 +286,55 @@ fun ThreadScreen(
         proposalIds = history?.proposals.orEmpty().map { it.id },
     )
 }
+
+private data class PreviewThreads(
+    override val threads: List<AskThread>,
+    override val accountKey: String = "preview-lifter",
+    override val nextThreadCursor: String? = null,
+) : ThreadsState {
+    override fun draft(id: String): CoachDraft = CoachDraft()
+    override fun draftSaved(id: String): Boolean = true
+    override fun isAsking(id: String): Boolean = false
+}
+
+private object PreviewThreadsEvents : ThreadsEvents {
+    override suspend fun readThreads(cursor: String?): GymResult<List<AskThread>> = GymResult.Ok(emptyList())
+    override suspend fun deleteThread(id: String): GymResult<Unit> = GymResult.Ok(Unit)
+}
+
+@Composable
+private fun ThreadsPreview(dark: Boolean, threads: List<AskThread>) {
+    CompositionLocalProvider(LocalWindmillDark provides dark) {
+        GymMaterial {
+            ThreadsScreen(PreviewThreads(threads), PreviewThreadsEvents, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {})
+        }
+    }
+}
+
+private val previewThreads: List<AskThread> get() {
+    val now = System.currentTimeMillis()
+    return listOf(
+        AskThread("preview-1", "Can you add a second leg day to my week?", askedAtMs = now - 3_600_000,
+            outcome = ThreadOutcome(ThreadOutcome.applied, changes = 2, routine = "Legs B")),
+        AskThread("preview-2", "My left shoulder clicks on overhead press", askedAtMs = now - 86_400_000,
+            answerPreview = "Swap to a landmine press for two weeks and keep the load where it stays pain-free."),
+        AskThread("preview-3", "How long should I rest between heavy squat sets?", askedAtMs = now - 6 * 86_400_000,
+            answerPreview = "Three to five minutes on your top sets; two is enough on back-off sets."),
+    )
+}
+
+@Preview(name = "Threads · chats · Dark")
+@Composable
+private fun ThreadsChatsDark() = ThreadsPreview(dark = true, threads = previewThreads)
+
+@Preview(name = "Threads · chats · Daylight")
+@Composable
+private fun ThreadsChatsDaylight() = ThreadsPreview(dark = false, threads = previewThreads)
+
+@Preview(name = "Threads · empty · Dark")
+@Composable
+private fun ThreadsEmptyDark() = ThreadsPreview(dark = true, threads = emptyList())
+
+@Preview(name = "Threads · empty · Daylight")
+@Composable
+private fun ThreadsEmptyDaylight() = ThreadsPreview(dark = false, threads = emptyList())
