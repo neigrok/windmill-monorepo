@@ -8,7 +8,7 @@
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The log row menu's *Discard workout* is a default (ink) menu item (`ui/LogScreen.kt:354`).
-- The receipt overflow's *Discard* is ink (`ui/FinishScreen.kt:289`).
+- The receipt overflow's *Discard* is ink (`ui/FinishScreen.kt:287`).
 - History's *Delete* confirm uses `MaterialTheme.gymColors.alarmInk` (`coach/ThreadsScreen.kt:182`), which differs from the scheme's `error` (`ui/GymSkin.kt:40,49`).
 - `GymMenuItem(destructive = true)` already uses `colorScheme.error` (`ui/NativeControls.kt:107`).
 
