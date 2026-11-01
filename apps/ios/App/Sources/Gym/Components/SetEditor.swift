@@ -123,27 +123,23 @@ struct RepsWheel: View {
   }
 }
 
-// A set's numbers as Fix set and Edit sets draw them (03.25, 03.30): the Load row on the decimal pad, its field outlined in
-// the accent while it is typed in, over the reps wheel.
-struct SetFields: View {
+// A set's Load row as Fix set and Edit sets draw it (03.25, 03.30): the load on the decimal pad in its well, outlined in
+// the accent while it has focus, then its unit.
+struct LoadRow: View {
   @Binding var weightKg: Double
-  @Binding var reps: Int
   let basis: MovementEquipment
   let focus: FocusState<Bool>.Binding
   let identifier: String
+  var ended: () -> Void = {}
 
   var body: some View {
     LabeledContent("Load") {
       HStack(spacing: RoomSpace.related) {
-        LoadField(weightKg: $weightKg, basis: basis, focus: focus, identifier: "\(identifier)-load")
-          .multilineTextAlignment(.trailing).monospacedDigit()
-          .padding(.horizontal, 10).frame(width: 120, height: 36)
-          .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 10))
-          .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(focus.wrappedValue ? GymPalette.accent : .clear, lineWidth: 1.5) }
+        LoadField(weightKg: $weightKg, basis: basis, focus: focus, identifier: identifier, ended: ended)
+          .modifier(FieldWell(focused: focus.wrappedValue))
         Text(basis.unit).foregroundStyle(GymPalette.inkDim).fixedSize()
       }
     }.foregroundStyle(GymPalette.ink)
-    RepsWheel(reps: $reps, identifier: "\(identifier)-reps").frame(height: 140).clipped()
   }
 }
 
@@ -255,8 +251,11 @@ struct SetEditor: View {
       Form {
         Group {
           Section {
-            SetFields(weightKg: $draft.weightKg, reps: $draft.reps, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)),
-                      focus: $loadFocused, identifier: identifier).id(draft.exerciseId)
+            Group {
+              LoadRow(weightKg: $draft.weightKg, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)),
+                      focus: $loadFocused, identifier: "\(identifier)-load")
+              RepsWheel(reps: $draft.reps, identifier: "\(identifier)-reps").frame(height: 140).clipped()
+            }.id(draft.exerciseId)
           }
           Section {
             Picker("Effort", selection: $draft.rpe) {
