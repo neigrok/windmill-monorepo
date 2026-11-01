@@ -416,10 +416,6 @@ and Android disagree.
     the iOS onboarding projection has no corresponding typed-code mapping.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only.
-  - `ios/ios-redesign.md` §2 (the `gym/alarm-fill` row, the brick line under the table, white on
-    `alarm-fill`) gives a removal's primary a brick fill, where the boards draw **Remove routine** in
-    the destructive style: iOS draws it quiet with its label in the system red and holds no
-    `gym/alarm-fill` colour. §2 wants the row and the lines retired.
   - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
     `Program.kt`, web `routines.js`), and web `coach.js` *Coach reads your log, so it needs you
     signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. Android's
@@ -494,31 +490,14 @@ and Android disagree.
   from the lifter's state and never from capability copy — *Build me a routine* with no routines,
   *How did today go?* after a workout today. A tap fills the composer without sending, and the
   capsule leaves with the first message. It waits on the owner and is not drawn.
-- **iOS card radii (build drift, needs a Figma decision).** One card role is drawn at three radii, named in
-  `RoomSpace` (`Theme/TypeScale.swift`): `cardRadius` 16 pt for the room's cards (the transient band, workout
-  ledger and fact tiles, Journal echoes), `coachCardRadius` 22 pt continuous for Coach's conversation cards
-  (`ChangeCard`), and `weighInRadius` 24 pt for the weigh-in sheet's weight, date and Delete weigh-in cards
-  (`Gym/Log/BodyweightScreen.swift`); the share sheet's preview card is 12 pt (`SessionShareSheet.swift`). For the
-  designer: one radius for the card role, or a named role for each that differs. The build changes after the drawing.
-- **Coach card decisions are hand-drawn (build drift, needs a Figma decision).** Apply, Reject and Sign in on Coach's
-  cards (`RoomDecisionStyle` in `Theme/RoomControls.swift`) are full-width 52 pt capsules drawn by hand: the accent
-  with an on-accent label, or the canvas with an ink label (system red on a destructive button), at 50 % while
-  disabled and 98 % while pressed, the same on iOS 18 and iOS 26. Every other primary (`RoomPrimaryStyle`: the
-  routine sheet's Start, the rack's Log set, the receipt's Done) is the system's prominent glass on iOS 26 and the
-  bordered prominent button on iOS 18. For the
-  designer: whether card decisions take the system's prominent and plain glass, or stay a drawn card-decision component.
-- **The weigh-in builds its own form rows (build drift, needs a Figma decision).** The weigh-in sheet
-  (`BodyweightScreen.swift`, `fields`) draws its weight field, date row and Delete weigh-in as separate 52 pt
-  rows on 24 pt card shapes in a scroll view, with its own accent focus stroke, where Fix set, Fix workout, the
-  rename sheet and the movement picker use a native grouped `Form`. For the designer: whether the weigh-in becomes
-  a native grouped form (with the content-sized sheet and graphical calendar of 10y) or keeps its drawn rows.
-- **A machine's load unit has two answers (build drift, needs a design/product decision).** The domain's
-  `Readout.loadUnit` (`apps/ios/Domain/Sources/GymDomain/TrainingReads.swift`, held by the shared `loadUnit` vector)
-  reads a machine's load as *kg total*, like a barbell's, and a workout plan's swap keeps the targets only between
-  movements of one unit. The app's `MovementEquipment.unit` (`Gym/Components/MovementEquipment.swift`) draws a
-  machine's load as plain *kg* on the rack, Fix set, Edit sets and the routine editor, with cable, kettlebell and
-  Other; Gym's 11e names *kg total* for barbell/machine. For the designer and the owner: which unit a machine's load
-  shows, after which both sources speak it.
+- **List sections keep the system's corners (build drift, no SwiftUI API).** Every card on a room's canvas is
+  `RoomSpace.cardRadius`, 22 pt continuous (`Theme/TypeScale.swift`, drawn as `.card`), as the approved sections
+  draw it: Gym [`1811:64816`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1811-64816) and Journal
+  [`231:431`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=231-431), on the Figma variable
+  `ios/radius/card`. The sections of the system's inset-grouped lists and forms keep the system's corners, about
+  26 pt on iOS 26 and 27 and 10 pt on iOS 18: Edit movement, workout detail, the Record's *Earlier records*, the
+  receipt's *Personal record* and *Performed*, Fix workout and the weigh-in. SwiftUI has no public API for a list
+  section's radius. For the designer: whether the boards draw those sections at the system's radius.
 
 ## Onboarding
 
@@ -816,8 +795,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   task 24 still needs its approved compact sheet, calendar and IME-state implementation.
 - **11e · Equipment, units and Edit movement.** Routine summary, editor, finish receipt and
   workout detail use equipment-aware units with a preceding space: *kg each* for paired dumbbells,
-  *kg total* for barbell/machine, *kg added* for bodyweight, and *kg* for one dumbbell, cable,
-  kettlebell, Other or unknown equipment. Coach presentation retains its own formatter.
+  *kg total* for barbell, *kg added* for bodyweight, and *kg* for one dumbbell, machine, cable,
+  kettlebell, Other or unknown equipment, as on iOS and the web (approved section
+  [`1814:13077`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1814-13077)). Coach presentation retains its own formatter.
   Standalone Edit movement uses plain **Barbell / Dumbbells / Other**, implicit 1/2/1, without a
   count selector or Name/Equipment hints. Its approved section is `1548:7642`; unchanged and
   name-only edits preserve legacy raw equipment/count and all historical loads. Record opens it
@@ -828,6 +808,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   The static 05.6/05.7 specimens still include a same-day vertical segment; the task's explicit
   daily-best rule governs live data. A Log link to a collapsed workout leaves the chart unselected
   while keeping the factual workout identity. Boards 05.6 `1252:30001`, 05.7 `1252:30215`.
+- **Cable loads drawn as kg total (design drift, designer).** Against 11e, Android boards draw cable
+  movements in *kg total*: Triceps Pushdown *25 kg total* on 02.2 `1252:28969` and its siblings 02.5, 02.6,
+  02.8, 02.13, 02.16, 02.17, 02.21–02.25, 00.6 `1745:25871` and 03.4 `1253:29834`; Lat Pulldown *45 kg total*
+  on 01.13 `1254:36454`. 02.2 also draws the custom *Landmine Press · yours* at *20 kg total* in a layer named
+  *movement · Cable Fly*, with no equipment stated. The build reads a cable's load as plain *kg*. For the
+  designer: redraw the cable loads in *kg*, and name the Landmine Press's equipment.
 - **11f · New routine is a FAB (owner ruling, 2026-10-22).** Routines uses the shared M3 FAB (+),
   bottom-end 16 dp above navigation, with its accessible *New routine* label at every text scale.
   The root bar holds only title/account; the paired 03/17 native check verifies full/empty Dark and

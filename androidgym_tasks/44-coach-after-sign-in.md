@@ -25,7 +25,7 @@
   - then a proposal card:
     - **CHANGES TO FULL BODY B** · *2 changes*
     - REMOVED *Chin-up*: *Sets 3*, *Reps 8*, all struck
-    - ADDED *Lat Pulldown*: *Sets 3*, *Reps 8*, *Load 45 kg total*
+    - ADDED *Lat Pulldown*: *Sets 3*, *Reps 8*, *Load 45 kg*
     - **Apply** / **Reject**
 - No *Signed in* notice and no line between the two halves of the thread.
 - Discard in the sign-in decision deletes the signed-out thread with the rest of the phone's signed-out training.
