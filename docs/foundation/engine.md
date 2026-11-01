@@ -1600,13 +1600,17 @@ pulls as §7.9 states. An open that fails, and a socket that ends or fails (the 
 closes it, or a `ping` goes unanswered for `LIVE_PONG_MS`), count as a reconnect: the puller runs at
 once. The client sends `ping` after `LIVE_PING_MS` with no frame or `pong` received. A close the
 client makes (leaving the foreground, going offline, a sign-in, a sign-out or a re-identify) pulls
-nothing, though the sign-in, sign-out or re-identify runs the puller itself (§7.12). Opening again
-backs off as the sender does (§7.4), with its own `k` and the 30 s ceiling: `k` rises with every
-failed open or ended socket, and resets once a socket has stayed open 30 s. None of the sender's kicks
-cuts that wait short, and neither does the pull a reconnect runs or a frame, so a server refusing the
-socket sees a handful of opens a minute, never one per pull. A socket the client closed itself
-(leaving the foreground, going offline, signed out or paused) opens at once when it is wanted again,
-keeping `k`. A `401` at the upgrade, where the
+nothing and raises no `k`, though the sign-in, sign-out or re-identify runs the puller itself
+(§7.12); while the socket is still wanted (a re-identify, a completed sign-in), the next one opens at
+once. Opening again after a reconnect backs off as the sender does (§7.4), with its own `k` and the
+30 s ceiling: `k` rises with every failed open or ended socket, and resets once a socket has stayed
+open 30 s. None of the sender's kicks cuts that wait short, and neither does the pull a reconnect
+runs or a frame, so a server refusing the socket sees a handful of opens a minute, never one per
+pull. A refused upgrade's `retryAfterMs` is not read, since a browser and URLSession cannot read the
+upgrade's body; the pull the failed open runs hears the server's wait. A socket that was not wanted
+(the app away or offline, no account, a pause) opens at once when it is wanted again, keeping `k`.
+The first open after a failed open or an ended socket (`k > 0`) pulls every subscribed scope once its
+`sub` frames are sent, for what changed while no socket followed them. A `401` at the upgrade, where the
 client can read it, sets `authPaused` too; a browser, which cannot, learns it from its next pull or
 push. A frame served as another principal (§9.1) sets `authPaused`, applies nothing, and the client
 closes the socket. A re-authentication that clears `authPaused` opens the socket again at once, with
