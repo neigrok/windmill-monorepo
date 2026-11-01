@@ -41,11 +41,13 @@ enum RoomSpace {
   static let related: CGFloat = 8
   static let inset: CGFloat = 16
   static let panel: CGFloat = 20
-  static let cardRadius: CGFloat = 16
-  // Coach's cards and the weigh-in sheet round their cards apart from `cardRadius` (docs/design/consistency.md, iOS card radii).
-  static let coachCardRadius: CGFloat = 22
-  static let weighInRadius: CGFloat = 24
+  // Every card on a room's canvas, drawn with continuous corners as `.card`.
+  static let cardRadius: CGFloat = 22
   static let minimumTarget: CGFloat = 44
-  // A full-width control or a form row: a card's decision, a labelled floating act, a weigh-in row.
+  // A row-height control drawn by hand: a labelled floating act, onboarding's top row, the welcome's Sign in.
   static let controlHeight: CGFloat = 52
+}
+
+extension Shape where Self == RoundedRectangle {
+  static var card: RoundedRectangle { RoundedRectangle(cornerRadius: RoomSpace.cardRadius, style: .continuous) }
 }

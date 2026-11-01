@@ -222,7 +222,7 @@ struct SessionShareSheet: View {
             Text(share.link(base: base))
               .font(.footnote.monospacedDigit()).foregroundStyle(GymPalette.accent)
               .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-              .padding().background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
+              .padding(RoomSpace.inset).background(GymPalette.card, in: .card)
               .accessibilityIdentifier("gym-share-link")
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding()

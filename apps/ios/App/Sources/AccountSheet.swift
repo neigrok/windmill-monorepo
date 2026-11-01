@@ -240,7 +240,7 @@ struct AccountSheet: View {
 
   func equalButton(_ label: String, action: @escaping () -> Void) -> some View {
     Button(action: action) { Text(label).font(ShellType.secondaryAction).foregroundStyle(brand).frame(maxWidth: .infinity, minHeight: 27) }
-      .modifier(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule).tint(brand)
+      .buttonStyle(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule).tint(brand)
   }
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
@@ -328,7 +328,7 @@ struct AccountSheet: View {
         Button { model.performAuthentication { await model.verifyLink(signInLink) } } label: {
           Text("Sign in").frame(maxWidth: .infinity)
         }.font(ShellType.action)
-          .modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
+          .buttonStyle(RoomPrimaryStyle(room: .shell)).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
         Button(model.runtime?.settings.appleEnabled == true ? "Use email instead" : "Continue with email") { model.cancelAuthentication(); usingLink = false; model.error = nil }.frame(minHeight: 44)
       } else {
       Text(model.sheet == .appleAddress ? "Your Windmill email" : "Sign in with email").font(ShellType.title)
@@ -337,7 +337,7 @@ struct AccountSheet: View {
         .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(brand)).accessibilityIdentifier("email-address")
       Button { model.performAuthentication { await model.sendCode() } } label: {
         Text("Send code").frame(maxWidth: .infinity)
-      }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || !model.email.contains("@"))
+      }.font(ShellType.action).buttonStyle(RoomPrimaryStyle(room: .shell)).disabled(model.working || !model.email.contains("@"))
       if let addressNote { Text(addressNote).font(ShellType.meta).foregroundStyle(dim) }
       }
     }

@@ -205,7 +205,7 @@ struct DeleteAccountScreen: View {
       Text(AccountDeletion.returnLine(closingOn)).font(ShellType.body).foregroundStyle(ShellPalette.inkDim).multilineTextAlignment(.center)
       Spacer()
       Button { model.deletion = nil } label: { Text("Done").frame(maxWidth: .infinity) }
-        .font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("delete-account-done")
+        .font(ShellType.action).buttonStyle(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("delete-account-done")
     }.padding(.horizontal, RoomSpace.inset).padding(.bottom, 8).frame(maxWidth: .infinity)
       .toolbar(.hidden, for: .navigationBar)
   }

@@ -274,7 +274,7 @@ struct FactTiles: View {
           Text(fact.label).font(.caption).foregroundStyle(GymPalette.inkDim)
         }.frame(maxWidth: .infinity, alignment: .leading)
           .padding(ground == .own ? 14 : 0)
-          .background { if ground == .own { RoundedRectangle(cornerRadius: RoomSpace.cardRadius).fill(GymPalette.card) } }
+          .background { if ground == .own { RoundedRectangle.card.fill(GymPalette.card) } }
           .accessibilityElement(children: .combine)
           .accessibilityIdentifier(fact.identifier ?? "")
       }
