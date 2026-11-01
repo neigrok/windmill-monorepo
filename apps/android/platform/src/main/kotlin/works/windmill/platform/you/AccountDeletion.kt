@@ -3,6 +3,8 @@ package works.windmill.platform.you
 import android.content.Context
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.io.IOException
@@ -169,7 +171,7 @@ class AccountDeletionStore(
     // The typed confirmation lives here, in memory only, for the life of one operation.
     var email by mutableStateOf("")
         private set
-    var count by mutableStateOf(0)
+    var count by mutableIntStateOf(0)
         private set
     var failure by mutableStateOf<AccountDeletionFailure?>(null)
         private set
@@ -180,7 +182,7 @@ class AccountDeletionStore(
     private var preparing by mutableStateOf(false)
     val transitionPending: Boolean get() = preparing || storage.blocked
     val closureConfirmed: Boolean get() = storage.pending?.receipt != null
-    var operationRevision by mutableStateOf(0L)
+    var operationRevision by mutableLongStateOf(0L)
         private set
     private var work: Deferred<Unit>? = null
     private var held: AuthSignOutSession? = null

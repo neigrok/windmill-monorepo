@@ -2,6 +2,7 @@ package works.windmill.platform.auth
 
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.serialization.Serializable
@@ -80,11 +81,11 @@ class AuthStore(
     private var handoff: Handoff? = null
     var handoffPending by mutableStateOf(false)
         private set
-    var handoffRevision by mutableStateOf(0L)
+    var handoffRevision by mutableLongStateOf(0L)
         private set
     var handoffResult: AuthHandoffResult? by mutableStateOf(null)
         private set
-    var identityRevision by mutableStateOf(0L)
+    var identityRevision by mutableLongStateOf(0L)
         private set
 
     private data class SignOutOpening(val user: User, val secret: String?, val attempt: Long, val revision: Long,

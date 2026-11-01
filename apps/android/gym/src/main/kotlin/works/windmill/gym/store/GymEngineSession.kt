@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -37,7 +38,7 @@ class GymEngineSession(
         private set
     private val decisionIdentity = java.util.UUID.randomUUID().toString()
     val decisionKey: String get() = "$decisionIdentity:$decisionRevision"
-    var decisionRevision: Long by mutableStateOf(0L)
+    var decisionRevision: Long by mutableLongStateOf(0L)
         private set
     var decisionFailure: String? by mutableStateOf(null)
         private set
