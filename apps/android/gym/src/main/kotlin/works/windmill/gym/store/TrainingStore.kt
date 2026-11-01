@@ -1229,6 +1229,8 @@ class TrainingStore(
         }
     }
 
+    val caughtUpTo: Long? get() = training.caughtUpTo
+
     // Pending removals and unshown receipts remain readable after their synced rows disappear.
     suspend fun proposal(id: String): ProposalRead {
         return (training.proposal(id) ?: training.removalReceipts()[id] ?: settledProposals[id])?.let { ProposalRead.Found(it) } ?: ProposalRead.Gone

@@ -71,6 +71,8 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.domain.kit.Id
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
@@ -993,8 +995,10 @@ class AskScreenTests {
         scope.cancel()
     }
 
+    // Coach answers before its proposal reaches the phone: the answer stands, and the card is drawn in the same visit
+    // once the proposal syncs.
     @Test
-    fun anUnpulledProposalKeepsTheAnswerAndAppearsWhenTheRoomReopensAfterPull() {
+    fun aProposalThatSyncsAfterItsAnswerIsDrawnWithoutReopeningTheRoom() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         val room = signedIn(scope)
@@ -1002,22 +1006,54 @@ class AskScreenTests {
         propose(room, server, "proposal1", routine, listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
             exerciseId = "bench-press", before = ProposalTargets(List(3) { SetTarget(5) }),
             after = ProposalTargets(List(2) { SetTarget(5) }))), "Use one lighter set.", pull = false)
-        var visit by mutableStateOf(0)
+        room.store.observeEngine()
         compose.setContent {
-            key(visit) {
+            AskScreen(room.store, listOf(AskExchange("What next?", AskAnswer("The answer stays readable.", read,
+                proposals = listOf("proposal1")))), emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+        }
+        compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText("Review").assertDoesNotExist()
+        compose.runOnIdle { room.pull(server) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Proposal · Push A").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Proposal · Push A").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        scope.cancel()
+    }
+
+    // A proposal still missing once the phone has caught up past where it stood at the first miss is reported once,
+    // with no labels.
+    @Test
+    fun aProposalStillMissingAfterThePhoneCatchesUpIsReportedOnce() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        room.pull(server)
+        room.store.observeEngine()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides telemetry) {
                 AskScreen(room.store, listOf(AskExchange("What next?", AskAnswer("The answer stays readable.", read,
                     proposals = listOf("proposal1")))), emptyList(), emptySet(), false, null, {}, {}, {}, "",
                     "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
             }
         }
-        compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
         compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
-        compose.onNodeWithText("Review").assertDoesNotExist()
-        compose.onNodeWithText("Try again").assertDoesNotExist()
-        compose.runOnIdle { room.pull(server); visit++ }
-        compose.onNodeWithText("Proposal · Push A").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Try again").assertDoesNotExist()
+        val before = compose.runOnIdle { room.store.caughtUpTo }
+        repeat(2) { saved(room, server, RoutineDraft(name = "Pull $it").adding("bench-press", List(3) { SetTarget(5) })) }
+        compose.waitUntil(5_000) { compose.runOnIdle { events.any { it.first == "gym_proposal_missing" } } }
+        compose.runOnIdle {
+            assertTrue(room.store.caughtUpTo!! > before!!)
+            assertEquals(listOf("gym_proposal_missing" to emptyMap<String, String>()), events.filter { it.first == "gym_proposal_missing" })
+        }
+        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
         scope.cancel()
     }
 

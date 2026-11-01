@@ -116,6 +116,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     val imports = WorkoutImports(engine, writeAuthority)
     val anonymous: Boolean get() = read { it.isAnonymous }
     val firstPullComplete: Boolean get() = read { it.firstPullComplete() }
+    // The account's sequence this phone holds every change up to; null while it is behind.
+    val caughtUpTo: Long? get() = read { it.checkpoint().cleanSeq }
     val notesReady: Boolean get() = anonymous || firstPullComplete
     val planUnreadable: Boolean get() = read { reader ->
         reader.repository(EngineSession).all(ViewMode.stored).any { it.planUnreadable } ||

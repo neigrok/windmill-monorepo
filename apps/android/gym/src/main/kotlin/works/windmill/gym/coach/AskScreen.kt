@@ -150,17 +150,26 @@ fun AskScreen(
 
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.
+    // Coach can answer before its proposal reaches this phone, so an id not found is read again each time the
+    // replica changes. `missing` keeps where the phone stood at the first miss; still missing once it has caught up
+    // past that point, the proposal is reported, once.
     val minted = remember { mutableStateMapOf<String, Proposal>() }
-    val missing = remember { mutableStateMapOf<String, Boolean>() }
+    val missing = remember { mutableStateMapOf<String, Long?>() }
+    val reported = remember { mutableSetOf<String>() }
     val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
     val headerProposals = proposalIds.filterNot { it in attachedProposals }
     val wanted = (attachedProposals + proposalIds).toList()
-    LaunchedEffect(wanted) {
+    LaunchedEffect(wanted, store.replicaReadRevision) {
+        val caughtUpTo = store.caughtUpTo
         wanted.forEach { id ->
-            if (minted.containsKey(id) || missing.containsKey(id)) return@forEach
+            if (minted.containsKey(id)) return@forEach
             when (val read = store.proposal(id)) {
-                is ProposalRead.Found -> minted[id] = read.proposal
-                ProposalRead.Gone -> missing[id] = true
+                is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
+                ProposalRead.Gone -> when {
+                    !missing.containsKey(id) -> missing[id] = caughtUpTo
+                    caughtUpTo != null && caughtUpTo > (missing[id] ?: Long.MIN_VALUE) && reported.add(id) ->
+                        telemetry.event("gym_proposal_missing")
+                }
             }
         }
     }
