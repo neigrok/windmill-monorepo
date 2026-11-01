@@ -63,7 +63,7 @@ class LoggerNavigationTests {
             compose.setContent {
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
-                    LoggerScreen(room.store, {}, {})
+                    LoggerBinding(room.store).let { LoggerScreen(it, it, {}, {}) }
                 }
             }
             val head = compose.onNode(hasText(name) and hasClickAction())
@@ -104,7 +104,7 @@ class LoggerNavigationTests {
             }
             compose.setContent {
                 CompositionLocalProvider(LocalTelemetry provides telemetry) {
-                    LoggerScreen(room.store, {}, {})
+                    LoggerBinding(room.store).let { LoggerScreen(it, it, {}, {}) }
                 }
             }
             val firstNext = compose.onNode(hasContentDescription("Exercise 1 of 2")).fetchSemanticsNode()

@@ -55,7 +55,7 @@ class LoggerManagementTests {
                 room.store.workout.editRack(82.5, 8)
             }
             val session = room.store.workout.session
-            compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerScreen(room.store, {}, {}) } }
+            compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerBinding(room.store).let { LoggerScreen(it, it, {}, {}) } } }
             compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
             compose.onNodeWithText("This workout").assertIsDisplayed()
             val dialog = ShadowDialog.getLatestDialog() as ComponentDialog
@@ -106,7 +106,7 @@ class LoggerManagementTests {
             val session = room.store.workout.session
             val sets = room.store.workout.sets
             val restoration = StateRestorationTester(compose)
-            restoration.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerScreen(room.store, {}, {}) } }
+            restoration.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerBinding(room.store).let { LoggerScreen(it, it, {}, {}) } } }
             compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
             compose.onNodeWithText("This workout").assertIsDisplayed()
             compose.onNodeWithText("Add movement").performClick()
