@@ -501,9 +501,9 @@ public enum Readout {
   public static func loadUnit(equipment: String?, loadCount: Int) -> String {
     switch Equipment(equipment) {
     case .dumbbell: loadCount == 2 ? "kg each" : "kg"
-    case .barbell, .machine: "kg total"
+    case .barbell: "kg total"
     case .bodyweight: "kg added"
-    case .cable, .kettlebell, .other, nil: "kg"
+    case .machine, .cable, .kettlebell, .other, nil: "kg"
     }
   }
 
