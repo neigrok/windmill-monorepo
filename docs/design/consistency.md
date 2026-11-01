@@ -880,7 +880,10 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   floating-label idiom the movement sheet uses, and Android builds it (task 56); 02.3, 02.5 and the
   other editor boards still draw a label above the field (designer to redraw). 02.20 draws only a
   named draft: Android says *This routine won't be saved.* while the name is blank (designer to
-  confirm).
+  confirm). Under its dialog 02.20 also draws Save muted on a new draft that is named and holds a
+  movement, where 00.1's rule enables it, and an editor body at 16 dp margins with mono target lines;
+  Android's body keeps its 20 dp margins and sans target lines (designer to
+  reconcile).
 
 - **11t · You after a confirmed closure (designer).** D5's caption names the row *Finish deletion*
   once closure is confirmed, and Android builds that label (task 48). The subtitle under *You* is
