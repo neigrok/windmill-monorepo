@@ -77,7 +77,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -337,9 +339,16 @@ fun RoutineBuilder(
 @Composable
 private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
     val skin = LocalGymColors.current
-    AlertDialog(onDismissRequest = onKeepEditing, title = { Text(title) }, text = { Text(text) },
-        confirmButton = { TextButton(onClick = onDiscard) { Text("Discard", color = skin.error) } },
-        dismissButton = { TextButton(onClick = onKeepEditing) { Text("Keep editing", color = skin.accent) } },
+    val native = FontFamily.Default
+    @Composable
+    fun Action(label: String, colour: Color, onClick: () -> Unit) = TextButton(onClick = onClick) {
+        Text(label, color = colour, fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+    }
+    AlertDialog(onDismissRequest = onKeepEditing,
+        title = { Text(title, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp, color = skin.ink) },
+        text = { Text(text, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, color = skin.inkDim) },
+        confirmButton = { Action("Discard", skin.error, onDiscard) },
+        dismissButton = { Action("Keep editing", skin.accent, onKeepEditing) },
         containerColor = skin.surface)
 }
 
