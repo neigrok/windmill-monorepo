@@ -132,6 +132,21 @@ struct KeyboardBar: View {
   }
 }
 
+// A number typed in place at a form row's end, drawn as Fix set's Load field (03.25): a 120 × 36 well on the system
+// fill, growing with the text size, outlined in the accent while it has focus.
+struct FieldWell: ViewModifier {
+  let focused: Bool
+  @ScaledMetric(relativeTo: .body) private var width = 120.0
+  @ScaledMetric(relativeTo: .body) private var height = 36.0
+
+  func body(content: Content) -> some View {
+    content.multilineTextAlignment(.trailing).monospacedDigit()
+      .padding(.horizontal, 10).frame(width: width, height: height)
+      .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 10))
+      .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(focused ? GymPalette.accent : .clear, lineWidth: 1.5) }
+  }
+}
+
 // A tab's one creation act, floating bottom-trailing in the tab's reach band, 16 pt from the edge and 12 pt above the tab
 // bar, so the list's last row clears it: Liquid Glass with its symbol, and its label when it has one, in the accent. A
 // bare symbol is a 60 pt circle named for VoiceOver by the act; a labelled act is a 52 pt capsule. Before iOS 26 the

@@ -118,7 +118,7 @@ struct RoutineMovementEditor: View {
           focus = nil
           if !onCommit() { gym.telemetry.event("gym_action", properties: ["screen": "routine_movement_editor", "action": "stage", "outcome": "refused"]) }
         } label: { Text(movement.adding ? "Add" : "Done").frame(maxWidth: .infinity, minHeight: 22) }
-          .modifier(RoomPrimaryStyle(room: .gym))
+          .buttonStyle(RoomPrimaryStyle(room: .gym))
           .disabled(gym.accountTransition || movement.problem != nil)
           .accessibilityIdentifier("gym-movement-editor-commit")
       }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 8).background(GymPalette.canvas)

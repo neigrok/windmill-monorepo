@@ -105,7 +105,7 @@ struct JournalEchoInk: View {
       }.buttonStyle(.plain).accessibilityIdentifier("echo-introduction-done")
     }.padding(.horizontal, RoomSpace.inset).padding(.top, RoomSpace.inset - 4)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(JournalPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+      .background(JournalPalette.card, in: .card)
   }
 }
 

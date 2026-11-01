@@ -110,7 +110,18 @@ struct ChangeCard: ViewModifier {
   var stroke: Color?
   func body(content: Content) -> some View {
     content.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
-      .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.coachCardRadius, style: .continuous))
-      .overlay { if let stroke { RoundedRectangle(cornerRadius: RoomSpace.coachCardRadius, style: .continuous).stroke(stroke, lineWidth: 1) } }
+      .background(GymPalette.card, in: .card)
+      .overlay { if let stroke { RoundedRectangle.card.stroke(stroke, lineWidth: 1) } }
+  }
+}
+
+// A card's decisions under what it says (C.1): large capsules, 10 pt apart and 16 pt below the content, each label taking
+// the card's width. Apply is the room's primary, Reject and a removal its secondary.
+struct CardDecisions<Decisions: View>: View {
+  @ViewBuilder let decisions: Decisions
+
+  var body: some View {
+    VStack(spacing: 10) { decisions }
+      .font(.headline).controlSize(.large).buttonBorderShape(.capsule).padding(.top, RoomSpace.inset)
   }
 }

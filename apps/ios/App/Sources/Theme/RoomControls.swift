@@ -1,27 +1,37 @@
 import SwiftUI
 
-// Every role a room's button takes: the screen's primary, a secondary, a glass seat and a card's decision.
+// Every role a room's button takes: the screen's primary, a secondary and a glass seat. A card's decisions take the
+// first two, full width.
 
-// The one primary of a screen.
-struct RoomPrimaryStyle: ViewModifier {
+// The one primary of a screen, or a card's prominent decision.
+struct RoomPrimaryStyle: PrimitiveButtonStyle {
   let room: RoomColors
   @Environment(\.isEnabled) private var enabled
 
-  func body(content: Content) -> some View {
-    styled(content).controlSize(.large).buttonBorderShape(.capsule).tint(room.accent)
+  func makeBody(configuration: Configuration) -> some View {
+    prominent(Button(configuration)).controlSize(.large).buttonBorderShape(.capsule).tint(room.accent)
       .foregroundStyle(enabled ? AnyShapeStyle(room.onAccent) : AnyShapeStyle(.secondary))
   }
 
-  @ViewBuilder private func styled(_ content: Content) -> some View {
-    if #available(iOS 26.0, *) { content.buttonStyle(.glassProminent) }
-    else { content.buttonStyle(.borderedProminent) }
+  @ViewBuilder private func prominent(_ button: Button<Configuration.Label>) -> some View {
+    if #available(iOS 26.0, *) { button.buttonStyle(.glassProminent) }
+    else { button.buttonStyle(.borderedProminent) }
   }
 }
 
-struct RoomSecondaryStyle: ViewModifier {
-  @ViewBuilder func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) { content.buttonStyle(.glass) }
-    else { content.buttonStyle(.bordered) }
+// A secondary: the system's regular glass, bordered before iOS 26. Given a room, its label takes the room's ink rather
+// than the page's accent tint, or system red under the destructive role.
+struct RoomSecondaryStyle: PrimitiveButtonStyle {
+  var room: RoomColors?
+
+  @ViewBuilder func makeBody(configuration: Configuration) -> some View {
+    if let room { regular(Button(configuration)).tint(configuration.role == .destructive ? .red : room.ink) }
+    else { regular(Button(configuration)) }
+  }
+
+  @ViewBuilder private func regular(_ button: Button<Configuration.Label>) -> some View {
+    if #available(iOS 26.0, *) { button.buttonStyle(.glass) }
+    else { button.buttonStyle(.bordered) }
   }
 }
 
@@ -32,26 +42,6 @@ struct RoomSeatStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label.frame(width: diameter, height: diameter).roomGlass(in: Circle(), interactive: true)
       .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
-  }
-}
-
-// A card's decision, the full width: prominent on the accent, or quiet on the canvas, where a destructive button takes
-// system red for its label. It is drawn by hand where every other primary is the system's prominent glass
-// (docs/design/consistency.md, Coach card decisions); Coach's cards are its one home, so it draws in the gym's colours.
-struct RoomDecisionStyle: ButtonStyle {
-  enum Emphasis { case prominent, quiet }
-  let emphasis: Emphasis
-  @Environment(\.isEnabled) private var enabled
-
-  init(_ emphasis: Emphasis) { self.emphasis = emphasis }
-
-  func makeBody(configuration: Configuration) -> some View {
-    let prominent = emphasis == .prominent
-    let label = prominent ? GymPalette.onAccent : configuration.role == .destructive ? GymPalette.destructive : GymPalette.ink
-    configuration.label.font(.headline).foregroundStyle(label)
-      .frame(maxWidth: .infinity, minHeight: RoomSpace.controlHeight).padding(.horizontal, RoomSpace.inset)
-      .background(prominent ? GymPalette.accent : GymPalette.canvas, in: Capsule())
-      .opacity(enabled ? 1 : 0.5).scaleEffect(configuration.isPressed ? 0.98 : 1).contentShape(Capsule())
   }
 }
 
@@ -89,7 +79,7 @@ struct ActionBand: View {
           Text(title)
           if let symbol { Image(systemName: symbol).accessibilityHidden(true) }
         }.frame(maxWidth: .infinity)
-      }.modifier(RoomPrimaryStyle(room: room))
+      }.buttonStyle(RoomPrimaryStyle(room: room))
         .disabled(disabled || busy)
         .accessibilityIdentifier(actionIdentifier ?? title)
       if let footer {

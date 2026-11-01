@@ -211,7 +211,7 @@ struct OnboardingGlimpse: View {
               if row.id > 0 { Divider().overlay(GymPalette.line) }
               WorkoutLedgerRow(row: row, unsent: false)
             }
-          }.padding(.horizontal, RoomSpace.inset).background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+          }.padding(.horizontal, RoomSpace.inset).background(GymPalette.card, in: .card)
           HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
             Text("100").modifier(GymNumeral()).foregroundStyle(GymPalette.ink)
             Text("kg").font(.title3).foregroundStyle(GymPalette.inkDim)

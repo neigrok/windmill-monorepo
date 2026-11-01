@@ -42,7 +42,7 @@ struct CoachUnavailable: View {
     ContentUnavailableView {
       Label { EmptyView() } icon: { Image(systemName: symbol) }
     } description: { Text(sentence) } actions: {
-      if let signIn { Button("Sign in", action: signIn).modifier(RoomSecondaryStyle()).controlSize(.large).accessibilityIdentifier("coach-sign-in") }
+      if let signIn { Button("Sign in", action: signIn).buttonStyle(RoomSecondaryStyle()).controlSize(.large).accessibilityIdentifier("coach-sign-in") }
     }.accessibilityElement(children: .contain)
   }
 }

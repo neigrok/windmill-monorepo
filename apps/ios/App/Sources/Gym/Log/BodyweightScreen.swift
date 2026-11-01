@@ -215,20 +215,20 @@ struct WeighInSheet: View {
   }
 
   private var form: some View {
-    ScrollView {
-      VStack(spacing: RoomSpace.related + RoomSpace.small) {
-        if choosingDate { calendar } else { fields }
-      }.padding(RoomSpace.inset)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { (height: CGFloat) in contentHeight = height }
+    Form {
+      Group {
+        if choosingDate { Section { calendar } } else { fields }
+      }.listRowBackground(GymPalette.card)
     }
+    .listSectionSpacing(.compact).contentMargins(.top, RoomSpace.related, for: .scrollContent)
     .scrollBounceBehavior(.basedOnSize)
+    .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { (_: CGFloat, height: CGFloat) in contentHeight = height }
     .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { (height: CGFloat) in
       if height > 0 { navigationHeight = height }
     }
     .disabled(saving)
-    .background(GymPalette.canvas)
+    .modifier(GymPage())
     .navigationTitle(choosingDate ? "Date" : "Weigh in")
-    .navigationBarTitleDisplayMode(.inline)
     .modifier(SheetCommit(title: choosingDate ? "Use date" : "Save",
                           identifier: choosingDate ? "gym-weigh-in-date-accept" : "gym-weigh-in-save",
                           dismissal: choosingDate ? "Back" : "Cancel",
@@ -239,29 +239,21 @@ struct WeighInSheet: View {
                           }))
   }
 
+  // Weight and Date in one section, a refusal its footer; a correction keeps its day and adds Delete weigh-in below.
   @ViewBuilder var fields: some View {
-    VStack(alignment: .leading, spacing: RoomSpace.related) {
-      HStack(spacing: RoomSpace.related) {
-        TextField("Weight", text: $typed)
-          .font(.title2.weight(.medium)).monospacedDigit()
-          .keyboardType(.decimalPad).focused($weightFocused)
-          .accessibilityLabel("Weight in kilograms").accessibilityIdentifier("gym-weigh-in-weight")
-          .onSubmit { save() }
-        Text("kg").foregroundStyle(GymPalette.inkDim)
-      }.padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight)
-        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.weighInRadius))
-        .overlay { RoundedRectangle(cornerRadius: RoomSpace.weighInRadius).strokeBorder(weightFocused ? GymPalette.accent : .clear, lineWidth: 1.5) }
-      if let refusal {
-        Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm)
-          .padding(.horizontal, RoomSpace.inset).fixedSize(horizontal: false, vertical: true)
-          .accessibilityIdentifier("gym-weigh-in-refusal")
-      }
-    }
-    Group {
+    Section {
+      LabeledContent("Weight") {
+        HStack(spacing: RoomSpace.related) {
+          TextField("Weight", text: $typed)
+            .keyboardType(.decimalPad).focused($weightFocused).modifier(FieldWell(focused: weightFocused))
+            .accessibilityLabel("Weight in kilograms").accessibilityIdentifier("gym-weigh-in-weight")
+            .onSubmit { save() }
+          Text("kg").foregroundStyle(GymPalette.inkDim).fixedSize()
+        }
+      }.foregroundStyle(GymPalette.ink)
       if let entry {
-        LabeledContent("Date", value: gym.dates.subtitle(entry.day))
-          .padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight)
-          .accessibilityIdentifier("gym-weigh-in-fixed-date")
+        LabeledContent("Date") { Text(gym.dates.subtitle(entry.day)).foregroundStyle(GymPalette.inkDim) }
+          .foregroundStyle(GymPalette.ink).accessibilityIdentifier("gym-weigh-in-fixed-date")
       } else {
         Button {
           weightFocused = false
@@ -272,27 +264,30 @@ struct WeighInSheet: View {
             Text(gym.dates.day(LogPresentation.day(date)))
               .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
               .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 8))
-          }.padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight).contentShape(Rectangle())
+          }.contentShape(Rectangle())
         }.buttonStyle(.plain).foregroundStyle(GymPalette.ink)
           .accessibilityLabel("Date").accessibilityValue(gym.dates.day(LogPresentation.day(date)))
           .accessibilityIdentifier("gym-weigh-in-date")
       }
-    }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.weighInRadius))
+    } footer: {
+      if let refusal {
+        Text(refusal).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-weigh-in-refusal")
+      }
+    }
     if let entry {
-      Button("Delete weigh-in", role: .destructive) {
-        if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
-        else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
-      }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, RoomSpace.inset).frame(minHeight: RoomSpace.controlHeight)
-        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.weighInRadius))
-        .accessibilityIdentifier("gym-weigh-in-delete")
+      Section {
+        Button("Delete weigh-in", role: .destructive) {
+          if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
+          else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
+        }.accessibilityIdentifier("gym-weigh-in-delete")
+      }
     }
   }
 
   var calendar: some View {
     DatePicker("Date", selection: Binding(get: { proposedDate ?? date }, set: { proposedDate = $0 }),
                in: ...LogPresentation.date(today), displayedComponents: .date)
-      .datePickerStyle(.graphical).labelsHidden().fixedSize(horizontal: false, vertical: true)
-      .tint(GymPalette.accent)
+      .datePickerStyle(.graphical).labelsHidden()
       .accessibilityIdentifier("gym-weigh-in-calendar")
   }
 
