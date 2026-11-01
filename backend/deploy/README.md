@@ -163,10 +163,9 @@ with internal READY_FOR_BETA_TESTING and external READY_FOR_BETA_SUBMISSION; int
 is unverified. [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
 completed across three scopes and corrected two digests. Web Deploy promotes each web push to `main`
 once the live hello admits it. The last complete promotion is
-[run 41305388716](https://github.com/neigrok/windmill-monorepo/actions/runs/41305388716), source `3b136a3d`.
-[Run 41319412052](https://github.com/neigrok/windmill-monorepo/actions/runs/41319412052), source `3cf8d661`,
-passed that check, then its `rsync --delete` failed with no space left on the VPS, so the served web
-files are unverified. Queued client delivery and final native
+[run 41325909004](https://github.com/neigrok/windmill-monorepo/actions/runs/41325909004), source `6aabcde2`.
+The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
+is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
 
 1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
