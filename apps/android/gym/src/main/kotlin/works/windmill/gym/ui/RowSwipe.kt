@@ -24,6 +24,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -67,6 +68,7 @@ fun DeleteSwipeRow(
     onDelete: suspend () -> Boolean,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    shape: Shape = RoundedCornerShape(16.dp),
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -81,7 +83,7 @@ fun DeleteSwipeRow(
     }
     val scale by animateFloatAsState(if (pastThreshold) 1.2f else 1f, label = "Delete threshold")
     SwipeToDismissBox(state = swipe, enableDismissFromStartToEnd = false, enableDismissFromEndToStart = enabled,
-        modifier = modifier.clip(RoundedCornerShape(16.dp)).semantics {
+        modifier = modifier.clip(shape).semantics {
             if (enabled) customActions = listOf(CustomAccessibilityAction(actionLabel) {
                 scope.launch { delete() }
                 true

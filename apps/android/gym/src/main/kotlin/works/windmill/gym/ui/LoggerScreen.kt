@@ -400,7 +400,7 @@ fun LoggerScreen(
                             it.exerciseId == pageMovement && it.id !in store.withheldIds && it.id !in store.deletedSets
                         }
                         val exercise = store.catalog.firstOrNull { it.id == pageMovement }
-                        val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+                        val unit = Readout.loadUnit(exercise)
                         val slots = LiveLines.slots(today, store.session?.id.orEmpty(), store.session?.plan?.entry(pageMovement), store.lastTimeOf(pageMovement),
                             store.stalled, unit)
                         var ledgerBottom by remember(pageMovement) { mutableStateOf(0.dp) }
@@ -548,7 +548,9 @@ fun LoggerScreen(
                         exercise = store.catalog.firstOrNull { it.id == set.exerciseId },
                         origin = FixOrigin.Workout,
                         movement = Readout.movement(set.exerciseId, store.catalog),
-                        setNumber = set.setNumber ?: (store.todaySets.indexOfFirst { it.id == set.id } + 1),
+                        // The rack's own count of the row it opened from, never the log's `setNumber`.
+                        position = store.todaySets.filter { it.id !in store.withheldIds && it.id !in store.deletedSets }
+                            .indexOfFirst { it.id == set.id } + 1,
                         routine = store.session?.plan?.routine,
                         onSave = { fix ->
                             if (sessionId == null) {
@@ -798,7 +800,7 @@ private fun Rack(
     val skin = LocalGymColors.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+    val unit = Readout.loadUnit(exercise)
     val load = entry.load
     val count = entry.count
     val page = rememberScrollState()

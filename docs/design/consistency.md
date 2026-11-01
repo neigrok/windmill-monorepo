@@ -943,9 +943,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     with a quiet count: a bare digit with no *Set* word, the set's position within its movement
     counted 1..N in logged order, never the server's set number, so it never reads *2, 3, 1*;
     after a delete the rows that remain renumber. Fix set keeps *Set N* in its title, N by the
-    same count. The app still prints the server number on the row and in Fix set
-    (`ui/SessionScreen.kt` `Row.number` from `set.setNumber`, passed to `ui/FixSheet.kt`) until
-    this is built. Board 05.3b *Quiet set count* (Dark `1782:26943`, Daylight `1782:27019`,
+    same count. Built on Android (`ui/SessionScreen.kt` `Performed.Row.position`, passed to
+    `ui/FixSheet.kt`). Board 05.3b *Quiet set count* (Dark `1782:26943`, Daylight `1782:27019`,
     caption `1782:27095`, in section 05, ✅ Ready for dev) draws the count in JetBrains Mono 12/16 in
     text/tertiary, in a 24 dp column on the load's baseline, inside each movement's one group of
     sets. Revisions 05.14b (`1793:27005`, `1793:27113`, caption `1793:27221`), 05.4b (`1793:27226`,

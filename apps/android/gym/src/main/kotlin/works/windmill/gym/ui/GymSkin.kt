@@ -1,10 +1,12 @@
 package works.windmill.gym.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -131,5 +133,17 @@ object GymLayout {
     val scrollTailBand = WindmillSpace.x4  // bottom of a scroll body with a band pinned under it
     val sheetBottom = WindmillSpace.x6     // bottom of every sheet, under its last control
     val contentTop = WindmillSpace.x2      // first content under the top bar
+}
+
+// Rows that read as one group: 2 dp apart, 12 dp at the group's outer corners and 4 dp where two rows meet, so a
+// lone row is 12 dp all round.
+object GymSegment {
+    val gap = 2.dp
+
+    fun shape(index: Int, count: Int): Shape {
+        val top = if (index == 0) 12.dp else 4.dp
+        val bottom = if (index == count - 1) 12.dp else 4.dp
+        return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
+    }
 }
 
