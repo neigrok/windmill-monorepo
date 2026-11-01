@@ -110,12 +110,15 @@ function ColumnHeading({ column, id, scrolled = false, compact = false }) {
   );
 }
 
+// A scrolling column is never a tab stop of its own: the Board's one stop is the roving card (Chromium otherwise makes a
+// scroller with nothing tabbable inside it keyboard-focusable).
 function FullColumn({ column, children }) {
   const [scrolled, setScrolled] = useState(false);
   return (
     <section
       className={`st-board-columns-column st-board-columns-column--${column.name}`}
       data-column={column.name}
+      tabIndex={-1}
       onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
     >
       <ColumnHeading column={column} scrolled={scrolled} />

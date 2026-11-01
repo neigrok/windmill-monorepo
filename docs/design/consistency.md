@@ -630,6 +630,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · New step on an empty phone roadmap.** The phone empty roadmap (185:2149) pins New step, but
   the web has no way to plant a first step on a phone or tablet yet, so there an empty roadmap stays on
   the Graph as before and the Board's empty state shows only on the desktop editor.
+- **Board · the topbar before a roadmap loads.** Desktop 02.09 (374:5067) and 02.10 (374:5202) draw the roadmap's
+  name with its switcher chevron and the Board/Graph switch, and no Share. Before the load answers, or after it
+  fails, the build knows no name, so it shows none rather than *Untitled roadmap*, and it offers no Share. It shows
+  the switch while loading, but not after a failed load: the Graph's load error veils the topbar, so the switch would
+  lead where a pointer cannot come back from. Draw what the topbar names before the name is known, and say whether
+  the switch belongs on 02.10 once the Graph's load error leaves the topbar reachable.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

@@ -51,9 +51,11 @@ export function ControlBar({ title, titleSlot, viewSwitch = null, board = false,
             </button>
           </Tooltip>
         )}
-        <Tooltip label="Share roadmap" side="bottom">
-          <IconButton icon={<Icon name="share" />} label="Share roadmap" size="sm" onClick={onShare} />
-        </Tooltip>
+        {onShare && (
+          <Tooltip label="Share roadmap" side="bottom">
+            <IconButton icon={<Icon name="share" />} label="Share roadmap" size="sm" onClick={onShare} />
+          </Tooltip>
+        )}
         {!board && (
           <div className="st-zoom-group">
             <Tooltip label="Zoom out" side="bottom">

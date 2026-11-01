@@ -275,6 +275,32 @@ test('Chromium: the columns are one tab stop that Tab enters from either side on
   }
 });
 
+test('Chromium: with every column scrolling, Tab and Shift+Tab each cross the Board in exactly one stop', async () => {
+  await ready;
+  const errors = [];
+  const nodes = coastalNodes();
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
+  try {
+    assert.deepEqual(await page.locator('.st-board-columns-column').evaluateAll((columns) => columns.map((column) => column.scrollHeight > column.clientHeight)), [true, true, true]);
+    const walk = async (from, key) => {
+      await page.getByRole('button', { name: from }).focus();
+      const stops = [];
+      for (let step = 0; step < 6; step += 1) {
+        await page.keyboard.press(key);
+        const name = await focused(page);
+        stops.push(name);
+        if (name === 'Before the Board' || name === 'After the Board') break;
+      }
+      return stops;
+    };
+    assert.deepEqual(await walk('Before the Board', 'Tab'), ['Up next 0', 'After the Board']);
+    assert.deepEqual(await walk('After the Board', 'Shift+Tab'), ['Up next 0', 'Before the Board']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
 test('Chromium: on the desktop the arrow keys rove every card, Locked included, across columns at the nearest height; Enter selects', async () => {
   await ready;
   const errors = [];

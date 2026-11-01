@@ -1605,7 +1605,12 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const mobileSurface = activeSurface({ multiMode, aim, removing, selectedNode });
 
-  const viewSwitch = boardAvailable ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} /> : null;
+  // While the Board stands in for a roadmap that has not loaded, the topbar names nothing and offers no Share; a failed
+  // load offers no Graph either, whose load error would cover the topbar with no way back.
+  const boardAwaitsRoadmap = boardActive && !boardFacts.loaded;
+  const viewSwitch = boardAvailable && !(boardActive && loadError)
+    ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} />
+    : null;
   // The Board carries its switch in its identity row; the Graph's rides the topbar, or the lane on phones and tablets.
   const lanePill = BOARD_OPEN
     ? (readOnly && breakpoint !== 'desktop' && !boardActive ? viewSwitch : null)
@@ -1776,9 +1781,9 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       ) : (
         <ControlBar
-          title={tree?.title}
+          title={boardAwaitsRoadmap ? undefined : tree?.title}
           onTend={canTend ? () => setTendOpen(true) : undefined}
-          titleSlot={
+          titleSlot={boardAwaitsRoadmap ? null : (
             <TreeSwitcher
               current={{ id: treeId, title: tree?.title, done: shareStats?.done, total: shareStats?.total, dominantKind: shareStats?.dominantKind }}
               listTrees={listAllTrees}
@@ -1787,7 +1792,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onPreviewTitle={previewTreeTitle}
               onDelete={handleDeleteTree}
             />
-          }
+          )}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onFocus={handleFocus}
@@ -1795,7 +1800,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           viewSwitch={viewSwitch}
           board={boardActive}
           onBottom={BOARD_OPEN ? setTopbarBottom : undefined}
-          onShare={() => setShareOpen(true)}
+          onShare={boardAwaitsRoadmap ? undefined : () => setShareOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}

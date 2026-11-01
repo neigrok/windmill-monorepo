@@ -26,7 +26,8 @@ production; off production, localStorage `windmill:board:dev` set to `1` opens i
 the List's place, owners open on the Board and visitors on the Graph, and the selected step carries
 across. The desktop editor's topbar carries the Board/Graph switch on both views; elsewhere the Board's
 identity row carries it, and the Graph's rides the action lane on phones and tablets. A desktop
-visitor's Graph has no switch yet. Graph keyboard shortcuts do not act on the Board.
+visitor's Graph has no switch yet. While the Board stands in for a roadmap that has not loaded, the topbar names
+none and offers no Share, and after a failed load it offers no switch. Graph keyboard shortcuts do not act on the Board.
 
 From 1024px the Board stands Locked, Up next and Done side by side, each column scrolling under its
 sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures while

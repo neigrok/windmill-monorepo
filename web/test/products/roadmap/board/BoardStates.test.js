@@ -51,11 +51,11 @@ test('BoardStates — from 744px the skeleton holds the three columns with their
     + '<span class="st-board-skeleton-lines"><span class="st-board-skeleton-line"></span><span class="st-board-skeleton-line"></span></span></span>';
   assert.equal(frame({ loading: true }), [
     '<div class="st-board-columns" aria-busy="true" tabindex="-1">',
-    '<section class="st-board-columns-column st-board-columns-column--locked"><h2 class="st-board-columns-heading st-board-columns-heading--locked">',
+    '<section class="st-board-columns-column st-board-columns-column--locked" tabindex="-1"><h2 class="st-board-columns-heading st-board-columns-heading--locked">',
     `<span class="st-board-columns-title">Locked</span></h2>${card}${card}${card}</section>`,
-    '<section class="st-board-columns-column st-board-columns-column--upNext"><h2 class="st-board-columns-heading st-board-columns-heading--upNext">',
+    '<section class="st-board-columns-column st-board-columns-column--upNext" tabindex="-1"><h2 class="st-board-columns-heading st-board-columns-heading--upNext">',
     `<span class="st-board-columns-accent" aria-hidden="true"></span><span class="st-board-columns-title">Up next</span></h2>${card}${card}</section>`,
-    '<section class="st-board-columns-column st-board-columns-column--done"><h2 class="st-board-columns-heading st-board-columns-heading--done">',
+    '<section class="st-board-columns-column st-board-columns-column--done" tabindex="-1"><h2 class="st-board-columns-heading st-board-columns-heading--done">',
     `<span class="st-board-columns-title">Done</span></h2>${card}${card}${card}</section>`,
     '</div>',
   ].join(''));

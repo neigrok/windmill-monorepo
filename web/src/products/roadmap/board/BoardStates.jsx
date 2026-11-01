@@ -48,7 +48,7 @@ export function BoardSkeleton({ phone }) {
   return (
     <div className="st-board-columns" aria-busy="true" tabIndex={-1}>
       {COLUMNS.map((column) => (
-        <section key={column} className={`st-board-columns-column st-board-columns-column--${column}`}>
+        <section key={column} className={`st-board-columns-column st-board-columns-column--${column}`} tabIndex={-1}>
           <h2 className={`st-board-columns-heading st-board-columns-heading--${column}`}>
             {column === 'upNext' && <span className="st-board-columns-accent" aria-hidden />}
             <span className="st-board-columns-title">{COLUMN_TITLES[column]}</span>
