@@ -1,20 +1,15 @@
 # Sweep: deprecated APIs, dead code, warnings and stale references
 
-**Status:** Cleanup. Not started.
+**Status:** Done on `android-native-wave-a`; not yet on main.
 
 **Current implementation**
-- **Deprecated APIs:**
-  - `LocalClipboardManager` in `GymRoom.kt`, `coach/CoachBubble.kt`, `sharing/WorkoutShareCard.kt` and about 10 tests.
-  - `lifecycle.whenResumed` in `app/.../MainActivity.kt`.
-  - The framework `android.media.ExifInterface` in `coach/CoachPhotos.kt`, which has known bugs on API 26–28.
-- **Dead code and resources:**
-  - Drawables `gym_photo.xml`, `gym_settings.xml`. Library modules skip lint's `UnusedResources`, so lint never flags them.
-  - `Finish.discard = "Discard session"`, used only by absence asserts.
-  - The unused `AskThread` import and the dead string `Threads.past`.
-- **Compiler warnings:** "Condition is always 'true'" (about 10 in `coach/CoachStore.kt` and one in `GymRoom.kt`) marks dead defensive branches. Also "Redundant creation of Json format" in `WorkoutControls.kt`.
-- **`MainActivity`:** it re-runs `enableEdgeToEdge` from a `SideEffect`; `DisposableEffect(dark)` states the intent.
-- **Stale ledger references:** `docs/design/consistency.md` 9r and three other lines cite `ui/SettingsScreen.kt`, which no longer exists; 9r also says Android ships *Gym settings*.
-- **Large-text tests:** most scale text with `Density(x, 2f)`, which is linear. Android 14's 200 % is non-linear (16 sp draws at 28 dp), so those tests check a harsher layout than a phone shows; `RuntimeEnvironment.setFontScale(2f)` gives the real curve.
+- **Deprecated APIs:** clipboard writes go through `LocalClipboard`'s suspend `setClipEntry` (`GymRoom.kt`, `coach/CoachBubble.kt`, `sharing/WorkoutShareCard.kt`); the two on-tap copies start undispatched, so the copy lands in the same frame as before. Their tests fake `Clipboard` and read the platform clip. `MainActivity` asks for keyguard dismissal through `withResumed`, the one-shot replacement for `whenResumed`; `repeatOnLifecycle` would ask again on every resume. Coach photos read orientation with AndroidX `ExifInterface`.
+- **Dead code:** gone — the `gym_photo` and `gym_settings` drawables, `Finish.discard` (its absence asserts now check the live *Discard*), `Threads.past`, `Ask.notesDoor`, `SetEffort.rpeLabel`, AskScreen's and ThreadScreen's unused `onNotes`, `gymFieldColours`, `dashedEdge`, `GymColors.weightInk`, `RowDeleteGround`, platform's `ActionCapsule`, `GymEngineSession.anonymousCounts`, `gymLineageCounts`, `TrainingStore.retryImport`, `WorkoutImports.replaceStartAndRetry`, and the unused imports in `:gym` main and tests.
+- **Compiler warnings:** none in `:app`, `:platform` or `:gym` main sources. CoachStore's always-true `seat` checks are gone, and the strict workout decoder is one `workoutJson` in `WorkoutControls`. Two remain in `:sync-engine` (`AndroidSqlite.kt` `setIdleConnectionTimeout`, `Transport.kt` `onFailure` parameter name), outside this sweep's files.
+- **Lint:** the app's lint reads its dependencies (`checkDependencies`) and fails the build on `UnusedResources`. The tile's pre-34 `startActivityAndCollapse(Intent)` branch suppresses `StartActivityAndCollapseDeprecated`, which the app-level lint raises as an error.
+- **`MainActivity`:** `enableEdgeToEdge` runs from `DisposableEffect(dark)`.
+- **Ledger:** 9k, 9r, 11c and 12c in `docs/design/consistency.md` point at the code that holds those parts now; 9r no longer says Android ships Gym settings.
+- **Large-text tests:** unchanged. Compose 1.8's `Density(density, fontScale)` already applies Android's non-linear curve (16 sp sets at 28 dp, 40 sp at 46.9 dp at `fontScale` 2), the same as `RuntimeEnvironment.setFontScale(2f)`.
 
 **Change**
 - **APIs:** replace the deprecated ones: `LocalClipboard` with the suspend API, `repeatOnLifecycle`, and AndroidX `ExifInterface`.

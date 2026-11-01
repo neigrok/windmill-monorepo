@@ -224,12 +224,11 @@ and Android disagree.
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from
   other tabs (iOS section 07 `1116:1705`; Android 07.7 `1283:42660`, 07.1 `1283:42787`, 07.2
-  `1284:16798`, 07.3 `1284:16888`, 07.8 `1284:17208`). Android builds none of it: it shows *Saved
-  workouts need review (N)* above the bar on every tab (`GymRoom.kt:980-982`), puts the cards in Gym
-  settings (`ui/SettingsScreen.kt:182-442`) with a dialog Inspect, a typed-format fix sheet
-  (*Renumber sets for import*, *import limit 200*), *Choose set kind* and no Discard, and a refusal
-  banner on Routines (`ui/RefusalBanner.kt`). iOS's discard question still says *This permanently
-  removes the copy saved on this phone.* (`WorkoutInspectScreen.swift:52-58`); see 12g.
+  `1284:16798`, 07.3 `1284:16888`, 07.8 `1284:17208`). Android builds it: the row heads The log
+  (`ui/LogScreen.kt:113`), the list, Inspect, Fix workout and ⋯ *Discard workout* live in
+  `ui/OnThisPhoneScreen.kt`, and the badge in `GymRoom.kt:1296`. iOS's discard question for a landed
+  workout's stranded sets still says *This permanently removes the copy saved on this phone.*
+  (`WorkoutInspectScreen.swift:49-53`); see 12g.
 - **9m · Iteration-1 boards outside the Gym page.** The Gym iOS page was redrawn to the app on
   2026-10-22 (10o). Iteration-1 drawings of You's native sections and the update-required alert
   predate the native chrome; redraw them from the app.
@@ -265,10 +264,10 @@ and Android disagree.
   (`AccountSheet.swift:419-431`) and a hidden workout from the tab bar's accessory on iOS 26 and the
   **Hidden** row at the head of The log on iOS 18 (board 03.5). Android draws the same: You holds
   *Notes*, *Connected log*, *About Windmill* (Shell · Android 16a/16b), the workout bar's trailing
-  action is *Hide*, and Units go. Android still ships Gym settings (`ui/SettingsScreen.kt:81-129`)
-  with a kg/lb toggle that draws nothing in lb,
-  and Coach's ⋮ More with Notes, Connected log, New chat and Account (`coach/AskScreen.kt`).
-  The workout bar has no settings action; its trailing slot awaits task 45's Hide behaviour.
+  action is *Hide*, and Units go. Android builds this: the room gives You its *Notes* and
+  *Connected log* rows (`GymRoom.kt:375-376`) beside *About Windmill* (`app/MainActivity.kt:282`),
+  the workout's top bar trails *Hide workout* (`ui/LoggerScreen.kt:331-332`), no units control
+  remains, and Coach's top bar holds History and the account seat (`coach/AskScreen.kt:164-167`).
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
@@ -760,12 +759,10 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   keeps its *Dismiss*.
 - **11c · Destructive actions use the M3 error role (owner ruling, 2026-10-22).** Library Theme
   `android/system/error` (#E46962 dark · #B3261E light) and `on-error` (#410E0B · #FFFFFF). The app
-  maps M3 `error` and `onError` to those roles in `ui/GymMaterial.kt`. Direct destructive
-  controls still use other roles: brick (*Discard session* `ui/SessionScreen.kt:322-326`, *Delete
-  note*), ink (*Delete set* `ui/FixSheet.kt:277-281`, *Delete weigh-in*, the log menu's *Discard
-  session* `ui/LogScreen.kt:263`, the routine menu's *Delete*), accent (*Discard* in the sign-in
-  decision `app/MainActivity.kt:290,303`, *Remove set* `ui/SettingsScreen.kt:344,359`). Boards 00.2
-  `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
+  maps M3 `error` and `onError` to those roles in `ui/GymMaterial.kt`, and the workout's *Discard
+  workout*, *Delete set*, the swipe deletes, the routine menu's *Delete* and the sign-in decision's
+  *Discard* use them. The log row menu's *Discard workout* still draws in ink
+  (`ui/LogScreen.kt:276`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
 - **11d · Number entry is a stepper (owner ruling, 2026-10-22).** Load and reps are M3 icon buttons
   − / + (48 dp) around a numeric text field; tapping the value opens the decimal keyboard, − / +
   nudge by the movement's step, and the plate ladder stays for bigger jumps. Pressing shows the M3
@@ -984,9 +981,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 - **12c · Hide workout on Android.** The logger's *Hide* (and system Back) leaves a running workout,
   which waits in `Android / Workout bar` (*Push A · 12:34*) above the navigation bar on every tab root
   (Android 03.4 `1253:29834`, 03.5 `1283:41318`). Swiping the notification away only turns it off:
-  This workout shows *Notification off* · *Show*. Android today cannot leave the logger before Finish
-  (`GymRoom.kt:163,180`), and a swiped notification sets *Workout hidden* / *Show workout* in Gym
-  settings (`ui/SettingsScreen.kt:113-118`, `notification/WorkoutNotifications.kt:211`).
+  This workout shows *Notification off* · *Show*. Android builds this: *Hide workout* in the
+  logger's top bar (`ui/LoggerScreen.kt:331-332`), the bar (`ui/WorkoutBar.kt`), and the swipe's
+  delete intent (`notification/WorkoutNotifications.kt:258`) feeding This workout's *Notification
+  off* · *Show* row (`ui/AssemblySheet.kt:225-228`).
 - **12d · The approved Finish receipt.** Android Finish (03.7 `1254:32362`, 03.8 `1254:32441`)
   has a readable receipt and two main actions: crowned *Share with Coach* and *Done*, each 56 dp
   with 12 dp between. *Discard* is in the native top-end overflow and asks once. Task 14 implements
