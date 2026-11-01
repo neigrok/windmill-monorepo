@@ -2,6 +2,7 @@ package works.windmill.gym.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -88,14 +89,15 @@ class ConnectedLogScreenTests {
                 override fun openUri(uri: String) { opened += uri }
             }
             CompositionLocalProvider(LocalUriHandler provides browser) {
-                ConnectedLogScreen(
-                    store = store,
+                remember(store) { ConnectionsBinding(store) }.let { connections -> ConnectedLogScreen(
+                    state = connections,
+                    events = connections,
                     isSignedIn = signedIn,
                     origin = "https://windmill.works",
                     backTo = "Settings",
                     onBack = {},
                     onSignIn = { signIns += "you" },
-                )
+                ) }
             }
         }
     }
@@ -209,7 +211,7 @@ class ConnectedLogScreenTests {
         app.lifecycle.currentState = Lifecycle.State.RESUMED
         compose.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides app) {
-                ConnectedLogScreen(store, true, "https://windmill.works", "Routines", {}, {})
+                remember(store) { ConnectionsBinding(store) }.let { connections -> ConnectedLogScreen(connections, connections, true, "https://windmill.works", "Routines", {}, {}) }
             }
         }
         fun credentialReads() = server.calls.count { it == "grants" || it == "mcpKeys" }

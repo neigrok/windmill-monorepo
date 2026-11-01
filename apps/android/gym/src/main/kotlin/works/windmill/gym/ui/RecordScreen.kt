@@ -1,8 +1,10 @@
 package works.windmill.gym.ui
 
+import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,8 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -27,17 +31,57 @@ import kotlinx.coroutines.launch
 import works.windmill.gym.presentation.*
 import works.windmill.gym.presentation.Record
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.HistoryReads
+import works.windmill.gym.store.RoutinesStore
+import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
+
+// What a movement's record page draws: the account's progress, the catalogue it names movements from, and whose seat it is.
+@Stable
+interface RecordState {
+    val accountKey: String
+    val replica: String?
+    val progress: StatsProgress?
+    val progressFailure: WriteFailure?
+    val catalog: List<Exercise>
+}
+
+// What a movement's record page asks of the stores.
+interface RecordEvents {
+    suspend fun loadProgress(force: Boolean): GymResult<StatsProgress>
+    suspend fun record(exerciseId: String): GymResult<MovementRecord>
+    suspend fun edit(exerciseId: String, name: String, equipment: String?, loadCount: Int?, base: Exercise?,
+        expectedAccountKey: String, expectedReplica: String?): GymResult<Exercise>
+}
+
+// A movement's record page over the room's stores.
+class RecordBinding(private val seat: TrainingSeat, private val history: HistoryReads, private val routines: RoutinesStore) :
+    RecordState, RecordEvents {
+    constructor(store: TrainingStore) : this(store.seat, store.history, store.routines)
+
+    override val accountKey: String get() = seat.accountKey
+    override val replica: String? get() = seat.replica
+    override val progress: StatsProgress? get() = history.progress
+    override val progressFailure: WriteFailure? get() = history.progressFailure
+    override val catalog: List<Exercise> get() = routines.catalog
+
+    override suspend fun loadProgress(force: Boolean): GymResult<StatsProgress> = history.loadProgress(force)
+    override suspend fun record(exerciseId: String): GymResult<MovementRecord> = history.record(exerciseId)
+    override suspend fun edit(exerciseId: String, name: String, equipment: String?, loadCount: Int?, base: Exercise?,
+        expectedAccountKey: String, expectedReplica: String?): GymResult<Exercise> =
+        history.edit(exerciseId, name, equipment, loadCount, base, expectedAccountKey, expectedReplica)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBack: () -> Unit,
+fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, backTo: String, onBack: () -> Unit,
     onDraftOpen: (Boolean) -> Unit = {}, focusSessionId: String? = null, now: () -> Long = System::currentTimeMillis) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val nowMs = remember(exerciseId, store.history.progress?.asOf) { now() }
+    val nowMs = remember(exerciseId, state.progress?.asOf) { now() }
     val zone = ZoneId.systemDefault()
     var record by remember(exerciseId) { mutableStateOf<MovementRecord?>(null) }
     var failure by remember(exerciseId) { mutableStateOf<WriteFailure?>(null) }
@@ -72,8 +116,8 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     LaunchedEffect(exerciseId, asked) {
         failure = null
         coroutineScope {
-            val data = async { store.history.loadProgress(force = asked > 0) }
-            when (val read = store.history.record(exerciseId)) {
+            val data = async { events.loadProgress(force = asked > 0) }
+            when (val read = events.record(exerciseId)) {
                 is GymResult.Ok -> record = read.value
                 is GymResult.Failed -> failure = read.why
             }
@@ -83,9 +127,9 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
             }
         }
     }
-    val progress = store.history.progress?.movement(exerciseId)
-    val ready = record != null && progress != null && failure == null && store.history.progressFailure == null
-    GymScreen(title = record?.exercise?.name ?: Readout.movement(exerciseId, store.routines.catalog),
+    val progress = state.progress?.movement(exerciseId)
+    val ready = record != null && progress != null && failure == null && state.progressFailure == null
+    GymScreen(title = record?.exercise?.name ?: Readout.movement(exerciseId, state.catalog),
         onBack = onBack, backTo = backTo,
         actions = { if (ready) Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More") }
@@ -95,7 +139,7 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
                     val exercise = record!!.exercise
                     draft = exercise.name; equipment = exercise.equipment; loadCount = exercise.loadCount
                     openedName = exercise.name; openedEquipment = exercise.equipment; openedCount = exercise.loadCount
-                    openedAccount = store.seat.accountKey; openedReplica = store.seat.replica
+                    openedAccount = state.accountKey; openedReplica = state.replica
                     refused = null; renaming = true
                 }, modifier = Modifier.widthIn(min = 208.dp))
             }
@@ -103,9 +147,9 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
             .padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when {
-                failure != null || store.history.progressFailure != null -> {
+                failure != null || state.progressFailure != null -> {
                     Text("Record unavailable", style = WindmillFont.body(24, FontWeight.Bold), color = skin.ink)
-                    Text((failure ?: store.history.progressFailure)!!.line("Your record could not be read."), style = WindmillFont.body(16), color = skin.inkDim)
+                    Text((failure ?: state.progressFailure)!!.line("Your record could not be read."), style = WindmillFont.body(16), color = skin.inkDim)
                     TextButton(onClick = { asked += 1 }) { Text("Try again") }
                 }
                 ready -> RecordBody(Record.page(record!!, nowMs, progress!!), record!!.exercise.equipment, progress, nowMs, zone, focusSessionId)
@@ -138,10 +182,10 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
                         saving = true
                         scope.launch {
                             try {
-                                when (val result = store.history.edit(exerciseId, draft, equipment, loadCount, base, openedAccount, openedReplica)) {
+                                when (val result = events.edit(exerciseId, draft, equipment, loadCount, base, openedAccount, openedReplica)) {
                                     is GymResult.Failed -> refused = result.why.line("that movement was not changed.")
                                     is GymResult.Ok -> {
-                                        if (store.seat.accountKey == openedAccount && store.seat.replica == openedReplica) {
+                                        if (state.accountKey == openedAccount && state.replica == openedReplica) {
                                             record = read.copy(exercise = result.value)
                                             asked += 1
                                         }
@@ -246,5 +290,44 @@ internal fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId
         Text("${if (all) "All" else "Last 12 weeks"} · ${Readout.sessionCount(window.sessions.size)}",
             style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
         if (window.estimatesComplete && window.estimates.isEmpty()) Text("No eligible estimate in this window.", style = WindmillFont.body(14), color = skin.inkDim)
+    }
+}
+
+private val recordPreviewNow = LocalDateTime.of(2026, 10, 28, 19, 30).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+private val recordPreviewBench = Exercise("bench-press", "Bench Press")
+
+private val recordPreviewLog = listOf(70.0, 72.5, 75.0, 75.0, 77.5, 80.0).mapIndexed { index, kg ->
+    val started = recordPreviewNow - (5 - index) * 7L * 86_400_000 - 3_600_000
+    SessionDetail(Session("push-$index", started, started + 3_300_000, plan = PlanSnapshot("Push A")),
+        (1..3).map { set -> TrainingSet("push-$index-$set", "bench-press", set, kg, 5, completedAtMs = started + set * 300_000L) })
+}
+
+private data class RecordPreviewState(override val progress: StatsProgress?) : RecordState {
+    override val accountKey: String = "preview"
+    override val replica: String? = "preview"
+    override val progressFailure: WriteFailure? = null
+    override val catalog: List<Exercise> = listOf(recordPreviewBench)
+}
+
+// Answers the page's reads from the preview log; writes change nothing.
+private object RecordPreviewEvents : RecordEvents {
+    override suspend fun loadProgress(force: Boolean): GymResult<StatsProgress> =
+        GymResult.Ok(StatsProgress.of(recordPreviewLog, recordPreviewNow))
+    override suspend fun record(exerciseId: String): GymResult<MovementRecord> =
+        GymResult.Ok(MovementRecord.of(recordPreviewBench, recordPreviewLog, recordPreviewNow))
+    override suspend fun edit(exerciseId: String, name: String, equipment: String?, loadCount: Int?, base: Exercise?,
+        expectedAccountKey: String, expectedReplica: String?): GymResult<Exercise> = GymResult.Ok(recordPreviewBench)
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun RecordWithBestPreview() {
+    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
+        GymMaterial {
+            RecordScreen(RecordPreviewState(StatsProgress.of(recordPreviewLog, recordPreviewNow)), RecordPreviewEvents, "bench-press",
+                backTo = "The log", onBack = {}, now = { recordPreviewNow })
+        }
     }
 }

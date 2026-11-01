@@ -67,7 +67,7 @@ class LogRowLayoutTests {
             val opened = mutableListOf<SessionSummary>()
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
-                    GymMaterial { LogScreen(room.store, "A", { opened += it }, {}, {}, {}, now = { now }) }
+                    GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", { opened += it }, {}, {}, {}, now = { now }) } }
                 }
             }
             val title = compose.onNodeWithText("Push A", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()

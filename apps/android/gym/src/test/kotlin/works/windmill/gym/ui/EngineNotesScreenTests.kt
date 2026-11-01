@@ -1,6 +1,7 @@
 package works.windmill.gym.ui
 
 import android.os.Looper
+import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -28,7 +29,7 @@ class EngineNotesScreenTests {
 
     private fun show(room: EngineRoomFixture) {
         compose.setContent { WindmillMaterial { GymMaterial {
-            NotesScreen(room.store, true, "Settings", {}, { _, _ -> }, {}, {})
+            remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(notes, notes, true, "Settings", {}, { _, _ -> }, {}, {}) }
         } } }
     }
 

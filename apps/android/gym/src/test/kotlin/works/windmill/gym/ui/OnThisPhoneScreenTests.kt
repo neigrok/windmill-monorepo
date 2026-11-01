@@ -213,8 +213,8 @@ class OnThisPhoneScreenTests {
             val read = requireNotNull(room.store.recovery.latest)
             val opening = room.account()
             var account by mutableStateOf(opening)
-            compose.setContent { WindmillMaterial { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {},
-                recovery = read.takeIf { it.belongsTo(account) }, now = { room.now }) } } }
+            compose.setContent { WindmillMaterial { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {},
+                recovery = read.takeIf { it.belongsTo(account) }, now = { room.now }) } } } }
             compose.onNodeWithText("On this phone").assertIsDisplayed()
             for (changed in listOf(Account("https://other.invalid", opening.user),
                 Account(opening.origin, opening.user, identityRevision = opening.identityRevision + 1),

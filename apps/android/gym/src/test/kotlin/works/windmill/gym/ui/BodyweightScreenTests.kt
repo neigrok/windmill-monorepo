@@ -81,14 +81,15 @@ class BodyweightScreenTests {
 
     private fun log(store: TrainingStore, doors: MutableList<String>) {
         compose.setContent {
-            LogScreen(
-                store = store,
+            LogBinding(store).let { log -> LogScreen(
+                state = log,
+                events = log,
                 seat = "",
                 onOpenSession = { doors += "session" },
                 onOpenBodyweight = { doors += "bodyweight" },
                 onShareSession = { doors += "share" },
                 onDiscardSession = { doors += "discard" },
-            )
+            ) }
         }
     }
 
@@ -205,7 +206,7 @@ class BodyweightScreenTests {
                 store.bodyweight.weighIn(today.toString(), 82.4)
             }
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
             compose.onNodeWithText(Bodyweight.title).assertIsDisplayed()
@@ -237,7 +238,7 @@ class BodyweightScreenTests {
                 store.bodyweight.weighIn(today.minusDays(150).toString(), 83.0)
             }
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
             compose.onNodeWithText("90 days · 0 weigh-ins").assertIsDisplayed()
@@ -264,7 +265,7 @@ class BodyweightScreenTests {
             }
             room.sync(server)
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
             compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
@@ -364,7 +365,7 @@ class BodyweightScreenTests {
                 store.bodyweight.weighIn(later.toString(), 83.0)
             }
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
             compose.onNodeWithText(Bodyweight.listDay(earlier)).performScrollTo().performClick()
@@ -384,7 +385,7 @@ class BodyweightScreenTests {
             aheadWrites(room, server, tomorrow to 90.0, today.minusDays(3) to 82.4)
             val store = store(room, server)
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
             compose.runOnIdle {
@@ -435,7 +436,7 @@ class BodyweightScreenTests {
             val store = store(room, EngineRoomFixture.server())
             runBlocking { store.bodyweight.weighIn(today.toString(), 82.4) }
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
             compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight(today.toString())) }
@@ -460,7 +461,7 @@ class BodyweightScreenTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room, EngineRoomFixture.server())
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
             compose.onNodeWithText(Bodyweight.nothingYet).assertIsDisplayed()
             compose.onNodeWithText("90 days").assertDoesNotExist()
@@ -475,7 +476,7 @@ class BodyweightScreenTests {
             val day = today.minusDays(1)
             runBlocking { store.bodyweight.weighIn(day.toString(), 182.0) }
             compose.setContent {
-                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+                BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
             compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()

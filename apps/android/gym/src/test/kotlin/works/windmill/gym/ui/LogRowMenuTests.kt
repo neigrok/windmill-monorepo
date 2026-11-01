@@ -64,14 +64,15 @@ class LogRowMenuTests {
 
     private fun log(room: EngineRoomFixture, doors: MutableList<String>) {
         compose.setContent {
-            LogScreen(
-                store = room.store,
+            LogBinding(room.store).let { log -> LogScreen(
+                state = log,
+                events = log,
                 seat = "",
                 onOpenSession = { doors += "open" },
                 onOpenBodyweight = { doors += "bodyweight" },
                 onShareSession = { doors += "share" },
                 onDiscardSession = { doors += "discard" },
-            )
+            ) }
         }
     }
 

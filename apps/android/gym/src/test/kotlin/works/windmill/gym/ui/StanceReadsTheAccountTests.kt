@@ -110,8 +110,8 @@ class StanceReadsTheAccountTests {
         val store = room.store
         val session = oneWorkout(room)
         compose.setContent {
-            LogScreen(store = store, seat = "", onOpenSession = {}, onOpenBodyweight = {},
-                onShareSession = {}, onDiscardSession = {})
+            LogBinding(store).let { log -> LogScreen(state = log, events = log, seat = "", onOpenSession = {}, onOpenBodyweight = {},
+                onShareSession = {}, onDiscardSession = {}) }
         }
         compose.onNodeWithText("No workouts yet").assertDoesNotExist()
 
@@ -202,8 +202,8 @@ class StanceReadsTheAccountTests {
         assertEquals("the log is read to its bottom, which is when the foot says this at all",
             Older.End, store.history.older)
         compose.setContent {
-            LogScreen(store = store, seat = "", onOpenSession = {}, onOpenBodyweight = {},
-                onShareSession = {}, onDiscardSession = {})
+            LogBinding(store).let { log -> LogScreen(state = log, events = log, seat = "", onOpenSession = {}, onOpenBodyweight = {},
+                onShareSession = {}, onDiscardSession = {}) }
         }
         compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
 

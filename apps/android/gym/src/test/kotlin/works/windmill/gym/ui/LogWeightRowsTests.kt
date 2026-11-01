@@ -51,7 +51,7 @@ class LogWeightRowsTests {
             }
             var opens = 0
             compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) {
-                GymMaterial { LogScreen(room.store, "A", {}, { opens++ }, {}, {}, now = { room.now }) }
+                GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, { opens++ }, {}, {}, now = { room.now }) } }
             } }
             compose.onNodeWithText("No workouts yet").assertDoesNotExist()
             compose.onNodeWithText("Bodyweight").assertDoesNotExist()
@@ -75,7 +75,7 @@ class LogWeightRowsTests {
                 room.select(null)
                 repeat(16) { assertNull(room.store.bodyweight.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
             }
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             val fab = compose.onNodeWithContentDescription("Weigh in")
             val label = compose.onNode(hasText("Weigh in"), useUnmergedTree = true)
             val expanded = fab.getBoundsInRoot()
@@ -102,7 +102,7 @@ class LogWeightRowsTests {
             room.now = now
             runBlocking { room.select(null); assertNull(room.store.bodyweight.weighIn(day.toString(), 82.4)) }
             val original = room.store.bodyweight.drawn
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.onNodeWithTag("weight:$day").performTouchInput { swipeLeft() }
             compose.waitForIdle()
             compose.onNodeWithTag("weight:$day").assertDoesNotExist()
@@ -129,7 +129,7 @@ class LogWeightRowsTests {
                 room.select(null)
                 repeat(16) { assertNull(room.store.bodyweight.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
             }
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             val top = compose.onNodeWithTag("weight:$day").getBoundsInRoot()
             compose.onNodeWithTag("weight:$day").performTouchInput { swipeLeft() }
             compose.waitForIdle()

@@ -1,7 +1,9 @@
 package works.windmill.gym.ui
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,14 +22,20 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.ConnectedLogState
+import works.windmill.gym.presentation.ConnectedTool
 import works.windmill.gym.presentation.LogLevel
+import works.windmill.gym.presentation.LogReach
+import works.windmill.gym.store.SharingStore
+import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 
 private object ConnectionType {
@@ -36,10 +44,39 @@ private object ConnectionType {
     val row = body.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
 }
 
+// What the connected-log page draws: the seat's answer about the tools that read the training log.
+@Stable
+interface ConnectionsState {
+    val accountKey: String
+    val isLoading: Boolean
+    val connectedLog: ConnectedLogState
+    val connectedLogGeneration: Long
+}
+
+// What the connected-log page asks of the stores.
+interface ConnectionsEvents {
+    suspend fun readConnectedLog()
+    suspend fun refreshConnectedLog()
+}
+
+// The connected-log page over the room's stores.
+class ConnectionsBinding(private val seat: TrainingSeat, private val sharing: SharingStore) : ConnectionsState, ConnectionsEvents {
+    constructor(store: TrainingStore) : this(store.seat, store.sharing)
+
+    override val accountKey: String get() = seat.accountKey
+    override val isLoading: Boolean get() = seat.isLoading
+    override val connectedLog: ConnectedLogState get() = sharing.connectedLog
+    override val connectedLogGeneration: Long get() = sharing.connectedLogGeneration
+
+    override suspend fun readConnectedLog() { sharing.readConnectedLog() }
+    override suspend fun refreshConnectedLog() { sharing.refreshConnectedLog() }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectedLogScreen(
-    store: TrainingStore,
+    state: ConnectionsState,
+    events: ConnectionsEvents,
     isSignedIn: Boolean,
     origin: String,
     backTo: String,
@@ -50,29 +87,29 @@ fun ConnectedLogScreen(
     val scope = rememberCoroutineScope()
     val web = LocalUriHandler.current
     val telemetry = LocalTelemetry.current
-    val owner = store.seat.accountKey
+    val owner = state.accountKey
     var how by rememberSaveable(owner) { mutableStateOf<Boolean?>(null) }
     var refreshing by remember(owner) { mutableStateOf(false) }
     val rootScroll = rememberLazyListState()
     val howScroll = rememberLazyListState()
     val now = System.currentTimeMillis()
     fun refresh() {
-        if (refreshing || !isSignedIn || store.seat.isLoading) return
+        if (refreshing || !isSignedIn || state.isLoading) return
         refreshing = true
         scope.launch {
-            try { store.sharing.refreshConnectedLog() }
-            finally { if (store.seat.accountKey == owner) refreshing = false }
+            try { events.refreshConnectedLog() }
+            finally { if (state.accountKey == owner) refreshing = false }
         }
     }
     fun browse(url: String) {
         runCatching { web.openUri(url) }.onFailure { telemetry.failure("gym.openConnections", it) }
     }
-    LaunchedEffect(store, owner, isSignedIn, store.seat.isLoading, store.sharing.connectedLogGeneration) {
-        if (isSignedIn && !store.seat.isLoading) store.sharing.readConnectedLog()
+    LaunchedEffect(events, owner, isSignedIn, state.isLoading, state.connectedLogGeneration) {
+        if (isSignedIn && !state.isLoading) events.readConnectedLog()
     }
     ReadsAgainOnReturn { refresh() }
-    val state = if (isSignedIn) store.sharing.connectedLog else ConnectedLogState.None
-    val connected = state as? ConnectedLogState.Connected
+    val log = if (isSignedIn) state.connectedLog else ConnectedLogState.None
+    val connected = log as? ConnectedLogState.Connected
     BackHandler(enabled = how != null) { how = null }
     if (how != null) {
         GymScreen(title = ConnectedLog.disclosure, onBack = { how = null }, backTo = ConnectedLog.title) {
@@ -106,10 +143,10 @@ fun ConnectedLogScreen(
         PullToRefreshBox(isRefreshing = refreshing, onRefresh = ::refresh, modifier = Modifier.fillMaxSize()) {
             LazyColumn(Modifier.fillMaxSize(), state = rootScroll,
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 20.dp)) {
-                when (state) {
+                when (log) {
                     is ConnectedLogState.Connected -> {
                         item("head") { ConnectionHeading(ConnectedLog.connectedHead, FontWeight.Bold) }
-                        items(state.tools, key = { "tool:${it.credential}:${it.id}" }) { tool ->
+                        items(log.tools, key = { "tool:${it.credential}:${it.id}" }) { tool ->
                             ConnectionRow(tool.name, tool.meta(now)) { browse(ConnectedLog.connectionsUrl(origin)) }
                         }
                     }
@@ -123,7 +160,7 @@ fun ConnectedLogScreen(
                     }
                     ConnectedLogState.Refused, ConnectedLogState.Offline -> item("failure") {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(if (state == ConnectedLogState.Offline) ConnectedLog.offline else ConnectedLog.unread,
+                            Text(if (log == ConnectedLogState.Offline) ConnectedLog.offline else ConnectedLog.unread,
                                 style = ConnectionType.body, color = skin.inkDim)
                             TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again") }
                         }
@@ -173,3 +210,40 @@ private fun ConnectionRow(title: String, detail: String, onOpen: (() -> Unit)? =
         if (onOpen != null) Icon(painterResource(R.drawable.gym_forward), null, Modifier.size(20.dp), tint = skin.inkDim)
     }
 }
+
+private data class ConnectionsPreviewState(override val connectedLog: ConnectedLogState) : ConnectionsState {
+    override val accountKey: String = "preview"
+    override val isLoading: Boolean = false
+    override val connectedLogGeneration: Long = 0
+}
+
+private object ConnectionsPreviewEvents : ConnectionsEvents {
+    override suspend fun readConnectedLog() = Unit
+    override suspend fun refreshConnectedLog() = Unit
+}
+
+@Composable
+private fun ConnectionsPreview(log: ConnectedLogState) {
+    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
+        GymMaterial {
+            ConnectedLogScreen(ConnectionsPreviewState(log), ConnectionsPreviewEvents, isSignedIn = true,
+                origin = "https://windmill.works", backTo = "Settings", onBack = {}, onSignIn = {})
+        }
+    }
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun ConnectionsAnsweredPreview() {
+    val since = System.currentTimeMillis() - 12L * 86_400_000
+    ConnectionsPreview(ConnectedLogState.Connected(listOf(
+        ConnectedTool("claude", "Claude", since, LogReach("gym:read gym:write"), ConnectedTool.Credential.Approved),
+        ConnectedTool("key-1", "Training notebook", since, LogReach(""), ConnectedTool.Credential.Pasted),
+    )))
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun ConnectionsNonePreview() = ConnectionsPreview(ConnectedLogState.None)

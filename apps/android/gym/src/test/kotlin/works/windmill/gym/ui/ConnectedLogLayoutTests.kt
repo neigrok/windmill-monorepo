@@ -1,6 +1,7 @@
 package works.windmill.gym.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
@@ -38,7 +39,7 @@ class ConnectedLogLayoutTests {
             runBlocking { room.select("A") }
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(2f, 2f), LocalWindmillDark provides dark) {
-                    GymMaterial { ConnectedLogScreen(room.store, true, "https://windmill.works", "Settings", {}, {}) }
+                    GymMaterial { remember(room.store) { ConnectionsBinding(room.store) }.let { connections -> ConnectedLogScreen(connections, connections, true, "https://windmill.works", "Settings", {}, {}) } }
                 }
             }
             for (text in LogLevel.entries.map { it.meta } + ConnectedLog.caption) {

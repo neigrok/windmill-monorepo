@@ -101,8 +101,10 @@ import works.windmill.gym.coach.AskAbsentStance
 import works.windmill.gym.coach.AskBinding
 import works.windmill.gym.coach.AskScreen
 import works.windmill.gym.coach.CoachAccessStance
+import works.windmill.gym.ui.BodyweightBinding
 import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.ConnectedLogScreen
+import works.windmill.gym.ui.ConnectionsBinding
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
@@ -117,11 +119,14 @@ import works.windmill.gym.ui.OnThisPhoneScreen
 import works.windmill.gym.ui.WorkoutInspectScreen
 import works.windmill.gym.ui.WorkoutFixScreen
 import works.windmill.gym.ui.RecoveryBinding
+import works.windmill.gym.ui.LogBinding
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerBinding
 import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.NoteEditorScreen
+import works.windmill.gym.ui.NotesBinding
 import works.windmill.gym.ui.NotesScreen
+import works.windmill.gym.ui.RecordBinding
 import works.windmill.gym.ui.RecordScreen
 import works.windmill.gym.ui.ReviewBinding
 import works.windmill.gym.ui.ReviewSheet
@@ -1009,8 +1014,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
             @Composable
             fun TabScreen(tab: Tab, transient: SnackbarHostState? = null) = when (tab) {
-                Tab.Log -> LogScreen(
-                    store = store,
+                Tab.Log -> remember(store) { LogBinding(store) }.let { log -> LogScreen(
+                    state = log,
+                    events = log,
                     seat = youInitial,
                     onOpenSession = { look(Away.Session(it)) },
                     onOpenBodyweight = { look(Away.Bodyweight) },
@@ -1020,7 +1026,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     onOpenRecovery = { id -> look(if (id == null) Away.OnThisPhone else Away.InspectWorkout(id)) },
                     recovery = recoveryRead,
                     transient = transient,
-                )
+                ) }
                 Tab.Coach -> CoachStance { Conversation(backTo = null, onBack = null) }
                 Tab.Routines -> RoutinesScreen(
                     state = routinesHome,
@@ -1044,37 +1050,40 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             fun PushedScreen(frame: Frame.Pushed) {
                 val backTo = wayBackTo(frame.under, frame.tab)
                 when (val standing = frame.away) {
-                    is Away.Movement -> RecordScreen(
+                    is Away.Movement -> remember(store) { RecordBinding(store) }.let { record -> RecordScreen(
+                        state = record,
+                        events = record,
                         exerciseId = standing.exerciseId,
                         focusSessionId = standing.focusSessionId,
-                        store = store,
                         backTo = backTo,
                         onBack = { back() },
                         onDraftOpen = { pushedDraftOpen = it },
-                    )
-                    Away.Connections -> ConnectedLogScreen(
-                        store = store,
+                    ) }
+                    Away.Connections -> remember(store) { ConnectionsBinding(store) }.let { connections -> ConnectedLogScreen(
+                        state = connections,
+                        events = connections,
                         isSignedIn = account.isSignedIn,
                         origin = origin,
                         backTo = backTo,
                         onBack = { back() },
                         onSignIn = shell.openSignIn,
-                    )
-                    Away.Notes -> NotesScreen(
-                        store = store,
+                    ) }
+                    Away.Notes -> remember(store) { NotesBinding(store) }.let { notes -> NotesScreen(
+                        state = notes,
+                        events = notes,
                         isSignedIn = account.isSignedIn,
                         backTo = backTo,
                         onBack = { back() },
                         onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
                         onSignIn = shell.openSignIn,
                         say = { note = it },
-                    )
+                    ) }
                     // The list beneath reads itself again on the way back: a saved note is on the list
                     // because the log says so.
                     is Away.NoteEditor -> NoteEditorScreen(
+                        events = remember(store) { NotesBinding(store) },
                         note = standing.note,
                         seedTitle = standing.seedTitle,
-                        store = store,
                         backTo = backTo,
                         onBack = { back() },
                         onDone = { back() },
@@ -1106,13 +1115,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             currentOwner = { recoveryRead.belongsTo(currentAccount) })
                         else LaunchedEffect(standing.id) { back() }
                     } else TabScreen(frame.tab)
-                    Away.Bodyweight -> BodyweightScreen(
-                        store = store,
+                    Away.Bodyweight -> remember(store) { BodyweightBinding(store) }.let { bodyweight -> BodyweightScreen(
+                        state = bodyweight,
+                        events = bodyweight,
                         backTo = backTo,
                         onBack = { back() },
                         say = { note = it },
                         onDraftOpen = { pushedDraftOpen = it },
-                    )
+                    ) }
                     is Away.Coach -> CoachStance { Conversation(backTo = backTo, onBack = { back() }) }
                     Away.Threads -> remember(store) { ThreadsBinding(store.coach) }.let { threads -> ThreadsScreen(
                         state = threads, events = threads,
