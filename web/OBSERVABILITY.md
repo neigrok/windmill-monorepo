@@ -80,8 +80,10 @@ Only `failed` reports to Sentry, under the static operation `gym-coach-routine-c
 conversation, question, identifier or server text is reported.
 
 Roadmap's Board/Graph switch emits `roadmap_view_switch` with only `view` (`board` or `graph`) when a reader
-switches; the view a tree opens on emits nothing. The switch exists only while the Board's development gate
-(`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's storage flag fails
-closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
+switches; the view a tree opens on emits nothing. Below 744px the Board's column tabs emit `roadmap_board_column`
+with only `column` (`locked`, `upNext` or `done`) when a reader picks another column; the column a Board opens on, or
+moves to because a step was selected elsewhere, emits nothing. The switch and the tabs exist only while the Board's
+development gate (`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
+storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
 drops the Board until that roadmap is opened again and shows the Graph. No tree, step, title, identifier or exception
 message is reported.

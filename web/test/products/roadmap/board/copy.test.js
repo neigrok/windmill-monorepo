@@ -46,6 +46,7 @@ test('copy — one word per state, one title per column, one label per sort', ()
   assert.deepEqual(COLUMN_TITLES, { locked: 'Locked', upNext: 'Up next', done: 'Done' });
   assert.deepEqual(SORT_LABELS, { roadmap: 'Roadmap order', newest: 'Created · newest', oldest: 'Created · oldest' });
   assert.deepEqual(LABELS, {
+    columns: 'Columns',
     findStep: 'Find a step',
     filterByKind: 'Filter by kind',
     allKinds: 'All',
