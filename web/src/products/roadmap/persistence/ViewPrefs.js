@@ -59,9 +59,17 @@ export function initialView({ saved, owner, empty, born = false, boardOpen = fal
   return owner ? working : 'tree';
 }
 
-// A Board that cannot show yet (loading, no steps, crashed) shows the Graph without forgetting the choice.
-export function viewToShow(view, { boardReady }) {
-  return view === 'board' && !boardReady ? 'tree' : view;
+// The Board shows while its roadmap loads or fails to load, and once loaded unless it crashed; a roadmap with no steps
+// shows there only where the Board's New step can plant the first one.
+export function boardCanShow({ crashed = false, loaded = false, empty = false, canAddFirstStep = false }) {
+  if (crashed) return false;
+  if (!loaded || !empty) return true;
+  return canAddFirstStep;
+}
+
+// A Board that cannot show shows the Graph without forgetting the choice.
+export function viewToShow(view, board) {
+  return view === 'board' && !boardCanShow(board) ? 'tree' : view;
 }
 
 // Session-scoped one-shot birth stamp: a planting door stamps the tree it made, the view decision

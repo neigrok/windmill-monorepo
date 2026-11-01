@@ -1,10 +1,11 @@
 // Below 744px: one column at a time over the bottom band's Locked · Up next · Done tabs; each column's pane keeps its scroll
 // and its own place for the arrow keys, which move between its cards.
 
-import React, { useId, useRef, useState } from 'react';
+import React, { useContext, useId, useRef, useState } from 'react';
 import './phone.css';
 import { track } from '../../../telemetry/beacon.js';
 import { ColumnCards, useArrivals } from './StepCard.jsx';
+import { UpNextRest } from './BoardStates.jsx';
 import { columnStops, useRovingFocus } from './traversal.js';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount } from './copy.js';
 
@@ -43,6 +44,7 @@ export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, done
   };
 
   const arrived = useArrivals(board);
+  const upNextRest = useContext(UpNextRest);
   const shownCards = Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })]));
   const roving = useRovingFocus([{ name: shown, stops: columnStops(shownCards[shown]) }]);
 
@@ -66,15 +68,17 @@ export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, done
             onScroll={(event) => handleScroll(column.name, event)}
           >
             <h2 className="st-board-phone-heading">{COLUMN_TITLES[column.name]}</h2>
-            <ColumnCards
-              shown={shownCards[column.name]}
-              stopId={roving.stopIn(column.name)}
-              pinned={roving.pinnedIn(column.name)}
-              arrived={arrived}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onExpandDone={expandDone}
-            />
+            {column.name === 'upNext' && upNextRest !== null ? upNextRest : (
+              <ColumnCards
+                shown={shownCards[column.name]}
+                stopId={roving.stopIn(column.name)}
+                pinned={roving.pinnedIn(column.name)}
+                arrived={arrived}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onExpandDone={expandDone}
+              />
+            )}
           </div>
         ))}
       </div>

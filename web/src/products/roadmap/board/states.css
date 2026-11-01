@@ -1,0 +1,249 @@
+/* The Board's states: skeleton, load error, empty roadmap and Roadmap complete, in the columns' frame grammar. */
+
+/* ---- Skeleton card: from 744px the sunken ground breathes; on the phone a still card outline. ---- */
+.st-board-skeleton-card {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+}
+.st-board-skeleton-rail {
+  flex-shrink: 0;
+  width: 4px;
+  border-radius: 2px;
+}
+.st-board-skeleton-lines {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.st-board-skeleton-line {
+  height: 10px;
+  max-width: 100%;
+  border-radius: 5px;
+}
+.st-board-skeleton-line:first-child {
+  height: 14px;
+}
+
+.st-board-skeleton-card--columns {
+  height: 76px;
+  border-radius: 20px;
+  background: var(--surface-sunken);
+  animation: st-board-skeleton-breathe 1200ms var(--ease-glow) infinite alternate;
+}
+.st-board-skeleton-card--columns .st-board-skeleton-rail {
+  height: 52px;
+  background: var(--border-default);
+}
+.st-board-skeleton-card--columns .st-board-skeleton-lines {
+  gap: 10px;
+  padding: var(--space-1) 0;
+}
+.st-board-skeleton-card--columns .st-board-skeleton-line {
+  width: 100%;
+  background: var(--border-default);
+}
+.st-board-skeleton-card--columns .st-board-skeleton-line:first-child {
+  width: 180px;
+  border-radius: 7px;
+}
+@keyframes st-board-skeleton-breathe {
+  from { opacity: 1; }
+  to { opacity: 0.6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-board-skeleton-card--columns {
+    animation: none;
+  }
+}
+
+.st-board-skeleton-card--reason,
+.st-board-skeleton-card--plain {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+}
+.st-board-skeleton-card--reason {
+  height: 94px;
+}
+.st-board-skeleton-card--plain {
+  height: 72px;
+}
+.st-board-skeleton-card--reason .st-board-skeleton-rail,
+.st-board-skeleton-card--plain .st-board-skeleton-rail {
+  align-self: stretch;
+  background: var(--surface-sunken);
+}
+.st-board-skeleton-card--reason .st-board-skeleton-lines,
+.st-board-skeleton-card--plain .st-board-skeleton-lines {
+  align-self: stretch;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.st-board-skeleton-card--reason .st-board-skeleton-line,
+.st-board-skeleton-card--plain .st-board-skeleton-line {
+  background: var(--surface-sunken);
+}
+.st-board-skeleton-card--reason .st-board-skeleton-line:nth-child(1) { width: 200px; }
+.st-board-skeleton-card--reason .st-board-skeleton-line:nth-child(2) { width: 140px; }
+.st-board-skeleton-card--reason .st-board-skeleton-line:nth-child(3) { width: 260px; }
+.st-board-skeleton-card--plain .st-board-skeleton-line:nth-child(1) { width: 180px; }
+.st-board-skeleton-card--plain .st-board-skeleton-line:nth-child(2) { width: 240px; }
+
+/* ---- The phone's band with nothing to pick yet: drawn, never pressed. ---- */
+.st-board-quiet-band {
+  pointer-events: none;
+}
+
+/* ---- A state in place of the columns: its message centred in the Board's room. ---- */
+.st-board-state {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: var(--space-6);
+}
+.st-board-state--empty {
+  gap: var(--space-6);
+  padding-bottom: 120px;
+}
+.st-board-state-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 360px;
+  text-align: center;
+}
+.st-board-state-message--empty {
+  gap: var(--space-2);
+}
+.st-board-state-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-board-state-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 25px;
+  color: var(--text-primary);
+}
+.st-board-state--empty .st-board-state-title {
+  font-size: 24px;
+  line-height: 32px;
+}
+.st-board-state-body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+/* The phone's load error: the message centred over Try again, pinned in thumb reach above the band. */
+.st-board-state--phone {
+  align-items: stretch;
+  padding-bottom: 0;
+}
+.st-board-state--phone .st-board-state-message {
+  flex: 1;
+  justify-content: center;
+  gap: var(--space-3);
+  max-width: none;
+  padding: var(--space-3) 0 0;
+}
+.st-board-state--phone .st-board-state-title {
+  font-size: 22px;
+  line-height: normal;
+}
+.st-board-state-pinned {
+  flex-shrink: 0;
+  padding: 0 0 var(--space-2);
+}
+
+/* ---- New step, the Board's creation verb as the one primary. ---- */
+.st-board-new-step {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 52px;
+  padding: 0 var(--space-6);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 24px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+@media (hover: hover) {
+  .st-board-new-step:hover {
+    background: var(--color-brand-hover);
+  }
+}
+.st-board-new-step:active {
+  background: var(--color-brand-active);
+}
+.st-board-new-step:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ---- Roadmap complete: under the Up next heading from 744px, the phone's Up next pane on its own. ---- */
+.st-board-complete {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4) var(--space-4);
+  text-align: center;
+}
+.st-board-complete-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 25px;
+  color: var(--text-primary);
+}
+.st-board-complete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-3);
+}
+.st-board-complete-crown {
+  flex-shrink: 0;
+  color: var(--kind-gold);
+}
+.st-board-phone-pane:has(> .st-board-complete) > .st-board-phone-heading {
+  display: none;
+}
+.st-board-phone-pane > .st-board-complete--phone {
+  flex: 1 0 auto;
+  justify-content: center;
+  padding: var(--space-3) 0 0;
+}
+.st-board-complete--phone .st-board-complete-title {
+  font-size: 22px;
+  line-height: normal;
+}

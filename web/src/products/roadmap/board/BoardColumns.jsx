@@ -1,11 +1,12 @@
 // From 744px: Locked · Up next · Done side by side, each scrolling under its sticky heading. At 1024px and up
 // all three stand; below it one side column folds to a rail and Show swaps which one, Up next never folds.
 
-import React, { useId, useEffect, useRef, useState } from 'react';
+import React, { useContext, useId, useEffect, useRef, useState } from 'react';
 import './columns.css';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { Chevron, ColumnCards, useArrivals } from './StepCard.jsx';
+import { UpNextRest } from './BoardStates.jsx';
 import { RAIL, columnStops, useRovingFocus } from './traversal.js';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount, showColumn } from './copy.js';
 
@@ -31,6 +32,7 @@ export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSe
   const showPressed = useRef(false);
   const stage = columnStage({ band, railed });
   const arrived = useArrivals(board);
+  const upNextRest = useContext(UpNextRest);
   const shown = Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })]));
   const roving = useRovingFocus(board.columns.map((column) => ({
     name: column.name,
@@ -68,15 +70,17 @@ export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSe
         )
         : (
           <FullColumn key={column.name} column={column}>
-            <ColumnCards
-              shown={shown[column.name]}
-              stopId={roving.stopIn(column.name)}
-              pinned={roving.pinnedIn(column.name)}
-              arrived={arrived}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onExpandDone={expandDone}
-            />
+            {column.name === 'upNext' && upNextRest !== null ? upNextRest : (
+              <ColumnCards
+                shown={shown[column.name]}
+                stopId={roving.stopIn(column.name)}
+                pinned={roving.pinnedIn(column.name)}
+                arrived={arrived}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onExpandDone={expandDone}
+              />
+            )}
           </FullColumn>
         )))}
     </div>
