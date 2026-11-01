@@ -194,7 +194,7 @@ import XCTest
     app.buttons["edit-sets-set-1"].tap()
     app.typeLoad("12.5", into: "edit-sets-load")
     app.buttons["edit-sets-save"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 1, current, target 12.5 kilograms, 8 reps"))
+    XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 1, current, 12.5 kilograms, 8 reps"))
 
     menu.tap()
     XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5)); app.buttons["Add movement"].tap()
@@ -210,7 +210,7 @@ import XCTest
     app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "15 reps")
     app.buttons["edit-sets-add"].tap()
     app.buttons["edit-sets-save"].tap()
-    XCTAssertTrue(open.waitForLabel("Set 1, current, target 15 kilograms, 15 reps"))
+    XCTAssertTrue(open.waitForLabel("Set 1, current, 15 kilograms, 15 reps"))
 
     for _ in 0..<4 where menu.value as? String != "Dumbbell Bench Press" {
       app.descendants(matching: .any)["workout-current-set"].swipeRight(); _ = menu.waitForValue("Dumbbell Bench Press", timeout: 2)
@@ -287,7 +287,7 @@ import XCTest
     XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
     XCTAssertTrue(app.buttons["edit-sets-set-3"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["edit-sets-set-4"].exists)
-    XCTAssertEqual(app.buttons["edit-sets-set-1"].label, planned.replacingOccurrences(of: ", current, target ", with: ", planned, "))
+    XCTAssertEqual(app.buttons["edit-sets-set-1"].label, planned.replacingOccurrences(of: ", current, ", with: ", planned, "))
   }
 
   // ✓ tapped twice saves the sheet once: one set added, no refusal said.
