@@ -258,6 +258,7 @@ sends `state`: `shown` when its question opens.
 | `movement_form` | `add` | `ok`, `refused`, `failed` | |
 | `movement_form` | `cancel` | `ok` | |
 | `movement_form` | `create` | `ok`, `refused`, `failed` | |
+| `movement_form` | `discard` | `ok`, `cancelled` | yes |
 | `movement_form` | `open` | `ok` | |
 | `movement_form` | `stage` | `ok`, `refused` | |
 | `note_editor` | `delete` | `ok`, `refused`, `failed` | |

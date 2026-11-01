@@ -27,6 +27,7 @@ object GymActions : EventSchema {
         "routine_editor" to mapOf("save" to setOf("ok", "refused", "failed"), "discard" to setOf("ok", "cancelled")),
         "movement_form" to mapOf(
             "open" to setOf("ok"), "stage" to setOf("ok", "refused"), "cancel" to setOf("ok"),
+            "discard" to setOf("ok", "cancelled"),
             "create" to setOf("ok", "refused", "failed"), "add" to setOf("ok", "refused", "failed"),
         ),
         "bodyweight" to mapOf(
@@ -51,7 +52,7 @@ object GymActions : EventSchema {
     )
     val asking: Map<String, Set<String>> = mapOf(
         "threads" to setOf("delete"), "finish" to setOf("discard"), "session" to setOf("discard"), "log" to setOf("discard"),
-        "routine_editor" to setOf("discard"),
+        "routine_editor" to setOf("discard"), "movement_form" to setOf("discard"),
     )
 
     override fun allowedKeys(properties: Map<String, String>): Set<String> {
