@@ -1,0 +1,64 @@
+# By hand only: a disk report from the VPS, and with `clean`, the removals that never touch data —
+# images no container uses, Docker build cache, and the systemd journal beyond 200 MB. Volumes,
+# containers and ~/windmill are never removed.
+name: Ops · VPS disk
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: report (read-only) or clean
+        required: true
+        default: report
+        type: choice
+        options: [report, clean]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-ops
+  cancel-in-progress: false
+
+jobs:
+  disk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Disk report, then clean if asked
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SSH_KEY" > deploy_key && chmod 600 deploy_key
+          trap 'rm -f deploy_key' EXIT
+          ssh -i deploy_key -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" \
+            "MODE=$MODE bash -s" <<'REMOTE'
+          set -u
+          report() {
+            echo "== df"; df -h /
+            echo "== docker"; docker system df
+            echo "== images"; docker images --format '{{.Repository}}:{{.Tag}}  {{.CreatedSince}}  {{.Size}}'
+            echo "== containers"; docker ps -a --size --format '{{.Names}}  {{.Status}}  {{.Size}}'
+            echo "== ~/windmill"; du -xh --max-depth=1 ~/windmill 2>/dev/null | sort -h | tail -15
+            if sudo -n true 2>/dev/null; then
+              echo "== journal"; sudo journalctl --disk-usage
+              echo "== container logs"; sudo sh -c 'du -sh /var/lib/docker/containers/*/*-json.log 2>/dev/null | sort -h | tail -8'
+              echo "== top level"; sudo du -xh --max-depth=1 / 2>/dev/null | sort -h | tail -10
+            else
+              echo "== no passwordless sudo: journal, container logs and top-level sizes are not readable"
+            fi
+          }
+          report
+          if [ "$MODE" = clean ]; then
+            echo "== cleaning"
+            docker image prune -af
+            docker builder prune -af
+            if sudo -n true 2>/dev/null; then sudo journalctl --vacuum-size=200M; fi
+            echo "== after"; df -h /; docker system df
+          fi
+          REMOTE
