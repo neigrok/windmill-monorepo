@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.testTag
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -29,7 +30,6 @@ import java.time.format.DateTimeFormatter
 import works.windmill.gym.R
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.ui.LocalGymColors
-import works.windmill.platform.design.WindmillSheetWindow
 import works.windmill.platform.telemetry.LocalTelemetry
 
 internal object CoachSources {
@@ -78,18 +78,19 @@ internal fun CoachReadSources(
     val counted = CoachSources.tally(tally)
     val notesRead = steps.any { it.tool == "list_notes" && !it.failed }
     val line = if (counted.isNotEmpty()) "Read $counted" else if (notesRead) "Read your notes" else "Read nothing from your log"
+    // The line keeps its 13 sp size; its touch target is the platform's 48 dp.
     Row(verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "What Coach read") {
+        modifier = Modifier.testTag("coach-read-sources").clickable(role = Role.Button, onClickLabel = "What Coach read") {
             expanded = true
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
-        }.padding(start = 12.dp, top = 4.dp),
+        }.heightIn(min = 48.dp).padding(start = 12.dp),
     ) {
         Text(line, style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
         Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = skin.inkDim)
     }
     if (!expanded) return
     DisposableEffect(Unit) { onDispose { onSheetTop(null) } }
-    ModalBottomSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
+    WindmillSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
         containerColor = skin.surface, scrimColor = skin.scrim,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
@@ -98,7 +99,6 @@ internal fun CoachReadSources(
             }
         },
     ) {
-        WindmillSheetWindow()
         Column(Modifier.fillMaxWidth()
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

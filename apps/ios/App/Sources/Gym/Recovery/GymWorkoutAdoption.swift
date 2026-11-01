@@ -46,7 +46,7 @@ extension GymModel {
     for workout in saved where workout.session.isOpen {
       for set in workout.sets {
         let present = try runner.read(Gym.scope) { try $0.repository(TrainingSet.self).find(set.id, in: .drawn) != nil }
-        if !present, let refusal = try runner.run(AppendSet(set)).refusal {
+        if !present, let refusal = try runner.run(AppendSet(set).recorded).refusal {
           throw AppFailure(message: "Your signed-out sets are kept on this phone. " + message(refusal))
         }
       }

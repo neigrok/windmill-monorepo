@@ -32,6 +32,7 @@ val layering by tasks.registering(Test::class) {
     systemProperty("windmill.android", rootProject.projectDir.absolutePath)
     systemProperty("windmill.model", rootProject.layout.buildDirectory.file("layering/model.tsv").get().asFile.absolutePath)
     inputs.file(rootProject.layout.buildDirectory.file("layering/model.tsv"))
+    inputs.dir(rootProject.file("platform/src/main/kotlin"))
     testLogging { events("failed", "standardOut") }
 }
 tasks.named("check") { dependsOn(layering) }

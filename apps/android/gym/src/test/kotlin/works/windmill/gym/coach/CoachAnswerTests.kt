@@ -12,9 +12,10 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -53,6 +54,8 @@ class CoachAnswerTests {
         assertEquals(396.dp, bubble.right)
         assertEquals(32.dp, compose.onNodeWithText("Read 1 workout · 1 week", useUnmergedTree = true)
             .getUnclippedBoundsInRoot().left)
+        val target = compose.onNodeWithTag("coach-read-sources").assertHasClickAction().getUnclippedBoundsInRoot()
+        assertEquals("What Coach read is a 48 dp target", 48.dp, target.bottom - target.top)
     }
 
     @Test

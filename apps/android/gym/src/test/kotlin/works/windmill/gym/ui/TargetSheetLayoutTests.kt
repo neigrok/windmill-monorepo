@@ -17,7 +17,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -51,7 +50,7 @@ class TargetSheetLayoutTests {
             runBlocking { room.select(null) }
             var draft by mutableStateOf(lowerA)
             compose.setContent {
-                RoutineBuilder(draft = draft, store = room.store, saving = false, onDraft = { draft = it }, onSave = {}, onClose = {}, say = {})
+                RoutineBuilder(draft = draft, store = room.store, saving = false, onDraft = { draft = it }, onSave = {}, onClose = {}, say = {}, backTo = "Routines")
             }
             compose.onNodeWithText("Back Squat").performClick()
 

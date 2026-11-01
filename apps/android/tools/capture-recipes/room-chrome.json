@@ -43,7 +43,7 @@
         "wait": "You"
       },
       {
-        "tap": "Gym settings"
+        "tap": "Notes"
       },
       {
         "wait": "Back to The log"
@@ -100,7 +100,7 @@
     ],
     "after": [
       {
-        "tap": "Back to the routine you were on"
+        "tap": "Back to Push A"
       },
       {
         "wait": "Start workout"
@@ -112,5 +112,78 @@
         "wait": "Push A"
       }
     ]
+  },
+  {
+    "board": "00.1",
+    "name": "bars-log-scrolled",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "wait": "Back Squat \u00b7 new best"
+      },
+      {
+        "swipe": [
+          540,
+          1700,
+          540,
+          900,
+          600
+        ]
+      },
+      {
+        "wait": "Your account"
+      }
+    ],
+    "after": [
+      {
+        "swipe": [
+          540,
+          900,
+          540,
+          1900,
+          300
+        ]
+      },
+      {
+        "swipe": [
+          540,
+          900,
+          540,
+          1900,
+          300
+        ]
+      },
+      {
+        "wait": "Back Squat \u00b7 new best"
+      }
+    ]
+  },
+  {
+    "board": "00.7",
+    "name": "nav-large",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "Legs"
+      },
+      {
+        "wait": "The log"
+      },
+      {
+        "wait": "Coach"
+      }
+    ],
+    "viewport": {
+      "width": 320,
+      "height": 800,
+      "density": 160,
+      "fontScale": 2
+    }
   }
 ]

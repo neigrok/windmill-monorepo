@@ -1,6 +1,6 @@
 # Create movement in a routine draft or an active workout
 
-**Design status:** The paired 02.9/02.14 creation states and their captions are 🚀 In production on the canonical Android page (`56:2`). The shared editor and equipment control are also in production.
+**Design status:** The paired 02.9/02.22 creation states and their captions are 🚀 In production on the canonical Android page (`56:2`). The shared editor and equipment control are also in production.
 
 **Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — human-approved 2026-10-25. The live-workout picker/custom-create return is covered by the approved [Workout flow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036).
 
@@ -27,7 +27,7 @@
 - Routine context: **Add** stages new identity, equipment, load count and targets in the outer routine draft. No `store.create` / `CreateExercise` call occurs here. Only outer **Save** invokes the existing `SaveRoutinePlan` (18). Cancelling custom creation returns to the picker; cancelling the outer routine leaves no created movement or metadata write.
 - Live-workout context is separate: enter via movement name → **This workout** → **Add movement** (11). This context has no outer routine Save. **Create and add** owns its existing create/append boundary, passes the category’s implicit load count through the store/engine adapter into `CreateExercise`, then adds/selects the movement in the current workout and returns to the preserved rack. Do not stage this work in an unrelated routine draft or modify the source routine’s targets.
 - Persist the creation identity and known result across recreation/retry, and distinguish catalogue creation from workout insertion. An uncertain receipt is not a known success or a safe fresh create: reconcile the same identity/result before retrying or reporting an outcome. If creation succeeds but insertion refuses, retain that known result and retry only the remaining insertion; never claim nothing was created or create a duplicate on retry. Before a successful create, Cancel writes nothing. Custom-create Cancel returns to the picker; picker Cancel returns to This workout. Existing workout ID, sets and rack drafts survive every return path.
-- Use the error role for validation and retain typed values after refusal. Fix sheet presentation and navigation so selection/creation never leads to a grey screen. Respect status/navigation insets after mode switch or activity recreation (`WindmillSheetWindow`/`contentWindowInsets`), and keep the focused field, error and primary action reachable above the IME.
+- Use the error role for validation and retain typed values after refusal. Fix sheet presentation and navigation so selection/creation never leads to a grey screen. Respect status/navigation insets after mode switch or activity recreation (`WindmillSheet`/`contentWindowInsets`), and keep the focused field, error and primary action reachable above the IME.
 - No separate Cable/Kettlebell choices are added. Their existing stored metadata and history remain intact.
 
 **Out of scope:** the outer routine write implementation (18); standalone Record editing (20); the This workout management sheet (11).

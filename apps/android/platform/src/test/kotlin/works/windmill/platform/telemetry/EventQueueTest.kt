@@ -40,7 +40,7 @@ class EventQueueTest {
             batch.events.size
         }, { _, _, _ -> }, backgroundScope, now = { 7L })
         queue.add("account_delete", mapOf("state" to "shown"))
-        queue.add("gym_screen_viewed", mapOf("screen" to "coach"))
+        queue.add("app_foregrounded", mapOf("screen" to "coach"))
         queue.add("account_delete", mapOf("outcome" to "pending_confirmation"))
         runCurrent()
         queue.retire("account-a", setOf("account_delete"))
@@ -49,84 +49,33 @@ class EventQueueTest {
         assertEquals(listOf(listOf("account_delete" to mapOf("state" to JsonPrimitive("shown")),
             "account_delete" to mapOf("outcome" to JsonPrimitive("pending_confirmation"))) to null),
             sent.map { (events, bearer) -> events.map { it.name to it.props } to bearer })
-        assertFalse(disk!!.contains("gym_screen_viewed"))
+        assertFalse(disk!!.contains("app_foregrounded"))
         assertFalse(disk!!.contains("account_delete"))
     }
 
     @Test
-    fun onboardingEventsRetainOnlyTheirFiniteSchemaAndReachTheQueueSender() = runTest {
-        var disk: String? = null
-        val sent = mutableListOf<EventBatchIn>()
-        val queue = EventQueue(null, null, { disk }, { disk = it; true }, { batch, bearer ->
-            assertNull(bearer)
-            sent += batch
-            batch.events.size
-        }, { _, error, _ -> throw AssertionError(error) }, backgroundScope, now = { 123L })
-        val metadata = mapOf(
-            "platform" to "android", "app_version" to "0.1", "build" to "123",
-            "release" to "android-test", "environment" to "verification",
-        )
-        val valid = linkedMapOf(
-            "onboarding_opened" to mapOf("state" to "first_launch"),
-            "onboarding_page_viewed" to mapOf("state" to "replay", "screen" to "windmill"),
-            "onboarding_action" to mapOf("state" to "first_launch", "screen" to "roadmap", "action" to "swipe"),
-            "onboarding_exited" to mapOf("state" to "replay", "screen" to "gym", "outcome" to "completed"),
-        )
-        for ((name, properties) in valid) {
-            queue.add(name, mapOf(
-                "state" to "private_state", "screen" to "private_workout", "action" to "private_action",
-                "outcome" to "private_outcome", "storage" to "private_storage", "operation" to "private_operation",
-                "route" to "/private_workout", "question" to "private_question", "duration_ms" to "100",
-            ) + properties + metadata)
-        }
-        runCurrent()
-        assertEquals(1, sent.size)
-        assertEquals(valid.keys.toList(), sent.single().events.map { it.name })
-        assertEquals(valid.values.map { props -> (props + metadata).mapValues { JsonPrimitive(it.value) } },
-            sent.single().events.map { it.props })
-        assertTrue(sent.single().events.all { it.clientMs == 123L })
-        assertFalse(WindmillJson.encodeToString(EventBatchIn.serializer(), sent.single()).contains("private"))
-        assertTrue(disk!!.contains("\"events\":[]"))
-    }
-
-    @Test
-    fun onboardingNamesAreExactAndAllPropertyEnumsAreFinite() = runTest {
+    fun aReservedPrefixRefusesUnregisteredNamesAndItsSchemasKeepOnlyTheirLabels() = runTest {
         var disk: String? = null
         val failures = mutableListOf<String>()
         val sent = mutableListOf<EventBatchIn>()
         val queue = EventQueue(null, null, { disk }, { disk = it; true }, { batch, _ ->
             sent += batch
             batch.events.size
-        }, { operation, _, _ -> failures += operation }, backgroundScope)
-        val originalDisk = disk
-        for (name in listOf("onboarding_custom", "onboarding_opened_private", "ONBOARDING_OPENED", "onboarding_")) {
-            queue.add(name, mapOf("state" to "first_launch"))
-        }
+        }, { operation, _, _ -> failures += operation }, backgroundScope,
+            schemas = EventSchemas(mapOf("probe_opened" to LabelSchema(mapOf("state" to setOf("first", "again")))), setOf("probe_")))
+        for (name in listOf("probe_custom", "probe_opened_private", "PROBE_OPENED", "probe_")) queue.add(name, mapOf("state" to "first"))
         runCurrent()
         assertEquals(List(4) { "telemetry_event_name" }, failures)
-        assertEquals(originalDisk, disk)
         assertTrue(sent.isEmpty())
-
-        for (state in listOf("first_launch", "replay")) {
-            queue.add("onboarding_opened", mapOf("state" to state))
-            for (screen in listOf("windmill", "roadmap", "journal", "gym")) {
-                queue.add("onboarding_page_viewed", mapOf("state" to state, "screen" to screen))
-                for (action in listOf("next", "back", "swipe", "adjust")) {
-                    queue.add("onboarding_action", mapOf("state" to state, "screen" to screen, "action" to action))
-                }
-                for (outcome in listOf("skipped", "completed", "back", "closed")) {
-                    queue.add("onboarding_exited", mapOf("state" to state, "screen" to screen, "outcome" to outcome))
-                }
-            }
-        }
-        queue.add("onboarding_action", mapOf("state" to "private_state", "screen" to "private_screen", "action" to "private_action"))
-        queue.add("onboarding_exited", mapOf("state" to "private_state", "screen" to "private_screen", "outcome" to "private_outcome"))
+        queue.add("probe_opened", mapOf("state" to "again", "screen" to "private_screen", "platform" to "android"))
+        queue.add("probe_opened", mapOf("state" to "private_state"))
+        queue.add("app_started", mapOf("screen" to "home", "question" to "private_question"))
         runCurrent()
-        val events = sent.flatMap { it.events }
-        assertEquals(76, events.size)
-        assertEquals(74, events.count { it.props.isNotEmpty() })
-        assertEquals(listOf(emptyMap<String, JsonPrimitive>(), emptyMap()), events.takeLast(2).map { it.props })
-        assertFalse(WindmillJson.encodeToString(EventBatchIn.serializer(), sent.last()).contains("private"))
+        assertEquals(listOf(
+            "probe_opened" to mapOf("state" to JsonPrimitive("again"), "platform" to JsonPrimitive("android")),
+            "probe_opened" to emptyMap(),
+            "app_started" to mapOf("screen" to JsonPrimitive("home")),
+        ), sent.flatMap { it.events }.map { it.name to it.props })
     }
 
     @Test

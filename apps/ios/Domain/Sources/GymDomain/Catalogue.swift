@@ -59,6 +59,13 @@ public struct Exercise: Writable, Equatable {
     ["name": .string(name), "pattern": .string(pattern), "equipment": .string(equipment), "stepKg": .of(stepKg)]
   }
 
+  public var loadFloor: Double? { ExerciseRules.loadFloor(equipment: equipment, loadCount: loadCount) }
+
+  public func floored(_ weightKg: Double, rule: String, at path: Path) throws(Violation) {
+    guard let floor = loadFloor, weightKg < floor else { return }
+    throw Violation(rule: rule, path: path, reason: .below(min: floor))
+  }
+
   public static let checks: [Check<Exercise>] = [
     Check("name") { value, _ in value.name = try ExerciseRules.name.apply(value.name, at: "name") },
     Check("pattern") { value, _ in value.pattern = try ExerciseRules.pattern.apply(value.pattern, at: "pattern") },
@@ -129,6 +136,11 @@ public enum ExerciseRules {
     case .dumbbell where loadCount == 2: Equipment.dumbbell.rawValue
     case .dumbbell, .machine, .cable, .bodyweight, .kettlebell, .other, nil: Equipment.other.rawValue
     }
+  }
+
+  // A barbell or a pair of dumbbells carries 0 or more; every other loading keeps its sign, an assisted machine's included.
+  public static func loadFloor(equipment: String, loadCount: Int) -> Double? {
+    loadingChoice(equipment: equipment, loadCount: loadCount) == "other" ? nil : 0
   }
 
   public static func defaultStepKg(equipment: String) -> Double {

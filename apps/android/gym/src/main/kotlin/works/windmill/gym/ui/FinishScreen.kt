@@ -8,22 +8,34 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,12 +48,13 @@ import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetTarget
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import works.windmill.gym.R
@@ -55,7 +68,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 import works.windmill.gym.domain.Against
 import works.windmill.gym.domain.AgainstMovement
 import works.windmill.gym.domain.Effort
@@ -222,11 +237,12 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
     ) {
         Text(comparison.title, style = GymType.numeral(11), color = skin.inkDim)
         comparison.rows.forEach { row ->
-            ReceiptLine(row.movement, row.detail, skin.ink, skin.inkDim)
+            ReceiptLine(row.movement, row.detail)
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FinishScreen(
     finished: FinishedSession,
@@ -250,11 +266,14 @@ fun FinishScreen(
         }
         return
     }
+    // At large text the receipt opens the whole sheet; otherwise it stands at its board height and grows to hold every
+    // fact. Either way the body scrolls under the pinned actions.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val requestedHeight = if (finished.slight) 465.dp else 815.dp
-        val receiptHeight = requestedHeight.coerceAtMost(maxHeight)
-        Column(Modifier.fillMaxWidth().height(receiptHeight).navigationBarsPadding()) {
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
+        val largeText = GymTextScale.large
+        val floor = if (largeText) maxHeight else (if (finished.slight) 465.dp else 815.dp).coerceAtMost(maxHeight)
+        Column(Modifier.fillMaxWidth().heightIn(min = floor, max = maxHeight).navigationBarsPadding().testTag("Finish receipt"),
+            verticalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp).padding(bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -279,6 +298,7 @@ fun FinishScreen(
                 }
                 val summary = SessionSummary(finished.session, finished.sets, catalog)
                 val duration = ((finished.session.finishedAtMs ?: finished.session.startedAtMs) - finished.session.startedAtMs).coerceAtLeast(0)
+                // The three facts share one row, or wrap two to a row where large text or a narrow sheet leaves no room.
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val facts: @Composable (Modifier) -> Unit = { modifier ->
                         ReceiptFact(Readout.duration(duration), "Duration", modifier)
@@ -286,14 +306,14 @@ fun FinishScreen(
                         val volume = Finish.volume(summary.tonnageKg)
                         ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
                     }
-                    if (LocalDensity.current.fontScale > 1.3f || maxWidth < 270.dp) {
-                        Column(Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))) {
-                            facts(Modifier.fillMaxWidth())
+                    val tiles = Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))
+                    if (largeText || maxWidth < 270.dp) {
+                        FlowRow(tiles.padding(vertical = 16.dp), maxItemsInEachRow = 2,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            facts(Modifier.fillMaxWidth(0.5f))
                         }
                     } else {
-                        Row(Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))) {
-                            facts(Modifier.weight(1f))
-                        }
+                        Row(tiles) { facts(Modifier.weight(1f).padding(vertical = 16.dp)) }
                     }
                 }
                 onKeep?.let { keep ->
@@ -329,45 +349,68 @@ fun FinishScreen(
     }
 }
 
+// The value keeps one line, shrinking where a half-width tile at large text cannot hold it. A value too wide even at
+// the 16 sp floor stays at the floor and wraps at the space before its unit, so the number itself keeps one line
+// wherever one line can hold it.
 @Composable
 private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: String? = null) {
     val skin = LocalGymColors.current
-    Column(modifier.padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(buildAnnotatedString {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        val text = buildAnnotatedString {
             append(value)
-            unit?.let { withStyle(SpanStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal)) { append(" $it") } }
-        }, style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp), color = skin.ink)
+            unit?.let { withStyle(SpanStyle(fontSize = 0.5.em, fontWeight = FontWeight.Normal)) { append(" $it") } }
+        }
+        val style = WindmillFont.display(32, FontWeight.ExtraBold).copy(lineHeight = 40.sp, color = skin.ink, textAlign = TextAlign.Center)
+        val floor = style.copy(fontSize = 16.sp, lineHeight = 20.sp)
+        val measurer = rememberTextMeasurer()
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val oneLine = !measurer.measure(text, floor, maxLines = 1,
+                constraints = Constraints(maxWidth = constraints.maxWidth)).hasVisualOverflow
+            if (oneLine) BasicText(text, Modifier.fillMaxWidth(), style, maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 32.sp))
+            else BasicText(text, Modifier.fillMaxWidth(), floor)
+        }
         Text(label, style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.inkDim,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
+// 03.36: the label keeps one line, centred, and at large text may run into the side padding rather than wrap.
 @Composable
 private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = false, crown: Boolean = false) {
     val skin = LocalGymColors.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(if (tonal) skin.raised else skin.accent, RoundedCornerShape(16.dp))
-        .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-        if (crown) Image(painterResource(R.drawable.gym_coach_crown), contentDescription = null,
-            contentScale = ContentScale.Fit, modifier = Modifier.size(24.dp))
-        Text(label, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = if (tonal) skin.ink else skin.onAccent)
+    val modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary)
+    val shape = RoundedCornerShape(16.dp)
+    val padding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+    val content: @Composable RowScope.() -> Unit = {
+        Row(Modifier.wrapContentWidth(unbounded = true), verticalAlignment = Alignment.CenterVertically) {
+            if (crown) {
+                Image(painterResource(R.drawable.gym_coach_crown), contentDescription = null,
+                    contentScale = ContentScale.Fit, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            }
+            Text(label, style = MaterialTheme.typography.labelLarge.copy(lineHeight = 22.sp))
+        }
     }
+    if (tonal) FilledTonalButton(onClick, modifier, shape = shape, contentPadding = padding, content = content,
+        colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink))
+    else Button(onClick, modifier, shape = shape, contentPadding = padding, content = content,
+        colors = ButtonDefaults.buttonColors(containerColor = skin.accent, contentColor = skin.onAccent))
 }
 
 @Composable
-private fun ReceiptLine(name: String, detail: String, nameColor: androidx.compose.ui.graphics.Color, detailColor: androidx.compose.ui.graphics.Color) {
-    val largeText = LocalDensity.current.fontScale > 1.3f
+private fun ReceiptLine(name: String, detail: String) {
+    val skin = LocalGymColors.current
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (largeText || maxWidth < 360.dp || name.length > 22 || detail.length > 24) {
+        if (GymTextScale.large || maxWidth < 360.dp || name.length > 22 || detail.length > 24) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(name, style = WindmillFont.body(15), color = nameColor, modifier = Modifier.fillMaxWidth())
-                Text(detail, style = GymType.numeral(13), color = detailColor, modifier = Modifier.fillMaxWidth())
+                Text(name, style = WindmillFont.body(15), color = skin.ink, modifier = Modifier.fillMaxWidth())
+                Text(detail, style = GymType.numeral(13), color = skin.inkDim, modifier = Modifier.fillMaxWidth())
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, style = WindmillFont.body(15), color = nameColor, modifier = Modifier.weight(1f))
-                Text(detail, style = GymType.numeral(13), color = detailColor)
+                Text(name, style = WindmillFont.body(15), color = skin.ink, modifier = Modifier.weight(1f))
+                Text(detail, style = GymType.numeral(13), color = skin.inkDim)
             }
         }
     }

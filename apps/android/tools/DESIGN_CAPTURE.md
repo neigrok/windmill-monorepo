@@ -82,6 +82,13 @@ optional `fontScale` from 1 to 2. The owned emulator's size, density and text sc
 before subsequent recipes or performance measurements. O recipes cover signed Display overflow at
 phone and 320dp widths, editing from `24` to `-499.99`, and 200% text.
 
+A recipe's optional `accessibility_timeout_ms` (9000–120000) sets the owned emulator's system
+accessibility timeout before its account's appearance launches, so the app reads it on resume; it
+holds for every recipe of that account, which must not ask for a different one, and an account
+whose recipes name none runs with the setting deleted. `log.json`'s 05.17 weight Undo uses 30 s:
+the app holds the Undo that long, so the recipe's Undo tap lands after the screenshot however
+slowly the hierarchy settles.
+
 `--fixture apps/android/tools/capture-recipes/number-entry-fixture.json` with
 `--scenarios apps/android/tools/capture-recipes/number-entry.json` captures the actual rack's pressed,
 changed and native-keyboard states in both appearances. These recipes opt into `workout_clock`,
@@ -111,7 +118,8 @@ The Record fixture has six factual workouts, five daily chart points and two ear
 
 `--fixture apps/android/tools/capture-recipes/compact-rack-fixture.json` with
 `--scenarios apps/android/tools/capture-recipes/compact-rack.json` covers the three equipment rack
-boards plus native keyboard, long-name/many-movement and single-movement variants. The canonical
+boards plus native keyboard, long-name/many-movement and single-movement variants, the fitted
+22.5 kg numeral (03.34) and the 320 dp / 200% text page (03.35). The canonical
 loads are 24 kg each, 10 kg added and 75 kg total. These recipes retain exact numeric values and
 geometry while normalizing only the identified workout clock descriptions for settlement.
 
@@ -153,7 +161,7 @@ observed control bounds and release in `finally` as described below.
 `tap` and `wait` match exact accessibility text, description or resource ID. `wait_contains`
 explicitly matches a visible partial label while a model answer grows. Other steps are `text`, `key`
 (Android key name) and `swipe` (`[fromX, fromY, toX, toY, durationMs]`). Canonical board IDs such as
-`02.7`, `15a`, `27g` and `A4`, and filename
+`02.7`, `08.58b`, `15a`, `27g` and `A4`, and filename
 slugs are validated. Choose a body-state selector, not the navigation label. Two matching fresh
 accessibility trees establish settlement. Recipes may opt into `resend_countdown: true`, which
 normalizes only the bounded `Resend in 1s` through `Resend in 30s` label for that comparison; the
@@ -210,6 +218,8 @@ A `touch` down may set `row: true` to use the nearest observed clickable ancesto
 
 A `touch` step has `phase: "down"`, an accessibility `target`, and optional `at: [x, y]` fractions
 inside that control's observed bounds. `move` uses those same bounds; `up` releases the pointer.
+A down with `screen: true` names no target and uses the whole window's bounds instead, so a recipe
+can hold a system back gesture from the edge (`at: [0, 0.55]`) and capture it mid-swipe.
 Every scenario releases an outstanding pointer in `finally`, including capture failures. The normal
 settle check gives a long-pressed reorder handle time to expose its raised state. Local fixture sync
 accepts a valid acknowledged prefix, retains operation identity for the suffix, and bounds retries.
@@ -253,6 +263,11 @@ partial or continuously changing output fails at the bounded deadline instead of
 The script prints its device and local database, saves allowlisted events, then stops its processes
 and drops its database. Normal completion, errors, Ctrl-C and SIGTERM run the same cleanup. A
 failed run preserves its manifest, logs and any completed captures for inspection.
+
+`--scenarios apps/android/tools/capture-recipes/predictive-back.json` captures 00.5 and 00.6 in both
+appearances: Bodyweight over The log, then This workout over the rack, each at rest, held mid-swipe
+from the left edge, and 90 ms after release. The held stills settle normally; the release stills
+are transient. The workout recipe logs one set and finishes the workout in its last `after` steps.
 
 `capture-recipes/this-workout.json` uses `this-workout-fixture.json` for the approved 03.4
 four-set management state, an end-to-start removal ground and 320 × 640 dp / 200% text.

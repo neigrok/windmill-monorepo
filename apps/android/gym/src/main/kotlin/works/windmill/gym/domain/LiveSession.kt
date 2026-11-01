@@ -51,9 +51,13 @@ object AutoClose {
 // account's session lapsed (401).
 enum class Blocker { Offline, LogFailed, SignInLapsed }
 
-// A target as TalkBack says it: units named, the placeholders spelled out.
-private fun SetTarget.spoken(unit: String): String = (weightKg?.let { "${Readout.weight(it)} $unit" } ?: "last time’s weight") + ", " +
-        (reps?.let(Readout::repCount) ?: "max reps")
+// A set still to lift: the load its rack will offer, `—` while there is no offer to name, and the plan's reps.
+private fun SetTarget.line(offeredKg: Double?, unit: String): String =
+    "${offeredKg?.let { "${Readout.weight(it)} $unit" } ?: "—"} × ${Readout.repTarget(reps)}"
+
+// The same set as TalkBack says it, the placeholders spelled out.
+private fun SetTarget.spoken(offeredKg: Double?, unit: String): String =
+    (offeredKg?.let { "${Readout.weight(it)} $unit" } ?: "no load yet") + ", " + (reps?.let(Readout::repCount) ?: "max reps")
 
 object LiveLines {
     const val onThisDevice = "on this device"
@@ -102,29 +106,30 @@ object LiveLines {
             override val line: String get() = row.line
         }
 
-        // The set about to be lifted. The rack is its editor, so the row names only the plan's target.
-        data class Current(val index: Int, val target: SetTarget?, val unit: String = "kg") : Slot {
-            override val line: String? get() = target?.let { "${it.weightKg?.let(Readout::weight) ?: "last"} $unit × ${Readout.repTarget(it.reps)}" }
+        // The set about to be lifted. The rack is its editor; past the plan the row names nothing.
+        data class Current(val index: Int, val target: SetTarget?, val offeredKg: Double?, val unit: String = "kg") : Slot {
+            override val line: String? get() = target?.line(offeredKg, unit)
             override val spoken: String
-                get() = listOfNotNull("Set $index", "current", target?.let { "target ${it.spoken(unit)}" }).joinToString(", ")
+                get() = listOfNotNull("Set $index", "current", target?.spoken(offeredKg, unit)).joinToString(", ")
         }
 
-        data class Planned(val index: Int, val target: SetTarget, val unit: String = "kg") : Slot {
-            val weight: String get() = target.weightKg?.let(Readout::weight) ?: "last"
-            val reps: String get() = Readout.repTarget(target.reps)
-            override val line: String get() = "$weight $unit × $reps"
-            override val spoken: String get() = "Set $index, planned, ${target.spoken(unit)}"
+        data class Planned(val index: Int, val target: SetTarget, val offeredKg: Double?, val unit: String = "kg") : Slot {
+            override val line: String get() = target.line(offeredKg, unit)
+            override val spoken: String get() = "Set $index, planned, ${target.spoken(offeredKg, unit)}"
         }
     }
 
-    // Performed sets, the set in hand, and the remaining planned slots.
-    fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, stalled: Set<String>, unit: String = "kg"): List<Slot> {
+    // Performed sets, the set in hand, and the remaining planned slots, each naming the load its rack will offer. A null
+    // `lastTime` is one not read yet.
+    fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?, stalled: Set<String>,
+              unit: String = "kg"): List<Slot> {
         val landed = rows(sets, stalled, unit).map { Slot.Landed(it) }
         val lifted = setCount(sets)
         val plan = planEntry?.sets.orEmpty()
-        val current = Slot.Current(index = lifted + 1, target = plan.getOrNull(lifted), unit = unit)
+        val offers = Prefill.offeredLoads(sets, planEntry, lastTime)
+        val current = Slot.Current(index = lifted + 1, target = plan.getOrNull(lifted), offeredKg = offers.firstOrNull(), unit = unit)
         val coming = plan.drop(lifted + 1).mapIndexed { offset, target ->
-            Slot.Planned(index = lifted + offset + 2, target = target, unit = unit)
+            Slot.Planned(index = lifted + offset + 2, target = target, offeredKg = offers.getOrNull(offset + 1), unit = unit)
         }
         return landed + current + coming
     }

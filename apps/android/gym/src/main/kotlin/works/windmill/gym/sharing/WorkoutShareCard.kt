@@ -3,27 +3,26 @@ package works.windmill.gym.sharing
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LocalGymColors
-import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -116,34 +115,29 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             )
         }
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 64.dp)
-                .background(skin.accent, RoundedCornerShape(16.dp))
-                .clickable(enabled = state != WorkoutSharing.State.Working, role = Role.Button) { act() },
+        Button(
+            onClick = ::act,
+            enabled = state != WorkoutSharing.State.Working,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = skin.accent,
+                contentColor = skin.onAccent,
+                disabledContainerColor = skin.accent.copy(alpha = .38f),
+                disabledContentColor = skin.onAccent.copy(alpha = .38f),
+            ),
         ) {
-            Text(
-                card.action,
-                style = WindmillFont.body(16, FontWeight.Bold),
-                color = skin.onAccent,
-            )
+            Text(card.action, style = WindmillFont.body(16, FontWeight.Bold))
         }
 
         card.revoke?.let { revoke ->
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum)
-                    .clickable(role = Role.Button) { revokeLink() },
+            TextButton(
+                onClick = ::revokeLink,
+                modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = skin.accent),
             ) {
-                Text(
-                    revoke,
-                    style = WindmillFont.body(15, FontWeight.SemiBold),
-                    color = skin.accent,
-                )
+                Text(revoke, style = WindmillFont.body(15, FontWeight.SemiBold))
             }
         }
     }

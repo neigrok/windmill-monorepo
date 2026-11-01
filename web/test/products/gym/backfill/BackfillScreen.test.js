@@ -544,6 +544,21 @@ test('a backfill form opened beside another tab keeps its own draft when that ta
   assert.equal(said.some((text) => text === 'Push A is in the log.'), false);
 });
 
+test('a past workout with a barbell load below zero says the floor and sends nothing', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+  browserWith();
+  const gym = await pushAAccount(t);
+  const said = [];
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
+  movements(view.tree)[0].props.onOpen();
+  rowsOf(movements(view.tree)[0])[0].onCommit(-2.5);
+  saveButton(view.tree).props.onClick();
+  await settle();
+  assert.deepEqual(said, ['Load, 0 or more.']);
+  assert.deepEqual(gym.owed(), []);
+  assert.equal(textOf(saveButton(view.tree)), 'Save · 9 sets');
+});
+
 test('a press the browser could not keep is pressed again with the same request, ids and all, and lands once', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();

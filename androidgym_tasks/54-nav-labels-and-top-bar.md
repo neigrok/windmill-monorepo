@@ -1,14 +1,15 @@
 # Navigation labels stay whole at large text; the top app bar tints on scroll
 
-**Status:** ✅ Ready for dev. The owner approved 00.7 on 2026-10-31. The top bar's scroll tint conforms to 00.1, which is already approved. Not started.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Board 00.7 is 🚀 In production; the top bar's scroll tint conforms to 00.1, which draws no scrolled state (ledger 11v).
 
 **Figma:**
 - 00.7 Navigation bar at 320 dp / 200 %: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1745-27419) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1745-27475)
 - 00.1 Room chrome, top app bar: [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38215)
 
-**Current implementation**
-- `GymRoom.kt` draws the M3 `NavigationBar`. At 320 dp width with 200 % font, the labels clip to "Routine" and "The".
-- `GymScreen.kt`'s `TopAppBar` has no `scrollBehavior`, so the scrolled-container colour never applies.
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `GymRoom.kt`'s `TabRail` draws the M3 `NavigationBar`, at least 80 dp tall and growing with its labels. `RailLabels` measures each label: it keeps one line while it clears each neighbouring label by 8 dp and stays inside the bar, and otherwise wraps at its spaces. A label is never shrunk or ellipsized and may spill past its own item into the width a neighbour leaves. At 320 dp with 200 % text: *Routines*, *The / log*, *Coach*.
+- `ui/GymScreen.kt`'s `TopAppBar` carries `TopAppBarDefaults.pinnedScrollBehavior()` over the screen's content, so every screen drawn through `GymScreen` tints its bar from the canvas to the card ground (`skin.surface`) once content scrolls under it, and back at the top.
+- Tests: `GymRailTests` (whole labels at 320 dp / 200 % and 100 %, the wrapping rule), `ui/GymScreenTests` (the bar's ground at rest, scrolled and back). The rig captures `00.7-nav-large` and `00.1-bars-log-scrolled` (`tools/capture-recipes/room-chrome.json`) and recaptures `02.1-routines-large` (`routines-list.json`).
 
 **Change**
 - **Labels (00.7):**

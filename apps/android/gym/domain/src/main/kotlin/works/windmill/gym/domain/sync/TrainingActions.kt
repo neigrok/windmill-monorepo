@@ -34,6 +34,28 @@ data class TrainingState(val drawn: List<Session>, val stored: List<Session>, va
         .filter { it.id != excluding && SessionRules.crosses(start, finish, it) }.minWithOrNull(compareBy({ it.startedAt }, { it.id }))
 }
 
+// An action through which a person enters loads now. It decides as the log decides a replay of the same facts, then
+// holds the loads the person entered to their movements' floors. `recorded` is that replay, for facts already recorded.
+interface EntersLoads<L, T> : Action<L, T, GymRefusal> {
+    fun decideRecorded(loaded: L, ids: IDSource): Decision<T, GymRefusal>
+    fun floored(loaded: L)
+    override fun decide(loaded: L, ids: IDSource): Decision<T, GymRefusal> {
+        val decision = decideRecorded(loaded, ids)
+        if (decision is Decision.Write) floored(loaded)
+        return decision
+    }
+    val recorded: Recorded<L, T> get() = Recorded(this)
+}
+
+// Facts already recorded, on this phone signed out or by an older build, replayed onto the log: the action's checks and
+// its write, never the floor, which guards only a load a person enters now.
+class Recorded<L, T>(val action: EntersLoads<L, T>) : Action<L, T, GymRefusal> {
+    override val scope get() = action.scope
+    override val refusals get() = action.refusals
+    override fun load(read: Reader): L = action.load(read)
+    override fun decide(loaded: L, ids: IDSource): Decision<T, GymRefusal> = action.decideRecorded(loaded, ids)
+}
+
 class StartSession(val id: Id<Session>, val routineId: Id<Routine>? = null, val startedAt: Instant? = null) : Action<StartSession.Loaded, Id<Session>, GymRefusal> {
     data class Loaded(val state: TrainingState, val routine: Routine?, val prior: Boolean)
     override val scope = Session.scope
@@ -69,11 +91,12 @@ class FinishSession(val id: Id<Session>, val finishedAt: Instant? = null) : Acti
     }
 }
 
-class AppendSet(val value: TrainingSet) : Action<TrainingState, Id<TrainingSet>, GymRefusal> {
+class AppendSet(val value: TrainingSet) : EntersLoads<TrainingState, Id<TrainingSet>> {
     override val scope = TrainingSet.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = TrainingState(read)
-    override fun decide(loaded: TrainingState, ids: IDSource): Decision<Id<TrainingSet>, GymRefusal> {
+    override fun floored(loaded: TrainingState) = SetRules.floored(value, loaded.sets, loaded.catalogue, Path("weightKg"))
+    override fun decideRecorded(loaded: TrainingState, ids: IDSource): Decision<Id<TrainingSet>, GymRefusal> {
         val valid = Valid(value, TrainingSet, at = loaded.moment)
         val session = loaded.session(value.sessionId)?.takeIf { loaded.drawn.any { drawn -> drawn.id == value.sessionId } }
             ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, value.sessionId.ref, path = Refused.Path.predicted)))
@@ -95,7 +118,8 @@ class AppendSet(val value: TrainingSet) : Action<TrainingState, Id<TrainingSet>,
             if (next == null || next.toLong() + numbered > Int.MAX_VALUE) throw Violation("set.setNumber", Path("setNumber"), Violation.Reason.Above(Int.MAX_VALUE.toDouble()))
             return null
         }
-        // Every set appended to the workout in one plan, in the order given, or the refusal of the first the log would refuse.
+        // Every recorded set appended to the workout in one plan, in the order given, or the refusal of the first the log
+        // would refuse. A recorded load stands as recorded.
         fun appended(sets: List<TrainingSet>, session: Session, state: TrainingState, plan: Plan): GymRefusal? {
             val planned = mutableListOf<TrainingSet>()
             for (set in sets) {
@@ -109,11 +133,12 @@ class AppendSet(val value: TrainingSet) : Action<TrainingState, Id<TrainingSet>,
     }
 }
 
-class CorrectSet(val value: TrainingSet) : Action<TrainingState, Unit, GymRefusal> {
+class CorrectSet(val value: TrainingSet) : EntersLoads<TrainingState, Unit> {
     override val scope = TrainingSet.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = TrainingState(read)
-    override fun decide(loaded: TrainingState, ids: IDSource): Decision<Unit, GymRefusal> {
+    override fun floored(loaded: TrainingState) = SetRules.floored(value, loaded.sets, loaded.catalogue, Path("weightKg"))
+    override fun decideRecorded(loaded: TrainingState, ids: IDSource): Decision<Unit, GymRefusal> {
         val old = loaded.sets.firstOrNull { it.id == value.id && loaded.drawnSets.any { drawn -> drawn.id == value.id } } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, value.id.ref, path = Refused.Path.predicted)))
         if (old.sessionId != value.sessionId || old.exerciseId != value.exerciseId || old.completedAt != value.completedAt || old.setNumber != value.setNumber)
             throw Violation("set.identity", Path("id"), Violation.Reason.Custom("immutable"))
@@ -146,11 +171,14 @@ data class ImportedSet(val id: Id<TrainingSet>, val exerciseId: Id<Exercise>, va
     fun value(session: Id<Session>) = TrainingSet(id, session, exerciseId, weightKg, reps, rpe, note ?: "", completedAt)
 }
 
-class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt: Instant, val sets: List<ImportedSet>, val routineId: Id<Routine>? = null) : Action<ImportSession.Loaded, Id<Session>, GymRefusal> {
+class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt: Instant, val sets: List<ImportedSet>, val routineId: Id<Routine>? = null) : EntersLoads<ImportSession.Loaded, Id<Session>> {
     data class Loaded(val state: TrainingState, val routine: Routine?)
     override val scope = Session.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = Loaded(TrainingState(read), routineId?.let { read.repository(Routine).find(it, ViewMode.drawn) })
+    override fun floored(loaded: Loaded) = sets.forEachIndexed { at, set ->
+        SetRules.floored(set.value(id), loaded.state.sets, loaded.state.catalogue, Path("sets") + at + "weightKg")
+    }
     // The import's own checks, before the log: the window's instants, the count and identities of its sets, their
     // place inside the window, then each set's values.
     fun refusal(at: Moment): GymRefusal? {
@@ -161,7 +189,7 @@ class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt:
         for (set in sets) Valid(set.value(id), TrainingSet, at = at)
         return null
     }
-    override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Session>, GymRefusal> {
+    override fun decideRecorded(loaded: Loaded, ids: IDSource): Decision<Id<Session>, GymRefusal> {
         refusal(loaded.state.moment)?.let { return Decision.Refuse(it) }
         val checked = sets.map { set -> Valid(set.value(id), TrainingSet, at = loaded.state.moment).value }
         val routine = loaded.routine
@@ -181,14 +209,19 @@ class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt:
 }
 
 data class CorrectedSet(val id: Id<TrainingSet>, val exerciseId: Id<Exercise>, val setNumber: Long, val weightKg: Double, val reps: Int,
-    val completedAt: Instant, val rpe: Double? = null, val note: String? = null, val rpeNamed: Boolean = rpe != null)
+    val completedAt: Instant, val rpe: Double? = null, val note: String? = null, val rpeNamed: Boolean = rpe != null) {
+    fun value(session: Id<Session>) = TrainingSet(id, session, exerciseId, weightKg, reps, rpe, note ?: "", completedAt, setNumber.toInt())
+}
 
 class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: Instant, val finishedAt: Instant,
-    val routineName: String?, val sets: List<CorrectedSet>, val preserveOtherSets: Boolean = false) : Action<TrainingState, Unit, GymRefusal> {
+    val routineName: String?, val sets: List<CorrectedSet>, val preserveOtherSets: Boolean = false) : EntersLoads<TrainingState, Unit> {
     override val scope = Session.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = TrainingState(read)
-    override fun decide(loaded: TrainingState, ids: IDSource): Decision<Unit, GymRefusal> {
+    override fun floored(loaded: TrainingState) = sets.forEachIndexed { at, set ->
+        SetRules.floored(set.value(id), loaded.sets, loaded.catalogue, Path("sets") + at + "weightKg")
+    }
+    override fun decideRecorded(loaded: TrainingState, ids: IDSource): Decision<Unit, GymRefusal> {
         val session = loaded.session(id)
         if (!requestId.matches(Regex("^[A-Za-z0-9_-]{8,64}$"))) throw Violation("session.requestId", Path("requestId"), Violation.Reason.Custom("invalid"))
         SessionRules.instant(startedAt, "session.startedAt", Path("startedAt"))

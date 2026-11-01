@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Button, Icon } from '../../../design-system/index.js';
+import { loadFloor } from '../domain/catalogue.js';
 import { alsoReadsLabel, schemeAgrees } from '../log.js';
 import {
   ADD_SET, commitLabel, EVERY_SET, FILL, headOf, isOpenFields, ladderOf, LAST_TIME_PLACEHOLDER,
@@ -8,17 +9,18 @@ import {
   withRow, withRowAdded, withRowRemoved, withSignFlipped,
 } from '../routines.js';
 
-export function TargetEditor({ movement, place, panePlace = place, entry, equipment, neverLogged, onSet, onClose, onDraft = null, pane = false }) {
+export function TargetEditor({ movement, place, panePlace = place, entry, exercise, neverLogged, onSet, onClose, onDraft = null, pane = false }) {
   const [fields, setFields] = useState(() => targetFieldsOf(entry));
   const initial = useRef(fields).current;
   const originalRows = ladderOf(initial);
   const originalHead = headOf(initial);
   const ids = useId();
+  const floor = exercise ? loadFloor(exercise.equipment, exercise.loadCount ?? 1) : null;
   const change = (next) => {
     setFields(next);
-    onDraft?.(targetRefusal(next) ? null : targetEntryOf(entry, next));
+    onDraft?.(targetRefusal(next, floor) ? null : targetEntryOf(entry, next));
   };
-  const refusal = targetRefusal(fields);
+  const refusal = targetRefusal(fields, floor);
   const open = isOpenFields(fields);
   const head = headOf(fields);
   const ladder = ladderOf(fields);
@@ -27,7 +29,7 @@ export function TargetEditor({ movement, place, panePlace = place, entry, equipm
   // The pounds reading is honest only for a scheme with one load to read.
   const alsoReads = held?.sets && schemeAgrees(held.sets) ? alsoReadsLabel(held.sets[0].weightKg ?? null) : null;
   // `±` is drawn only where a negative load means something: band assistance on a bodyweight movement.
-  const signed = equipment === 'bodyweight';
+  const signed = exercise?.equipment === 'bodyweight';
   const rowRefusal = (index, field) => (refusal?.row === index && refusal.field === field ? refusal.message : undefined);
   const rowId = (index, field) => `${ids}-row-${index}-${field}`;
   // Enter walks the same column down the ladder, so a ramp is typed top to bottom without a mouse.

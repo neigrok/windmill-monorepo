@@ -100,9 +100,9 @@ class RoutinePlanRaceTests {
             room = it; room.select("first")
             val movement = room.store.catalog.single { it.id == "bench-press" }
             val draft = RoutineDraft(name = "Exact saved", creationId = "routine_exact",
-                entries = listOf(RoutineEntry(1, movement.id, listOf(SetTarget(8, -12.505)))),
+                entries = listOf(RoutineEntry(1, movement.id, listOf(SetTarget(8, 12.505)))),
                 movements = listOf(RoutineMovement(movement, movement)))
-            val expected = Routine("routine_exact", "Exact saved", entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, -12.51)))))
+            val expected = Routine("routine_exact", "Exact saved", entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 12.51)))))
             val beforeCatalog = room.store.catalog
             telemetry.events.clear(); armed = true
             assertEquals(GymResult.Ok(expected), room.store.saveRoutine(draft))

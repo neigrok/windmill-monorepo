@@ -57,12 +57,12 @@ class FixSheetLayoutTests {
             }
         }
         compose.onNodeWithText("Set note").performScrollTo().performTextInput("Controlled tempo\n".repeat(12))
-        compose.onNodeWithText("Save fix").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save fix").assertIsDisplayed()
         val button = compose.onNodeWithText("Save fix").getBoundsInRoot()
         assertTrue(button.height >= 64.dp)
         compose.onNodeWithText("Save fix").performClick()
-        compose.onNodeWithText("Delete set").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Push A keeps its planned targets.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Delete set").assertIsDisplayed()
+        compose.onNodeWithText("Push A keeps its planned targets.").assertIsDisplayed()
         compose.runOnIdle { assertEquals(listOf(SetFix(note = "Controlled tempo\n".repeat(12))), saved) }
     }
 
@@ -81,18 +81,39 @@ class FixSheetLayoutTests {
         }
         val field = compose.onNodeWithContentDescription("Load, kg")
         field.performScrollTo().performClick().performTextReplacement("-499.99")
-        field.assertTextEquals("Load", "kg", "-499.99")
+        field.assertTextEquals("−499.99")
         val layouts = mutableListOf<TextLayoutResult>()
         field.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
         assertFalse(layouts.single().hasVisualOverflow)
         field.performTextReplacement("-1e999")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.onNodeWithText("That is not a number yet.").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { assertEquals(emptyList<SetFix>(), saved) }
         field.performScrollTo().performTextReplacement("-499.99")
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -499.99)), saved) }
     }
+    @Test
+    fun withTheKeyboardUpSaveFixStandsBelowTheScrollingFieldsAndDeleteScrollsWithThem() {
+        val set = TrainingSet(id = "set_7", exerciseId = "bench-press", setNumber = 7, weightKg = 80.0, reps = 5, completedAtMs = 0)
+        lateinit var view: android.view.View
+        compose.setContent {
+            view = androidx.compose.ui.platform.LocalView.current
+            Box(Modifier.height(340.dp)) {
+                FixSheet(set, "Bench Press", 7, "Push A", onSave = { FixOutcome.Corrected(it.corrected(set)) }, onDelete = {})
+            }
+        }
+        val keyboard = android.view.WindowInsets.Builder()
+            .setInsets(android.view.WindowInsets.Type.ime(), android.graphics.Insets.of(0, 0, 0, 600))
+            .setVisible(android.view.WindowInsets.Type.ime(), true).build()
+        compose.runOnIdle { view.dispatchApplyWindowInsets(keyboard) }
+        compose.onNodeWithText("Save fix").assertIsDisplayed()
+        val save = compose.onNodeWithText("Save fix").getBoundsInRoot()
+        assertTrue("the whole button stands inside the sheet: $save", save.bottom <= 340.dp)
+        compose.onNodeWithText("Delete set").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save fix").assertIsDisplayed()
+    }
+
     @Test fun deleteUsesTheMaterialErrorRoleInBothAppearancesAndKeepsItsTouchHeight() {
         val dark = mutableStateOf(true)
         val set = TrainingSet("set_1", "bench-press", weightKg = 75.0, reps = 8, completedAtMs = 0)
@@ -104,7 +125,7 @@ class FixSheetLayoutTests {
         }
         for (isDark in listOf(true, false)) {
             compose.runOnIdle { dark.value = isDark }
-            val button = compose.onNodeWithText("Delete set").performScrollTo()
+            val button = compose.onNodeWithText("Delete set")
             assertTrue(button.getBoundsInRoot().height >= 48.dp)
             val layouts = mutableListOf<TextLayoutResult>()
             compose.onNodeWithText("Delete set", useUnmergedTree = true)
@@ -124,7 +145,7 @@ class FixSheetLayoutTests {
         }
         for ((kind, unit) in listOf("barbell" to "kg total", "dumbbell" to "kg each", "bodyweight" to "kg added", "machine" to "kg total", "legacy-cable" to "kg")) {
             compose.runOnIdle { equipment.value = kind }
-            compose.onNodeWithContentDescription("Load, $unit").assertTextEquals("Load", unit, "-12.5")
+            compose.onNodeWithContentDescription("Load, $unit").assertTextEquals("−12.5")
         }
     }
 

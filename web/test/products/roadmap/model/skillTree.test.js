@@ -72,6 +72,8 @@ test('a diamond is a legal DAG — two prerequisites on one node is not a cycle'
   assert.deepEqual([...tree.ranks()], [['root', 0], ['x', 1], ['y', 1], ['z', 2]]);
   assert.deepEqual(tree.roots().map((node) => node.id), ['root']);
   assert.deepEqual(tree.ancestorsOf('z').map((node) => node.id), ['x', 'y', 'root']);
+  assert.deepEqual(tree.descendantsOf('root').map((node) => node.id), ['x', 'y', 'z']);
+  assert.deepEqual(tree.descendantsOf('z'), []);
 });
 
 test('a forest of disconnected roots is legal', () => {
@@ -92,6 +94,7 @@ test('every read of an unknown id throws by that id', () => {
   assert.throws(() => tree.parentsOf('ghost'), { message: 'Unknown node id "ghost"' });
   assert.throws(() => tree.childrenOf('ghost'), { message: 'Unknown node id "ghost"' });
   assert.throws(() => tree.ancestorsOf('ghost'), { message: 'Unknown node id "ghost"' });
+  assert.throws(() => tree.descendantsOf('ghost'), { message: 'Unknown node id "ghost"' });
   assert.deepEqual(tree.nodeOrThrow('a'), { id: 'a', label: 'A', prerequisites: [] });
 });
 

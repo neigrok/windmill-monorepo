@@ -71,6 +71,34 @@ public struct TrainingState: Sendable {
   public func session(_ id: ID<Session>) -> Session? { stored.first { $0.id == id } ?? drawn.first { $0.id == id } }
 }
 
+// An action through which a person enters loads now. It decides as the log decides a replay of the same facts, then
+// holds the loads the person entered to their movements' floors. `recorded` is that replay, for facts already recorded.
+public protocol EntersLoads: Action where Refusal == GymRefusal {
+  func decideRecorded(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Result, GymRefusal>
+  func floored(_ loaded: Loaded) throws(Violation)
+}
+
+extension EntersLoads {
+  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Result, GymRefusal> {
+    let decision = try decideRecorded(loaded, ids: ids)
+    if case .write = decision { try floored(loaded) }
+    return decision
+  }
+  public var recorded: Recorded<Self> { Recorded(self) }
+}
+
+// Facts already recorded, on this phone signed out or by an older build, replayed onto the log: the action's checks and
+// its write, never the floor, which guards only a load a person enters now.
+public struct Recorded<Entry: EntersLoads>: Action {
+  public let action: Entry
+  public init(_ action: Entry) { self.action = action }
+  public var scope: ScopeRef { action.scope }
+  public func load(_ read: Reader) throws -> Entry.Loaded { try action.load(read) }
+  public func decide(_ loaded: Entry.Loaded, ids: IDSource) throws(Violation) -> Decision<Entry.Result, GymRefusal> {
+    try action.decideRecorded(loaded, ids: ids)
+  }
+}
+
 public struct StartSession: Action {
   public typealias Loaded = (state: TrainingState, routine: Routine?, prior: Bool)
   public let id: ID<Session>
@@ -115,12 +143,16 @@ public struct FinishSession: Action {
   }
 }
 
-public struct AppendSet: Action {
+public struct AppendSet: EntersLoads {
+  public typealias Result = ID<TrainingSet>
   public let value: TrainingSet
   public init(_ value: TrainingSet) { self.value = value }
   public var scope: ScopeRef { TrainingSet.scope }
   public func load(_ read: Reader) throws -> TrainingState { try TrainingState(read) }
-  public func decide(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<ID<TrainingSet>, GymRefusal> {
+  public func floored(_ loaded: TrainingState) throws(Violation) {
+    try SetRules.floored(value, recorded: loaded.sets, catalogue: loaded.catalogue, at: "weightKg")
+  }
+  public func decideRecorded(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<ID<TrainingSet>, GymRefusal> {
     let valid = try Valid(value, at: loaded.moment)
     guard let session = loaded.session(value.sessionId), loaded.drawn.contains(where: { $0.id == session.id }) else { return .refuse(.gone(value.sessionId.ref, .predicted)) }
     if let refusal = try Self.refusal(appending: valid, to: session, state: loaded) { return .refuse(refusal) }
@@ -129,6 +161,7 @@ public struct AppendSet: Action {
 
   // The phone's checks before a set joins a session: the session still takes a set at that time, the catalogue knows its
   // movement, its identity is fresh and a number is left for it. `planned` are the sets the same plan appends before it.
+  // A recorded set's load stands as recorded.
   public static func refusal(appending valid: Valid<TrainingSet>, to session: Session, state: TrainingState,
                              planned: [TrainingSet] = []) throws(Violation) -> GymRefusal? {
     let value = valid.value
@@ -143,13 +176,17 @@ public struct AppendSet: Action {
   }
 }
 
-public struct CorrectSet: Action {
+public struct CorrectSet: EntersLoads {
+  public typealias Result = Void
   public let value: TrainingSet
   public let original: TrainingSet?
   public init(_ value: TrainingSet, original: TrainingSet? = nil) { self.value = value; self.original = original }
   public var scope: ScopeRef { TrainingSet.scope }
   public func load(_ read: Reader) throws -> TrainingState { try TrainingState(read) }
-  public func decide(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+  public func floored(_ loaded: TrainingState) throws(Violation) {
+    try SetRules.floored(value, recorded: loaded.sets, catalogue: loaded.catalogue, at: "weightKg")
+  }
+  public func decideRecorded(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     guard let old = loaded.sets.first(where: { $0.id == value.id }), loaded.drawnSets.contains(where: { $0.id == value.id }) else { return .refuse(.gone(value.id.ref, .predicted)) }
     let fields = ["weightKg", "reps", "rpe", "note"]
     var correction = value
@@ -214,8 +251,9 @@ public struct ImportedSet: Sendable {
   }
 }
 
-public struct ImportSession: Action {
+public struct ImportSession: EntersLoads {
   public typealias Loaded = (state: TrainingState, routine: Routine?)
+  public typealias Result = ID<Session>
   public let id: ID<Session>
   public let startedAt: Instant
   public let finishedAt: Instant
@@ -229,7 +267,7 @@ public struct ImportSession: Action {
     (try TrainingState(read), try routineId.flatMap { try read.repository(Routine.self).find($0, in: .drawn) })
   }
   // The import's own checks, before the account's: instants in bounds, at most 200 distinct sets, every set inside the window and valid.
-  public func checked(at moment: Moment) -> Result<[TrainingSet], GymRefusal> {
+  public func checked(at moment: Moment) -> Swift.Result<[TrainingSet], GymRefusal> {
     do throws(Violation) {
       try SessionRules.instant(startedAt, rule: "session.startedAt", at: "startedAt")
       try SessionRules.instant(finishedAt, rule: "session.finishedAt", at: "finishedAt")
@@ -244,7 +282,12 @@ public struct ImportSession: Action {
       return .success(checked)
     } catch { return .failure(.invalid(error)) }
   }
-  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
+  public func floored(_ loaded: Loaded) throws(Violation) {
+    for (at, set) in sets.enumerated() {
+      try SetRules.floored(set.value(session: id), recorded: loaded.state.sets, catalogue: loaded.state.catalogue, at: Path("sets") + at + "weightKg")
+    }
+  }
+  public func decideRecorded(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
     let checked: [TrainingSet]
     switch self.checked(at: loaded.state.moment) {
     case .failure(let refusal): return .refuse(refusal)
@@ -273,13 +316,18 @@ public struct CorrectedSet: Sendable {
     self.id = id; self.exerciseId = exerciseId; self.setNumber = setNumber; self.weightKg = weightKg; self.reps = reps
     self.completedAt = completedAt; self.rpe = rpe; self.note = note; self.rpeNamed = rpeNamed ?? (rpe != nil)
   }
+  public func value(session: ID<Session>) -> TrainingSet {
+    TrainingSet(id: id, sessionId: session, exerciseId: exerciseId, weightKg: weightKg, reps: reps,
+                rpe: rpe, note: note ?? "", completedAt: completedAt, setNumber: setNumber)
+  }
   public var json: JSON {
     var members: JSON.Object = ["id": id.json, "exerciseId": exerciseId.json, "setNumber": JSON(setNumber), "weightKg": .of(weightKg), "reps": JSON(reps), "completedAt": .of(completedAt)]
     if let note { members["note"] = .string(note) }; if rpeNamed { members["rpe"] = .of(rpe) }; return .object(members)
   }
 }
 
-public struct CorrectSession: Action {
+public struct CorrectSession: EntersLoads {
+  public typealias Result = Void
   public let id: ID<Session>
   public let requestId: String
   public let startedAt: Instant
@@ -293,7 +341,12 @@ public struct CorrectSession: Action {
   }
   public var scope: ScopeRef { Session.scope }
   public func load(_ read: Reader) throws -> TrainingState { try TrainingState(read) }
-  public func decide(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+  public func floored(_ loaded: TrainingState) throws(Violation) {
+    for (at, set) in sets.enumerated() {
+      try SetRules.floored(set.value(session: id), recorded: loaded.sets, catalogue: loaded.catalogue, at: Path("sets") + at + "weightKg")
+    }
+  }
+  public func decideRecorded(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     guard (8...64).contains(requestId.utf8.count) && requestId.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95 }) else {
       throw Violation(rule: "session.requestId", path: "requestId", reason: .custom("invalid"))
     }

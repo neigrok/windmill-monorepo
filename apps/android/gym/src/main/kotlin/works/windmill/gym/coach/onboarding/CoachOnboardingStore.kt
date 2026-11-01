@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.update
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.LocalChat
 import works.windmill.gym.coach.CoachAttachment
+import works.windmill.platform.ai.AiAvailability
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationStorageFailure
 import works.windmill.platform.net.WindmillApiException
@@ -208,7 +209,7 @@ class CoachOnboardingStore(
                     }
                     if (response.errorCode in setOf("device_bound", "installation_bound")) installation.markBound()
                     if (response.errorCode == "invalid_installation") installation.markInvalid()
-                    cap = "allowance".takeIf { response.errorCode in allowanceCodes }
+                    cap = "allowance".takeIf { response.errorCode in AiAvailability.allowanceCodes }
                     if (response.errorCode in failedCodes) return CoachOnboardingOutcome.Failed(record)
                     outcome = if (cap == null) "refused" else "capped"
                     return CoachOnboardingOutcome.Refused(response.errorCode ?: response.status, record)
@@ -237,16 +238,15 @@ class CoachOnboardingStore(
                 if (code == "device_bound" || code == "installation_bound") installation.markBound()
                 if (code == "invalid_installation") installation.markInvalid()
                 record = (local.onboarding(record.owner, record.requestId) ?: record).copy(refusalCode = code,
-                    refusalMessage = failure.refusal.message?.takeIf { code in allowanceCodes && it.isNotBlank() })
+                    refusalMessage = failure.refusal.message?.takeIf { code in AiAvailability.allowanceCodes && it.isNotBlank() })
                 keep(record, authority)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 reportUnexpected(failure)
                 return CoachOnboardingOutcome.Failed(record)
             }
-            val declaredUnavailable = failure.status == 503 && (code == "anonymous_ai_unavailable" || code in allowanceCodes)
-            if (failure.status >= 500 && !declaredUnavailable) return CoachOnboardingOutcome.Failed(record)
-            cap = "allowance".takeIf { code in allowanceCodes }
+            if (failure.status >= 500 && !AiAvailability.declaredUnavailable(failure)) return CoachOnboardingOutcome.Failed(record)
+            cap = "allowance".takeIf { code in AiAvailability.allowanceCodes }
             outcome = if (cap == null) "refused" else "capped"
             return CoachOnboardingOutcome.Refused(code, record)
         } catch (_: WindmillApiException) {
@@ -298,8 +298,6 @@ class CoachOnboardingStore(
     }
 
     companion object {
-        private val allowanceCodes = setOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted",
-            "concurrency_exhausted", "funding_required", "debt_outstanding", "unconfigured")
         private val failedCodes = setOf("provider_failed", "invalid_result", "internal_error", "output_truncated",
             "interrupted", "unavailable")
     }

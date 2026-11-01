@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
@@ -55,15 +56,12 @@ import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.net.GymRest
@@ -100,7 +98,7 @@ class TrainingStore(
     private val mintSet: () -> String = Ids::set,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
-    private val undoWindowMs: Long = Withheld.windowMs,
+    undoWindowMs: Long = Withheld.windowMs,
     private val workoutClock: WorkoutClock = WorkoutClock { val at = now(); WorkoutMoment(at, at, "local") },
     private val workoutAuthority: (String?) -> Boolean = { true },
     private val telemetry: Telemetry = Telemetry.None,
@@ -118,8 +116,7 @@ class TrainingStore(
 
     // A refusal is an answer the screen says, never a failure to report.
     private fun reportFailure(operation: String, error: Exception) {
-        if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException || error is TrainingReadChanged) return
-        telemetry.failure(operation, error)
+        if (error !is TrainingReadChanged) telemetry.unexpected(operation, error)
     }
 
     private class TrainingReadChanged : Exception()
@@ -599,6 +596,9 @@ class TrainingStore(
     var withheld: List<WithheldDelete> by mutableStateOf(emptyList())
         private set
     private val clocks = mutableMapOf<String, Job>()
+    // How long a delete stays takeable. The room that shows the Undo sets it to the system's
+    // accessibility timeout; the store stamps every instant from its own clock.
+    var undoWindowMs: Long = undoWindowMs
     var deleteRefused: String? by mutableStateOf(null)
         private set
     // One room's memory of its own deletes, never a tombstone: a session read BEFORE the delete would
@@ -637,7 +637,7 @@ class TrainingStore(
     // Whose the replica in hand is: the account id, or null for the signed-out seat.
     private var owner: String? = null
     private var closedDetails by mutableStateOf<Map<String, SessionDetail>>(emptyMap())
-    private val lastTimes = mutableMapOf<String, LastTime>()
+    private val lastTimes = mutableStateMapOf<String, LastTime>()
     private var resumePending = false
     // A change of seat drops the map and the picker's own effect never runs again, so `connect` asks
     // again on the way out.
@@ -967,6 +967,9 @@ class TrainingStore(
         lastTime = answer
         redial()
     }
+
+    // A movement's last time as this workout has read it: null until the movement is first chosen and its read answers.
+    fun lastTimeOf(movement: String): LastTime? = lastTimes[movement]
 
     // Sets are keyed by movement and never by position, so only the walk order moves.
     fun reorder(from: Int, to: Int) {
@@ -1790,13 +1793,14 @@ class TrainingStore(
             val seat = owner
             val replica = controls.engineReplica ?: return
             val anonymous = seat == null
+            val window = undoWindowMs
             scope.launch {
                 bodyweightWrite.withLock {
                     if (!workoutAuthorized || seat != owner || replica != training.engine.activeReplica()) return@withLock
                     try {
                         val weight = training.weighins(deletion.dateLocal, deletion.dateLocal).singleOrNull()
                             ?: return@withLock
-                        val receipt = training.holdBodyweight(deletion.dateLocal, replica, anonymous) ?: return@withLock
+                        val receipt = training.holdBodyweight(deletion.dateLocal, window, replica, anonymous) ?: return@withLock
                         if (!workoutAuthorized || seat != owner || replica != training.engine.activeReplica()) return@withLock
                         val offer = training.engine.undoOffers().firstOrNull { it.id == receipt.gestureId }
                         if (offer != null) {

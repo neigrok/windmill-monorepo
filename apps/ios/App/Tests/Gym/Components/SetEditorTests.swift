@@ -91,6 +91,19 @@ import SyncCore
     #expect(gym.routines.first?.entries == plan.entries && workout.session?.plan == SessionPlan(plan))
   }
 
+  @Test func aBarbellFixBelowZeroIsRefusedNamingTheLoadItKeeps() throws {
+    let workouts = WorkoutStateTests(), (_, gym) = try workouts.fixture(), workout = try workouts.begin(gym)
+    workout.logSet()
+    let logged = try #require(workout.sets.first), raise = SetFixDraft(logged, account: gym.account)
+    raise.weightKg = 75
+    #expect(raise.save(gym))
+    let original = try #require(workout.sets.first), draft = SetFixDraft(original, account: gym.account)
+    draft.weightKg = -5
+    #expect(!draft.save(gym))
+    #expect(draft.failure == "Enter 0 or more, or cancel to keep 75")
+    #expect(workout.sets == [original])
+  }
+
   @Test func fixAcceptsAdmissionSerialButRetainsDraftWhenAnotherCorrectionArrives() throws {
     let workouts = WorkoutStateTests(), (harness, gym) = try workouts.fixture(anonymous: false), workout = try workouts.begin(gym)
     workout.logSet()

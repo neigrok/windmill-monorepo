@@ -26,7 +26,7 @@ class NumberStepperEditsTests {
         val current = TextFieldValue("12.5", TextRange(0, 4))
         for (text in listOf("-82.5", "−82,5", ".5", "-.5", "  -12,5  ", "1.7976931348623157e+308", "-1E-308")) {
             val next = TextFieldValue(text, TextRange(text.length))
-            assertSame(text, next, numberStepperEdit(current, next))
+            assertEquals(text, next.copy(text = text.replace('-', '−')), numberStepperEdit(current, next))
         }
     }
 
@@ -41,15 +41,20 @@ class NumberStepperEditsTests {
         val current = TextFieldValue("12.5", TextRange(0, 4))
         for (text in listOf("", "-", "−", "+", ".", ",", "-.", "−,", "1.", "1,", "1e", "1e-", "1E+")) {
             val next = TextFieldValue(text, TextRange(text.length))
-            assertSame(text, next, numberStepperEdit(current, next))
+            assertEquals(text, next.copy(text = text.replace('-', '−')), numberStepperEdit(current, next))
         }
     }
 
     @Test fun cursorSelectionAndCompositionChangesPreserveTheText() {
-        val current = TextFieldValue("-12.5", TextRange(5))
+        val current = TextFieldValue("−12.5", TextRange(5))
         val moved = current.copy(selection = TextRange(4, 1), composition = TextRange(1, 4))
         assertSame(moved, numberStepperEdit(current, moved))
-        assertEquals("-12.5", moved.text)
+        assertEquals("−12.5", moved.text)
+    }
+
+    @Test fun aTypedHyphenBecomesTheMinusSignWithItsCaretAndComposition() {
+        val typed = TextFieldValue("-12.5", TextRange(1), TextRange(0, 1))
+        assertEquals(TextFieldValue("−12.5", TextRange(1), TextRange(0, 1)), numberStepperEdit(TextFieldValue("12.5", TextRange(0)), typed))
     }
 
     @Test fun anExistingInvalidBufferCanBeSelectedAndReplaced() {

@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import works.windmill.platform.ai.AiAllowance
+import works.windmill.platform.ai.AiAvailability
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
@@ -100,7 +101,7 @@ interface CoachOnboardingApi {
 }
 
 class CoachOnboardingHttp(baseUrl: HttpUrl, telemetry: Telemetry = Telemetry.None) : CoachOnboardingApi {
-    private val api = WindmillApi(baseUrl, { null }, telemetry = telemetry)
+    private val api = WindmillApi(baseUrl, { null }, telemetry = telemetry, expected = AiAvailability::declaredUnavailable)
     private fun api(credential: String) = api.withHeaders(mapOf("Sync-Schema" to SyncSchema.version.toString(),
         "X-Windmill-Installation" to credential))
 

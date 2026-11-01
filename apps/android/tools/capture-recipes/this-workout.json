@@ -18,13 +18,13 @@
         "tap": "Log set"
       },
       {
-        "wait": "Set 2, current, target 77.5 kg total, 8 reps"
+        "wait_contains": "Set 2, current, "
       },
       {
         "tap": "Log set"
       },
       {
-        "wait": "Set 3, current, target 80 kg total, 6 reps"
+        "wait_contains": "Set 3, current, "
       },
       {
         "tap": "Log set"

@@ -162,9 +162,11 @@ public struct WorkoutFix: Equatable, Sendable {
     return SignedOutWorkout(session: session, sets: original.sets.filter { !edited.contains($0.id) } + sets.map { $0.set(in: session.id) })
   }
 
-  // The editor's live line: what this phone would refuse before asking the account. A landed workout's sets must be
-  // valid and on known movements; a whole copy passes what its retry would meet (`SignedOutWorkout.retryRefusal`).
+  // The editor's live line: what this phone would refuse before asking the account. A load the person changed meets its
+  // floor; a landed workout's sets must be valid and on known movements; a whole copy passes what its retry would meet
+  // (`SignedOutWorkout.retryRefusal`).
   public func refusal(at moment: Moment, among sessions: [Session], catalogue: Catalogue) -> GymRefusal? {
+    if let refusal = workout.floorRefusal(since: original, catalogue: catalogue) { return refusal }
     if landed {
       for set in sets {
         do throws(Violation) { _ = try Valid(set.set(in: original.session.id), at: moment) } catch { return .invalid(error) }
@@ -193,8 +195,9 @@ public struct DiscardSignedOutWorkout: Action {
 // A set the account refused after its workout had landed lives only in its notice; the saved copy still holds it.
 // `intoWorkout` puts the sets inside the workout's window back into it: appended while it is open, else corrected in,
 // numbered after the ones it kept, its times left alone. `separately` makes the sets outside the window a saved copy of
-// their own, from the first to the last, and queues its import, so a refusal of it is that copy's to fix. Either takes a
-// revised copy, which replaces the saved one only when the retry is queued.
+// their own, from the first to the last, and queues its import, so a refusal of it is that copy's to fix. Either replays
+// what the copy recorded and takes a revised copy, whose changed loads meet their floors and which replaces the saved one
+// only when the retry is queued.
 public struct RecoverStrandedSets: Action {
   public enum Placement: Sendable { case intoWorkout, separately }
   public struct Loaded {
@@ -225,6 +228,8 @@ public struct RecoverStrandedSets: Action {
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     guard let workout = loaded.workout, !loaded.stranded.isEmpty else { return .unchanged(()) }
     guard let session = loaded.session else { return .refuse(.gone(id.ref, .predicted)) }
+    let saved = loaded.backup.first { $0.session.id == id }
+    if let refusal = workout.floorRefusal(since: saved, catalogue: loaded.state.catalogue) { return .refuse(refusal) }
     let inside = loaded.stranded.filter { set in
       set.completedAt >= session.startedAt && (session.finishedAt.map { set.completedAt <= $0 } ?? true)
     }
@@ -249,7 +254,7 @@ public struct RecoverStrandedSets: Action {
       })
       if let refusal = copy.importRefusal(at: loaded.state.moment, among: loaded.state.stored, catalogue: loaded.state.catalogue) { return .refuse(refusal) }
       var plan: Plan
-      switch copy.importAction.decision((state: loaded.state, routine: nil), ids: ids) {
+      switch copy.importAction.recorded.decision((state: loaded.state, routine: nil), ids: ids) {
       case .write(let imported, _): plan = imported
       case .refuse(let refusal): return .refuse(refusal)
       case .unchanged: return .unchanged(())
@@ -281,6 +286,6 @@ public struct RecoverStrandedSets: Action {
     }
     let correction = CorrectSession(id: id, requestId: ids.opaqueID(), startedAt: session.startedAt, finishedAt: finish,
                                     routineName: session.displayName, sets: corrected, preserveOtherSets: true)
-    return correction.decision(state, ids: ids)
+    return correction.recorded.decision(state, ids: ids)
   }
 }

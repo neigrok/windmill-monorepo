@@ -54,6 +54,15 @@ public struct SignedOutWorkout: Equatable, Sendable {
     guard let crossed else { return nil }
     return .sessionOverlap(Refused(Gym.Codes.sessionOverlap, subject: session.id.ref, detail: ["sessionId": crossed.id.json], path: .predicted))
   }
+  // The loads a person changed in this copy since `saved` meet their movements' floors; a load the copy recorded stands.
+  public func floorRefusal(since saved: SignedOutWorkout?, catalogue: Catalogue) -> GymRefusal? {
+    do throws(Violation) {
+      for (at, set) in sets.enumerated() {
+        try SetRules.floored(set, recorded: saved?.sets ?? [], catalogue: catalogue, at: Path("sets") + at + "weightKg")
+      }
+    } catch { return .invalid(error) }
+    return nil
+  }
   // What this phone refuses before a retry asks the account. A finished copy is an import, with the import's checks.
   // An open copy restarts as a start that does not join, with its sets appended: the log refuses that while it holds an
   // open workout of its own, and never for crossing a finished one.
@@ -100,8 +109,8 @@ public struct SignedOutWorkout: Equatable, Sendable {
 
 // `prepare` turns a signed-out workout into one import, or a non-joining start, before the replica changes hands.
 // `keep` imports the saved copy as finished at its last set; `restart` resubmits an open one's start with every set it
-// holds, in one plan, or refuses the whole retry. Both take a revised copy, which replaces the saved one only when the
-// retry is queued.
+// holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy, whose
+// changed loads meet their floors and which replaces the saved one only when the retry is queued.
 public struct AdoptWorkout: Action {
   public enum Mode: Sendable { case prepare, keep, restart }
   public struct Loaded {
@@ -145,7 +154,7 @@ public struct AdoptWorkout: Action {
     case .prepare:
       guard loaded.anonymous, let start = commands.first(where: { $0.command.name == Gym.Commands.start && $0.canSupersede }) else { return .unchanged(()) }
       if !workout.session.isOpen, let imported = loaded.imported {
-        switch workout.importAction.decision(imported, ids: ids) {
+        switch workout.importAction.recorded.decision(imported, ids: ids) {
         case .write(let imported, _): plan = imported; plan.supersede([start.gestureId])
         case .refuse(let refusal): return .refuse(refusal)
         case .unchanged: return .unchanged(())
@@ -161,6 +170,8 @@ public struct AdoptWorkout: Action {
       }
       guard !loaded.confirmed else { return .refuse(.taken(id.ref, .predicted)) }
       guard let imported = loaded.imported else { return .unchanged(()) }
+      let saved = loaded.backup.first { $0.session.id == id }
+      if let refusal = workout.floorRefusal(since: saved, catalogue: imported.state.catalogue) { return .refuse(refusal) }
       if case .restart = mode {
         switch try restart(workout, state: imported.state) {
         case .write(let started, _): plan = started
@@ -169,7 +180,7 @@ public struct AdoptWorkout: Action {
         }
       } else {
         if let refusal = workout.importRefusal(at: imported.state.moment, among: imported.state.stored, catalogue: imported.state.catalogue) { return .refuse(refusal) }
-        switch workout.importAction.decision(imported, ids: ids) {
+        switch workout.importAction.recorded.decision(imported, ids: ids) {
         case .write(let imported, _): plan = imported
         case .refuse(let refusal): return .refuse(refusal)
         case .unchanged: return .unchanged(())

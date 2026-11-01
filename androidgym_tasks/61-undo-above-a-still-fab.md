@@ -1,12 +1,16 @@
 # Undo rises above a Weigh-in button that never moves, and lasts the system's accessibility timeout
 
-**Status:** ✅ Ready for dev. The owner approved 05.17 on 2026-10-31. Once shipped, it replaces 05.16. Not started.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Board 05.17 is 🚀 In production; 05.16 is deleted.
 
 **Figma:** 05.17 Log, weigh-in Undo: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41789) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41887). Superseded once this ships: 05.16 [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1447-20658).
 
 **Current implementation**
-- `store/WithheldDelete.kt` holds a deleted weigh-in for a fixed `windowMs = 9_000L`, and `TrainingStore` takes it as `undoWindowMs`.
-- When the snackbar closes, the *Weigh in* extended FAB drops into the space it left, under the lifter's finger. The capture rig's `log.json` weight-undo step taps Undo and opens the Weigh-in sheet instead.
+- The Log and Routines screens host the room's transient in their own `GymScreen` Scaffold (`snackbarHost` and `floatingActionButton` slots), so the snackbar sits above *Weigh in* and *New routine* and neither button moves. Other frames keep the transient in the room's bottom bar.
+- `GymRoom` reads `accessibleUndoWindowMs`, which is `AccessibilityManager.getRecommendedTimeoutMillis(9_000, FLAG_CONTENT_CONTROLS | FLAG_CONTENT_TEXT)` floored at `Withheld.windowMs = 9_000L`, on every resume and sets it as `TrainingStore.undoWindowMs`.
+- `TrainingStore.withhold` passes that window to `EngineTraining.holdBodyweight`, whose engine gesture carries it as `Gesture.holdMs`; the engine stamps `releaseAt` from its own clock. The store keeps its injected clock.
+- A log read from its top stays at its top when Undo brings a newer day back above the first row drawn, so the restored row is in view (`LogScreen`).
+- The capture rig's `log.json` weight-undo recipe sets a 30 s accessibility timeout (`accessibility_timeout_ms`), so its Undo tap lands after the screenshot.
+- Tests: `LogTransientTests` (the FAB's bounds with and without the snackbar in Dark and Daylight at 200% text; a 20 s timeout keeps Undo past nine seconds and restores the weigh-in), `LogWeightRowsTests` (a restored newest day returns into view), `HarnessTests` (a gesture's own hold length).
 
 **Change**
 - **Placement:** the snackbar rises above the FAB, which never moves. This is the standard Scaffold layout: the snackbar host sits above the FAB slot.
@@ -21,6 +25,5 @@
   - The FAB's bounds are identical with and without the snackbar.
   - The hold equals the accessibility timeout when that is longer than 9 s.
   - Undo inside the window restores the weigh-in.
-- Delete Figma 05.16 after merge: superseded boards are deleted, not archived.
 
 **Depends on:** 05, 24.

@@ -1,6 +1,5 @@
 package works.windmill.gym.domain
 
-import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.serialization.json.Json
@@ -223,6 +222,24 @@ class ProgramTests {
             json.encodeToString(RoutineWrite.serializer(), draft.original!!))
         assertEquals("""{"id":"rt_a","name":"Push","position":3,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":60.0}]}]}""",
             json.encodeToString(RoutineWrite.serializer(), RoutineWrite(routine)))
+    }
+
+    @Test
+    fun testOnlyADraftHoldingWorkBackWouldLoseIsUnsaved() {
+        val routine = Routine("rt_a", "Push", 3, revision = 7, entries = listOf(
+            RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0))), RoutineEntry(2, "squat")))
+        val opened = RoutineDraft.of(routine)
+        assertEquals(listOf(false, false, true, true, false, true, true, true), listOf(
+            RoutineDraft(position = 3).unsaved,
+            RoutineDraft(position = 3).named("   ").unsaved,
+            RoutineDraft(position = 3).named("Pull").unsaved,
+            RoutineDraft(position = 3).adding("squat").unsaved,
+            opened.unsaved,
+            opened.moving(0, 1).unsaved,
+            opened.removing("squat").unsaved,
+            opened.named("Pull").unsaved,
+        ))
+        assertFalse("a reorder undone by hand is the routine it opened", opened.moving(0, 1).moving(0, 1).unsaved)
     }
 
 }

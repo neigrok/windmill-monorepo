@@ -1,15 +1,13 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import works.windmill.gym.sharing.WorkoutShareCard
-import works.windmill.platform.design.WindmillSheetBack
-import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
@@ -27,15 +25,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,14 +39,10 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import works.windmill.platform.net.WindmillJson
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -76,8 +67,8 @@ import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 // The frozen plan beside these rows is a snapshot and is the ONLY source for what the plan said.
 object Performed {
@@ -303,7 +294,7 @@ fun SessionScreen(
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(skin.raised, RoundedCornerShape(16.dp))
+                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(16.dp)).background(skin.raised)
                         .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
                         Text("Share this workout", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                     }
@@ -318,59 +309,56 @@ fun SessionScreen(
         movement.rows.firstOrNull { it.id == fixing }?.let { movement.movement to it }
     }
     if (open != null) {
-        ModalBottomSheet(
-            onDismissRequest = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
+        // Back reaches Fix set's own handlers first: a busy save swallows it and open entry cancels it. A drag
+        // waits on the same two through the sheet state.
+        WindmillSheet(
+            onDismissRequest = { close() },
             sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
-            WindmillSheetWindow()
             val (movement, row) = open
             fixStates.SaveableStateProvider(fixing!!) {
-            WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
-                FixSheet(
-                    set = row.set,
-                    exercise = store.catalog.firstOrNull { it.id == row.set.exerciseId },
-                    origin = FixOrigin.Session,
-                    movement = movement,
-                    setNumber = row.number,
-                    routine = standing.plan?.routine,
-                    onSave = { fix ->
-                        val ended = store.fixSet(readId, row.id, fix, FixOrigin.Session)
-                        when (ended) {
-                            is FixOutcome.Corrected -> {
-                                detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {
-                                    if (it.id == row.id) ended.set else it
-                                }) }
-                                corrected += 1
-                            }
-                            is FixOutcome.Gone -> {
-                                detail = currentDetail?.let { held -> held.copy(sets = held.sets.filterNot { it.id == row.id }) }
-                                corrected += 1
-                            }
-                            is FixOutcome.Failed -> Unit
+            FixSheet(
+                set = row.set,
+                exercise = store.catalog.firstOrNull { it.id == row.set.exerciseId },
+                origin = FixOrigin.Session,
+                movement = movement,
+                setNumber = row.number,
+                routine = standing.plan?.routine,
+                onSave = { fix ->
+                    val ended = store.fixSet(readId, row.id, fix, FixOrigin.Session)
+                    when (ended) {
+                        is FixOutcome.Corrected -> {
+                            detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {
+                                if (it.id == row.id) ended.set else it
+                            }) }
+                            corrected += 1
                         }
-                        ended
-                    },
-                    onSaved = { close(); say(null) },
-                    onGone = { close(); say(it) },
-                    onBusy = { fixBusy = it },
-                    onEntryCancel = { cancelFixEntry = it },
-                    onDelete = {
-                        close()
-                        say(null)
-                        scope.launch { say(store.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
-                    },
-                )
-            }
+                        is FixOutcome.Gone -> {
+                            detail = currentDetail?.let { held -> held.copy(sets = held.sets.filterNot { it.id == row.id }) }
+                            corrected += 1
+                        }
+                        is FixOutcome.Failed -> Unit
+                    }
+                    ended
+                },
+                onSaved = { close(); say(null) },
+                onGone = { close(); say(it) },
+                onBusy = { fixBusy = it },
+                onEntryCancel = { cancelFixEntry = it },
+                onDelete = {
+                    close()
+                    say(null)
+                    scope.launch { say(store.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
+                },
+            )
             }
         }
     }
-    if (shareOpen) ModalBottomSheet(onDismissRequest = { shareOpen = false },
+    if (shareOpen) WindmillSheet(onDismissRequest = { shareOpen = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = skin.surface, scrimColor = skin.scrim) {
-            WindmillSheetWindow()
         WorkoutShareCard(sharing, readId)
     }
 
@@ -449,7 +437,7 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
     val skin = LocalGymColors.current
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
-    val largeText = LocalDensity.current.fontScale > 1.3f
+    val largeText = GymTextScale.large
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
         .background(if (pressed) skin.raised else skin.surface)
         .clickable(interactionSource = pressing, indication = null, role = Role.Button,

@@ -149,17 +149,43 @@ public struct Prefill: Equatable, Sendable {
   }
 
   public static func of(todaySets: [TrainingSet], planEntry: PlannedExercise?, lastTime: LastTime?) -> Prefill {
+    at(slot: todaySets.count, after: todaySets.last.map { Prefill(weightKg: $0.weightKg, reps: $0.reps) }, planEntry: planEntry, lastTime: lastTime)
+  }
+
+  // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered as though the one
+  // before it were logged as offered. A load that would come from a last time not read yet is nil.
+  public static func offeredLoads(todaySets: [TrainingSet], planEntry: PlannedExercise?, lastTime: LastTime) -> [Double?] {
     let scheme = planEntry?.sets ?? []
-    let sticky = todaySets.last
+    let slots = todaySets.count..<max(todaySets.count, scheme.count)
+    if lastTime.session != nil || lastTime.isComplete {
+      var sticky = todaySets.last.map { Prefill(weightKg: $0.weightKg, reps: $0.reps) }
+      return slots.map { slot in
+        let offer = at(slot: slot, after: sticky, planEntry: planEntry, lastTime: lastTime)
+        sticky = offer
+        return offer.weightKg
+      }
+    }
+    let straight = scheme.allSatisfy { $0 == scheme[0] }
+    var sticky = todaySets.last?.weightKg
+    return slots.map { slot in
+      let load = straight ? sticky ?? scheme[0].weightKg : scheme[slot].weightKg
+      sticky = load
+      return load
+    }
+  }
+
+  // The offer at a slot, `sticky` being the set logged just before it.
+  public static func at(slot: Int, after sticky: Prefill?, planEntry: PlannedExercise?, lastTime: LastTime?) -> Prefill {
+    let scheme = planEntry?.sets ?? []
     let history = lastTime?.sets ?? []
     let straight = scheme.first.map { first in scheme.allSatisfy { $0 == first } } ?? true
     if !scheme.isEmpty && !straight {
-      let slot = todaySets.count < scheme.count ? scheme[todaySets.count] : nil
-      let lastNth = todaySets.count < history.count ? history[todaySets.count] : nil
-      return Prefill(weightKg: slot?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? emptyBarKg,
-                     reps: slot?.reps ?? lastNth?.reps ?? sticky?.reps ?? emptyBarReps)
+      let target = slot < scheme.count ? scheme[slot] : nil
+      let lastNth = slot < history.count ? history[slot] : nil
+      return Prefill(weightKg: target?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? emptyBarKg,
+                     reps: target?.reps ?? lastNth?.reps ?? sticky?.reps ?? emptyBarReps)
     }
-    if let sticky { return Prefill(weightKg: sticky.weightKg, reps: sticky.reps) }
+    if let sticky { return sticky }
     let planned = scheme.first
     return Prefill(weightKg: planned?.weightKg ?? history.last?.weightKg ?? emptyBarKg,
                    reps: planned?.reps ?? history.first?.reps ?? emptyBarReps)

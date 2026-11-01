@@ -90,7 +90,30 @@ object RoutineRules {
     val targetWeight = NumberSpec("routine.entries.sets.weightKg", quantum = 0.01)
     val rest = NumberSpec("routine.entries.restSeconds", 15.0, 900.0, integer = true)
     val exercise = TextSpec("routine.entries.exerciseId", MeasureUnit.chars, 1, 64, false, false)
-    val rules = listOf(name, position, entries, targets, targetReps, targetWeight, rest, exercise).map(Rule::local) + Rule.local("routine.zeroTarget", Routine.type)
+    const val loadFloor = "routine.loadFloor"
+    val rules = listOf(name, position, entries, targets, targetReps, targetWeight, rest, exercise).map(Rule::local) +
+        Rule.local("routine.zeroTarget", Routine.type) + Rule.local(loadFloor, Routine.type)
+
+    // The floor a save holds a line's target loads to: its movement's wherever the save touches the line, by changing
+    // its targets or the movement's loading (a new movement counts as one). A line the save leaves alone keeps what it held.
+    fun targetFloor(retargeted: Boolean, equipment: String, loadCount: Int, base: Pair<String, Int>?): Double? {
+        val reloaded = base == null || base != (equipment to loadCount)
+        return if (retargeted || reloaded) ExerciseRules.loadFloor(equipment, loadCount) else null
+    }
+
+    fun floored(routine: Routine, base: Routine, movements: List<RoutineMovementChange>, catalogue: Catalogue) {
+        routine.entries.forEachIndexed { index, entry ->
+            val staged = movements.firstOrNull { it.current.id == entry.exerciseId }
+            val movement = staged?.current ?: catalogue.find(entry.exerciseId) ?: return@forEachIndexed
+            val loading = if (staged == null) movement.equipment to movement.loadCount else staged.base?.let { it.equipment to it.loadCount }
+            val retargeted = base.entries.firstOrNull { it.exerciseId == entry.exerciseId }?.sets != entry.sets
+            val floor = targetFloor(retargeted, movement.equipment, movement.loadCount, loading) ?: return@forEachIndexed
+            entry.sets?.forEachIndexed { at, set ->
+                val weightKg = set.weightKg ?: return@forEachIndexed
+                if (weightKg < floor) throw Violation(loadFloor, Path("entries") + index + "sets" + at + "weightKg", Violation.Reason.Below(floor))
+            }
+        }
+    }
 }
 
 data class RoutineMovementChange(val base: Exercise?, val current: Exercise) {
@@ -121,6 +144,7 @@ class SaveRoutinePlan(val base: Routine, val current: Routine, val isNew: Boolea
             return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, current.id.ref, path = Refused.Path.predicted)))
         val touched = current.fields().keys.filter { isNew || current.fields()[it] != base.fields()[it] }.sorted()
         val valid = Valid(current, Routine, touched, loaded.moment)
+        RoutineRules.floored(valid.value, base, movements, loaded.catalogue)
         val changed = touched.filter { loaded.routine?.fields()?.get(it) != valid.value.fields()[it] }
         if (!isNew && changed.any { loaded.routine?.fields()?.get(it) != base.fields()[it] })
             return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.stale, current.id.ref, path = Refused.Path.predicted)))

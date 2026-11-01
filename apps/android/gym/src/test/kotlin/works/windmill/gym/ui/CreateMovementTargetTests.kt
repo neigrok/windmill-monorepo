@@ -62,6 +62,28 @@ class CreateMovementTargetTests {
         } } finally { scope.cancel() }
     }
 
+    @Test fun aBarbellLoadBelowZeroWaitsAndTheBlankLoadHintLeavesOnceALoadIsTyped() {
+        val hint = "kg blank: pick it at the rack the first time; after that, last time fills it."
+        val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
+        var movement by mutableStateOf(RoutineMovement(bench, bench))
+        var scheme by mutableStateOf(TargetEntry.Draft(rows = List(3) { TargetEntry.TypedSet(reps = "8") }, sets = "3"))
+        compose.setContent { GymMaterial {
+            MovementForm(movement, scheme, "Edit movement", "Done", { movement = it }, { scheme = it }, {}, {})
+        } }
+        compose.onNodeWithText(hint).assertExists()
+        compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("-12.5")
+        compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("−12.5")
+        compose.onNodeWithText(hint).assertDoesNotExist()
+        compose.onNodeWithText("Load, 0 or more.").assertExists()
+        compose.onNodeWithText("Check Load").assertExists()
+        compose.onNodeWithText("Done").assertIsNotEnabled()
+        compose.runOnIdle { movement = movement.equipped("other") }
+        compose.onNodeWithText("Load, 0 or more.").assertDoesNotExist()
+        compose.onNodeWithText("Done").assertIsEnabled()
+        compose.onNodeWithContentDescription("Load, kg").performTextClearance()
+        compose.onNodeWithText(hint).assertExists()
+    }
+
     @Test fun perSetLoadsShareAtomicSeparatorEditingAndKeepNegativeCaretAndZero() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
@@ -69,7 +91,7 @@ class CreateMovementTargetTests {
             var draft by mutableStateOf(RoutineDraft(name = "Push").adding("bench-press",
                 List(3) { SetTarget(8, 75.0) }))
             val before = room.engine.snapshot()
-            compose.setContent { GymMaterial { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}) } }
+            compose.setContent { GymMaterial { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}, "Routines") } }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithText("Vary by set").performScrollTo().performClick()
             val field = compose.onNodeWithContentDescription("Set 1 load")
@@ -79,25 +101,25 @@ class CreateMovementTargetTests {
             }
             field.performClick().performTextClearance()
             field.performTextInput("-")
-            assertEditor("-", 1)
+            assertEditor("−", 1)
             compose.onNodeWithText("Done").assertIsNotEnabled()
             field.performTextInput("12.5")
-            assertEditor("-12.5", 5)
+            assertEditor("−12.5", 5)
             for (separator in listOf(".", ",")) {
                 field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 2, false) }
                 field.performTextInput(separator)
-                assertEditor("-12.5", 2)
+                assertEditor("−12.5", 2)
             }
             for (separator in listOf(",", ".")) {
                 field.performSemanticsAction(SemanticsActions.SetSelection) { it(3, 4, false) }
                 field.performTextInput(separator)
-                assertEditor("-12${separator}5", 4)
+                assertEditor("−12${separator}5", 4)
             }
             field.performSemanticsAction(SemanticsActions.SetSelection) { it(1, 4, false) }
             field.performTextInput("3.")
-            assertEditor("-3.5", 3)
+            assertEditor("−3.5", 3)
             field.performTextReplacement("1.2,3")
-            assertEditor("-3.5", 3)
+            assertEditor("−3.5", 3)
             field.performTextReplacement("0")
             assertEditor("0", 1)
             compose.onNodeWithText("Done").assertIsEnabled().performClick()
@@ -115,13 +137,13 @@ class CreateMovementTargetTests {
             val before = room.engine.snapshot()
             val restorer = StateRestorationTester(compose)
             restorer.setContent { GymMaterial {
-                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {})
+                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
             compose.onNodeWithContentDescription("Movement name").performTextReplacement("Meadows 🏋 row")
-            assertEquals("3", raw("Sets, sets"))
-            assertEquals("10", raw("Reps, reps"))
+            assertEquals("3", raw("Sets"))
+            assertEquals("10", raw("Reps"))
             assertEquals("", raw("Load, kg total"))
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("1e999")
             compose.onNodeWithText("Add").assertIsNotEnabled()
@@ -162,7 +184,7 @@ class CreateMovementTargetTests {
             val changes = mutableListOf<RoutineDraft>()
             val before = room.engine.snapshot()
             compose.setContent { GymMaterial {
-                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {})
+                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()

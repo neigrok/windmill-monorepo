@@ -17,6 +17,8 @@ import { Session, SessionRules, SessionValue, SetRules, TrainingSet, TrainingSet
 /** @typedef {import('../../../platform/domain-kit/time.js').Instant} Instant */
 /** @typedef {import('./catalogue.js').ExerciseValue} ExerciseValue */
 /** @typedef {import('./routines.js').RoutineValue} RoutineValue */
+/** @typedef {import('../../../platform/domain-kit/actions.js').IDSource} IDSource */
+/** @typedef {import('./gymRules.js').GymRefusal} GymRefusal */
 
 export const MAX_SESSION_SETS = 200;
 
@@ -34,6 +36,30 @@ export class TrainingState {
 
   /** @param {Id<SessionValue>} id */
   session(id) { return this.stored.find((session) => session.id.equals(id)) ?? this.drawn.find((session) => session.id.equals(id)) ?? null; }
+}
+
+// A decider through which a person enters loads now. It decides as the log decides a replay of the same facts, then
+// holds the loads the person entered to their movements' floors. `recorded` is that replay, for facts already recorded,
+// on this phone signed out or by an older build: the action's checks and its write, never the floor.
+/**
+ * @template L, T
+ * @param {import('../../../platform/domain-kit/actions.js').Decider<L, T, GymRefusal>} recorded
+ * @param {(loaded: L) => void} floored
+ */
+function EntersLoads(recorded, floored) {
+  return Object.freeze({
+    scope: recorded.scope,
+    refusals: recorded.refusals,
+    recorded,
+    /** @param {Reader} read */
+    load(read) { return recorded.load(read); },
+    /** @param {L} loaded @param {IDSource} ids */
+    decide(loaded, ids) {
+      const decision = recorded.decide(loaded, ids);
+      if (decision.kind === 'write') floored(loaded);
+      return decision;
+    },
+  });
 }
 
 /** @param {{ id: Id<SessionValue>, routineId?: Id<RoutineValue> | null, startedAt?: Instant | null }} input */
@@ -88,7 +114,7 @@ export function FinishSession({ id, finishedAt = null }) {
 
 /** @param {TrainingSetValue} value */
 export function AppendSet(value) {
-  return Object.freeze({
+  const recorded = Object.freeze({
     scope: TrainingSet.scope,
     refusals: GymRefusals,
     /** @param {Reader} read */
@@ -103,7 +129,9 @@ export function AppendSet(value) {
       if (!SessionRules.lateSetLands(session, value.completedAt)) {
         return Decision.refuse(GymRefusals.ofRefused(new Refused('session-finished', value.id.ref, null, 'predicted')));
       }
-      if (loaded.catalogue.find(value.exerciseId) === null) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', value.id.ref, null, 'predicted')));
+      if (loaded.catalogue.find(value.exerciseId) === null) {
+        return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', value.id.ref, null, 'predicted')));
+      }
       if (loaded.sets.some((set) => set.id.equals(value.id))) return Decision.refuse(GymRefusals.ofRefused(new Refused('id-taken', value.id.ref, null, 'predicted')));
       if (SetRules.nextNumber(loaded.sets, value.sessionId, value.exerciseId) === null) {
         throw new Violation('set.setNumber', new Path('setNumber'), { kind: 'above', max: SetRules.maxNumber });
@@ -113,11 +141,13 @@ export function AppendSet(value) {
       return Decision.write(plan, value.id);
     },
   });
+  return EntersLoads(recorded, /** @param {TrainingState} loaded */ (loaded) =>
+    SetRules.floored(value, loaded.sets, loaded.catalogue, new Path('weightKg')));
 }
 
 /** @param {TrainingSetValue} value @param {TrainingSetValue | null} original */
 export function CorrectSet(value, original = null) {
-  return Object.freeze({
+  const recorded = Object.freeze({
     scope: TrainingSet.scope,
     refusals: GymRefusals,
     /** @param {Reader} read */
@@ -155,6 +185,8 @@ export function CorrectSet(value, original = null) {
       return Decision.write(plan, null);
     },
   });
+  return EntersLoads(recorded, /** @param {TrainingState} loaded */ (loaded) =>
+    SetRules.floored(value, loaded.sets, loaded.catalogue, new Path('weightKg')));
 }
 
 /** @param {Id<TrainingSetValue>} id */
@@ -217,7 +249,7 @@ export class ImportedSet {
  */
 export function ImportSession({ id, startedAt, finishedAt, sets, routineId = null }) {
   const imported = Object.freeze([...sets]);
-  return Object.freeze({
+  const recorded = Object.freeze({
     scope: Session.scope,
     refusals: GymRefusals,
     /** @param {Reader} read */
@@ -244,6 +276,8 @@ export function ImportSession({ id, startedAt, finishedAt, sets, routineId = nul
       return Decision.write(Plan.running(command, predictions), id);
     },
   });
+  return EntersLoads(recorded, /** @param {{ state: TrainingState, routine: RoutineValue | null }} loaded */ ({ state }) =>
+    imported.forEach((set, at) => SetRules.floored(set.value(id), state.sets, state.catalogue, new Path('sets').plus(at).plus('weightKg'))));
 }
 
 export class CorrectedSet {
@@ -264,6 +298,12 @@ export class CorrectedSet {
     Object.freeze(this);
   }
 
+  /** @param {Id<SessionValue>} sessionId */
+  value(sessionId) {
+    return new TrainingSetValue(this.id, sessionId, this.exerciseId, this.weightKg, this.reps,
+      this.completedAt, this.rpe, this.note ?? '', this.setNumber);
+  }
+
   /** @returns {Record<string, Json>} */
   get json() {
     return { id: this.id.json, exerciseId: this.exerciseId.json, setNumber: this.setNumber, weightKg: this.weightKg,
@@ -278,7 +318,7 @@ export class CorrectedSet {
  */
 export function CorrectSession({ id, requestId, startedAt, finishedAt, routineName, sets, preserveOtherSets = false }) {
   const corrected = Object.freeze([...sets]);
-  return Object.freeze({
+  const recorded = Object.freeze({
     scope: Session.scope,
     refusals: GymRefusals,
     /** @param {Reader} read */
@@ -326,4 +366,6 @@ export function CorrectSession({ id, requestId, startedAt, finishedAt, routineNa
       return Decision.write(Plan.running(command, predictions), null);
     },
   });
+  return EntersLoads(recorded, /** @param {TrainingState} loaded */ (loaded) =>
+    corrected.forEach((set, at) => SetRules.floored(set.value(id), loaded.sets, loaded.catalogue, new Path('sets').plus(at).plus('weightKg'))));
 }

@@ -7,7 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -40,6 +39,19 @@ class PlanningRestorationTests {
     @get:Rule val compose = createComposeRule()
     @get:Rule val tmp = TemporaryFolder()
 
+    @Test fun aLineTheEditorLeavesAloneKeepsItsLoadAndATouchedOneMeetsTheFloor() {
+        val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
+        val legacy = TargetEntry.Draft(listOf(SetTarget(8, -10.0)))
+        val opened = BuilderSheet.Target("bench-press", legacy, RoutineMovement(bench, bench))
+        assertEquals(listOf<Double?>(null, 0.0, 0.0, 0.0), listOf(
+            opened.floor(RoutineMovement(bench, bench)),
+            opened.copy(scheme = legacy.copy(rows = listOf(TargetEntry.TypedSet("6", "−10")))).floor(RoutineMovement(bench, bench)),
+            opened.floor(RoutineMovement(bench, bench.copy(equipment = "dumbbell", loadCount = 2))),
+            opened.copy(adding = true).floor(RoutineMovement(bench, bench)),
+        ))
+        assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), legacy.reading(opened.floor(RoutineMovement(bench, bench))))
+    }
+
     // Signed out: the anonymous replica's store.
     private fun store(room: EngineRoomFixture): TrainingStore {
         runBlocking { room.select(null) }
@@ -63,7 +75,7 @@ class PlanningRestorationTests {
     }
 
     private fun uniformTargets() {
-        if (compose.onAllNodesWithContentDescription("Sets, sets").fetchSemanticsNodes().isEmpty())
+        if (compose.onAllNodesWithContentDescription("Sets").fetchSemanticsNodes().isEmpty())
             compose.onNodeWithText("Vary by set").performScrollTo().performClick()
     }
 
@@ -86,20 +98,20 @@ class PlanningRestorationTests {
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithContentDescription("Set 3 load").performTextReplacement("1e999")
             uniformTargets()
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("1")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("1")
             perSetTargets()
             compose.onNodeWithContentDescription("Set 1 reps").performTextReplacement("0")
             restorer.emulateSavedInstanceStateRestore()
             hideSearchIme()
             assertEquals("0", raw("Set 1 reps"))
             uniformTargets()
-            assertEquals("1", raw("Sets, sets"))
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("3")
+            assertEquals("1", raw("Sets"))
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("3")
             perSetTargets()
             assertEquals("1e999", raw("Set 3 load"))
             compose.onNodeWithText("Done").assertIsNotEnabled()
@@ -123,7 +135,7 @@ class PlanningRestorationTests {
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasSetTextAction() and hasText("Search movements")).performTextReplacement("Zercher")
@@ -239,18 +251,18 @@ class PlanningRestorationTests {
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Chin Up").performClick()
             uniformTargets()
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("")
-            compose.onAllNodesWithContentDescription(bandAssistedSignDescription).assertCountEquals(0)
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("")
+            compose.onAllNodesWithContentDescription("Flip the sign — band-assisted").assertCountEquals(0)
             compose.onNodeWithContentDescription("Load, kg added").assertIsNotEnabled()
             restorer.emulateSavedInstanceStateRestore()
             hideSearchIme()
-            assertEquals("", raw("Sets, sets"))
+            assertEquals("", raw("Sets"))
             compose.onNodeWithContentDescription("Load, kg added").assertIsNotEnabled()
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("2")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("2")
             perSetTargets()
             assertEquals("−10", raw("Set 1 load"))
             assertEquals("−5", raw("Set 2 load"))
@@ -314,9 +326,9 @@ class PlanningRestorationTests {
             sets = "1", varyBySet = true,
         ))
         assertEquals(expected, builderSheetSaver.restore(saved))
-        assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), expected.scheme.reading)
+        assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), expected.scheme.reading(null))
         assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, TargetEntry.notANumber),
-            (builderSheetSaver.restore(saved) as BuilderSheet.Target).scheme.withCount("2").reading)
+            (builderSheetSaver.restore(saved) as BuilderSheet.Target).scheme.withCount("2").reading(null))
         assertNull(builderSheetSaver.restore("""{"type":"works.windmill.gym.ui.BuilderSheet.Target","exerciseId":"chin-up","rows":42,"sets":"1"}"""))
         assertNull(builderSheetSaver.restore("not json"))
         assertNull(builderSheetSaver.restore(""))

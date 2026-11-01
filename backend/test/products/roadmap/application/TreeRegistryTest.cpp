@@ -116,6 +116,28 @@ TEST(create_with_a_requested_id_plants_an_empty_tree_with_the_default_legend_at_
   CHECK(stored.legend == expected);
 }
 
+TEST(create_adds_the_initial_steps_now_while_the_legend_stays_at_genesis) {
+  Setup s;
+  UserId me = uid("me");
+  s.clock.now = 1'800'000'000'000;
+
+  TreeRegistry::Creation outcome = s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"},
+      treeData("Frontend", {spec("html", NodeColor::olive), spec("css", NodeColor::olive, {nid("html")})}));
+
+  CHECK(outcome == TreeRegistry::Creation::created);
+  const StoredTree& stored = s.trees.byId["t_00c0ffee00c0ffee"];
+  const Hlc planted{1'800'000'000'000, 0, "srv"};
+  REQUIRE_EQ(stored.state.nodes.size(), 2u);
+  for (const NodeStateEntry& node : stored.state.nodes) {
+    CHECK_EQ(node.createdAt, planted);
+    CHECK_EQ(node.labelAt, planted);
+  }
+  REQUIRE_EQ(stored.state.edges.size(), 1u);
+  CHECK_EQ(stored.state.edges[0].addedAt, planted);
+  REQUIRE_EQ(stored.legend.kinds.size(), 3u);
+  for (const KindStateEntry& kind : stored.legend.kinds) CHECK_EQ(kind.createdAt, (Hlc{1, 0, "genesis"}));
+}
+
 TEST(create_with_the_same_id_by_its_owner_resumes_without_touching_the_row) {
   Setup s;
   UserId me = uid("me");

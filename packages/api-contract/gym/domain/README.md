@@ -41,7 +41,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
 | `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
-| `training-reads.json` | Prefill, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
+| `training-reads.json` | Prefill and the loads it offers ahead, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -85,6 +85,21 @@ presentation read: it does not convert loads or volume. Its shared read cases us
 `{operation:"loadUnit", equipment?, loadCount}`. Screen formatters insert a space before this unit;
 Coach action and review presentation keeps its existing formatter.
 
+**Load floor.** `ExerciseRules.loadFloor` takes resolved `equipment` and `loadCount`: a movement whose
+loading choice is barbell or dumbbell (two dumbbells) has a floor of 0; every other loading, one
+dumbbell included, keeps its sign. The floor guards a load a person enters now; a load already
+recorded is never refused by it. `AppendSet`, `CorrectSet`, `ImportSession` and `CorrectSession` are
+the person's doors: once their other checks pass, each set whose movement the catalogue resolves and
+whose movement or load differs from the set recorded under its id is refused under the floor with
+`set.loadFloor` (`reason` `below`, `min` 0), at `weightKg` for one set and `sets.<i>.weightKg` for a
+session. Each door's `recorded` is the replay of facts already recorded (a signed-out workout's
+import, start or sets, an owed set or fix, a stranded set's recovery): the same checks and write,
+without the floor. `AdoptWorkout` and `RecoverStrandedSets` replay the saved copy; a `revised` copy's
+sets whose load differs from the saved copy meet the floor at `sets.<i>.weightKg` of the copy, and
+`WorkoutFix` reports the same refusal live. `SaveRoutinePlan` refuses a target load under
+the floor with `routine.loadFloor` at `entries.<i>.sets.<j>.weightKg` on each line whose targets
+changed or whose staged movement changed its loading; a line the save leaves alone keeps its loads.
+
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 `ImportCoachRoutineBatch` takes the captured replica, full result identity, a supplied SHA-256 fingerprint of the normalized payload, a bounded device receipt key, preassigned routine identities and required custom movements. The adapter derives `rack:coachImport` plus 48 lowercase hexadecimal SHA-256 digits from the result identity; its 59-character rack suffix fits the existing device-key grammar. One Plan writes every record and that receipt together. A matching receipt returns the same identities without writes; a full result-identity or fingerprint conflict refuses. Receipt keys are separate per result so Add preserves unrelated account and anonymous receipts. Record-identity adoption rewrites the receipt's routine and movement references while retaining its fingerprint. Swift also replays, without writing, a result an earlier iOS build imported under the single `rack:coachOnboarding` key.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
@@ -127,6 +142,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `StartSession` | `{id,routineId?,startedAt?}` | Predicted or joined session id; always sends `joinOpenSession:true` |
 | `FinishSession` | `{id,finishedAt?}` | `null` |
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |
+| `AppendSet.recorded`, `CorrectSet.recorded`, `ImportSession.recorded`, `CorrectSession.recorded` | as the action | as the action; the replay of a recorded fact, never refused by the load floor |
 | `DiscardSession` | `{id}` | `null`; held, refuses an active non-stale session |
 | `ImportSession` | `{id,routineId?,startedAt,finishedAt,sets:[ImportedSet]}` | Session id |
 | `CorrectSession` | `{sessionId,requestId,startedAt,finishedAt,routineName,sets:[CorrectedSet],preserveOtherSets?}` | `null` |
@@ -210,7 +226,9 @@ parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-s
 finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
 
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
-last-time rows and today's sets. `SessionReadout` provides duration, set
+last-time rows and today's sets. `OfferedLoads` is the prefill's load at every set the plan still
+holds, the set in hand first, each later set offered as though the one before were logged as
+offered; a load that would come from a last time not read yet is null. `SessionReadout` provides duration, set
 and movement counts, volume and the session estimate. `StatsProgress` groups
 finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility

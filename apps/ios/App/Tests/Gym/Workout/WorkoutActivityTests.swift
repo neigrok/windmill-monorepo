@@ -48,12 +48,12 @@ import SyncTesting
     let recorder = TelemetryRecorder(), (harness, gym) = try fixtures.fixture(anonymous: false, telemetry: recorder)
     let workout = try fixtures.begin(gym)
     harness.sync(); gym.refresh(); workout.reconcile()
-    workout.weightKg = -25.5; workout.reps = 8
+    workout.weightKg = 25.5; workout.reps = 8
     let offer = try #require(workout.activityOffer()), session = try #require(workout.session)
     #expect(try workout.activityRecord()?.offer == offer)
     #expect(workout.logActivityOffer(offer))
     let expected = TrainingSet(id: ID(RecordID(offer.setID)), sessionId: session.id, exerciseId: fixtures.first,
-                               weightKg: -25.5, reps: 8, completedAt: fixtures.start)
+                               weightKg: 25.5, reps: 8, completedAt: fixtures.start)
     #expect(workout.sets == [expected])
     let pending = try #require(gym.runner.read(Gym.scope) { try $0.repository(TrainingSet.self).record(expected.id, in: .stored) })
     #expect(pending.isPending && pending.isVisible)

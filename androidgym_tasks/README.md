@@ -25,7 +25,7 @@ At the user's request, tasks **29–35, 41–42 and 44 are postponed from this r
 
 Task 28's general bubbles, composer and chrome and task 37's History/chat lifecycle remain active. Task 37 does not wait for task 30's postponed outcome-word changes, and retains tool-write receipt content in its current presentation while task 35 waits. Task 17 keeps the existing proposal review route while task 29 waits. Task 49 remains active: its choices populate chat input and its kept draft is composer text, not a tool-action output.
 
-The additional U/P proposals and A2 local-save cards are deferred from this release and are not approved. A request-recovery cards and B.2 pending-result recovery remain unapproved. The two [08.6b signed-out access screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152), formerly B.1, are human-approved 2026-10-28 and ✅ Ready for dev on the Android design page. [Z zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production with task 14. [D account-deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev. Both additions were human-approved 2026-10-25. Active tasks retain their remaining scoped design and backend prerequisites.
+The additional U/P proposals and A2 local-save cards are deferred from this release and are not approved. A request-recovery cards and B.2 pending-result recovery remain unapproved. The two [08.58b signed-out access screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152), formerly B.1, are human-approved 2026-10-28 and ✅ Ready for dev on the Android design page. [Z zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production with task 14. [D account-deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev. Both additions were human-approved 2026-10-25. Active tasks retain their remaining scoped design and backend prerequisites.
 
 ## Scoped prerequisites
 
@@ -34,7 +34,7 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | Gate | Affected task | Work that waits |
 |---|---|---|
 | `android-gym-signed-load-input-design` · resolved | [07](07-number-stepper.md), [10](10-fix-set.md), [18](18-targets.md) | Use the approved native-keyboard minus interaction and original sizing; verify negative decimal entry on the target emulator |
-| `android-regular-stepper-overflow-design` · resolved for unit-below layout | [18](18-targets.md), [19](19-create-movement.md) | [02.19 Load unit below](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960) is 🚀 In production, human-approved 2026-10-28. Preserve text size, native keyboard and pinned action; the older full-width/buttons-below fallback remains unapproved. |
+| `android-regular-stepper-overflow-design` · resolved for unit-below layout | [18](18-targets.md), [19](19-create-movement.md) | [02.25 Load unit below](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960) is 🚀 In production, human-approved 2026-10-28. Preserve text size, native keyboard and pinned action; the older full-width/buttons-below fallback remains unapproved. |
 | `android-routine-target-summary-responsive-design` · postponed by human 2026-10-29 | [18](18-targets.md) | The [Target summary proposal](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1675-10931) stays unapproved on Proposals. Keep the current summary layout; its known overlap at 320 dp / 200% text is excluded from this release. The approved Load-field fix continues. |
 | `android-gym-equipment-variants-design` · resolved | [08](08-units-by-equipment.md), [19](19-create-movement.md), [20](20-edit-exercise.md), [21](21-record.md) | [Canonical plain Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), 🚀 In production; no Name/Equipment hints. Preserve legacy values/history. New iOS/web pickers require separate design approval. |
 | `android-gym-empty-finish-design` · resolved | [14](14-finish-receipt.md) | [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production with task 14, human-approved 2026-10-25 |
@@ -42,7 +42,7 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | `android-gym-mcp-proposal-row-design` | [17](17-routines-list.md), [29](29-coach-change-card.md) | New proposal route without a Coach conversation; keep its existing review path |
 | `android-coach-uncertain-apply-design` · deferred from release scope, unapproved | [34](34-proposal-long-failure-retry.md) | New unknown-outcome Apply/removal state |
 | `android-coach-partial-drafts-design` · deferred from release scope, unapproved | [41](41-coach-drafts-card.md), [42](42-coach-drafts-saved.md) | New signed-in partial-save/recovery states |
-| `android-coach-bound-installation-design` · resolved for access | [36](36-coach-access-states.md), [38](38-signed-out-coach.md) | Approved 08.6b retains History and Sign in; no anonymous Send. The separate B.2 recovery card remains unapproved. |
+| `android-coach-bound-installation-design` · resolved for access | [36](36-coach-access-states.md), [38](38-signed-out-coach.md) | Approved 08.58b retains History and Sign in; no anonymous Send. The separate B.2 recovery card remains unapproved. |
 | `android-account-delete-recovery-design` · resolved | [48](48-delete-account.md) | [D1–D5 recovery states](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ✅ Ready for dev, human-approved 2026-10-25; backend receipt/recovery is deployed in `ac1e0c75`; Android task 48 remains pending |
 | `account-delete-reconciliation` · resolved | [48](48-delete-account.md) | Backend receipt/recovery across session revocation is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance |
 
@@ -64,7 +64,7 @@ The 2026-10-31 review of the Android app (native experience on the emulator, cod
 | B | [54](54-nav-labels-and-top-bar.md), [56](56-routine-editor-asks-before-discard.md), [58](58-planned-rows-offered-load.md), [60](60-receipt-at-large-text.md), [61](61-undo-above-a-still-fab.md), [62](62-native-buttons-and-icons.md), [64](64-accessibility-pass.md), [71](71-one-gym-domain.md), [72](72-honest-reads-before-first-pull.md) |
 | C | [67](67-theme-roles.md), [68](68-split-the-store-and-the-room.md), [65](65-delete-account-clock-and-not-deleted.md) once its boards are approved |
 
-Stage A tasks touch disjoint areas and can run in parallel. 56 uses 53's back guard; 68 follows 53 so the room is not rewritten twice; 67 and 68 are wide refactors best done when the visual tasks have landed.
+Stage A, except 70, is on main (`70ec2dbe`); its boards 00.5, 00.6, 02.21, 03.33, 03.34 and 03.35 are 🚀 In production. Stage B's visual tasks (54, 56, 58, 60, 61, 62, 64) are on main (`ef0f05fb`); their boards 00.7, 02.20, 02.17, 03.36, 05.17 and Shell 16b are 🚀 In production, and 05.16 is deleted. 71, 72 and 70 are next. 56 uses 53's back guard; 68 follows 53 so the room is not rewritten twice; 67 and 68 are wide refactors best done when the visual tasks have landed.
 
 ### Working on a native-wave task
 
@@ -92,7 +92,7 @@ Stage A tasks touch disjoint areas and can run in parallel. 56 uses 53's back gu
   - **Emulator limits:** on the API 37 image the notification shade draws empty pills, and `screencap` can omit the status bar. Judge those from `dumpsys`.
 - **Delivery:**
   - One commit per task, then the gauntlet: an adversarial review that executes its findings, one fix pass, then native and local-stack acceptance including failures, Sentry and content-free events.
-  - After merge, mark the boards 🚀 In production once the release carrying them is published, and delete superseded boards (05.16 when 61 ships).
+  - Once the verified implementation is on main, mark its boards 🚀 In production and delete the boards it supersedes.
 
 ## Execution order
 

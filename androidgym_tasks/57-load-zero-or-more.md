@@ -1,17 +1,16 @@
 # Barbell and dumbbell loads are 0 or more on every surface; the field shows a real minus sign
 
-**Status:** ✅ Ready for dev. The owner approved 02.21 and 03.33 on 2026-10-31, including iOS and web taking the same rule. Not started.
+**Status:** 🚀 On main (`70ec2dbe`), not yet in a published release. Boards 02.21 and 03.33 are 🚀 In production.
 
 **Figma:**
 - 02.21 Movement editor, load below zero: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-39774) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40098)
 - 03.33 Fix set, load below zero: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40425) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40717)
 
 **Current implementation**
-- Signed load fields (number | signed | decimal, IME `0x3002`) exist on purpose: assisted machines take a negative load.
-- A barbell *total* of −12.5 kg is accepted in routine targets and in Fix set. To reproduce: type −12.5 into a barbell movement's Load in the editor, or in Fix set, and press Done.
-- The field types a hyphen while the summary shows a minus sign.
-- The "kg blank: pick it at the rack…" hint stays visible after a load is entered.
-- No shared vector pins a lower bound per equipment, so iOS, web and Android can disagree.
+- **Rule:** `ExerciseRules.loadFloor` gives Barbell and a pair of Dumbbells a floor of 0; Bodyweight, Other and a single dumbbell keep their sign, so an assisted machine still takes a negative load. Kotlin `:gym:domain`, Swift `GymDomain` and web `web/src/products/gym/domain` pass the shared vectors in `packages/api-contract/gym/domain/` (`training-actions.json`, `routines-actions.json`, `recovery-actions.json`).
+- **Scope:** the floor guards a load a person enters now, on every surface: Barbell and Dumbbells refuse below 0 when a set is logged, fixed, entered as a past workout, corrected as a session, edited in a recovery fix, or saved as a routine target. Facts already recorded (signed-out workouts adopted, owed sets and fixes replayed after an upgrade, stranded sets recovered, untouched loads in a correction) replay through each action's `recorded` door and are never refused by it.
+- **Android:** the movement editor shows **Load, 0 or more.** inline and Done waits; the hint shows only while Load is empty. Fix set shows **Enter 0 or more, or cancel to keep {kept}** and Save fix waits. The rack and Fix set steps stop at 0, and a kept legacy load under 0 cannot be stepped down. Every load field and readout draws the minus sign U+2212.
+- **iOS and web** surface the refusal through their existing inline refusal lines. No server validates a load bound, so the backend is unchanged.
 
 **Change**
 - **Shared rule:**

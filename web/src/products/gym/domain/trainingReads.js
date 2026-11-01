@@ -125,18 +125,50 @@ export class Prefill {
 
   /** @param {readonly TrainingSetValue[]} todaySets @param {RoutineEntry | null} planEntry @param {LastTime | null} lastTime */
   static of(todaySets, planEntry, lastTime) {
+    const last = todaySets.at(-1);
+    return Prefill.at(todaySets.length, last ? new Prefill(last.weightKg, last.reps) : null, planEntry, lastTime);
+  }
+
+  // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered as though the one
+  // before it were logged as offered. A load that would come from a last time not read yet is null.
+  /** @param {readonly TrainingSetValue[]} todaySets @param {RoutineEntry | null} planEntry @param {LastTime} lastTime */
+  static offeredLoads(todaySets, planEntry, lastTime) {
     const scheme = planEntry?.sets ?? [];
-    const sticky = todaySets.at(-1);
+    const known = lastTime.session !== null || lastTime.isComplete;
+    const first = scheme[0];
+    const straight = scheme.every((set) => set.reps === first?.reps && set.weightKg === first?.weightKg);
+    const last = todaySets.at(-1);
+    let offer = last ? new Prefill(last.weightKg, last.reps) : null;
+    /** @type {number | null} */
+    let load = last?.weightKg ?? null;
+    /** @type {(number | null)[]} */
+    const loads = [];
+    for (let slot = todaySets.length; slot < scheme.length; slot += 1) {
+      if (known) {
+        offer = Prefill.at(slot, offer, planEntry, lastTime);
+        loads.push(offer.weightKg);
+      } else {
+        load = straight ? load ?? first?.weightKg ?? null : scheme[slot]?.weightKg ?? null;
+        loads.push(load);
+      }
+    }
+    return loads;
+  }
+
+  // The offer at a slot, `sticky` being the set logged just before it.
+  /** @param {number} slot @param {Prefill | null} sticky @param {RoutineEntry | null} planEntry @param {LastTime | null} lastTime */
+  static at(slot, sticky, planEntry, lastTime) {
+    const scheme = planEntry?.sets ?? [];
     const history = lastTime?.sets ?? [];
     const first = scheme[0];
     const straight = first === undefined || scheme.every((set) => set.reps === first.reps && set.weightKg === first.weightKg);
     if (scheme.length > 0 && !straight) {
-      const slot = scheme[todaySets.length];
-      const lastNth = history[todaySets.length];
-      return new Prefill(slot?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? Prefill.emptyBarKg,
-        slot?.reps ?? lastNth?.reps ?? sticky?.reps ?? Prefill.emptyBarReps);
+      const target = scheme[slot];
+      const lastNth = history[slot];
+      return new Prefill(target?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? Prefill.emptyBarKg,
+        target?.reps ?? lastNth?.reps ?? sticky?.reps ?? Prefill.emptyBarReps);
     }
-    if (sticky) return new Prefill(sticky.weightKg, sticky.reps);
+    if (sticky) return sticky;
     return new Prefill(first?.weightKg ?? history.at(-1)?.weightKg ?? Prefill.emptyBarKg,
       first?.reps ?? history[0]?.reps ?? Prefill.emptyBarReps);
   }

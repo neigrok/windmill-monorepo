@@ -2,6 +2,8 @@
 
 **Status:** Logic is ready. The log's foot copy needs a designer: it stays 🚧 until a board or copy is approved. Not started.
 
+**Figma:** 05.18 The log, reading before the first pull (🚧 In progress, awaiting owner approval; ledger 11u): [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1767-27118) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1767-27204). Build the log-foot part only once it is ✅ Ready for dev.
+
 **Context:** a phone signed in to an account it has not pulled yet holds partial history. Rule: device-local data can support leaving something out, never asserting it. PR #43 gated the receipt's record and the record page's tiles. Native e2e on 2026-10-31 found three more places.
 
 **Current implementation**

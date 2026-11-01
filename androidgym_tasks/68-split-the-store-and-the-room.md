@@ -32,6 +32,9 @@
 - **Screens:** each takes a narrow state class and an events interface. Add `@Preview`s for each screen's main states, Dark and Daylight.
 - **Room:** move the finish and review sheet choreography into their own composables, and move the SharedPreferences readers out of composition. Inline `FinishReceipts` (19 lines, one consumer).
 - **Lint:** fix the autoboxing and the `layoutInfo` read in composition.
+- **Room chrome:** `TabRail`, `RailLabels` and the frame chrome move out of `GymRoom.kt` into their own file.
+- **Transient host:** a screen with a floating action button declares that it hosts the room's transient, in place of the room deciding by frame type (`RoomFrame.screenTransient`).
+- **Timed store hold:** `TrainingStore.withhold`/`armDelete` (`Deletion.Session`) runs only in tests, because every live delete is an engine hold. `DeletionsStore` drops it.
 
 **Done when**
 - The whole gym test suite passes. Behaviour tests move with their code, and the test tree mirrors the new layout.

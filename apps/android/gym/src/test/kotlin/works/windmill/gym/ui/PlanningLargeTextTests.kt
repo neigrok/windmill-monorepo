@@ -7,12 +7,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import kotlinx.coroutines.CoroutineScope
@@ -62,11 +59,11 @@ class PlanningLargeTextTests {
             var draft by mutableStateOf(RoutineDraft(name = "Pull").adding("chin-up"))
             compose.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Chin Up").performClick()
-            val sets = compose.onNodeWithContentDescription("Sets, sets").fetchSemanticsNode().positionInRoot
-            val reps = compose.onNodeWithContentDescription("Reps, reps").fetchSemanticsNode().positionInRoot
+            val sets = compose.onNodeWithContentDescription("Sets").fetchSemanticsNode().positionInRoot
+            val reps = compose.onNodeWithContentDescription("Reps").fetchSemanticsNode().positionInRoot
             val weight = compose.onNodeWithContentDescription("Load, kg added").fetchSemanticsNode().positionInRoot
             assertTrue(reps.y > sets.y)
             assertTrue(weight.y > reps.y)

@@ -35,15 +35,30 @@ remain on Proposals. Account, sign-in, appearance and shared settings belong to
 [Shell](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf); landing pages belong to
 [Marketing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81).
 
-### Board view · 💡 Proposal / awaiting human review
+### Board view · ✅ Ready for dev
 
-Separate [Web Mobile proposal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900)
-and [Web proposal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) pages.
-Main frames: [mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433),
-[desktop](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-[Proposal notes](design/roadmap-board-proposal.md) · [Design review](design/roadmap-board-review.md).
-This additional view is separate from the
-reconciled implementation and is not Ready for dev.
+Separate [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) and
+[✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) pages.
+Start at the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543)
+and the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433).
+[Proposal](design/roadmap-board-proposal.md) · [Review](design/roadmap-board-review.md). Owner
+approved 2026-10-31; the build is dogfood node `roadmap-board-web-build`.
+
+| Flow | Web | Web Mobile | Entry → exit |
+|---|---|---|---|
+| Board, complete and reset | [184:1542](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1542) · [374:4540](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=374-4540) | [183:903](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-903) · [183:904](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-904) | Board → step → Complete or Reset in place → Undo |
+| Step detail and delete | [208:355](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=208-355) | [228:964](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-964) · [324:5158](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=324-5158) · [397:28207](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=397-28207) | Step → workspace, history, note → menu → Delete held 9s with Undo |
+| Empty, loading and recovery | [374:4540](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=374-4540) · [232:1086](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-1086) | [183:905](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-905) | Empty or complete roadmap; skeletons, load error, save failure, sync states |
+| Readers and account states | [376:12774](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12774) | [188:1524](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-1524) · [276:8779](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-8779) | Visitor lands on Graph → Board → Fork; anonymous and lapsed owners |
+| Responsive and narrow widths | [377:14651](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14651) | [258:4895](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-4895) · [383:18664](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=383-18664) | 744, 900, 1024 bands; 320px and dark specimens |
+| Large roadmaps | [379:8923](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=379-8923) | [379:18852](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=379-18852) | 5,000 steps: counts, per-column scroll, Done collapse |
+| Find, filter and sort | [387:26773](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=387-26773) | [209:2396](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=209-2396) | Find a step, filter by kind, Roadmap order or Created |
+| Roadmap verbs | [260:5150](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5150) | [258:4895](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-4895) | Verbs row on Board and Graph; phone title-tap sheet |
+| Create a step | [232:1086](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-1086) | [226:602](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=226-602) · [258:4749](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-4749) | New step → prerequisites picker → revealed in its column |
+| Keyboard and gestures | [386:13311](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=386-13311) | [378:16260](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=378-16260) · [398:28881](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-28881) | Roving focus and C; swipe to complete; long-press multi-select |
+| Explore a branch | [294:8978](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-8978) | [292:8701](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-8701) | View branch → scoped Board → Graph and back |
+| Long content | — | [294:10081](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-10081) | Long step content at 390 and 320 |
+| Later · Activity overlay | [246:3690](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-3690) | [360:10601](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=360-10601) | Out of the first wave |
 
 ## Gym · iOS
 
@@ -84,7 +99,7 @@ Figma: Gym file, page [Android](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJR
 Code: `apps/android/gym/src/main/kotlin/works/windmill/gym/`. Components: Design System library,
 Android page. Journeys follow the iOS page and no number names two different screens across
 the phone pages; the page is the
-target ([consistency.md](design/consistency.md) 11a–11t, 12a–12o); build tasks: `androidgym_tasks/`.
+target ([consistency.md](design/consistency.md) 11a–11v, 12a–12r); build tasks: `androidgym_tasks/`.
 
 | Flow | Section | Entry → exit |
 |---|---|---|

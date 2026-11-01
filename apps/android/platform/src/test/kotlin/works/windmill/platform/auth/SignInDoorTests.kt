@@ -1,5 +1,8 @@
 package works.windmill.platform.auth
 
+import android.text.InputType
+import android.view.View
+import android.view.inputmethod.EditorInfo
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.*
@@ -12,6 +15,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import works.windmill.platform.design.LocalWindmillDark
 import kotlinx.coroutines.*
 import okhttp3.mockwebserver.*
@@ -51,25 +55,25 @@ class SignInDoorTests {
         } } }
         compose.onNodeWithText("Training on this phone can join your account. If both have training, you choose Add or Discard.").assertDoesNotExist()
         compose.onNodeWithText("Email", useUnmergedTree = true).assertIsDisplayed()
-        val field = compose.onNodeWithContentDescription("Email field").getBoundsInRoot()
+        val field = compose.onNodeWithContentDescription("Email").getBoundsInRoot()
         val label = compose.onNodeWithText("Email", useUnmergedTree = true).getBoundsInRoot()
         assertTrue(label.top >= field.top && label.bottom <= field.bottom)
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("  a@example.com  ")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("  a@example.com  ")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Use a valid email.").fetchSemanticsNodes().isNotEmpty() }
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithContentDescription("Email field").assertTextContains("  a@example.com  ")
+        compose.onNodeWithContentDescription("Email").assertTextContains("  a@example.com  ")
         compose.onNodeWithText("Use a valid email.").assertIsDisplayed()
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Code field").performTextReplacement(" 123456 ")
+        compose.onNodeWithContentDescription("Code").performTextReplacement(" 123456 ")
         compose.onNodeWithText("Sign in").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText(refusedCode).fetchSemanticsNodes().isNotEmpty() }
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ")
+        compose.onNodeWithContentDescription("Code").assertTextContains(" 123456 ")
         compose.onNodeWithText(refusedCode).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Works once. Expires in 15 minutes.").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Code field").assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, refusedCode))
+        compose.onNodeWithContentDescription("Code").assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, refusedCode))
         val finalClick = compose.onNodeWithText("Sign in").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { finalClick() }
         compose.waitUntil(5_000) { done == 1 }
@@ -78,6 +82,32 @@ class SignInDoorTests {
         assertEquals(listOf("""{"email":"a@example.com","door":"app"}""", """{"email":"a@example.com","door":"app"}""",
             """{"email":"a@example.com","code":"123456"}""", """{"email":"a@example.com","code":"123456"}"""),
             List(4) { server.takeRequest().body.readUtf8() })
+    }
+
+    @Test fun emailAndCodeOfferAutofillAndTheCodeOpensTheDigitKeyboard() {
+        val auth = AuthStore(server.url("/"), MemorySessions())
+        runBlocking { auth.restore() }
+        server.enqueue(MockResponse().setBody("{}"))
+        lateinit var view: View
+        compose.setContent { view = LocalView.current; WindmillMaterial { SignInDoor(auth) } }
+        fun keyboardOf(field: SemanticsNodeInteraction): Int {
+            field.performClick()
+            return compose.runOnIdle { EditorInfo().also { view.onCreateInputConnection(it) }.inputType }
+        }
+        fun hintsOf(field: SemanticsNodeInteraction): Set<*> {
+            val contentType = field.fetchSemanticsNode().config[SemanticsProperties.ContentType]
+            return contentType.javaClass.getDeclaredMethod("getAndroidAutofillHints").apply { isAccessible = true }.invoke(contentType) as Set<*>
+        }
+        val email = compose.onNodeWithContentDescription("Email")
+        assertEquals(setOf("emailAddress"), hintsOf(email))
+        assertEquals(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, keyboardOf(email))
+        email.performTextReplacement("a@example.com")
+        compose.onNodeWithText("Send code").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
+        val code = compose.onNodeWithContentDescription("Code")
+        assertEquals(setOf("smsOTPCode", "emailOTPCode"), hintsOf(code))
+        assertEquals(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD, keyboardOf(code))
+        code.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Password))
     }
 
     @Test fun resendUsesItsRestoredDeadlineAndPastedLinkUsesTheExistingParser() {
@@ -91,7 +121,7 @@ class SignInDoorTests {
         var done = 0
         val restoration = StateRestorationTester(compose)
         restoration.setContent { WindmillMaterial { SignInDoor(auth, { done++ }, now = { clock }) } }
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Resend in 30s").fetchSemanticsNodes().isNotEmpty() }
         compose.runOnIdle { clock = 11_000L }
@@ -102,7 +132,7 @@ class SignInDoorTests {
         compose.waitUntil(5_000) { server.requestCount == 2 }
         compose.onNodeWithText("Sending…").assertIsDisplayed().assertIsNotEnabled()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Resend in 30s").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Code field").performTextReplacement(" https://windmill.works/#/auth?token=exact-token&next=log ")
+        compose.onNodeWithContentDescription("Code").performTextReplacement(" https://windmill.works/#/auth?token=exact-token&next=log ")
         compose.onNodeWithText("Sign in").performClick()
         compose.waitUntil(5_000) { done == 1 }
         server.takeRequest(); server.takeRequest()
@@ -124,12 +154,12 @@ class SignInDoorTests {
         var auth by mutableStateOf(old)
         var busy = false
         compose.setContent { WindmillMaterial { SignInDoor(auth, onBusy = { busy = it }) } }
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("old@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("old@example.com")
         val click = compose.onNodeWithText("Send code").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { click(); click() }
         compose.waitUntil(5_000) { server.requestCount == 1 }
         compose.onNodeWithText("Sending…").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Email field").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Email").assertIsNotEnabled()
         compose.runOnIdle { assertTrue(busy); auth = AuthStore(server.url("/"), MemorySessions()) }
         compose.runOnIdle { assertFalse(busy); release.countDown() }
         compose.waitUntil(5_000) { old.linkSentTo != null }
@@ -162,13 +192,13 @@ class SignInDoorTests {
             .addHeader("Set-Cookie", "wm_session=fresh; Path=/; HttpOnly")) }
         var done = 0
         compose.setContent { WindmillMaterial { SignInDoor(auth, { done++ }) } }
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Code field").performTextReplacement(" 123456 ")
+        compose.onNodeWithContentDescription("Code").performTextReplacement(" 123456 ")
         compose.onNodeWithText("Sign in").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Sign-in could not be completed. Try again.").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ")
+        compose.onNodeWithContentDescription("Code").assertTextContains(" 123456 ")
         assertNull(sessions.read())
         assertEquals(AuthStatus.SignedOut, auth.status)
         assertEquals(0, done)
@@ -225,18 +255,18 @@ class SignInDoorTests {
             }
         }
         try {
-            compose.onNodeWithContentDescription("Email field").performTextReplacement(next.email)
+            compose.onNodeWithContentDescription("Email").performTextReplacement(next.email)
             compose.onNodeWithText("Send code").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithContentDescription("Code field").performTextReplacement(" 123456 ")
+            compose.onNodeWithContentDescription("Code").performTextReplacement(" 123456 ")
             compose.onNodeWithText("Sign in").performClick()
             compose.waitUntil(10_000) { compose.runOnIdle { entered.isCompleted } }
             compose.onNodeWithText("Check your email").assertIsDisplayed()
             compose.onNodeWithText("Signing in…").assertIsNotEnabled()
-            compose.onNodeWithContentDescription("Code field").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Code").assertIsNotEnabled()
             restoration.emulateSavedInstanceStateRestore()
             compose.runOnIdle { dark.value = false; font.floatValue = 1.4f }
-            compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Code").assertTextContains(" 123456 ").assertIsNotEnabled()
             compose.onNodeWithText("Change email").assertIsNotEnabled()
             compose.runOnIdle { assertTrue(busy); assertEquals(1, visits); assertEquals(0, done); release.complete(Unit) }
             if (fails) {
@@ -248,7 +278,7 @@ class SignInDoorTests {
                     assertEquals(listOf("auth_sign_in"), failures)
                 }
                 restoration.emulateSavedInstanceStateRestore()
-                compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ")
+                compose.onNodeWithContentDescription("Code").assertTextContains(" 123456 ")
                 compose.onNodeWithText("Sign in").performClick()
             }
             compose.waitUntil(10_000) { compose.runOnIdle { done == 1 } }

@@ -3,7 +3,7 @@
 import { SetTarget } from './domain/routines.js';
 import { round, snap } from './logger/ladder.js';
 import {
-  entryLabel, isNeverTrained, OPEN_TARGET, schemeAgrees,
+  entryLabel, fmtKg, isNeverTrained, OPEN_TARGET, schemeAgrees,
 } from './log.js';
 
 // THE ROUTINE TARGET'S BANDS, and nothing else's. A set may ask for 1–100 reps (Routine.cpp:23) and a
@@ -108,6 +108,11 @@ export const REPS_BAND = 'Whole reps, 1 to 100.';
 export const SETS_BAND = 'Sets, 1 to 20.';
 export const ZERO_TARGET = 'A zero target is no target — clear the field instead.';
 
+// A barbell or a pair of dumbbells carries no load below its floor; the domain's `loadFloor` names it.
+export function loadFloorLine(floor) {
+  return `Load, ${fmtKg(floor)} or more.`;
+}
+
 const BLANK_ROW = { reps: '', weight: '' };
 
 // The sheet opens on what the row HOLDS and invents nothing: an open row opens with no count and no
@@ -166,15 +171,18 @@ export function headOf(fields) {
   return { reps: column('reps', MAX_PLACEHOLDER), weight: column('weight', LAST_TIME_PLACEHOLDER) };
 }
 
-// Null for a field that is empty — an empty field is a null target and not a fault.
-export function refusalOf(field, text) {
+// Null for a field that is empty — an empty field is a null target and not a fault. A null `floor` keeps a load's sign.
+export function refusalOf(field, text, floor = null) {
   const raw = (text ?? '').trim();
   if (raw === '') return null;
   const normalised = raw.replace(/,/g, '.');
   if ((normalised.match(/\./g) || []).length > 1) return ONE_DECIMAL;
   const value = Number(normalised);
   if (normalised === '-' || !Number.isFinite(value)) return NOT_A_NUMBER;
-  if (field === 'weight') return value !== 0 && round(value) === 0 ? NOT_A_NUMBER : null;
+  if (field === 'weight') {
+    if (value !== 0 && round(value) === 0) return NOT_A_NUMBER;
+    return floor !== null && round(value) < floor ? loadFloorLine(floor) : null;
+  }
   if (value === 0) return ZERO_TARGET;
   if (field === 'reps') {
     return Number.isInteger(value) && value >= ENTRY_REPS_MIN && value <= ENTRY_REPS_MAX ? null : REPS_BAND;
@@ -289,13 +297,13 @@ export function withSignFlipped(fields, index = null) {
 // One refusal on the sheet at a time, drawn under the field it belongs to, topmost first: the
 // twenty-first row that never landed, then the count, then the rows top to bottom — and the rows
 // only while the count names them, since a hidden ladder is not what the commit hands back.
-export function targetRefusal(fields) {
+export function targetRefusal(fields, floor = null) {
   if (fields.addRefused) return { field: 'add', row: null, message: SETS_BAND };
   const sets = refusalOf('sets', fields.sets);
   if (sets) return { field: 'sets', row: null, message: sets };
   for (const [row, texts] of ladderOf(fields).entries()) {
     for (const field of ['reps', 'weight']) {
-      const message = refusalOf(field, texts[field]);
+      const message = refusalOf(field, texts[field], floor);
       if (message) return { field, row, message };
     }
   }

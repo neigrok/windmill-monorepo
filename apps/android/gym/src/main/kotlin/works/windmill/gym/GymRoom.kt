@@ -1,12 +1,22 @@
 package works.windmill.gym
 
-import works.windmill.platform.design.WindmillSheetWindow
 import android.app.Activity
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import kotlin.math.ceil
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +31,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
+import works.windmill.platform.design.WindmillSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -30,14 +40,12 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -51,7 +59,6 @@ import kotlin.coroutines.EmptyCoroutineContext
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.annotation.DrawableRes
@@ -59,17 +66,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -78,22 +78,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.AskCap
 import works.windmill.gym.coach.CoachAttachment
-import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.onboarding.AnonymousCoachAccess
-import works.windmill.gym.coach.AskExchange
-import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.sharing.WorkoutSharing
 import works.windmill.gym.sharing.WorkoutShareActions
-import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
-import works.windmill.gym.domain.Note
-import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.coach.Threads
-import works.windmill.gym.coach.AskOutcome
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.Seat
 import works.windmill.gym.store.FinishReceipts
@@ -103,8 +95,6 @@ import works.windmill.gym.store.WriteFailure
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.LocalGymEngineSession
-import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.coach.AskAbsentStance
 import works.windmill.gym.coach.AskScreen
@@ -151,8 +141,8 @@ import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
-import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSpace
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 // Gym's one seam into the superapp.
 class GymModule(private val store: TrainingStore, private val notifications: WorkoutNotifications? = null) : ProductModule {
@@ -170,81 +160,6 @@ class GymModule(private val store: TrainingStore, private val notifications: Wor
     }
 }
 
-internal enum class Tab(val title: String) {
-    Routines("Routines"),
-    Log("The log"),
-    Coach("Coach"),
-}
-
-// Back has four meanings on this surface and two of them are not pops, which is why the room
-// decides them itself rather than handing the stack to a navigator. The finish receipt is not among
-// them: it is a sheet, and a sheet answers back by coming down.
-internal enum class BackMeans {
-    HideTheWorkout,
-    // The editor: back is Cancel and it leaves the whole draft.
-    LeaveTheDraft,
-    PopOnePushedScreen,
-    ReturnToTheRoutinesTab,
-    // The routines home has nothing behind it, so back is the platform's and leaves the app.
-    LeaveTheApp,
-}
-
-internal fun backMeans(
-    live: Boolean,
-    building: Boolean,
-    away: Int,
-    tab: Tab,
-): BackMeans = when {
-    live && !building && away == 0 -> BackMeans.HideTheWorkout
-    building -> BackMeans.LeaveTheDraft
-    away > 0 -> BackMeans.PopOnePushedScreen
-    tab != Tab.Routines -> BackMeans.ReturnToTheRoutinesTab
-    else -> BackMeans.LeaveTheApp
-}
-
-// Coach keeps the full three-tab rail while reading a selected chat. Training drafts and other
-// pushed screens retain their own frame; the logger owns its workout controls.
-internal fun railStands(live: Boolean, building: Boolean, away: Int, coach: Boolean = false): Boolean =
-    !building && (coach || !live && away == 0)
-
-// Saved as its NAME: a Bundle holding an entry this build does not have must land on home, not
-// crash the restore.
-internal fun restoredTab(saved: Any?): Tab =
-    Tab.entries.firstOrNull { it.name == saved } ?: Tab.Routines
-
-internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::restoredTab)
-
-// A session travels as the ROW the list already holds, which carries facts no other read gives back;
-// so does a note, which the list just read and the editor edits whole. A movement and
-// thread travel as IDS, because what they say changes under them. `Coach` carries a DRAFT, never the
-// thread — the thread is hoisted into the room below so it outlives this stack. A proposal review is
-// not a destination at all: it is a sheet over whichever of these is standing.
-@Serializable
-internal sealed interface Away {
-    @Serializable
-    data class Session(val summary: SessionSummary, val detail: SessionDetail? = null) : Away
-    @Serializable
-    data class Movement(val exerciseId: String, val focusSessionId: String? = null) : Away
-    @Serializable
-    data class Coach(val seed: String = "") : Away
-    @Serializable
-    data object Threads : Away
-    @Serializable
-    data class Thread(val threadId: String) : Away
-    @Serializable
-    data object Connections : Away
-    @Serializable
-    data object Notes : Away
-    @Serializable
-    data class NoteEditor(val note: Note?, val seedTitle: String) : Away
-    @Serializable
-    data object Bodyweight : Away
-    @Serializable
-    data object OnThisPhone : Away
-    @Serializable
-    data class InspectWorkout(val id: String) : Away
-}
-
 // The review sheet and the door it opened from, which is where its receipt lands: the live
 // conversation, a stored thread, or the routines home. The proposal carries the routine the diff was
 // written against.
@@ -256,25 +171,6 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
     }
 }
 
-// The three tabs, the live session, and the screens a tab can push — the finish receipt is a sheet
-// over one of those, not an arm of this. The shell owns the theme control and billing; its account
-// seat rides the trailing slot of each root's own top bar, because a native rail has no fourth seat.
-//
-// The visible logger takes the whole screen; hidden workouts leave the tab roots available.
-//
-// The application owns the store; this room owns only navigation and transient UI state.
-
-internal fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
-    save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
-    restore = { raw -> runCatching {
-        val retained = WindmillJson.parseToJsonElement(raw).jsonArray.filterNot {
-            it.jsonObject["type"]?.jsonPrimitive?.content == "works.windmill.gym.Away.Settings"
-        }
-        WindmillJson.decodeFromJsonElement(ListSerializer(Away.serializer()), JsonArray(retained))
-    }
-        .onFailure { telemetry.failure("gym.restoreNavigation", it) }.getOrDefault(emptyList()) },
-)
-
 private fun finishedSaver(telemetry: Telemetry) = Saver<FinishedSession?, String>(
     save = { it?.let { value -> WindmillJson.encodeToString(FinishedSession.serializer(), value) } ?: "" },
     restore = { raw -> raw.takeIf { it.isNotEmpty() }?.let {
@@ -283,6 +179,14 @@ private fun finishedSaver(telemetry: Telemetry) = Saver<FinishedSession?, String
     } },
 )
 
+// The three tabs, the live session, and the screens a tab can push — the finish receipt is a sheet
+// over one of those, not an arm of this. The shell owns the theme control and billing; its account
+// seat rides the trailing slot of each root's own top bar, because a native rail has no fourth seat.
+//
+// The visible logger takes the whole screen; hidden workouts leave the tab roots available.
+//
+// The application owns the store; this room owns its navigator, the frames `GymStage` moves between,
+// and transient UI state.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null,
@@ -310,18 +214,16 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val finishSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Whether the receipt is on its way down, so a second tap during the descent is one tap.
     var closingFinish by remember { mutableStateOf(false) }
-    var away by rememberSaveable(stateSaver = remember(telemetry) { awaySaver(telemetry) }) { mutableStateOf<List<Away>>(emptyList()) }
+    val navigator = rememberGymNavigator(telemetry)
     var selectedRoutineId by rememberSaveable { mutableStateOf<String?>(null) }
     var starting by remember { mutableStateOf(false) }
     var savingRoutine by remember { mutableStateOf(false) }
     var routineSaveAttempt by remember { mutableStateOf<Any?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    // Which tab was open exists nowhere but here, so it is saved through `tabSaver`.
-    var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
     var initialTabChosen by rememberSaveable { mutableStateOf(false) }
     fun chooseTab(next: Tab) {
         initialTabChosen = true
-        tab = next
+        navigator.choose(next)
     }
     var pushedDraftOpen by remember { mutableStateOf(false) }
     // The review open over the room. NOT saved: it reads the log on the way in, and a recreation
@@ -341,8 +243,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val coachUpload = store.coach.upload(conversationId)
     val cap = AskCap.entries.firstOrNull { it.name == selectedChat?.cap }
     val anonymousCoachAccess = store.coach.anonymousAccess
-    LaunchedEffect(account.identityRevision, store.coach.accountKey, tab, away.lastOrNull()) {
-        if (account.isSignedIn || !initialTabChosen || tab == Tab.Coach || away.lastOrNull() is Away.Coach || away.lastOrNull() is Away.Thread)
+    LaunchedEffect(account.identityRevision, store.coach.accountKey, navigator.tab, navigator.away.lastOrNull()) {
+        if (account.isSignedIn || !initialTabChosen || navigator.tab == Tab.Coach || navigator.away.lastOrNull() is Away.Coach || navigator.away.lastOrNull() is Away.Thread)
             store.coach.refreshAnonymousAccess()
     }
     // A half-typed routine exists nowhere but in memory, so the draft is saved and the builder is
@@ -367,7 +269,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     // A thread's receipts live exactly as long as that thread is on screen.
     fun pruneReceipts() {
-        val standing = (away.lastOrNull() as? Away.Thread)?.let { Reviewing.thread(it.threadId) }
+        val standing = (navigator.away.lastOrNull() as? Away.Thread)?.let { Reviewing.thread(it.threadId) }
         receipts = receipts.filterKeys { it == Reviewing.coach || it == standing }
     }
 
@@ -378,13 +280,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             try { store.coach.freshChat(at.seed) }
             catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
         }
-        away = away + at
+        navigator.push(at)
         pruneReceipts()
     }
 
     fun back() {
         note = null
-        away = away.dropLast(1)
+        navigator.pop()
         pruneReceipts()
     }
 
@@ -445,26 +347,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         finished != null -> "finish"
         building != null -> "routine_editor"
         selectedRoutineId != null -> "routine"
-        away.isNotEmpty() -> when (away.last()) {
-            is Away.Session -> "session"
-            is Away.Movement -> "movement"
-            is Away.Coach -> "coach"
-            Away.Threads -> "threads"
-            is Away.Thread -> "thread"
-            Away.Connections -> "connections"
-            Away.Notes -> "notes"
-            is Away.NoteEditor -> "note_editor"
-            Away.Bodyweight -> "bodyweight"
-            Away.OnThisPhone -> "on_this_phone"
-            is Away.InspectWorkout -> "workout_inspect"
-        }
+        navigator.away.isNotEmpty() -> navigator.away.last().screen
         loggerShown -> "workout"
-        else -> tab.name.lowercase()
+        else -> navigator.tab.name.lowercase()
     }
     LaunchedEffect(screen) { telemetry.event("gym_screen_viewed", mapOf("screen" to screen)) }
 
-    val means = backMeans(loggerShown, building != null, away.size, tab)
-    BackHandler(enabled = means != BackMeans.LeaveTheApp) {
+    fun goBack(means: BackMeans) {
         when (means) {
             BackMeans.HideTheWorkout -> hideWorkout()
             BackMeans.LeaveTheApp -> Unit
@@ -495,7 +384,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             return@LaunchedEffect
         }
         if (workout?.key == requested && store.setLoggerHidden(requested, false) == WorkoutChange.Saved) {
-            away = emptyList()
+            navigator.reset()
             selectedRoutineId = null
             store.acknowledgeWorkoutRequest()
         }
@@ -505,8 +394,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (store.routinesOpenRequest > 0) {
             note = null
             chooseTab(Tab.Routines)
-            if (building == null && !savingRoutine && !pushedDraftOpen && reviewing == null && away.none { it is Away.NoteEditor }) {
-                away = emptyList()
+            if (building == null && !savingRoutine && !pushedDraftOpen && reviewing == null && navigator.away.none { it is Away.NoteEditor }) {
+                navigator.reset()
                 selectedRoutineId = null
                 pruneReceipts()
             }
@@ -530,7 +419,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             selectedRoutineId = null
             reviewing = null
             note = null
-            away = emptyList()
+            navigator.reset()
         }
         if (standing != null) seatRead = true
         store.connect(account)
@@ -546,17 +435,17 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     // A phone draft moving into the account chooses its chat first; a fresh chat waits for it.
-    LaunchedEffect(store.initialGymEmpty, account.resolved, store.coach.accountKey, store.coach.adoptingDraft, tab, away, building,
+    LaunchedEffect(store.initialGymEmpty, account.resolved, store.coach.accountKey, store.coach.adoptingDraft, navigator.tab, navigator.away, building,
         selectedRoutineId, anonymousCoachAccess) {
         if (!account.resolved || store.coach.adoptingDraft) return@LaunchedEffect
         val empty = store.initialGymEmpty
-        if (empty != null && store.coach.selectedChatId == null && (tab == Tab.Coach || away.lastOrNull() is Away.Coach)) {
+        if (empty != null && store.coach.selectedChatId == null && (navigator.tab == Tab.Coach || navigator.away.lastOrNull() is Away.Coach)) {
             try { store.coach.freshChat(setup = empty) }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { note = "Your conversation couldn’t be saved. Try again." }
         }
         if (initialTabChosen) return@LaunchedEffect
-        if (away.isNotEmpty() || building != null || selectedRoutineId != null) {
+        if (navigator.away.isNotEmpty() || building != null || selectedRoutineId != null) {
             initialTabChosen = true
             return@LaunchedEffect
         }
@@ -567,7 +456,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (!empty || store.coach.anonymous && anonymousCoachAccess != AnonymousCoachAccess.Available) return@LaunchedEffect
         try {
             if (store.coach.selectedChatId == null) store.coach.freshChat(setup = true)
-            tab = Tab.Coach
+            navigator.choose(Tab.Coach)
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { note = "Your conversation couldn’t be saved. Try again." }
     }
@@ -626,7 +515,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) store.coach.refreshAnonymousAccess()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                store.coach.refreshAnonymousAccess()
+                // Read again on every return: the timeout is changed in system settings, away from here.
+                store.undoWindowMs = accessibleUndoWindowMs(context)
+            }
             // The transient goes down with what it was offering: an Undo left standing over an act
             // that was let go would offer a way back to something that never happened.
             if (event == Lifecycle.Event.ON_STOP && store.abandonWithheld()) {
@@ -662,7 +555,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     note = opened.why.line("nothing started")
                     return@launch
                 }
-                away = emptyList()
+                navigator.reset()
                 selectedRoutineId = null
                 if (notifications != null && Build.VERSION.SDK_INT >= 33 &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
@@ -685,9 +578,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             when (val ended = store.finish()) {
                 is FinishOutcome.Closed -> {
                     if (owner != currentAccount.user?.id) return@launch
-                    sessionStates.removeState("workout:${ended.detail.session.id}")
+                    sessionStates.removeState("${Frame.Workout(navigator.tab).key}:${ended.detail.session.id}")
                     if (ended.detail.sets.isNotEmpty()) haptics.finished()
-                    away = listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail))
+                    navigator.reset(listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail)))
                     pruneReceipts()
                     finished = FinishedSession(ended.detail.session, ended.detail.sets, review = null,
                         reviewRead = false, suggestsKeep = ended.detail.sets.isNotEmpty() &&
@@ -710,12 +603,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (detail == null) {
             finishStates.removeState(saved.session.id)
             finished = null
-            away = emptyList()
+            navigator.reset()
             chooseTab(Tab.Log)
             return@LaunchedEffect
         }
         finished = finished?.copy(session = detail.session, sets = detail.sets)
-        if (away.isEmpty()) away = listOf(Away.Session(SessionSummary(detail.session, detail.sets, store.catalog), detail))
+        if (navigator.away.isEmpty()) navigator.reset(listOf(Away.Session(SessionSummary(detail.session, detail.sets, store.catalog), detail)))
         val owner = currentAccount.user?.id
         val review = store.review(detail.session.id)
         if (owner == currentAccount.user?.id && receipt?.session?.id == detail.session.id) {
@@ -725,7 +618,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     fun discard(sessionId: String, source: String, snapshot: SessionDetail? = null) {
         if (discardPrompt != null || discarding || queuedFinishShare != null) return
-        val standing = (away.lastOrNull() as? Away.Session)?.takeIf { it.summary.id == sessionId }
+        val standing = (navigator.away.lastOrNull() as? Away.Session)?.takeIf { it.summary.id == sessionId }
         val detail = snapshot ?: standing?.detail?.let(store::retainedSession)
         val summary = detail?.let { SessionSummary(it.session, it.sets, store.catalog) }
             ?: store.allSessions.firstOrNull { it.id == sessionId } ?: standing?.summary ?: return
@@ -763,7 +656,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     fun askSomethingNew(draft: String = "") {
         try { store.coach.freshChat(draft) }
         catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
-        away = emptyList()
+        navigator.reset()
         receipts = emptyMap()
         chooseTab(Tab.Coach)
     }
@@ -801,7 +694,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         queuedFinishShareOwner = authenticatedOwner
         try {
             val chat = store.coach.freshChat(FinishCoach.question, id = request)
-            away = emptyList()
+            navigator.reset()
             receipts = emptyMap()
             chooseTab(Tab.Coach)
             if (!store.coach.hasRequest(chat, request) &&
@@ -844,7 +737,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     is GymResult.Ok -> {
                         haptics.saved()
                         building = null
-                        away = emptyList()
+                        navigator.reset()
                         selectedRoutineId = written.value.id
                         chooseTab(Tab.Routines)
                     }
@@ -868,7 +761,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         note = null
         building = null
         selectedRoutineId = null
-        away = emptyList()
+        navigator.reset()
         chooseTab(Tab.Routines)
         return true
     }
@@ -924,18 +817,17 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             // Over the conversation or the routines home, never a push. Closing it — swipe, scrim, back —
             // decides nothing: the proposal stays pending and its card reads `still waiting`.
             reviewing?.let { open ->
-                ModalBottomSheet(
+                WindmillSheet(
                     onDismissRequest = {
-                        if (reviewBusy) return@ModalBottomSheet
+                        if (reviewBusy) return@WindmillSheet
                         reviewing = null
                         if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
                     },
                     sheetState = reviewSheet,
-                    properties = androidx.compose.material3.ModalBottomSheetProperties(shouldDismissOnBackPress = !reviewBusy),
                     containerColor = skin.surface,
                     scrimColor = skin.scrim,
                 ) {
-                    WindmillSheetWindow()
+                    BackHandler(enabled = reviewBusy) {}
                     ReviewSheet(
                         onBusy = { reviewBusy = it },
                         proposalId = open.proposalId,
@@ -964,11 +856,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 val canonical = store.retainedSession(SessionDetail(original.session, original.sets))
                 val ended = original.copy(session = canonical.session,
                     sets = canonical.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets })
-                ModalBottomSheet(
+                WindmillSheet(
                     onDismissRequest = {
                         finishStates.removeState(original.session.id)
                         finished = null
-                        if (ended.sets.isEmpty()) { away = emptyList(); chooseTab(Tab.Routines) }
+                        if (ended.sets.isEmpty()) { navigator.reset(); chooseTab(Tab.Routines) }
                     },
                     sheetState = finishSheet,
                     contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
@@ -980,7 +872,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         }
                     } },
                 ) {
-                    WindmillSheetWindow()
                     finishStates.SaveableStateProvider(original.session.id) {
                         FinishScreen(
                             finished = ended,
@@ -988,7 +879,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onDone = {
                                 if (!closingFinish && queuedFinishShare == null) {
                                     telemetry.event("gym_action", mapOf("screen" to "finish", "action" to "done", "outcome" to "ok"))
-                                    closeFinish { if (ended.sets.isEmpty()) { away = emptyList(); chooseTab(Tab.Routines) } }
+                                    closeFinish { if (ended.sets.isEmpty()) { navigator.reset(); chooseTab(Tab.Routines) } }
                                 }
                             },
                             onDiscard = { discard(ended.session.id, "finish", SessionDetail(ended.session, ended.sets)) },
@@ -1033,12 +924,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                             else -> failure.line("the workout is still saved")
                                         }
                                         closeFinish {
-                                            away = listOf(Away.Session(prompt.summary, prompt.detail))
+                                            navigator.reset(listOf(Away.Session(prompt.summary, prompt.detail)))
                                             note = line
                                         }
                                         return@launch
                                     }
-                                    closeFinish { away = emptyList(); chooseTab(Tab.Log) }
+                                    closeFinish { navigator.reset(); chooseTab(Tab.Log) }
                                 } finally { discarding = false }
                             }
                         }
@@ -1058,286 +949,292 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 )
             }
 
-            val standing = away.lastOrNull()
-            // What the way back leads to. Names are read off the store, so a rename moves this row too.
-            val beneath = when (val under = away.getOrNull(away.size - 2)) {
-                is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
-                is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
-                is Away.Coach -> Ask.title
-                Away.Threads -> Threads.title
-                // The noun, not the thread's title: a title is the lifter's first message verbatim.
-                is Away.Thread -> Threads.conversation
-                Away.Connections -> ConnectedLog.title
-                Away.Notes -> Notes.title
-                is Away.NoteEditor -> Notes.title
-                Away.Bodyweight -> Bodyweight.title
-                Away.OnThisPhone -> "On this phone"
-                is Away.InspectWorkout -> "On this phone"
-                null -> if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
-            }
-            val coachRoom = standing is Away.Coach || standing is Away.Thread || standing == null && tab == Tab.Coach
-            val railUp = railStands(loggerShown, building != null, away.size, coachRoom)
-            val workoutBarUp = liveSession != null && store.loggerHidden && building == null && away.isEmpty() &&
-                selectedRoutineId == null && reviewing == null
             val youInitial = account.user?.email?.take(1) ?: ""
-            val loggerTransient = loggerShown && standing == null
             val recoveryRead = store.recovery?.takeIf { it.belongsTo(account) }
             val fixRead = store.recoveryDraft?.read
             if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(store, currentOwner = { fixRead.belongsTo(currentAccount) })
 
-            Scaffold(
-                modifier = Modifier.fillMaxSize(),
-                containerColor = skin.canvas,
-                bottomBar = {
-                    val line = note.takeIf { selectedRoutineId == null || building != null }
-                    if (railUp || line != null || !loggerTransient) {
-                        Column(Modifier.fillMaxWidth().background(skin.canvas)) {
-                            // Reserve the transient's measured height below screen-owned actions.
-                            if (!loggerTransient) GymSnackbarHost(transient)
-                            line?.let {
-                                Text(
-                                    it,
-                                    style = GymNativeType.note,
-                                    color = skin.inkDim,
-                                    maxLines = 2,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                )
+
+            @Composable
+            fun CoachStance(otherwise: @Composable () -> Unit) = when {
+                !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
+                    CoachAccessStance(seat = youInitial, onSignIn = shell.openSignIn,
+                        bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.allThreads.isNotEmpty(),
+                        onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
+                askAbsent -> AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
+                else -> otherwise()
+            }
+
+            @Composable
+            fun Conversation(backTo: String?, onBack: (() -> Unit)?) = AskScreen(
+                store = store,
+                seat = youInitial,
+                thread = conversation,
+                conversationId = conversationId,
+                onOpenRoutine = { selectedRoutineId = it },
+                onOpenWorkout = ::openCoachWorkout,
+                onOpenChat = { openCoachChat(it, "reply_open") },
+                receipts = receipts[Reviewing.coach].orEmpty(),
+                lookedAt = lookedAtIds,
+                asking = asking,
+                cap = cap,
+                onAsk = { asked -> ask(asked) },
+                onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
+                onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
+                onSignIn = shell.openSignIn,
+                onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
+                onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
+                onAskNew = { askSomethingNew() },
+                seed = "",
+                onNewDraft = { askSomethingNew(it) },
+                onThreads = { look(Away.Threads) },
+                onConnections = { look(Away.Connections) },
+                onNotes = { look(Away.Notes) },
+                origin = origin,
+                backTo = backTo,
+                onBack = onBack,
+                onReview = { review(it.id, it.routineId, Reviewing.coach) },
+            )
+
+            @Composable
+            fun TabScreen(tab: Tab, transient: SnackbarHostState? = null) = when (tab) {
+                Tab.Log -> LogScreen(
+                    store = store,
+                    seat = youInitial,
+                    onOpenSession = { look(Away.Session(it)) },
+                    onOpenBodyweight = { look(Away.Bodyweight) },
+                    onOpenMovement = { exercise, session -> look(Away.Movement(exercise, session)) },
+                    onShareSession = { shareWorkout(it) },
+                    onDiscardSession = { discard(it, "log") },
+                    onOpenRecovery = { id -> look(if (id == null) Away.OnThisPhone else Away.InspectWorkout(id)) },
+                    recovery = recoveryRead,
+                    transient = transient,
+                )
+                Tab.Coach -> CoachStance { Conversation(backTo = null, onBack = null) }
+                Tab.Routines -> RoutinesScreen(
+                    store = store,
+                    lookedAt = lookedAtIds,
+                    seat = youInitial,
+                    // A routine starts from its plan sheet.
+                    onBuild = { building = it },
+                    onOpenRoutine = { selectedRoutineId = it },
+                    onDeleteRoutine = { destroy(it) },
+                    onReview = { review(it.id, it.routineId, Reviewing.routines) },
+                    transient = transient,
+                )
+            }
+
+            // What a way back is named after: the screen beneath, else the tab, or the logger when it stands.
+            fun wayBackTo(under: Away?, tab: Tab): String = under?.wayBack(store.catalog)
+                ?: if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
+
+            @Composable
+            fun PushedScreen(frame: Frame.Pushed) {
+                val backTo = wayBackTo(frame.under, frame.tab)
+                when (val standing = frame.away) {
+                    is Away.Movement -> RecordScreen(
+                        exerciseId = standing.exerciseId,
+                        focusSessionId = standing.focusSessionId,
+                        store = store,
+                        backTo = backTo,
+                        onBack = { back() },
+                        onDraftOpen = { pushedDraftOpen = it },
+                    )
+                    Away.Connections -> ConnectedLogScreen(
+                        store = store,
+                        isSignedIn = account.isSignedIn,
+                        origin = origin,
+                        backTo = backTo,
+                        onBack = { back() },
+                        onSignIn = shell.openSignIn,
+                    )
+                    Away.Notes -> NotesScreen(
+                        store = store,
+                        isSignedIn = account.isSignedIn,
+                        backTo = backTo,
+                        onBack = { back() },
+                        onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
+                        onSignIn = shell.openSignIn,
+                        say = { note = it },
+                    )
+                    // The list beneath reads itself again on the way back: a saved note is on the list
+                    // because the log says so.
+                    is Away.NoteEditor -> NoteEditorScreen(
+                        note = standing.note,
+                        seedTitle = standing.seedTitle,
+                        store = store,
+                        backTo = backTo,
+                        onBack = { back() },
+                        onDone = { back() },
+                    )
+                    is Away.Session -> if (finished?.let { it.session.id == standing.summary.id && it.sets.isEmpty() } == true) {
+                        GymScreen(title = standing.summary.plan?.routine ?: Readout.noRoutine,
+                            onBack = { back() }, backTo = backTo) { }
+                    } else SessionScreen(
+                        summary = standing.summary,
+                        seed = standing.detail,
+                        store = store,
+                        sharing = sharing,
+                        backTo = backTo,
+                        onBack = { back() },
+                        say = { note = it },
+                        onOpenMovement = { look(Away.Movement(it)) },
+                        onDiscard = { discard(it, "session") },
+                        onDraftOpen = { pushedDraftOpen = it },
+                    )
+                    Away.OnThisPhone -> if (recoveryRead != null) OnThisPhoneScreen(recoveryRead,
+                        onBack = { back() }, onInspect = { look(Away.InspectWorkout(it)) }) else TabScreen(frame.tab)
+                    is Away.InspectWorkout -> if (recoveryRead != null) {
+                        val row = recoveryRead.workouts.firstOrNull { it.id == standing.id }
+                        if (row != null) WorkoutInspectScreen(store, recoveryRead, row, onBack = { back() },
+                            currentOwner = { recoveryRead.belongsTo(currentAccount) })
+                        else LaunchedEffect(standing.id) { back() }
+                    } else TabScreen(frame.tab)
+                    Away.Bodyweight -> BodyweightScreen(
+                        store = store,
+                        backTo = backTo,
+                        onBack = { back() },
+                        say = { note = it },
+                        onDraftOpen = { pushedDraftOpen = it },
+                    )
+                    is Away.Coach -> CoachStance { Conversation(backTo = backTo, onBack = { back() }) }
+                    Away.Threads -> ThreadsScreen(
+                        store = store,
+                        backTo = backTo,
+                        onBack = { back() },
+                        onOpen = { openCoachChat(it, "history_open") },
+                        onAskNew = { askSomethingNew() },
+                    )
+                    is Away.Thread -> ThreadScreen(
+                        threadId = standing.threadId,
+                        seat = youInitial,
+                        composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
+                        onSignIn = shell.openSignIn,
+                        onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
+                        onAskNew = { askSomethingNew() },
+                        store = store,
+                        origin = origin,
+                        onThreads = { look(Away.Threads) },
+                        onNotes = { look(Away.Notes) },
+                        onConnections = { look(Away.Connections) },
+                        onOpenRoutine = { selectedRoutineId = it },
+                        onOpenWorkout = ::openCoachWorkout,
+                        onOpenChat = { openCoachChat(it, "reply_open") },
+                        receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
+                        lookedAt = lookedAtIds,
+                        backTo = backTo,
+                        onBack = { back() },
+                        onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
+                        say = { note = it },
+                    )
+                }
+            }
+
+            // The editor keeps the draft it last drew while it slides away after a save or a cancel.
+            val leavingDraft = remember { object { var draft: RoutineDraft? = null } }
+
+            // One frame of the room: its screen and the chrome that frame owns. Only the standing frame
+            // carries the room's line and transient; a frame a gesture reveals, or one sliding away,
+            // shows its rail and nothing that is about the moment.
+            @Composable
+            fun RoomFrame(frame: Frame, standing: Boolean) {
+                val coachRoom = frame is Frame.Root && frame.tab == Tab.Coach ||
+                    frame is Frame.Pushed && (frame.away is Away.Coach || frame.away is Away.Thread)
+                val loggerTransient = frame is Frame.Workout
+                // A screen with a floating button hosts the transient itself, above that button (05.17).
+                val screenTransient = loggerTransient || frame is Frame.Root && frame.tab != Tab.Coach
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = skin.canvas,
+                    bottomBar = {
+                        val line = note.takeIf { standing && (selectedRoutineId == null || building != null) }
+                        if (frame.railStands || line != null || !loggerTransient) {
+                            Column(Modifier.fillMaxWidth().background(skin.canvas)) {
+                                // Reserve the transient's measured height below screen-owned actions.
+                                if (standing && !screenTransient) GymSnackbarHost(transient)
+                                line?.let {
+                                    Text(
+                                        it,
+                                        style = GymNativeType.note,
+                                        color = skin.inkDim,
+                                        maxLines = 2,
+                                        // Said as it changes, so TalkBack hears the line the eye reads.
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                                            .semantics { liveRegion = LiveRegionMode.Polite },
+                                    )
+                                }
+                                if (frame.railStands) {
+                                    if (frame is Frame.Root && liveSession != null && selectedRoutineId == null && reviewing == null) WorkoutBar(
+                                        session = liveSession,
+                                        onOpen = {
+                                            val result = workout?.key?.let { store.setLoggerHidden(it, false) }
+                                                ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
+                                            telemetry.event("gym_action", mapOf("screen" to "workout_bar", "action" to "open",
+                                                "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
+                                            if (result is WorkoutChange.Unavailable) note = result.reason
+                                        },
+                                    )
+                                    TabRail(
+                                        current = if (coachRoom) Tab.Coach else frame.tab,
+                                        recoveryCount = PhoneRecovery.needsYou(recoveryRead?.workouts.orEmpty()),
+                                        onPick = { picked ->
+                                            note = null
+                                            if (picked == Tab.Coach) askSomethingNew()
+                                            else { navigator.reset(); chooseTab(picked) }
+                                        },
+                                    )
+                                } else {
+                                    Box(Modifier.fillMaxWidth().navigationBarsPadding())
+                                }
                             }
-                            if (railUp) {
-                                if (workoutBarUp) WorkoutBar(
-                                    session = liveSession!!,
-                                    onOpen = {
-                                        val result = workout?.key?.let { store.setLoggerHidden(it, false) }
-                                            ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
-                                        telemetry.event("gym_action", mapOf("screen" to "workout_bar", "action" to "open",
-                                            "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
-                                        if (result is WorkoutChange.Unavailable) note = result.reason
-                                    },
+                        }
+                    },
+                ) { inner ->
+                    // Each frame keeps its saved state under its own key, so two frames on the stage at once
+                    // never share one, even when both show the same session. The logger's state is its
+                    // session's and leaves the stage with it.
+                    val stateKey = if (frame is Frame.Workout) liveSession?.let { "${frame.key}:${it.id}" } else frame.key
+                    // Consumed as well as applied: a screen inside that pads itself for the keyboard would
+                    // otherwise count the navigation bar twice and leave a gap above the keys.
+                    Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
+                        if (stateKey != null) sessionStates.SaveableStateProvider(stateKey) {
+                            when (frame) {
+                                is Frame.Workout -> LoggerScreen(
+                                    store = store,
+                                    say = { note = it },
+                                    onFinish = { close() },
+                                    onHide = ::hideWorkout,
+                                    transient = transient.takeIf { standing },
                                 )
-                                TabRail(
-                                    current = if (coachRoom) Tab.Coach else tab,
-                                    recoveryCount = PhoneRecovery.needsYou(recoveryRead?.workouts.orEmpty()),
-                                    onPick = { picked ->
-                                        note = null
-                                        if (picked == Tab.Coach) askSomethingNew()
-                                        else { away = emptyList(); chooseTab(picked) }
-                                    },
-                                )
-                            } else {
-                                Box(Modifier.fillMaxWidth().navigationBarsPadding())
+                                // A day being built outranks a tab and nothing else, and it covers the rail.
+                                is Frame.Draft -> (building?.also { leavingDraft.draft = it } ?: leavingDraft.draft)?.let { draft ->
+                                    RoutineBuilder(
+                                        draft = draft,
+                                        store = store,
+                                        saving = savingRoutine,
+                                        onDraft = { building = it },
+                                        onSave = { building?.let(::write) },
+                                        onClose = { building = null },
+                                        say = { note = it },
+                                        // An edit returns to its routine's sheet; a new draft to what it was opened over.
+                                        backTo = selectedRoutineId?.let { store.routine(it)?.name }
+                                            ?: wayBackTo(navigator.away.lastOrNull(), frame.tab),
+                                    )
+                                }
+                                is Frame.Pushed -> PushedScreen(frame)
+                                is Frame.Root -> TabScreen(frame.tab, transient.takeIf { standing })
                             }
                         }
-                    }
-                },
-            ) { inner ->
-                // Consumed as well as applied: a screen inside that pads itself for the keyboard would
-                // otherwise count the navigation bar twice and leave a gap above the keys.
-                Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
-                    when {
-                        loggerShown && liveSession != null && standing == null && building == null -> sessionStates.SaveableStateProvider("workout:${liveSession.id}") {
-                            LoggerScreen(
-                                store = store,
-                                say = { note = it },
-                                onFinish = { close() },
-                                onHide = ::hideWorkout,
-                                transient = transient,
-                            )
-                        }
-                        // A day being built outranks a tab and nothing else, and it covers the rail.
-                        building != null -> RoutineBuilder(
-                            draft = building!!,
-                            store = store,
-                            saving = savingRoutine,
-                            onDraft = { building = it },
-                            onSave = { write(building!!) },
-                            onClose = { building = null },
-                            say = { note = it },
-                        )
-                        standing is Away.Movement -> RecordScreen(
-                            exerciseId = standing.exerciseId,
-                            focusSessionId = standing.focusSessionId,
-                            store = store,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onDraftOpen = { pushedDraftOpen = it },
-                        )
-                        standing is Away.Connections -> ConnectedLogScreen(
-                            store = store,
-                            isSignedIn = account.isSignedIn,
-                            origin = origin,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onSignIn = shell.openSignIn,
-                        )
-                        standing is Away.Notes -> NotesScreen(
-                            store = store,
-                            isSignedIn = account.isSignedIn,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
-                            onSignIn = shell.openSignIn,
-                            say = { note = it },
-                        )
-                        // The list beneath reads itself again on the way back: a saved note is on the list
-                        // because the log says so.
-                        standing is Away.NoteEditor -> NoteEditorScreen(
-                            note = standing.note,
-                            seedTitle = standing.seedTitle,
-                            store = store,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onDone = { back() },
-                        )
-                        standing is Away.Session -> sessionStates.SaveableStateProvider(standing.summary.id) {
-                        if (finished?.let { it.session.id == standing.summary.id && it.sets.isEmpty() } == true) {
-                            GymScreen(title = standing.summary.plan?.routine ?: Readout.noRoutine,
-                                onBack = { back() }, backTo = beneath) { }
-                        } else SessionScreen(
-                            summary = standing.summary,
-                            seed = standing.detail,
-                            store = store,
-                            sharing = sharing,
-                            backTo = beneath,
-                            onBack = { back() },
-                            say = { note = it },
-                            onOpenMovement = { look(Away.Movement(it)) },
-                            onDiscard = { discard(it, "session") },
-                            onDraftOpen = { pushedDraftOpen = it },
-                        )
-                        }
-                        standing is Away.OnThisPhone && recoveryRead != null -> OnThisPhoneScreen(recoveryRead,
-                            onBack = { back() }, onInspect = { look(Away.InspectWorkout(it)) })
-                        standing is Away.InspectWorkout && recoveryRead != null -> {
-                            val row = recoveryRead.workouts.firstOrNull { it.id == standing.id }
-                            if (row != null) WorkoutInspectScreen(store, recoveryRead, row, onBack = { back() },
-                                currentOwner = { recoveryRead.belongsTo(currentAccount) })
-                            else LaunchedEffect(standing.id) { back() }
-                        }
-                        standing is Away.Bodyweight -> BodyweightScreen(
-                            store = store,
-                            backTo = beneath,
-                            onBack = { back() },
-                            say = { note = it },
-                            onDraftOpen = { pushedDraftOpen = it },
-                        )
-                        (standing is Away.Coach || standing == null && tab == Tab.Coach) && !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
-                            CoachAccessStance(seat = youInitial, onSignIn = shell.openSignIn,
-                                bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.allThreads.isNotEmpty(),
-                                onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
-                        (standing is Away.Coach || standing == null && tab == Tab.Coach) && askAbsent ->
-                            AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
-                        standing is Away.Coach -> AskScreen(
-                            store = store,
-                            seat = youInitial,
-                            thread = conversation,
-                            conversationId = conversationId,
-                            onOpenRoutine = { selectedRoutineId = it },
-                            onOpenWorkout = ::openCoachWorkout,
-                            onOpenChat = { openCoachChat(it, "reply_open") },
-                            receipts = receipts[Reviewing.coach].orEmpty(),
-                            lookedAt = lookedAtIds,
-                            asking = asking,
-                            cap = cap,
-                            onAsk = { asked -> ask(asked) },
-                            onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
-                            onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
-                            onSignIn = shell.openSignIn,
-                            onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
-                            onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
-                            onAskNew = { askSomethingNew() },
-                            seed = "",
-                            onNewDraft = { askSomethingNew(it) },
-                            onThreads = { look(Away.Threads) },
-                            onConnections = { look(Away.Connections) },
-                            onNotes = { look(Away.Notes) },
-                            origin = origin,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onReview = { review(it.id, it.routineId, Reviewing.coach) },
-                        )
-                        standing is Away.Threads -> ThreadsScreen(
-                            store = store,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onOpen = { openCoachChat(it, "history_open") },
-                            onAskNew = { askSomethingNew() },
-                        )
-                        standing is Away.Thread -> ThreadScreen(
-                            threadId = standing.threadId,
-                            seat = youInitial,
-                            composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
-                            onSignIn = shell.openSignIn,
-                            onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
-                            onAskNew = { askSomethingNew() },
-                            store = store,
-                            origin = origin,
-                            onThreads = { look(Away.Threads) },
-                            onNotes = { look(Away.Notes) },
-                            onConnections = { look(Away.Connections) },
-                            onOpenRoutine = { selectedRoutineId = it },
-                            onOpenWorkout = ::openCoachWorkout,
-                            onOpenChat = { openCoachChat(it, "reply_open") },
-                            receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
-                            lookedAt = lookedAtIds,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
-                            say = { note = it },
-                        )
-                        tab == Tab.Log -> sessionStates.SaveableStateProvider("log") { LogScreen(
-                            store = store,
-                            seat = youInitial,
-                            onOpenSession = { look(Away.Session(it)) },
-                            onOpenBodyweight = { look(Away.Bodyweight) },
-                            onOpenMovement = { exercise, session -> look(Away.Movement(exercise, session)) },
-                            onShareSession = { shareWorkout(it) },
-                            onDiscardSession = { discard(it, "log") },
-                            onOpenRecovery = { id -> look(if (id == null) Away.OnThisPhone else Away.InspectWorkout(id)) },
-                            recovery = recoveryRead,
-                        ) }
-                        tab == Tab.Coach -> AskScreen(
-                            store = store,
-                            thread = conversation,
-                            conversationId = conversationId,
-                            onOpenRoutine = { selectedRoutineId = it },
-                            onOpenWorkout = ::openCoachWorkout,
-                            onOpenChat = { openCoachChat(it, "reply_open") },
-                            receipts = receipts[Reviewing.coach].orEmpty(),
-                            lookedAt = lookedAtIds,
-                            asking = asking,
-                            cap = cap,
-                            onAsk = { asked -> ask(asked) },
-                            onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
-                            onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
-                            onSignIn = shell.openSignIn,
-                            onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
-                            onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
-                            onAskNew = { askSomethingNew() },
-                            seed = "",
-                            onNewDraft = { askSomethingNew(it) },
-                            onThreads = { look(Away.Threads) },
-                            onConnections = { look(Away.Connections) },
-                            onNotes = { look(Away.Notes) },
-                            origin = origin,
-                            backTo = null,
-                            onBack = null,
-                            seat = youInitial,
-                            onReview = { review(it.id, it.routineId, Reviewing.coach) },
-                        )
-                        else -> RoutinesScreen(
-                            store = store,
-                            lookedAt = lookedAtIds,
-                            seat = youInitial,
-                            // A routine starts from its plan sheet.
-                            onBuild = { building = it },
-                            onOpenRoutine = { selectedRoutineId = it },
-                            onDeleteRoutine = { destroy(it) },
-                            onReview = { review(it.id, it.routineId, Reviewing.routines) },
-                        )
                     }
                 }
+            }
+
+            val standing = navigator.standing(building = building != null, logger = loggerShown)
+            val standingKey = standing.frame.key
+            GymStage(standing = standing, guards = navigator.guards, onBack = ::goBack) { frame ->
+                RoomFrame(frame, standing = frame.key == standingKey)
             }
         } else {
             Box(Modifier.fillMaxSize().background(skin.canvas))
@@ -1345,36 +1242,88 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 }
 
+// 00.7: a navigation label stays whole. It keeps one line while it clears each neighbouring label by
+// `gap` and stays inside the bar; otherwise it wraps at its spaces. It is never shrunk or cut, and it
+// may spill past its own item into the width a neighbour leaves.
+internal object RailLabels {
+    val gap = 8.dp
+
+    // In px: `pitch` between neighbouring item centres, `edge` from the bar's side to an outer centre,
+    // and for each label its one-line width and its widest word. Answers the width each label takes.
+    fun widths(pitch: Float, edge: Float, gap: Float, line: List<Float>, word: List<Float>): List<Float> {
+        val taken = line.toMutableList()
+        fun wraps(at: Int) = word[at] < taken[at]
+        fun crowded(left: Int) = taken[left] / 2 + taken[left + 1] / 2 + gap > pitch
+        listOf(0, taken.lastIndex).filter { taken[it] / 2 > edge && wraps(it) }.forEach { taken[it] = word[it] }
+        while (true) {
+            val left = (0 until taken.lastIndex).firstOrNull { crowded(it) && (wraps(it) || wraps(it + 1)) } ?: return taken
+            val wrapping = listOf(left, left + 1).filter(::wraps).maxBy { taken[it] }
+            taken[wrapping] = word[wrapping]
+        }
+    }
+}
+
 @Composable
-private fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
+internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
     val skin = LocalGymColors.current
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
     Column(Modifier.fillMaxWidth().background(skin.surface)) {
-        NavigationBar(
-            containerColor = skin.surface,
-            tonalElevation = 0.dp,
-            windowInsets = WindowInsets(0, 0, 0, 0),
-            modifier = Modifier.height(80.dp).padding(horizontal = 12.dp),
-        ) {
-            Tab.entries.forEach { entry ->
-                NavigationBarItem(
-                    selected = entry == current,
-                    onClick = { onPick(entry) },
-                    icon = { BadgedBox(badge = {
-                        if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
-                    }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
-                    label = { Text(entry.title, maxLines = 1, style = GymChrome.tab) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = skin.accent,
-                        selectedTextColor = skin.ink,
-                        indicatorColor = skin.raised,
-                        unselectedIconColor = skin.inkDim,
-                        unselectedTextColor = skin.inkDim,
-                    ),
-                )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val barWidth = constraints.maxWidth
+            val labelWidths = remember(barWidth, density) {
+                with(density) {
+                    fun width(text: String) = measurer.measure(text, GymChrome.tab, softWrap = false).size.width.toFloat()
+                    val side = 12.dp.toPx()
+                    // NavigationBar's own spacing between its items.
+                    val spacing = 8.dp.toPx()
+                    val slot = (barWidth - 2 * side - spacing * Tab.entries.lastIndex) / Tab.entries.size
+                    RailLabels.widths(pitch = slot + spacing, edge = side + slot / 2, gap = RailLabels.gap.toPx(),
+                        line = Tab.entries.map { width(it.title) },
+                        word = Tab.entries.map { tab -> tab.title.split(' ').maxOf(::width) },
+                    ).map { ceil(it).toInt().toDp() }
+                }
+            }
+            NavigationBar(
+                containerColor = skin.surface,
+                tonalElevation = 0.dp,
+                // The 12 dp sides are the bar's own inset, inside its surface, so a long label may spill into them.
+                windowInsets = WindowInsets(left = 12.dp, right = 12.dp),
+            ) {
+                Tab.entries.forEachIndexed { index, entry ->
+                    NavigationBarItem(
+                        selected = entry == current,
+                        onClick = { onPick(entry) },
+                        icon = { BadgedBox(badge = {
+                            if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
+                        }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
+                        label = {
+                            Text(entry.title, style = GymChrome.tab, textAlign = TextAlign.Center,
+                                modifier = Modifier.requiredWidth(labelWidths[index]))
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = skin.accent,
+                            selectedTextColor = skin.ink,
+                            indicatorColor = skin.raised,
+                            unselectedIconColor = skin.inkDim,
+                            unselectedTextColor = skin.inkDim,
+                        ),
+                    )
+                }
             }
         }
         Box(Modifier.fillMaxWidth().background(skin.canvas).navigationBarsPadding())
     }
+}
+
+// The Undo carries a control and a line of text, so it waits as long as the system's accessibility
+// timeout asks for such content, and never less than nine seconds (05.17).
+internal fun accessibleUndoWindowMs(context: Context): Long {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return Withheld.windowMs
+    val accessibility = context.getSystemService(AccessibilityManager::class.java) ?: return Withheld.windowMs
+    val recommended = accessibility.getRecommendedTimeoutMillis(Withheld.windowMs.toInt(),
+        AccessibilityManager.FLAG_CONTENT_CONTROLS or AccessibilityManager.FLAG_CONTENT_TEXT)
+    return Withheld.window(recommended.toLong())
 }
 
 @DrawableRes

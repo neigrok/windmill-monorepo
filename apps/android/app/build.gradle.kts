@@ -115,3 +115,12 @@ dependencies {
     testImplementation(libs.compose.ui.test.manifest)
     testImplementation(libs.okhttp.mockwebserver)
 }
+
+// ObservabilityDocTests reads the sources it names and the doc it holds to them.
+tasks.withType<Test>().configureEach {
+    val doc = rootProject.file("../../docs/ANDROID_OBSERVABILITY.md")
+    systemProperty("windmill.android", rootProject.projectDir.absolutePath)
+    systemProperty("windmill.observabilityDoc", doc.absolutePath)
+    inputs.file(doc)
+    for (module in listOf("app", "platform", "gym")) inputs.dir(rootProject.file("$module/src/main/kotlin"))
+}

@@ -96,13 +96,13 @@ class LiveLinesTests {
     }
 
     @Test
-    fun ledgerRowsNameTheEquipmentUnitAndRetainOpenTargets() {
+    fun ledgerRowsNameTheEquipmentUnitAndOfferTheSetBeforeForAnOpenTarget() {
         for (unit in listOf("kg each", "kg added", "kg total", "kg")) {
             val rows = LiveLines.slots(listOf(aSet("lift", -12.5, 8, 1)),
-                PlanEntry("lift", listOf(SetTarget(8, -12.5), SetTarget(10, 24.0), SetTarget())), emptySet(), unit)
-            assertEquals(listOf("−12.5 $unit × 8", "24 $unit × 10", "last $unit × max"), rows.map { it.line })
-            assertEquals(listOf("Set 1, logged, −12.5 $unit, 8 reps", "Set 2, current, target 24 $unit, 10 reps",
-                "Set 3, planned, last time’s weight, max reps"), rows.map { it.spoken })
+                PlanEntry("lift", listOf(SetTarget(8, -12.5), SetTarget(10, 24.0), SetTarget())), LastTime("lift"), emptySet(), unit)
+            assertEquals(listOf("−12.5 $unit × 8", "24 $unit × 10", "24 $unit × max"), rows.map { it.line })
+            assertEquals(listOf("Set 1, logged, −12.5 $unit, 8 reps", "Set 2, current, 24 $unit, 10 reps",
+                "Set 3, planned, 24 $unit, max reps"), rows.map { it.spoken })
         }
     }
 
@@ -132,29 +132,61 @@ class LiveLinesTests {
         val landed = listOf(aSet("back-squat", 60.0, 5, at = 1_000, id = "s1"),
                             aSet("back-squat", 80.0, 5, at = 2_000, id = "s2"))
 
-        val slots = LiveLines.slots(landed, lowerA, stalled = setOf("s2"))
+        val slots = LiveLines.slots(landed, lowerA, LastTime("back-squat"), stalled = setOf("s2"))
 
         assertEquals(
             listOf(
                 LiveLines.Slot.Landed(LiveLines.Row("s1", "1", "60", 5, isOnThisDevice = false)),
                 LiveLines.Slot.Landed(LiveLines.Row("s2", "2", "80", 5, isOnThisDevice = true)),
-                LiveLines.Slot.Current(index = 3, target = SetTarget(3, 90.0)),
-                LiveLines.Slot.Planned(index = 4, target = SetTarget(1, 100.0)),
-                LiveLines.Slot.Planned(index = 5, target = SetTarget(5, 80.0)),
+                LiveLines.Slot.Current(index = 3, target = SetTarget(3, 90.0), offeredKg = 90.0),
+                LiveLines.Slot.Planned(index = 4, target = SetTarget(1, 100.0), offeredKg = 100.0),
+                LiveLines.Slot.Planned(index = 5, target = SetTarget(5, 80.0), offeredKg = 80.0),
             ),
             slots)
         assertEquals(
             listOf(
                 "Set 1, logged, 60 kg, 5 reps",
                 "Set 2, logged, 80 kg, 5 reps, on this device",
-                "Set 3, current, target 90 kg, 3 reps",
+                "Set 3, current, 90 kg, 3 reps",
                 "Set 4, planned, 100 kg, 1 rep",
                 "Set 5, planned, 80 kg, 5 reps",
             ),
             slots.map { it.spoken })
-        assertEquals("90 kg × 3", (slots[2] as LiveLines.Slot.Current).line)
-        assertEquals(listOf("100" to "1", "80" to "5"),
-            slots.filterIsInstance<LiveLines.Slot.Planned>().map { it.weight to it.reps })
+        assertEquals(listOf("60 kg × 5", "80 kg × 5", "90 kg × 3", "100 kg × 1", "80 kg × 5"), slots.map { it.line })
+    }
+
+    @Test
+    fun testARowStillToLiftNamesTheLoadItsRackWillOfferAndNeverLast() {
+        val bench = PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget() })
+        val first = aSet("bench-press", 22.5, 5, at = 1_000, id = "s1")
+        val lastTime = LastTime("bench-press", Session("before", 0), sets = listOf(aSet("bench-press", 60.0, 8, at = 500)))
+
+        val afterOne = LiveLines.slots(listOf(first), bench, lastTime, stalled = emptySet(), unit = "kg total")
+        assertEquals(listOf("22.5 kg total × 5", "22.5 kg total × max", "22.5 kg total × max"), afterOne.map { it.line })
+
+        val opening = LiveLines.slots(emptyList(), bench, lastTime, stalled = emptySet(), unit = "kg total")
+        assertEquals("before any set, last time's load", listOf("60 kg total × max", "60 kg total × max", "60 kg total × max"),
+            opening.map { it.line })
+
+        val firstTime = LiveLines.slots(emptyList(), bench, LastTime("bench-press"), stalled = emptySet(), unit = "kg total")
+        assertEquals("the empty bar", listOf("20 kg total × max", "20 kg total × max", "20 kg total × max"), firstTime.map { it.line })
+
+        val unread = LiveLines.slots(emptyList(), bench, lastTime = null, stalled = emptySet(), unit = "kg total")
+        assertEquals("nothing to offer before last time is read", listOf("— × max", "— × max", "— × max"), unread.map { it.line })
+        assertEquals(listOf("Set 1, current, no load yet, max reps", "Set 2, planned, no load yet, max reps",
+            "Set 3, planned, no load yet, max reps"), unread.map { it.spoken })
+
+        val unreadAfterOne = LiveLines.slots(listOf(first), bench, lastTime = null, stalled = emptySet(), unit = "kg total")
+        assertEquals("today's last set needs no history", listOf("22.5 kg total × 5", "22.5 kg total × max", "22.5 kg total × max"),
+            unreadAfterOne.map { it.line })
+
+        val ladder = PlanEntry(exerciseId = "bench-press", sets = listOf(SetTarget(8, 60.0), SetTarget(), SetTarget(3, 110.0)))
+        val unreadLadder = LiveLines.slots(emptyList(), ladder, lastTime = null, stalled = emptySet(), unit = "kg total")
+        assertEquals("the plan's own loads need no history", listOf("60 kg total × 8", "— × max", "110 kg total × 3"),
+            unreadLadder.map { it.line })
+
+        val lines = listOf(afterOne, opening, firstTime, unread, unreadAfterOne, unreadLadder).flatten().mapNotNull { it.line }
+        assertEquals(emptyList<String>(), lines.filter { "last" in it })
     }
 
     @Test
@@ -171,27 +203,27 @@ class LiveLinesTests {
                 LiveLines.Slot.Landed(LiveLines.Row("s1", "2", "0", 9, isOnThisDevice = false)),
                 LiveLines.Slot.Landed(LiveLines.Row("s2", "3", "0", 8, isOnThisDevice = false)),
                 LiveLines.Slot.Landed(LiveLines.Row("s3", "4", "0", 6, isOnThisDevice = false)),
-                LiveLines.Slot.Current(index = 5, target = null),
+                LiveLines.Slot.Current(index = 5, target = null, offeredKg = null),
             ),
-            LiveLines.slots(sets, entry, stalled = emptySet()))
+            LiveLines.slots(sets, entry, LastTime("chin-up"), stalled = emptySet()))
 
-        val opening = LiveLines.slots(sets.take(1), entry, stalled = emptySet())
+        val opening = LiveLines.slots(sets.take(1), entry, LastTime("chin-up"), stalled = emptySet())
         assertEquals(
             listOf(
                 LiveLines.Slot.Landed(LiveLines.Row("w1", "1", "0", 5, isOnThisDevice = false)),
-                LiveLines.Slot.Current(index = 2, target = SetTarget()),
+                LiveLines.Slot.Current(index = 2, target = SetTarget(), offeredKg = 0.0),
             ),
             opening)
         assertEquals(
             listOf(
                 "Set 1, logged, 0 kg, 5 reps",
-                "Set 2, current, target last time’s weight, max reps",
+                "Set 2, current, 0 kg, max reps",
             ),
             opening.map { it.spoken })
-        assertEquals("last kg × max", (opening[1] as LiveLines.Slot.Current).line)
+        assertEquals("0 kg × max", (opening[1] as LiveLines.Slot.Current).line)
 
-        val free = LiveLines.slots(emptyList(), null, stalled = emptySet())
-        assertEquals("no plan: only the set in hand", listOf(LiveLines.Slot.Current(index = 1, target = null)), free)
+        val free = LiveLines.slots(emptyList(), null, LastTime("chin-up"), stalled = emptySet())
+        assertEquals("no plan: only the set in hand", listOf(LiveLines.Slot.Current(index = 1, target = null, offeredKg = null)), free)
         assertEquals(listOf("Set 1, current"), free.map { it.spoken })
         assertNull((free.single() as LiveLines.Slot.Current).line)
     }

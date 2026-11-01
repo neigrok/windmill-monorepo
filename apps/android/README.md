@@ -142,8 +142,25 @@ inactive tap opens Routines without starting anything. An active tap rechecks th
 before opening it. Routines requests clear read-only pushed navigation and preserve open drafts;
 each request is consumed once, including across activity recreation.
 
+`GymNavigator` keeps the tab and the pushed stack across recreation, and `Standing` decides what
+Back means. `GymStage` moves the room's frame and keeps each frame's saved state under the frame's
+key: pushes and pops travel along the shared X axis and tab changes fade through, 300 ms with
+emphasized easing. A back gesture shrinks a pushed screen, the logger or the routine editor toward
+90 % over the frame its release returns to. A Back that lands during a release cannot stop the pop
+it committed to; it waits for the stage to settle and then acts on where the room stands. A busy
+`BackHandler` swallows the gesture. A `BackGuard` vetoes the preview and asks instead of leaving;
+only the standing frame's guard counts. The routine editor registers one: on a draft holding unsaved
+work, Back, the gesture and its back arrow ask *Discard routine changes?*, a clean draft leaves at
+once, and a save in flight swallows Back.
+`KeepOnBack` lets a screen keep typed entry before Back leaves it; the logger's rack registers one.
+Every sheet is a `WindmillSheet`, which previews Back from its own window and finishes a close it
+has begun even when another Back arrives. With Remove animations on, all of these cut.
+
 The rack and Fix set keep native number input separate from committed values. IME Done and explicit
-Log set / Save fix validate the current buffer; plain blur or Cancel restores the committed value.
+Log set / Save fix validate the current buffer. Leaving a field commits a valid typed value the way
+Done does, and an invalid one keeps its refusal and the committed value; Cancel restores the
+committed value. The logger owns the rack's entry, so Hide, Finish, Back and a move to another
+movement commit a valid typed value first.
 `NumberEntry` owns signed/comma parsing and performed-set bounds, while `NumberStepper` owns the
 stable editor, accessibility actions and accepted-change feedback. Planned target fields retain
 separate domain rules. Focused number editing owns horizontal drag so it cannot page movements.
@@ -295,5 +312,17 @@ by 0.10.0 or earlier; installing 0.11.0 first moves them into the engine. Uninst
 device-only records; preserve them before changing installation. When both sides hold training,
 choose Add to transfer signed-out records.
 
-Spoken TalkBack acceptance is unverified. Routines tab labels clip at 320dp with 200% text; see
-[the design consistency ledger](../../docs/design/consistency.md).
+A spoken TalkBack pass (TalkBack 16, API 37 emulator, 2026-11-01) covered Routines, the routine editor
+and its movement sheet, the rack, Finish, signed-out Coach, and a signed-in Coach answer on the capture
+rig's local stack. Each element was touched through the emulator's own touchscreen (`adb emu event
+mouse`), which TalkBack's touch exploration treats as a finger; adb's `input tap` bypasses touch
+exploration, and `uiautomator dump` suspends TalkBack while it reads the screen. With TalkBack's log
+level at verbose, logcat records every utterance (`SpeechControllerImpl: Speaking fragment`) and the
+text-to-speech engine's word ranges for it. An emulator has no audio check, so the speech is verified
+from that log, not by ear. Heard: steppers say their value, *Edit box* and their label once (*3, Edit
+box, Sets*); outlined fields say their name once; the editor's back names its destination (*Back to
+Routines*, *Back to Push Day*); its discard question is announced as it opens; the routine sheet's
+*A workout is already open. Finish it first.* is announced as it appears; *Read 12 workouts · 5 weeks*
+is a button. Still said twice: a rack set row (its description, then its drawn set and target), the
+editor's movement row (the drag handle's *Move Bench Press, 1 of 1*, then the name), and Finish's
+facts read each value apart from its label.

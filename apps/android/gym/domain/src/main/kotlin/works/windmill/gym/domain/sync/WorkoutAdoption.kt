@@ -31,6 +31,13 @@ class SignedOutWorkout(session: Session, sets: List<TrainingSet>) {
         return GymRefusal.predicted(Gym.Codes.sessionOverlap, session.id.ref, Json.objectOf("sessionId" to crossed.id.json))
     }
 
+    // The loads a person changed in this copy since `saved` meet their movements' floors; a load the copy recorded stands.
+    fun floorRefusal(saved: SignedOutWorkout?, catalogue: Catalogue): GymRefusal? {
+        try { sets.forEachIndexed { at, set -> SetRules.floored(set, saved?.sets.orEmpty(), catalogue, Path("sets") + at + "weightKg") } }
+        catch (violation: Violation) { return GymRefusal.Invalid(violation) }
+        return null
+    }
+
     // What this phone refuses before a retry asks the account. A finished copy is an import, with the import's checks.
     // An open copy restarts as a start that does not join, with its sets appended: the log refuses that while it
     // holds an open workout of its own, and never for crossing a finished one.
@@ -99,8 +106,8 @@ fun nonJoiningStart(session: Session): ServerCommand = GymCommand(Gym.Commands.s
 
 // `prepare` turns a signed-out workout into one import, or a non-joining start, before the replica changes hands.
 // `keep` imports the saved copy as finished at its last set; `restart` resubmits an open one's start with every set
-// it holds, in one plan, or refuses the whole retry. Both take a revised copy, which replaces the saved one only
-// when the retry is queued.
+// it holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy,
+// whose changed loads meet their floors and which replaces the saved one only when the retry is queued.
 class AdoptWorkout(val id: Id<Session>, val mode: Mode, val revised: SignedOutWorkout? = null) : Action<AdoptWorkout.Loaded, Unit, GymRefusal> {
     enum class Mode { prepare, keep, restart }
     data class Loaded(val anonymous: Boolean, val commands: List<QueuedCommand>, val backup: List<SignedOutWorkout>,
@@ -131,7 +138,7 @@ class AdoptWorkout(val id: Id<Session>, val mode: Mode, val revised: SignedOutWo
                 val start = commands.firstOrNull { it.command.name == Gym.Commands.start && it.canSupersede }
                 if (!loaded.anonymous || start == null) return Decision.Unchanged(Unit)
                 val imported = loaded.imported
-                if (!workout.session.isOpen && imported != null) when (val decision = workout.importAction.decision(imported, ids)) {
+                if (!workout.session.isOpen && imported != null) when (val decision = workout.importAction.recorded.decision(imported, ids)) {
                     is Decision.Write -> decision.plan.also { it.supersede(listOf(start.gestureId)) }
                     is Decision.Refuse -> return Decision.Refuse(decision.refusal)
                     is Decision.Unchanged -> return Decision.Unchanged(Unit)
@@ -144,9 +151,10 @@ class AdoptWorkout(val id: Id<Session>, val mode: Mode, val revised: SignedOutWo
                     return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, id.ref))
                 if (loaded.confirmed) return Decision.Refuse(GymRefusal.Taken(id.ref, Refused.Path.predicted))
                 val imported = loaded.imported ?: return Decision.Unchanged(Unit)
+                workout.floorRefusal(loaded.backup.firstOrNull { it.session.id == id }, imported.state.catalogue)?.let { return Decision.Refuse(it) }
                 val decision = if (mode == Mode.restart) restart(workout, imported.state) else {
                     workout.importRefusal(imported.state.moment, imported.state.stored, imported.state.catalogue)?.let { return Decision.Refuse(it) }
-                    workout.importAction.decision(imported, ids)
+                    workout.importAction.recorded.decision(imported, ids)
                 }
                 when (decision) {
                     is Decision.Write -> decision.plan

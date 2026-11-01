@@ -108,11 +108,14 @@ function trainingReadsForm(vector, read) {
       const value = log.lastTime(f.ref('exerciseId', Exercise));
       return { sessionId: value.session?.id.json ?? null, routine: value.routine, sets: value.sets.map((set) => set.id.json), isFirstTime: value.isFirstTime };
     }
-    case 'Prefill': {
+    case 'Prefill':
+    case 'OfferedLoads': {
       const last = log.lastTime(f.ref('exerciseId', Exercise));
       const today = f.optionalRef('todaySessionId', Session);
       const sets = today === null ? [] : log.setsFor(today).filter((set) => set.exerciseId.equals(last.exerciseId));
-      const value = Prefill.of(sets, f.optionalValue('planEntry', RoutineEntry.decode), last);
+      const plan = f.optionalValue('planEntry', RoutineEntry.decode);
+      if (vector.input.read === 'OfferedLoads') return Prefill.offeredLoads(sets, plan, last);
+      const value = Prefill.of(sets, plan, last);
       return { weightKg: value.weightKg, reps: value.reps };
     }
     case 'RestTarget': {
@@ -258,12 +261,16 @@ const handlers = {
         default: throw new Error(`unclaimed training action read ${vector.input.read}`);
       }
     });
-    switch (vector.input.action) {
+    const recorded = vector.input.action.endsWith('.recorded');
+    // `<Action>.recorded` is the action's replay of facts already recorded, never held to the load floor.
+    /** @param {{ recorded: any }} action */
+    const door = (action) => recorded ? action.recorded : action;
+    switch (vector.input.action.replace(/\.recorded$/, '')) {
       case 'StartSession': return corpus.decision(StartSession({ id: f.ref('id', Session), routineId: f.optionalRef('routineId', Routine),
         startedAt: f.optionalInstant('startedAt') }), vector, (id) => id.json, refusalForm);
       case 'FinishSession': return corpus.decision(FinishSession({ id: f.ref('id', Session), finishedAt: f.optionalInstant('finishedAt') }), vector, () => null, refusalForm);
-      case 'AppendSet': return corpus.decision(AppendSet(TrainingSet.decode(Fields.values('set', input.set.id, input.set.fields))), vector, (id) => id.json, refusalForm);
-      case 'CorrectSet': return corpus.decision(CorrectSet(TrainingSet.decode(Fields.values('set', input.set.id, input.set.fields))), vector, () => null, refusalForm);
+      case 'AppendSet': return corpus.decision(door(AppendSet(TrainingSet.decode(Fields.values('set', input.set.id, input.set.fields)))), vector, (id) => id.json, refusalForm);
+      case 'CorrectSet': return corpus.decision(door(CorrectSet(TrainingSet.decode(Fields.values('set', input.set.id, input.set.fields)))), vector, () => null, refusalForm);
       case 'DiscardSession': return corpus.decision(DiscardSession(f.ref('id', Session)), vector, () => null, refusalForm);
       case 'DeleteSet': return corpus.decision(DeleteSet(f.ref('id', TrainingSet)), vector, () => null, refusalForm);
       case 'ImportSession': {
@@ -273,8 +280,8 @@ const handlers = {
             reps: s.int('reps'), completedAt: s.instant('completedAt'), rpe: s.optionalDouble('rpe'),
             note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe') });
         });
-        return corpus.decision(ImportSession({ id: f.ref('id', Session), startedAt: f.instant('startedAt'), finishedAt: f.instant('finishedAt'),
-          sets, routineId: f.optionalRef('routineId', Routine) }), vector, (id) => id.json, refusalForm);
+        return corpus.decision(door(ImportSession({ id: f.ref('id', Session), startedAt: f.instant('startedAt'), finishedAt: f.instant('finishedAt'),
+          sets, routineId: f.optionalRef('routineId', Routine) })), vector, (id) => id.json, refusalForm);
       }
       case 'CorrectSession': {
         const sets = input.sets.map((/** @type {any} */ raw) => {
@@ -283,8 +290,8 @@ const handlers = {
             weightKg: s.double('weightKg'), reps: s.int('reps'), completedAt: s.instant('completedAt'), rpe: s.optionalDouble('rpe'),
             note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe') });
         });
-        return corpus.decision(CorrectSession({ id: f.ref('sessionId', Session), requestId: f.string('requestId'), startedAt: f.instant('startedAt'),
-          finishedAt: f.instant('finishedAt'), routineName: f.optionalString('routineName'), sets, preserveOtherSets: input.preserveOtherSets === true }),
+        return corpus.decision(door(CorrectSession({ id: f.ref('sessionId', Session), requestId: f.string('requestId'), startedAt: f.instant('startedAt'),
+          finishedAt: f.instant('finishedAt'), routineName: f.optionalString('routineName'), sets, preserveOtherSets: input.preserveOtherSets === true })),
         vector, () => null, refusalForm);
       }
       default: throw new Error(`unclaimed training action ${vector.input.action}`);

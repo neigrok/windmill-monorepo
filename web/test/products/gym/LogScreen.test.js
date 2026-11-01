@@ -47,6 +47,29 @@ const deleteTheFirstSet = (room) => {
   sheet.props.onDelete();
 };
 
+test('a fix under a barbell’s load floor keeps the stored load and names it, while a bodyweight load keeps its sign', async (t) => {
+  browserWith();
+  const gym = await gymAccount(t, [...sessionWithASet(), confirmed('set', 'set0000002', { sessionId: 'session0001',
+    exerciseId: 'back-extension', setNumber: 1, weightKg: 10, reps: 12, note: '', completedAt: 1_755_000_900_000 })]);
+  const room = await sessionInARoom(t);
+  const sheetOf = (index) => {
+    findByClass(room.screen(), 'gym-set')[index].props.onClick();
+    return elementsOf(room.screen()).find((each) => typeof each.type === 'function' && each.type.name === 'FixSheet');
+  };
+
+  const barbell = sheetOf(0);
+  assert.equal(await barbell.props.onSave({ weightKg: -10 }), 'Enter 0 or more, or cancel to keep 100');
+  await settle();
+  assert.deepEqual(gym.owed(), [], 'the refused load is never written');
+  assert.equal(elementsOf(room.screen()).some((each) => each.type?.name === 'FixSheet'), true, 'the sheet stays open on the refusal');
+
+  barbell.props.onClose();
+  await settle();
+  assert.equal(await sheetOf(1).props.onSave({ weightKg: -10 }), undefined);
+  await settle();
+  assert.deepEqual(gym.owed(), ['ready update set set0000002 weightKg']);
+});
+
 test('the log waits for the initial pull before claiming an empty or unmatched history', async (t) => {
   browserWith();
   const { engine } = await gymAccount(t, [confirmed('note', 'note000001', { title: 'Note', body: '', ord: 'a', updatedAt: 0 })]);

@@ -1,6 +1,6 @@
 # Real Material buttons, a real disabled Log set, and icons instead of text chevrons
 
-**Status:** ✅ Conformance to approved boards and the native-idiom rule (`docs/design/guidelines/system-architecture.md`, ledger 11n). Not started.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Conformance to approved boards and the native-idiom rule (`docs/design/guidelines/system-architecture.md`, ledger 11n); Shell 16b is 🚀 In production.
 
 **Figma:**
 - Disabled state as drawn on 02.16 (Done at 38 %): [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1443-19406)
@@ -8,17 +8,15 @@
 - The Coach proposal look stays as it is (ledger 11k keeps the proposal redesign deferred, tasks 29–35).
 
 **Current implementation**
-- Primary buttons are drawn as `Box.background(accent).clickable`:
-  - Apply and Turn down (`coach/ReviewSheet.kt`)
-  - share and revoke (`sharing/WorkoutShareCard.kt`)
-  - **Log set** (`ui/LoggerScreen.kt`)
-- Their disabled states:
-  - Log set has no disabled visual when `enabled == false` and it isn't finishing: it stays accent-filled and looks tappable.
-  - Apply fakes disabled with `alpha(0.4f)`.
-- Ripples spill outside rounded shapes where `.background(shape)` comes before `.clickable` with no clip.
-- `ui/NativeControls.kt` `GymExtendedFab` rebuilds `ExtendedFloatingActionButton` from `FloatingActionButton + Row` and loses collapse-on-scroll.
-- The You sheet's rows end in a text "›", which TalkBack reads aloud.
-- Icons come from four sources: drawables, `GymGlyph` (`ui/GymSkin.kt`), a `glyph()` builder in `LoggerScreen.kt`, and a hand-written path beside `Icons.Filled.DragHandle` in `GymScreen.kt`.
+- Primary buttons are Material 3 buttons that keep their colours through `ButtonDefaults`:
+  - **Log set** (`ui/LoggerScreen.kt`) is a `Button`. Disabled, it draws 02.16's Done: accent and on-accent at 38 %. While Finish is in flight, it draws the raised wait.
+  - Apply (`ui/ReviewSheet.kt`) is a `Button` whose disabled colours keep the 40 % look; Turn this down is a `TextButton`.
+  - Share and revoke (`sharing/WorkoutShareCard.kt`) are a `Button` (38 % while the link is being made) and a `TextButton`.
+- The custom surfaces that remain clip to their shape before `clickable` (log workout rows, the workout detail's Share this workout, On this phone rows), so ripples stay inside.
+- `ui/NativeControls.kt` `GymExtendedFab` is M3 `ExtendedFloatingActionButton`. On the Log, *Weigh in* collapses to its icon while the list is scrolled and keeps "Weigh in" as its accessible name.
+- The You sheet's rows end in the `you_chevron` drawable with no content description; a row reads its label alone.
+- Icons come from drawables and the core `Icons` set. `GymGlyph`, the `glyph()` builder and the hand-written drag-handle path are gone; the logger's cloud-off mark is the `gym_cloud_off` drawable.
+- Tests: `LoggerScreenTests` (a disabled Log set is a disabled button and a tap logs nothing), `LogWeightRowsTests` (*Weigh in* collapses on scroll and expands at the top), `YouSheetTests` (each row's merged text is its label and it has no content description).
 
 **Change**
 - **Buttons:**

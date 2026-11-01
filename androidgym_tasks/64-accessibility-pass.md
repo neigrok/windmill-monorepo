@@ -1,14 +1,17 @@
 # Accessibility pass: status lines are announced, targets are 48 dp, labels say each thing once
 
-**Status:** ✅ Conformance (no visual change). Not started.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Conformance; the one drawn change is the taller "What Coach read" row.
 
-**Current implementation**
-- **Status line not announced:** the room's status `note` line in `GymRoom.kt` (e.g. "Finish this session", "Your draft couldn't be saved") is plain `Text` with no `liveRegion`, so TalkBack does not announce it. It also runs as a second message channel beside the `SnackbarHost`, which does announce.
-- **Small target:** "What Coach read" (`coach/CoachSources.kt`) is about 22 dp tall: 13 sp text with 4 dp top padding.
-- **Semantics nits** (from the uiautomator review):
-  - "Sets, sets" and "Reps, reps": each label equals its unit.
-  - New routine's back reads "Back to the routine you were on" when it was opened from the list.
-- **Not yet verified:** spoken TalkBack acceptance has never been run. `apps/android/README.md` says so.
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- **Status lines:** the room's `note` line (`GymRoom.kt`) and the routine sheet's failure line (`ui/RoutinesScreen.kt`) are polite live regions, so TalkBack says what the eye reads as it changes. The snackbar host keeps the transient with its window; `note` stays the line about the screen you are on, so the two are not merged.
+- **Target:** "What Coach read" (`coach/CoachSources.kt`) is a 48 dp clickable row; its 13 sp line and 18 dp chevron are drawn as before, centred in the row, so the answer below it sits lower.
+- **Each thing once:**
+  - A `NumberStepper` describes itself by its label, with the unit only when it adds to the label ("Sets", "Reps", "Load, kg total"); the drawn label and unit are silent, and TalkBack reads the typed value from the field: "3, Edit box, Sets".
+  - The outlined Name and Equipment fields keep their description ("Routine name", "Movement name", "Equipment"); their drawn floating labels are silent.
+  - The account seat says "Your account" without its initial or dot.
+  - The routine editor's back names where it goes: "Back to Routines" from the list, "Back to Push A" from a routine's sheet, else the screen or tab beneath. `GymRoom.wayBackTo` names a pushed screen's way back the same way.
+- **Spoken pass:** recorded in `apps/android/README.md`, with what is still said twice.
+- Tests: `ui/RoutineSaveTests` (the room's line is a polite live region), `coach/CoachAnswerTests` (the 48 dp target), `ui/NumberStepperTests` (label, value and unit each once), `ui/RoutineEditorTests` (the back description from the list and from a routine).
 
 **Change**
 - Give the `note` line `liveRegion = LiveRegionMode.Polite`, or move its messages into the snackbar host. Pick the one that leaves a single message channel.

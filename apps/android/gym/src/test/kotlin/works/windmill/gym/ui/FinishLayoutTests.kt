@@ -7,12 +7,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -24,6 +32,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.domain.*
@@ -108,4 +117,115 @@ class FinishLayoutTests {
         compose.onNodeWithText(FinishCoach.action).assertIsDisplayed()
     }
 
+    @Test
+    fun atLargeTextTheReceiptOpensFullHeightWrapsTheFactsTwoToARowAndScrollsToPerformed() {
+        val sets = List(5) { TrainingSet("set_$it", "bench-press", weightKg = 80.0, reps = 6, completedAtMs = 2_000L + it) }
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 3_121_000, plan = PlanSnapshot("Push A")),
+            sets, null, suggestsKeep = true)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                GymMaterial {
+                    Box(Modifier.height(592.dp).testTag("Sheet")) {
+                        FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell")),
+                            onShareWithCoach = {}, onKeep = {})
+                    }
+                }
+            }
+        }
+        val sheet = compose.onNodeWithTag("Sheet").fetchSemanticsNode().boundsInRoot
+        val receipt = compose.onNodeWithTag("Finish receipt").fetchSemanticsNode().boundsInRoot
+        assertEquals(sheet.height, receipt.height, 0.5f)
+
+        val duration = compose.onNodeWithText("Duration").fetchSemanticsNode().boundsInRoot
+        val count = compose.onNodeWithText("Sets").fetchSemanticsNode().boundsInRoot
+        val volume = compose.onNodeWithText("Volume").fetchSemanticsNode().boundsInRoot
+        assertEquals(duration.top, count.top, 0.5f)
+        assertTrue(count.left >= duration.right - 0.5f)
+        assertTrue(volume.top > duration.bottom)
+        assertEquals(duration.left, volume.left, 0.5f)
+        val total = compose.onNodeWithText("2,400 kg").fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        total.config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+        assertEquals(1, layouts.single().lineCount)
+        assertFalse(layouts.single().hasVisualOverflow)
+
+        val band = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().boundsInRoot.top
+        for (text in listOf("Performed", "Bench Press", "5 × 6 · 80 kg total")) {
+            val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("$text ends at ${node.bottom}, under the band at $band", node.bottom <= band + 0.5f)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w412dp-h915dp-xhdpi")
+    fun signedOutAtNormalTextEveryFactAndPerformedStandAboveThePinnedActions() {
+        val catalog = listOf(Exercise("bench-press", "Bench Press", "press", "barbell"),
+            Exercise("overhead-press", "Overhead Press", "press", "barbell"),
+            Exercise("incline-press", "Incline Dumbbell Press", "press", "dumbbell", loadCount = 2))
+        val full = List(3) { TrainingSet("bench_$it", "bench-press", weightKg = 75.0 + it * 2.5, reps = 6 + it, completedAtMs = 2_000L + it) } +
+            TrainingSet("ohp", "overhead-press", weightKg = 47.5, reps = 6, completedAtMs = 3_000) +
+            TrainingSet("incline", "incline-press", weightKg = 24.0, reps = 10, completedAtMs = 4_000)
+        val slight = full.drop(2)
+        val workout = mutableStateOf(full)
+        compose.setContent {
+            GymMaterial {
+                Box(Modifier.height(839.dp)) {
+                    FinishScreen(FinishedSession(Session("first", startedAtMs = 1_000, finishedAtMs = 3_121_000, plan = PlanSnapshot("Push A")),
+                        workout.value, null, suggestsKeep = true), catalog, onShareWithCoach = {}, onKeep = {})
+                }
+            }
+        }
+        for (sets in listOf(full, slight)) {
+            compose.runOnIdle { workout.value = sets }
+            compose.onNodeWithText(if (sets == full) "Well done." else "Ended early.").assertIsDisplayed()
+            val band = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().boundsInRoot.top
+            for (text in listOf("Duration", "Sets", "Volume", "Only on this phone · Keep it", "Performed", "Bench Press", "Overhead Press",
+                                "Incline Dumbbell Press", "1 × 10 · 24 kg each")) {
+                val node = compose.onNodeWithText(text).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                assertTrue("$text ends at ${node.bottom}, under the band at $band", node.bottom <= band + 0.5f)
+            }
+        }
+    }
+
+    @Test
+    fun atLargeTextAVolumeNoSizeFitsWholeKeepsItsNumberOnOneLineAndDropsOnlyItsUnit() {
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 3_121_000),
+            listOf(TrainingSet("set", "bench-press", weightKg = 12_437.75, reps = 1, completedAtMs = 2_000)), null)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                GymMaterial { FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell"))) }
+            }
+        }
+        val node = compose.onNodeWithText("12,437.75 kg").performScrollTo().assertIsDisplayed()
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+        val layout = layouts.single()
+        assertEquals(16f, layout.layoutInput.style.fontSize.value)
+        assertEquals(listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1), "12,437.75 kg".indices.filter { it != 9 }.map(layout::getLineForOffset))
+        assertFalse(layout.hasVisualOverflow)
+    }
+
+    // The real 200 %: Android 14 scales type non-linearly, so a 16 sp label sets at 28 dp.
+    @Test
+    fun atTheLargestTextBothReceiptActionsAreMaterialButtonsWithOneLineLabelsInsideThem() {
+        RuntimeEnvironment.setFontScale(2f)
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 3_121_000, plan = PlanSnapshot("Push A")),
+            List(5) { TrainingSet("set_$it", "bench-press", weightKg = 80.0, reps = 6, completedAtMs = 2_000L + it) }, null)
+        compose.setContent {
+            GymMaterial {
+                FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell")), onShareWithCoach = {})
+            }
+        }
+        for (label in listOf(FinishCoach.action, "Done")) {
+            val button = compose.onNode(hasText(label) and hasClickAction()).assertIsDisplayed()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)).fetchSemanticsNode().boundsInRoot
+            val text = compose.onNode(hasText(label), useUnmergedTree = true).fetchSemanticsNode()
+            val layouts = mutableListOf<TextLayoutResult>()
+            text.config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+            assertEquals(label, 1, layouts.single().lineCount)
+            assertEquals(label, label.length, layouts.single().getLineEnd(0, visibleEnd = true))
+            assertTrue("$label at ${text.boundsInRoot} spills out of its button at $button",
+                text.boundsInRoot.left >= button.left && text.boundsInRoot.right <= button.right)
+        }
+    }
 }

@@ -43,6 +43,7 @@ import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
+import works.windmill.gym.telemetry.GymEvents
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -60,7 +61,7 @@ class CoachOnboardingLiveWireTests {
         assertTrue(eventPrefs.edit().clear().commit())
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         AndroidTelemetry.startSentry(context, checkNotNull(System.getenv("WM_COACH_SENTRY_DSN")), release, "local", "38")
-        val delivery = AndroidTelemetry(context, base, release, "local", "task38", "38", null, { null }, applicationScope)
+        val delivery = AndroidTelemetry(context, base, release, "local", "task38", "38", null, { null }, applicationScope, GymEvents.schemas)
         val failures = Collections.synchronizedList(mutableListOf<String>())
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) = delivery.event(name, properties)

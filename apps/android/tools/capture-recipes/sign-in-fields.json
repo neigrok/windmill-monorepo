@@ -14,7 +14,7 @@
         "keyboard": "show"
       },
       {
-        "tap": "Email field"
+        "tap": "Email"
       },
       {
         "text": "lifter@example.com"
@@ -48,7 +48,7 @@
         "keyboard": "show"
       },
       {
-        "tap": "Code field"
+        "tap": "Code"
       }
     ]
   },
@@ -82,7 +82,7 @@
         "keyboard": "show"
       },
       {
-        "tap": "Code field"
+        "tap": "Code"
       }
     ],
     "after": [

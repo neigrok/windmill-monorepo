@@ -5,7 +5,11 @@ the resolved catalogue. The pure shared `Readout.loadUnit` maps two dumbbells to
 and machine to `kg total`, and bodyweight to `kg added`. One dumbbell, cable, kettlebell, unknown
 equipment and a missing exercise read `kg`. Signed loads remain signed; no formatter changes
 weights, volume, equipment or load counts. The rack and Coach draft/action/review strings use their
-existing formatters.
+existing formatters. A barbell or two-dumbbell load is 0 or more (`ExerciseRules.loadFloor`, shared
+with Swift and web): the rack and Fix set refuse a lower load as it is typed, the movement editor
+refuses a lower target, and their steppers stop at 0. A load already recorded below 0 stands: replays
+of recorded facts never meet the floor, and a kept legacy load cannot be stepped down. Every other
+loading keeps its sign.
 
 The shared training-read corpus contains nine load-unit cases claimed by Kotlin, Swift and web.
 Android full-string tests cover signed/open/ranged targets, resolved one/two dumbbell counts and the

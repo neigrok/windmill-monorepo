@@ -5,6 +5,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -129,6 +130,12 @@ class YouSheetTests {
         compose.onNodeWithText(if (signedIn) "Sign out" else "Sign in").assertIsDisplayed()
         val bounds = rows.map { compose.onNodeWithText(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot }
         assertTrue(bounds.zipWithNext().all { (first, next) -> first.bottom < next.top })
+        // Each row ends in an icon, not a "›" a screen reader would say: the row reads its label alone.
+        rows.forEach { label ->
+            val row = compose.onNode(hasText(label) and hasClickAction()).fetchSemanticsNode().config
+            assertEquals(label, listOf(label), row.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.map { it.text })
+            assertEquals(label, null, row.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription))
+        }
         listOf("Gym settings", "Units", "lb", "One account across Windmill.").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
@@ -144,7 +151,7 @@ class YouSheetTests {
             destinations = listOf(YouDestination("settings", "Product settings") { events += "settings" })) } }
         compose.onNodeWithText("You").assertIsDisplayed()
         compose.onNodeWithText("Sign in").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Email field").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Email").assertDoesNotExist()
         val click = compose.onNodeWithText("Product settings").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { click(); click() }
         compose.waitUntil(5_000) { !visible }
@@ -159,7 +166,7 @@ class YouSheetTests {
         val events = mutableListOf<String>()
         compose.setContent { WindmillMaterial { if (visible) YouSheet(auth,
             onDismiss = { events += "dismiss"; visible = false }, startSignIn = true) } }
-        compose.onNodeWithContentDescription("Email field").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Email").assertIsDisplayed()
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { !visible }
@@ -207,14 +214,14 @@ class YouSheetTests {
         var dismissed = 0
         compose.setContent { WindmillMaterial { if (visible) YouSheet(auth, { dismissed += 1; visible = false },
             startSignIn = true) } }
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { server.requestCount == 1 }
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Sending…").assertIsDisplayed().assertIsNotEnabled()
         compose.runOnIdle { assertTrue(visible); assertEquals(0, dismissed); release.countDown() }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Try another email.").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Email field").assertTextContains("a@example.com")
+        compose.onNodeWithContentDescription("Email").assertTextContains("a@example.com")
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { !visible }
         assertEquals(1, dismissed)
@@ -227,15 +234,15 @@ class YouSheetTests {
         server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
         val restoration = StateRestorationTester(compose)
         restoration.setContent { WindmillMaterial { YouSheet(auth, {}, startSignIn = true) } }
-        compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
+        compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Code field").performTextReplacement(" 123456 ")
+        compose.onNodeWithContentDescription("Code").performTextReplacement(" 123456 ")
         compose.onNodeWithText("Sign in").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText(MagicLink.expiredCode).fetchSemanticsNodes().isNotEmpty() }
         compose.runOnIdle { auth = AuthStore(server.url("/"), MemorySessions()) }
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ")
+        compose.onNodeWithContentDescription("Code").assertTextContains(" 123456 ")
         compose.onNodeWithText("Code sent to a@example.com.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(MagicLink.expiredCode).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign in").assertIsEnabled()

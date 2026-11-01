@@ -55,7 +55,7 @@ are removed. Focused tests pass; native visual and installed event acceptance re
 - List it in `docs/ANDROID_OBSERVABILITY.md`.
 - `gym_screen_viewed` `coach` still fires.
 - Tests:
-  - `GymTabsTests.kt`: an empty Gym opens on Coach; a Gym with routines opens on Routines.
+  - `coach/CoachSetupTests.kt`: an empty Gym opens on Coach; a Gym with routines opens on Routines.
   - `coach/AskScreenTests.kt`: the greeting shows signed in and signed out, and goes after the first message.
   - `ui/StanceReadsTheAccountTests.kt` and `coach/AskTests.kt`: they pin the deleted stance and strings.
 

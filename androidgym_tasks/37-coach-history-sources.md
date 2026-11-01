@@ -5,7 +5,7 @@
 **Figma:**
 - 08.4 History: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28552) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41230)
 - 08.5 What Coach read: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28654) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41250)
-- 08.34 History, delete a conversation: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31663) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41570)
+- 08.60 History, delete a conversation: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31663) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41570)
 - Components (Design System library, Android page):
   - `Android / Swipe row` `337:2217` (Rest, Swiping, Past threshold)
   - `Android / FAB` `337:2110` (Extended)
@@ -31,7 +31,7 @@
   - Opening a fresh chat must not call `CoachStore.abandon`/`LocalCoach.clear`, delete a draft or cancel another chat's request. An answering chat does not block navigation. Its eventual reply and receipt return to the originating chat, with a link from the approved pending-reply state. Account transitions must not leak one owner's draft or response to another.
   - Selecting History restores that exact chat, including unsent text/photo and scroll position. New chat starts an empty composer while retaining the old row. Task 44 carries the selected anonymous chat across explicit sign-in adoption without treating that return as a fresh tab entry.
   - Empty: *No conversations* (replaces `Threads.none`).
-- Delete a conversation (08.34):
+- Delete a conversation (08.60):
   - The row swipes on `DeleteSwipeRow` (04), a11y label *Delete conversation*.
   - Past the threshold, an M3 `AlertDialog`: *Delete this conversation?* / *You can’t undo this.* / **Cancel** · **Delete** (error role, 02). Cancel puts the row back. Both phones use these words (ledger 12g).
   - On Delete the conversation goes at once: no hold, no Undo snackbar. A refusal brings the row back and the note line explains.
@@ -47,7 +47,7 @@
 **Out of scope:** the swipe row itself (04), the chat (28), postponed outcome-word changes (30) and new write-receipt presentation (35). Existing tool-write content remains available.
 
 **Done when**
-- Screenshots of the active History, sources and deletion layouts in 08.4, 08.5 and 08.34 match in Dark and Daylight on the emulator, retaining current action cards, receipt presentation and outcome wording wherever the drawings include postponed changes; the rig (01) adds `08.4-coach-history-dark` / `-light`, `08.5-coach-what-read-dark` / `-light`, `08.34-history-delete-dark` / `-light`.
+- Screenshots of the active History, sources and deletion layouts in 08.4, 08.5 and 08.60 match in Dark and Daylight on the emulator, retaining current action cards, receipt presentation and outcome wording wherever the drawings include postponed changes; the rig (01) adds `08.4-coach-history-dark` / `-light`, `08.5-coach-what-read-dark` / `-light`, `08.60-history-delete-dark` / `-light`.
 - `gym_screen_viewed` `threads` and `thread` still fire; a read row opens `session`.
 - Delete emits `gym_action` `{screen: threads, action: delete, state: shown}` when the dialog shows, then `{…, outcome: ok | refused | failed | cancelled}`. No title or question text in any event.
 - Delete failures still report under `gym.deleteThread`; a refusal is an event, not an Issue. Draft/history persistence failures report under static operations and keep recoverable draft state.

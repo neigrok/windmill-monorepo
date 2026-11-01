@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasParent
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
@@ -319,7 +320,7 @@ class LargestTypeTests {
     }
 
     private fun scroller() =
-        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack")).getBoundsInRoot()
+        compose.onNode(hasTestTag("Set ledger")).getBoundsInRoot()
 
     private fun inside(inner: DpRect, outer: DpRect) = inner.top >= outer.top && inner.bottom <= outer.bottom
 
@@ -357,7 +358,7 @@ class LargestTypeTests {
         try { loggerOnThePhone(scope, server, fontScale = 1.3f).use { room ->
             logSets(room, server, 5)
 
-            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack"))
+            val ledger = compose.onNode(hasTestTag("Set ledger"))
             assertTrue("the ledger overflows",
                 ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
             val current = compose.onNode(hasContentDescription("Set 6, current")).assertIsDisplayed().getBoundsInRoot()
@@ -375,7 +376,7 @@ class LargestTypeTests {
         try { loggerOnThePhone(scope, server, fontScale = 1.3f, walk = listOf("bench-press")).use { room ->
             logSets(room, server, 6)
 
-            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack"))
+            val ledger = compose.onNode(hasTestTag("Set ledger"))
             assertTrue("the ledger overflows",
                 ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
             val region = scroller()
@@ -443,6 +444,45 @@ class LargestTypeTests {
             (0 until 10).forEach { at ->
                 val readout = laid(readouts[at])
                 assertTrue("The full load, unit and reps fit on one line", unclipped(readout))
+            }
+        } } finally { scope.cancel() }
+    }
+
+
+    // 03.35: at 320 dp and 200 % the page scrolls as one and the ledger window scrolls its five rows; each can be read
+    // whole above the pinned Log set, which never leaves the window.
+    @Test
+    @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
+    fun atTwoHundredPercentOnANarrowPhoneEveryRowScrollsIntoViewAboveAPinnedLogSet() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        try { store(scope, server).use { room ->
+            runBlocking {
+                room.startExternalWorkout()
+                room.store.choose("bench-press")
+                repeat(4) { room.store.logSet(22.5, 5) }
+                room.sync(server)
+                room.store.refreshEngine()
+            }
+            compose.setContent {
+                GymMaterial {
+                    CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
+                        LoggerScreen(store = room.store, say = {}, onFinish = {})
+                    }
+                }
+            }
+            val window = compose.onRoot().getBoundsInRoot()
+            val rows = compose.onAllNodes(hasParent(hasTestTag("Set ledger")))
+            val count = rows.fetchSemanticsNodes().size
+            assertEquals(5, count)
+            repeat(count) { at ->
+                rows[at].performScrollTo().assertIsDisplayed()
+                val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
+                val ledger = compose.onNodeWithTag("Set ledger").getBoundsInRoot()
+                val row = rows[at].getBoundsInRoot()
+                assertTrue("row $at at $row inside the ledger $ledger above Log set $log in $window",
+                    row.height > 0.dp && row.top >= ledger.top && row.bottom <= ledger.bottom && row.bottom <= log.top &&
+                        log.bottom <= window.bottom)
             }
         } } finally { scope.cancel() }
     }

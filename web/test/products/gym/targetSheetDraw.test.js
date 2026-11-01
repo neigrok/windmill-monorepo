@@ -224,6 +224,26 @@ test('the ± is drawn on a bodyweight movement’s load fields only, named `Flip
   assert.deepEqual(refusals(sheet.tree), []);
 });
 
+test('a barbell load below zero is refused under its row and holds the routine’s save, while a bodyweight load keeps its sign', async (t) => {
+  const editor = await openEditor(t);
+  const barbell = sheetOf(t, editor);
+  setCount(barbell, 2);
+  type(barbell.tree, 'Set 1 reps', '8');
+  type(barbell.tree, 'Set 2 load', '-10');
+  assert.deepEqual(refusals(barbell.tree), [['Set 2 load', 'Load, 0 or more.']]);
+  assert.equal(commit(barbell.tree), null);
+  assert.deepEqual(drawn(editor.tree, 'gym-editor-missing'), ['Check the movement targets.']);
+  type(barbell.tree, 'Set 2 load', '0');
+  assert.deepEqual(refusals(barbell.tree), []);
+  assert.deepEqual(drawn(editor.tree, 'gym-editor-missing'), ['Name it to save it.']);
+
+  const assisted = await openSheet(t, 'chin-up');
+  setCount(assisted, 1);
+  type(assisted.tree, 'Set 1 load', '-10');
+  assert.deepEqual(refusals(assisted.tree), []);
+  assert.equal(commit(assisted.tree), 'Set · 1 × max · −10');
+});
+
 test('the sheet owns the sentence; the list never draws a copy, open row or not', async (t) => {
   const editor = await openEditor(t);
   // One open row, no sheet: the row names itself `open` and the list says nothing more.
@@ -233,7 +253,7 @@ test('the sheet owns the sentence; the list never draws a copy, open row or not'
   handed(editor.tree, 'onTarget').props.onTarget(0);
   assert.deepEqual(drawn(editor.tree, 'gym-open-line'), []);
   const sheet = handed(editor.tree, 'neverLogged');
-  assert.equal(sheet.props.equipment, 'barbell');
+  assert.equal(sheet.props.exercise, CATALOG[0]);
   assert.deepEqual(drawn(renderHook(t, () => sheet.type(sheet.props)).tree, 'gym-open-line'), [OPEN_LINE]);
 
   // The sheet closes with nothing set: the row is still open, and the list still draws no copy.

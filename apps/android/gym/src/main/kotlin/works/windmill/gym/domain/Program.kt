@@ -79,6 +79,7 @@ object TargetEntry {
     const val outsideReps = "Whole reps, 1 to 100."
     const val outsideSets = "Sets, 1 to 20."
     const val zeroTarget = "A zero target is no target — clear the field instead."
+    fun belowFloor(floor: Double): String = "Load, ${Readout.weight(floor)} or more."
 
     const val setsPlaceholder = "open"
     const val repsPlaceholder = "max"
@@ -119,14 +120,15 @@ object TargetEntry {
             varyBySet = targets.isNotEmpty() && !Scheme.straight(targets),
         )
 
-        val reading: Reading get() = reading(sets, rows)
+        // `floor` is the movement's: a barbell or a pair of dumbbells refuses a load under 0.
+        fun reading(floor: Double?): Reading = reading(sets, rows, floor)
 
         fun withCount(typed: String): Draft {
             val count = whole(typed, setsBand, outsideSets).whole
             return copy(sets = typed, rows = count?.let { grown(rows, it) } ?: rows)
         }
 
-        fun stepped(field: Field, direction: Int): Draft {
+        fun stepped(field: Field, direction: Int, floor: Double? = null): Draft {
             val shown = shown(rows, sets)
             val typed = when (field) {
                 Field.Sets -> sets
@@ -139,7 +141,7 @@ object TargetEntry {
             val next = when (field) {
                 Field.Sets -> (current + direction).coerceIn(0.0, Program.maxSets.toDouble())
                 Field.Reps -> (current + direction).coerceIn(0.0, Program.maxReps.toDouble())
-                Field.Weight -> Ladder.bump(current, direction, big = false).takeIf { it.isFinite() } ?: return this
+                Field.Weight -> NumberEntry.bumped(current, direction, big = false, floor).takeIf { it.isFinite() } ?: return this
             }
             if (field != Field.Weight && current != kotlin.math.floor(current)) return this
             val value = if (next == 0.0 && field != Field.Weight) "" else Readout.weight(next)
@@ -166,7 +168,7 @@ object TargetEntry {
     // is never told about a lower row while a higher one is still nonsense. A blank Sets is the open
     // line — the rows are hidden, not lost — and only a commit of it drops them. The rows past the
     // count are hidden the same way: the reading is the count's prefix, `resized` up to it.
-    fun reading(sets: String, rows: List<TypedSet>): Reading {
+    fun reading(sets: String, rows: List<TypedSet>, floor: Double? = null): Reading {
         if (sets.isBlank()) return Reading.Open
         val counted = whole(sets, setsBand, outsideSets)
         counted.said?.let { return Reading.Refused(null, Field.Sets, it) }
@@ -174,7 +176,7 @@ object TargetEntry {
         val scheme = ladder.mapIndexed { index, row ->
             val repeated = whole(row.reps, repsBand, outsideReps)
             repeated.said?.let { return Reading.Refused(index, Field.Reps, it) }
-            val loaded = load(row.weight)
+            val loaded = load(row.weight, floor)
             loaded.said?.let { return Reading.Refused(index, Field.Weight, it) }
             SetTarget(reps = repeated.whole, weightKg = loaded.kg)
         }
@@ -282,7 +284,7 @@ object TargetEntry {
         return Read(whole = counted)
     }
 
-    private fun load(typed: String): Read {
+    private fun load(typed: String, floor: Double? = null): Read {
         val raw = typed.trim().replace("−", "-")
         if (raw.isEmpty()) return Read()
         val normalised = raw.replace(",", ".")
@@ -291,6 +293,7 @@ object TargetEntry {
         if (value == null || !value.isFinite()) return Read(said = notANumber)
         val rounded = Ladder.round(value)
         if (value != 0.0 && rounded == 0.0) return Read(said = notANumber)
+        if (floor != null && rounded < floor) return Read(said = belowFloor(floor))
         return Read(kg = rounded)
     }
 }
@@ -327,6 +330,9 @@ data class RoutineDraft(
 
     val changed: Boolean get() = original == null ||
         Program.named(name) != original.name || position != original.position || write != original.entries || movements.any { it.changed }
+
+    // What a Back would lose: anything typed into a new draft, or an edit that differs from its routine.
+    val unsaved: Boolean get() = if (original == null) name.isNotBlank() || entries.isNotEmpty() else changed
 
     val full: Boolean get() = entries.size >= Program.maxEntries
 

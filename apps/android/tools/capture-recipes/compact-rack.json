@@ -15,7 +15,62 @@
         "wait": "Load, kg total"
       },
       {
-        "wait": "Set 1, current, target 75 kg total, 8 reps"
+        "wait_contains": "Set 1, current, "
+      }
+    ]
+  },
+  {
+    "board": "03.34",
+    "name": "rack-fits",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "keyboard": "show"
+      },
+      {
+        "tap": "Load, kg total"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "22.5"
+      },
+      {
+        "key": "KEYCODE_ENTER"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait_contains": "Set 2, current, "
+      }
+    ]
+  },
+  {
+    "board": "03.35",
+    "name": "rack-large-text",
+    "account": "fixture",
+    "workout_clock": true,
+    "viewport": {
+      "width": 840,
+      "height": 1866,
+      "density": 420,
+      "fontScale": 2
+    },
+    "steps": [
+      {
+        "wait": "Log set"
       }
     ]
   },
@@ -38,7 +93,7 @@
         "tap": "Log set"
       },
       {
-        "wait": "Set 2, current, target 24 kg each, 10 reps"
+        "wait_contains": "Set 2, current, "
       }
     ],
     "after": [
@@ -81,7 +136,7 @@
         "tap": "Log set"
       },
       {
-        "wait": "Set 2, current, target 10 kg added, 8 reps"
+        "wait_contains": "Set 2, current, "
       }
     ]
   },

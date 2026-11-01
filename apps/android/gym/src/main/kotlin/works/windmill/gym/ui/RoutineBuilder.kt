@@ -1,8 +1,8 @@
 package works.windmill.gym.ui
 
-import works.windmill.platform.design.WindmillSheetWindow
-import works.windmill.platform.design.WindmillSheetBack
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
+import works.windmill.gym.BackGuard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -32,21 +32,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -67,7 +63,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -78,11 +73,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -96,18 +94,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.RoutineMovement
-import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.domain.sync.RoutineRules
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.net.WindmillJson
+import androidx.compose.runtime.setValue
 
 // Save enables when the draft is savable — named and holding at least one movement — and for an edit
 // only once something actually changed: a Save that rewrote a document with itself would move the
@@ -136,6 +134,11 @@ internal sealed interface BuilderSheet {
         val discarding: Boolean = false,
     ) : BuilderSheet {
         val dirty: Boolean get() = movement != opening || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets
+        // The floor the save will hold this line to, by the domain's own rule.
+        fun floor(of: RoutineMovement): Double? = RoutineRules.targetFloor(
+            retargeted = adding || creating || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets,
+            equipment = of.current.equipment, loadCount = of.current.loadCount,
+            base = of.base?.let { it.equipment to it.loadCount })
     }
     @Serializable
     data object Picker : BuilderSheet
@@ -168,6 +171,8 @@ fun RoutineBuilder(
     onSave: () -> Unit,
     onClose: () -> Unit,
     say: (String?) -> Unit,
+    // What Back returns to, named for its description: the routine, the tab or the screen beneath.
+    backTo: String,
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
@@ -231,13 +236,23 @@ fun RoutineBuilder(
     }
 
     val editing = draft.id != null
-    BackHandler(enabled = saving) {}
+    // Asked over the draft, so a recreation mid-question keeps both the question and the draft.
+    var discarding by rememberSaveable { mutableStateOf(false) }
+    // A lambda rather than a local fun: Compose remembers it against the draft it reads, never a stale one.
+    val leave: () -> Unit = leave@{
+        if (saving) return@leave
+        if (!draft.unsaved) return@leave onClose()
+        discarding = true
+        telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "state" to "shown"))
+    }
+    // While a save is in flight Back does nothing; while the draft holds work it asks.
+    BackGuard(enabled = saving || draft.unsaved, ask = leave)
     LaunchedEffect(saving) {
         if (saving) { focusManager.clearFocus(); keyboard?.hide() }
     }
 
     BuildStep(
-        draft = draft, store = store, history = history, editing = editing, editable = !saving,
+        draft = draft, store = store, history = history, editing = editing, editable = !saving, backTo = backTo,
         savable = draft.savable && draft.changed && !saving,
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
@@ -246,13 +261,12 @@ fun RoutineBuilder(
             else sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()), movement)
         },
         onRemove = { onDraft(draft.removing(it)) }, onAdd = { sheet = BuilderSheet.Picker },
-        onSave = onSave, onCancel = { if (!saving) onClose() },
+        onSave = onSave, onCancel = leave,
     )
 
     val open = sheet
     if (open != null) {
-        ModalBottomSheet(onDismissRequest = ::requestClose, sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+        WindmillSheet(onDismissRequest = ::requestClose, onBack = ::requestClose, sheetState = sheetState,
             containerColor = skin.surface, scrimColor = skin.scrim,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             dragHandle = {
@@ -260,96 +274,85 @@ fun RoutineBuilder(
                     Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
                 }
             }) {
-            WindmillSheetWindow()
-            WindmillSheetBack(onDismiss = ::requestClose) {
-                val sheetKeyboard = LocalSoftwareKeyboardController.current
-                BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
-                when (open) {
-                    is BuilderSheet.Target -> {
-                        val movement = open.movement ?: draft.movement(open.exerciseId, store.catalog)
-                        if (movement != null) MovementForm(movement, open.scheme,
-                            title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
-                            commitLabel = if (open.adding) "Add" else "Done",
-                            onMovement = { changed ->
-                                val latest = sheet as? BuilderSheet.Target
-                                if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
-                            },
-                            onScheme = { changed ->
-                                val latest = sheet as? BuilderSheet.Target
-                                if (latest != null) sheet = latest.copy(scheme = changed)
-                            }, onCancel = ::requestClose,
-                            onCommit = commit@ {
-                                if (closing || saving) return@commit
-                                val latest = sheet as? BuilderSheet.Target
-                                val edited = latest?.movement ?: movement
-                                val reading = latest?.scheme?.reading ?: open.scheme.reading
-                                val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
-                                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
-                                    "outcome" to if (valid) "ok" else "refused"))
-                                if (valid) {
-                                    focusManager.clearFocus(); keyboard?.hide()
-                                    onDraft(draft.staging(edited, reading))
-                                    close()
-                                }
-                            }, creating = open.creating, busy = closing)
-                    }
-                    BuilderSheet.Picker -> MovementPicker(
-                        catalog = store.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
-                        nowMs = 0, sessions = store.recent, title = "Add movement",
-                        onPick = { id ->
-                            val movement = draft.movement(id, store.catalog)
-                            if (movement == null) say("That movement is no longer on the log.")
-                            else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.domain.SetTarget>()), movement, adding = true)
-                        }, onCreate = null,
-                        onCreateDraft = { exercise, scheme ->
-                            sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)
-                        }, state = pickerState,
-                        modifier = Modifier.heightIn(max = pickerMaxHeight()).padding(horizontal = GymLayout.gutter)
-                            .padding(bottom = GymLayout.sheetBottom), onClose = ::close,
-                    )
+            val sheetKeyboard = LocalSoftwareKeyboardController.current
+            BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
+            when (open) {
+                is BuilderSheet.Target -> {
+                    val movement = open.movement ?: draft.movement(open.exerciseId, store.catalog)
+                    if (movement != null) MovementForm(movement, open.scheme,
+                        title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
+                        commitLabel = if (open.adding) "Add" else "Done",
+                        onMovement = { changed ->
+                            val latest = sheet as? BuilderSheet.Target
+                            if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
+                        },
+                        onScheme = { changed ->
+                            val latest = sheet as? BuilderSheet.Target
+                            if (latest != null) sheet = latest.copy(scheme = changed)
+                        }, onCancel = ::requestClose,
+                        onCommit = commit@ {
+                            if (closing || saving) return@commit
+                            val latest = sheet as? BuilderSheet.Target
+                            val edited = latest?.movement ?: movement
+                            val reading = (latest?.scheme ?: open.scheme).reading((latest ?: open).floor(edited))
+                            val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
+                            telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
+                                "outcome" to if (valid) "ok" else "refused"))
+                            if (valid) {
+                                focusManager.clearFocus(); keyboard?.hide()
+                                onDraft(draft.staging(edited, reading))
+                                close()
+                            }
+                        }, creating = open.creating, busy = closing, floor = open.floor(movement))
                 }
+                BuilderSheet.Picker -> MovementPicker(
+                    catalog = store.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
+                    nowMs = 0, sessions = store.recent, title = "Add movement",
+                    onPick = { id ->
+                        val movement = draft.movement(id, store.catalog)
+                        if (movement == null) say("That movement is no longer on the log.")
+                        else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.domain.SetTarget>()), movement, adding = true)
+                    }, onCreate = null,
+                    onCreateDraft = { exercise, scheme ->
+                        sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)
+                    }, state = pickerState,
+                    modifier = Modifier.heightIn(max = pickerMaxHeight()).padding(horizontal = GymLayout.gutter)
+                        .padding(bottom = GymLayout.sheetBottom), onClose = ::close,
+                )
             }
         }
     }
     val form = open as? BuilderSheet.Target
-    if (form?.discarding == true) AlertDialog(onDismissRequest = { sheet = form.copy(discarding = false) },
-        title = { Text("Discard changes?") }, text = { Text("Changes to this movement won’t be kept.") },
-        confirmButton = { TextButton(onClick = ::leaveForm) { Text("Discard", color = skin.error) } },
-        dismissButton = { TextButton(onClick = { sheet = form.copy(discarding = false) }) { Text("Cancel") } },
-        containerColor = skin.surface)
+    if (form?.discarding == true) DiscardQuestion("Discard changes?", "Changes to this movement won’t be kept.",
+        onKeepEditing = { sheet = form.copy(discarding = false) }, onDiscard = ::leaveForm)
+    if (discarding) DiscardQuestion("Discard routine changes?",
+        "${Program.named(draft.name) ?: "This routine"} won’t be saved.",
+        onKeepEditing = {
+            discarding = false
+            telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "outcome" to "cancelled"))
+        },
+        onDiscard = {
+            discarding = false
+            telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "outcome" to "ok"))
+            onClose()
+        })
 }
 
+// The editor's two questions before work is let go: the movement form's and the whole draft's.
 @Composable
-internal fun PlanningNameField(
-    value: String,
-    onValue: (String) -> Unit,
-    description: String,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    container: Color? = null,
-) {
+private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
     val skin = LocalGymColors.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Name", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-        OutlinedTextField(
-            value, onValueChange = onValue, singleLine = true, enabled = enabled,
-            placeholder = { Text(placeholder) }, textStyle = WindmillFont.body(18).copy(lineHeight = 25.sp),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words,
-                autoCorrectEnabled = false, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
-            shape = RoundedCornerShape(8.dp),
-            colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = container ?: skin.surface,
-                unfocusedContainerColor = container ?: skin.surface, focusedBorderColor = skin.accent,
-                unfocusedBorderColor = skin.line, focusedTextColor = skin.ink,
-                unfocusedTextColor = skin.ink, cursorColor = skin.accent,
-                focusedPlaceholderColor = skin.inkDim, unfocusedPlaceholderColor = skin.inkDim),
-            modifier = modifier.fillMaxWidth().heightIn(min = 56.dp)
-                .semantics { contentDescription = description },
-        )
-        Program.counter(value)?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
+    val native = FontFamily.Default
+    @Composable
+    fun Action(label: String, colour: Color, onClick: () -> Unit) = TextButton(onClick = onClick) {
+        Text(label, color = colour, fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
     }
+    AlertDialog(onDismissRequest = onKeepEditing,
+        title = { Text(title, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp, color = skin.ink) },
+        text = { Text(text, fontFamily = native, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, color = skin.inkDim) },
+        confirmButton = { Action("Discard", skin.error, onDiscard) },
+        dismissButton = { Action("Keep editing", skin.accent, onKeepEditing) },
+        containerColor = skin.surface)
 }
 
 @Composable
@@ -366,6 +369,7 @@ private fun BuildStep(
     onAdd: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    backTo: String,
 ) {
     val skin = LocalGymColors.current
     val focus = remember { FocusRequester() }
@@ -419,7 +423,7 @@ private fun BuildStep(
         title = if (editing) "Edit routine" else "New routine",
         navigation = {
             IconButton(onClick = onCancel, enabled = editable, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to the routine you were on",
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to $backTo",
                     tint = if (editable) skin.ink else skin.inkDim, modifier = Modifier.size(24.dp))
             }
         },
@@ -432,8 +436,18 @@ private fun BuildStep(
             .onGloballyPositioned { viewport = it.boundsInRoot() }
             .testTag("routine-editor-body").verticalScroll(scroll).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            PlanningNameField(draft.name, { onDraft(draft.named(it)) }, "Routine name", "Routine name",
-                modifier = Modifier.focusRequester(focus), enabled = editable)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                NativeFieldType {
+                    OutlinedTextField(draft.name, onValueChange = { onDraft(draft.named(it)) }, enabled = editable,
+                        label = { Text("Name", Modifier.clearAndSetSemantics {}) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words,
+                            autoCorrectEnabled = false, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
+                            .semantics { contentDescription = "Routine name" })
+                }
+                Program.counter(draft.name)?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
+            }
             if (draft.name.isBlank() && (editing || draft.entries.isNotEmpty())) {
                 Text(Program.nameItToSaveIt, style = WindmillFont.body(14), color = skin.inkDim)
             }

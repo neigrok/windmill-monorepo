@@ -122,9 +122,10 @@ data class WorkoutFix(val original: SignedOutWorkout, val landed: Boolean, val s
         return SignedOutWorkout(session, original.sets.filter { it.id !in edited } + sets.map { it.set(session.id) })
     }
 
-    // The editor's live line: what this phone would refuse before asking the account. A landed workout's sets must be
-    // valid and on known movements; a whole copy passes what its retry would meet.
+    // The editor's live line: what this phone would refuse before asking the account. A load the person changed meets
+    // its floor; a landed workout's sets must be valid and on known movements; a whole copy passes what its retry would meet.
     fun refusal(at: Moment, among: List<Session>, catalogue: Catalogue): GymRefusal? {
+        workout.floorRefusal(original, catalogue)?.let { return it }
         if (!landed) return workout.retryRefusal(at, among, catalogue)
         for (set in sets) {
             try { Valid(set.set(original.session.id), TrainingSet, at = at) } catch (violation: Violation) { return GymRefusal.Invalid(violation) }
@@ -151,7 +152,8 @@ class DiscardSignedOutWorkout(val id: Id<Session>) : Action<List<SignedOutWorkou
 // `intoWorkout` puts the sets inside the workout's window back into it: appended while it is open, else corrected
 // in, numbered after the ones it kept, its times left alone. `separately` makes the sets outside the window a saved
 // copy of their own, from the first to the last, and queues its import, so a refusal of it is that copy's to fix.
-// Either takes a revised copy, which replaces the saved one only when the retry is queued.
+// Either replays what the copy recorded and takes a revised copy, whose changed loads meet their floors and which
+// replaces the saved one only when the retry is queued.
 class RecoverStrandedSets(val id: Id<Session>, val placement: Placement, val revised: SignedOutWorkout? = null) : Action<RecoverStrandedSets.Loaded, Unit, GymRefusal> {
     enum class Placement { intoWorkout, separately }
     data class Loaded(val backup: List<SignedOutWorkout>, val workout: SignedOutWorkout?, val session: Session?, val stranded: List<TrainingSet>, val state: TrainingState)
@@ -169,6 +171,7 @@ class RecoverStrandedSets(val id: Id<Session>, val placement: Placement, val rev
         val workout = loaded.workout ?: return Decision.Unchanged(Unit)
         if (loaded.stranded.isEmpty()) return Decision.Unchanged(Unit)
         val session = loaded.session ?: return Decision.Refuse(GymRefusal.Gone(id.ref, Refused.Path.predicted))
+        workout.floorRefusal(loaded.backup.firstOrNull { it.session.id == id }, loaded.state.catalogue)?.let { return Decision.Refuse(it) }
         val inside = loaded.stranded.filter { set -> set.completedAt >= session.startedAt && (session.finishedAt?.let { set.completedAt <= it } ?: true) }
         when (placement) {
             Placement.intoWorkout -> {
@@ -187,7 +190,7 @@ class RecoverStrandedSets(val id: Id<Session>, val placement: Placement, val rev
                 val separate = Session(ids.mint(Session), first.completedAt, outside.last().completedAt, "finish")
                 val copy = SignedOutWorkout(separate, outside.map { it.copy(sessionId = separate.id) })
                 copy.importRefusal(loaded.state.moment, loaded.state.stored, loaded.state.catalogue)?.let { return Decision.Refuse(it) }
-                val plan = when (val imported = copy.importAction.decision(ImportSession.Loaded(loaded.state, null), ids)) {
+                val plan = when (val imported = copy.importAction.recorded.decision(ImportSession.Loaded(loaded.state, null), ids)) {
                     is Decision.Write -> imported.plan
                     is Decision.Refuse -> return Decision.Refuse(imported.refusal)
                     is Decision.Unchanged -> return Decision.Unchanged(Unit)
@@ -216,6 +219,6 @@ class RecoverStrandedSets(val id: Id<Session>, val placement: Placement, val rev
             CorrectedSet(set.id, set.exerciseId, next, set.weightKg, set.reps, set.completedAt, set.rpe, set.note, rpeNamed = true)
         }
         val correction = CorrectSession(id, ids.opaqueID(), session.startedAt, finish, session.displayName, corrected, preserveOtherSets = true)
-        return correction.decision(state, ids)
+        return correction.recorded.decision(state, ids)
     }
 }

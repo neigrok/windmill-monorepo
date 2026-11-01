@@ -3,6 +3,10 @@ package works.windmill.gym.store
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -390,7 +394,10 @@ class HeldWeightLifecycleTests {
             runCurrent()
             assertEquals(emptyList<Any>(), room.store.bodyweight)
             server.refuse(code = "forbidden")
-            room.sync(server); room.store.refreshEngine()
+            room.sync(server)
+            // The store reads refusals from the engine's notice view, which its observation thread fills after the sync.
+            withContext(Dispatchers.IO) { withTimeout(10_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
+            room.store.refreshEngine()
             assertEquals(original, room.store.bodyweight)
             assertEquals(emptyList<Any>(), room.engine.undoOffers())
             assertEquals(listOf("That change could not be saved."), room.store.refusals.map { it.reason })

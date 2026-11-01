@@ -1,12 +1,11 @@
 # Gym owns its event schema; the observability doc is complete and checked
 
-**Status:** Refactor plus docs. Not started.
+**Status:** 🚀 On main (`70ec2dbe`). Refactor plus docs.
 
 **Current implementation**
-- **Dependency rule:** `platform/.../telemetry/Telemetry.kt` hard-codes the `gym_action` allowlist (`workout_bar`, `bodyweight` `calendar_open`, `routine_editor`, `movement_form`, `record`, `tile`, …). Every new gym action has to edit `:platform`, which breaks the rule in `STRUCTURE.md`: platform is product-neutral.
-- **Failure operations:** about 30 of the roughly 85 static failure operations in code appear nowhere in `docs/ANDROID_OBSERVABILITY.md`. Examples: `gym.savePreferences`, `gym.weighIn`, `gym.readNotes`, `gym.readProgram`, `gym.revokeShare`, `gym.restoreNavigation`, `gym.restoreFinishedSession`, `gym.workoutClock`, `session_decode`, `session_migrate`, `telemetry_persist`, `telemetry_restore`, `application_coroutine`.
-- **Product events table:** partial; the rest is scattered over per-task prose.
-- **Evidence logs:** the doc carries per-task verification records ("Task 18's final local Save window receives 22 bounded intake events…", "Task 51's current-source local intake contains 17…", "Installed 03/17 acceptance records nine…", the "local native recipe delivers four…" sections). AGENTS.md says docs record current state only, and the README says such evidence belongs in the task report.
+- **Dependency rule:** `:platform` owns `EventSchema`, `LabelSchema` and `EventSchemas` (`platform/telemetry/Telemetry.kt`) and registers only its own events (`account_delete`, `ai_installation_outcome`). `:gym` registers `gym_action` (`GymActions`), its other bounded events and the `onboarding_` prefix in `gym/telemetry/GymEvents.kt`; the app hands `GymEvents.schemas` to `AndroidTelemetry`. The AI doors declare their expected 503s through `AiAvailability` instead of `:platform` naming their operations. `LayeringTests.platformSourcesHoldNoGymLabel` keeps gym labels out of `:platform`.
+- **Doc:** `docs/ANDROID_OBSERVABILITY.md` is one reference: the failures table, the events table with allowed properties, and the gym_action table. It holds no per-task evidence.
+- **Test:** `ObservabilityDocTests` (`:app`) collects failure-operation and event literals from `:app`, `:platform` and `:gym`, every registered event and label, and `GymActions`; it fails on a missing row, a row the code no longer names, or a gym_action table that differs from `GymActions`.
 
 **Change**
 - **Allowlist:** `:gym` registers its `gym_action` schema (screens, actions, outcomes) with `:platform`'s validator through an interface `:platform` owns. `:platform` keeps no gym names.

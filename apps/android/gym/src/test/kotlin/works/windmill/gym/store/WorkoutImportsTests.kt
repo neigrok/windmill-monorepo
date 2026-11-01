@@ -64,6 +64,28 @@ class WorkoutImportsTests {
         }
     }
 
+    @Test fun aFixThatMovesABarbellLoadBelowZeroIsRefusedWhileTheLoadTheWorkoutRecordedStands() {
+        val recorded = finished().sets.single().copy(weightKg = -10.0)
+        val row = finished(start = 101_000, finish = 103_000).copy(sets = listOf(recorded.copy(completedAtMs = 102_000)))
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            imports.prepare(row)
+            val opening = imports.opening(row.session.id)
+            val kept = finished().copy(sets = listOf(recorded))
+            val moved = finished().copy(sets = listOf(recorded.copy(weightKg = -5.0)))
+            val before = local.snapshot()
+            assertNull(imports.preview(opening, kept, false, testNow))
+            assertEquals("invalid-set", imports.preview(opening, moved, false, testNow))
+            assertEquals(before, local.snapshot())
+            imports.replaceAndRetry(row.session.id, moved, opening = opening)
+            assertEquals(listOf("refused" to "invalid-set"), sources(local).map { it.member("state").str() to it.member("code").str() })
+            assertTrue(outbox(local).isEmpty())
+            imports.replaceAndRetry(row.session.id, kept, opening = imports.opening(row.session.id))
+            assertEquals(listOf(-10.0), outbox(local).single().member("intent").member("cmd").member("args").member("sets").arr()
+                .map { it.member("weightKg").num() })
+        }
+    }
+
     @Test fun anOpenCorrectionUpdatesItsOwedChildInTheSameGuardedGesture() {
         val row = finished(start = 101_000, finish = 103_000).let { it.copy(session = it.session.copy(finishedAtMs = null),
             sets = it.sets.map { set -> set.copy(completedAtMs = 102_000, note = "Retained", rpe = 7.5) }, deleted = emptyList()) }
@@ -388,6 +410,27 @@ class WorkoutImportsTests {
             assertTrue(gym.details().all { !it.session.isOpen })
             assertFalse(gym.imports.hasOwedSets("session01"))
             assertTrue(gym.imports.refusals().isEmpty())
+        }
+    }
+
+    @Test fun anOwedBarbellSetBelowZeroThatAnOlderBuildRecordedStillSyncsAfterUpgrade() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val gym = EngineTraining(local)
+            gym.startSession(SessionStart("session01", 1_000))
+            // An older build took this barbell load below zero offline; the floor guards only a load entered now.
+            local.commit(scope, works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.create("set",
+                works.windmill.sync.api.NewID.Given(RecordID("set00001")), mapOf("sessionId" to Json.of("session01"),
+                    "exerciseId" to Json.of("back-squat"), "weightKg" to Json.of(-2.5), "reps" to Json.of(5), "completedAt" to Json.of(2_000))))))
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            assertEquals(-2.5, gym.imports.operations().single().entry.set.weightKg, 0.0)
+            repeat(12) { gym.reconcileImports(); push(local, server); pull(local, server) }
+            assertFalse(gym.imports.hasOwedSets("session01"))
+            assertEquals(listOf("set00001" to -2.5), gym.details().flatMap { it.sets }.map { it.id to it.weightKg })
+            assertTrue(gym.imports.refusals().isEmpty())
+            assertTrue(local.notices("gym").notices.value.isEmpty())
+            assertTrue(outbox(local).isEmpty())
         }
     }
 

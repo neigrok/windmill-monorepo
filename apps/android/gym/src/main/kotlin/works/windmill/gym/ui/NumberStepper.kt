@@ -60,9 +60,11 @@ import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextStyle
@@ -85,7 +87,9 @@ enum class NumberEditResult { Changed, Unchanged, Refused }
 
 private val numberStepperBuffer = Regex("[-+−]?(?:(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)(?:[eE][-+−]?[0-9]*)?|[.,])?")
 
-internal fun numberStepperEdit(current: TextFieldValue, next: TextFieldValue): TextFieldValue {
+// A typed hyphen becomes the minus sign U+2212, the one every load readout draws.
+internal fun numberStepperEdit(current: TextFieldValue, typed: TextFieldValue): TextFieldValue {
+    val next = if ('-' in typed.text) typed.copy(text = typed.text.replace('-', '−')) else typed
     if (next.text == current.text || numberStepperBuffer.matches(next.text.trim())) return next
     if (next.text.length < current.text.length) {
         var from = 0
@@ -217,28 +221,44 @@ fun NumberStepper(
             val unitGap = with(density) { (if (display) 8.dp else 6.dp).roundToPx() }
             val sideWidth = (constraints.maxWidth - button * 2 - gap * 2 - padding).coerceAtLeast(0)
             val unitWidth = textMeasurer.measure(unit, unitStyle).size.width
-            val baseWidth = textMeasurer.measure(measuredValue, baseStyle).size.width
-            val minimumWidth = if (display) textMeasurer.measure(measuredValue, baseStyle.copy(fontSize = 32.sp)).size.width else 0
+            val measured = baseStyle.copy(color = Color.Unspecified)
+            fun numeralWidth(size: Int) = textMeasurer.measure(measuredValue, measured.copy(fontSize = size.sp)).size.width
+            // Width grows with size, so the largest size that fits is found by halving the range.
+            fun largest(range: IntRange, fits: (Int) -> Boolean): Int? {
+                var low = range.first
+                var high = range.last
+                var found: Int? = null
+                while (low <= high) {
+                    val middle = (low + high) / 2
+                    if (fits(middle)) { found = middle; low = middle + 1 } else high = middle - 1
+                }
+                return found
+            }
+            val baseWidth = numeralWidth(if (display) 88 else 20)
+            // The Display numeral first fits beside its unit, from 88 sp down to 64 sp; only below that does the unit go under it.
+            val inlineSize = if (display) largest(64..88) { numeralWidth(it) + gap + unitGap + unitWidth <= sideWidth } else null
             val requiredLayout = when {
                 !display && (input != NumberStepperInput.SignedDecimal ||
                     baseWidth + gap + unitGap + unitWidth <= sideWidth) -> NumberFieldLayout.Inline
                 !display -> NumberFieldLayout.UnitBelow
-                baseWidth + gap + unitGap + unitWidth <= sideWidth -> NumberFieldLayout.Inline
-                minimumWidth + gap <= sideWidth && unitWidth <= sideWidth -> NumberFieldLayout.UnitBelow
+                inlineSize != null -> NumberFieldLayout.Inline
+                numeralWidth(32) + gap <= sideWidth && unitWidth <= sideWidth -> NumberFieldLayout.UnitBelow
                 else -> NumberFieldLayout.FullWidth
             }
             val fieldLayout = if (focused) maxOf(focusedLayout, requiredLayout) else requiredLayout
             SideEffect { focusedLayout = if (focused) fieldLayout else NumberFieldLayout.Inline }
             val contentWidth = if (fieldLayout == NumberFieldLayout.FullWidth)
                 (constraints.maxWidth - padding).coerceAtLeast(0) else sideWidth
-            val numeralSize = if (display && fieldLayout != NumberFieldLayout.Inline) {
-                (88 downTo 32).firstOrNull { candidate ->
-                    textMeasurer.measure(measuredValue, baseStyle.copy(fontSize = candidate.sp)).size.width + gap <= contentWidth
-                } ?: 32
-            } else if (display) 88 else 20
+            val numeralSize = when {
+                !display -> 20
+                fieldLayout == NumberFieldLayout.Inline -> inlineSize ?: 64
+                else -> largest(32..88) { numeralWidth(it) + gap <= contentWidth } ?: 32
+            }
             val valueStyle = baseStyle.copy(fontSize = numeralSize.sp,
                 lineHeight = (numeralSize + 4).sp)
             val numeralWidth = textMeasurer.measure(measuredValue, valueStyle).size.width
+            // A numeral fitted below 88 sp keeps the 88 sp line, so stepping never changes the field's height.
+            val numeralLine = if (display && fieldLayout == NumberFieldLayout.Inline) textMeasurer.measure(measuredValue, measured).size.height else 0
             val animateValue = !focused && !reducedMotion && numeralWidth + gap <= contentWidth
             Layout(content = {
                 StepperButton(NumberStep.Decrease, label, enabled && decreaseEnabled) {
@@ -251,7 +271,9 @@ fun NumberStepper(
                         editor = accepted
                         if (accepted.text != previous.text) onValueChange(accepted.text)
                     }, Modifier.semantics {
-                        contentDescription = "$label, $unit"
+                        // The label once and the unit only when it adds to it: "Sets", "Load, kg total". TalkBack
+                        // reads the typed value from the field itself, so the drawn label and unit stay silent.
+                        contentDescription = if (unit.equals(label, ignoreCase = true)) label else "$label, $unit"
                         refusal?.let { error(it) }
                         customActions = listOf(
                             CustomAccessibilityAction("Decrease") { step(NumberStep.Decrease) },
@@ -281,7 +303,7 @@ fun NumberStepper(
                                 Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp,
                                     bottom = if (display && fieldLayout == NumberFieldLayout.Inline) 4.dp else 8.dp)) {
                                     Text(label, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp),
-                                        color = if (focused || flash) skin.accent else skin.inkDim)
+                                        color = if (focused || flash) skin.accent else skin.inkDim, modifier = Modifier.clearAndSetSemantics { testTag = "stepper-label" })
                                     Layout(content = {
                                         Box(Modifier.clipToBounds()) {
                                             Box(Modifier.fillMaxWidth().graphicsLayer {
@@ -294,13 +316,14 @@ fun NumberStepper(
                                                 innerTextField()
                                             }
                                         }
-                                        Text(unit, color = if (flash) skin.accent else skin.inkDim, style = unitStyle, maxLines = 1)
+                                        Text(unit, color = if (flash) skin.accent else skin.inkDim, style = unitStyle, maxLines = 1,
+                                            modifier = Modifier.clearAndSetSemantics { testTag = "stepper-unit" })
                                     }) { children, limits ->
                                         val unitPlaceable = children[1].measure(limits.copy(minWidth = 0, minHeight = 0))
                                         val below = fieldLayout != NumberFieldLayout.Inline
                                         val valueWidth = if (below) limits.maxWidth else
                                             minOf(numeralWidth + gap, (limits.maxWidth - unitPlaceable.width - unitGap).coerceAtLeast(0))
-                                        val valuePlaceable = children[0].measure(limits.copy(minWidth = 0, minHeight = 0, maxWidth = valueWidth))
+                                        val valuePlaceable = children[0].measure(limits.copy(minWidth = 0, minHeight = numeralLine.coerceAtMost(limits.maxHeight), maxWidth = valueWidth))
                                         val unitY = if (below) valuePlaceable.height + gap else
                                             (valuePlaceable[FirstBaseline] - unitPlaceable[FirstBaseline]).coerceAtLeast(0)
                                         layout(limits.maxWidth, maxOf(valuePlaceable.height, unitY + unitPlaceable.height)) {

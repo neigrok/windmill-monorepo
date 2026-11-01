@@ -34,7 +34,7 @@ class NativeControlsTests {
             }
         }
         compose.onNodeWithContentDescription("New routine").performClick()
-        compose.onNodeWithText("Weigh in").performClick()
+        compose.onNodeWithContentDescription("Weigh in").performClick()
         compose.onNodeWithText("Discard").assertIsNotEnabled().performClick()
         compose.onNodeWithText("Delete note").performClick()
         compose.runOnIdle { assertEquals(listOf("routine", "weigh-in", "note"), calls) }

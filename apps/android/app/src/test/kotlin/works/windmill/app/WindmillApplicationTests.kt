@@ -23,6 +23,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 import javax.crypto.KeyGenerator
 import javax.crypto.KeyGeneratorSpi
 import javax.crypto.SecretKey
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -159,10 +162,18 @@ class WindmillApplicationTests {
             activity.setup()
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(Lifecycle.State.RESUMED, ProcessLifecycleOwner.get().lifecycle.currentState)
-            runBlocking {
+            // The app reads on Dispatchers.Default and resumes on the main looper, and its own restore may still be on its
+            // way back; blocking this thread would starve that resume, so the looper turns until the write lands.
+            val written = CoroutineScope(Dispatchers.Main.immediate).async {
                 app.gym.restoreLocal()
-                assertNull(app.gym.store.weighIn("2026-09-01", 81.25))
+                app.gym.store.weighIn("2026-09-01", 81.25)
             }
+            val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
+            while (!written.isCompleted) {
+                assertTrue("the weigh-in never landed", System.nanoTime() < deadline)
+                shadowOf(Looper.getMainLooper()).idle()
+            }
+            assertNull(runBlocking { written.await() })
             app.gym.store.withhold(Deletion.Bodyweight("2026-09-01"))
             shadowOf(Looper.getMainLooper()).idle()
             val store = app.gym.store

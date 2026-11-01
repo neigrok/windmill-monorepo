@@ -42,7 +42,7 @@ class TargetSheetSignKeyTests {
                     request.createInputConnection(info)
                     inputs?.add(info.inputType)
                     awaitCancellation()
-                }) { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}) }
+                }) { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}, "Routines") }
             }
         }
         compose.onNodeWithText(movement).performClick()
@@ -50,7 +50,7 @@ class TargetSheetSignKeyTests {
     }
 
     private fun noSignKey() {
-        compose.onAllNodesWithContentDescription(bandAssistedSignDescription).assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Flip the sign — band-assisted").assertCountEquals(0)
         compose.onAllNodesWithText("±").assertCountEquals(0)
     }
 

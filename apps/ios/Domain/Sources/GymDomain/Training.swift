@@ -126,9 +126,18 @@ public enum SetRules {
   public static let maxNumber = 2_147_483_647
   // The reps a lifter enters for a set they performed; `reps` admits up to 500 for history brought in from elsewhere.
   public static let loggedReps = 1...99
+  public static let loadFloor = "set.loadFloor"
   static let rules: [Rule] = [.local(weightKg), .local(reps), .local(rpe), .local(note),
-                              .local("set.completedAt", subject: TrainingSet.type),
+                              .local("set.completedAt", subject: TrainingSet.type), .local(loadFloor, subject: TrainingSet.type),
                               .local("set.identity", subject: TrainingSet.type), .local("set.setNumber", subject: TrainingSet.type)]
+
+  // A load a person enters now meets its movement's floor. A set recorded with the same movement and load is a fact the
+  // floor never refuses, and a movement the catalogue lacks is the log's to refuse.
+  public static func floored(_ entered: TrainingSet, recorded: [TrainingSet], catalogue: Catalogue, at path: Path) throws(Violation) {
+    let load: Double = try weightKg.apply(entered.weightKg, at: path)
+    if recorded.contains(where: { $0.id == entered.id && $0.exerciseId == entered.exerciseId && $0.weightKg == load }) { return }
+    try catalogue.find(entered.exerciseId)?.floored(load, rule: loadFloor, at: path)
+  }
 
   public static func nextNumber(_ sets: [TrainingSet], sessionId: ID<Session>, exerciseId: ID<Exercise>) -> Int? {
     let last = sets.filter { $0.sessionId == sessionId && $0.exerciseId == exerciseId }.compactMap(\.setNumber).max() ?? 0

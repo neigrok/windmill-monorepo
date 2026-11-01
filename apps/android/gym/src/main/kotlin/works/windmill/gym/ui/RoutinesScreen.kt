@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,8 +24,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,7 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
@@ -55,7 +58,6 @@ import works.windmill.gym.domain.sync.SeedExercises
 import works.windmill.gym.store.RefusedWorkout
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSheetWindow
 
 @Composable
 fun RoutinesScreen(
@@ -67,6 +69,7 @@ fun RoutinesScreen(
     onOpenRoutine: (String) -> Unit,
     onDeleteRoutine: suspend (String) -> Boolean,
     onReview: (Proposal) -> Unit,
+    transient: SnackbarHostState? = null,
 ) {
     val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
@@ -78,6 +81,8 @@ fun RoutinesScreen(
     GymScreen(
         title = "Routines",
         actions = { YouSeat(seat) },
+        transient = transient,
+        floatingActionButton = { GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) }) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -126,8 +131,6 @@ fun RoutinesScreen(
                     }
                 }
             }
-            GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
         }
     }
 }
@@ -183,7 +186,7 @@ fun RoutineSheet(
 ) {
     val skin = LocalGymColors.current
     val routine = store.routine(routineId)
-    ModalBottomSheet(
+    WindmillSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = skin.surface,
@@ -196,7 +199,6 @@ fun RoutineSheet(
         },
         modifier = Modifier.testTag("routine-sheet"),
     ) {
-        WindmillSheetWindow()
         Column(Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.weight(1f, fill = false).fillMaxWidth()
@@ -240,7 +242,8 @@ fun RoutineSheet(
             if (routine != null) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter)
                     .padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    failure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
+                    failure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
                     Button(onClick = { onStart(routine.id) }, enabled = !starting, shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))

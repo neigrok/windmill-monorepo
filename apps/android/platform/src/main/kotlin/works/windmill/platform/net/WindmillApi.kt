@@ -45,12 +45,14 @@ class WindmillApi(
     client: OkHttpClient = OkHttpClient(),
     @PublishedApi internal val telemetry: Telemetry = Telemetry.None,
     headers: Map<String, String> = emptyMap(),
+    // A refusal this door's callers expect and handle: it stays an api_request_failed event, never an Issue.
+    private val expected: (WindmillApiException) -> Boolean = { false },
 ) {
     private val transport = RequestDiagnostics.attachTo(client)
     private val requestHeaders = headers.toMap()
 
     fun withHeaders(headers: Map<String, String>): WindmillApi =
-        WindmillApi(baseUrl, credential, transport, telemetry, requestHeaders + headers)
+        WindmillApi(baseUrl, credential, transport, telemetry, requestHeaders + headers, expected)
 
     suspend inline fun <reified Reply> get(path: String, operation: String = "http_request"): Reply = send("GET", path, operation = operation)
 
@@ -81,7 +83,7 @@ class WindmillApi(
     }
 
     @PublishedApi
-    internal fun report(method: String, path: String, operation: String, error: Throwable, diagnostics: RequestDiagnostics) {
+    internal fun report(method: String, path: String, operation: String, error: WindmillApiException, diagnostics: RequestDiagnostics) {
         val properties = mutableMapOf(
             "method" to method,
             "route" to path.substringBefore('?').substringBefore('#').split('/').take(3).joinToString("/"),
@@ -91,7 +93,7 @@ class WindmillApi(
         properties.putAll(diagnostics.properties())
         if (error is WindmillApiException.Refused) properties["status"] = error.status.toString()
         telemetry.event("api_request_failed", properties)
-        if (TelemetryPolicy.report(error, operation)) telemetry.failure(operation, error, properties)
+        if (TelemetryPolicy.report(error) && !expected(error)) telemetry.failure(operation, error, properties)
     }
 
     suspend fun <Reply> consume(

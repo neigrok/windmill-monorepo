@@ -48,7 +48,8 @@ data class Change(val type: String, val operation: Operation, val values: Map<St
 data class DeviceWrite(val key: String, val value: Json?)
 data class Gesture(var changes: List<Change>, var atomic: Boolean = false, var hold: Boolean = false,
     var guards: List<RegisterRef> = emptyList(), var retire: List<RecordRef> = emptyList(), var supersede: List<String> = emptyList(),
-    var command: Command? = null, var predict: List<Change> = emptyList(), var local: List<DeviceWrite> = emptyList(), var gestureId: String? = null)
+    var command: Command? = null, var predict: List<Change> = emptyList(), var local: List<DeviceWrite> = emptyList(), var gestureId: String? = null,
+    var holdMs: Long = Constants.HOLD_MS)
 
 sealed interface CommitOutcome {
     data class Committed(val receipt: CommitReceipt) : CommitOutcome

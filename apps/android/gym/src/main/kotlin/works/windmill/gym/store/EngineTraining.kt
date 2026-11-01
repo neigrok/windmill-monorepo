@@ -1,5 +1,8 @@
 package works.windmill.gym.store
 
+import kotlinx.coroutines.CancellationException
+import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.telemetry.Telemetry
 import java.time.ZoneId
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -104,6 +107,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             return engine.undo(gestureId)
         }
     }
+    // A held removal lasts the window the room asked for; every other gesture keeps the engine's own.
+    private fun holding(holdMs: Long) = object : works.windmill.sync.api.Replica by writable {
+        override fun <T> commit(scope: ScopeRef, body: (works.windmill.sync.api.CommitContext) -> Pair<works.windmill.sync.api.Gesture?, T>): Pair<works.windmill.sync.api.CommitOutcome?, T> =
+            writable.commit(scope) { context -> body(context).also { (gesture, _) -> gesture?.holdMs = holdMs } }
+    }
     private val reader = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
     val imports = WorkoutImports(engine, writeAuthority)
     val anonymous: Boolean get() = read { it.isAnonymous }
@@ -115,9 +123,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 
     private fun <T> read(body: (Reader) -> T): T = reader.read(EngineSession.scope, body)
-    private suspend fun <T> writing(body: (ActionRunner) -> T): T = withGymActionContext { context ->
+    private suspend fun <T> writing(replica: works.windmill.sync.api.Replica = writable, body: (ActionRunner) -> T): T = withGymActionContext { context ->
         check(!context.insideRun) { "a run cannot enter inside a run" }
-        body(ActionRunner(writable, engine.registry, zone, context))
+        body(ActionRunner(replica, engine.registry, zone, context))
     }
     private suspend fun <L, T> apply(action: Decider<L, T, GymRefusal>): T =
         writing { runner -> runner.execute(action) }
@@ -289,7 +297,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                         "setId" to Json.of(setId), "sessionId" to Json.of(sessionId)))
                 }
             }
-        }, expectedReplica, expectedAnonymous, release = true)
+        }, expectedReplica, expectedAnonymous)
     }
     suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
         reconcileImports()
@@ -307,7 +315,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     } ?: session(id)?.session
     suspend fun discardSession(sessionId: String, expectedReplica: String = engine.activeReplica(),
         expectedAnonymous: Boolean = anonymous) {
-        remove(DiscardSession(Id(sessionId, EngineSession)), expectedReplica, expectedAnonymous, release = true)
+        remove(DiscardSession(Id(sessionId, EngineSession)), expectedReplica, expectedAnonymous)
     }
     // Before a sign-in, every signed-out workout is retained in the import journal for the account.
     fun prepareAdoption() {
@@ -548,7 +556,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         stepKg ?: ExerciseRules.defaultStepKg(equipment), aliases, loadCount)
 
     suspend fun deleteRoutine(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
-        remove(deleteRoutine(Id(id, EngineRoutine)), expectedReplica, expectedAnonymous, release = true)
+        remove(deleteRoutine(Id(id, EngineRoutine)), expectedReplica, expectedAnonymous)
     }
     fun proposal(id: String): Proposal? = read { reader ->
         val identity = Id(id, EngineProposal)
@@ -636,7 +644,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         return notes().firstOrNull { it.id == id } ?: notes().first { it.title == write.title.trim() && it.body == write.body.trim() }
     }
     suspend fun deleteNote(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
-        remove(deleteNote(Id(id, EngineNote)), expectedReplica, expectedAnonymous, release = true)
+        remove(deleteNote(Id(id, EngineNote)), expectedReplica, expectedAnonymous)
     }
     suspend fun moveNote(id: String, drawn: List<String>, withheld: Set<String>): Boolean = writing { runner ->
         val move = moveNote(Id(id, EngineNote), drawn.getOrNull(drawn.indexOf(id) - 1)?.let { Id(it, EngineNote) })
@@ -695,14 +703,15 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         return WeighIn(dateLocal, saved.values.getValue("kg").num(), saved.values.getValue("recordedAt").long())
     }
     suspend fun deleteBodyweight(dateLocal: String) { apply(deleteWeighIn(Id(dateLocal, EngineWeighIn))) }
-    suspend fun holdBodyweight(dateLocal: String, expectedReplica: String = engine.activeReplica(),
+    suspend fun holdBodyweight(dateLocal: String, holdMs: Long, expectedReplica: String = engine.activeReplica(),
         expectedAnonymous: Boolean = anonymous): CommitReceipt? =
-        remove(deleteWeighIn(Id(dateLocal, EngineWeighIn)), expectedReplica, expectedAnonymous, release = false)
+        remove(deleteWeighIn(Id(dateLocal, EngineWeighIn)), expectedReplica, expectedAnonymous, holdMs = holdMs)
 
     private data class RemovalLoaded<L>(val value: L)
 
+    // A removal is released at once, or held for `holdMs` while Undo can still take it back.
     private suspend fun <L> remove(action: Decider<L, Unit, GymRefusal>, expectedReplica: String,
-        expectedAnonymous: Boolean, release: Boolean): CommitReceipt? = writing { runner ->
+        expectedAnonymous: Boolean, holdMs: Long? = null): CommitReceipt? = writing(holdMs?.let(::holding) ?: writable) { runner ->
         val guarded = object : Action<RemovalLoaded<L>?, Boolean, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
@@ -721,7 +730,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
         when (val outcome = runner.run(guarded)) {
             is Outcome.Committed -> {
-                if (release) {
+                if (holdMs == null) {
                     try { outcome.receipt.localIds.forEach { releaseIntent(it) } }
                     catch (failure: Exception) {
                         val restored = try { engine.undo(outcome.receipt.gestureId) }
@@ -741,7 +750,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 
     // Signed-out training prepared for this account: confirmed starts settle, then the sets an
-    // unfinished workout still owes follow it under their own ids.
+    // unfinished workout still owes follow it under their own ids, replayed as they were recorded.
     suspend fun reconcileImports() {
         imports.reconcileConfirmed()
         if (anonymous || firstPullComplete) for (deletion in imports.deletedSets()) {
@@ -781,9 +790,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                     throw TrainingRefused("set-id-taken", "that set id is already used")
                 val decision = when {
                     entry.write == Owed.Delete -> Remove(EngineSet, value.id, GymRefusal).decide(known, ids)
-                    known == null -> AppendSet(value).decide(state, ids)
+                    known == null -> AppendSet(value).recorded.decide(state, ids)
                     entry.write == Owed.Fix -> CorrectSet(known.copy(weightKg = value.weightKg, reps = value.reps,
-                        rpe = value.rpe, note = value.note)).decide(state, ids)
+                        rpe = value.rpe, note = value.note)).recorded.decide(state, ids)
                     else -> Decision.Unchanged(Unit)
                 }
                 val plan = when (decision) {
@@ -919,6 +928,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 refusal.violation.rule == NoteRules.title.path && refusal.violation.reason == Violation.Reason.Blank -> "a note needs a title"
                 refusal.violation.rule == NoteRules.title.path && refusal.violation.reason is Violation.Reason.TooLong -> "a title runs to 60 characters"
                 refusal.violation.rule == NoteRules.body.path && refusal.violation.reason is Violation.Reason.TooLong -> "a note runs to 500 bytes"
+                refusal.violation.rule == SetRules.loadFloor || refusal.violation.rule == RoutineRules.loadFloor ->
+                    works.windmill.gym.domain.TargetEntry.belowFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
                 else -> "Check ${refusal.violation.path.text.substringAfterLast('.')}."
             }
             is GymRefusal.Stale -> "stale" to "That changed. Open it again."
@@ -949,6 +960,13 @@ class TrainingDeleteUnconfirmed(cause: Exception) : Exception(cause)
 // What the replica cannot answer yet: the account's first pull, or the log's receipt for a decision,
 // has not arrived.
 data object TrainingUnanswered : Exception()
+
+// A refusal, an unanswered read, a transport answer or a cancellation is expected and its caller says so; only
+// the rest reaches Sentry, under the operation's static name.
+internal fun Telemetry.unexpected(operation: String, error: Exception) {
+    if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException) return
+    failure(operation, error)
+}
 
 @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
 internal class GymActionContext : AbstractCoroutineContextElement(Key), ActionContext, CopyableThreadContextElement<Unit> {

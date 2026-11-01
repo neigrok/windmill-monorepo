@@ -16,7 +16,6 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.isDialog
@@ -215,7 +214,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("controlled tempo").assertExists()
             compose.runOnIdle { assertEquals(listOf(original), room.training.session(live.id)!!.sets) }
             compose.onNode(load).performClick().performTextReplacement("61")
-            compose.onNodeWithText("Save fix").performScrollTo().performClick()
+            compose.onNodeWithText("Save fix").performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("Fix set")).fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
                 assertEquals(listOf(original.copy(weightKg = 61.0, note = "controlled tempo")), room.training.session(live.id)!!.sets)
@@ -327,7 +326,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
         compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).assertIsDisplayed()
         compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
-        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { runBlocking {
             val set = room.training.session(localId)!!.sets.single()
             assertEquals(setId, set.id)
@@ -500,19 +499,19 @@ class WorkoutRecoveryTests {
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.onNode(hasContentDescription("Increase Reps")).performClick()
             compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             compose.waitUntil(10_000) {
                 compose.onAllNodes((hasContentDescription("Load, kg total") and hasText("92"))).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             val connection = compose.runOnIdle { currentScope.async { room.pull(server); current.connect(account) } }
             compose.waitUntil(10_000) { compose.runOnIdle { connection.isCompleted } }
             runBlocking { connection.await() }
             compose.runOnIdle { assertEquals(listOf(80.0), current.lastTime!!.sets.map { it.weightKg }) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
                 assertEquals(listOf(92.0 to 6), current.sets.map { it.weightKg to it.reps })
@@ -546,7 +545,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("Set note").performTextInput("Live retained note")
             compose.onNodeWithText("Not rated").performClick()
             compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).performScrollTo().performClick()
-            for (dismissal in listOf("back", "blur", "scrim", "drag")) {
+            for (dismissal in listOf("back", "blur then back", "scrim", "drag")) {
                 val modal = compose.onNodeWithText("Fix set").fetchSemanticsNode().root
                 compose.onNode(hasText("60") and SemanticsMatcher("in the Fix dialog") { it.root == modal }).performClick()
                 compose.onNode(hasContentDescription("Load, kg total") and SemanticsMatcher("in the Fix dialog") { it.root == modal })
@@ -554,7 +553,11 @@ class WorkoutRecoveryTests {
                 compose.onNodeWithText("1e999").assertIsDisplayed()
                 when (dismissal) {
                     "back" -> compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
-                    "blur" -> compose.onNodeWithText("Set note").performClick()
+                    "blur then back" -> {
+                        compose.onNodeWithText("Live retained note").performClick()
+                        compose.onNodeWithText("1e999").assertIsDisplayed()
+                        compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
+                    }
                     "scrim" -> compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
                     else -> compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss)).performTouchInput {
                         swipe(center, center + Offset(0f, 1_200f), durationMillis = 500)
@@ -564,7 +567,7 @@ class WorkoutRecoveryTests {
                 compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).assertIsDisplayed()
                 compose.onNodeWithText("1e999").assertDoesNotExist()
             }
-            compose.onNodeWithText("Save fix").performScrollTo().performClick()
+            compose.onNodeWithText("Save fix").performClick()
             compose.runOnIdle {
                 val fixed = logged.copy(note = "Live retained note", rpe = 9.5)
                 assertEquals(listOf(fixed), runBlocking { room.training.session(sessionId) }!!.sets)

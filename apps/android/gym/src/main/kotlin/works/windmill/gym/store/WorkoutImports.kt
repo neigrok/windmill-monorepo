@@ -172,9 +172,9 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             ?: return@read "saved-workout-changed"
         try {
             val before = item.member("source")
-            val original = if (item["kind"] == Json.of("start")) Json.objectOf("session" to before.member("session"),
-                "sets" to Json.Arr(before["entries"]?.obj().orEmpty().values.map { it.member("set") })) else before
+            val original = if (item["kind"] == Json.of("start")) authored(before) else before
             val candidate = editedFinished(original, corrected, markFinished)
+            floorEdits(item, corrected.signedOut(), reader, now)
             if (corrected.session.isOpen) {
                 val readerAt = Reader(reader, scope, Moment(Instant(now), FixedZone(0)), engine.registry)
                 corrected.signedOut().retryRefusal(readerAt.moment, TrainingLog(readerAt).drawnSessions, Catalogue(readerAt))
@@ -186,10 +186,20 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         catch (invalid: Violation) { code(GymRefusal.Invalid(invalid)) }
     }
 
+    // A load the person changed in the fix editor meets its movement's floor; a load the saved workout first recorded
+    // stands as recorded.
+    private fun floorEdits(item: Json, edited: SignedOutWorkout, reader: ScopeReader, now: Long) {
+        val catalogue = Catalogue(Reader(reader, scope, Moment(Instant(now), FixedZone(0)), engine.registry))
+        edited.floorRefusal(signedOutSource(item, item["original"] ?: item.member("source")), catalogue)?.let { throw RefusedImport(code(it)) }
+    }
+
+    // A journal item's workout as the domain reads it.
+    private fun signedOutSource(item: Json, source: Json): SignedOutWorkout =
+        decode(if (item["kind"] == Json.of("start")) authored(source) else source, SavedWorkout.serializer()).signedOut()
+
     private fun editedStart(before: Json, corrected: SavedWorkout): Json {
         val old = before["entries"]?.obj().orEmpty()
-        val authored = Json.objectOf("session" to before.member("session"), "sets" to Json.Arr(old.values.map { it.member("set") }))
-        val edited = editedFinished(authored, corrected, markFinished = false)
+        val edited = editedFinished(authored(before), corrected, markFinished = false)
         val sets = edited.member("sets").arr().associateBy { it.member("id").str() }
         val entries = old.mapValues { (id, entry) ->
             val value = decode(entry, OwedSet.serializer())
@@ -333,8 +343,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     private fun gesture(item: Item, context: CommitContext): Gesture = when (item.kind) {
         "finished" -> imported(item.payload, context)
         "start" -> {
-            val authored = Json.objectOf("session" to item.payload.member("session"), "sets" to Json.Arr(item.payload["entries"]?.obj().orEmpty().values.map { it.member("set") }))
-            if (unknownFinishedFields(authored)) throw RefusedImport("source-needs-update")
+            if (unknownFinishedFields(authored(item.payload))) throw RefusedImport("source-needs-update")
             val session = decode(item.payload.member("session"), Session.serializer())
             val fields = sessionFields(session)
             val known = context.confirmed(Gym.Types.session, RecordID(session.id))?.takeIf { it.isVisible && it.born != null }
@@ -379,7 +388,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         val session = checked.session
         val action = checked.copy.importAction
         val loaded = checked.loaded
-        return when (val decision = action.decision(loaded, IDSource(context))) {
+        return when (val decision = action.recorded.decision(loaded, IDSource(context))) {
             is Decision.Write -> decision.plan.gesture(scope, engine.registry).also { gesture ->
                 gesture.atomic = true
                 if (session.routineId != null) {
@@ -570,7 +579,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                         number.toLong(), set.weightKg, set.reps, Instant(set.completedAtMs), set.rpe, set.note, true)),
                     preserveOtherSets = true)
                 val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), engine.registry)
-                val decision = action.decision(action.load(reader), IDSource(context))
+                val decision = action.recorded.decision(action.load(reader), IDSource(context))
                 if (decision !is Decision.Write) throw RefusedImport("bad-instant")
                 decision.plan.guardRead(session.id, listOf("startedAt", "finishedAt", "displayName", "closedBy"))
                 decision.plan.guardRead(Id(set.id, SyncSet), listOf("sessionId", "exerciseId", "weightKg", "reps", "rpe", "note", "completedAt"))
@@ -609,7 +618,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 "set" -> {
                     val action = AppendSet(SyncSet(Id(setId, SyncSet), Id(sessionId, SyncSession), Id(source.exerciseId, SyncExercise),
                         source.weightKg, source.reps, source.rpe, source.note, Instant(source.completedAtMs)))
-                    when (val decision = action.decision(action.load(reader), IDSource(context))) {
+                    when (val decision = action.recorded.decision(action.load(reader), IDSource(context))) {
                         is Decision.Write -> decision.plan
                         is Decision.Refuse -> throw RefusedImport(if (decision.refusal is GymRefusal.SessionFinished) "session-finished" else "recovery-retry")
                         is Decision.Unchanged -> Plan()
@@ -894,7 +903,10 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 else if (childKey == key) { items.putAll(children); null }
                 else DeviceWrite(childKey, withItems(childJournal, children))
             }
-            val gesture = try { gesture(Item(item.member("seat").str(), kind, id, source), context) } catch (refusal: RefusedImport) {
+            val gesture = try {
+                if (corrected != null || correctedOpen != null) floorEdits(item, signedOutSource(item, source), context, context.now)
+                gesture(Item(item.member("seat").str(), kind, id, source), context)
+            } catch (refusal: RefusedImport) {
                 val changed = item.changed("source" to source, "state" to Json.of(if (refusal.code == "waiting-for-firstpull") "pending" else "refused"), "code" to Json.of(refusal.code),
                     "original" to (item["original"] ?: item.member("source")))
                 items[token] = changed
@@ -963,6 +975,9 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             if (retainedSets + deleted > 0) count[Gym.Types.set] = (count[Gym.Types.set] ?: 0) + retainedSets + deleted
             return journal.changed("items" to Json.Obj(items.toList()), "count" to Json.Obj(count.map { it.key to Json.of(it.value) }))
         }
+        // An unfinished workout's source as a finished one reads: its session and the set each owed entry holds.
+        private fun authored(start: Json) = Json.objectOf("session" to start.member("session"),
+            "sets" to Json.Arr(start["entries"]?.obj().orEmpty().values.map { it.member("set") }))
         private fun journal(reader: ScopeReader, key: String) = reader.device(key) ?: Json.objectOf("version" to Json.of(1), "items" to Json.objectOf())
         // The saved copy as the domain reads it, for the checks this phone runs before asking the account.
         private fun SavedWorkout.signedOut(finishedAtMs: Long? = session.finishedAtMs): SignedOutWorkout {

@@ -584,15 +584,34 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
   that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
   Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
-- **Board vocabulary drifts from the tiers.** The Board proposal pages name the three tiers
-  *Closed · Up next · Done* and the same state *ready*, *blocked* and *locked* in toasts and empty
-  states; canon names them locked · available · complete and the card glyph is a lock. Owner ruling
-  2026-10-28: **Locked · Up next · Done**, one word per state ([review](roadmap-board-review.md));
-  redraw both pages before any Board flow is Ready for dev.
-- **Board says node where the product says step.** Both Board pages use *node* in every control
-  (*Search nodes*, *New node*, *Needs 2 nodes*); the shipped roadmap and the L4 vocabulary say
-  *step*. Redraw with *step*; the proposal's validation list must stop naming node terminology as a
-  requirement.
+- **Board · light focus ring on cream.** `--focus-ring` in `tokens/shadows.css` is a 4px
+  `--accent-terracotta-100` (#F3DFD2) shadow: 1.18:1 against `--surface-canvas` (#F9F5EB), under the
+  3:1 non-text minimum. The [Board proposal](roadmap-board-proposal.md) draws a 2px brand-colour
+  `:focus-visible` ring with a 2px offset (card state sheets 353:5571, 353:5686). The token is shared
+  by the design-system Button, IconButton, Input, Select and SegmentedControl; the library owner
+  retokens it before the Board ships.
+- **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
+  legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
+  384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six
+  hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
+- **Board · no Complete offer after the last subtask.** Checking the last subtask on web fills the
+  gauge and nothing else. The proposal offers *All subtasks done · Complete step* there (phone 07.06
+  231:1174, desktop 03.09 399:19282); no web surface draws it yet.
+- **Board · `/` has two owners.** `shortcuts/shortcutMap.js` lists `/` as Ask AI's second chord and
+  `SkillTreeView.jsx` binds it. The proposal gives `/` to *Find a step* and leaves Ask AI on ⌘K
+  (desktop 10.03 386:13666).
+- **Board · swipe commit.** The shipped List commits a swipe on release past 72px
+  (`SWIPE_COMMIT_PX` in `list/editing.js`). The Board card swipe reveals Complete at 96px and never
+  commits on release or a full swipe; only a tap on Complete does (phone 17.03 378:16515, swipe spec
+  379:17279). The two must not share the commit-on-release path.
+- **Board · Shell at 200% text.** The 200%-text Board specimen (phone 18.05 380:18803) leaves out
+  the Shared Shell: neither the proposal's Shell component (290:7085) nor the shipped
+  `web/src/shell/chrome/chrome.css` (room-switcher pills at a fixed 30px height with
+  `white-space: nowrap`, 32px grid gutters) defines a reflow. The Shell owner draws and builds it at
+  320px with 200% text.
+- **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
+  `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
+  against the 1–3-word button budget in `guidelines/text-budget.md`.
 - **1e · Available-node treatment.** The DOM specimen draws a card-coloured available node;
   `NodeBatch.js` paints available and complete with saturated fills, distinguishing complete with a
   halo. Choose one treatment and align shader and specimen.
@@ -709,7 +728,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11b · Deletion follows the resource.** Use the shared Material end-to-start swipe row with
   the error-red ground and trash icon (`Android / Swipe row` `337:2217`). Routine, set and note
   deletes commit immediately where their tasks specify it; workout discard and conversation delete
-  ask once. The approved Log/Weigh-in flow keeps a nine-second held weight deletion and Undo, so
+  ask once. The approved Log/Weigh-in flow keeps a held weight deletion and Undo for the system's
+  accessibility timeout, never less than nine seconds (05.17), so
   `WithheldDelete.kt` remains while that path uses it. Do not remove all holds as shared-row cleanup.
   Android routine/editor/detail-set rows use the shared ground. Immediate actions are application-owned;
   weights project exact durable receipts. The remaining row migrations belong to their screen tasks.
@@ -719,12 +739,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Routines list | `ui/RoutinesScreen.kt`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
   | Routine ⋮ Delete | `ui/RoutinesScreen.kt`, shared error-role menu, immediate | 02.12 `1253:29480` | verified in Dark/Daylight |
   | Editor movement | `ui/RoutineBuilder.kt`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
-  | Target set row | `ui/TargetBlock.kt:264-277`, word ground | 02.11 `1253:29263` | shared row |
+  | Target set row | `ui/MovementForm.kt`, shared row | 02.11 `1253:29263` | shared row |
   | This workout row | `ui/AssemblySheet.kt:163-195`, both directions, *Remove* on raised | 03.4 `1253:29834` | end-to-start, shared row |
   | Workout detail set | `ui/SessionScreen.kt`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
   | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
   | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable nine-second hold | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, nine-second held delete and Undo |
+  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
   | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
 
@@ -861,38 +881,69 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | 07.4 · 07.5 | 07.11 · 07.12 | Sign-in decision · Discard 3 workouts? |
   | 08.6 · 08.6b · 08.33–08.36 | 08.58 · 08.58b · 08.59–08.62 | No seat · Signed out, earlier chats retained · Scroll · Delete a conversation · Another reply pending · Draft restored |
 
-  The build side still uses the old numbers: `androidgym_tasks/` (README, 18, 19, 24, 25, 28,
-  36, 37, 38), the capture recipes (`bodyweight.json`, `coach-history.json`,
-  `on-this-phone.json`, `routine-targets.json`) and `docs/engineering/android-implementation.md`,
-  `android-task-readiness.md`. `routine-targets.json` also names the movement editor's discard
-  dialog 02.14 although its board is 02.17. Flows drawn on both phones under different numbers
-  remain (Android 02.9 and iOS 02.14 *Create movement*; Android 03.38 and iOS 03.16 *Add movement*).
+  The task files, capture recipes and engineering docs use the new numbers; `routine-targets.json`
+  captures the movement editor's discard dialog as 02.17. Flows drawn on both phones under
+  different numbers remain (Android 02.9 and iOS 02.14 *Create movement*; Android 03.38 and iOS
+  03.16 *Add movement*).
 - **11s · Android review boards, ✅ Ready for dev (owner approved 2026-10-31).** Drawn from the
   native emulator review; implementation pending.
 
   | Gap | Build today | Board (Dark · Daylight) |
   |---|---|---|
-  | In-app predictive back and navigation motion | One root `BackHandler` (`GymRoom.kt`); `WindmillSheetBack` overrides `ModalBottomSheet`'s own predictive back; pushes, pops and tab switches cut | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
-  | Nav labels at 320dp/200% | *Routines* and *The log* clip (see *Narrow tab label*) | 00.7 `1745:27419` · `1745:27475` |
-  | Dirty routine draft on Back (4k) | Back drops a new draft with no question | 02.20 `1742:39519` · `1742:39682` |
-  | Movement editor discard wording | The dialog's dismiss says *Cancel* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
+  | In-app predictive back and navigation motion | Built (task 53): `GymStage` previews pushed screens, the logger and the editor; `WindmillSheet` previews every sheet from its own window, so a busy sheet still swallows Back; shared axis X and fade-through, cuts with Remove animations | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
+  | Nav labels at 320dp/200% | Built (task 54): labels stay whole, spill into a neighbour's spare width and wrap only at a space (*The / log*) | 00.7 `1745:27419` · `1745:27475` |
+  | Dirty routine draft on Back (4k) | Built (task 56): Back, the gesture and the back arrow ask on an unsaved draft; a clean one leaves at once | 02.20 `1742:39519` · `1742:39682` |
+  | Movement editor discard wording | Built (task 56): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
-  | Rack height and planned rows | *22.5 kg total* moves the unit below (O rule) and grows the rack about 80px; planned rows read *last kg total × max* | 03.34 `1742:40960` · `1742:41112` |
+  | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the rack will offer, *22.5 kg total × max*, or *— × max* while last time is unread | 03.34 `1742:40960` · `1742:41112` |
   | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
-  | Receipt at 320dp/200% | Facts and *Performed* fall off-screen; the sheet does not grow | 03.36 `1742:41620` · `1742:41702` |
-  | Weigh-in Undo | *Weigh in* moves above the snackbar and drops under the finger when the fixed nine-second window ends | 05.17 `1742:41789` · `1742:41887`; 05.16 stays as the production picture until 05.17 ships |
+  | Receipt at 320dp/200% | Built (task 60): the receipt opens full height, the facts wrap two to a row and the body scrolls to *Performed* under the pinned actions. A value no size fits on one line stays at the 16 sp floor and drops only its unit to the next line. *Share with Coach* and *Done* are Material filled tonal and filled buttons with one-line labels, which at 200 % run into the 24 dp side padding as the board draws them. The crown is the 24 dp drawable 8 dp before the label, where the board sets an emoji glyph at the label size | 03.36 `1742:41620` · `1742:41702` |
+  | Weigh-in Undo | Built (task 61): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887` |
 
   Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
-  Dumbbells, and iOS planned rows read *last × max* (`Readout.setTarget`). 03.34 adds a fit-first
+  Dumbbells, and iOS planned rows read the load the rack will offer, as 03.34 draws. 03.34 adds a fit-first
   step to the O rule for the rack. 02.20 draws the routine Name field in the outlined
-  floating-label idiom the movement sheet uses; 02.3, 02.5 and the other editor boards still draw a
-  label above the field.
+  floating-label idiom the movement sheet uses, and Android builds it (task 56); 02.3, 02.5 and the
+  other editor boards still draw a label above the field (designer to redraw). 02.20 draws only a
+  named draft: Android says *This routine won't be saved.* while the name is blank (designer to
+  confirm). Editing a saved routine, Android says *<Name> won't be saved.* although only the edits are
+  lost and the routine stays (designer to word that case). Under its dialog 02.20 also draws Save
+  muted on a new draft that is named and holds a movement, where 00.1's rule enables it, and an
+  editor body at 16 dp margins with mono target lines; Android's body keeps its 20 dp margins and
+  sans target lines (designer to reconcile).
 
 - **11t · You after a confirmed closure (designer).** D5's caption names the row *Finish deletion*
   once closure is confirmed, and Android builds that label (task 48). The subtitle under *You* is
   drawn only for an unknown result (*Deletion unconfirmed*); Android still shows it while the
   confirmed closure waits for local cleanup, where it is no longer true. Designer to draw the
   subtitle for D4's state.
+- **11u · The log before the first pull (🚧, awaiting owner).** On an account this phone has not
+  pulled yet, the log's foot shows **Retry** over *That read failed.* (`ui/LogScreen.kt` `LogFoot`),
+  but nothing failed: the log is waiting for the first pull (task 72). Board 05.18 *Reading your
+  log* (Dark `1767:27118`, Daylight `1767:27204`, caption `1767:27286`, in section 05) draws the
+  wait: the workouts this phone holds, with no new best, record dot, weekly line or change since,
+  and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,
+  once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
+  becomes **Retry** · *That read failed.*, which no Android board draws.
+- **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
+  (Pixel 8 profile, API 37); none of these has a board to settle it:
+  - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
+    the status-bar strip above it on the canvas, so a scrolled screen shows a two-tone seam. 00.1
+    draws no scrolled state.
+  - *Receipt actions.* *Share with Coach* and *Done* are M3 buttons 56 dp tall; 03.36 draws them
+    72 dp tall at 200 % and 03.15 at 56 dp.
+  - *Navigation pill.* M3 draws the active-tab indicator 64 × 28 dp at 320 dp / 200 %; 00.7 draws
+    56 × 32 dp.
+  - *Rack.* At 22.5 kg the load chips step ±5 (the load band) where 03.34 draws ±10, and a logged
+    row ends in a text ✓ where 03.34 draws a check icon.
+  - *Dialogs.* The discard questions measure about 319 dp wide against 312 dp on 02.20 and 02.17,
+    so *Changes to this movement won't be kept.* fits one line where 02.17 wraps it; the Daylight
+    scrim reads #5e5c5b against the board's #6a6866.
+  - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
+    the unit (`ui/ReviewSheet.kt:384` over `domain/Proposal.kt`); every other Android readout spaces it.
+  - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
+    (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
+    (`web/src/products/gym/log.js`).
 
 ### Parity rulings (owner, 2026-10-22)
 
@@ -1005,6 +1056,21 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
     A refused session (401) or a request 35 or more days old stays on D3.
   iOS sends the body-only close (`AppRuntime.swift` `deleteAccount`), so it has no clock refusal and no
   pending record; its 27e stays as drawn. If iOS adopts the recoverable close, it takes both states.
+- **12p · iOS receipt *Save to ‹routine›* and a load under 0 (needs words).** A barbell or two-dumbbell
+  target under 0 is refused by every domain (`routine.loadFloor`). iOS `WorkoutReceipt`'s *Save to
+  ‹routine›* sends the edited plan through `SaveRoutinePlan`, so such a target now reads the generic
+  *‹routine› wasn't changed. Try again.*, which a retry cannot fix; Edit sets checks only the target's
+  shape. The receipt needs its own refusal copy, or Edit sets refuses the load first.
+- **12q · iOS recovery fix and a load under 0 (needs words).** A recovery fix that moves a barbell or
+  two-dumbbell load under 0 is refused (`set.loadFloor`; Android `invalid-set`). iOS `WorkoutFixSheet`
+  shows it through its existing `invalidSet` line, *Refused by the log — fix the workout, then retry.*,
+  which does not say *0 or more*, the words Fix set and the editor use. Android's recovery fix edits
+  through Fix set, whose inline line already says them. iOS needs that refusal copy.
+- **12r · Web past workout: a barbell load of 0 reads as *bodyweight* (needs words).** The web
+  past-workout form labels a load of exactly 0 as *bodyweight* for every movement
+  (`web/src/products/gym/backfill/draft.js` `valueLabel`). Since 0 is the barbell and dumbbell floor,
+  the lowest allowed barbell load reads as *bodyweight*. The same form labels a negative bodyweight load
+  *kg added*, while the session page reads *kg assisted*. The form needs equipment-aware load words.
 
 ### Coach on the client
 
@@ -1092,12 +1158,12 @@ iOS. It and the product differ in these places.
   including an explicitly empty name for a free session.
 - **F38 · Target entry.** Web uses the ladder as its count; native entry retains Sets. Decide
   whether that difference is intentional. Android's targets are drawn as number steppers (Android
-  02.6, 02.11; 11d). Preserve `TargetBlock(scheme, onChange)` until device tests cover varied
-  reps/loads, keyboard, focus and TalkBack.
+  02.6, 02.11; 11d).
 - **4k · Leaving drafts.** iOS asks *Discard routine changes?* (Discard · Keep editing) on a
-  dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`); Android Back drops a dirty new
-  routine silently, while its movement editor asks (02.17). Approved Android 02.20 and the
-  revised 02.17 (✅, 11s) follow the iOS rule and words. Web and restored drafts remain open.
+  dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`). Android follows the same rule and
+  words (02.20, the revised 02.17; task 56): Back, the gesture and the back arrow ask
+  on an unsaved draft, and the gesture previews nothing while it would ask. Web and restored drafts
+  remain open.
 - **4u · Delete scope.** Define whether a held session deletion also filters movement ranking,
   records and finish reads elsewhere in the room. Undo visibility and stored-count validation are
   already separate concerns (`guidelines/system-architecture.md` §3, the window rule).
@@ -1108,13 +1174,10 @@ iOS. It and the product differ in these places.
 - **Native acceptance.** Keep API 26, notification promotion-disabled fallback, full TalkBack
   traversal and review-gate transitions in the Android acceptance matrix. Existing source or
   representative captures do not establish the full device matrix.
-- **Narrow tab label.** Routines has a recorded clipping defect at 320dp/200% text in dark mode:
-  the visible label loses its final “s”, while the accessible name remains complete. Fix the
-  layout without reducing text scale or target size and verify both themes.
-  Task 17 native captures reproduce clipped *Routines* and *The log* labels in both appearances
-  at 320 dp/200% text; the hierarchy retains their complete names. Evidence:
-  `/private/tmp/windmill-android-task17/native2/02.7-no-routines-fab-large-dark.png` and
-  `02.7-no-routines-fab-large-light.png`. Tracking: `android-gym-large-text-tab-label`.
+- **Narrow tab label.** At 320dp/200% text Android keeps every navigation label whole (00.7,
+  task 54): *Routines* spills into its neighbour's spare width and *The log* wraps
+  at its space. The 00.7 caption draws the wrapped label at a 28 sp line; Android keeps the
+  label's own 16 sp line scaled to 32 sp.
 
 - **Android Display stepper overflow.** [O · Display overflow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1523-6723)
   was human-approved on 2026-10-26. Task 04 implements the approved rule: retain the 88sp inline

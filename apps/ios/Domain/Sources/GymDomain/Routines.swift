@@ -137,8 +137,25 @@ public enum RoutineRules {
   public static let targetWeight = NumberSpec("routine.entries.sets.weightKg", quantum: 0.01)
   public static let rest = NumberSpec("routine.entries.restSeconds", min: 15, max: 900, integer: true)
   public static let exercise = TextSpec("routine.entries.exerciseId", unit: .chars, min: 1, max: 64, trim: false, nfc: false)
+  public static let loadFloor = "routine.loadFloor"
   static let rules: [Rule] = [.local(name), .local(position), .local(entries), .local(targets), .local(targetReps),
-                             .local(targetWeight), .local(rest), .local(exercise), .local("routine.zeroTarget", subject: Routine.type)]
+                             .local(targetWeight), .local(rest), .local(exercise), .local("routine.zeroTarget", subject: Routine.type),
+                             .local(loadFloor, subject: Routine.type)]
+
+  // A target load meets its movement's floor wherever the save touches it: a line whose targets changed, or one whose
+  // movement changed its loading. A line the save leaves alone keeps what it held.
+  static func floored(_ routine: Routine, base: Routine, movements: [RoutineMovementChange], catalogue: Catalogue) throws(Violation) {
+    for (index, entry) in routine.entries.enumerated() {
+      let staged = movements.first { $0.current.id == entry.exerciseId }
+      let retargeted = base.entries.first { $0.exerciseId == entry.exerciseId }?.sets != entry.sets
+      let reloaded = staged.map { $0.base == nil || $0.base?.equipment != $0.current.equipment || $0.base?.loadCount != $0.current.loadCount } ?? false
+      guard retargeted || reloaded, let movement = staged?.current ?? catalogue.find(entry.exerciseId) else { continue }
+      for (at, target) in (entry.sets ?? []).enumerated() {
+        guard let weightKg = target.weightKg else { continue }
+        try movement.floored(weightKg, rule: loadFloor, at: Path("entries") + index + "sets" + at + "weightKg")
+      }
+    }
+  }
 }
 
 public typealias SaveRoutine = SaveDraft<Routine, GymRefusal>
@@ -203,6 +220,7 @@ public struct SaveRoutinePlan: Action {
     }
     let touched = current.fields.keys.filter { isNew || current.fields[$0] != base.fields[$0] }.sorted()
     let valid = try Valid(current, fields: isNew ? Array(current.fields.keys) : touched, at: loaded.moment)
+    try RoutineRules.floored(valid.value, base: base, movements: movements, catalogue: loaded.catalogue)
     let changed = touched.filter { loaded.routine?.fields[$0] != valid.value.fields[$0] }
     if !isNew && changed.contains(where: { loaded.routine?.fields[$0] != base.fields[$0] }) {
       return .refuse(GymRefusal(Refused(.stale, subject: current.id.ref, path: .predicted)))

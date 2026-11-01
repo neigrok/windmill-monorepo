@@ -9,7 +9,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -67,6 +66,7 @@ class PickerMintTests {
                 onSave = {},
                 onClose = {},
                 say = {},
+                backTo = "Routines",
             )
         }
         compose.onNodeWithText("Add movement").performClick()

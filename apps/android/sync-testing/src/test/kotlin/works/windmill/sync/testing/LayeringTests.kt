@@ -175,6 +175,18 @@ class LayeringTests {
         println("layering model: 12 projects, 8 JVM modules, 8 rejected model attacks")
     }
 
+    // Platform is product-neutral: no label it holds names gym (`gym`, `gym_…`, `gym.…`). Copy, which has spaces, may.
+    @Test fun platformSourcesHoldNoGymLabel() {
+        val gym = Regex("""(?:^|[._])gym(?:$|[._])""")
+        val labels = File(android, "platform/src/main/kotlin").walk().filter { it.extension == "kt" }.flatMap { file ->
+            Regex(""""([^"\\\s]+)"""").findAll(file.readText()).map { it.groupValues[1] }
+                .filter { gym.containsMatchIn(it.lowercase()) }.map { "${file.name}: $it" }
+        }.toList()
+        assertEquals(emptyList<String>(), labels)
+        assertTrue(gym.containsMatchIn("gym_action") && gym.containsMatchIn("gym.coachOnboarding") && gym.containsMatchIn("gym"))
+        assertFalse(gym.containsMatchIn("gymnast"))
+    }
+
     fun validateModel(model: List<List<String>>): List<String> {
         val findings = mutableListOf<String>()
         val jvm = setOf(":sync-model-server", ":sync-core", ":sync-api", ":sync-schema", ":sync-testing", ":domain-kit", ":domain-kit-testing", ":gym:domain")

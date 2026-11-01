@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,7 +16,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,8 +30,6 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSheetBack
-import works.windmill.platform.design.WindmillSheetWindow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,8 +115,7 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     }
     val read = record
     if (renaming && read != null) {
-        ModalBottomSheet(onDismissRequest = { close() }, sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+        WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
             containerColor = skin.surface, scrimColor = skin.scrim,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             dragHandle = {
@@ -126,39 +123,36 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
                     Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
                 }
             }) {
-            WindmillSheetWindow()
-            WindmillSheetBack(onDismiss = { close() }) {
-                BackHandler(saving || closing) {}
-                val base = read.exercise.copy(name = openedName, equipment = openedEquipment, loadCount = openedCount)
-                EditMovementSheet(base, draft, equipment, loadCount, refused,
-                    onName = { if (!saving && !closing) { draft = it; refused = null } },
-                    onEquipment = { if (!saving && !closing) {
-                        val original = works.windmill.gym.domain.sync.ExerciseRules.loadingChoice(openedEquipment, openedCount)
-                        equipment = if (it == original) openedEquipment else it
-                        loadCount = if (it == original) openedCount else if (it == "dumbbell") 2 else 1
-                        refused = null
-                    } },
-                    onSave = {
-                        if (!saving && !closing) {
-                            saving = true
-                            scope.launch {
-                                try {
-                                    when (val result = store.edit(exerciseId, draft, equipment, loadCount, base, openedAccount, openedReplica)) {
-                                        is GymResult.Failed -> refused = result.why.line("that movement was not changed.")
-                                        is GymResult.Ok -> {
-                                            if (store.accountKey == openedAccount && store.editReplica == openedReplica) {
-                                                record = read.copy(exercise = result.value)
-                                                asked += 1
-                                            }
-                                            saving = false
-                                            close()
+            BackHandler(saving || closing) {}
+            val base = read.exercise.copy(name = openedName, equipment = openedEquipment, loadCount = openedCount)
+            EditMovementSheet(base, draft, equipment, loadCount, refused,
+                onName = { if (!saving && !closing) { draft = it; refused = null } },
+                onEquipment = { if (!saving && !closing) {
+                    val original = works.windmill.gym.domain.sync.ExerciseRules.loadingChoice(openedEquipment, openedCount)
+                    equipment = if (it == original) openedEquipment else it
+                    loadCount = if (it == original) openedCount else if (it == "dumbbell") 2 else 1
+                    refused = null
+                } },
+                onSave = {
+                    if (!saving && !closing) {
+                        saving = true
+                        scope.launch {
+                            try {
+                                when (val result = store.edit(exerciseId, draft, equipment, loadCount, base, openedAccount, openedReplica)) {
+                                    is GymResult.Failed -> refused = result.why.line("that movement was not changed.")
+                                    is GymResult.Ok -> {
+                                        if (store.accountKey == openedAccount && store.editReplica == openedReplica) {
+                                            record = read.copy(exercise = result.value)
+                                            asked += 1
                                         }
+                                        saving = false
+                                        close()
                                     }
-                                } finally { saving = false }
-                            }
+                                }
+                            } finally { saving = false }
                         }
-                    }, saving = saving || closing)
-            }
+                    }
+                }, saving = saving || closing)
         }
     }
 }
@@ -172,7 +166,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
     }
     page.nothingYet?.let { Text(it, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim); return }
     if (page.tiles.isNotEmpty()) {
-        if (LocalDensity.current.fontScale >= 1.5f) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (GymTextScale.stacked) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             page.tiles.forEach { RecordMetric(it, Modifier.fillMaxWidth()) }
         } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             page.tiles.forEach { RecordMetric(it, Modifier.weight(1f)) }

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,7 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -108,7 +109,7 @@ fun OnThisPhoneSection(read: RecoveryRead?, onList: () -> Unit, onInspect: (Stri
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         RecoveryHeading("On this phone")
         if (rows.size == 1) RecoveryRow(rows.single()) { onInspect(rows.single().id) }
-        else Row(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp))
+        else Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(skin.surface)
             .clickable(role = Role.Button, onClick = onList).padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -158,7 +159,7 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
         if (Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == today) "Today"
         else Readout.date(ms).substringBeforeLast(" ")
     }
-    Row(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp))
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(skin.surface)
         .clickable(role = Role.Button, onClick = onInspect).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -308,7 +309,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
 @Composable
 private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, markFinished: (() -> Unit)? = null) {
     val skin = LocalGymColors.current
-    val largeText = LocalDensity.current.fontScale > 1.3f
+    val largeText = GymTextScale.large
     Column(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp)) {
         for ((index, field) in listOf("Started" to session.startedAtMs, "Finished" to session.finishedAtMs).withIndex()) {
             if (index > 0) HorizontalDivider(color = skin.inkDim.copy(alpha = .12f))
@@ -457,7 +458,7 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
         val set = draft.copy.sets.firstOrNull { it.id == editing }
         if (set != null) {
             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            ModalBottomSheet(onDismissRequest = { editing = null }, sheetState = sheet, containerColor = skin.canvas) {
+            WindmillSheet(onDismissRequest = { editing = null }, sheetState = sheet, containerColor = skin.canvas) {
                 FixSheet(set, Readout.movement(set.exerciseId, store.catalog),
                     Performed.movements(draft.copy.sets, store.catalog).flatMap { it.rows }.first { it.id == set.id }.number,
                     draft.copy.session.plan?.routine,

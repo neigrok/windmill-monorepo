@@ -21,6 +21,8 @@ data class Exercise(
     val aliases: List<String> = emptyList(),
     val loadCount: Int = works.windmill.gym.domain.sync.ExerciseRules.defaultLoadCount(equipment, id),
 ) {
+    val loadFloor: Double? get() = works.windmill.gym.domain.sync.ExerciseRules.loadFloor(equipment, loadCount)
+
     companion object {
         val loadings = listOf("barbell", "dumbbell", "machine", "bodyweight")
 
@@ -468,19 +470,36 @@ data class Prefill(val weightKg: Double, val reps: Int) {
         const val EMPTY_BAR_KG = 20.0
         const val EMPTY_BAR_REPS = 5
 
-        fun of(todaySets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?): Prefill {
+        fun of(todaySets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?): Prefill =
+            at(todaySets.size, todaySets.lastOrNull()?.let { Prefill(it.weightKg, max(1, it.reps)) }, planEntry, lastTime)
+
+        // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered
+        // as though the one before it were logged as offered. `lastTime` is null until it is read, and a load that
+        // would come from it is null until then.
+        fun offeredLoads(todaySets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?): List<Double?> {
             val scheme = planEntry?.sets.orEmpty()
-            val sticky = todaySets.lastOrNull()
+            val slots = todaySets.size until scheme.size
+            if (lastTime != null) {
+                var sticky = todaySets.lastOrNull()?.let { Prefill(it.weightKg, max(1, it.reps)) }
+                return slots.map { slot -> at(slot, sticky, planEntry, lastTime).also { sticky = it }.weightKg }
+            }
+            val straight = scheme.isNotEmpty() && Scheme.straight(scheme)
+            var sticky: Double? = todaySets.lastOrNull()?.weightKg
+            return slots.map { slot -> (if (straight) sticky ?: scheme.first().weightKg else scheme[slot].weightKg).also { sticky = it } }
+        }
+
+        // The offer at a slot, `sticky` being the set logged just before it.
+        fun at(slot: Int, sticky: Prefill?, planEntry: PlanEntry?, lastTime: LastTime?): Prefill {
+            val scheme = planEntry?.sets.orEmpty()
             val history = lastTime?.sets ?: emptyList()
             if (scheme.isNotEmpty() && !Scheme.straight(scheme)) {
-                val lifted = todaySets.size
-                val slot = Scheme.slot(scheme, lifted)
-                val lastNth = history.getOrNull(lifted)
-                val weight = slot?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: EMPTY_BAR_KG
-                val reps = slot?.reps ?: lastNth?.reps ?: sticky?.reps ?: EMPTY_BAR_REPS
+                val target = Scheme.slot(scheme, slot)
+                val lastNth = history.getOrNull(slot)
+                val weight = target?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: EMPTY_BAR_KG
+                val reps = target?.reps ?: lastNth?.reps ?: sticky?.reps ?: EMPTY_BAR_REPS
                 return Prefill(weight, max(1, reps))
             }
-            if (sticky != null) return Prefill(sticky.weightKg, max(1, sticky.reps))
+            if (sticky != null) return sticky
             val planned = scheme.firstOrNull()
             val weight = planned?.weightKg ?: history.lastOrNull()?.weightKg ?: EMPTY_BAR_KG
             val reps = planned?.reps ?: history.firstOrNull()?.reps ?: EMPTY_BAR_REPS

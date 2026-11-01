@@ -29,6 +29,16 @@ test('the sheet draws exactly one refusal, computed for the sheet and not one pe
   assert.deepEqual(targetRefusal({ ...two, addRefused: true }), { field: 'add', row: null, message: SETS_BAND });
 });
 
+test('a load under the movement’s floor is refused under its own row, and a movement without a floor keeps its sign', () => {
+  const ladder = fields({ sets: '2', rows: [row('8', '20'), row('8', '-12,5')] });
+  assert.deepEqual(targetRefusal(ladder, 0), { field: 'weight', row: 1, message: 'Load, 0 or more.' });
+  assert.equal(targetRefusal(ladder, null), null);
+  assert.equal(targetRefusal(ladder), null);
+  assert.equal(targetRefusal(withRow(ladder, 1, 'weight', '0'), 0), null);
+  assert.equal(targetRefusal(withRow(ladder, 1, 'weight', ''), 0), null, 'an empty load is last time, not a load below the floor');
+  assert.deepEqual(targetRefusal(withRow(ladder, 1, 'weight', '-0,001'), 0), { field: 'weight', row: 1, message: NOT_A_NUMBER });
+});
+
 test('± flips the sign of one row’s load text and never leaves a bare minus behind', () => {
   const one = (weight) => fields({ sets: '1', rows: [row('8', weight)] });
   assert.equal(withSignFlipped(one('60'), 0).rows[0].weight, '-60');

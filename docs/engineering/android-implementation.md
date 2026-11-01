@@ -255,8 +255,9 @@ native Material behavior with the approved 00.4 anatomy. Number entry keeps text
 with the consumer; explicit changed/unchanged/refused results govern feedback and IME completion.
 Signed load input requests signed and decimal Android flags. Existing screen consumers and their
 bidirectional swipe behavior remain in their numbered migration tasks. The approved O addendum
-measures signed Display text at the actual font scale, puts the unit below on overflow and uses
-the full control width when the 32sp floor needs it. The editor stays in the same composition slot
+measures signed Display text at the actual font scale: the numeral first fits beside its unit from 88sp
+down to 64sp and keeps the 88sp line height, then puts the unit below and uses the full control
+width when the 32sp floor needs it. The editor stays in the same composition slot
 as the field and button positions change; focused expansion preserves selection and contracts only
 on blur. Full gym Debug passes 1,196 checks with 17 opt-in live-wire skips (1,213 total); all
 33 focused Release and 32 capture-tool checks pass. Native-font tests cover 372/280dp controls,
@@ -476,8 +477,9 @@ independent of the preserved proposal card's height; the list tail exposes the f
 The rack and Fix set use the shared native number field with separate raw and committed values.
 One pure reader owns signed/comma parsing, refusal order, finite-number checks and
 half-away hundredth rounding; performed reps remain 1–99. Planned-target rules stay separate.
-Explicit Log set and Save fix validate the active buffer before a write. Plain blur and Cancel
-restore the committed value. A new focus places the caret at the end, and later selection survives
+Explicit Log set and Save fix validate the active buffer before a write. Leaving a field commits a
+valid typed value as Done does; an invalid one keeps the committed value and its refusal. Cancel
+restores the committed value. A new focus places the caret at the end, and later selection survives
 layout expansion. Field accessibility actions share the same Increase/Decrease callback and
 48 dp hit targets as the buttons. Only accepted step/IME changes flash and tick; Log set stays silent.
 
@@ -884,7 +886,7 @@ does not establish that fault. No native discard storage-failure Issue delivery 
 owned rig is stopped, its retired AVD removed and all acceptance evidence retained.
 
 Regular numeric entry retains its 20 sp value and 16 sp unit bases at the chosen text scale.
-The human-approved [02.19 unit-below layout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960)
+The human-approved [02.25 unit-below layout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960)
 is marked In production on the canonical Android page. It keeps a realistic signed load visible at narrow
 width and enlarged text. Task 18 implements and verifies that exact focused Load scope; the older
 full-width/buttons-below fallback remains unapproved.

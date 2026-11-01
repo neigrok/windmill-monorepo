@@ -9,23 +9,23 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -44,14 +44,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -64,7 +61,6 @@ import works.windmill.gym.domain.FieldMove
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalIntent
-import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.store.ProposalOutcome
@@ -438,24 +434,24 @@ private fun Foot(
                 onKeep = { turningDown = false },
             )
         }
-        val ready = seen && !deciding
-        Box(
-            contentAlignment = Alignment.Center,
+        Button(
+            onClick = { onDecide(true) },
+            enabled = seen && !deciding,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.secondary)
-                .alpha(if (ready) 1f else 0.4f)
-                .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                 // TalkBack announced `disabled` and nothing else; the reason belongs on the control
                 // that is refusing, not only in the row beneath it.
-                .semantics { if (!seen) stateDescription = Proposal.applyHint }
-                .clickable(enabled = ready, role = Role.Button) { onDecide(true) },
+                .semantics { if (!seen) stateDescription = Proposal.applyHint },
+            shape = RoundedCornerShape(WindmillRadius.lg),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = skin.accent,
+                contentColor = skin.onAccent,
+                disabledContainerColor = skin.accent.copy(alpha = .4f),
+                disabledContentColor = skin.onAccent.copy(alpha = .4f),
+            ),
         ) {
-            Text(
-                proposal.applyLabel,
-                style = WindmillFont.body(16, FontWeight.Bold),
-                color = skin.onAccent,
-            )
+            Text(proposal.applyLabel, style = WindmillFont.body(16, FontWeight.Bold))
         }
         // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree in
         // BOTH: the reason Apply is refusing belongs to Apply, which says it above, and a reader
@@ -476,14 +472,14 @@ private fun Foot(
             color = skin.inkDim,
             modifier = Modifier.fillMaxWidth(),
         )
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .clickable(enabled = !deciding, role = Role.Button) { turningDown = true },
+        TextButton(
+            onClick = { turningDown = true },
+            enabled = !deciding,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            shape = RoundedCornerShape(WindmillRadius.lg),
+            colors = ButtonDefaults.textButtonColors(contentColor = skin.ink),
         ) {
-            Text(Proposal.turnDownVerb, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+            Text(Proposal.turnDownVerb, style = WindmillFont.body(16, FontWeight.Bold))
         }
     }
 }

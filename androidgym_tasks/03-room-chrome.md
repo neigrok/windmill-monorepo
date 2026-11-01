@@ -28,7 +28,7 @@
 **Done when**
 - Screenshots of 00.1 match in Dark and Daylight, apart from the logger bar's Hide (45); `tools/capture-recipes/room-chrome.json` covers the three roots, a pushed screen and the editor in each appearance. Capture the live logger separately after **Push A → Start workout**, once **Log set** and enabled **Finish** are present; its clock prevents exact whole-tree settlement.
 - `gym_screen_viewed` still fires on every destination change.
-- `ui/GymScreenTests.kt`, `GymRailTests.kt`, `GymTabsTests.kt` and `ui/AccountRouteTests.kt` pass, with a test that the Coach root shows the seat, that the tab reads *The log*, and that the logger's bar has no *Gym settings* action.
+- `ui/GymScreenTests.kt`, `GymRailTests.kt`, `GymNavigatorTests.kt` and `ui/AccountRouteTests.kt` pass, with a test that the Coach root shows the seat, that the tab reads *The log*, and that the logger's bar has no *Gym settings* action.
 
 **Depends on:** 02. Ships together with 17; creation-route and onboarding acceptance remain required after the FAB replacement is present.
 
