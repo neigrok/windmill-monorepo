@@ -584,6 +584,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `web/src/shell/chrome/chrome.css` (room-switcher pills at a fixed 30px height with
   `white-space: nowrap`, 32px grid gutters) defines a reflow. The Shell owner draws and builds it at
   320px with 200% text.
+- **Board · the step card's note says "steps away".** The Step card component description (351:5672)
+  words the Locked reason as *Needs <step> · <longest chain> steps away*. The owner ruling,
+  `board/copy.js` and the card state sheets (353:5571, 353:5686, 353:5801) say *Needs Read the wind ·
+  1 to go*. Correct the description.
+- **Board · two pairs of view glyphs.** The phone identity row (258:1397) draws Board as three
+  outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
+  strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
+  icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

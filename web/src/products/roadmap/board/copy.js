@@ -1,4 +1,4 @@
-// Every Board string, phone and desktop alike. Step titles arrive as plain strings.
+// Every Board string, phone and desktop alike. Step titles arrive as plain strings; reasonLine reads them off a card.
 
 export const STATE_WORDS = { locked: 'locked', upNext: 'up next', done: 'done' };
 export const COLUMN_TITLES = { locked: 'Locked', upNext: 'Up next', done: 'Done' };
@@ -13,6 +13,8 @@ export const LABELS = {
   undo: 'Undo',
   allSubtasksDone: 'All subtasks done · Complete step',
 };
+
+export const VIEW_SWITCH = { group: 'View', board: 'Board', graph: 'Graph' };
 
 export const LINK_COPIED = 'Link copied';
 export const EMPTY_ROADMAP = { title: 'Your first step', body: 'Give your roadmap a place to start.', action: 'New step' };
@@ -47,6 +49,13 @@ export function needsLine({ need, extra, toGo }) {
 
 export function unlocksLine({ first, extra }) {
   return `Unlocks ${first}${extra > 0 ? ` +${formatCount(extra)}` : ''}`;
+}
+
+// A Locked card names what it needs, an Up next card what it opens; Done and a card that opens nothing say neither.
+export function reasonLine({ needs, unlocks }) {
+  if (needs) return needsLine({ need: needs.need.label, extra: needs.extra, toGo: needs.toGo });
+  if (unlocks) return unlocksLine({ first: unlocks.first.label, extra: unlocks.extra });
+  return null;
 }
 
 export function lockedStatus({ toGo }) {

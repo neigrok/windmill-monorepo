@@ -78,3 +78,10 @@ sends, `saved` once the server confirms the draft (emitted even when the room ha
 server answers 4xx (400, 401, 404, 409, 422) and `failed` on a 5xx, a network loss or a reply naming another draft.
 Only `failed` reports to Sentry, under the static operation `gym-coach-routine-confirm`. No routine name, movement,
 conversation, question, identifier or server text is reported.
+
+Roadmap's Board/Graph switch emits `roadmap_view_switch` with only `view` (`board` or `graph`) when a reader
+switches; the view a tree opens on emits nothing. The switch exists only while the Board's development gate
+(`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's storage flag fails
+closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
+drops the Board until that roadmap is opened again and shows the Graph. No tree, step, title, identifier or exception
+message is reported.
