@@ -1267,8 +1267,8 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
             NavigationBar(
                 containerColor = skin.surface,
                 tonalElevation = 0.dp,
-                windowInsets = WindowInsets(0, 0, 0, 0),
-                modifier = Modifier.padding(horizontal = 12.dp),
+                // The 12 dp sides are the bar's own inset, inside its surface, so a long label may spill into them.
+                windowInsets = WindowInsets(left = 12.dp, right = 12.dp),
             ) {
                 Tab.entries.forEachIndexed { index, entry ->
                     NavigationBarItem(
