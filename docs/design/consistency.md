@@ -225,7 +225,7 @@ and Android disagree.
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from
   other tabs (iOS section 07 `1116:1705`; Android 07.7 `1283:42660`, 07.1 `1283:42787`, 07.2
   `1284:16798`, 07.3 `1284:16888`, 07.8 `1284:17208`). Android builds it: the row heads The log
-  (`ui/LogScreen.kt:113`), the list, Inspect, Fix workout and ⋯ *Discard workout* live in
+  (`ui/LogScreen.kt:112`), the list, Inspect, Fix workout and ⋯ *Discard workout* live in
   `ui/OnThisPhoneScreen.kt`, and the badge in `GymRoom.kt:1296`. iOS's discard question for a landed
   workout's stranded sets still says *This permanently removes the copy saved on this phone.*
   (`WorkoutInspectScreen.swift:49-53`); see 12g.
@@ -258,7 +258,7 @@ and Android disagree.
 - **9q · Where Weigh in sits (owner rulings, 2026-10-22; build).** Both phones float *Weigh in*
   bottom-end over The log: iOS as the labelled glass capsule (target 05.1), Android as the M3
   extended FAB (Android 05.1). iOS builds it, the list's bottom inset keeping its last row clear;
-  Android builds it as `GymExtendedFab` over The log (`ui/LogScreen.kt:105`), the list's bottom
+  Android builds it as `GymExtendedFab` over The log (`ui/LogScreen.kt:104`), the list's bottom
   padding keeping its last row clear.
 - **9r · No Gym settings anywhere (owner ruling, 2026-10-22; Android build).** Neither phone has a
   Gym settings page. On iOS, Notes and Connected log are reached from You's Settings
@@ -267,8 +267,8 @@ and Android disagree.
   *Notes*, *Connected log*, *About Windmill* (Shell · Android 16a/16b), the workout bar's trailing
   action is *Hide*, and Units go. Android builds this: the room gives You its *Notes* and
   *Connected log* rows (`GymRoom.kt:375-376`) beside *About Windmill* (`app/MainActivity.kt:282`),
-  the workout's top bar trails *Hide workout* (`ui/LoggerScreen.kt:331-332`), no units control
-  remains, and Coach's top bar holds History and the account seat (`coach/AskScreen.kt:164-167`).
+  the workout's top bar trails *Hide workout* (`ui/LoggerScreen.kt:329-330`), no units control
+  remains, and Coach's top bar holds History and the account seat (`coach/AskScreen.kt:163-166`).
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
@@ -779,19 +779,19 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 
   | Place | Code today | Board | Build work |
   |---|---|---|---|
-  | Routines list | `ui/RoutinesScreen.kt:128`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
+  | Routines list | `ui/RoutinesScreen.kt:126`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
   | Routine ⋮ Delete | `ui/RoutinesScreen.kt`, shared error-role menu, immediate | 02.12 `1253:29480` | verified in Dark/Daylight |
-  | Editor movement | `ui/RoutineBuilder.kt:482`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
-  | Target set row | `ui/MovementForm.kt:203`, shared row | 02.11 `1253:29263` | shared row |
-  | This workout row | `ui/AssemblySheet.kt:141`, shared row, *Remove movement* | 03.4 `1253:29834` | shared row |
-  | Workout detail set | `ui/SessionScreen.kt:430`, shared row, immediate | 05.4b `1793:27226` | swipe verified in Dark/Daylight; Session copy remains 23 |
-  | The log row | `ui/LogScreen.kt:138`, shared row *Discard workout*, and the long-press menu's *Discard workout* (`:276`); both ask *Discard this workout?* (`ui/ConfirmDialog.kt:60`) | 05.2 `1252:27527` | swipe + *Discard this workout?* |
-  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:301`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.14b `1793:27005` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt:328` and the log's weigh-in row (`ui/LogScreen.kt:146`), shared row; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
+  | Editor movement | `ui/RoutineBuilder.kt:479`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
+  | Target set row | `ui/MovementForm.kt:200`, shared row | 02.11 `1253:29263` | shared row |
+  | This workout row | `ui/AssemblySheet.kt:140`, shared row, *Remove movement* | 03.4 `1253:29834` | shared row |
+  | Workout detail set | `ui/SessionScreen.kt:428`, shared row, immediate | 05.4b `1793:27226` | swipe verified in Dark/Daylight; Session copy remains 23 |
+  | The log row | `ui/LogScreen.kt:137`, shared row *Discard workout*, and the long-press menu's *Discard workout* (`:276`); both ask *Discard this workout?* (`ui/ConfirmDialog.kt:59`) | 05.2 `1252:27527` | swipe + *Discard this workout?* |
+  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:299`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.14b `1793:27005` | confirm once |
+  | Bodyweight | `ui/BodyweightScreen.kt:325` and the log's weigh-in row (`ui/LogScreen.kt:145`), shared row; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
-  | Coach History | `coach/ThreadsScreen.kt:143-160`, asks *Delete this conversation?*, then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
+  | Coach History | `coach/ThreadsScreen.kt:144-161`, asks *Delete this conversation?*, then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
 
-  The refusal notice's swipe (`ui/RefusalBanner.kt:52-89`) dismisses a notice, not a record, and
+  The refusal notice's swipe (`ui/RefusalBanner.kt:51-89`) dismisses a notice, not a record, and
   keeps its *Dismiss*.
 - **11c · Destructive actions use the M3 error role (owner ruling, 2026-10-22).** Library Theme
   `android/system/error` (#E46962 dark · #B3261E light) and `on-error` (#410E0B · #FFFFFF). The app
@@ -800,13 +800,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   *Discard* use them. Three destructive controls are still off the error role: the log row menu's
   *Discard workout* (`ui/LogScreen.kt:276`) and the receipt overflow's *Discard*
   (`ui/FinishScreen.kt:289`) draw in ink, and History's *Delete* confirm draws in `alarmInk`
-  (`coach/ThreadsScreen.kt:149`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
+  (`coach/ThreadsScreen.kt:150`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
 - **11d · Number entry is a stepper (owner ruling, 2026-10-22).** Load and reps are M3 icon buttons
   − / + (48 dp) around a numeric text field; tapping the value opens the decimal keyboard, − / +
   nudge by the movement's step, and the plate ladder stays for bigger jumps. Pressing shows the M3
   state layer; an accepted change ticks the value and flashes the field. Today the rack and Fix set
   open a custom keypad sheet (`ui/KeypadSheet.kt`), pressing only scales to 0.96
-  (`ui/LoggerScreen.kt:1009-1020`) and nothing ticks. Boards 03.1 `1252:28036`, 03.2 `1252:28178`,
+  (`ui/LoggerScreen.kt:1008-1019`) and nothing ticks. Boards 03.1 `1252:28036`, 03.2 `1252:28178`,
   03.3 `1253:29581`, 03.10–03.13 (`1252:28389`, `1252:28534`, `1252:28687`, `1252:28829`), 02.6
   `1252:30392`, 02.11. The owner's 2026-10-25 clarification approves the native keyboard's minus
   key for assisted loads; verify signed decimal entry on the target emulator and add no app-level
@@ -837,7 +837,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11g · Coach chat in the Google Messages style (owner ruling, 2026-10-22).** Coach and lifter in
   grouped Material bubbles with timestamps, a typing bubble while Coach thinks, the answer streaming
   into its bubble, long Markdown at full width. Today the question is a raised bubble at 90 % width
-  and the answer unbubbled prose (`coach/CoachAnswer.kt:58-65,236-311`), with no timestamps or
+  and the answer unbubbled prose (`coach/CoachAnswer.kt:57-64,236-311`), with no timestamps or
   grouping; waiting is the text *reading your log…* and, with the server polled at 1 Hz, the
   answer lands whole. Boards 08.1 `1252:27790`, 08.10 `1254:30552`, 08.11 `1254:30653`, 08.32
   `1254:31101`, 08.59 `1254:31296`, 01.6 `1253:30742`.
@@ -859,7 +859,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   action cards, review route and outcome wording under the owner's 2026-10-25 scope decision.
   Android decides a proposal in a review sheet
   (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm), its card
-  says *Review* under the promise line (`coach/CoachAnswer.kt:327-341`, `Ask.promise`), and receipts
+  says *Review* under the promise line (`coach/CoachAnswer.kt:338-352`, `Ask.promise`), and receipts
   say *Turned down* (`presentation/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
   the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
   the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). 10v covers the words on every surface.
@@ -880,9 +880,11 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   label, reveals the placeholder and accents the outline. Reconcile the drawing's empty/unfocused
   state with the native component. Native acceptance must compare unfocused and focused states
   separately; this does not authorize a custom floating-label field.
-- **11n · Android specimens.** The boards set text in Nunito and JetBrains Mono, standing in for the
-  app's system sans and mono (`ui/GymMaterial.kt:57-81`); system parts come from the team Material 3
-  Design Kit, themed with the Windmill Theme roles. Native implementation uses Compose Material 3.
+- **11n · Android specimens.** The boards set text in Nunito and JetBrains Mono. The app bundles both
+  for its chrome, native controls, number stepper, status line and Coach, and sets its reading text and
+  readouts in the system sans and mono (`ui/GymType.kt`, `platform/design/Tokens.kt`); system parts
+  come from the team Material 3 Design Kit, themed with the Windmill Theme roles. Native
+  implementation uses Compose Material 3.
 - **11o · A proposal with no conversation.** The waiting-proposal row on Routines (02.1) opens the
   proposal's Coach conversation at its card. A proposal written by a connected agent over MCP
   (`ProposalDoor::mcp`) has no conversation, and no board draws where it is decided. Rule where it
@@ -1015,6 +1017,29 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   proposal is no longer available.* `gym_proposal_missing` counts only answers this visit waited
   for: a proposal deleted before the visit, as on a reopened thread, draws the line and sends
   nothing.
+- **11x · Type and colour roles against 00.2 (designer).** Android screens read colour from the
+  Material scheme and four roles of the room's own (`MaterialTheme.gymColors`: faint ink, record ink,
+  record wash, refusal ink; `ui/GymMaterial.kt`), and type from `MaterialTheme.typography`,
+  `WindmillType` (`platform/design/Tokens.kt`) and `GymType` (`ui/GymType.kt`). Each role holds the
+  value its screen drew, so the drift from 00.2's ramp now sits in those two files:
+  - *Ramp.* 00.2 draws root title 24 Bold, sheet title 28 ExtraBold, section 17 Bold, row 16 Bold /
+    13, target mono 13, label 13 Bold, button 16 Bold, note line mono 12 and weight numeral 104
+    ExtraBold. Android draws the root title in Nunito 22 Bold on 28; sheet titles at 28 Bold on 36
+    (*This workout*, *Fix set*), 26 ExtraBold on 32 (*Edit movement*, You, *Delete your account?*),
+    26 Bold on 36 (a proposal) and Nunito 28 ExtraBold on 36 (*What Coach read*); section titles at
+    18 Bold on 24, 18 Bold on 25, 17 Bold on 23 and 17 Bold on 24; the rack's load in Nunito 88
+    ExtraBold on 92. Row, target, label, button and note line match.
+  - *Line heights.* One size stands on several leadings: 16 on none, 21, 22, 23 and 24; 14 on none,
+    18, 20 and 21; 13 on none, 18 and 20; 12 on none, 16 and 17.
+  - *Figures.* The Material slots carry tabular figures and no line height; the screens' sans styles
+    carry neither. No screen reads a slot in their place, because the swap would change digit widths
+    on a system face whose default figures are proportional, and every line height.
+  - *Discard questions.* *Discard this workout?* is Bold, the routine editor's two questions Regular,
+    both 24 on 32 in the system default face (`ui/ConfirmDialog.kt`, `ui/RoutineBuilder.kt`).
+  - *Outlined fields.* The planning forms' fields set the stock field type in the system sans, the
+    note editor's in the system default face (`ui/GymScreen.kt`, `ui/NotesScreen.kt`).
+  - *Dynamic colour (decided).* Android paints the fixed brand palette in both modes; Material You
+    dynamic colour stays off.
 
 ### Parity rulings (owner, 2026-10-22)
 
@@ -1036,9 +1061,9 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   which waits in `Android / Workout bar` (*Push A · 12:34*) above the navigation bar on every tab root
   (Android 03.4 `1253:29834`, 03.5 `1283:41318`). Swiping the notification away only turns it off:
   This workout shows *Notification off* · *Show*. Android builds this: *Hide workout* in the
-  logger's top bar (`ui/LoggerScreen.kt:331-332`), the bar (`ui/WorkoutBar.kt`), and the swipe's
+  logger's top bar (`ui/LoggerScreen.kt:329-330`), the bar (`ui/WorkoutBar.kt`), and the swipe's
   delete intent (`notification/WorkoutNotifications.kt:258`) feeding This workout's *Notification
-  off* · *Show* row (`ui/AssemblySheet.kt:225-228`).
+  off* · *Show* row (`ui/AssemblySheet.kt:224-227`).
 - **12d · The approved Finish receipt.** Android Finish (03.7 `1254:32362`, 03.8 `1254:32441`)
   has a readable receipt and two main actions: crowned *Share with Coach* and *Done*, each 56 dp
   with 12 dp between. *Discard* is in the native top-end overflow and asks once. Task 14 implements

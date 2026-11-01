@@ -11,8 +11,8 @@
   - `Android / Chat bubble` `337:2761`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Each created routine gets its own card (`coach/CoachAnswer.kt:134-141`): *Routine created*, the name, and **Open routine** (:137, :139).
-- The routine sheet `RoutineSheet` (`ui/RoutinesScreen.kt:274`) has **Start workout** (:343) and **Edit routine** (:347).
+- Each created routine gets its own card (`coach/CoachAnswer.kt:133-140`): *Routine created*, the name, and **Open routine** (:137, :139).
+- The routine sheet `RoutineSheet` (`ui/RoutinesScreen.kt:272`) has **Start workout** (:343) and **Edit routine** (:347).
   - Targets print `Readout.target` plus a bare *kg* (:329).
 - Signed out, nothing says the routines are only on this phone.
 

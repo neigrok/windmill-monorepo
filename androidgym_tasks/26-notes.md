@@ -16,7 +16,7 @@
 - The final relevant gate passes 51 gym and six telemetry cases with no failures or skips; all 38 Android tool tests pass. API 37 native evidence covers both appearances, real handle reorder, Save and editor/list deletion, plus Save above the real IME and scrolled Delete at 320 dp/200% text. Evidence and qualifications are recorded in `docs/engineering/android-implementation.md`.
 
 **Change**
-- Head: one line, *Any agent you connect can read these too.* Delete the subtitle *what you write for Coach* (`Notes.sub`) and the footer *Top note wins.* (`Notes.topWins`, `ui/NotesScreen.kt:116`). The reorder handle stays.
+- Head: one line, *Any agent you connect can read these too.* Delete the subtitle *what you write for Coach* (`Notes.sub`) and the footer *Top note wins.* (`Notes.topWins`, `ui/NotesScreen.kt:114`). The reorder handle stays.
 - Note rows swipe end-to-start on `DeleteSwipeRow` (04), a11y label *Delete note*. Past the threshold the note is deleted at once: no hold, no Undo.
   - The reorder handle and *Add a note* stay as they are.
   - A swipe and a long-press drag must not fight: the drag starts only from the handle, the swipe only from the row body.
