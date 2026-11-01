@@ -51,10 +51,10 @@ class LoggerManagementTests {
                 room.select("owner")
                 room.pull(EngineRoomFixture.server())
                 room.startExternalWorkout()
-                room.store.choose("bench-press")
-                room.store.editRack(82.5, 8)
+                room.store.workout.choose("bench-press")
+                room.store.workout.editRack(82.5, 8)
             }
-            val session = room.store.session
+            val session = room.store.workout.session
             compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerScreen(room.store, {}, {}) } }
             compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
             compose.onNodeWithText("This workout").assertIsDisplayed()
@@ -72,9 +72,9 @@ class LoggerManagementTests {
             nativeBack()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("This workout")).fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
-                assertEquals(session, room.store.session)
-                assertEquals(82.5, room.store.rack!!.weightKg, 0.0)
-                assertEquals(8, room.store.rack!!.reps)
+                assertEquals(session, room.store.workout.session)
+                assertEquals(82.5, room.store.workout.rack!!.weightKg, 0.0)
+                assertEquals(8, room.store.workout.rack!!.reps)
             }
             assertEquals(listOf("open_workout", "picker_open", "picker_cancel").map {
                 "gym_action" to mapOf("screen" to "workout", "action" to it, "outcome" to "ok")
@@ -96,15 +96,15 @@ class LoggerManagementTests {
                 room.select("owner")
                 room.pull(EngineRoomFixture.server())
                 room.startExternalWorkout()
-                room.store.choose("bench-press")
-                room.store.logSet(60.0, 5)
-                room.store.editRack(82.5, 8)
-                room.store.choose("barbell-row")
-                room.store.editRack(67.5, 9)
-                room.store.choose("bench-press")
+                room.store.workout.choose("bench-press")
+                room.store.workout.logSet(60.0, 5)
+                room.store.workout.editRack(82.5, 8)
+                room.store.workout.choose("barbell-row")
+                room.store.workout.editRack(67.5, 9)
+                room.store.workout.choose("bench-press")
             }
-            val session = room.store.session
-            val sets = room.store.sets
+            val session = room.store.workout.session
+            val sets = room.store.workout.sets
             val restoration = StateRestorationTester(compose)
             restoration.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerScreen(room.store, {}, {}) } }
             compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
@@ -117,26 +117,26 @@ class LoggerManagementTests {
             compose.onAllNodes(hasText("Bench Press") and hasClickAction()).onLast().performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("This workout")).fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
-                assertEquals(session, room.store.session)
-                assertEquals(sets, room.store.sets)
-                assertEquals("bench-press", room.store.exerciseId)
-                assertEquals(82.5, room.store.rack!!.weightKg, 0.0)
-                assertEquals(8, room.store.rack!!.reps)
+                assertEquals(session, room.store.workout.session)
+                assertEquals(sets, room.store.workout.sets)
+                assertEquals("bench-press", room.store.workout.exerciseId)
+                assertEquals(82.5, room.store.workout.rack!!.weightKg, 0.0)
+                assertEquals(8, room.store.workout.rack!!.reps)
             }
             compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
             compose.onNodeWithText("Add movement").performClick()
             compose.onNodeWithText("Cable Fly").performScrollTo().performClick()
-            compose.waitUntil(10_000) { compose.runOnIdle { room.store.exerciseId == "cable-fly" } }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.workout.exerciseId == "cable-fly" } }
             compose.onNodeWithText("Log set").assertIsDisplayed()
             compose.onNode(hasText("Cable Fly") and hasClickAction()).performClick()
             compose.onNodeWithText("Barbell Row").performClick()
-            compose.waitUntil(10_000) { compose.runOnIdle { room.store.exerciseId == "barbell-row" } }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.workout.exerciseId == "barbell-row" } }
             compose.runOnIdle {
-                assertEquals(session, room.store.session)
-                assertEquals(sets, room.store.sets)
-                assertEquals(listOf("bench-press", "barbell-row", "cable-fly"), room.store.order)
-                assertEquals(67.5, room.store.rack!!.weightKg, 0.0)
-                assertEquals(9, room.store.rack!!.reps)
+                assertEquals(session, room.store.workout.session)
+                assertEquals(sets, room.store.workout.sets)
+                assertEquals(listOf("bench-press", "barbell-row", "cable-fly"), room.store.workout.order)
+                assertEquals(67.5, room.store.workout.rack!!.weightKg, 0.0)
+                assertEquals(9, room.store.workout.rack!!.reps)
             }
             assertEquals(listOf("open_workout", "picker_open", "picker_cancel", "open_workout", "picker_open",
                 "movement_switch", "picker_add", "open_workout", "movement_switch").map {

@@ -18,27 +18,27 @@ class BodyweightWriteTests {
             writeAuthority = { permitted }).use { room ->
             room.select("a")
             val day = "2026-01-01"
-            assertNull(room.store.weighIn(day, 82.0))
+            assertNull(room.store.bodyweight.weighIn(day, 82.0))
             val before = room.engine.snapshot()
-            room.store.withhold(Deletion.Bodyweight(day))
+            room.store.deletions.withhold(Deletion.Bodyweight(day))
             permitted = false
             runCurrent()
             assertEquals(before, room.engine.snapshot())
-            assertTrue(room.store.withheld.isEmpty())
+            assertTrue(room.store.held.withheld.isEmpty())
             permitted = true
-            room.store.withhold(Deletion.Bodyweight(day))
+            room.store.deletions.withhold(Deletion.Bodyweight(day))
             runCurrent()
-            val offer = room.store.withheld.single()
+            val offer = room.store.held.withheld.single()
             val held = room.engine.snapshot()
             permitted = false
-            assertNull(room.store.keepWithheld())
-            assertTrue(room.store.settleWithheld(offer.subjectId) is WriteFailure.Refused)
+            assertNull(room.store.deletions.keepWithheld())
+            assertTrue(room.store.deletions.settleWithheld(offer.subjectId) is WriteFailure.Refused)
             assertEquals(held, room.engine.snapshot())
-            assertEquals(listOf(offer), room.store.withheld)
+            assertEquals(listOf(offer), room.store.held.withheld)
             permitted = true
-            assertEquals(offer, room.store.keepWithheld())
+            assertEquals(offer, room.store.deletions.keepWithheld())
             assertEquals(listOf(day), room.training.weighins().map { it.dateLocal })
-            assertTrue(room.store.withheld.isEmpty())
+            assertTrue(room.store.held.withheld.isEmpty())
         }
     }
 
@@ -60,19 +60,19 @@ class BodyweightWriteTests {
         val server = EngineRoomFixture.server()
         val older = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server)
-            assertNull(other.store.weighIn("2026-01-01", 82.0))
+            assertNull(other.store.bodyweight.weighIn("2026-01-01", 82.0))
             other.sync(server)
             WeighIn("2026-01-01", 82.0, other.now)
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            assertFalse(room.store.bodyweightRead)
-            assertNull(room.store.weighIn("2026-01-02", 83.0))
+            assertFalse(room.store.bodyweight.bodyweightRead)
+            assertNull(room.store.bodyweight.weighIn("2026-01-02", 83.0))
             val saved = WeighIn("2026-01-02", 83.0, room.now)
-            assertEquals(listOf(saved), room.store.bodyweight)
+            assertEquals(listOf(saved), room.store.bodyweight.drawn)
             room.pull(server); room.store.refreshEngine()
-            assertEquals(listOf(older, saved), room.store.bodyweight)
-            assertTrue(room.store.bodyweightRead)
+            assertEquals(listOf(older, saved), room.store.bodyweight.drawn)
+            assertTrue(room.store.bodyweight.bodyweightRead)
         }
     }
 
@@ -82,16 +82,16 @@ class BodyweightWriteTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            assertNull(room.store.weighIn(day, 82.0))
+            assertNull(room.store.bodyweight.weighIn(day, 82.0))
             room.sync(server)
-            room.store.withhold(Deletion.Bodyweight(day))
+            room.store.deletions.withhold(Deletion.Bodyweight(day))
             runCurrent()
-            assertNull(room.store.weighIn(day, 84.0))
-            room.store.withhold(Deletion.Bodyweight(day))
+            assertNull(room.store.bodyweight.weighIn(day, 84.0))
+            room.store.deletions.withhold(Deletion.Bodyweight(day))
             runCurrent()
-            assertEquals(emptyList<WeighIn>(), room.store.bodyweight)
+            assertEquals(emptyList<WeighIn>(), room.store.bodyweight.drawn)
             room.sync(server); room.store.refreshEngine()
-            assertEquals(emptyList<WeighIn>(), room.store.bodyweight)
+            assertEquals(emptyList<WeighIn>(), room.store.bodyweight.drawn)
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server)
@@ -103,12 +103,12 @@ class BodyweightWriteTests {
     fun oneOwnersWeighInNeverPopulatesTheNextOwner() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            assertNull(room.store.weighIn("2026-01-01", 82.0))
+            assertNull(room.store.bodyweight.weighIn("2026-01-01", 82.0))
             room.select("b")
-            assertTrue(room.store.bodyweight.isEmpty())
+            assertTrue(room.store.bodyweight.drawn.isEmpty())
             assertTrue(room.training.weighins().isEmpty())
             room.select("a")
-            assertEquals(listOf("2026-01-01"), room.store.bodyweight.map { it.dateLocal })
+            assertEquals(listOf("2026-01-01"), room.store.bodyweight.drawn.map { it.dateLocal })
         }
     }
 
@@ -118,15 +118,15 @@ class BodyweightWriteTests {
         val server = EngineRoomFixture.server()
         val expected = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            assertNull(room.store.weighIn(day, 82.0))
+            assertNull(room.store.bodyweight.weighIn(day, 82.0))
             room.sync(server)
-            room.store.withhold(Deletion.Bodyweight(day))
+            room.store.deletions.withhold(Deletion.Bodyweight(day))
             runCurrent()
-            assertNull(room.store.weighIn(day, 84.0))
+            assertNull(room.store.bodyweight.weighIn(day, 84.0))
             val expected = WeighIn(day, 84.0, room.now)
-            assertEquals(listOf(expected), room.store.bodyweight)
+            assertEquals(listOf(expected), room.store.bodyweight.drawn)
             room.sync(server); room.store.refreshEngine()
-            assertEquals(listOf(expected), room.store.bodyweight)
+            assertEquals(listOf(expected), room.store.bodyweight.drawn)
             expected
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->

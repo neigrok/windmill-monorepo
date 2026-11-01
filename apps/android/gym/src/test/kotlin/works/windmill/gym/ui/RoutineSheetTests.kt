@@ -52,14 +52,14 @@ class RoutineSheetTests {
             // The routine and a workout on it are the account's, written on another phone under its own ids.
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("u1"); other.pull(server)
-                assertTrue(other.store.saveRoutine(RoutineDraft(name = "Push Day", entries = entries, creationId = "routine_push").capturingMovements(other.store.catalog)) is GymResult.Ok)
+                assertTrue(other.store.routines.saveRoutine(RoutineDraft(name = "Push Day", entries = entries, creationId = "routine_push").capturingMovements(other.store.routines.catalog)) is GymResult.Ok)
                 other.training.startSession(SessionStart("remote01", other.now - 10_000, routineId = "routine_push"))
                 other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 50.0, 8, other.now - 9_000))
                 other.training.finishSession("remote01", other.now)
                 other.sync(server)
             } }
             runBlocking { room.select("u1"); room.pull(server); room.store.refreshEngine() }
-            assertNotNull("the routine has been trained", room.store.routine("routine_push")!!.lastTrainedAtMs)
+            assertNotNull("the routine has been trained", room.store.routines.routine("routine_push")!!.lastTrainedAtMs)
             val store = room.store
             // The room comes down before the engine closes: its lifecycle watcher writes on pause.
             val visible = mutableStateOf(true)
@@ -96,7 +96,7 @@ class RoutineSheetTests {
                 compose.onNodeWithText("Push A").assertIsDisplayed().performClick()
                 compose.onNodeWithText("Start workout").performClick()
                 compose.onNodeWithTag("routine-sheet").assertDoesNotExist()
-                compose.runOnIdle { assertEquals("routine_push", store.session?.routineId) }
+                compose.runOnIdle { assertEquals("routine_push", store.workout.session?.routineId) }
             } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
         } } finally { scope.cancel() }
     }
@@ -105,10 +105,10 @@ class RoutineSheetTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             runBlocking {
                 room.select(null)
-                assertTrue(room.store.create("Landmine Press", "other", "ex_landmine", loadCount = 1) is GymResult.Ok)
+                assertTrue(room.store.routines.create("Landmine Press", "other", "ex_landmine", loadCount = 1) is GymResult.Ok)
                 val draft = RoutineDraft(name = "Push", creationId = "routine_yours")
-                    .adding("bench-press").adding("ex_landmine").capturingMovements(room.store.catalog)
-                assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
+                    .adding("bench-press").adding("ex_landmine").capturingMovements(room.store.routines.catalog)
+                assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Ok)
             }
             val before = room.engine.snapshot()
             val visible = mutableStateOf(true)
@@ -138,7 +138,7 @@ class RoutineSheetTests {
             )
             runBlocking {
                 room.select(null)
-                assertTrue(room.store.saveRoutine(RoutineDraft(name = "Mixed equipment", entries = entries, creationId = "routine_mixed").capturingMovements(room.store.catalog)) is GymResult.Ok)
+                assertTrue(room.store.routines.saveRoutine(RoutineDraft(name = "Mixed equipment", entries = entries, creationId = "routine_mixed").capturingMovements(room.store.routines.catalog)) is GymResult.Ok)
             }
             val visible = mutableStateOf(true)
             compose.setContent { if (visible.value) GymMaterial { GymRoom(room.account(), room.store) } }
@@ -149,7 +149,7 @@ class RoutineSheetTests {
                 compose.onNodeWithText("Edit routine").performClick()
                 targets.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
                 entries.forEachIndexed { index, entry ->
-                    val name = room.store.catalog.first { it.id == entry.exerciseId }.name
+                    val name = room.store.routines.catalog.first { it.id == entry.exerciseId }.name
                     compose.onNodeWithContentDescription("Move $name, ${index + 1} of 4").assertIsDisplayed()
                 }
             } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }

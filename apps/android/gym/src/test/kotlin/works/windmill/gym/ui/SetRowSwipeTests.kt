@@ -59,11 +59,11 @@ class SetRowSwipeTests {
             room.select("u1")
             room.pull(server)
             room.startExternalWorkout()
-            room.store.choose("bench-press")
-            room.store.logSet(weightKg = 82.5, reps = 5)
-            room.store.logSet(weightKg = 90.0, reps = 3)
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(weightKg = 82.5, reps = 5)
+            room.store.workout.logSet(weightKg = 90.0, reps = 3)
             room.now += 60_000
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
             room.sync(server)
             room.store.refreshEngine()
         }
@@ -71,7 +71,7 @@ class SetRowSwipeTests {
         return room
     }
 
-    private fun session(room: EngineRoomFixture): SessionSummary = room.store.recent.single()
+    private fun session(room: EngineRoomFixture): SessionSummary = room.store.history.recent.single()
 
     private fun screen(
         room: EngineRoomFixture,
@@ -106,15 +106,15 @@ class SetRowSwipeTests {
             compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").assertIsDisplayed()
             compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput { swipeRight() }
             compose.runOnIdle {
-                assertEquals("nothing on the leading edge", emptySet<String>(), room.store.withheldIds)
+                assertEquals("nothing on the leading edge", emptySet<String>(), room.store.held.withheldIds)
             }
             compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").assertIsDisplayed()
 
             compose.onNodeWithContentDescription("Set 1, 82.5 kg total, 5 reps").performTouchInput { swipeLeft() }
             compose.runOnIdle {
-                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Any>(), room.store.held.withheld)
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
-                assertNull(room.store.keepWithheld())
+                assertNull(room.store.deletions.keepWithheld())
             }
         } } finally { scope.cancel() }
     }
@@ -130,7 +130,7 @@ class SetRowSwipeTests {
             }
 
             compose.runOnIdle {
-                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Any>(), room.store.held.withheld)
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
             }
         } } finally { scope.cancel() }
@@ -152,7 +152,7 @@ class SetRowSwipeTests {
 
             compose.runOnIdle { assertTrue(declared.single().action?.invoke() == true) }
             compose.runOnIdle {
-                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Any>(), room.store.held.withheld)
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
             }
         } } finally { scope.cancel() }
@@ -206,7 +206,7 @@ class SetRowSwipeTests {
 
             compose.onNodeWithText("Fix set").assertIsDisplayed()
             compose.onNodeWithText("Set note").assertIsDisplayed()
-            compose.runOnIdle { assertEquals(emptySet<String>(), room.store.withheldIds) }
+            compose.runOnIdle { assertEquals(emptySet<String>(), room.store.held.withheldIds) }
         } } finally { scope.cancel() }
     }
 
@@ -225,7 +225,7 @@ class SetRowSwipeTests {
             compose.onNodeWithText("somewhere else").assertIsDisplayed()
 
             compose.runOnIdle {
-                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Any>(), room.store.held.withheld)
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
                 assertEquals(listOf(90.0), room.training.details().single { it.session.id == summary.id }.sets.map { it.weightKg })
             }
@@ -243,7 +243,7 @@ class SetRowSwipeTests {
             standing.value = false
             compose.runOnIdle { }
 
-            compose.runOnIdle { assertNull(room.store.keepWithheld()) }
+            compose.runOnIdle { assertNull(room.store.deletions.keepWithheld()) }
             standing.value = true
             compose.onNodeWithContentDescription("Set 1, 90 kg total, 3 reps").assertIsDisplayed()
             assertEquals(emptyList<Any>(), compose.onAllNodesWithContentDescription("82.5 kg", substring = true).fetchSemanticsNodes())

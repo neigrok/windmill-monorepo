@@ -50,28 +50,28 @@ fun ConnectedLogScreen(
     val scope = rememberCoroutineScope()
     val web = LocalUriHandler.current
     val telemetry = LocalTelemetry.current
-    val owner = store.accountKey
+    val owner = store.seat.accountKey
     var how by rememberSaveable(owner) { mutableStateOf<Boolean?>(null) }
     var refreshing by remember(owner) { mutableStateOf(false) }
     val rootScroll = rememberLazyListState()
     val howScroll = rememberLazyListState()
     val now = System.currentTimeMillis()
     fun refresh() {
-        if (refreshing || !isSignedIn || store.isLoading) return
+        if (refreshing || !isSignedIn || store.seat.isLoading) return
         refreshing = true
         scope.launch {
-            try { store.refreshConnectedLog() }
-            finally { if (store.accountKey == owner) refreshing = false }
+            try { store.sharing.refreshConnectedLog() }
+            finally { if (store.seat.accountKey == owner) refreshing = false }
         }
     }
     fun browse(url: String) {
         runCatching { web.openUri(url) }.onFailure { telemetry.failure("gym.openConnections", it) }
     }
-    LaunchedEffect(store, owner, isSignedIn, store.isLoading, store.connectedLogGeneration) {
-        if (isSignedIn && !store.isLoading) store.readConnectedLog()
+    LaunchedEffect(store, owner, isSignedIn, store.seat.isLoading, store.sharing.connectedLogGeneration) {
+        if (isSignedIn && !store.seat.isLoading) store.sharing.readConnectedLog()
     }
     ReadsAgainOnReturn { refresh() }
-    val state = if (isSignedIn) store.connectedLog else ConnectedLogState.None
+    val state = if (isSignedIn) store.sharing.connectedLog else ConnectedLogState.None
     val connected = state as? ConnectedLogState.Connected
     BackHandler(enabled = how != null) { how = null }
     if (how != null) {

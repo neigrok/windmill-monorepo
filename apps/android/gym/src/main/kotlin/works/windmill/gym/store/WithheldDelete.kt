@@ -1,5 +1,8 @@
 package works.windmill.gym.store
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.WeighIn
@@ -55,6 +58,27 @@ data class WithheldDelete(
 ) {
     val subjectId: String get() = deletion.subjectId
     val takeable: Boolean get() = !sent
+}
+
+// What this room has taken off its lists: deletes inside their way back and set deletes already settled. Every
+// list that could draw one filters against it.
+class HeldDeletes {
+    // Weight receipts project engine holds; workout recovery remains room-owned.
+    var withheld: List<WithheldDelete> by mutableStateOf(emptyList())
+        internal set
+    // One room's memory of its own deletes, never a tombstone: a session read BEFORE the delete would
+    // otherwise draw a row that is gone.
+    var deletedSets: Set<String> by mutableStateOf(emptySet())
+        internal set
+    // Every id the lifter has deleted inside a window still open. As far as the lifter is concerned the row is gone.
+    val withheldIds: Set<String> get() = withheld.mapTo(mutableSetOf()) { it.subjectId }
+
+    // Takes the open window on this subject off without asking anyone: a whole-record rewrite replaced it.
+    internal fun release(subjectId: String): WithheldDelete? {
+        val taking = withheld.firstOrNull { it.subjectId == subjectId && it.takeable } ?: return null
+        withheld = withheld - taking
+        return taking
+    }
 }
 
 data class HeldWeightReceipt(val replica: String, val anonymous: Boolean, val gestureId: String, val localIds: List<String>, val weighIn: WeighIn)

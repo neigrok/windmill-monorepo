@@ -37,7 +37,7 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     onDraftOpen: (Boolean) -> Unit = {}, focusSessionId: String? = null, now: () -> Long = System::currentTimeMillis) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
-    val nowMs = remember(exerciseId, store.progress?.asOf) { now() }
+    val nowMs = remember(exerciseId, store.history.progress?.asOf) { now() }
     val zone = ZoneId.systemDefault()
     var record by remember(exerciseId) { mutableStateOf<MovementRecord?>(null) }
     var failure by remember(exerciseId) { mutableStateOf<WriteFailure?>(null) }
@@ -72,8 +72,8 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     LaunchedEffect(exerciseId, asked) {
         failure = null
         coroutineScope {
-            val data = async { store.loadProgress(force = asked > 0) }
-            when (val read = store.record(exerciseId)) {
+            val data = async { store.history.loadProgress(force = asked > 0) }
+            when (val read = store.history.record(exerciseId)) {
                 is GymResult.Ok -> record = read.value
                 is GymResult.Failed -> failure = read.why
             }
@@ -83,9 +83,9 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
             }
         }
     }
-    val progress = store.progress?.movement(exerciseId)
-    val ready = record != null && progress != null && failure == null && store.progressFailure == null
-    GymScreen(title = record?.exercise?.name ?: Readout.movement(exerciseId, store.catalog),
+    val progress = store.history.progress?.movement(exerciseId)
+    val ready = record != null && progress != null && failure == null && store.history.progressFailure == null
+    GymScreen(title = record?.exercise?.name ?: Readout.movement(exerciseId, store.routines.catalog),
         onBack = onBack, backTo = backTo,
         actions = { if (ready) Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More") }
@@ -95,7 +95,7 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
                     val exercise = record!!.exercise
                     draft = exercise.name; equipment = exercise.equipment; loadCount = exercise.loadCount
                     openedName = exercise.name; openedEquipment = exercise.equipment; openedCount = exercise.loadCount
-                    openedAccount = store.accountKey; openedReplica = store.editReplica
+                    openedAccount = store.seat.accountKey; openedReplica = store.seat.replica
                     refused = null; renaming = true
                 }, modifier = Modifier.widthIn(min = 208.dp))
             }
@@ -103,9 +103,9 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
             .padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when {
-                failure != null || store.progressFailure != null -> {
+                failure != null || store.history.progressFailure != null -> {
                     Text("Record unavailable", style = WindmillFont.body(24, FontWeight.Bold), color = skin.ink)
-                    Text((failure ?: store.progressFailure)!!.line("Your record could not be read."), style = WindmillFont.body(16), color = skin.inkDim)
+                    Text((failure ?: store.history.progressFailure)!!.line("Your record could not be read."), style = WindmillFont.body(16), color = skin.inkDim)
                     TextButton(onClick = { asked += 1 }) { Text("Try again") }
                 }
                 ready -> RecordBody(Record.page(record!!, nowMs, progress!!), record!!.exercise.equipment, progress, nowMs, zone, focusSessionId)
@@ -138,10 +138,10 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
                         saving = true
                         scope.launch {
                             try {
-                                when (val result = store.edit(exerciseId, draft, equipment, loadCount, base, openedAccount, openedReplica)) {
+                                when (val result = store.history.edit(exerciseId, draft, equipment, loadCount, base, openedAccount, openedReplica)) {
                                     is GymResult.Failed -> refused = result.why.line("that movement was not changed.")
                                     is GymResult.Ok -> {
-                                        if (store.accountKey == openedAccount && store.editReplica == openedReplica) {
+                                        if (store.seat.accountKey == openedAccount && store.seat.replica == openedReplica) {
                                             record = read.copy(exercise = result.value)
                                             asked += 1
                                         }

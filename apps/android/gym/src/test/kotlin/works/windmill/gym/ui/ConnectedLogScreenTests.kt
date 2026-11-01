@@ -283,14 +283,14 @@ class ConnectedLogScreenTests {
                 assertEquals(1, grantReads)
                 val original = phone.account()
                 runBlocking { store.connect(Account(original.origin, original.user, identityRevision = original.identityRevision)) }
-                assertFalse(store.isLoading)
+                assertFalse(store.seat.isLoading)
                 release.complete(Unit)
             }
-            compose.waitUntil(5_000) { grantReads == 2 && store.connectedLog.answered }
+            compose.waitUntil(5_000) { grantReads == 2 && store.sharing.connectedLog.answered }
             compose.runOnIdle {
                 assertEquals(listOf(2, 2), listOf(grantReads, keyReads))
                 assertEquals(ConnectedLog.state(listOf(OAuthGrant("grant", "Current grant", 1, "gym:read")),
-                    listOf(McpKey("key", "Static", 2))), store.connectedLog)
+                    listOf(McpKey("key", "Static", 2))), store.sharing.connectedLog)
             }
             compose.onNodeWithText("Current grant").assertIsDisplayed()
             compose.onNodeWithText("Old grant").assertDoesNotExist()

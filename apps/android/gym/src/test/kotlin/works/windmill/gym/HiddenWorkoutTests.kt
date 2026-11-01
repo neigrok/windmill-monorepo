@@ -65,8 +65,8 @@ class HiddenWorkoutTests {
                 phone.select("u1"); phone.pull(EngineRoomFixture.server())
                 if (withWorkout) {
                     phone.workout(finish = false)
-                    assertEquals(WorkoutChange.Saved, phone.store.editRack(92.5, 7))
-                } else phone.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press"))
+                    assertEquals(WorkoutChange.Saved, phone.store.workout.editRack(92.5, 7))
+                } else phone.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press"))
             }
             val account = phone.account()
             val shell = ShellActions(openYou = {})
@@ -87,7 +87,7 @@ class HiddenWorkoutTests {
 
     @Test fun hideAndBackReturnToTheOriginatingTabAndTheSameRack() = room { phone, restoration, events ->
         val bar = "${Readout.noRoutine}, in progress"
-        val session = phone.store.session
+        val session = phone.store.workout.session
         compose.onNodeWithContentDescription("Hide workout").performClick()
         compose.onNodeWithContentDescription(bar).assertIsDisplayed()
         compose.onNodeWithText("Finish").assertDoesNotExist()
@@ -100,10 +100,10 @@ class HiddenWorkoutTests {
             compose.onNodeWithContentDescription(bar).assertIsDisplayed()
             compose.onNode(hasText(tab) and hasClickAction()).assertIsDisplayed().assertIsSelected()
             compose.runOnIdle {
-                assertTrue(phone.store.loggerHidden)
-                assertEquals(session, phone.store.session)
-                assertEquals(92.5, phone.store.rack!!.weightKg, 0.0)
-                assertEquals(7, phone.store.rack!!.reps)
+                assertTrue(phone.store.workout.loggerHidden)
+                assertEquals(session, phone.store.workout.session)
+                assertEquals(92.5, phone.store.workout.rack!!.weightKg, 0.0)
+                assertEquals(7, phone.store.workout.rack!!.reps)
             }
         }
         compose.onNode(hasText("Coach") and hasClickAction()).performClick()
@@ -123,19 +123,19 @@ class HiddenWorkoutTests {
 
     @Test fun managementHideAndNotificationShowHaveSeparateEffectsAndAConsumedOpenDoesNotReplay() = room { phone, restoration, events ->
         val bar = "${Readout.noRoutine}, in progress"
-        compose.runOnIdle { assertEquals(WorkoutChange.Saved, phone.store.showWorkout(phone.store.notification.value!!.key, true)) }
+        compose.runOnIdle { assertEquals(WorkoutChange.Saved, phone.store.workout.showWorkout(phone.store.workout.notification.value!!.key, true)) }
         compose.onNodeWithText("Bench Press").performClick()
         compose.onNodeWithText("Notification off").assertIsDisplayed()
         compose.onNodeWithText("Show").performClick()
         compose.onNodeWithText("Notification off").assertDoesNotExist()
         compose.onNodeWithText("Hide workout").performClick()
         compose.onNodeWithContentDescription(bar).assertIsDisplayed()
-        compose.runOnIdle { phone.store.requestWorkout() }
+        compose.runOnIdle { phone.store.workout.requestWorkout() }
         compose.onNodeWithText("Finish").assertIsDisplayed()
         compose.runOnIdle {
-            assertFalse(phone.store.loggerHidden)
-            assertFalse(phone.store.notification.value!!.hidden)
-            assertEquals(0L, phone.store.workoutOpenRequest)
+            assertFalse(phone.store.workout.loggerHidden)
+            assertFalse(phone.store.workout.notification.value!!.hidden)
+            assertEquals(0L, phone.store.workout.workoutOpenRequest)
         }
         compose.onNodeWithContentDescription("Hide workout").performClick()
         restoration.emulateSavedInstanceStateRestore()
@@ -150,13 +150,13 @@ class HiddenWorkoutTests {
         compose.onNodeWithContentDescription("${Readout.noRoutine}, in progress").performClick()
         compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("−")
         compose.runOnIdle {
-            assertEquals(92.5, phone.store.rack!!.weightKg, 0.0)
-            assertEquals(7, phone.store.rack!!.reps)
+            assertEquals(92.5, phone.store.workout.rack!!.weightKg, 0.0)
+            assertEquals(7, phone.store.workout.rack!!.reps)
         }
     }
 
     @Test fun anUnavailableHideEmitsRefusedAndKeepsTheExistingFailureNote() = room { phone, _, events ->
-        compose.runOnIdle { phone.store.authorizeWorkout(false) }
+        compose.runOnIdle { phone.store.workout.authorizeWorkout(false) }
         compose.onNodeWithContentDescription("Hide workout").performClick()
         compose.onNodeWithText("The workout is not ready.").assertIsDisplayed()
         compose.onNodeWithText("Finish").assertIsDisplayed()
@@ -167,7 +167,7 @@ class HiddenWorkoutTests {
     @Test fun startingFromACoachRoutineDoorReturnsToCoachWhenHidden() {
         val rest = FakeGymRest()
         room(withWorkout = false, rest = rest) { phone, _, _ ->
-            val routine = phone.store.routines.first()
+            val routine = phone.store.routines.all.first()
             rest.answers += AskAnswer("Your routine is ready.", ReadTally(),
                 results = listOf(CoachResult("routine-created", "operation", routine.id, routine.name)))
             compose.onNode(hasText("Coach") and hasClickAction()).performClick()

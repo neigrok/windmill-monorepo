@@ -259,8 +259,8 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
     var refused by rememberSaveable { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
     val sheetStates = rememberSaveableStateHolder()
-    val rows = Bodyweight.windowed(store.bodyweight, ChartWindow.All, today)
-    val standing = Bodyweight.windowed(store.allWeighIns, ChartWindow.All, today)
+    val rows = Bodyweight.windowed(store.bodyweight.drawn, ChartWindow.All, today)
+    val standing = Bodyweight.windowed(store.bodyweight.allWeighIns, ChartWindow.All, today)
     val shown = Bodyweight.windowed(rows, window, today)
 
     fun close(after: () -> Unit = {}) {
@@ -280,15 +280,15 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
     GymScreen(title = Bodyweight.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (!store.bodyweightRead) {
+            if (!store.bodyweight.bodyweightRead) {
                 Text("Reading your weigh-ins…", style = WindmillFont.body(16), color = skin.inkDim)
             }
             if (standing.isEmpty()) {
-                if (store.bodyweightRead) {
+                if (store.bodyweight.bodyweightRead) {
                     Text(Bodyweight.nothingYet, style = WindmillFont.body(16), color = skin.inkDim)
                 }
             } else {
-                if (store.bodyweightRead) {
+                if (store.bodyweight.bodyweightRead) {
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.surface).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -327,7 +327,7 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
                         key(entry.dateLocal) {
                             DeleteSwipeRow(Bodyweight.deleteRow, onDelete = {
                                 say(null)
-                                store.withhold(Deletion.Bodyweight(entry.dateLocal))
+                                store.deletions.withhold(Deletion.Bodyweight(entry.dateLocal))
                                 false
                             }) {
                                 Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).background(skin.canvas)
@@ -361,7 +361,7 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
                             refused = null
                             scope.launch {
                                 try {
-                                    val failed = store.weighIn(dateLocal, weightKg)
+                                    val failed = store.bodyweight.weighIn(dateLocal, weightKg)
                                     if (failed != null) refused = failed.line("that weigh-in wasn’t saved")
                                     saving = false
                                     if (failed == null) close()
@@ -369,7 +369,7 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
                             }
                         }
                     },
-                    onDelete = { close { say(null); store.withhold(Deletion.Bodyweight(open.dateLocal)) } },
+                    onDelete = { close { say(null); store.deletions.withhold(Deletion.Bodyweight(open.dateLocal)) } },
                 )
             }
         }

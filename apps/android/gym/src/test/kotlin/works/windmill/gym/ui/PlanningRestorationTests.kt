@@ -167,7 +167,7 @@ class PlanningRestorationTests {
             assertEquals("dumbbell", movement.current.equipment)
             assertEquals(2, movement.current.loadCount)
             assertEquals(listOf(RoutineEntry(1, movement.current.id, List(3) { SetTarget(10) })), draft.entries)
-            assertEquals(emptyList<Exercise>(), store.catalog.filter { it.custom })
+            assertEquals(emptyList<Exercise>(), store.routines.catalog.filter { it.custom })
             assertEquals(before, room.engine.snapshot())
         } } finally { scope.cancel() }
     }
@@ -178,7 +178,7 @@ class PlanningRestorationTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
             runBlocking { room.startExternalWorkout() }
-            val session = store.session!!.id
+            val session = store.workout.session!!.id
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
@@ -196,12 +196,12 @@ class PlanningRestorationTests {
             compose.onNodeWithText("Dumbbells").assertIsDisplayed()
             compose.onNodeWithText("Create and add").performClick()
             compose.waitForIdle()
-            assertEquals(session, store.session?.id)
-            val exercise = store.catalog.single { it.custom }
+            assertEquals(session, store.workout.session?.id)
+            val exercise = store.routines.catalog.single { it.custom }
             assertEquals("Farmer carry", exercise.name)
             assertEquals("dumbbell", exercise.equipment)
-            assertEquals(listOf(exercise.id), store.order)
-            assertEquals(exercise.id, store.exerciseId)
+            assertEquals(listOf(exercise.id), store.workout.order)
+            assertEquals(exercise.id, store.workout.exerciseId)
         } } finally { scope.cancel() }
     }
 

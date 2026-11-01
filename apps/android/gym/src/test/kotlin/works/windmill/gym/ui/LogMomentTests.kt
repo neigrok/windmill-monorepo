@@ -37,16 +37,16 @@ class LogMomentTests {
     // lift. Its routine is deleted after, so the log's sessions keep only their frozen plan.
     private suspend fun EngineRoomFixture.trained(plan: String, at: Long, lifts: List<Pair<String, Double>>, reps: Int = 1): Session {
         now = at - 60_000
-        val routine = (store.saveRoutine(lifts.fold(RoutineDraft(name = plan)) { draft, (movement, _) -> draft.adding(movement) })
+        val routine = (store.routines.saveRoutine(lifts.fold(RoutineDraft(name = plan)) { draft, (movement, _) -> draft.adding(movement) })
             as GymResult.Ok).value
-        val session = (store.start(routine.id) as GymResult.Ok).value
+        val session = (store.workout.start(routine.id) as GymResult.Ok).value
         for ((movement, load) in lifts) {
-            store.choose(movement)
-            store.logSet(load, reps)
+            store.workout.choose(movement)
+            store.workout.logSet(load, reps)
         }
         now = at + 3_540_000
-        assertTrue(store.finish() is FinishOutcome.Closed)
-        assertNull(store.dropRoutine(routine.id))
+        assertTrue(store.workout.finish() is FinishOutcome.Closed)
+        assertNull(store.routines.dropRoutine(routine.id))
         return session
     }
 
@@ -129,7 +129,7 @@ class LogMomentTests {
                     phone.now = now - index * 60_000 - 1_000
                     val session = phone.startExternalWorkout()
                     phone.now += 1_000
-                    assertTrue(phone.store.finish() is FinishOutcome.Closed)
+                    assertTrue(phone.store.workout.finish() is FinishOutcome.Closed)
                     session.id
                 }
                 phone.sync(server)
@@ -140,17 +140,17 @@ class LogMomentTests {
                 room.select("a")
                 room.pull(server)
                 room.store.refreshEngine()
-                room.store.recent.toList().forEach { room.store.withhold(Deletion.Session(it.id)) }
-                assertEquals(Older.More, room.store.older)
-                assertEquals(recent.toSet(), room.store.withheldIds)
-                assertEquals(emptyList<SessionSummary>(), room.store.recent)
+                room.store.history.recent.toList().forEach { room.store.deletions.withhold(Deletion.Session(it.id)) }
+                assertEquals(Older.More, room.store.history.older)
+                assertEquals(recent.toSet(), room.store.held.withheldIds)
+                assertEquals(emptyList<SessionSummary>(), room.store.history.recent)
             }
             room.store.observeEngine()
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { now }) } }
             compose.onNodeWithText("Bench Press · new best").assertDoesNotExist()
             compose.onNodeWithText("No workouts yet").assertDoesNotExist()
             compose.onNodeWithText("Load older").assertIsDisplayed().performClick()
-            compose.waitUntil(10_000) { compose.runOnIdle { room.store.older == Older.End } }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.history.older == Older.End } }
             compose.onNodeWithText("Older workout").assertIsDisplayed()
             compose.onNodeWithText("Bench Press · new best").assertIsDisplayed()
             compose.onNodeWithText("Load older").assertDoesNotExist()

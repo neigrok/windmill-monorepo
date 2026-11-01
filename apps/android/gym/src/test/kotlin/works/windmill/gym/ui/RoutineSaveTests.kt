@@ -43,7 +43,7 @@ class RoutineSaveTests {
             val server = EngineRoomFixture.server()
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("a"); other.pull(server)
-                assertTrue(other.store.saveRoutine(RoutineDraft(name = "Push", entries = entries, creationId = "routine_push").capturingMovements(other.store.catalog)) is GymResult.Ok)
+                assertTrue(other.store.routines.saveRoutine(RoutineDraft(name = "Push", entries = entries, creationId = "routine_push").capturingMovements(other.store.routines.catalog)) is GymResult.Ok)
                 other.sync(server)
             } }
             runBlocking { room.select("a"); room.pull(server); room.store.refreshEngine() }
@@ -59,7 +59,7 @@ class RoutineSaveTests {
                 val moved = if (!refused) null else EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                     other.select("a"); other.pull(server)
                     val draft = RoutineDraft.of(other.training.program().single()).named("Push elsewhere")
-                    assertTrue(other.store.saveRoutine(draft) is GymResult.Ok)
+                    assertTrue(other.store.routines.saveRoutine(draft) is GymResult.Ok)
                     other.sync(server)
                     room.pull(server); room.store.refreshEngine()
                     room.training.program().single()

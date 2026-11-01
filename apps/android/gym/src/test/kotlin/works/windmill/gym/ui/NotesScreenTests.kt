@@ -68,7 +68,7 @@ class NotesScreenTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), room.scope).use { other -> runBlocking {
             other.select("u1"); other.pull(server)
-            for ((id, write) in notes) assertTrue(other.store.saveNote(id, write) is GymResult.Ok)
+            for ((id, write) in notes) assertTrue(other.store.notes.saveNote(id, write) is GymResult.Ok)
             other.sync(server)
         } }
         runBlocking { room.select("u1"); room.pull(server) }
@@ -159,7 +159,7 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
-            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Note("note_003"))) } }
+            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Note("note_003"))) } }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
             compose.onNodeWithText(Notes.full).assertDoesNotExist()
@@ -167,7 +167,7 @@ class NotesScreenTests {
             compose.runOnIdle {
                 assertEquals((0..9).filter { it != 3 }.map { "note_00$it" }, room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
-                assertNull(store.keepWithheld())
+                assertNull(store.deletions.keepWithheld())
             }
         } } finally { scope.cancel() }
     }
@@ -186,7 +186,7 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
-            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Note("note_003"))) } }
+            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Note("note_003"))) } }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
             compose.onNodeWithText(Notes.add).assertIsDisplayed()
@@ -214,10 +214,10 @@ class NotesScreenTests {
             compose.onNodeWithText(Notes.delete).performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals("the editor leaves on the tap", 1, done)
-                assertEquals(emptyList<String>(), store.withheld.map { it.subjectId })
+                assertEquals(emptyList<String>(), store.held.withheld.map { it.subjectId })
                 assertEquals(emptyList<String>(), room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
-                assertNull(works.windmill.gym.store.Withheld.line(store.withheld))
+                assertNull(works.windmill.gym.store.Withheld.line(store.held.withheld))
             }
         } } finally { scope.cancel() }
     }
@@ -281,7 +281,7 @@ class NotesScreenTests {
             compose.onNodeWithText("Sign in").performClick()
             compose.runOnIdle {
                 assertEquals(listOf("signIn"), doors)
-                assertFalse("nothing was read from the notebook", room.store.notesRead)
+                assertFalse("nothing was read from the notebook", room.store.notes.notesRead)
             }
         } } finally { scope.cancel() }
     }
@@ -330,14 +330,14 @@ class NotesScreenTests {
             }
             compose.waitUntil(2_000) {
                 shadowOf(Looper.getMainLooper()).idle()
-                room.store.noteRefusals.isNotEmpty() && room.store.notes.map { it.id } == listOf("note_000", "note_001", "note_002")
+                room.store.notes.noteRefusals.isNotEmpty() && room.store.notes.all.map { it.id } == listOf("note_000", "note_001", "note_002")
             }
 
             compose.runOnIdle {
                 assertEquals(listOf("note_000", "note_001", "note_002"), onTheLog(room, server))
                 assertEquals(listOf("note_000", "note_001", "note_002"), runBlocking { room.training.notes() }.map { it.id })
                 assertEquals("the refusal reaches the room", listOf("That changed. Open it again."),
-                    room.store.noteRefusals.map { it.reason })
+                    room.store.notes.noteRefusals.map { it.reason })
             }
             compose.onNodeWithText("That changed. Open it again.", substring = true).assertIsDisplayed()
             assertEquals("the list says what the log holds, not the order it refused",
@@ -431,20 +431,20 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 0").assertIsDisplayed()
 
-            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Note("note_001"))) } }
+            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Note("note_001"))) } }
             compose.onNodeWithText("note 1").assertDoesNotExist()
 
             dragBelowTheNextRow("note 0")
 
             compose.runOnIdle {
                 assertEquals("nothing was refused", emptyList<String>(), said.filterNotNull())
-                assertEquals(emptyList<String>(), store.withheld.map { it.subjectId })
+                assertEquals(emptyList<String>(), store.held.withheld.map { it.subjectId })
                 room.sync(server)
             }
             assertEquals(listOf("note_002", "note_000"), onTheLog(room, server))
             assertEquals(listOf("note 2", "note 0"), drawnOrder("note 0", "note 2"))
             compose.onNodeWithText("note 1").assertDoesNotExist()
-            compose.runOnIdle { assertNull(store.keepWithheld()) }
+            compose.runOnIdle { assertNull(store.deletions.keepWithheld()) }
             assertEquals(listOf("note 2", "note 0"), drawnOrder("note 0", "note 2"))
         } } finally { scope.cancel() }
     }
@@ -460,7 +460,7 @@ class NotesScreenTests {
             val handle = compose.onNodeWithContentDescription("Reorder note 0")
             handle.performTouchInput { swipe(center, Offset(-250f, centerY)) }
             compose.runOnIdle {
-                assertEquals(listOf("note_000", "note_001", "note_002"), room.store.notes.map { it.id })
+                assertEquals(listOf("note_000", "note_001", "note_002"), room.store.notes.all.map { it.id })
                 assertTrue(telemetry.events.isEmpty())
             }
             val rowHeight = compose.onNodeWithText("note 0").fetchSemanticsNode().size.height
@@ -505,7 +505,7 @@ class NotesScreenTests {
             compose.runOnIdle {
                 assertEquals(listOf("note_001", "note_002"), room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
-                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Any>(), room.store.held.withheld)
                 assertEquals(listOf(
                     "gym_action" to mapOf("screen" to "notes", "action" to "delete", "outcome" to "failed"),
                     "gym_action" to mapOf("screen" to "notes", "action" to "delete", "outcome" to "ok"),
@@ -553,11 +553,11 @@ class NotesScreenTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
             signedIn(room)
             runBlocking {
-                assertTrue(room.store.saveNote("note_001", NoteWrite("Private title", "Private body")) is GymResult.Ok)
-                val refused = room.store.saveNote("note_001", NoteWrite("x".repeat(61), "Private refused body"))
+                assertTrue(room.store.notes.saveNote("note_001", NoteWrite("Private title", "Private body")) is GymResult.Ok)
+                val refused = room.store.notes.saveNote("note_001", NoteWrite("x".repeat(61), "Private refused body"))
                 assertTrue(refused is GymResult.Failed && refused.why is works.windmill.gym.store.WriteFailure.Refused)
                 room.engine.failNextCommit()
-                val failed = room.store.saveNote("note_001", NoteWrite("Private replacement", "Private failed body"))
+                val failed = room.store.notes.saveNote("note_001", NoteWrite("Private replacement", "Private failed body"))
                 assertTrue(failed is GymResult.Failed && failed.why !is works.windmill.gym.store.WriteFailure.Refused)
                 assertEquals(listOf("gym.saveNote"), telemetry.failures)
                 assertEquals(listOf(

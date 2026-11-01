@@ -226,17 +226,17 @@ fun SessionScreen(
             }
         })
 
-    val currentDetail = detail?.let(store::retainedSession)
+    val currentDetail = detail?.let(store.history::retainedSession)
     val readId = currentDetail?.session?.id ?: summary.id
-    val visibleSets = currentDetail?.sets?.filterNot { it.id in store.deletedSets || it.id in store.withheldIds }
-    val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), store.catalog) }
-        ?: store.recent.firstOrNull { it.id == summary.id } ?: summary
+    val visibleSets = currentDetail?.sets?.filterNot { it.id in store.held.deletedSets || it.id in store.held.withheldIds }
+    val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), store.routines.catalog) }
+        ?: store.history.recent.firstOrNull { it.id == summary.id } ?: summary
     var shareOpen by rememberSaveable(summary.id) { mutableStateOf(false) }
     // Null until the read lands, distinct from a workout with no sets.
     val movements = currentDetail?.let { held ->
         Performed.movements(
-            held.sets.filterNot { it.id in store.deletedSets || it.id in store.withheldIds },
-            store.catalog,
+            held.sets.filterNot { it.id in store.held.deletedSets || it.id in store.held.withheldIds },
+            store.routines.catalog,
             held.session.plan,
         )
     }
@@ -246,15 +246,15 @@ fun SessionScreen(
     }
 
     LaunchedEffect(readId) {
-        when (val found = store.sessionDetail(readId, currentDetail)) {
+        when (val found = store.history.sessionDetail(readId, currentDetail)) {
             is GymResult.Ok -> { detail = found.value; setsFailure = null }
             is GymResult.Failed -> setsFailure = found.why
         }
     }
 
     // A deleted or restored row changes the review as well as the set list.
-    LaunchedEffect(readId, corrected, store.deletedSets) {
-        review = store.review(readId)
+    LaunchedEffect(readId, corrected, store.held.deletedSets) {
+        review = store.history.review(readId)
         read = true
     }
 
@@ -289,7 +289,7 @@ fun SessionScreen(
                         onOpenMovement = onOpenMovement,
                         onFix = { fixing = it },
                         onDelete = { row ->
-                            val failure = store.delete(Deletion.Set(readId, row))
+                            val failure = store.deletions.delete(Deletion.Set(readId, row))
                             say(failure?.line("that set is still on the log"))
                             failure == null
                         },
@@ -305,9 +305,9 @@ fun SessionScreen(
                     )
                 }
             }
-            if (read && (review == null || Finish.recordSentence(review?.record, store.catalog) != null ||
-                    Finish.comparison(review?.against, store.catalog) != null)) {
-                item("review") { ReviewRemarks(review, store.catalog) }
+            if (read && (review == null || Finish.recordSentence(review?.record, store.routines.catalog) != null ||
+                    Finish.comparison(review?.against, store.routines.catalog) != null)) {
+                item("review") { ReviewRemarks(review, store.routines.catalog) }
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -338,13 +338,13 @@ fun SessionScreen(
             fixStates.SaveableStateProvider(fixing!!) {
             FixSheet(
                 set = row.set,
-                exercise = store.catalog.firstOrNull { it.id == row.set.exerciseId },
+                exercise = store.routines.catalog.firstOrNull { it.id == row.set.exerciseId },
                 origin = FixOrigin.Session,
                 movement = movement,
                 position = row.position,
                 routine = standing.plan?.routine,
                 onSave = { fix ->
-                    val ended = store.fixSet(readId, row.id, fix, FixOrigin.Session)
+                    val ended = store.workout.fixSet(readId, row.id, fix, FixOrigin.Session)
                     when (ended) {
                         is FixOutcome.Corrected -> {
                             detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {
@@ -367,7 +367,7 @@ fun SessionScreen(
                 onDelete = {
                     close()
                     say(null)
-                    scope.launch { say(store.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
+                    scope.launch { say(store.deletions.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
                 },
             )
             }

@@ -88,9 +88,9 @@ class LogStateTests {
             compose.onNodeWithText(Bodyweight.save).assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(2, instances)
-                assertEquals(listOf(day.plusDays(2).toString() to 82.45), current.bodyweight.map { it.dateLocal to it.weightKg })
-                assertTrue("recorded at the save", current.bodyweight.single().recordedAt!! in saving..room.now)
-                assertEquals("as the replica holds it", room.training.weighins(), current.bodyweight)
+                assertEquals(listOf(day.plusDays(2).toString() to 82.45), current.bodyweight.drawn.map { it.dateLocal to it.weightKg })
+                assertTrue("recorded at the save", current.bodyweight.drawn.single().recordedAt!! in saving..room.now)
+                assertEquals("as the replica holds it", room.training.weighins(), current.bodyweight.drawn)
             }
         } } finally { scope.cancel() }
     }
@@ -102,7 +102,7 @@ class LogStateTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             runBlocking { room.select("a"); room.store.observeEngine() }
-            compose.waitUntil(5_000) { room.store.older == Older.Reading }
+            compose.waitUntil(5_000) { room.store.history.older == Older.Reading }
             compose.mainClock.autoAdvance = false
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(2f, 2f)) {
@@ -204,7 +204,7 @@ class LogStateTests {
             compose.waitUntil(5_000) { compose.runOnIdle { actions.any { it["action"] == "retry" } } }
             compose.onNodeWithText("Retry").assertIsDisplayed()
             compose.runOnIdle { pulls.value = Pulls(replica, sent = 1, ended = 0) }
-            compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.Reading } }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.Reading } }
             compose.mainClock.advanceTimeBy(500)
             compose.onNodeWithText("Reading your log…").assertIsDisplayed()
             compose.onNodeWithText("Retry").assertDoesNotExist()
@@ -279,25 +279,25 @@ class LogStateTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             runBlocking {
                 room.select("a")
-                repeat(TrainingStore.logPage + 2) { index ->
+                repeat(HistoryReads.logPage + 2) { index ->
                     val start = room.now + index * 3_600_000L
                     room.training.startSession(SessionStart(id = "walked${index.toString().padStart(3, '0')}", startedAt = start))
                     room.training.finishSession("walked${index.toString().padStart(3, '0')}", start + 60_000)
                 }
-                room.now += (TrainingStore.logPage + 3) * 3_600_000L
+                room.now += (HistoryReads.logPage + 3) * 3_600_000L
                 room.store.observeEngine()
                 room.store.refreshEngine()
             }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
-            compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.More } }
-            compose.runOnIdle { runBlocking { room.store.loadOlder() } }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
+            compose.runOnIdle { runBlocking { room.store.history.loadOlder() } }
             compose.runOnIdle {
-                assertEquals(TrainingStore.logPage + 2, room.store.logged.size)
-                assertEquals(Older.Reading, room.store.older)
+                assertEquals(HistoryReads.logPage + 2, room.store.history.logged.size)
+                assertEquals(Older.Reading, room.store.history.older)
                 room.pull(EngineRoomFixture.server())
             }
-            compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.More } }
-            compose.runOnIdle { assertEquals(TrainingStore.logPage + 2, room.store.logged.size) }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
+            compose.runOnIdle { assertEquals(HistoryReads.logPage + 2, room.store.history.logged.size) }
         } } finally { scope.cancel() }
     }
 
@@ -311,7 +311,7 @@ class LogStateTests {
             runBlocking {
                 room.select("a")
                 room.pull(EngineRoomFixture.server())
-                repeat(TrainingStore.logPage + 1) { index ->
+                repeat(HistoryReads.logPage + 1) { index ->
                     val id = "walked${index.toString().padStart(3, '0')}"
                     val start = room.now + index * 3_600_000L
                     room.training.startSession(SessionStart(id = id, startedAt = start))
@@ -320,19 +320,19 @@ class LogStateTests {
                     }
                     room.training.finishSession(id, start + 600_000)
                 }
-                room.now += (TrainingStore.logPage + 2) * 3_600_000L
+                room.now += (HistoryReads.logPage + 2) * 3_600_000L
                 room.store.observeEngine()
                 room.store.refreshEngine()
             }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
-            compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.More } }
-            compose.runOnIdle { runBlocking { room.store.loadOlder() } }
-            compose.runOnIdle { assertEquals(2, room.store.logged.single { it.id == oldest }.setCount) }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
+            compose.runOnIdle { runBlocking { room.store.history.loadOlder() } }
+            compose.runOnIdle { assertEquals(2, room.store.history.logged.single { it.id == oldest }.setCount) }
             runBlocking { room.training.deleteSet(oldest, "set-0") }
-            compose.waitUntil(5_000) { compose.runOnIdle { room.store.logged.single { it.id == oldest }.setCount == 1 } }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.logged.single { it.id == oldest }.setCount == 1 } }
             compose.runOnIdle {
-                assertEquals(TrainingStore.logPage + 1, room.store.logged.size)
-                assertEquals(Older.End, room.store.older)
+                assertEquals(HistoryReads.logPage + 1, room.store.history.logged.size)
+                assertEquals(Older.End, room.store.history.older)
             }
         } } finally { scope.cancel() }
     }
@@ -353,13 +353,13 @@ class LogStateTests {
             repeat(2) { logged(it) }
             runBlocking { room.store.observeEngine(); room.store.refreshEngine() }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
-            compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.Reading } }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.Reading } }
             compose.runOnIdle {
-                (2 until TrainingStore.logPage + 1).forEach(::logged)
+                (2 until HistoryReads.logPage + 1).forEach(::logged)
                 room.pull(EngineRoomFixture.server())
             }
-            compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.More } }
-            compose.runOnIdle { assertEquals("the head page and the row below it", TrainingStore.logPage + 1, room.store.recent.size) }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
+            compose.runOnIdle { assertEquals("the head page and the row below it", HistoryReads.logPage + 1, room.store.history.recent.size) }
         } } finally { scope.cancel() }
     }
 
@@ -379,8 +379,8 @@ class LogStateTests {
                 listOf("2026-12-01" to 80.0, "2026-12-07" to 82.5, "2026-12-14" to 85.0, "2026-12-16" to 87.5,
                     "2026-12-21" to 80.0, "2026-12-28" to 80.0).forEach { (day, load) -> room.now = at(day); room.workout(load) }
                 room.now = today
-                assertNull(room.store.weighIn("2026-11-20", 83.0))
-                assertNull(room.store.weighIn("2027-01-10", 82.0))
+                assertNull(room.store.bodyweight.weighIn("2026-11-20", 83.0))
+                assertNull(room.store.bodyweight.weighIn("2027-01-10", 82.0))
                 room.store.observeEngine()
             }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }

@@ -179,14 +179,14 @@ fun WorkoutInspectScreen(store: TrainingStore, read: RecoveryRead, row: ImportRe
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     var submitted by remember(row.sourceKey) { mutableStateOf(false) }
-    val busy = store.recoveryBusy || submitted
+    val busy = store.recovery.busy || submitted
     var menu by rememberSaveable(row.id) { mutableStateOf(false) }
     var discardSource by rememberSaveable { mutableStateOf<String?>(null) }
     var message by rememberSaveable(row.sourceKey) { mutableStateOf<String?>(null) }
     val primary = PhoneRecovery.primary(row)
     fun fix() {
         menu = false
-        if (store.beginRecoveryFix(read, row)) telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "opened"))
+        if (store.recovery.beginFix(read, row)) telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "opened"))
     }
     fun act(action: RecoveryAction) {
         if (busy) return
@@ -194,7 +194,7 @@ fun WorkoutInspectScreen(store: TrainingStore, read: RecoveryRead, row: ImportRe
         submitted = true; message = null
         telemetry.event("gym_import_recovery", mapOf("action" to action.wire, "state" to "started"))
         scope.launch {
-            try { when (val result = store.recover(read, row, action, currentOwner = currentOwner)) {
+            try { when (val result = store.recovery.recover(read, row, action, currentOwner = currentOwner)) {
                 RecoveryResult.Accepted -> { discardSource = null; if (action == RecoveryAction.Discard) onBack() }
                 is RecoveryResult.Refused -> { discardSource = null; message = result.line }
                 RecoveryResult.Failed -> { discardSource = null; message = "The original workout is still saved on this phone. ${PhoneRecovery.label(action)} could not be completed." }
@@ -261,7 +261,7 @@ private fun RecoveryFacts(row: ImportRecovery, store: TrainingStore) {
     val skin = LocalGymColors.current
     val copy = requireNotNull(row.workout)
     val sets = PhoneRecovery.sets(row)
-    val summary = SessionSummary(copy.session, sets, store.catalog)
+    val summary = SessionSummary(copy.session, sets, store.routines.catalog)
     val duration = if (row.operationsOnly) "—" else copy.session.finishedAtMs?.let { finish -> runCatching { Math.subtractExact(finish, copy.session.startedAtMs) }.getOrNull()?.takeIf { it >= 0 }?.let(Readout::duration) } ?: "—"
     val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { "${Readout.weight(it)} kg" } ?: "—"
     Row(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp)).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -282,7 +282,7 @@ private fun RecoveryBand(line: String, failed: Boolean = false) {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(sets: List<TrainingSet>, store: TrainingStore,
     times: Boolean, onSet: ((TrainingSet) -> Unit)? = null) {
-    val movements = Performed.movements(sets, store.catalog)
+    val movements = Performed.movements(sets, store.routines.catalog)
     movements.forEach { movement ->
         item("movement:${movement.id}") { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             RecoveryHeading(movement.movement)
@@ -342,7 +342,7 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
-    val draft = store.recoveryDraft ?: return
+    val draft = store.recovery.fixDraft ?: return
     val skin = LocalGymColors.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
@@ -352,21 +352,21 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
     var held by remember(draft.row.sourceKey) { mutableStateOf<String?>(null) }
     var checking by remember(draft.row.sourceKey) { mutableStateOf(true) }
     var submitted by remember(draft.row.sourceKey) { mutableStateOf(false) }
-    val busy = store.recoveryBusy || submitted
+    val busy = store.recovery.busy || submitted
     LaunchedEffect(draft) {
         checking = true
-        held = store.recoveryFixRefusal(draft)
+        held = store.recovery.fixRefusal(draft)
         checking = false
     }
     fun close() {
         if (busy) return
         telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "cancelled"))
-        store.closeRecoveryFix()
+        store.recovery.closeFix()
     }
     fun change(copy: SavedWorkout, markFinished: Boolean = draft.markFinished) {
         if (busy) return
         failure = null; checking = true
-        store.changeRecoveryFix(draft, copy, markFinished)
+        store.recovery.changeFix(draft, copy, markFinished)
     }
     Dialog(onDismissRequest = ::close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(skin.canvas).systemBarsPadding()) {
@@ -380,7 +380,7 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
                     telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "started"))
                     scope.launch {
                         try {
-                            when (val result = store.recover(draft.read, draft.row, RecoveryAction.Fix, draft, currentOwner)) {
+                            when (val result = store.recovery.recover(draft.read, draft.row, RecoveryAction.Fix, draft, currentOwner)) {
                                 RecoveryResult.Accepted -> Unit
                                 is RecoveryResult.Refused -> failure = result.line
                                 RecoveryResult.Failed -> failure = "The original workout is still saved on this phone. Fix workout could not be completed."
@@ -459,8 +459,8 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
         if (set != null) {
             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             WindmillSheet(onDismissRequest = { editing = null }, sheetState = sheet, containerColor = skin.canvas) {
-                FixSheet(set, Readout.movement(set.exerciseId, store.catalog),
-                    Performed.movements(draft.copy.sets, store.catalog).flatMap { it.rows }.first { it.id == set.id }.savedNumber,
+                FixSheet(set, Readout.movement(set.exerciseId, store.routines.catalog),
+                    Performed.movements(draft.copy.sets, store.routines.catalog).flatMap { it.rows }.first { it.id == set.id }.savedNumber,
                     draft.copy.session.plan?.routine,
                     onSave = { fix ->
                         val changed = set.copy(weightKg = fix.weightKg ?: set.weightKg, reps = fix.reps ?: set.reps,
@@ -473,7 +473,7 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
                         editing = null
                         telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "set_removed"))
                     }, onSaved = { editing = null }, draftKey = "recovery:${draft.row.sourceKey}:${set.id}",
-                    exercise = store.catalog.firstOrNull { it.id == set.exerciseId })
+                    exercise = store.routines.catalog.firstOrNull { it.id == set.exerciseId })
             }
         }
     }

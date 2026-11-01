@@ -35,11 +35,11 @@ class GymRuntimeTests {
 
     private suspend fun EngineRoomFixture.startWorkout(vararg movements: String) {
         select(null)
-        val routine = (store.saveRoutine(RoutineDraft(name = "Workout")
+        val routine = (store.routines.saveRoutine(RoutineDraft(name = "Workout")
             .adding(movements.firstOrNull() ?: "bench-press")) as GymResult.Ok).value
-        val started = store.start(routine.id)
+        val started = store.workout.start(routine.id)
         assertTrue(started.toString(), started is GymResult.Ok)
-        movements.reversed().forEach { store.choose(it) }
+        movements.reversed().forEach { store.workout.choose(it) }
     }
 
     @Test
@@ -56,25 +56,25 @@ class GymRuntimeTests {
                 AtomicDocument.write(file, bytes)
             }).use { room ->
             room.startWorkout("bench-press")
-            assertEquals(WorkoutChange.Saved, room.store.editRack(60.0, 5))
-            assertEquals(WorkoutChange.Saved, room.store.editWorkout(true))
+            assertEquals(WorkoutChange.Saved, room.store.workout.editRack(60.0, 5))
+            assertEquals(WorkoutChange.Saved, room.store.workout.editWorkout(true))
             val before = room.controlsFile.readText()
-            val rack = room.store.rack
+            val rack = room.store.workout.rack
             val replica = room.engine.snapshot()
             broken = true
-            assertTrue(room.store.editRack(61.0, 5) is WorkoutChange.Unavailable)
-            assertTrue(room.store.editWorkout(false) is WorkoutChange.Unavailable)
+            assertTrue(room.store.workout.editRack(61.0, 5) is WorkoutChange.Unavailable)
+            assertTrue(room.store.workout.editWorkout(false) is WorkoutChange.Unavailable)
             assertEquals(listOf("gym.editRack"), failures)
             assertEquals(before, room.controlsFile.readText())
             assertEquals(replica, room.engine.snapshot())
-            assertEquals(rack, room.store.rack)
+            assertEquals(rack, room.store.workout.rack)
             broken = false
             val restored = room.freshStore()
             restored.connect(room.account())
-            assertEquals(rack!!.copy(revision = rack.revision + 1), restored.rack)
-            assertEquals(WorkoutChange.Saved, restored.editWorkout(false))
-            assertEquals(WorkoutChange.Saved, restored.editRack(61.0, 5))
-            assertEquals(61.0, restored.rack!!.weightKg, 0.0)
+            assertEquals(rack!!.copy(revision = rack.revision + 1), restored.workout.rack)
+            assertEquals(WorkoutChange.Saved, restored.workout.editWorkout(false))
+            assertEquals(WorkoutChange.Saved, restored.workout.editRack(61.0, 5))
+            assertEquals(61.0, restored.workout.rack!!.weightKg, 0.0)
             assertEquals(listOf("gym.editRack"), failures)
         }
     }
@@ -86,18 +86,18 @@ class GymRuntimeTests {
             first.startWorkout("bench-press")
             val runtime = GymRuntime(first.store, { null }, { true }, StandardTestDispatcher(testScheduler))
             runtime.restoreLocal()
-            val started = first.store.session!!.startedAtMs
+            val started = first.store.workout.session!!.startedAtMs
             assertEquals(started, runtime.notification.value!!.sinceSetAtMs)
-            first.store.logSet(60.0, 8)
+            first.store.workout.logSet(60.0, 8)
             assertEquals(101_000L, runtime.notification.value!!.sinceSetAtMs)
             moment = moment.copy(wallMs = 105_000, elapsedMs = 5_000)
-            first.store.choose("barbell-row")
-            first.store.logSet(30.0, 8)
-            val newest = first.store.sets.last()
-            first.store.choose("bench-press")
+            first.store.workout.choose("barbell-row")
+            first.store.workout.logSet(30.0, 8)
+            val newest = first.store.workout.sets.last()
+            first.store.workout.choose("bench-press")
             assertEquals(105_000L, runtime.notification.value!!.sinceSetAtMs)
             assertEquals("Bench Press", runtime.notification.value!!.movement)
-            assertTrue(first.store.fixSet(first.store.session!!.id, newest.id,
+            assertTrue(first.store.workout.fixSet(first.store.workout.session!!.id, newest.id,
                 SetFix(weightKg = 35.0, reps = 6)) is FixOutcome.Corrected)
             assertEquals(105_000L, runtime.notification.value!!.sinceSetAtMs)
             val snapshot = first.engine.snapshot()
@@ -107,9 +107,9 @@ class GymRuntimeTests {
                 assertEquals(105_000L, cold.notification.value!!.sinceSetAtMs)
                 restored.store.connect(restored.account())
                 assertEquals(105_000L, cold.notification.value!!.sinceSetAtMs)
-                assertNull(restored.store.deleteSet(restored.store.session!!.id, newest.id))
+                assertNull(restored.store.workout.deleteSet(restored.store.workout.session!!.id, newest.id))
                 assertEquals(101_000L, cold.notification.value!!.sinceSetAtMs)
-                assertEquals(1, restored.store.sets.size)
+                assertEquals(1, restored.store.workout.sets.size)
             }
         }
     }
@@ -129,13 +129,13 @@ class GymRuntimeTests {
             assertEquals(LogSetAcceptance.Accepted(offered.id), one.await())
             assertEquals(LogSetAcceptance.Stale, two.await())
             val original = TrainingSet(offered.id, "bench-press", weightKg = 20.0, reps = 5, completedAtMs = moment.wallMs)
-            assertEquals(listOf(original), first.store.sets)
+            assertEquals(listOf(original), first.store.workout.sets)
             assertEquals(listOf(original), first.training.openWorkout()!!.sets)
             moment = moment.copy(wallMs = 801_000, elapsedMs = 4_000)
             room(directory, WorkoutClock { moment }, first.engine.snapshot()).use { next ->
                 val cold = GymRuntime(next.store, { null }, { true }, StandardTestDispatcher(testScheduler))
                 assertEquals(LogSetAcceptance.Stale, cold.logSet(command))
-                assertEquals(listOf(original), next.store.sets)
+                assertEquals(listOf(original), next.store.workout.sets)
                 assertEquals(listOf(original), next.training.openWorkout()!!.sets)
             }
         }
@@ -148,7 +148,7 @@ class GymRuntimeTests {
         val offered = room(directory, WorkoutClock { moment }).use { prepared ->
             prepared.startWorkout("bench-press")
             GymRuntime(prepared.store, { null }, { true }, StandardTestDispatcher(testScheduler)).restoreLocal()
-            requireNotNull(prepared.store.notification.value?.offer) to prepared.engine.snapshot()
+            requireNotNull(prepared.store.workout.notification.value?.offer) to prepared.engine.snapshot()
         }
         val (offer, snapshot) = offered
         val command = LogSetCommand(offer.key, offer.id)
@@ -164,7 +164,7 @@ class GymRuntimeTests {
         val edited = room(directory, WorkoutClock { moment }, snapshot).use { opened ->
             val runtime = GymRuntime(opened.store, { null }, { true }, StandardTestDispatcher(testScheduler))
             runtime.restoreLocal()
-            assertEquals(WorkoutChange.Saved, opened.store.editWorkout(true))
+            assertEquals(WorkoutChange.Saved, opened.store.workout.editWorkout(true))
             opened.controlsFile.readText() to opened.engine.snapshot()
         }
         room(directory, WorkoutClock { moment }, edited.second).use { cold ->
@@ -182,9 +182,9 @@ class GymRuntimeTests {
             val moment = WorkoutMoment(101_000, 1_000, "boot")
             room(tmp.newFolder(), WorkoutClock { moment }).use { room ->
                 room.select("A")
-                val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
-                assertTrue(room.store.start(routine.id) is GymResult.Ok)
-                room.store.choose("bench-press")
+                val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+                assertTrue(room.store.workout.start(routine.id) is GymResult.Ok)
+                room.store.workout.choose("bench-press")
                 var owner: String? = "A"
                 var allowed = true
                 var revision = 0L
@@ -236,22 +236,22 @@ class GymRuntimeTests {
                 workoutAuthority = { selected -> (sessions.localSession as? LocalSession.Owned)?.user?.id == selected }).use { room ->
                 room.select("A")
                 room.now = 1_000
-                val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
-                assertTrue(room.store.start(routine.id) is GymResult.Ok)
-                room.store.choose("bench-press"); room.store.logSet(30.0, 8)
+                val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+                assertTrue(room.store.workout.start(routine.id) is GymResult.Ok)
+                room.store.workout.choose("bench-press"); room.store.workout.logSet(30.0, 8)
                 room.now = 2_000
-                val previous = (room.store.finish() as FinishOutcome.Closed).session
+                val previous = (room.store.workout.finish() as FinishOutcome.Closed).session
                 room.now = 100_000
-                assertTrue(room.store.start(routine.id) is GymResult.Ok)
-                val live = requireNotNull(room.store.session)
-                room.store.choose("bench-press"); room.store.choose("overhead-press"); room.store.choose("bench-press")
+                assertTrue(room.store.workout.start(routine.id) is GymResult.Ok)
+                val live = requireNotNull(room.store.workout.session)
+                room.store.workout.choose("bench-press"); room.store.workout.choose("overhead-press"); room.store.workout.choose("bench-press")
                 room.seedFeedback(GymPreferences(confirmSound = true))
                 val runtime = GymRuntime(room.store, { sessions.user()?.id }, { sessions.localSession is LocalSession.Owned },
                     StandardTestDispatcher(testScheduler), authorityRevision = { auth.identityRevision })
                 runtime.restoreLocal()
                 val first = requireNotNull(runtime.notification.value?.offer)
                 assertEquals(LogSetAcceptance.Accepted(first.id), runtime.logSet(LogSetCommand(first.key, first.id)))
-                val accepted = room.store.sets.single()
+                val accepted = room.store.workout.sets.single()
                 val original = requireNotNull(runtime.notification.value?.offer)
                 val before = room.engine.snapshot()
                 val controlsBefore = room.controlsFile.readText()
@@ -259,27 +259,27 @@ class GymRuntimeTests {
                     .addHeader("Set-Cookie", "wm_session=secret-B; Path=/; HttpOnly"))
                 auth.completeCode("b@example.com", "222222")
                 assertEquals(AuthStatus.SignedIn(bea), auth.status)
-                assertEquals("u.A", room.store.accountKey)
-                assertTrue(room.store.acceptSet(LogSetCommand(original.key, original.id)) is LogSetAcceptance.Unavailable)
-                room.store.logSet(30.0, 8)
-                assertEquals(FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first.")), room.store.finish())
-                room.store.choose("overhead-press")
-                room.store.reorder(0, 1)
-                assertFalse(room.store.drop("overhead-press"))
+                assertEquals("u.A", room.store.seat.accountKey)
+                assertTrue(room.store.workout.acceptSet(LogSetCommand(original.key, original.id)) is LogSetAcceptance.Unavailable)
+                room.store.workout.logSet(30.0, 8)
+                assertEquals(FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first.")), room.store.workout.finish())
+                room.store.workout.choose("overhead-press")
+                room.store.workout.reorder(0, 1)
+                assertFalse(room.store.workout.drop("overhead-press"))
                 assertEquals(FixOutcome.Failed(WriteFailure.Refused("the account changed while fixing")),
-                    room.store.fixSet(live.id, accepted.id, SetFix(weightKg = 40.0)))
-                assertEquals(WriteFailure.Refused("the account changed while deleting"), room.store.deleteSet(live.id, accepted.id))
-                assertFalse(room.store.discard(previous.id))
+                    room.store.workout.fixSet(live.id, accepted.id, SetFix(weightKg = 40.0)))
+                assertEquals(WriteFailure.Refused("the account changed while deleting"), room.store.workout.deleteSet(live.id, accepted.id))
+                assertFalse(room.store.workout.discard(previous.id))
                 room.store.connect(Account(auth.baseUrl.toString(), ana))
-                assertEquals("u.A", room.store.accountKey)
+                assertEquals("u.A", room.store.seat.accountKey)
                 assertEquals(GymPreferences(confirmSound = true), room.training.settings())
-                assertEquals(listOf(accepted), room.store.sets)
-                assertEquals(listOf("bench-press", "overhead-press"), room.store.order)
-                assertEquals("bench-press", room.store.exerciseId)
-                assertEquals(live.id, room.store.session?.id)
+                assertEquals(listOf(accepted), room.store.workout.sets)
+                assertEquals(listOf("bench-press", "overhead-press"), room.store.workout.order)
+                assertEquals("bench-press", room.store.workout.exerciseId)
+                assertEquals(live.id, room.store.workout.session?.id)
                 assertEquals(before, room.engine.snapshot())
                 assertEquals(controlsBefore, room.controlsFile.readText())
-                assertNull(room.store.notification.value)
+                assertNull(room.store.workout.notification.value)
                 assertEquals("Bearer secret-A", server.takeRequest().getHeader("Authorization"))
                 assertFalse(runtime.openWorkout(original.key))
                 room.store.connect(Account(auth.baseUrl.toString(), bea))
@@ -295,7 +295,7 @@ class GymRuntimeTests {
         val moment = WorkoutMoment(101_000, 1_000, "boot")
         room(tmp.newFolder(), WorkoutClock { moment }).use { room ->
             room.startWorkout("bench-press")
-            val anonymous = requireNotNull(room.store.session)
+            val anonymous = requireNotNull(room.store.workout.session)
             var owner: String? = null
             val runtime = GymRuntime(room.store, { owner }, { true }, StandardTestDispatcher(testScheduler))
             runtime.restoreLocal()
@@ -307,15 +307,15 @@ class GymRuntimeTests {
             room.engine.signIn("B", mapOf("gym" to true), mapOf("gym" to "add"))
             owner = "B"
             runtime.restoreLocal()
-            assertNull(room.store.notification.value)
+            assertNull(room.store.workout.notification.value)
             assertFalse(runtime.openWorkout(old.key))
             assertTrue(runtime.logSet(LogSetCommand(old.key, old.id)) !is LogSetAcceptance.Accepted)
             room.selected = "B"
             room.store.connect(room.account("B"))
             assertEquals(LogSetAcceptance.Stale, runtime.logSet(LogSetCommand(old.key, old.id)))
-            assertEquals("u.B", room.store.accountKey)
-            assertEquals(anonymous.id, room.store.session?.id)
-            assertEquals("Add keeps the original set identity and its own workout", listOf(original), room.store.sets)
+            assertEquals("u.B", room.store.seat.accountKey)
+            assertEquals(anonymous.id, room.store.workout.session?.id)
+            assertEquals("Add keeps the original set identity and its own workout", listOf(original), room.store.workout.sets)
             assertEquals(listOf(original), room.training.session(anonymous.id)!!.sets)
             assertTrue(room.engine.snapshot().member("replicas").arr().none { it.member("meta").member("state") == Json.of("anon") })
         }
@@ -340,7 +340,7 @@ class GymRuntimeTests {
                 fail = true
                 assertTrue(runtime.logSet(command) is LogSetAcceptance.Unavailable)
                 assertTrue(runtime.logSet(command) is LogSetAcceptance.Unavailable)
-                assertEquals(emptyList<TrainingSet>(), room.store.sets)
+                assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
                 assertNull(runtime.notification.value?.offer)
                 assertEquals("the engine never holds a set the phone could not save", emptyList<TrainingSet>(),
                     room.training.openWorkout()!!.sets)
@@ -368,11 +368,11 @@ class GymRuntimeTests {
             val runtime = GymRuntime(room.store, { null }, { true }, StandardTestDispatcher(testScheduler))
             runtime.restoreLocal()
             room.select(null)
-            assertFalse(room.store.isLoading)
-            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workoutFailure)
+            assertFalse(room.store.seat.isLoading)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutFailure)
             assertNull(runtime.notification.value)
             assertEquals(raw, file.readText())
-            assertTrue(room.store.start("routine") is GymResult.Failed)
+            assertTrue(room.store.workout.start("routine") is GymResult.Failed)
             assertEquals(raw, file.readText())
             assertNull(room.training.openWorkout())
         }

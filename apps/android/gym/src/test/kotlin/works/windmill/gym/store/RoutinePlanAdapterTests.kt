@@ -16,7 +16,7 @@ class RoutinePlanAdapterTests {
     @Test fun stagingAndDiscardLeaveTheWholeReplicaUnchanged() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val base = room.store.catalog.single { it.id == "bench-press" }
+            val base = room.store.routines.catalog.single { it.id == "bench-press" }
             val before = room.engine.snapshot()
             val made = Exercise("ex_staged", "Shrug", equipment = "dumbbell", custom = true, loadCount = 2)
             val draft = RoutineDraft(name = "Push", creationId = "routine_staged")
@@ -35,7 +35,7 @@ class RoutinePlanAdapterTests {
     @Test fun onePlanCreatesMetadataAndTargetsAndRetriesTheSameIdentity() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            val base = room.store.catalog.single { it.id == "bench-press" }
+            val base = room.store.routines.catalog.single { it.id == "bench-press" }
             val renamed = base.copy(name = "Close-grip press", equipment = "other", loadCount = 1)
             val made = Exercise("ex_staged", "Shrug", equipment = "dumbbell", custom = true, loadCount = 2)
             val draft = RoutineDraft(name = "Push", creationId = "routine_staged")
@@ -45,7 +45,7 @@ class RoutinePlanAdapterTests {
                 RoutineEntry(1, "bench-press", listOf(SetTarget(8, -12.5))),
                 RoutineEntry(2, "ex_staged", listOf(SetTarget(10, 24.0))),
             ))
-            assertEquals(GymResult.Ok(expected), room.store.saveRoutine(draft))
+            assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(draft))
             assertEquals(listOf(expected), room.training.program())
             assertEquals(renamed.copy(aliases = listOf(base.name)), room.training.catalogue().single { it.id == base.id })
             assertEquals(made.copy(stepKg = 2.0), room.training.catalogue().single { it.id == made.id })
@@ -54,10 +54,10 @@ class RoutinePlanAdapterTests {
             assertEquals(listOf("exercise", "exerciseName", "routine"), outbox.single().member("intent").member("d").arr()
                 .map { it.member("t").str() }.sorted())
             val restored = WindmillJson.decodeFromString(RoutineDraft.serializer(), WindmillJson.encodeToString(draft))
-            assertEquals(GymResult.Ok(expected), room.store.saveRoutine(restored))
+            assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(restored))
             assertEquals(outbox, room.outbox())
-            assertEquals(listOf(expected), room.store.routines)
-            assertEquals(renamed.copy(aliases = listOf(base.name)), room.store.catalog.single { it.id == base.id })
+            assertEquals(listOf(expected), room.store.routines.all)
+            assertEquals(renamed.copy(aliases = listOf(base.name)), room.store.routines.catalog.single { it.id == base.id })
         }
     }
 
@@ -68,7 +68,7 @@ class RoutinePlanAdapterTests {
             val draft = RoutineDraft(name = "Push", creationId = "routine_kept").adding("bench-press")
                 .staging(RoutineMovement(null, made), TargetEntry.Reading.Open).removing(made.id)
             val expected = Routine("routine_kept", "Push", entries = listOf(RoutineEntry(1, "bench-press")))
-            assertEquals(GymResult.Ok(expected), room.store.saveRoutine(draft))
+            assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(draft))
             assertEquals(listOf(expected), room.training.program())
             assertEquals(emptyList<Exercise>(), room.training.catalogue().filter { it.id == made.id })
             assertEquals(emptyList<RoutineMovement>(), draft.movements)
@@ -90,12 +90,12 @@ class RoutinePlanAdapterTests {
             val before = room.engine.snapshot()
             events.clear(); failures.clear()
             room.engine.failNextCommit()
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Failed)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Failed)
             assertEquals(before, room.engine.snapshot())
             assertEquals(listOf("gym.saveRoutine"), failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "routine_editor", "action" to "save", "outcome" to "failed")), events)
             val expected = Routine("routine_retry", "Retry push", entries = listOf(RoutineEntry(1, made.id, listOf(SetTarget(10, 24.0)))))
-            assertEquals(GymResult.Ok(expected), room.store.saveRoutine(draft))
+            assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(draft))
             assertEquals(1, room.outbox().size)
             assertEquals(listOf(expected), room.training.program())
             assertEquals(listOf(RoutineMovement(null, made)), draft.movements)
@@ -105,14 +105,14 @@ class RoutinePlanAdapterTests {
     @Test fun staleMetadataRefusesTheWholeRoutineAndKeepsItsStagedCreation() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val base = room.store.catalog.single { it.id == "bench-press" }
+            val base = room.store.routines.catalog.single { it.id == "bench-press" }
             val made = Exercise("ex_stale", "Retained draft", equipment = "other", custom = true)
             val draft = RoutineDraft(name = "Push", creationId = "routine_stale")
                 .staging(RoutineMovement(base, base.copy(name = "My press")), TargetEntry.Reading.Open)
                 .staging(RoutineMovement(null, made), TargetEntry.Reading.Open)
             room.training.editExercise(base.id, "Another press", base = base)
             val before = room.engine.snapshot()
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Failed)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Failed)
             assertEquals(before, room.engine.snapshot())
             assertEquals(emptyList<Routine>(), room.training.program())
             assertEquals(emptyList<Exercise>(), room.training.catalogue().filter { it.id == made.id })
@@ -129,7 +129,7 @@ class RoutinePlanAdapterTests {
                 RoutineEntryWrite("barbell-row", restSeconds = 120),
             )))
             assertEquals(listOf(90, 120), opened.entries.map { it.restSeconds })
-            val draft = RoutineDraft.of(opened, room.store.catalog).named("Rested push")
+            val draft = RoutineDraft.of(opened, room.store.routines.catalog).named("Rested push")
                 .targeting("bench-press", listOf(SetTarget(6, 80.0)))
             val restored = WindmillJson.decodeFromString(RoutineDraft.serializer(), WindmillJson.encodeToString(draft))
             assertEquals(draft, restored)
@@ -138,9 +138,9 @@ class RoutinePlanAdapterTests {
             val expected = opened.copy(name = "Rested push", entries = opened.entries.map {
                 if (it.exerciseId == "bench-press") it.copy(sets = listOf(SetTarget(6, 80.0))) else it
             })
-            assertEquals(GymResult.Ok(expected), room.store.saveRoutine(restored))
+            assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(restored))
             val saved = room.engine.snapshot()
-            assertEquals(GymResult.Ok(expected), room.store.saveRoutine(restored))
+            assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(restored))
             assertEquals(saved, room.engine.snapshot())
             assertEquals(listOf(expected), room.training.program())
         }
@@ -180,11 +180,11 @@ class RoutinePlanAdapterTests {
                 assertEquals(draft, restored)
                 assertEquals(staged, room.engine.snapshot())
                 val expected = Routine("routine_legacy", "Legacy routine", entries = listOf(RoutineEntry(1, base.id, targets)))
-                assertEquals(GymResult.Ok(expected), room.store.saveRoutine(restored))
+                assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(restored))
                 assertEquals(listOf(expected), room.training.program())
                 assertEquals(base.copy(name = "Renamed legacy", aliases = listOf(base.name)), room.training.catalogue().single { it.id == base.id })
                 val saved = room.engine.snapshot()
-                assertEquals(GymResult.Ok(expected), room.store.saveRoutine(restored))
+                assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(restored))
                 assertEquals(saved, room.engine.snapshot())
             }
         }
@@ -199,7 +199,7 @@ class RoutinePlanAdapterTests {
                     entries = listOf(RoutineEntry(1, movement.id, listOf(SetTarget(8, load)))),
                     movements = listOf(RoutineMovement(null, movement)))
                 val before = room.engine.snapshot()
-                assertTrue(room.store.saveRoutine(draft) is GymResult.Failed)
+                assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Failed)
                 assertEquals(before, room.engine.snapshot())
                 assertEquals(emptyList<Routine>(), room.training.program())
                 assertEquals(emptyList<Exercise>(), room.training.catalogue().filter { it.id == movement.id })

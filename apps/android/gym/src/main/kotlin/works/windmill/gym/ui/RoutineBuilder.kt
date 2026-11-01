@@ -227,18 +227,18 @@ fun RoutineBuilder(
         val form = sheet as? BuilderSheet.Target ?: return@LaunchedEffect
         telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "open", "outcome" to "ok"))
         if (form.movement == null) {
-            draft.movement(form.exerciseId, store.catalog)?.let { movement ->
+            draft.movement(form.exerciseId, store.routines.catalog)?.let { movement ->
                 sheet = form.copy(movement = movement, opening = movement,
                     initialScheme = TargetEntry.Draft(draft.entry(form.exerciseId)?.sets.orEmpty()))
             }
         }
     }
 
-    var history by remember(store.accountKey, store.editReplica, draft.id) { mutableStateOf(emptyList<SessionSummary>()) }
-    LaunchedEffect(store.accountKey, store.editReplica, store.replicaReadRevision, store.accountReady, store.withheldIds, draft.id) {
+    var history by remember(store.seat.accountKey, store.seat.replica, draft.id) { mutableStateOf(emptyList<SessionSummary>()) }
+    LaunchedEffect(store.seat.accountKey, store.seat.replica, store.seat.replicaReadRevision, store.seat.accountReady, store.held.withheldIds, draft.id) {
         val id = draft.id ?: return@LaunchedEffect
-        if (!store.accountReady) { history = emptyList(); return@LaunchedEffect }
-        history = when (val read = store.routineHistory(id)) {
+        if (!store.seat.accountReady) { history = emptyList(); return@LaunchedEffect }
+        history = when (val read = store.history.routineHistory(id)) {
             is GymResult.Ok -> read.value
             is GymResult.Failed -> emptyList()
         }
@@ -265,7 +265,7 @@ fun RoutineBuilder(
         savable = draft.savable && draft.changed && !saving,
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
-            val movement = draft.movement(id, store.catalog)
+            val movement = draft.movement(id, store.routines.catalog)
             if (movement == null) say("That movement is no longer on the log.")
             else sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()), movement)
         },
@@ -287,7 +287,7 @@ fun RoutineBuilder(
             BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
             when (open) {
                 is BuilderSheet.Target -> {
-                    val movement = open.movement ?: draft.movement(open.exerciseId, store.catalog)
+                    val movement = open.movement ?: draft.movement(open.exerciseId, store.routines.catalog)
                     if (movement != null) MovementForm(movement, open.scheme,
                         title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
                         commitLabel = if (open.adding) "Add" else "Done",
@@ -315,10 +315,10 @@ fun RoutineBuilder(
                         }, creating = open.creating, busy = closing, floor = open.floor(movement))
                 }
                 BuilderSheet.Picker -> MovementPicker(
-                    catalog = store.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
-                    nowMs = 0, sessions = store.recent, title = "Add movement",
+                    catalog = store.routines.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
+                    nowMs = 0, sessions = store.history.recent, title = "Add movement",
                     onPick = { id ->
-                        val movement = draft.movement(id, store.catalog)
+                        val movement = draft.movement(id, store.routines.catalog)
                         if (movement == null) say("That movement is no longer on the log.")
                         else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.presentation.SetTarget>()), movement, adding = true)
                     }, onCreate = null,
@@ -408,7 +408,7 @@ private fun BuildStep(
         val rows = currentDraft.entries.sortedBy { it.position }
         if (!editable || from !in rows.indices || to !in rows.indices || from == to) return
         changeDraft(currentDraft.moving(from, to))
-        said = "${Readout.movement(rows[from].exerciseId, store.catalog)}, ${to + 1} of ${rows.size}"
+        said = "${Readout.movement(rows[from].exerciseId, store.routines.catalog)}, ${to + 1} of ${rows.size}"
     }
     fun placeDragged() {
         val id = dragged ?: return
@@ -477,8 +477,8 @@ private fun BuildStep(
                     modifier = Modifier.padding(bottom = 8.dp))
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
-                        val movement = draft.movement(entry.exerciseId, store.catalog)?.current
-                        val name = movement?.name ?: Readout.movement(entry.exerciseId, store.catalog)
+                        val movement = draft.movement(entry.exerciseId, store.routines.catalog)?.current
+                        val name = movement?.name ?: Readout.movement(entry.exerciseId, store.routines.catalog)
                         DeleteSwipeRow(actionLabel = "Remove movement", enabled = editable,
                             onDelete = { onRemove(entry.exerciseId); true }) {
                             Row(Modifier.fillMaxWidth().heightIn(min = 72.dp)

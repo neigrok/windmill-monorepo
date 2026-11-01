@@ -26,7 +26,7 @@ class NotesStateTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), room.scope).use { other -> runBlocking {
             other.select("a"); other.pull(server)
-            for ((id, write) in notes) assertTrue(other.store.saveNote(id, write) is GymResult.Ok)
+            for ((id, write) in notes) assertTrue(other.store.notes.saveNote(id, write) is GymResult.Ok)
             other.sync(server)
         } }
         runBlocking { room.select("a"); room.pull(server) }
@@ -50,7 +50,7 @@ class NotesStateTests {
                 assertEquals(1, done)
                 assertEquals(listOf("note_tone" to NoteWrite("Tone", "Be precise.")),
                     runBlocking { room.training.notes() }.map { it.id to NoteWrite(it.title, it.body) })
-                assertEquals(emptyList<WithheldDelete>(), store.withheld)
+                assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
             }
         } } finally { scope.cancel() }
     }
@@ -100,7 +100,7 @@ class NotesStateTests {
                 assertEquals(1, done)
                 val saved = runBlocking { room.training.notes() }.single()
                 assertEquals(Note(saved.id, 0, "🏋".repeat(60), "é".repeat(250), saved.updatedAtMs), saved)
-                assertEquals(listOf(saved), room.store.notes)
+                assertEquals(listOf(saved), room.store.notes.all)
             }
         } } finally { scope.cancel() }
     }

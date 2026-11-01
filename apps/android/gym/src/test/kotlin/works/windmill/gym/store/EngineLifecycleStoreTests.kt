@@ -43,12 +43,12 @@ class EngineLifecycleStoreTests {
     private suspend fun Room.workout(weight: Double = 82.5, movement: String = "bench-press", finish: Boolean = true): Session {
         val opened = gym.startSession(SessionStart("session${++nextSession}", ++clockMs))
         store.refreshEngine()
-        assertEquals("External workout is adopted before logging", opened.id, store.session?.id)
-        store.choose(movement)
-        store.logSet(weight, 5)
+        assertEquals("External workout is adopted before logging", opened.id, store.workout.session?.id)
+        store.workout.choose(movement)
+        store.workout.logSet(weight, 5)
         assertEquals("The logged set is durable before account transition", listOf(weight), gym.session(opened.id)!!.sets.map { it.weightKg })
         clockMs += 60_000
-        if (finish) store.finish()
+        if (finish) store.workout.finish()
         return opened
     }
     private suspend fun Room.add(engine: Engine, id: String = "A") {
@@ -65,25 +65,25 @@ class EngineLifecycleStoreTests {
         val first = engine()
         val initial = room(first)
         initial.store.connect(account())
-        val made = (initial.store.create("Sled Push", "machine", "exercise1") as GymResult.Ok).value
+        val made = (initial.store.routines.create("Sled Push", "machine", "exercise1") as GymResult.Ok).value
         val snapshot = first.snapshot(); first.close()
         engine(snapshot).use { restored ->
             val room = room(restored)
             room.store.connect(account())
-            assertEquals(made, room.store.catalog.single { it.id == made.id })
+            assertEquals(made, room.store.routines.catalog.single { it.id == made.id })
             room.add(restored)
-            assertEquals(made, room.store.catalog.single { it.id == made.id })
+            assertEquals(made, room.store.routines.catalog.single { it.id == made.id })
         }
     }
 
     @Test fun addPreservesFinishedAndLiveWorkoutsAndFrozenRoutineLineage() = runTest {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account())
-            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push Day", creationId = "routine1")
-                .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 100.0))).capturingMovements(room.store.catalog)) as GymResult.Ok).value
-            val first = (room.store.start(routine.id) as GymResult.Ok).value
-            room.store.choose("bench-press"); room.store.logSet(100.0, 5); room.store.logSet(102.5, 3)
-            clockMs += 60_000; room.store.finish()
+            val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Push Day", creationId = "routine1")
+                .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 100.0))).capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
+            val first = (room.store.workout.start(routine.id) as GymResult.Ok).value
+            room.store.workout.choose("bench-press"); room.store.workout.logSet(100.0, 5); room.store.workout.logSet(102.5, 3)
+            clockMs += 60_000; room.store.workout.finish()
             val live = room.workout(140.0, "back-squat", finish = false)
             room.add(engine)
             val detail = room.gym.session(first.id)!!
@@ -92,9 +92,9 @@ class EngineLifecycleStoreTests {
             assertEquals(PlanSnapshot(routine), detail.session.plan)
             assertEquals(listOf(100.0, 102.5), detail.sets.map { it.weightKg })
             assertFalse(detail.session.isOpen)
-            assertEquals(live.id, room.store.session!!.id)
-            assertEquals(listOf(140.0), room.store.sets.map { it.weightKg })
-            assertEquals(setOf(first.id, live.id), room.store.recent.map { it.id }.toSet())
+            assertEquals(live.id, room.store.workout.session!!.id)
+            assertEquals(listOf(140.0), room.store.workout.sets.map { it.weightKg })
+            assertEquals(setOf(first.id, live.id), room.store.history.recent.map { it.id }.toSet())
         }
     }
 
@@ -128,12 +128,12 @@ class EngineLifecycleStoreTests {
             val first = room.workout()
             val second = room.workout(199.0, "back-squat", finish = false)
             room.add(engine); engine.releaseHeld(true); engine.nextPush()
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
             assertFalse(room.gym.session(first.id)!!.session.isOpen)
             assertFalse(room.gym.session(second.id)!!.session.isOpen)
             assertEquals(listOf(82.5), room.gym.session(first.id)!!.sets.map { it.weightKg })
             assertEquals(listOf(199.0), room.gym.session(second.id)!!.sets.map { it.weightKg })
-            assertNull(room.store.session)
+            assertNull(room.store.workout.session)
         }
     }
 
@@ -143,7 +143,7 @@ class EngineLifecycleStoreTests {
             val before = outbox(engine).size
             repeat(3) { room.store.connect(account("A")) }
             assertEquals(before, outbox(engine).size)
-            assertEquals(listOf(session.id), room.store.recent.map { it.id })
+            assertEquals(listOf(session.id), room.store.history.recent.map { it.id })
             assertEquals(1, room.gym.session(session.id)!!.sets.size)
         }
     }
@@ -155,7 +155,7 @@ class EngineLifecycleStoreTests {
         engine(snapshot).use { restored ->
             val room = room(restored); room.store.connect(account())
             assertEquals(original, WorkoutImports(restored).refusals().single())
-            assertEquals(listOf(original.session!!.id), room.store.recent.map { it.id })
+            assertEquals(listOf(original.session!!.id), room.store.history.recent.map { it.id })
         }
     }
 
@@ -183,7 +183,7 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account()); val first = room.workout(); room.add(engine)
             val second = room.workout(199.0, "back-squat", finish = false)
-            assertEquals(second.id, room.store.session!!.id)
+            assertEquals(second.id, room.store.workout.session!!.id)
             assertEquals(listOf(82.5), room.gym.session(first.id)!!.sets.map { it.weightKg })
             assertEquals(listOf(199.0), room.gym.session(second.id)!!.sets.map { it.weightKg })
         }
@@ -194,7 +194,7 @@ class EngineLifecycleStoreTests {
             val room = room(engine); room.store.connect(account()); val session = room.workout(finish = false); room.add(engine)
             engine.releaseHeld(true); engine.nextPush(); room.store.prepareEngineTransition(); engine.signOut("keep")
             room.store.connect(account()); engine.signIn("B", mapOf("gym" to false)); room.store.connect(account("B"))
-            assertNull(room.store.session); assertTrue(room.store.recent.isEmpty())
+            assertNull(room.store.workout.session); assertTrue(room.store.history.recent.isEmpty())
             assertNull(room.gym.session(session.id)); assertTrue(engine.dormantReplicas().single { it.account == "A" }.sent > 0)
         }
     }
@@ -205,23 +205,23 @@ class EngineLifecycleStoreTests {
             room.workout(); room.store.prepareEngineTransition(); engine.signOut("keep"); room.store.connect(account())
             val current = room.gym.startSession(SessionStart("session${++nextSession}", ++clockMs))
             room.store.refreshEngine()
-            room.store.choose("bench-press"); assertTrue(room.store.lastTime!!.isFirstTime)
+            room.store.workout.choose("bench-press"); assertTrue(room.store.workout.lastTime!!.isFirstTime)
             room.add(engine)
-            assertEquals(current.id, room.store.session!!.id)
-            assertEquals("bench-press", room.store.exerciseId)
-            assertFalse(room.store.lastTime!!.isFirstTime)
-            assertEquals(listOf(82.5), room.store.lastTime!!.sets.map { it.weightKg })
-            assertEquals(Prefill(82.5, 5), room.store.prefill)
+            assertEquals(current.id, room.store.workout.session!!.id)
+            assertEquals("bench-press", room.store.workout.exerciseId)
+            assertFalse(room.store.workout.lastTime!!.isFirstTime)
+            assertEquals(listOf(82.5), room.store.workout.lastTime!!.sets.map { it.weightKg })
+            assertEquals(Prefill(82.5, 5), room.store.workout.prefill)
         }
     }
 
     @Test fun signedOutCorrectionAndDeletionSurviveAddWithTheirOriginalIds() = runTest {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account()); val session = room.workout(finish = false)
-            room.store.logSet(60.0, 12); clockMs += 60_000; room.store.finish()
+            room.store.workout.logSet(60.0, 12); clockMs += 60_000; room.store.workout.finish()
             val sets = room.gym.session(session.id)!!.sets
-            room.store.fixSet(session.id, sets.first().id, SetFix(weightKg = 90.0, reps = 3))
-            room.store.deleteSet(session.id, sets.last().id); room.add(engine)
+            room.store.workout.fixSet(session.id, sets.first().id, SetFix(weightKg = 90.0, reps = 3))
+            room.store.workout.deleteSet(session.id, sets.last().id); room.add(engine)
             val left = room.gym.session(session.id)!!.sets.single()
             assertEquals(sets.first().id, left.id); assertEquals(90.0, left.weightKg, 0.0); assertEquals(3, left.reps)
             assertEquals("dead", engine.read(ScopeRef(Gym.scope)) { it.drawn(Gym.Types.set, RecordID(sets.last().id)) }!!.life!!.state)
@@ -233,7 +233,7 @@ class EngineLifecycleStoreTests {
             val room = room(engine); room.store.connect(account()); val session = room.workout(); room.add(engine)
             engine.releaseHeld(true); engine.nextPush()
             val set = room.gym.session(session.id)!!.sets.single()
-            val answer = room.store.fixSet(session.id, set.id, SetFix(weightKg = 90.0, reps = 3))
+            val answer = room.store.workout.fixSet(session.id, set.id, SetFix(weightKg = 90.0, reps = 3))
             assertTrue(answer is FixOutcome.Corrected)
             assertEquals(90.0, room.gym.session(session.id)!!.sets.single().weightKg, 0.0)
             assertTrue(outbox(engine).any { it.member("state") == Json.of("sent") })
@@ -249,7 +249,7 @@ class EngineLifecycleStoreTests {
         val snapshot = first.snapshot(); first.close()
         engine(snapshot).use { engine ->
             val restored = room(engine); restored.store.connect(account()); restored.add(engine)
-            assertEquals(GymPreferences(confirmSound = true), restored.store.preferences)
+            assertEquals(GymPreferences(confirmSound = true), restored.store.workout.preferences)
         }
     }
 
@@ -258,23 +258,23 @@ class EngineLifecycleStoreTests {
             val room = room(engine); engine.signIn("A", mapOf("gym" to false)); room.store.connect(account("A"))
             room.workout(90.0, "back-squat"); room.workout(80.0)
             room.store.prepareEngineTransition(); engine.signOut("keep"); room.store.connect(account())
-            val newest = room.workout(102.5, "back-squat"); room.store.loadLastSets()
-            assertEquals(setOf("back-squat"), room.store.lastSets!!.keys)
-            room.add(engine); room.store.loadLastSets()
-            assertEquals(setOf("back-squat", "bench-press"), room.store.lastSets!!.keys)
-            assertEquals(LastSet("back-squat", 102.5, 5, newest.startedAtMs), room.store.lastSets!!["back-squat"])
-            assertEquals(80.0, room.store.lastSets!!["bench-press"]!!.weightKg, 0.0)
-            assertNull(room.store.lastSets!!["chin-up"])
+            val newest = room.workout(102.5, "back-squat"); room.store.workout.loadLastSets()
+            assertEquals(setOf("back-squat"), room.store.workout.lastSets!!.keys)
+            room.add(engine); room.store.workout.loadLastSets()
+            assertEquals(setOf("back-squat", "bench-press"), room.store.workout.lastSets!!.keys)
+            assertEquals(LastSet("back-squat", 102.5, 5, newest.startedAtMs), room.store.workout.lastSets!!["back-squat"])
+            assertEquals(80.0, room.store.workout.lastSets!!["bench-press"]!!.weightKg, 0.0)
+            assertNull(room.store.workout.lastSets!!["chin-up"])
         }
     }
 
     @Test fun unavailableNetworkDoesNotAssertNeverLoggedOverKnownReplicaHistory() = runTest {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account()); room.workout(80.0); room.add(engine)
-            room.store.loadLastSets()
-            assertEquals(80.0, room.store.lastSets!!.getValue("bench-press").weightKg, 0.0)
+            room.store.workout.loadLastSets()
+            assertEquals(80.0, room.store.workout.lastSets!!.getValue("bench-press").weightKg, 0.0)
             room.store.refreshEngine()
-            assertEquals(80.0, room.store.lastSets!!.getValue("bench-press").weightKg, 0.0)
+            assertEquals(80.0, room.store.workout.lastSets!!.getValue("bench-press").weightKg, 0.0)
         }
     }
 
@@ -282,18 +282,18 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val room = room(engine); engine.signIn("A", mapOf("gym" to false)); room.store.connect(account("A")); room.workout(100.0)
             room.store.prepareEngineTransition(); engine.signOut("keep"); room.store.connect(account()); room.workout(140.0, "back-squat")
-            room.store.loadLastSets(); assertEquals(setOf("back-squat"), room.store.lastSets!!.keys)
+            room.store.workout.loadLastSets(); assertEquals(setOf("back-squat"), room.store.workout.lastSets!!.keys)
             room.add(engine)
-            assertEquals(setOf("back-squat", "bench-press"), room.store.lastSets!!.keys)
+            assertEquals(setOf("back-squat", "bench-press"), room.store.workout.lastSets!!.keys)
         }
     }
 
     @Test fun anAccountAliasPromiseNeverChangesTheMovementIdentity() = runTest {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account())
-            val made = (room.store.create("Hammer row", "machine", "exercise1") as GymResult.Ok).value
+            val made = (room.store.routines.create("Hammer row", "machine", "exercise1") as GymResult.Ok).value
             room.add(engine)
-            val renamed = (room.store.edit(made.id, "Hammer pull") as GymResult.Ok).value
+            val renamed = (room.store.history.edit(made.id, "Hammer pull") as GymResult.Ok).value
             assertEquals(made.id, renamed.id); assertEquals("Hammer pull", renamed.name)
         }
     }
@@ -302,7 +302,7 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account()); val session = room.workout(); room.add(engine)
             engine.releaseHeld(true); engine.nextPush()
-            val record = (room.store.record("bench-press") as GymResult.Ok).value
+            val record = (room.store.history.record("bench-press") as GymResult.Ok).value
             assertEquals(session.id, record.recentDays.single().sessionId)
             assertEquals(listOf(82.5), record.recentDays.single().sets.map { it.weightKg })
         }
@@ -318,7 +318,7 @@ class EngineLifecycleStoreTests {
             assertEquals(Json.of(1), question.member("count").member("session"))
             assertEquals(Json.of(1), question.member("count").member("set"))
             assertEquals(session.id, room.gym.sessions(50, null, null).single().id)
-            room.add(engine); assertEquals(session.id, room.store.recent.single().id)
+            room.add(engine); assertEquals(session.id, room.store.history.recent.single().id)
         }
     }
 

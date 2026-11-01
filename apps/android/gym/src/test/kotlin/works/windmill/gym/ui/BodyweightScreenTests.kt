@@ -67,7 +67,7 @@ class BodyweightScreenTests {
         EngineRoomFixture(tmp.newFolder(), room.scope).use { other -> runBlocking {
             other.now = System.currentTimeMillis() + 86_400_000
             other.select("u1"); other.pull(server)
-            for ((day, kg) in weighIns) assertNull(other.store.weighIn(day.toString(), kg))
+            for ((day, kg) in weighIns) assertNull(other.store.bodyweight.weighIn(day.toString(), kg))
             other.sync(server)
             other.training.weighins()
         } }
@@ -103,7 +103,7 @@ class BodyweightScreenTests {
             compose.onNodeWithText("kg").assertDoesNotExist()
             compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed()
 
-            runBlocking { store.weighIn(today.minusDays(3).toString(), 82.4) }
+            runBlocking { store.bodyweight.weighIn(today.minusDays(3).toString(), 82.4) }
             compose.onNodeWithText("82.4 kg").assertIsDisplayed()
             compose.onNodeWithText(works.windmill.gym.presentation.LogReadout.day(today.minusDays(3), System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
             compose.onNodeWithText("82.4 kg").performClick()
@@ -127,7 +127,7 @@ class BodyweightScreenTests {
             compose.onNodeWithText(Bodyweight.save).performClick()
 
             compose.runOnIdle {
-                assertEquals(listOf(today.toString() to 82.4), store.bodyweight.map { it.dateLocal to it.weightKg })
+                assertEquals(listOf(today.toString() to 82.4), store.bodyweight.drawn.map { it.dateLocal to it.weightKg })
                 assertEquals(listOf(today.toString() to 82.4), room.training.weighins().map { it.dateLocal to it.weightKg })
                 room.sync(server)
             }
@@ -162,7 +162,7 @@ class BodyweightScreenTests {
             compose.onNodeWithText("Between 20 and 400 kg — check the number.").assertIsDisplayed()
 
             compose.runOnIdle {
-                assertTrue(store.bodyweight.isEmpty())
+                assertTrue(store.bodyweight.drawn.isEmpty())
                 assertTrue(room.training.weighins().isEmpty())
                 assertEquals(emptyList<Json>(), room.outbox())
             }
@@ -182,9 +182,9 @@ class BodyweightScreenTests {
             compose.onNodeWithText(Bodyweight.save).performClick()
 
             compose.runOnIdle {
-                assertEquals(today.toString(), store.latestWeighIn!!.dateLocal)
-                assertEquals(81.0, store.latestWeighIn!!.weightKg, 0.0)
-                assertEquals("the anonymous replica holds it", listOf(store.latestWeighIn!!), room.training.weighins())
+                assertEquals(today.toString(), store.bodyweight.latestWeighIn!!.dateLocal)
+                assertEquals(81.0, store.bodyweight.latestWeighIn!!.weightKg, 0.0)
+                assertEquals("the anonymous replica holds it", listOf(store.bodyweight.latestWeighIn!!), room.training.weighins())
             }
             compose.onNodeWithText("81 kg").assertIsDisplayed()
             compose.onNodeWithText(LogReadout.day(today, System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
@@ -199,10 +199,10 @@ class BodyweightScreenTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room, EngineRoomFixture.server())
             runBlocking {
-                store.weighIn(today.minusDays(20).toString(), 84.0)
-                store.weighIn(today.minusDays(16).toString(), 83.6)
-                store.weighIn(today.minusDays(4).toString(), 82.9)
-                store.weighIn(today.toString(), 82.4)
+                store.bodyweight.weighIn(today.minusDays(20).toString(), 84.0)
+                store.bodyweight.weighIn(today.minusDays(16).toString(), 83.6)
+                store.bodyweight.weighIn(today.minusDays(4).toString(), 82.9)
+                store.bodyweight.weighIn(today.toString(), 82.4)
             }
             compose.setContent {
                 BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
@@ -233,8 +233,8 @@ class BodyweightScreenTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room, EngineRoomFixture.server())
             runBlocking {
-                store.weighIn(today.minusDays(200).toString(), 84.0)
-                store.weighIn(today.minusDays(150).toString(), 83.0)
+                store.bodyweight.weighIn(today.minusDays(200).toString(), 84.0)
+                store.bodyweight.weighIn(today.minusDays(150).toString(), 83.0)
             }
             compose.setContent {
                 BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
@@ -259,8 +259,8 @@ class BodyweightScreenTests {
             val store = store(room, server)
             val day = today.minusDays(2)
             runBlocking {
-                store.weighIn(day.toString(), 82.9)
-                store.weighIn(today.toString(), 82.4)
+                store.bodyweight.weighIn(day.toString(), 82.9)
+                store.bodyweight.weighIn(today.toString(), 82.4)
             }
             room.sync(server)
             compose.setContent {
@@ -283,7 +283,7 @@ class BodyweightScreenTests {
                 compose.mainClock.advanceTimeByFrame()
                 val onScreen = compose.onAllNodesWithText(Bodyweight.deleteRow)
                     .fetchSemanticsNodes().any { node -> node.boundsInWindow.height > 0f }
-                if (store.withheld.isNotEmpty()) {
+                if (store.held.withheld.isNotEmpty()) {
                     assertTrue("the Undo may not open under a sheet still on screen", !onScreen)
                     opened = true
                 }
@@ -297,25 +297,25 @@ class BodyweightScreenTests {
                 assertEquals("the held delete is off the drawn view", listOf(today.toString()),
                     room.training.weighins().map { it.dateLocal }.sorted())
                 assertEquals("and off the series for every reader at once — the chart and the head reading",
-                    listOf(today.toString()), store.bodyweight.map { it.dateLocal })
-                assertEquals(listOf(day.toString()), store.withheld.map { it.subjectId })
+                    listOf(today.toString()), store.bodyweight.drawn.map { it.dateLocal })
+                assertEquals(listOf(day.toString()), store.held.withheld.map { it.subjectId })
             }
             compose.onNodeWithText(Bodyweight.deleteRow).assertDoesNotExist()
 
-            compose.runOnIdle { assertNotNull(store.keepWithheld()) }
+            compose.runOnIdle { assertNotNull(store.deletions.keepWithheld()) }
             compose.runOnIdle {
                 assertEquals("Undo puts the day back", listOf(day.toString(), today.toString()),
-                    store.bodyweight.map { it.dateLocal })
+                    store.bodyweight.drawn.map { it.dateLocal })
                 assertEquals(emptyList<Json>(), room.outbox())
             }
 
             // One filter, in the store: the log's head reading reads the same series the chart does, so
             // one screen can never keep drawing a day the other has already dropped.
             compose.runOnIdle {
-                store.withhold(Deletion.Bodyweight(today.toString()))
+                store.deletions.withhold(Deletion.Bodyweight(today.toString()))
             }
             compose.runOnIdle {
-                assertEquals(day.toString(), store.latestWeighIn?.dateLocal)
+                assertEquals(day.toString(), store.bodyweight.latestWeighIn?.dateLocal)
             }
         } } finally { scope.cancel() }
     }
@@ -342,9 +342,9 @@ class BodyweightScreenTests {
             compose.runOnIdle { assertEquals(emptyList<String>(), saved) }
 
             // Past the field, the store refuses a forecast in the same words.
-            val refused = runBlocking { store.weighIn(today.plusDays(3).toString(), 82.4) }
+            val refused = runBlocking { store.bodyweight.weighIn(today.plusDays(3).toString(), 82.4) }
             assertEquals(WriteFailure.Refused(Bodyweight.notAForecast), refused)
-            assertTrue("a refused row is let go, not kept owed", store.bodyweight.isEmpty())
+            assertTrue("a refused row is let go, not kept owed", store.bodyweight.drawn.isEmpty())
             assertTrue(room.training.weighins().isEmpty())
             assertEquals(emptyList<Json>(), room.outbox())
         } } finally { scope.cancel() }
@@ -358,10 +358,10 @@ class BodyweightScreenTests {
             val earlier = today.minusDays(2)
             val later = today.minusDays(1)
             runBlocking {
-                store.weighIn(today.minusDays(60).toString(), 80.0)
-                store.weighIn(today.minusDays(30).toString(), 90.0)
-                store.weighIn(earlier.toString(), 82.9)
-                store.weighIn(later.toString(), 83.0)
+                store.bodyweight.weighIn(today.minusDays(60).toString(), 80.0)
+                store.bodyweight.weighIn(today.minusDays(30).toString(), 90.0)
+                store.bodyweight.weighIn(earlier.toString(), 82.9)
+                store.bodyweight.weighIn(later.toString(), 83.0)
             }
             compose.setContent {
                 BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
@@ -388,8 +388,8 @@ class BodyweightScreenTests {
             }
 
             compose.runOnIdle {
-                assertEquals("the served row is held, only never drawn", 2, store.bodyweight.size)
-                assertEquals(today.minusDays(3).toString(), store.latestWeighIn?.dateLocal)
+                assertEquals("the served row is held, only never drawn", 2, store.bodyweight.drawn.size)
+                assertEquals(today.minusDays(3).toString(), store.bodyweight.latestWeighIn?.dateLocal)
             }
             compose.onNodeWithText("90 days · 1 weigh-in").assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.listDay(today.minusDays(3))).performScrollTo().assertIsDisplayed()
@@ -417,8 +417,8 @@ class BodyweightScreenTests {
             compose.onNodeWithText(LogReadout.day(past, System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
             compose.onNodeWithText("90 kg").assertDoesNotExist()
             compose.runOnIdle {
-                assertEquals(listOf(pastEntry, futureEntry), store.bodyweight.sortedBy { it.dateLocal })
-                assertEquals(pastEntry, store.latestWeighIn)
+                assertEquals(listOf(pastEntry, futureEntry), store.bodyweight.drawn.sortedBy { it.dateLocal })
+                assertEquals(pastEntry, store.bodyweight.latestWeighIn)
             }
             compose.onNodeWithText("82.4 kg").performClick()
             compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
@@ -433,23 +433,23 @@ class BodyweightScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room, EngineRoomFixture.server())
-            runBlocking { store.weighIn(today.toString(), 82.4) }
+            runBlocking { store.bodyweight.weighIn(today.toString(), 82.4) }
             compose.setContent {
                 BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
             }
 
-            compose.runOnIdle { store.withhold(Deletion.Bodyweight(today.toString())) }
+            compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight(today.toString())) }
             compose.onNodeWithText(Bodyweight.nothingYet).assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals("the store still holds it, which is what Undo puts back",
-                    listOf(today.toString()), store.allWeighIns.map { it.dateLocal })
-                assertEquals(emptyList<String>(), store.bodyweight.map { it.dateLocal })
+                    listOf(today.toString()), store.bodyweight.allWeighIns.map { it.dateLocal })
+                assertEquals(emptyList<String>(), store.bodyweight.drawn.map { it.dateLocal })
             }
             // The rows keep reading the window: the dot is off the chart and the count says so.
             compose.onNodeWithText(Bodyweight.windowLine(ChartWindow.Ninety, 0)).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.noneInWindow).assertDoesNotExist()
 
-            compose.runOnIdle { assertNotNull(store.keepWithheld()) }
+            compose.runOnIdle { assertNotNull(store.deletions.keepWithheld()) }
             compose.onNodeWithText(Bodyweight.windowLine(ChartWindow.Ninety, 1)).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
@@ -473,7 +473,7 @@ class BodyweightScreenTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room, EngineRoomFixture.server())
             val day = today.minusDays(1)
-            runBlocking { store.weighIn(day.toString(), 182.0) }
+            runBlocking { store.bodyweight.weighIn(day.toString(), 182.0) }
             compose.setContent {
                 BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
             }
@@ -485,7 +485,7 @@ class BodyweightScreenTests {
             compose.onNodeWithText(Bodyweight.save).performClick()
 
             compose.runOnIdle {
-                assertEquals(listOf(day.toString() to 82.0), store.bodyweight.map { it.dateLocal to it.weightKg })
+                assertEquals(listOf(day.toString() to 82.0), store.bodyweight.drawn.map { it.dateLocal to it.weightKg })
                 assertEquals(listOf(day.toString() to 82.0), room.training.weighins().map { it.dateLocal to it.weightKg })
             }
         } } finally { scope.cancel() }

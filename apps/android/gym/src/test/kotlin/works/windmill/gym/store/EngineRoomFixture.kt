@@ -134,9 +134,9 @@ internal class EngineRoomFixture(
 
     suspend fun workout(load: Double = 82.5, movement: String = "bench-press", finish: Boolean = true): Session {
         val session = startExternalWorkout()
-        store.choose(movement); store.logSet(load, 5)
+        store.workout.choose(movement); store.workout.logSet(load, 5)
         now += 60_000
-        if (finish) assertTrue(store.finish() is FinishOutcome.Closed)
+        if (finish) assertTrue(store.workout.finish() is FinishOutcome.Closed)
         return session
     }
     fun pull(server: ModelServer) {

@@ -50,12 +50,12 @@ class RemovalReceiptTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val server = EngineRoomFixture.server()
             val pending = seed(room, server)
-            val first = async { room.store.applyProposal("proposal1") }
+            val first = async { room.store.routines.applyProposal("proposal1") }
             runCurrent(); advanceTimeBy(15_001); runCurrent()
             assertEquals(ProposalOutcome.Failed(WriteFailure.NoAnswer), first.await())
             val queued = room.outbox()
             assertEquals(1, queued.size)
-            val retry = async { room.store.applyProposal("proposal1") }
+            val retry = async { room.store.routines.applyProposal("proposal1") }
             runCurrent()
             assertEquals(queued, room.outbox())
             room.sync(server); advanceTimeBy(15_001); runCurrent()
@@ -67,10 +67,10 @@ class RemovalReceiptTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val server = EngineRoomFixture.server()
             val pending = seed(room, server)
-            val first = async { room.store.applyProposal("proposal1") }
+            val first = async { room.store.routines.applyProposal("proposal1") }
             runCurrent(); first.cancelAndJoin()
             val queued = room.outbox()
-            val retry = async { room.store.applyProposal("proposal1") }
+            val retry = async { room.store.routines.applyProposal("proposal1") }
             runCurrent()
             assertEquals(queued, room.outbox())
             room.sync(server); advanceTimeBy(15_001); runCurrent()
@@ -84,7 +84,7 @@ class RemovalReceiptTests {
             lateinit var pending: Proposal
             val snapshot = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
                 pending = seed(room, server)
-                val first = async { room.store.applyProposal("proposal1") }
+                val first = async { room.store.routines.applyProposal("proposal1") }
                 runCurrent(); first.cancelAndJoin()
                 if (phase == "resolved") room.sync(server)
                 if (phase == "acknowledged") {
@@ -100,19 +100,19 @@ class RemovalReceiptTests {
                 room.selected = "A"
                 room.store.connect(room.account())
                 if (phase != "resolved") {
-                    assertEquals(ProposalRead.Found(pending), room.store.proposal("proposal1"))
+                    assertEquals(ProposalRead.Found(pending), room.store.routines.proposal("proposal1"))
                     room.sync(server)
                 }
                 room.store.refreshEngine()
-                assertEquals("$phase relaunch", ProposalRead.Found(settled), room.store.proposal("proposal1"))
-                assertEquals(mapOf("proposal1" to settled), room.store.settledProposals)
+                assertEquals("$phase relaunch", ProposalRead.Found(settled), room.store.routines.proposal("proposal1"))
+                assertEquals(mapOf("proposal1" to settled), room.store.routines.settledProposals)
                 room.engine.snapshot()
             }
             EngineRoomFixture(tmp.newFolder(), backgroundScope, reopened).use { room ->
                 room.selected = "A"
                 room.store.connect(room.account())
                 room.store.refreshEngine()
-                assertEquals("Reading is not showing", ProposalRead.Found(settled), room.store.proposal("proposal1"))
+                assertEquals("Reading is not showing", ProposalRead.Found(settled), room.store.routines.proposal("proposal1"))
             }
         }
     }
@@ -133,7 +133,7 @@ class RemovalReceiptTests {
         val server = EngineRoomFixture.server()
         val pending = EngineRoomFixture(directory, backgroundScope, createEngine = open).use { room ->
             val proposal = seed(room, server)
-            val wait = async { room.store.applyProposal("proposal1") }
+            val wait = async { room.store.routines.applyProposal("proposal1") }
             runCurrent(); wait.cancelAndJoin()
             assertEquals(1, room.outbox().size)
             proposal
@@ -142,38 +142,38 @@ class RemovalReceiptTests {
         EngineRoomFixture(directory, backgroundScope, createEngine = open).use { room ->
             room.selected = "A"
             room.store.connect(room.account())
-            assertEquals(ProposalRead.Found(pending), room.store.proposal("proposal1"))
+            assertEquals(ProposalRead.Found(pending), room.store.routines.proposal("proposal1"))
             room.sync(server)
             room.store.refreshEngine()
-            assertEquals(ProposalRead.Found(receipt), room.store.proposal("proposal1"))
+            assertEquals(ProposalRead.Found(receipt), room.store.routines.proposal("proposal1"))
         }
         EngineRoomFixture(directory, backgroundScope, createEngine = open).use { room ->
             room.selected = "A"
             room.store.connect(room.account())
             room.store.refreshEngine()
-            assertEquals(ProposalRead.Found(receipt), room.store.proposal("proposal1"))
+            assertEquals(ProposalRead.Found(receipt), room.store.routines.proposal("proposal1"))
             assertTrue(room.outbox().isEmpty())
             SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.execSQL("CREATE TRIGGER fail_metadata BEFORE INSERT ON device BEGIN SELECT RAISE(ABORT,'injected'); END")
             }
-            room.store.proposalReceiptShown(receipt, room.store.accountKey)
-            assertEquals(mapOf("proposal1" to receipt), room.store.unseenRemovalReceipts)
+            room.store.routines.proposalReceiptShown(receipt, room.store.seat.accountKey)
+            assertEquals(mapOf("proposal1" to receipt), room.store.routines.unseenRemovalReceipts)
         }
         EngineRoomFixture(directory, backgroundScope, createEngine = open).use { room ->
             room.selected = "A"
             room.store.connect(room.account())
-            assertEquals(ProposalRead.Found(receipt), room.store.proposal("proposal1"))
+            assertEquals(ProposalRead.Found(receipt), room.store.routines.proposal("proposal1"))
             SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.execSQL("DROP TRIGGER fail_metadata")
             }
-            room.store.proposalReceiptShown(receipt, room.store.accountKey)
-            assertEquals(emptyMap<String, Proposal>(), room.store.unseenRemovalReceipts)
-            assertEquals(ProposalRead.Found(receipt), room.store.proposal("proposal1"))
+            room.store.routines.proposalReceiptShown(receipt, room.store.seat.accountKey)
+            assertEquals(emptyMap<String, Proposal>(), room.store.routines.unseenRemovalReceipts)
+            assertEquals(ProposalRead.Found(receipt), room.store.routines.proposal("proposal1"))
         }
         EngineRoomFixture(directory, backgroundScope, createEngine = open).use { room ->
             room.selected = "A"
             room.store.connect(room.account())
-            assertEquals(ProposalRead.Gone, room.store.proposal("proposal1"))
+            assertEquals(ProposalRead.Gone, room.store.routines.proposal("proposal1"))
         }
     }
 
@@ -188,20 +188,20 @@ class RemovalReceiptTests {
             val server = EngineRoomFixture.server()
             val pending = seed(room, server)
             room.engine.failNextCommit()
-            assertEquals(ProposalOutcome.Failed(WriteFailure.NoAnswer), room.store.applyProposal("proposal1"))
+            assertEquals(ProposalOutcome.Failed(WriteFailure.NoAnswer), room.store.routines.applyProposal("proposal1"))
             assertEquals(emptyList<Json>(), room.outbox())
             assertNull(room.engine.read(ScopeRef(Gym.scope)) { it.device(RemovalReceipts.key) })
-            assertEquals(ProposalRead.Found(pending), room.store.proposal("proposal1"))
-            val apply = async { room.store.applyProposal("proposal1") }
+            assertEquals(ProposalRead.Found(pending), room.store.routines.proposal("proposal1"))
+            val apply = async { room.store.routines.applyProposal("proposal1") }
             runCurrent(); room.sync(server); advanceTimeBy(25); runCurrent()
             val receipt = (apply.await() as ProposalOutcome.Decided).proposal
             room.engine.failNextCommit()
-            room.store.proposalReceiptShown(receipt, room.store.accountKey)
-            assertEquals(mapOf("proposal1" to receipt), room.store.unseenRemovalReceipts)
+            room.store.routines.proposalReceiptShown(receipt, room.store.seat.accountKey)
+            assertEquals(mapOf("proposal1" to receipt), room.store.routines.unseenRemovalReceipts)
             assertEquals(listOf("gym.applyProposal", "gym.proposal_receipt_shown"), failures)
             assertTrue(events.none { it.first == "gym_proposal_receipt_shown" })
-            room.store.proposalReceiptShown(receipt, room.store.accountKey)
-            room.store.proposalReceiptShown(receipt, room.store.accountKey)
+            room.store.routines.proposalReceiptShown(receipt, room.store.seat.accountKey)
+            room.store.routines.proposalReceiptShown(receipt, room.store.seat.accountKey)
             assertEquals(listOf("gym_proposal_receipt_shown" to mapOf("outcome" to "applied")),
                 events.filter { it.first == "gym_proposal_receipt_shown" })
         }
@@ -211,19 +211,19 @@ class RemovalReceiptTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val server = EngineRoomFixture.server()
             val pending = seed(room, server)
-            val wait = async { room.store.applyProposal("proposal1") }
+            val wait = async { room.store.routines.applyProposal("proposal1") }
             runCurrent(); wait.cancelAndJoin()
             room.sync(server); room.store.refreshEngine()
             val receipt = pending.copy(state = ProposalState.Applied)
-            val owner = room.store.accountKey
+            val owner = room.store.seat.accountKey
             room.select("B")
-            assertEquals(ProposalRead.Gone, room.store.proposal("proposal1"))
-            assertTrue(room.store.unseenRemovalReceipts.isEmpty())
-            room.store.proposalReceiptShown(receipt, owner)
+            assertEquals(ProposalRead.Gone, room.store.routines.proposal("proposal1"))
+            assertTrue(room.store.routines.unseenRemovalReceipts.isEmpty())
+            room.store.routines.proposalReceiptShown(receipt, owner)
             room.select("A")
             room.store.refreshEngine()
-            assertEquals(ProposalRead.Found(receipt), room.store.proposal("proposal1"))
-            assertEquals(mapOf("proposal1" to receipt), room.store.unseenRemovalReceipts)
+            assertEquals(ProposalRead.Found(receipt), room.store.routines.proposal("proposal1"))
+            assertEquals(mapOf("proposal1" to receipt), room.store.routines.unseenRemovalReceipts)
         }
     }
 
@@ -232,7 +232,7 @@ class RemovalReceiptTests {
         lateinit var pending: Proposal
         val snapshot = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             pending = seed(room, server)
-            val wait = async { room.store.applyProposal("proposal1") }
+            val wait = async { room.store.routines.applyProposal("proposal1") }
             runCurrent(); wait.cancelAndJoin()
             val request = requireNotNull(room.engine.nextPush())
             assertEquals(200, server.push(request, Credential.Account("A"), room.now).status)
@@ -244,11 +244,11 @@ class RemovalReceiptTests {
             room.selected = "A"
             room.store.connect(room.account())
             room.store.refreshEngine()
-            assertEquals(ProposalRead.Found(pending), room.store.proposal("proposal1"))
-            assertEquals(listOf(pending), room.store.pendingProposals)
-            assertTrue(room.store.unseenRemovalReceipts.isEmpty())
+            assertEquals(ProposalRead.Found(pending), room.store.routines.proposal("proposal1"))
+            assertEquals(listOf(pending), room.store.routines.pendingProposals)
+            assertTrue(room.store.routines.unseenRemovalReceipts.isEmpty())
             val queued = room.outbox()
-            val retry = async { room.store.applyProposal("proposal1") }
+            val retry = async { room.store.routines.applyProposal("proposal1") }
             runCurrent()
             assertEquals(queued, room.outbox())
             room.sync(server); advanceTimeBy(25); runCurrent()
@@ -260,12 +260,12 @@ class RemovalReceiptTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val server = EngineRoomFixture.server()
             val pending = seed(room, server)
-            val first = async { room.store.applyProposal("proposal1") }
+            val first = async { room.store.routines.applyProposal("proposal1") }
             runCurrent()
             val original = room.outbox().single()
             server.refuse(code = "stale"); room.sync(server); advanceTimeBy(25); runCurrent()
             assertTrue(first.await() is ProposalOutcome.Settled)
-            val retry = async { room.store.applyProposal("proposal1") }
+            val retry = async { room.store.routines.applyProposal("proposal1") }
             runCurrent()
             assertEquals(1, room.outbox().size)
             assertNotEquals(original.member("gestureId"), room.outbox().single().member("gestureId"))
@@ -278,11 +278,11 @@ class RemovalReceiptTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val server = EngineRoomFixture.server()
             val pending = seed(room, server)
-            val applying = async { room.store.applyProposal("proposal1") }
+            val applying = async { room.store.routines.applyProposal("proposal1") }
             runCurrent(); room.sync(server); room.store.refreshEngine()
             val receipt = pending.copy(state = ProposalState.Applied)
             assertFalse(applying.isCompleted)
-            room.store.proposalReceiptShown(receipt, room.store.accountKey)
+            room.store.routines.proposalReceiptShown(receipt, room.store.seat.accountKey)
             advanceTimeBy(25); runCurrent()
             assertEquals(ProposalOutcome.Decided(receipt), applying.await())
         }
@@ -306,7 +306,7 @@ class RemovalReceiptTests {
                 engine
             }).use { room ->
                 pending = seed(room, server)
-                val wait = async { room.store.applyProposal("proposal1") }
+                val wait = async { room.store.routines.applyProposal("proposal1") }
                 runCurrent(); wait.cancelAndJoin()
                 request = requireNotNull(room.engine.nextPush())
                 val reply = server.push(request, Credential.Account("A"), room.now)
@@ -320,17 +320,17 @@ class RemovalReceiptTests {
                     room.engine.crashAfterTransactions(2)
                     assertThrows(EngineCrash::class.java) { room.engine.onPushResponse(request, response, timing) }
                 }
-                assertTrue(room.store.unseenRemovalReceipts.isEmpty())
+                assertTrue(room.store.routines.unseenRemovalReceipts.isEmpty())
                 room.engine.snapshot()
             }
             EngineRoomFixture(tmp.newFolder(), backgroundScope, snapshot).use { room ->
                 room.selected = "A"
                 room.store.connect(room.account())
-                assertEquals(ProposalRead.Found(pending), room.store.proposal("proposal1"))
+                assertEquals(ProposalRead.Found(pending), room.store.routines.proposal("proposal1"))
                 room.engine.onPushResponse(request, response, timing)
                 room.pull(server)
                 room.store.refreshEngine()
-                assertEquals(ProposalRead.Found(pending.copy(state = ProposalState.Applied)), room.store.proposal("proposal1"))
+                assertEquals(ProposalRead.Found(pending.copy(state = ProposalState.Applied)), room.store.routines.proposal("proposal1"))
             }
         }
     }
@@ -340,7 +340,7 @@ class RemovalReceiptTests {
             val server = EngineRoomFixture.server()
             val snapshot = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
                 seed(room, server)
-                val apply = async { room.store.applyProposal("proposal1") }
+                val apply = async { room.store.routines.applyProposal("proposal1") }
                 runCurrent()
                 if (status == 200) { server.refuse(code = "stale"); room.sync(server) }
                 else {
@@ -350,7 +350,7 @@ class RemovalReceiptTests {
                 }
                 advanceTimeBy(25); runCurrent()
                 assertTrue(apply.await() is ProposalOutcome.Settled)
-                assertTrue(room.store.unseenRemovalReceipts.isEmpty())
+                assertTrue(room.store.routines.unseenRemovalReceipts.isEmpty())
                 assertEquals(ProposalState.Pending, room.training.proposal("proposal1")!!.state)
                 assertEquals("Original", room.training.routine("routine1")!!.name)
                 room.engine.snapshot()
@@ -360,15 +360,15 @@ class RemovalReceiptTests {
                 room.store.connect(room.account())
                 withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
                 room.store.refreshEngine()
-                assertEquals(1, room.store.refusals.size)
-                assertTrue(room.store.settledProposals.isEmpty())
-                assertFalse(room.store.removalPending("proposal1"))
+                assertEquals(1, room.store.workout.refusals.size)
+                assertTrue(room.store.routines.settledProposals.isEmpty())
+                assertFalse(room.store.routines.removalPending("proposal1"))
                 room.store.clearRefusals()
                 assertNull(room.engine.read(ScopeRef(Gym.scope)) { it.device(RemovalReceipts.key) })
                 room.training.deleteRoutine("routine1")
                 room.sync(server)
                 room.store.refreshEngine()
-                assertTrue("An unrelated deletion is not this Apply's receipt", room.store.unseenRemovalReceipts.isEmpty())
+                assertTrue("An unrelated deletion is not this Apply's receipt", room.store.routines.unseenRemovalReceipts.isEmpty())
             }
         }
     }

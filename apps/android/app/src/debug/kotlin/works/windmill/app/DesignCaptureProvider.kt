@@ -34,7 +34,7 @@ class DesignCaptureProvider : ContentProvider() {
                 result.delete()
                 activity.lifecycleScope.launch {
                     val store = (application as WindmillApplication).gym.store
-                    snapshotFlow { !store.isLoading && store.routines.map { it.id }.toSet() == expected }
+                    snapshotFlow { !store.seat.isLoading && store.routines.all.map { it.id }.toSet() == expected }
                         .first { it }
                     val view = activity.window.decorView
                     val listener = object : ViewTreeObserver.OnDrawListener {

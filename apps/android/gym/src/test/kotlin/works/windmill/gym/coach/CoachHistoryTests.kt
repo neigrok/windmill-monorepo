@@ -192,7 +192,7 @@ class CoachHistoryTests {
         }
         compose.onNodeWithText("No conversations").assertIsDisplayed()
         compose.onNodeWithText("Undo").assertDoesNotExist()
-        assertEquals(emptyList<Any>(), fixture.store.withheld)
+        assertEquals(emptyList<Any>(), fixture.store.held.withheld)
         assertEquals(listOf(
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "state" to "shown"),
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "ok"),

@@ -159,7 +159,7 @@ class CoachSetupTests {
         var settled by mutableStateOf(false)
         EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest(), localCoach = disk, workoutAuthority = { settled }).use { room ->
             runBlocking { room.select("alice") }
-            assertFalse(room.store.accountReady)
+            assertFalse(room.store.seat.accountReady)
             compose.setContent { GymMaterial { GymRoom(room.account(), room.store) } }
             compose.runOnIdle { assertEquals(CoachDraft("Phone draft"), LocalCoach(file).draft(phone, "phone-chat")) }
             compose.runOnIdle {
@@ -187,8 +187,8 @@ class CoachSetupTests {
                 room.select("alice")
                 room.pull(EngineRoomFixture.server())
                 room.store.refreshEngine()
-                val draft = RoutineDraft(name = "Owned routine").adding("bench-press").capturingMovements(room.store.catalog)
-                assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
+                val draft = RoutineDraft(name = "Owned routine").adding("bench-press").capturingMovements(room.store.routines.catalog)
+                assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Ok)
                 assertEquals(false, room.store.initialGymEmpty)
             }
             compose.setContent { GymMaterial { GymRoom(room.account(), room.store) } }

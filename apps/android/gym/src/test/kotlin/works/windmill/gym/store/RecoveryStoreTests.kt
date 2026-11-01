@@ -34,17 +34,17 @@ class RecoveryStoreTests {
 
     @Test fun disposingTheUiWaiterCannotAbandonAnAcceptedLocalDiscard() = runTest {
         phone().use { room ->
-            val read = requireNotNull(room.store.recovery)
+            val read = requireNotNull(room.store.recovery.latest)
             val row = read.workouts.single()
             val source = row.workout
-            val form = async(start = CoroutineStart.UNDISPATCHED) { room.store.recover(read, row, RecoveryAction.Discard) }
-            assertTrue(room.store.recoveryBusy)
+            val form = async(start = CoroutineStart.UNDISPATCHED) { room.store.recovery.recover(read, row, RecoveryAction.Discard) }
+            assertTrue(room.store.recovery.busy)
             form.cancelAndJoin()
             runCurrent()
             assertTrue(room.training.imports.refusals().isEmpty())
             assertTrue(room.training.imports.discardedWorkout(row.id))
-            assertTrue(room.store.recovery!!.workouts.isEmpty())
-            assertFalse(room.store.recoveryBusy)
+            assertTrue(room.store.recovery.latest!!.workouts.isEmpty())
+            assertFalse(room.store.recovery.busy)
             assertTrue(room.outbox().isEmpty())
             assertNotNull(source)
             assertEquals(listOf(mapOf("action" to "discard", "outcome" to "ok")), events)
@@ -54,12 +54,12 @@ class RecoveryStoreTests {
 
     @Test fun anAtoBtoARoomReplacementBeforeTheCommitCannotDiscardTheOpeningCopy() = runTest {
         phone().use { room ->
-            val read = requireNotNull(room.store.recovery)
+            val read = requireNotNull(room.store.recovery.latest)
             val row = read.workouts.single()
             var current = room.account()
             val before = room.engine.snapshot()
             val action = async(start = CoroutineStart.UNDISPATCHED) {
-                room.store.recover(read, row, RecoveryAction.Discard, currentOwner = { read.belongsTo(current) })
+                room.store.recovery.recover(read, row, RecoveryAction.Discard, currentOwner = { read.belongsTo(current) })
             }
             current = Account(current.origin, User("B", "b@example.com"), identityRevision = 1)
             current = Account(current.origin, User("A", "A@example.com"), identityRevision = 2)
@@ -73,52 +73,52 @@ class RecoveryStoreTests {
 
     @Test fun staleSourceAndLocalWriteFailureRetainTheExactCurrentCopy() = runTest {
         phone().use { room ->
-            val read = requireNotNull(room.store.recovery)
+            val read = requireNotNull(room.store.recovery.latest)
             val row = read.workouts.single()
             val source = requireNotNull(row.workout)
             val changed = source.copy(sets = source.sets.map { it.copy(note = "A newer edit") })
             room.training.imports.replaceAndRetry(row.id, changed)
             val before = room.engine.snapshot()
-            assertEquals(RecoveryResult.Refused("This saved workout changed. Open it again."), room.store.recover(read, row, RecoveryAction.Discard))
+            assertEquals(RecoveryResult.Refused("This saved workout changed. Open it again."), room.store.recovery.recover(read, row, RecoveryAction.Discard))
             assertEquals(before, room.engine.snapshot())
             room.store.refreshEngine()
-            val fresh = requireNotNull(room.store.recovery)
+            val fresh = requireNotNull(room.store.recovery.latest)
             room.engine.failNextCommit()
-            assertEquals(RecoveryResult.Failed, room.store.recover(fresh, fresh.workouts.single(), RecoveryAction.Discard))
+            assertEquals(RecoveryResult.Failed, room.store.recovery.recover(fresh, fresh.workouts.single(), RecoveryAction.Discard))
             assertEquals(changed, room.training.imports.retainedWorkouts().single())
             assertEquals(listOf("gym_import_discard"), failures)
             assertEquals(listOf("refused", "failed"), events.mapNotNull { it["outcome"] })
-            assertFalse(room.store.recoveryBusy)
+            assertFalse(room.store.recovery.busy)
         }
     }
 
     @Test fun aStaleKeepAfterPhoneCopyDiscardEmitsOnlyRefusedAndSchedulesNothing() = runTest {
         phone().use { room ->
-            val read = requireNotNull(room.store.recovery)
+            val read = requireNotNull(room.store.recovery.latest)
             val row = read.workouts.single()
             room.training.imports.discardRefusal(row.id, row.openings.single())
             val discarded = room.engine.snapshot()
-            assertEquals(RecoveryResult.Refused("This saved workout changed. Open it again."), room.store.recover(read, row, RecoveryAction.Keep))
+            assertEquals(RecoveryResult.Refused("This saved workout changed. Open it again."), room.store.recovery.recover(read, row, RecoveryAction.Keep))
             assertEquals(discarded, room.engine.snapshot()); assertTrue(room.outbox().isEmpty())
             assertEquals(listOf(mapOf("action" to "keep", "outcome" to "refused")), events)
-            assertTrue(failures.isEmpty()); assertFalse(room.store.recoveryBusy)
+            assertTrue(failures.isEmpty()); assertFalse(room.store.recovery.busy)
         }
     }
 
     @Test fun draftReattachmentKeepsTheCopyOnlyForTheSameOriginUserAndIdentityRevision() = runTest {
         phone().use { room ->
-            val read = requireNotNull(room.store.recovery)
+            val read = requireNotNull(room.store.recovery.latest)
             val row = read.workouts.single()
-            assertTrue(room.store.beginRecoveryFix(read, row))
-            val opening = requireNotNull(room.store.recoveryDraft)
-            room.store.changeRecoveryFix(opening, opening.copy.copy(sets = opening.copy.sets.map { it.copy(weightKg = 81.25) }))
-            val draft = room.store.recoveryDraft
+            assertTrue(room.store.recovery.beginFix(read, row))
+            val opening = requireNotNull(room.store.recovery.fixDraft)
+            room.store.recovery.changeFix(opening, opening.copy.copy(sets = opening.copy.sets.map { it.copy(weightKg = 81.25) }))
+            val draft = room.store.recovery.fixDraft
             room.store.connect(room.account())
-            assertSame(draft, room.store.recoveryDraft)
+            assertSame(draft, room.store.recovery.fixDraft)
             assertEquals(row.workout, room.training.imports.retainedWorkouts().single())
             room.store.connect(Account("https://other.invalid", User("A", "A@example.com")))
-            assertNull(room.store.recoveryDraft)
-            assertFalse(room.store.beginRecoveryFix(read, row))
+            assertNull(room.store.recovery.fixDraft)
+            assertFalse(room.store.recovery.beginFix(read, row))
             assertEquals(row.workout, room.training.imports.retainedWorkouts().single())
         }
     }

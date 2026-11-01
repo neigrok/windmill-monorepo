@@ -63,7 +63,7 @@ class PlanningSwipePaintTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
-            runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
+            runBlocking { store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
             var dark by mutableStateOf(true)
             compose.setContent {
                 contentView = LocalView.current

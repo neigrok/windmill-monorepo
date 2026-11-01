@@ -59,7 +59,7 @@ class RecordStateTests {
             compose.onNodeWithText("Use 60 characters or fewer.").assertIsDisplayed()
             compose.onNodeWithText("Save").assertIsNotEnabled()
             compose.onNodeWithText("Old name: Bench Press\nSearchable as an alias.").assertDoesNotExist()
-            assertEquals(listOf(movement), store.catalog.filter { it.id == movement.id })
+            assertEquals(listOf(movement), store.routines.catalog.filter { it.id == movement.id })
             assertEquals(listOf(movement), room.training.catalogue().filter { it.id == movement.id })
         } } finally { scope.cancel() }
     }
@@ -78,9 +78,9 @@ class RecordStateTests {
             compose.onNodeWithText("Save").performClick()
             compose.onNodeWithText("Paused Bench").assertIsDisplayed()
             compose.onNodeWithText("Edit movement").assertDoesNotExist()
-            compose.waitUntil(5_000) { store.catalog.single { it.id == movement.id } == renamed }
+            compose.waitUntil(5_000) { store.routines.catalog.single { it.id == movement.id } == renamed }
             compose.runOnIdle {
-                assertEquals(listOf(renamed), store.catalog.filter { it.id == movement.id })
+                assertEquals(listOf(renamed), store.routines.catalog.filter { it.id == movement.id })
                 assertEquals(listOf(renamed), room.training.catalogue().filter { it.id == movement.id })
             }
         } } finally { scope.cancel() }
@@ -137,7 +137,7 @@ class RecordStateTests {
             compose.onNodeWithText("90 kg est · today · 90 × 1").assertIsDisplayed()
             compose.runOnIdle { focus = "workout3" }
             winner.assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
-            compose.runOnIdle { assertEquals((0..4).map { "workout$it" }, room.store.progress!!.sessions.map { it.sessionId }) }
+            compose.runOnIdle { assertEquals((0..4).map { "workout$it" }, room.store.history.progress!!.sessions.map { it.sessionId }) }
         } } finally { scope.cancel() }
     }
 }

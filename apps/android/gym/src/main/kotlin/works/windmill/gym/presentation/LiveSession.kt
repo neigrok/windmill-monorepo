@@ -215,7 +215,7 @@ object LiveLines {
         }
     }
 
-    // The count is `TrainingStore.strandedCount` — drawn sets whose append or correction a walk could
+    // The count is `WorkoutSession.strandedCount` — drawn sets whose append or correction a walk could
     // not land — never every queued set.
     fun onThisDeviceLine(count: Int, by: Blocker?): String? {
         if (count <= 0) return null

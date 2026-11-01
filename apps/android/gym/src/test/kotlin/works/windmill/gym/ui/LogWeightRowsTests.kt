@@ -46,8 +46,8 @@ class LogWeightRowsTests {
             room.now = now
             runBlocking {
                 room.select(null)
-                assertNull(room.store.weighIn(day.toString(), 82.4))
-                assertNull(room.store.weighIn(day.minusDays(1).toString(), 82.2))
+                assertNull(room.store.bodyweight.weighIn(day.toString(), 82.4))
+                assertNull(room.store.bodyweight.weighIn(day.minusDays(1).toString(), 82.2))
             }
             var opens = 0
             compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) {
@@ -73,7 +73,7 @@ class LogWeightRowsTests {
             room.now = day.atTime(12, 45).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             runBlocking {
                 room.select(null)
-                repeat(16) { assertNull(room.store.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
+                repeat(16) { assertNull(room.store.bodyweight.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
             }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
             val fab = compose.onNodeWithContentDescription("Weigh in")
@@ -100,20 +100,20 @@ class LogWeightRowsTests {
             val day = LocalDate.of(2026, 10, 22)
             val now = day.atTime(12, 45).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             room.now = now
-            runBlocking { room.select(null); assertNull(room.store.weighIn(day.toString(), 82.4)) }
-            val original = room.store.bodyweight
+            runBlocking { room.select(null); assertNull(room.store.bodyweight.weighIn(day.toString(), 82.4)) }
+            val original = room.store.bodyweight.drawn
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
             compose.onNodeWithTag("weight:$day").performTouchInput { swipeLeft() }
             compose.waitForIdle()
             compose.onNodeWithTag("weight:$day").assertDoesNotExist()
             compose.runOnIdle {
-                assertEquals(emptyList<WeighIn>(), room.store.bodyweight)
-                assertEquals(original, room.store.allWeighIns)
+                assertEquals(emptyList<WeighIn>(), room.store.bodyweight.drawn)
+                assertEquals(original, room.store.bodyweight.allWeighIns)
                 assertEquals(1, room.engine.undoOffers().size)
-                room.store.keepWithheld()
+                room.store.deletions.keepWithheld()
             }
             compose.onNodeWithTag("weight:$day").assertIsDisplayed()
-            compose.runOnIdle { assertEquals(original, room.store.bodyweight) }
+            compose.runOnIdle { assertEquals(original, room.store.bodyweight.drawn) }
         } } finally { scope.cancel() }
     }
 
@@ -127,14 +127,14 @@ class LogWeightRowsTests {
             room.now = day.atTime(12, 45).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             runBlocking {
                 room.select(null)
-                repeat(16) { assertNull(room.store.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
+                repeat(16) { assertNull(room.store.bodyweight.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
             }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
             val top = compose.onNodeWithTag("weight:$day").getBoundsInRoot()
             compose.onNodeWithTag("weight:$day").performTouchInput { swipeLeft() }
             compose.waitForIdle()
             compose.onNodeWithTag("weight:$day").assertDoesNotExist()
-            compose.runOnIdle { room.store.keepWithheld() }
+            compose.runOnIdle { room.store.deletions.keepWithheld() }
             compose.waitForIdle()
             assertEquals(top, compose.onNodeWithTag("weight:$day").assertIsDisplayed().getBoundsInRoot())
             compose.onNode(hasText("Weigh in"), useUnmergedTree = true).assertIsDisplayed()

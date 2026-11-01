@@ -47,7 +47,7 @@ class BodyweightStateTests {
         EngineRoomFixture(temporary.newFolder(), scope).use { other -> runBlocking {
             other.now = System.currentTimeMillis()
             other.select("u1"); other.pull(server)
-            assertNull(other.store.weighIn(day.toString(), kg))
+            assertNull(other.store.bodyweight.weighIn(day.toString(), kg))
             other.sync(server)
         } }
 
@@ -69,7 +69,7 @@ class BodyweightStateTests {
             compose.runOnIdle { room.pull(server) }
             compose.waitUntil(2_000) {
                 shadowOf(Looper.getMainLooper()).idle()
-                room.store.bodyweightRead
+                room.store.bodyweight.bodyweightRead
             }
             compose.onNodeWithText(Bodyweight.nothingYet).assertDoesNotExist()
             compose.onNodeWithText(Bodyweight.noneInWindow).assertIsDisplayed()
@@ -139,7 +139,7 @@ class BodyweightStateTests {
             compose.onNodeWithText(Bodyweight.save).assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(2, instances)
-                assertEquals(listOf(day.toString() to 82.45), current.bodyweight.map { it.dateLocal to it.weightKg })
+                assertEquals(listOf(day.toString() to 82.45), current.bodyweight.drawn.map { it.dateLocal to it.weightKg })
                 assertEquals(listOf(day.toString() to 82.45), room.training.weighins().map { it.dateLocal to it.weightKg })
                 assertTrue("the correction is owed to the log", room.outbox().isNotEmpty())
             }

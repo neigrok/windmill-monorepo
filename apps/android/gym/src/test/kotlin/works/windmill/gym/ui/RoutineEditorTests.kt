@@ -87,14 +87,14 @@ class RoutineEditorTests {
             runBlocking {
                 room.select(null)
                 val plan = RoutineDraft(name = "Pull", creationId = "routine_history").adding("bench-press")
-                    .capturingMovements(room.store.catalog)
-                assertTrue(room.store.saveRoutine(plan) is GymResult.Ok)
+                    .capturingMovements(room.store.routines.catalog)
+                assertTrue(room.store.routines.saveRoutine(plan) is GymResult.Ok)
                 room.training.startSession(SessionStart("history_finished", room.now - 1_000, routineId = "routine_history"))
                 room.training.appendSet("history_finished", SetWrite("history_set_1", "bench-press", 50.0, 8, room.now - 900))
                 room.training.appendSet("history_finished", SetWrite("history_set_2", "barbell-row", 40.0, 10, room.now - 800))
                 room.training.finishSession("history_finished", room.now - 100)
             }
-            val opening = RoutineDraft.of(requireNotNull(room.store.routine("routine_history")), room.store.catalog).named("Retained draft")
+            val opening = RoutineDraft.of(requireNotNull(room.store.routines.routine("routine_history")), room.store.routines.catalog).named("Retained draft")
             val before = room.engine.snapshot()
             val draft = editor(room, opening)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("routine-history-row").fetchSemanticsNodes().size == 1 }
@@ -319,7 +319,7 @@ class RoutineEditorTests {
         try {
             runBlocking {
                 room.select(null)
-                saved?.let { assertTrue(room.store.saveRoutine(it.capturingMovements(room.store.catalog)) is GymResult.Ok) }
+                saved?.let { assertTrue(room.store.routines.saveRoutine(it.capturingMovements(room.store.routines.catalog)) is GymResult.Ok) }
             }
             room.store.observeEngine()
             actions.clear()

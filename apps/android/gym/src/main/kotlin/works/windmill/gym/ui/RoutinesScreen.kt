@@ -73,16 +73,16 @@ fun RoutinesScreen(
 ) {
     val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
-    val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
-    val empty = store.allRoutines.isEmpty()
-    val standing = store.pendingProposals.firstOrNull()
-    val refusals = store.refusals.filterNot { it is RefusedWorkout }
+    val routines = store.routines.all.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
+    val empty = store.routines.all.isEmpty()
+    val standing = store.routines.pendingProposals.firstOrNull()
+    val refusals = store.workout.refusals.filterNot { it is RefusedWorkout }
 
     GymScreen(
         title = "Routines",
         actions = { YouSeat(seat) },
         transient = transient,
-        floatingActionButton = { GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) }) },
+        floatingActionButton = { GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.routines.all.size)) }) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -96,10 +96,10 @@ fun RoutinesScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (refusals.isNotEmpty()) item("refusals") {
-                    Refusals(refusals, store.catalog, onDismiss = { store.clearRefusals() })
+                    Refusals(refusals, store.routines.catalog, onDismiss = { store.clearRefusals() })
                 }
 
-                items(store.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
+                items(store.routines.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
                     ProposalCard(receipt, receipt.routineName, nowMs, false) { onReview(receipt) }
                 }
 
@@ -109,7 +109,7 @@ fun RoutinesScreen(
                     item("proposal") {
                         ProposalCard(
                             proposal = waiting,
-                            routineName = store.routine(waiting.routineId)?.name ?: waiting.routineName,
+                            routineName = store.routines.routine(waiting.routineId)?.name ?: waiting.routineName,
                             nowMs = nowMs,
                             stillWaiting = waiting.id in lookedAt,
                             onReview = { onReview(waiting) },
@@ -126,7 +126,7 @@ fun RoutinesScreen(
                     items(routines, key = { it.id }) { routine ->
                         val delete: suspend () -> Boolean = { onDeleteRoutine(routine.id) }
                         DeleteSwipeRow(actionLabel = "Delete ${routine.name}", onDelete = delete) {
-                            RoutineRow(routine, standing?.id, store.catalog, onOpenRoutine, delete, onReview)
+                            RoutineRow(routine, standing?.id, store.routines.catalog, onOpenRoutine, delete, onReview)
                         }
                     }
                 }
@@ -185,7 +185,7 @@ fun RoutineSheet(
     failure: String? = null,
 ) {
     val skin = LocalGymColors.current
-    val routine = store.routine(routineId)
+    val routine = store.routines.routine(routineId)
     WindmillSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -227,11 +227,11 @@ fun RoutineSheet(
                                     Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    val name = Readout.movement(entry.exerciseId, store.catalog)
+                                    val name = Readout.movement(entry.exerciseId, store.routines.catalog)
                                     val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
                                     Text(if (yours) "$name · yours" else name,
                                         style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-                                    val target = Readout.targetWithUnit(entry.sets, store.catalog.find { it.id == entry.exerciseId })
+                                    val target = Readout.targetWithUnit(entry.sets, store.routines.catalog.find { it.id == entry.exerciseId })
                                     Text(target, style = GymType.numeral(13), color = skin.inkDim)
                                 }
                             }
@@ -248,7 +248,7 @@ fun RoutineSheet(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))
                     }
-                    TextButton(onClick = { onBuild(RoutineDraft.of(routine, store.catalog)) }, enabled = !starting,
+                    TextButton(onClick = { onBuild(RoutineDraft.of(routine, store.routines.catalog)) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                     }

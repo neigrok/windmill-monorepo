@@ -155,7 +155,7 @@ fun AskScreen(
     val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
     val headerProposals = proposalIds.filterNot { it in attachedProposals }
     val wanted = (attachedProposals + proposalIds).toList()
-    LaunchedEffect(wanted, store.replicaReadRevision, store.pulled.caughtUp) { proposals.read(wanted) }
+    LaunchedEffect(wanted, store.seat.replicaReadRevision, store.history.pulled.caughtUp) { proposals.read(wanted) }
     proposals.missing.keys.forEach { id -> key(id) { LaunchedEffect(Unit) { proposals.settle(id) } } }
 
     GymScreen(
@@ -214,9 +214,9 @@ fun AskScreen(
                                 val setupOnly = clarification != null && CoachSources.choicesAlone(answer.receipt?.steps ?: answer.steps,
                                     answer.receipt?.read ?: answer.read,
                                     acted = answer.proposals.isNotEmpty() || answer.results.isNotEmpty() || answer.routineDrafts.isNotEmpty())
-                                if (setupOnly) CoachAnswer(text.ifEmpty { requireNotNull(clarification).question }, null, store.catalog, nowMs,
+                                if (setupOnly) CoachAnswer(text.ifEmpty { requireNotNull(clarification).question }, null, store.routines.catalog, nowMs,
                                     copyText = answer.answer.ifEmpty { requireNotNull(clarification).question })
-                                else Answer(answer, text, exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
+                                else Answer(answer, text, exchange.answer != null, minted + store.routines.settledProposals, store.routines.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
                                 if (clarification != null) CoachChoices(clarification,
                                     store.coach.choices(conversationId, exchange.requestId, clarification.id),
                                     enabled = composerVisible && composerEnabled && !asking && syncDraft != null) { group, option ->
@@ -225,7 +225,7 @@ fun AskScreen(
                                         catch (_: Exception) { draftFailure = "Your draft couldn’t be saved. Try again." }
                                     }
                                 }
-                                answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
+                                answer.proposals.filter { it !in minted && it !in store.routines.settledProposals }.forEach { id ->
                                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
                                     else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
@@ -247,12 +247,12 @@ fun AskScreen(
                     }
                 }
                 headerProposals.forEach { id ->
-                    (store.settledProposals[id] ?: minted[id])?.let { proposal ->
-                        Minted(proposal, store.catalog, nowMs, id in lookedAt) { onReview(proposal) }
+                    (store.routines.settledProposals[id] ?: minted[id])?.let { proposal ->
+                        Minted(proposal, store.routines.catalog, nowMs, id in lookedAt) { onReview(proposal) }
                     }
                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
                 }
-                val shown = (minted + store.settledProposals).values.mapNotNull { it.receipt }.toSet()
+                val shown = (minted + store.routines.settledProposals).values.mapNotNull { it.receipt }.toSet()
                 receipts.filterNot { it in shown }.forEach { receipt ->
                     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { ReceiptLine(receipt) }
                 }
@@ -421,13 +421,13 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
     fun gone(id: String): Boolean = missing[id]?.gone == true
 
     suspend fun read(wanted: List<String>) {
-        val caughtUpTo = store.caughtUpTo
-        val caughtUpPull = store.pulled.caughtUp
+        val caughtUpTo = store.routines.caughtUpTo
+        val caughtUpPull = store.history.pulled.caughtUp
         for (id in wanted) {
             if (minted.containsKey(id)) continue
-            when (val read = store.proposal(id)) {
+            when (val read = store.routines.proposal(id)) {
                 is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
-                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.proposalRecorded(id), caughtUpTo, caughtUpPull)
+                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(store.routines.proposalRecorded(id), caughtUpTo, caughtUpPull)
             }
         }
         report()
@@ -436,9 +436,9 @@ internal class AnsweredProposals(private val store: TrainingStore, private val t
     suspend fun settle(id: String) {
         delay(settleMs)
         val miss = missing[id] ?: return
-        missing[id] = miss.copy(waitedAt = store.pulled.sent)
+        missing[id] = miss.copy(waitedAt = store.history.pulled.sent)
         report()
-        if (missing[id]?.gone == false) store.pullAgain()
+        if (missing[id]?.gone == false) store.history.pullAgain()
     }
 
     private fun report() {

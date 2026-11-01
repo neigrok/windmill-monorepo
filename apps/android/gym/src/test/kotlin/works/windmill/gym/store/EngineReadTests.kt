@@ -69,9 +69,9 @@ class EngineReadTests {
             val store = TrainingStore(WorkoutControls(File(temporary.root, "controls.json")), training, backgroundScope,
                 now = { now }, readDispatcher = reads)
             store.connect(Account("http://127.0.0.1:8098", User("first", "first@example.com")))
-            assertEquals(GymResult.Ok(training.session("session1")), store.finishedSession("session1"))
+            assertEquals(GymResult.Ok(training.session("session1")), store.history.finishedSession("session1"))
             pause = true
-            val pending = async { store.finishedSession("session1") }
+            val pending = async { store.history.finishedSession("session1") }
             try {
                 runCurrent()
                 assertFalse(held.isEmpty())
@@ -86,9 +86,9 @@ class EngineReadTests {
             }
             runCurrent()
             assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), pending.await())
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), store.finishedSession("session1"))
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), store.history.finishedSession("session1"))
             store.connect(Account("http://127.0.0.1:8098", User("other", "other@example.com")))
-            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.finishedSession("session1"))
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.history.finishedSession("session1"))
         }
     }
 
@@ -111,7 +111,7 @@ class EngineReadTests {
                 now = { now }, readDispatcher = reads)
             store.connect(Account("http://127.0.0.1:8098", User("alice", "alice@example.com")))
             val original = training.session("session1")!!
-            assertEquals(GymResult.Ok(original), store.finishedSession("session1"))
+            assertEquals(GymResult.Ok(original), store.history.finishedSession("session1"))
             val replica = engine.activeReplica()
             afterRead = {
                 assertTrue(engine.signOut("keep").member("complete").bool())
@@ -122,10 +122,10 @@ class EngineReadTests {
                 assertTrue(engine.commit(ScopeRef.product("gym"), Gesture(listOf(Change.delete(
                     Gym.Types.session, RecordID("session1"))))) is CommitOutcome.Committed)
             }
-            assertEquals(GymResult.Ok<SessionDetail?>(null), store.finishedSession("session1"))
+            assertEquals(GymResult.Ok<SessionDetail?>(null), store.history.finishedSession("session1"))
             assertNull(afterRead)
-            assertEquals(replica, store.workoutReplica)
-            assertEquals(GymResult.Ok<SessionDetail?>(null), store.finishedSession("session1"))
+            assertEquals(replica, store.seat.replica)
+            assertEquals(GymResult.Ok<SessionDetail?>(null), store.history.finishedSession("session1"))
         }
     }
 
@@ -137,10 +137,10 @@ class EngineReadTests {
             val replica = room.engine.activeReplica()
             assertTrue(room.engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
             assertEquals(replica, room.engine.activeReplica())
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), room.store.finishedSession(session.id))
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), room.store.history.finishedSession(session.id))
             room.selected = "alice"
             room.store.connect(room.account())
-            assertEquals(GymResult.Ok(room.training.session(session.id)), room.store.finishedSession(session.id))
+            assertEquals(GymResult.Ok(room.training.session(session.id)), room.store.history.finishedSession(session.id))
         }
     }
 
@@ -204,7 +204,7 @@ class EngineReadTests {
                     now = { now }, readDispatcher = reads)
                 store.connect(Account("http://127.0.0.1:8098", null))
                 threads.clear()
-                assertTrue(store.loadProgress(force = true) is GymResult.Ok)
+                assertTrue(store.history.loadProgress(force = true) is GymResult.Ok)
                 assertEquals(setOf("gym-read-worker"), threads.toSet())
             }
         }
@@ -233,10 +233,10 @@ class EngineReadTests {
                     telemetry = telemetry, readDispatcher = reads)
                 store.connect(Account("http://127.0.0.1:8098", null))
                 failing = true
-                assertTrue(store.loadProgress(force = true) is GymResult.Failed)
+                assertTrue(store.history.loadProgress(force = true) is GymResult.Failed)
                 assertEquals(listOf("gym.loadProgress" to emptyMap<String, String>()), failures.toList())
                 assertEquals(setOf("gym-read-worker"), failedThreads.toSet())
-                assertFalse(store.progressLoading)
+                assertFalse(store.history.progressLoading)
             }
         }
     }
@@ -246,13 +246,13 @@ class EngineReadTests {
             val store = TrainingStore(WorkoutControls(File(temporary.root, "controls.json")), EngineTraining(engine), backgroundScope,
                 readDispatcher = StandardTestDispatcher(testScheduler, "reads"))
             store.connect(Account("http://127.0.0.1:8098", null))
-            val pending = async(start = CoroutineStart.UNDISPATCHED) { store.loadProgress(force = true) }
-            assertTrue(store.progressLoading)
+            val pending = async(start = CoroutineStart.UNDISPATCHED) { store.history.loadProgress(force = true) }
+            assertTrue(store.history.progressLoading)
             engine.signIn("other", mapOf("gym" to false))
             runCurrent()
             assertEquals(GymResult.Failed(WriteFailure.NoAnswer), pending.await())
-            assertFalse(store.progressLoading)
-            assertNull(store.progressFailure)
+            assertFalse(store.history.progressLoading)
+            assertNull(store.history.progressFailure)
         }
     }
 
@@ -273,9 +273,9 @@ class EngineReadTests {
                 readDispatcher = reads)
             store.connect(Account("http://127.0.0.1:8098", null))
             churn = true
-            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.loadProgress(force = true))
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.history.loadProgress(force = true))
             assertEquals(3, changes)
-            assertFalse(store.progressLoading)
+            assertFalse(store.history.progressLoading)
         }
     }
 
@@ -316,7 +316,7 @@ class EngineReadTests {
                     state.snapshot.records.any { it.id.toString() == "routine1" } } }
             }
             runCurrent()
-            assertEquals(listOf("routine1"), store.routines.map { it.id })
+            assertEquals(listOf("routine1"), store.routines.all.map { it.id })
             assertTrue(consumer.isActive)
         }
     }
@@ -341,12 +341,12 @@ class EngineReadTests {
             afterRead = {
                 if (++readsCompleted == 3) {
                     afterRead = null
-                    opened = runBlocking { (store.start("routine1") as GymResult.Ok).value }
+                    opened = runBlocking { (store.workout.start("routine1") as GymResult.Ok).value }
                 }
             }
             store.refreshEngine()
             assertNotNull(opened)
-            assertEquals(opened, store.session)
+            assertEquals(opened, store.workout.session)
             assertEquals(opened, training.openWorkout()?.session)
         }
     }
@@ -366,18 +366,18 @@ class EngineReadTests {
             val store = TrainingStore(WorkoutControls(File(temporary.root, "controls.json")), training, backgroundScope,
                 readDispatcher = reads)
             store.connect(Account("http://127.0.0.1:8098", null))
-            assertTrue(store.start("routine1") is GymResult.Ok)
+            assertTrue(store.workout.start("routine1") is GymResult.Ok)
             var readsCompleted = 0
             var finished = false
             afterRead = {
                 if (++readsCompleted == 4) {
                     afterRead = null
-                    finished = runBlocking { store.finish() is FinishOutcome.Closed }
+                    finished = runBlocking { store.workout.finish() is FinishOutcome.Closed }
                 }
             }
             store.refreshEngine()
             assertTrue(finished)
-            assertNull(store.session)
+            assertNull(store.workout.session)
             assertNull(training.openWorkout())
         }
     }
@@ -385,17 +385,17 @@ class EngineReadTests {
         Engine.memory(SyncSchema.registry).use { engine ->
             val store = TrainingStore(WorkoutControls(File(temporary.root, "controls.json")), EngineTraining(engine), backgroundScope,
                 readDispatcher = StandardTestDispatcher(testScheduler))
-            val page = async(start = CoroutineStart.UNDISPATCHED) { store.loadOlder() }
-            val detail = async(start = CoroutineStart.UNDISPATCHED) { store.sessionDetail("session1") }
-            assertEquals(Older.Loading, store.older)
+            val page = async(start = CoroutineStart.UNDISPATCHED) { store.history.loadOlder() }
+            val detail = async(start = CoroutineStart.UNDISPATCHED) { store.history.sessionDetail("session1") }
+            assertEquals(Older.Loading, store.history.older)
             engine.signIn("other", mapOf("gym" to false))
             runCurrent()
             page.await()
-            assertEquals("the account it now reads is unread", Older.Reading, store.older)
+            assertEquals("the account it now reads is unread", Older.Reading, store.history.older)
             assertEquals(GymResult.Failed(WriteFailure.NoAnswer), detail.await())
             engine.signOut("keep")
-            store.loadOlder()
-            assertEquals(Older.End, store.older)
+            store.history.loadOlder()
+            assertEquals(Older.End, store.history.older)
         }
     }
 
@@ -403,15 +403,15 @@ class EngineReadTests {
         EngineRoomFixture(temporary.newFolder(), backgroundScope).use { room ->
             room.select(null)
             room.training.createRoutine(RoutineWrite("routine1", "Push A", 0, listOf(RoutineEntryWrite("bench-press"))))
-            assertTrue(room.store.start("routine1") is GymResult.Ok)
-            room.store.choose("bench-press")
-            room.store.logSet(50.0, 8)
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            assertTrue(room.store.workout.start("routine1") is GymResult.Ok)
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(50.0, 8)
+            assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
             val next = room.training.startSession(SessionStart("nextworkout", ++room.now))
             room.store.refreshEngine()
-            assertEquals(next.id, room.store.session?.id)
-            room.store.choose("back-squat")
-            room.store.logSet(100.0, 5)
+            assertEquals(next.id, room.store.workout.session?.id)
+            room.store.workout.choose("back-squat")
+            room.store.workout.logSet(100.0, 5)
             assertEquals(listOf(100.0 to 5), room.training.session(next.id)!!.sets.map { it.weightKg to it.reps })
         }
     }
@@ -441,14 +441,14 @@ class EngineReadTests {
             store.observeEngine()
             runCurrent()
             churn = true
-            store.choose("bench-press")
+            store.workout.choose("bench-press")
             assertEquals(3, changes)
-            assertTrue(store.lastTime!!.isUnread)
-            assertTrue(store.editRack(77.0, 7) is works.windmill.gym.presentation.WorkoutChange.Saved)
+            assertTrue(store.workout.lastTime!!.isUnread)
+            assertTrue(store.workout.editRack(77.0, 7) is works.windmill.gym.presentation.WorkoutChange.Saved)
             runCurrent()
-            assertEquals(listOf(100.0 to 6), store.lastTime!!.sets.map { it.weightKg to it.reps })
-            assertEquals(77.0 to 7, store.rack!!.weightKg to store.rack!!.reps)
-            assertEquals(77.0 to 7, store.notification.value!!.offer!!.weightKg to store.notification.value!!.offer!!.reps)
+            assertEquals(listOf(100.0 to 6), store.workout.lastTime!!.sets.map { it.weightKg to it.reps })
+            assertEquals(77.0 to 7, store.workout.rack!!.weightKg to store.workout.rack!!.reps)
+            assertEquals(77.0 to 7, store.workout.notification.value!!.offer!!.weightKg to store.workout.notification.value!!.offer!!.reps)
         }
     }
 
@@ -485,7 +485,7 @@ class EngineReadTests {
             seed("A", 140.0)
             val store = TrainingStore(WorkoutControls(file), training, backgroundScope, now = { now }, readDispatcher = reads)
             store.connect(Account("http://127.0.0.1:8098", User("A", "a@example.com")))
-            assertEquals(listOf(140.0), store.lastTime!!.sets.map { it.weightKg })
+            assertEquals(listOf(140.0), store.workout.lastTime!!.sets.map { it.weightKg })
             store.prepareEngineTransition()
             engine.signOut("keep")
             engine.signIn("B", mapOf("gym" to false))
@@ -498,10 +498,10 @@ class EngineReadTests {
             try {
                 runCurrent()
                 assertFalse(held.isEmpty())
-                assertTrue(store.lastTime!!.isUnread)
-                assertEquals("sessionB", store.session!!.id)
-                assertEquals(20.0, store.rack!!.weightKg, 0.0)
-                assertEquals(20.0, store.notification.value!!.offer!!.weightKg, 0.0)
+                assertTrue(store.workout.lastTime!!.isUnread)
+                assertEquals("sessionB", store.workout.session!!.id)
+                assertEquals(20.0, store.workout.rack!!.weightKg, 0.0)
+                assertEquals(20.0, store.workout.notification.value!!.offer!!.weightKg, 0.0)
             } finally {
                 pauseAt = 0
                 while (held.isNotEmpty()) {
@@ -510,8 +510,8 @@ class EngineReadTests {
                 }
             }
             connection.await()
-            assertEquals(listOf(80.0), store.lastTime!!.sets.map { it.weightKg })
-            assertEquals(80.0, store.rack!!.weightKg, 0.0)
+            assertEquals(listOf(80.0), store.workout.lastTime!!.sets.map { it.weightKg })
+            assertEquals(80.0, store.workout.rack!!.weightKg, 0.0)
         }
     }
 
@@ -539,12 +539,12 @@ class EngineReadTests {
             store.connect(Account("http://127.0.0.1:8098", null))
             assertEquals(3, changes)
             runCurrent()
-            assertFalse(store.isLoading)
-            assertEquals("session1", store.session!!.id)
-            assertEquals("bench-press", store.exerciseId)
-            assertEquals("bench-press", store.lastTime!!.exerciseId.record.string)
-            assertFalse(store.lastTime!!.isUnread)
-            assertNotNull(store.notification.value!!.offer)
+            assertFalse(store.seat.isLoading)
+            assertEquals("session1", store.workout.session!!.id)
+            assertEquals("bench-press", store.workout.exerciseId)
+            assertEquals("bench-press", store.workout.lastTime!!.exerciseId.record.string)
+            assertFalse(store.workout.lastTime!!.isUnread)
+            assertNotNull(store.workout.notification.value!!.offer)
         }
     }
 
@@ -576,7 +576,7 @@ class EngineReadTests {
             engine.signIn("first", mapOf("gym" to false))
             training.createRoutine(RoutineWrite("routine1", "Push A", 0, listOf(RoutineEntryWrite("bench-press"))))
             store.connect(Account("http://127.0.0.1:8098", User("first", "first@example.com")))
-            assertEquals(listOf("routine1"), store.routines.map { it.id })
+            assertEquals(listOf("routine1"), store.routines.all.map { it.id })
             store.observeEngine()
             runCurrent()
             engine.signOut("keep")
@@ -585,16 +585,16 @@ class EngineReadTests {
             churn = true
             val connection = async(start = CoroutineStart.UNDISPATCHED) {
                 store.connect(Account("http://127.0.0.1:8098", User("other", "other@example.com")))
-                store.isLoading
+                store.seat.isLoading
             }
-            assertEquals(emptyList<String>(), store.routines.map { it.id })
+            assertEquals(emptyList<String>(), store.routines.all.map { it.id })
             assertTrue(connection.await())
             runCurrent()
             assertEquals(3, changes)
-            assertFalse(store.isLoading)
-            assertNull(store.workoutFailure)
-            assertEquals(listOf("routine2"), store.routines.map { it.id })
-            assertTrue(store.start("routine2") is GymResult.Ok)
+            assertFalse(store.seat.isLoading)
+            assertNull(store.workout.workoutFailure)
+            assertEquals(listOf("routine2"), store.routines.all.map { it.id })
+            assertTrue(store.workout.start("routine2") is GymResult.Ok)
         }
     }
 
@@ -611,15 +611,15 @@ class EngineReadTests {
             val store = TrainingStore(WorkoutControls(File(temporary.root, "controls.json")), training, backgroundScope,
                 readDispatcher = StandardTestDispatcher(testScheduler))
             store.connect(Account("http://127.0.0.1:8098", null))
-            assertTrue(store.start("routine1") is GymResult.Ok)
-            store.choose("bench-press")
-            store.logSet(50.0, 8)
-            val set = store.sets.single()
+            assertTrue(store.workout.start("routine1") is GymResult.Ok)
+            store.workout.choose("bench-press")
+            store.workout.logSet(50.0, 8)
+            val set = store.workout.sets.single()
             engine.commit(ScopeRef.product("gym")) {
                 Gesture(emptyList(), local = listOf(DeviceWrite("rack:capturerevision", Json.of(1)))) to Unit
             }
             unavailable = true
-            assertEquals(setOf(set.id), store.stalled)
+            assertEquals(setOf(set.id), store.workout.stalled)
             unavailable = false
         }
     }
@@ -642,10 +642,10 @@ class EngineReadTests {
             val runtime = GymRuntime(store, cachedOwner = { null }, authorityAvailable = { true }, dispatcher = delegate)
             runtime.restoreLocal()
             assertEquals(3, changes)
-            assertNull(store.workoutFailure)
-            assertTrue(store.start("routine1") is GymResult.Failed)
+            assertNull(store.workout.workoutFailure)
+            assertTrue(store.workout.start("routine1") is GymResult.Failed)
             runtime.restoreLocal()
-            assertTrue(store.start("routine1") is GymResult.Ok)
+            assertTrue(store.workout.start("routine1") is GymResult.Ok)
         }
     }
     @Test fun abandonedLastTimeRestoreDoesNotMarkTheWorkoutReady() = runTest {
@@ -656,8 +656,8 @@ class EngineReadTests {
             val file = File(temporary.root, "controls.json")
             val first = TrainingStore(WorkoutControls(file), training, backgroundScope, readDispatcher = delegate)
             first.connect(Account("http://127.0.0.1:8098", null))
-            val opened = (first.start("routine1") as GymResult.Ok).value
-            first.choose("bench-press")
+            val opened = (first.workout.start("routine1") as GymResult.Ok).value
+            first.workout.choose("bench-press")
             val controls = WorkoutControls(file)
             assertEquals(engine.activeReplica(), controls.engineReplica)
             var readsCompleted = 0
@@ -673,12 +673,12 @@ class EngineReadTests {
             val restored = TrainingStore(controls, training, backgroundScope, readDispatcher = reads)
             assertFalse(restored.restoreWorkout(null, true))
             assertEquals(3, changes)
-            assertNull(restored.notification.value)
+            assertNull(restored.workout.notification.value)
             assertTrue(restored.restoreWorkout(null, true))
-            assertEquals(opened, restored.session)
-            assertEquals("bench-press", restored.exerciseId)
-            assertNotNull(restored.lastTime)
-            assertNotNull(restored.notification.value)
+            assertEquals(opened, restored.workout.session)
+            assertEquals("bench-press", restored.workout.exerciseId)
+            assertNotNull(restored.workout.lastTime)
+            assertNotNull(restored.workout.notification.value)
         }
     }
 }

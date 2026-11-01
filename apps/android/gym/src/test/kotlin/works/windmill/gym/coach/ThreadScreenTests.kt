@@ -110,7 +110,7 @@ class ThreadScreenTests {
     }
 
     private fun saved(room: EngineRoomFixture, server: ModelServer, draft: RoutineDraft): Routine = runBlocking {
-        (room.store.saveRoutine(draft.capturingMovements(room.store.catalog)) as GymResult.Ok).value.also { room.sync(server) }
+        (room.store.routines.saveRoutine(draft.capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value.also { room.sync(server) }
     }
 
     // Coach writes the proposal on the server inside the conversation, and this phone pulls it.
@@ -136,7 +136,7 @@ class ThreadScreenTests {
 
     // A decision waits for the server's receipt, so the phone syncs while it is pending.
     private fun applied(room: EngineRoomFixture, server: ModelServer) = runBlocking {
-        val decision = async { room.store.applyProposal("proposal1") }
+        val decision = async { room.store.routines.applyProposal("proposal1") }
         while (room.outbox().isEmpty() && !decision.isCompleted) yield()
         room.sync(server)
         decision.await() as ProposalOutcome.Decided
@@ -349,7 +349,7 @@ class ThreadScreenTests {
         compose.onNodeWithText(Ask.promise).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf("proposal1"), reviewed)
-            assertEquals(ProposalRead.Found(settled.proposal), runBlocking { room.store.proposal("proposal1") })
+            assertEquals(ProposalRead.Found(settled.proposal), runBlocking { room.store.routines.proposal("proposal1") })
             assertEquals(thread.turns, rest.conversations.getValue(thread.id).turns)
         }
         scope.cancel()

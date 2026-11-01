@@ -153,16 +153,16 @@ fun LoggerScreen(
     onHide: () -> Unit = {},
 ) {
     val skin = LocalGymColors.current
-    val notification = store.notification.collectAsState().value
+    val notification = store.workout.notification.collectAsState().value
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
-    val weightKg = store.rack?.weightKg ?: store.prefill.weightKg
-    val reps = store.rack?.reps ?: store.prefill.reps
-    val pickerState = rememberMovementPickerState(store.accountKey, store.session?.id)
+    val weightKg = store.workout.rack?.weightKg ?: store.workout.prefill.weightKg
+    val reps = store.workout.rack?.reps ?: store.workout.prefill.reps
+    val pickerState = rememberMovementPickerState(store.seat.accountKey, store.workout.session?.id)
     var sheet by rememberSaveable(stateSaver = loggerSheetSaver) { mutableStateOf<LoggerSheet?>(null) }
-    val rackOwner = store.accountKey
-    val rackSession = store.session?.id
-    val rackMovement = store.exerciseId
+    val rackOwner = store.seat.accountKey
+    val rackSession = store.workout.session?.id
+    val rackMovement = store.workout.exerciseId
     var rackEditing by remember(rackOwner, rackSession, rackMovement) { mutableStateOf(false) }
     var fixBusy by remember { mutableStateOf(false) }
     var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -187,15 +187,15 @@ fun LoggerScreen(
     LaunchedEffect(sheet, goingTo, rackOwner, rackSession) {
         if (sheet != null) return@LaunchedEffect
         val destination = goingTo ?: return@LaunchedEffect
-        val previous = store.exerciseId
-        try { store.choose(destination.movement) }
+        val previous = store.workout.exerciseId
+        try { store.workout.choose(destination.movement) }
         finally {
-            if (store.accountKey == rackOwner && store.session?.id == rackSession && goingTo == destination) {
-                if (previous != destination.movement && store.exerciseId == destination.movement) {
+            if (store.seat.accountKey == rackOwner && store.workout.session?.id == rackSession && goingTo == destination) {
+                if (previous != destination.movement && store.workout.exerciseId == destination.movement) {
                     telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"))
                 }
                 if (destination.fromPicker) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_add",
-                    "outcome" to if (store.exerciseId == destination.movement) "ok" else "refused"))
+                    "outcome" to if (store.workout.exerciseId == destination.movement) "ok" else "refused"))
                 goingTo = null
             }
         }
@@ -208,13 +208,13 @@ fun LoggerScreen(
         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_cancel", "outcome" to "ok"))
     }
 
-    val pickerUp = store.exerciseId == null || sheet == LoggerSheet.Picker
+    val pickerUp = store.workout.exerciseId == null || sheet == LoggerSheet.Picker
     LaunchedEffect(pickerUp) {
-        if (pickerUp) store.loadLastSets()
+        if (pickerUp) store.workout.loadLastSets()
     }
 
     LaunchedEffect(sheet) {
-        store.editWorkout(rackEditing || sheet is LoggerSheet.Fix)
+        store.workout.editWorkout(rackEditing || sheet is LoggerSheet.Fix)
     }
 
     LaunchedEffect(Unit) {
@@ -224,34 +224,34 @@ fun LoggerScreen(
         }
     }
 
-    val movement = store.exerciseId
-    val order = store.order
+    val movement = store.workout.exerciseId
+    val order = store.workout.order
     val at = order.indexOf(movement)
     val pagerOrder by rememberUpdatedState(order)
     val pager = rememberPagerState(initialPage = at.coerceAtLeast(0)) { pagerOrder.size }
-    var alignedMovement by remember(store.accountKey, store.session?.id) { mutableStateOf<String?>(null) }
-    var alignedOrder by remember(store.accountKey, store.session?.id) { mutableStateOf(emptyList<String>()) }
+    var alignedMovement by remember(store.seat.accountKey, store.workout.session?.id) { mutableStateOf<String?>(null) }
+    var alignedOrder by remember(store.seat.accountKey, store.workout.session?.id) { mutableStateOf(emptyList<String>()) }
     val bodyDrag = remember { MutableInteractionSource() }
-    var dragCancelled by remember(store.accountKey, store.session?.id) { mutableStateOf(false) }
-    var dragStopped by remember(store.accountKey, store.session?.id) { mutableStateOf(false) }
+    var dragCancelled by remember(store.seat.accountKey, store.workout.session?.id) { mutableStateOf(false) }
+    var dragStopped by remember(store.seat.accountKey, store.workout.session?.id) { mutableStateOf(false) }
     val ready = !pager.isScrollInProgress && pager.currentPageOffsetFraction == 0f && !dragCancelled &&
         order.getOrNull(pager.settledPage) == movement && goingTo == null
     val fling = PagerDefaults.flingBehavior(state = pager)
-    val finishing = store.isFinishing || store.workoutFailure != null
-    val rackExercise = store.catalog.firstOrNull { it.id == movement }
+    val finishing = store.workout.isFinishing || store.workout.workoutFailure != null
+    val rackExercise = store.routines.catalog.firstOrNull { it.id == movement }
     val rackKey = "$rackOwner:$rackSession:$movement"
     val entry = RackEntry(
         load = rememberNumberDraft(rackKey, NumberEntry.Field.Load, weightKg, rackExercise?.loadFloor),
         count = rememberNumberDraft(rackKey, NumberEntry.Field.Reps, reps.toDouble()),
         accepting = ready && !finishing,
-        change = store::editRack,
+        change = store.workout::editRack,
     )
     // Back hides the workout as the button does, keeping what is typed first.
     KeepOnBack { entry.leave() }
 
     // Compose fires no dismiss callback on a programmatic close, so every close routes through here.
     fun close() {
-        store.editWorkout(false)
+        store.workout.editWorkout(false)
         scope.launch { sheetState.hide() }.invokeOnCompletion {
             sheet?.let { sheetStates.removeState(if (it is LoggerSheet.Fix) "fix:${it.setId}" else it.javaClass.simpleName) }
             sheet = null
@@ -274,7 +274,7 @@ fun LoggerScreen(
     }
     val onMove by rememberUpdatedState<(String) -> Boolean> { move(it) }
 
-    LaunchedEffect(store.accountKey, store.session?.id, movement, order) {
+    LaunchedEffect(store.seat.accountKey, store.workout.session?.id, movement, order) {
         if (alignedMovement == movement && alignedOrder == order) return@LaunchedEffect
         if (at >= 0) {
             with(pager) { scroll(MutatePriority.PreventUserInput) { updateCurrentPage(at) } }
@@ -282,14 +282,14 @@ fun LoggerScreen(
         alignedMovement = movement
         alignedOrder = order
     }
-    LaunchedEffect(pager, store.accountKey, store.session?.id) {
+    LaunchedEffect(pager, store.seat.accountKey, store.workout.session?.id) {
         snapshotFlow {
             if (pager.isScrollInProgress || pager.currentPageOffsetFraction != 0f) null
             else Triple(pager.settledPage, dragCancelled, dragStopped)
         }.collect { settled ->
             val (page, cancelled, stopped) = settled ?: return@collect
             if (cancelled) {
-                val current = store.order.indexOf(store.exerciseId)
+                val current = store.workout.order.indexOf(store.workout.exerciseId)
                 if (current >= 0 && page != current) {
                     with(pager) { scroll(MutatePriority.PreventUserInput) { updateCurrentPage(current) } }
                 } else dragCancelled = false
@@ -297,16 +297,16 @@ fun LoggerScreen(
             }
             if (!stopped) return@collect
             dragStopped = false
-            if (alignedMovement != store.exerciseId || alignedOrder != store.order) return@collect
-            val destination = store.order.getOrNull(page) ?: return@collect
-            if (destination == store.exerciseId) return@collect
+            if (alignedMovement != store.workout.exerciseId || alignedOrder != store.workout.order) return@collect
+            val destination = store.workout.order.getOrNull(page) ?: return@collect
+            if (destination == store.workout.exerciseId) return@collect
             if (!onMove(destination)) {
-                val current = store.order.indexOf(store.exerciseId)
+                val current = store.workout.order.indexOf(store.workout.exerciseId)
                 if (current >= 0) pager.scrollToPage(current)
             }
         }
     }
-    LaunchedEffect(bodyDrag, pager, store.accountKey, store.session?.id) {
+    LaunchedEffect(bodyDrag, pager, store.seat.accountKey, store.workout.session?.id) {
         bodyDrag.interactions.collect { interaction ->
             when (interaction) {
                 is DragInteraction.Start -> { dragCancelled = false; dragStopped = false }
@@ -314,7 +314,7 @@ fun LoggerScreen(
                 is DragInteraction.Cancel -> {
                     dragStopped = false
                     dragCancelled = true
-                    val current = store.order.indexOf(store.exerciseId)
+                    val current = store.workout.order.indexOf(store.workout.exerciseId)
                     if (current >= 0) {
                         with(pager) { scroll(MutatePriority.PreventUserInput) { updateCurrentPage(current) } }
                     }
@@ -323,11 +323,11 @@ fun LoggerScreen(
         }
     }
 
-    val title = store.session?.plan?.routine ?: Readout.noRoutine
+    val title = store.workout.session?.plan?.routine ?: Readout.noRoutine
     GymScreen(
         title = title,
         titleAlignment = TextAlign.Center,
-        navigation = { TopAction("Finish", enabled = store.canFinish, onClick = { entry.leave(); onFinish() }) },
+        navigation = { TopAction("Finish", enabled = store.workout.canFinish, onClick = { entry.leave(); onFinish() }) },
         actions = { IconButton(onClick = ::hide) {
             Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = skin.inkDim)
         } },
@@ -341,8 +341,8 @@ fun LoggerScreen(
               flingBehavior = fling,
               interactionSource = bodyDrag,
           )) {
-        val clocks = store.session?.let { session ->
-            WorkoutClocks(session, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, nowMs)
+        val clocks = store.workout.session?.let { session ->
+            WorkoutClocks(session, store.workout.sets.filterNot { it.id in store.held.withheldIds || it.id in store.held.deletedSets }, nowMs)
         }
         if (movement == null) {
             Column(Modifier.fillMaxSize().padding(horizontal = GymLayout.gutter)) {
@@ -351,23 +351,23 @@ fun LoggerScreen(
                     Modifier.fillMaxWidth().padding(top = GymLayout.contentTop),
                     verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
                 ) {
-                    StrandedBand(store.strandedCount, store.strandedBy)
-                    Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
+                    StrandedBand(store.workout.strandedCount, store.workout.strandedBy)
+                    Refusals(store.workout.refusals, store.routines.catalog, onDismiss = { store.clearRefusals() })
                 }
                 // The running session is already drawn twice above — the title and Finish exist only
                 // while one runs — so a free session's picker carries no subtitle.
                 MovementPicker(
-                    catalog = store.catalog,
-                    taken = store.order,
-                    lastSets = store.lastSets,
+                    catalog = store.routines.catalog,
+                    taken = store.workout.order,
+                    lastSets = store.workout.lastSets,
                     nowMs = nowMs,
-                    sessions = store.recent,
+                    sessions = store.history.recent,
                     title = "What are you lifting?",
-                    subtitle = if (store.session?.plan == null) null else "nothing in this plan is left to walk",
-                    onPick = { picked -> scope.launch { store.choose(picked) } },
+                    subtitle = if (store.workout.session?.plan == null) null else "nothing in this plan is left to walk",
+                    onPick = { picked -> scope.launch { store.workout.choose(picked) } },
                     onCreate = { write ->
-                        val result = store.createForWorkout(write, rackSession.orEmpty(), rackOwner, store.workoutReplica)
-                        if (store.accountKey == rackOwner && store.session?.id == rackSession) result
+                        val result = store.workout.createForWorkout(write, rackSession.orEmpty(), rackOwner, store.seat.replica)
+                        if (store.seat.accountKey == rackOwner && store.workout.session?.id == rackSession) result
                         else MovementCreateOutcome.Failed(WriteFailure.Refused("The workout changed. Open this again."))
                     },
                     state = pickerState,
@@ -396,13 +396,13 @@ fun LoggerScreen(
                         val active = pageMovement == movement
                         val visible = kotlin.math.abs(pager.currentPage - page + pager.currentPageOffsetFraction) < 1f
                         val enabled = active && ready
-                        val today = store.sets.filter {
-                            it.exerciseId == pageMovement && it.id !in store.withheldIds && it.id !in store.deletedSets
+                        val today = store.workout.sets.filter {
+                            it.exerciseId == pageMovement && it.id !in store.held.withheldIds && it.id !in store.held.deletedSets
                         }
-                        val exercise = store.catalog.firstOrNull { it.id == pageMovement }
+                        val exercise = store.routines.catalog.firstOrNull { it.id == pageMovement }
                         val unit = Readout.loadUnit(exercise)
-                        val slots = LiveLines.slots(today, store.session?.id.orEmpty(), store.session?.plan?.entry(pageMovement), store.lastTimeOf(pageMovement),
-                            store.stalled, unit)
+                        val slots = LiveLines.slots(today, store.workout.session?.id.orEmpty(), store.workout.session?.plan?.entry(pageMovement), store.workout.lastTimeOf(pageMovement),
+                            store.workout.stalled, unit)
                         var ledgerBottom by remember(pageMovement) { mutableStateOf(0.dp) }
                         val pageSemantics = if (!visible) Modifier.clearAndSetSemantics {}
                             else Modifier.semantics { if (!active) hideFromAccessibility() }
@@ -410,7 +410,7 @@ fun LoggerScreen(
                             Modifier.fillMaxWidth().then(pageSemantics).padding(horizontal = GymLayout.gutter),
                         ) {
                             MovementHead(
-                                name = Readout.movement(pageMovement, store.catalog),
+                                name = Readout.movement(pageMovement, store.routines.catalog),
                                 equipment = exercise?.equipment.orEmpty(),
                                 place = LiveLines.place(pageOrder, pageMovement),
                                 enabled = enabled,
@@ -423,8 +423,8 @@ fun LoggerScreen(
                                 },
                             )
                             clocks?.let { WorkoutClockRow(it) }
-                            StrandedBand(store.strandedCount, store.strandedBy)
-                            Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
+                            StrandedBand(store.workout.strandedCount, store.workout.strandedBy)
+                            Refusals(store.workout.refusals, store.routines.catalog, onDismiss = { store.clearRefusals() })
                             Ledger(
                                 slots = slots,
                                 inHand = active,
@@ -443,19 +443,19 @@ fun LoggerScreen(
             },
             exercise = rackExercise,
             finishing = finishing,
-            failure = store.workoutFailure,
+            failure = store.workout.workoutFailure,
             enabled = ready,
             onEdit = { active ->
-                if (store.accountKey == rackOwner && store.session?.id == rackSession && store.exerciseId == rackMovement &&
+                if (store.seat.accountKey == rackOwner && store.workout.session?.id == rackSession && store.workout.exerciseId == rackMovement &&
                     rackEditing != active) {
                     rackEditing = active
-                    store.editWorkout(active || sheet is LoggerSheet.Fix)
+                    store.workout.editWorkout(active || sheet is LoggerSheet.Fix)
                 }
             },
             onLog = {
-                val offer = store.notification.value?.offer
-                if (offer == null) say(store.workoutFailure ?: "Check the weight and reps before logging.")
-                else when (val accepted = store.acceptSet(works.windmill.gym.presentation.LogSetCommand(offer.key, offer.id))) {
+                val offer = store.workout.notification.value?.offer
+                if (offer == null) say(store.workout.workoutFailure ?: "Check the weight and reps before logging.")
+                else when (val accepted = store.workout.acceptSet(works.windmill.gym.presentation.LogSetCommand(offer.key, offer.id))) {
                     is works.windmill.gym.presentation.LogSetAcceptance.Unavailable -> say(accepted.reason)
                     works.windmill.gym.presentation.LogSetAcceptance.Stale -> say("The workout changed. Check the current set.")
                     is works.windmill.gym.presentation.LogSetAcceptance.Accepted -> say(null)
@@ -467,7 +467,7 @@ fun LoggerScreen(
 
     // Fix set stands on a row the ledger draws and is titled by that row's count. A fix for a set that has since left
     // the ledger, held or deleted, has nothing to stand on.
-    val drawnToday = store.todaySets.filter { it.id !in store.withheldIds && it.id !in store.deletedSets }
+    val drawnToday = store.workout.todaySets.filter { it.id !in store.held.withheldIds && it.id !in store.held.deletedSets }
     val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> drawnToday.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
@@ -483,25 +483,25 @@ fun LoggerScreen(
             sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.setId}" else open.javaClass.simpleName) {
             when (open) {
                 LoggerSheet.Assembly -> AssemblySheet(
-                    rows = LiveLines.assemblyRows(store.order, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, store.session?.plan,
-                                                  store.catalog, store.exerciseId, store.stalled),
-                    routine = store.session?.plan?.routine,
+                    rows = LiveLines.assemblyRows(store.workout.order, store.workout.sets.filterNot { it.id in store.held.withheldIds || it.id in store.held.deletedSets }, store.workout.session?.plan,
+                                                  store.routines.catalog, store.workout.exerciseId, store.workout.stalled),
+                    routine = store.workout.session?.plan?.routine,
                     onJump = { move(it) },
                     onReorder = { from, to ->
-                        val before = store.order
-                        store.reorder(from, to)
-                        if (before != store.order) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "reorder", "outcome" to "ok"))
+                        val before = store.workout.order
+                        store.workout.reorder(from, to)
+                        if (before != store.workout.order) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "reorder", "outcome" to "ok"))
                     },
                     onDrop = {
-                        val accepted = store.drop(it)
+                        val accepted = store.workout.drop(it)
                         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "remove", "outcome" to if (accepted) "ok" else "refused"))
                         accepted
                     },
                     onHide = ::hide,
                     notificationOff = notification?.hidden == true,
                     onShowNotification = {
-                        val result = notification?.key?.let { store.showWorkout(it, false) }
-                            ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
+                        val result = notification?.key?.let { store.workout.showWorkout(it, false) }
+                            ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: "The workout is not ready.")
                         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "show_notification",
                             "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
                         if (result is WorkoutChange.Unavailable) { sheet = null; say(result.reason) }
@@ -512,17 +512,17 @@ fun LoggerScreen(
                     },
                 )
                 LoggerSheet.Picker -> MovementPicker(
-                    catalog = store.catalog,
-                    taken = store.order,
-                    lastSets = store.lastSets,
+                    catalog = store.routines.catalog,
+                    taken = store.workout.order,
+                    lastSets = store.workout.lastSets,
                     nowMs = nowMs,
-                    sessions = store.recent,
+                    sessions = store.history.recent,
                     title = "Add movement",
                     onPick = { move(it, fromPicker = true) },
                     onCreate = { write ->
-                        val previous = store.exerciseId
-                        val result = store.createForWorkout(write, rackSession.orEmpty(), rackOwner, store.workoutReplica)
-                        if (store.accountKey != rackOwner || store.session?.id != rackSession)
+                        val previous = store.workout.exerciseId
+                        val result = store.workout.createForWorkout(write, rackSession.orEmpty(), rackOwner, store.seat.replica)
+                        if (store.seat.accountKey != rackOwner || store.workout.session?.id != rackSession)
                             MovementCreateOutcome.Failed(WriteFailure.Refused("The workout changed. Open this again."))
                         else {
                             if (result is MovementCreateOutcome.Added && previous != result.movement.id)
@@ -544,20 +544,20 @@ fun LoggerScreen(
                 )
                 is LoggerSheet.Fix -> {
                     val set = fixing!!
-                    val sessionId = store.session?.id
+                    val sessionId = store.workout.session?.id
                     FixSheet(
                         set = set,
-                        exercise = store.catalog.firstOrNull { it.id == set.exerciseId },
+                        exercise = store.routines.catalog.firstOrNull { it.id == set.exerciseId },
                         origin = FixOrigin.Workout,
-                        movement = Readout.movement(set.exerciseId, store.catalog),
+                        movement = Readout.movement(set.exerciseId, store.routines.catalog),
                         position = drawnToday.indexOf(set) + 1,
-                        routine = store.session?.plan?.routine,
+                        routine = store.workout.session?.plan?.routine,
                         onSave = { fix ->
                             if (sessionId == null) {
                                 telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused"))
                                 FixOutcome.Gone("that workout is no longer open")
                             }
-                            else store.fixSet(sessionId, set.id, fix, FixOrigin.Workout)
+                            else store.workout.fixSet(sessionId, set.id, fix, FixOrigin.Workout)
                         },
                         onSaved = { close(); say(null) },
                         onGone = { close(); say(it) },
@@ -566,7 +566,7 @@ fun LoggerScreen(
                         onDelete = {
                             close()
                             say(null)
-                            if (sessionId != null) scope.launch { say(store.delete(Deletion.Set(sessionId, set))?.line("that set is still on the log")) }
+                            if (sessionId != null) scope.launch { say(store.deletions.delete(Deletion.Set(sessionId, set))?.line("that set is still on the log")) }
                         },
                     )
                 }

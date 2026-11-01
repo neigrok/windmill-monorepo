@@ -70,7 +70,7 @@ class LogTransientTests {
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             val before = compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot()
-            compose.runOnIdle { store.withhold(Deletion.Session(one)); store.withhold(Deletion.Session(two)) }
+            compose.runOnIdle { store.deletions.withhold(Deletion.Session(one)); store.deletions.withhold(Deletion.Session(two)) }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
             val snackbar = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion) and
                 SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss), useUnmergedTree = true)
@@ -84,16 +84,16 @@ class LogTransientTests {
             compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.runOnIdle {
-                assertEquals(listOf(one), store.withheld.map { it.subjectId })
-                assertEquals(listOf(two), store.recent.map { it.id })
+                assertEquals(listOf(one), store.held.withheld.map { it.subjectId })
+                assertEquals(listOf(two), store.history.recent.map { it.id })
                 assertEquals(original, room.training.details())
             }
             assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot())
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.waitForIdle()
             compose.runOnIdle {
-                assertEquals(emptyList<WithheldDelete>(), store.withheld)
-                assertEquals(listOf(two, one), store.recent.map { it.id })
+                assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
+                assertEquals(listOf(two, one), store.history.recent.map { it.id })
                 assertEquals(original, room.training.details())
             }
             assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot())
@@ -116,27 +116,27 @@ class LogTransientTests {
             room.now = System.currentTimeMillis()
             runBlocking {
                 room.select(null)
-                assertNull(room.store.weighIn(day, 82.4))
+                assertNull(room.store.bodyweight.weighIn(day, 82.4))
             }
             room.store.observeEngine()
             val store = room.store
-            val weighed = store.bodyweight
+            val weighed = store.bodyweight.drawn
             compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             val at = compose.runOnIdle {
-                assertEquals(20_000L, store.undoWindowMs)
-                room.now.also { store.withhold(Deletion.Bodyweight(day)) }
+                assertEquals(20_000L, store.deletions.undoWindowMs)
+                room.now.also { store.deletions.withhold(Deletion.Bodyweight(day)) }
             }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
             compose.runOnIdle {
-                assertEquals(listOf(day to at + 20_000), store.withheld.map { it.subjectId to it.untilMs })
+                assertEquals(listOf(day to at + 20_000), store.held.withheld.map { it.subjectId to it.untilMs })
                 room.now = at + 15_000
             }
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.waitForIdle()
             compose.runOnIdle {
-                assertEquals(emptyList<WithheldDelete>(), store.withheld)
-                assertEquals(weighed, store.bodyweight)
+                assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
+                assertEquals(weighed, store.bodyweight.drawn)
                 assertEquals(emptyList<Any>(), room.engine.undoOffers())
             }
             compose.onNodeWithText(Withheld.alreadyGone).assertDoesNotExist()

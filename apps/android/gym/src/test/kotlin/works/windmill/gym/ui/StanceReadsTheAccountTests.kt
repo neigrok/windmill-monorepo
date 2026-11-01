@@ -114,23 +114,23 @@ class StanceReadsTheAccountTests {
         }
         compose.onNodeWithText("No workouts yet").assertDoesNotExist()
 
-        compose.runOnIdle { store.withhold(Deletion.Session(session.id)) }
+        compose.runOnIdle { store.deletions.withhold(Deletion.Session(session.id)) }
 
         compose.onNodeWithText("No workouts yet").assertDoesNotExist()
         compose.onNodeWithText("Your training will land here.").assertDoesNotExist()
         compose.onNodeWithText("opening the log…").assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals("the row is off the screen", emptyList<String>(), store.recent.map { it.id })
+            assertEquals("the row is off the screen", emptyList<String>(), store.history.recent.map { it.id })
             assertEquals("and still on the account, which is what Undo puts back",
-                listOf(session.id), store.allSessions.map { it.id })
+                listOf(session.id), store.history.allSessions.map { it.id })
         }
 
         // And the second half: the settled delete leaves the READ, so the invitation becomes true
         // rather than never being drawn again.
-        val deleted = compose.runOnIdle { scope.async { store.settleWithheld(session.id) } }
+        val deleted = compose.runOnIdle { scope.async { store.deletions.settleWithheld(session.id) } }
         compose.waitUntil(10_000) { compose.runOnIdle { deleted.isCompleted } }
         runBlocking { deleted.await() }
-        compose.runOnIdle { assertEquals(emptyList<String>(), store.allSessions.map { it.id }) }
+        compose.runOnIdle { assertEquals(emptyList<String>(), store.history.allSessions.map { it.id }) }
         compose.onNodeWithText("No workouts yet").assertIsDisplayed()
         scope.cancel()
     }
@@ -144,21 +144,21 @@ class StanceReadsTheAccountTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try {
             val store = room(scope).store
-            runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
+            runBlocking { store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
             val drafts = mutableListOf<RoutineDraft>()
             compose.setContent {
                 RoutinesScreen(store = store, lookedAt = emptySet(), seat = "s",
                     onBuild = { drafts += it }, onOpenRoutine = {}, onDeleteRoutine = { true }, onReview = {})
             }
-            val id = store.routines.single().id
-            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Routine(id, "Push Day"))) } }
+            val id = store.routines.all.single().id
+            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Routine(id, "Push Day"))) } }
             compose.onNodeWithText("Push Day").assertDoesNotExist()
             compose.onNodeWithText("No routines yet.").assertIsDisplayed()
             compose.onNodeWithContentDescription("New routine").performClick()
             compose.runOnIdle {
                 assertEquals(listOf(0), drafts.map { it.position })
-                assertEquals(emptyList<String>(), store.allRoutines.map { it.name })
-                assertNull(store.keepWithheld())
+                assertEquals(emptyList<String>(), store.routines.all.map { it.name })
+                assertNull(store.deletions.keepWithheld())
             }
             compose.onNodeWithText("Start logging").assertDoesNotExist()
         } finally { scope.cancel() }
@@ -178,7 +178,7 @@ class StanceReadsTheAccountTests {
         compose.runOnIdle {
             assertEquals(emptyList<AskThread>(), store.coach.allThreads)
             assertEquals(emptySet<String>(), server.conversations.keys)
-            assertEquals(emptyList<Any>(), store.withheld)
+            assertEquals(emptyList<Any>(), store.held.withheld)
         }
         compose.onNodeWithText(Threads.none).assertIsDisplayed()
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
@@ -197,14 +197,14 @@ class StanceReadsTheAccountTests {
         val oldMs = old.startedAtMs
         val newMs = new.startedAtMs
         assertEquals("the log is read to its bottom, which is when the foot says this at all",
-            Older.End, store.older)
+            Older.End, store.history.older)
         compose.setContent {
             LogScreen(store = store, seat = "", onOpenSession = {}, onOpenBodyweight = {},
                 onShareSession = {}, onDiscardSession = {})
         }
         compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
 
-        compose.runOnIdle { store.withhold(Deletion.Session(old.id)) }
+        compose.runOnIdle { store.deletions.withhold(Deletion.Session(old.id)) }
 
         compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("First workout · ${Readout.date(newMs)}").assertDoesNotExist()
@@ -212,12 +212,12 @@ class StanceReadsTheAccountTests {
         // And the settled delete moves it, once, to the day the account actually started on. The
         // re-read is not enough on its own: a row deeper than the page it answers with is folded
         // straight back in, so the discard has to leave the READ itself.
-        val deleted = compose.runOnIdle { scope.async { store.settleWithheld(old.id) } }
+        val deleted = compose.runOnIdle { scope.async { store.deletions.settleWithheld(old.id) } }
         compose.waitUntil(10_000) { compose.runOnIdle { deleted.isCompleted } }
         runBlocking { deleted.await() }
         compose.runOnIdle {
             assertEquals("the log let go of it and never drew it again",
-                listOf(new.id), store.allSessions.map { it.id })
+                listOf(new.id), store.history.allSessions.map { it.id })
         }
         compose.onNodeWithText("First workout · ${Readout.date(newMs)}").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").assertDoesNotExist()
@@ -262,7 +262,7 @@ class StanceReadsTheAccountTests {
         assertTrue(deleted.isCompleted)
         assertEquals(GymResult.Ok(Unit), runBlocking { deleted.await() })
         assertEquals(emptyList<AskThread>(), store.coach.allThreads)
-        assertEquals(emptyList<Any>(), store.withheld)
+        assertEquals(emptyList<Any>(), store.held.withheld)
         scope.cancel()
     }
 
@@ -279,12 +279,12 @@ class StanceReadsTheAccountTests {
         room.now = 1_800_000_000_000L
         val started = scope.async {
             room.startExternalWorkout()
-            store.choose("back-squat")
-            store.logSet(100.0, 5)
+            store.workout.choose("back-squat")
+            store.workout.logSet(100.0, 5)
         }
         compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idle(); started.isCompleted }
         runBlocking { started.await() }
-        store.withhold(Deletion.Session(old.id))
+        store.deletions.withhold(Deletion.Session(old.id))
 
         compose.setContent { GymMaterial { GymRoom(account, store) } }
         compose.waitForIdle()
@@ -294,8 +294,8 @@ class StanceReadsTheAccountTests {
         }
 
         compose.runOnIdle {
-            assertEquals("one row drawn", 1, store.recent.size)
-            assertEquals("and two on the account", 2, store.allSessions.size)
+            assertEquals("one row drawn", 1, store.history.recent.size)
+            assertEquals("and two on the account", 2, store.history.allSessions.size)
         }
         compose.onNodeWithText("Your first session").assertDoesNotExist()
         scope.cancel()

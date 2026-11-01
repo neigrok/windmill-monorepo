@@ -32,17 +32,17 @@ class ConnectedLogReadTests {
         }
         EngineRoomFixture(tmp.newFolder(), this, rest = server).use { phone ->
             phone.select("u1")
-            val pending = async { phone.store.refreshConnectedLog() }
+            val pending = async { phone.store.sharing.refreshConnectedLog() }
             runCurrent()
-            assertEquals(ConnectedLogState.Unknown, phone.store.connectedLog)
+            assertEquals(ConnectedLogState.Unknown, phone.store.sharing.connectedLog)
             phone.select("u2"); phone.select("u1")
             release.complete(Unit)
             assertEquals(ConnectedLogState.Refused, pending.await())
-            assertEquals(ConnectedLogState.Unknown, phone.store.connectedLog)
-            val current = phone.store.readConnectedLog()
+            assertEquals(ConnectedLogState.Unknown, phone.store.sharing.connectedLog)
+            val current = phone.store.sharing.readConnectedLog()
             assertEquals(ConnectedLog.state(listOf(OAuthGrant("grant", "Current grant", 1, "gym:read")),
                 listOf(McpKey("key", "Static", 2))), current)
-            assertEquals(current, phone.store.connectedLog)
+            assertEquals(current, phone.store.sharing.connectedLog)
         }
     }
 
@@ -54,23 +54,23 @@ class ConnectedLogReadTests {
         }
         EngineRoomFixture(tmp.newFolder(), this, rest = server).use { phone ->
             phone.select("u1")
-            val pending = async { phone.store.refreshConnectedLog() }
+            val pending = async { phone.store.sharing.refreshConnectedLog() }
             runCurrent()
             val original = phone.account()
             phone.store.connect(Account(original.origin, original.user, identityRevision = 1))
             release.complete(Unit)
             assertEquals(ConnectedLogState.Refused, pending.await())
-            assertEquals(ConnectedLogState.Unknown, phone.store.connectedLog)
+            assertEquals(ConnectedLogState.Unknown, phone.store.sharing.connectedLog)
         }
     }
 
     @Test fun aMissingAuthenticatedTransportIsUnreadAndAnAnonymousPhoneMakesNoCredentialRead() = runTest {
         EngineRoomFixture(tmp.newFolder(), this).use { phone ->
             phone.select("u1")
-            assertEquals(ConnectedLogState.Refused, phone.store.refreshConnectedLog())
-            assertEquals(ConnectedLogState.Refused, phone.store.connectedLog)
+            assertEquals(ConnectedLogState.Refused, phone.store.sharing.refreshConnectedLog())
+            assertEquals(ConnectedLogState.Refused, phone.store.sharing.connectedLog)
             phone.select(null)
-            assertEquals(ConnectedLogState.None, phone.store.refreshConnectedLog())
+            assertEquals(ConnectedLogState.None, phone.store.sharing.refreshConnectedLog())
         }
     }
 }

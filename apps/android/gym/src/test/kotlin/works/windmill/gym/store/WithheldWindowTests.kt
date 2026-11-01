@@ -29,14 +29,14 @@ class WithheldWindowTests {
     fun anonymousDiscardIsAnAccountDecisionWithNoDeleteWindow() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            room.store.create("Unclaimed press", "machine", "exercise1")
+            room.store.routines.create("Unclaimed press", "machine", "exercise1")
             room.store.prepareEngineTransition()
             room.engine.signIn("u1", mapOf("gym" to true), mapOf("gym" to "discard"))
             room.selected = "u1"
             room.store.connect(room.account("u1"))
-            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
-            assertNull(room.store.holding)
-            assertFalse(room.store.catalog.any { it.id == "exercise1" })
+            assertEquals(emptyList<WithheldDelete>(), room.store.held.withheld)
+            assertNull(room.store.deletions.holding)
+            assertFalse(room.store.routines.catalog.any { it.id == "exercise1" })
         }
     }
 
@@ -44,13 +44,13 @@ class WithheldWindowTests {
     fun aRoutineLeavesTheProgramAtItsSettledDeleteWithNoUndo() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
-            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
-            assertNull(room.store.delete(Deletion.Routine(routine.id, routine.name)))
+            val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+            assertNull(room.store.deletions.delete(Deletion.Routine(routine.id, routine.name)))
             assertEquals(emptyList<Routine>(), room.training.program())
-            assertEquals(emptyList<Routine>(), room.store.routines)
-            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
-            assertNull(room.store.keepWithheld())
-            assertNull(room.store.delete(Deletion.Routine(routine.id, routine.name)))
+            assertEquals(emptyList<Routine>(), room.store.routines.all)
+            assertEquals(emptyList<WithheldDelete>(), room.store.held.withheld)
+            assertNull(room.store.deletions.keepWithheld())
+            assertNull(room.store.deletions.delete(Deletion.Routine(routine.id, routine.name)))
             assertEquals(1, room.outbox().count { entry -> entry.member("intent")["d"]?.arr()?.any {
                 it["t"]?.str() == "routine" && it["life"]?.arr()?.first()?.str() == "dead"
             } == true })
@@ -64,15 +64,15 @@ class WithheldWindowTests {
             val session = room.workout(82.5)
             runCurrent()
 
-            room.store.withhold(Deletion.Session(session.id))
+            room.store.deletions.withhold(Deletion.Session(session.id))
 
-            assertEquals("the row is off the log", emptyList<String>(), room.store.recent.map { it.id })
+            assertEquals("the row is off the log", emptyList<String>(), room.store.history.recent.map { it.id })
             assertEquals("and the workout is still on the account", listOf(session.id),
                 room.training.details().map { it.session.id })
-            assertEquals("Session deleted.", Withheld.line(room.store.withheld))
+            assertEquals("Session deleted.", Withheld.line(room.store.held.withheld))
 
-            assertNotNull(room.store.keepWithheld())
-            assertEquals(listOf(session.id), room.store.recent.map { it.id })
+            assertNotNull(room.store.deletions.keepWithheld())
+            assertEquals(listOf(session.id), room.store.history.recent.map { it.id })
             assertEquals(listOf(82.5), room.training.session(session.id)!!.sets.map { it.weightKg })
         }
     }
@@ -83,14 +83,14 @@ class WithheldWindowTests {
             room.select("u1")
             val session = room.workout()
             val taken = room.training.session(session.id)!!.sets.single()
-            assertNull(room.store.delete(Deletion.Set(session.id, taken)))
-            assertFalse(room.store.abandonWithheld())
-            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
-            assertNull(room.store.keepWithheld())
+            assertNull(room.store.deletions.delete(Deletion.Set(session.id, taken)))
+            assertFalse(room.store.deletions.abandonWithheld())
+            assertEquals(emptyList<WithheldDelete>(), room.store.held.withheld)
+            assertNull(room.store.deletions.keepWithheld())
             advanceTimeBy(Withheld.windowMs * 2)
             runCurrent()
             assertEquals(emptyList<TrainingSet>(), room.training.session(session.id)!!.sets)
-            assertEquals(setOf(taken.id), room.store.deletedSets)
+            assertEquals(setOf(taken.id), room.store.held.deletedSets)
         }
     }
 
@@ -99,14 +99,14 @@ class WithheldWindowTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
             val session = room.startExternalWorkout()
-            room.store.choose("bench-press")
-            room.store.logSet(weightKg = 82.5, reps = 5)
-            room.store.logSet(weightKg = 90.0, reps = 3)
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(weightKg = 82.5, reps = 5)
+            room.store.workout.logSet(weightKg = 90.0, reps = 3)
             room.now += 60_000
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
             val taken = room.training.session(session.id)!!.sets.first()
 
-            assertNull(room.store.delete(Deletion.Set(session.id, taken)))
+            assertNull(room.store.deletions.delete(Deletion.Set(session.id, taken)))
             advanceTimeBy(Withheld.windowMs + 1)
             runCurrent()
 
@@ -115,7 +115,7 @@ class WithheldWindowTests {
             }.map { it.member("d").arr().single().member("id").str() })
             assertEquals("the set is gone from the log", listOf(90.0),
                 room.training.session(session.id)!!.sets.map { it.weightKg })
-            assertEquals("and nothing is left holding it", emptyList<WithheldDelete>(), room.store.withheld)
+            assertEquals("and nothing is left holding it", emptyList<WithheldDelete>(), room.store.held.withheld)
         }
     }
 
@@ -123,18 +123,18 @@ class WithheldWindowTests {
     fun aRoutineDeleteLeavesTheHeldWeightWindowRunning() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
-            assertNull(room.store.weighIn("2026-09-01", 81.25))
-            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+            assertNull(room.store.bodyweight.weighIn("2026-09-01", 81.25))
+            room.store.deletions.withhold(Deletion.Bodyweight("2026-09-01"))
             runCurrent()
-            val held = room.store.withheld.single()
-            assertNull(room.store.delete(Deletion.Routine(routine.id, routine.name)))
+            val held = room.store.held.withheld.single()
+            assertNull(room.store.deletions.delete(Deletion.Routine(routine.id, routine.name)))
             assertNull(room.training.routine(routine.id))
-            assertEquals(listOf(held), room.store.withheld)
+            assertEquals(listOf(held), room.store.held.withheld)
             room.now = held.untilMs
             room.engine.releaseHeld()
             room.store.refreshEngine()
-            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
+            assertEquals(emptyList<WithheldDelete>(), room.store.held.withheld)
             assertEquals(emptyList<Any>(), room.training.weighins())
         }
     }
@@ -143,18 +143,18 @@ class WithheldWindowTests {
     fun testASettledNoteDeleteTakesTheRowAndTheCapWithIt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
-            repeat(10) { assertTrue(room.store.saveNote("note000$it", NoteWrite("note $it", "")) is GymResult.Ok) }
-            room.store.readNotes()
-            assertEquals(10, room.store.noteCount)
+            repeat(10) { assertTrue(room.store.notes.saveNote("note000$it", NoteWrite("note $it", "")) is GymResult.Ok) }
+            room.store.notes.readNotes()
+            assertEquals(10, room.store.notes.noteCount)
 
-            assertNull(room.store.delete(Deletion.Note("note0003")))
-            assertEquals("off the drawn list at once", 9, room.store.notes.size)
-            assertEquals("the committed delete releases the note slot", 9, room.store.noteCount)
+            assertNull(room.store.deletions.delete(Deletion.Note("note0003")))
+            assertEquals("off the drawn list at once", 9, room.store.notes.all.size)
+            assertEquals("the committed delete releases the note slot", 9, room.store.notes.noteCount)
 
             advanceTimeBy(Withheld.windowMs + 1)
             runCurrent()
-            assertEquals("the row stays gone", 9, room.store.notes.size)
-            assertEquals("and the count is nine, so `Add a note` is offered again", 9, room.store.noteCount)
+            assertEquals("the row stays gone", 9, room.store.notes.all.size)
+            assertEquals("and the count is nine, so `Add a note` is offered again", 9, room.store.notes.noteCount)
             assertEquals(9, room.training.notes().size)
         }
     }
@@ -172,19 +172,19 @@ class WithheldWindowTests {
     @Test fun twoWeightHoldsRestoreNewestFirstWithoutReleasingEitherReceipt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
-            assertNull(room.store.weighIn("2026-09-01", 81.25))
-            assertNull(room.store.weighIn("2026-09-02", 82.0))
+            assertNull(room.store.bodyweight.weighIn("2026-09-01", 81.25))
+            assertNull(room.store.bodyweight.weighIn("2026-09-02", 82.0))
             room.sync(EngineRoomFixture.server())
-            val original = room.store.bodyweight
-            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
-            room.store.withhold(Deletion.Bodyweight("2026-09-02"))
+            val original = room.store.bodyweight.drawn
+            room.store.deletions.withhold(Deletion.Bodyweight("2026-09-01"))
+            room.store.deletions.withhold(Deletion.Bodyweight("2026-09-02"))
             runCurrent()
-            assertEquals(setOf("2026-09-01", "2026-09-02"), room.store.withheldIds)
-            assertEquals("2 deleted.", Withheld.line(room.store.withheld))
-            assertEquals(Deletion.Bodyweight("2026-09-02"), room.store.keepWithheld()?.deletion)
-            assertEquals("Weigh-in deleted.", Withheld.line(room.store.withheld))
-            assertEquals(Deletion.Bodyweight("2026-09-01"), room.store.keepWithheld()?.deletion)
-            assertEquals(original, room.store.bodyweight)
+            assertEquals(setOf("2026-09-01", "2026-09-02"), room.store.held.withheldIds)
+            assertEquals("2 deleted.", Withheld.line(room.store.held.withheld))
+            assertEquals(Deletion.Bodyweight("2026-09-02"), room.store.deletions.keepWithheld()?.deletion)
+            assertEquals("Weigh-in deleted.", Withheld.line(room.store.held.withheld))
+            assertEquals(Deletion.Bodyweight("2026-09-01"), room.store.deletions.keepWithheld()?.deletion)
+            assertEquals(original, room.store.bodyweight.drawn)
             assertEquals(emptyList<Any>(), room.outbox())
         }
     }

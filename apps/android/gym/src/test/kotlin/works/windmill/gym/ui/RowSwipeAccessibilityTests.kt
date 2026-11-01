@@ -109,7 +109,7 @@ class RowSwipeAccessibilityTests {
     fun theRoutineRowSwipesToDeleteAndDeclaresThatActionByHandNamedWithTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
-            runBlocking { room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
+            runBlocking { room.store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
             val deleted = mutableListOf<String>()
             compose.setContent {
                 RoutinesScreen(
@@ -126,9 +126,9 @@ class RowSwipeAccessibilityTests {
 
             compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
             compose.runOnIdle {
-                assertEquals(listOf(room.store.routines.single().id), deleted)
+                assertEquals(listOf(room.store.routines.all.single().id), deleted)
                 assertEquals("the screen asks; the room is what withholds it",
-                    emptySet<String>(), room.store.withheldIds)
+                    emptySet<String>(), room.store.held.withheldIds)
             }
         } } finally { scope.cancel() }
     }

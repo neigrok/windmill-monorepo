@@ -99,22 +99,22 @@ class LoggerScreenTests {
             if (!lastTimeDown) room.pull(server)
             if (preferences != GymPreferences()) room.seedFeedback(preferences)
             if (history) {
-                val pushB = (room.store.saveRoutine(RoutineDraft(name = "Push B").adding("bench-press")) as GymResult.Ok).value
-                room.store.start(pushB.id)
-                room.store.choose("bench-press")
-                room.store.logSet(80.0, 6)
+                val pushB = (room.store.routines.saveRoutine(RoutineDraft(name = "Push B").adding("bench-press")) as GymResult.Ok).value
+                room.store.workout.start(pushB.id)
+                room.store.workout.choose("bench-press")
+                room.store.workout.logSet(80.0, 6)
                 room.now += 60_000
-                assertTrue(room.store.finish() is FinishOutcome.Closed)
+                assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
                 room.now = today
             }
             room.startExternalWorkout()
-            room.store.choose("bench-press")
-            room.store.choose("barbell-row")
-            room.store.choose("cable-fly")
-            room.store.choose("bench-press")
+            room.store.workout.choose("bench-press")
+            room.store.workout.choose("barbell-row")
+            room.store.workout.choose("cable-fly")
+            room.store.workout.choose("bench-press")
             if (unanswered) room.sync(server)
-            if (logged || loggedTwice) room.store.logSet(60.0, 5)
-            if (loggedTwice) room.store.logSet(65.0, 5)
+            if (logged || loggedTwice) room.store.workout.logSet(60.0, 5)
+            if (loggedTwice) room.store.workout.logSet(65.0, 5)
             // The set's send went out and never came back, so it may already be on the log.
             if (unanswered) {
                 room.engine.releaseHeld(true)
@@ -153,11 +153,11 @@ class LoggerScreenTests {
             runBlocking {
                 first.select("A")
                 first.startExternalWorkout()
-                first.store.choose("bench-press")
-                first.store.editRack(60.0, 5)
+                first.store.workout.choose("bench-press")
+                first.store.workout.editRack(60.0, 5)
                 other.select("B")
                 other.startExternalWorkout()
-                other.store.choose("bench-press")
+                other.store.workout.choose("bench-press")
             }
             compose.setContent { if (showing.value) GymMaterial { LoggerScreen(current.value, {}, {}) } }
             compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("61")
@@ -173,7 +173,7 @@ class LoggerScreenTests {
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button))
                 .performClick()
             compose.runOnIdle {
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), first.store.sets)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), first.store.workout.sets)
                 assertEquals(listOf("gym.editRack"), failures)
                 assertEquals(before, first.controlsFile.readText())
                 current.value = other.store
@@ -182,8 +182,8 @@ class LoggerScreenTests {
             compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("42")
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.runOnIdle {
-                assertEquals(42.0, other.store.rack!!.weightKg, 0.0)
-                assertEquals(60.0, first.store.rack!!.weightKg, 0.0)
+                assertEquals(42.0, other.store.workout.rack!!.weightKg, 0.0)
+                assertEquals(60.0, first.store.workout.rack!!.weightKg, 0.0)
             }
             val recovery = compose.runOnIdle {
                 broken = false
@@ -197,7 +197,7 @@ class LoggerScreenTests {
             compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("61")
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.runOnIdle {
-                assertEquals(61.0, restored.rack!!.weightKg, 0.0)
+                assertEquals(61.0, restored.workout.rack!!.weightKg, 0.0)
                 assertEquals(listOf("gym.editRack"), failures)
             }
         } finally {
@@ -220,12 +220,12 @@ class LoggerScreenTests {
             val load = compose.onNodeWithContentDescription("Load, kg total")
             load.performClick().performTextReplacement("12,5")
             compose.runOnIdle {
-                assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
+                assertEquals(20.0, room.store.workout.rack!!.weightKg, 0.0)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
             }
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
-                val saved = room.store.sets.single()
+                val saved = room.store.workout.sets.single()
                 assertEquals(saved.copy(weightKg = 12.5, reps = 5, exerciseId = "bench-press", setNumber = null), saved)
                 assertEquals(emptyList<HapticFeedbackType>(), sensations)
             }
@@ -253,10 +253,10 @@ class LoggerScreenTests {
             reps.performClick().performTextReplacement("5")
             compose.onNodeWithContentDescription("Decrease Reps").assertIsEnabled().performClick()
             reps.assertTextEquals("4")
-            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets) }
+            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets) }
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
-                val saved = room.store.sets.single()
+                val saved = room.store.workout.sets.single()
                 assertEquals(saved.copy(weightKg = 11.0, reps = 4, exerciseId = "bench-press", setNumber = null), saved)
             }
         } } finally { scope.cancel() }
@@ -272,22 +272,22 @@ class LoggerScreenTests {
             compose.onNodeWithText("That is not a number yet.").assertExists()
             load.assertTextEquals("1e999")
             compose.runOnIdle {
-                assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
+                assertEquals(20.0, room.store.workout.rack!!.weightKg, 0.0)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
             }
             compose.onNodeWithContentDescription("Reps").performClick()
             load.assertTextEquals("1e999")
             compose.onNodeWithText("That is not a number yet.").assertExists()
-            compose.runOnIdle { assertEquals(20.0, room.store.rack!!.weightKg, 0.0) }
+            compose.runOnIdle { assertEquals(20.0, room.store.workout.rack!!.weightKg, 0.0) }
             load.performClick().performTextReplacement("82.5")
             compose.onNodeWithContentDescription("Reps").performClick()
             load.assertTextEquals("82.5")
             compose.onNodeWithText("That is not a number yet.").assertDoesNotExist()
-            compose.runOnIdle { assertEquals(82.5, room.store.rack!!.weightKg, 0.0) }
+            compose.runOnIdle { assertEquals(82.5, room.store.workout.rack!!.weightKg, 0.0) }
             compose.onNodeWithContentDescription("Reps").performTextReplacement("7")
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
-                val saved = room.store.sets.single()
+                val saved = room.store.workout.sets.single()
                 assertEquals(saved.copy(weightKg = 82.5, reps = 7, exerciseId = "bench-press", setNumber = null), saved)
             }
         } } finally { scope.cancel() }
@@ -301,21 +301,21 @@ class LoggerScreenTests {
             val load = compose.onNodeWithContentDescription("Load, kg total")
             load.performClick().performTextReplacement("82.5")
             compose.onNodeWithContentDescription("Hide workout").performClick()
-            compose.runOnIdle { assertEquals(82.5 to listOf("hide"), room.store.rack!!.weightKg to left.toList()) }
+            compose.runOnIdle { assertEquals(82.5 to listOf("hide"), room.store.workout.rack!!.weightKg to left.toList()) }
             load.performClick().performTextReplacement("85")
             compose.onNodeWithText("Finish").performClick()
-            compose.runOnIdle { assertEquals(85.0 to listOf("hide", "finish"), room.store.rack!!.weightKg to left.toList()) }
+            compose.runOnIdle { assertEquals(85.0 to listOf("hide", "finish"), room.store.workout.rack!!.weightKg to left.toList()) }
             load.performClick().performTextReplacement("1e999")
             compose.onNodeWithContentDescription("Hide workout").performClick()
             load.assertTextEquals("1e999")
             compose.onNodeWithText("That is not a number yet.").assertExists()
-            compose.runOnIdle { assertEquals(85.0, room.store.rack!!.weightKg, 0.0) }
+            compose.runOnIdle { assertEquals(85.0, room.store.workout.rack!!.weightKg, 0.0) }
             load.performClick().performTextReplacement("87.5")
             val kept = mutableListOf<Double>()
             compose.runOnIdle {
                 val next = place().fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Next movement" }
                 next.action()
-                kept += room.store.rack!!.weightKg
+                kept += room.store.workout.rack!!.weightKg
             }
             compose.onNode(hasContentDescription("Exercise 2 of 3")).assertExists()
             assertEquals("the typed load was written to bench press before the move", listOf(87.5), kept)
@@ -335,7 +335,7 @@ class LoggerScreenTests {
                 load.assertTextEquals(shown)
                 before to panel.getBoundsInRoot().height
             }
-            compose.runOnIdle { assertEquals(20.0, room.store.rack!!.weightKg, 0.0) }
+            compose.runOnIdle { assertEquals(20.0, room.store.workout.rack!!.weightKg, 0.0) }
             assertEquals(List(2) { heights[0].first to heights[0].first }, heights)
         } } finally { scope.cancel() }
     }
@@ -375,7 +375,7 @@ class LoggerScreenTests {
             compose.onNodeWithText("Bench Press").performScrollTo().performClick()
             compose.onNodeWithText("Log set").performClick()
             compose.waitForIdle()
-            val sets = room.store.sets.toList()
+            val sets = room.store.workout.sets.toList()
             val restored = room.freshStore()
             compose.runOnIdle { runBlocking { restored.connect(room.account()) }; shown.value = restored }
             compose.waitForIdle()
@@ -383,10 +383,10 @@ class LoggerScreenTests {
             compose.onNodeWithText("Free workout").assertIsDisplayed()
             compose.onNodeWithText("Bench Press").assertIsDisplayed()
             compose.runOnIdle {
-                assertEquals(external, restored.session)
-                assertEquals("bench-press", restored.exerciseId)
-                assertEquals(sets, restored.sets)
-                assertEquals(listOf("bench-press"), restored.order)
+                assertEquals(external, restored.workout.session)
+                assertEquals("bench-press", restored.workout.exerciseId)
+                assertEquals(sets, restored.workout.sets)
+                assertEquals(listOf("bench-press"), restored.workout.order)
                 assertEquals(emptyList<works.windmill.gym.presentation.Routine>(), room.training.program())
                 assertEquals(listOf("gym_set_logged" to emptyMap<String, String>()), events)
                 assertEquals(emptyList<String>(), failures)
@@ -406,7 +406,7 @@ class LoggerScreenTests {
             compose.waitForIdle()
 
             assertEquals(listOf("Previous message", null), said)
-            assertEquals("barbell-row", room.store.exerciseId)
+            assertEquals("barbell-row", room.store.workout.exerciseId)
         } } finally { scope.cancel() }
     }
 
@@ -424,12 +424,12 @@ class LoggerScreenTests {
             room.now = System.currentTimeMillis()
             val routine = runBlocking {
                 room.select(null)
-                val saved = (room.store.saveRoutine(RoutineDraft(name = "Push and pull")
+                val saved = (room.store.routines.saveRoutine(RoutineDraft(name = "Push and pull")
                     .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 60.0)))
                     .adding("barbell-row").targeting("barbell-row", listOf(SetTarget(5, 40.0)))
-                    .adding("overhead-press").targeting("overhead-press", listOf(SetTarget(5, 20.0))).capturingMovements(room.store.catalog)) as GymResult.Ok).value
-                room.store.start(saved.id)
-                room.store.choose("bench-press")
+                    .adding("overhead-press").targeting("overhead-press", listOf(SetTarget(5, 20.0))).capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
+                room.store.workout.start(saved.id)
+                room.store.workout.choose("bench-press")
                 room.training.routine(saved.id)!!
             }
             events.clear()
@@ -437,11 +437,11 @@ class LoggerScreenTests {
             var finished: FinishOutcome? = null
             compose.setContent {
                 LoggerScreen(store = room.store, say = { said += it },
-                    onFinish = { scope.launch { finished = room.store.finish() } })
+                    onFinish = { scope.launch { finished = room.store.workout.finish() } })
             }
 
             listOf("bench-press", "barbell-row", "overhead-press").forEachIndexed { index, movement ->
-                compose.runOnIdle { assertEquals(movement, room.store.exerciseId) }
+                compose.runOnIdle { assertEquals(movement, room.store.workout.exerciseId) }
                 compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
                 compose.onNodeWithText("Log set").performClick()
                 compose.waitForIdle()
@@ -464,7 +464,7 @@ class LoggerScreenTests {
                     (finished as FinishOutcome.Closed).detail.sets.map { Triple(it.exerciseId, it.weightKg, it.reps) })
                 assertEquals(routine, room.training.routine(routine.id))
                 assertEquals(routine.revision, room.training.routine(routine.id)?.revision)
-                assertNull(room.store.session)
+                assertNull(room.store.workout.session)
                 assertEquals(List(5) { null }, said)
                 assertEquals(listOf("gym_set_logged" to emptyMap<String, String>(), "gym_set_logged" to emptyMap(),
                     "gym_set_logged" to emptyMap(), "gym_session_finished" to emptyMap()), events)
@@ -482,16 +482,16 @@ class LoggerScreenTests {
         room.now = System.currentTimeMillis()
         runBlocking {
             room.select(null)
-            val lowerA = (room.store.saveRoutine(
+            val lowerA = (room.store.routines.saveRoutine(
                 RoutineDraft(name = "Lower A")
                     .adding("back-squat")
                     .targeting("back-squat", listOf(
-                        SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))).capturingMovements(room.store.catalog)
+                        SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))).capturingMovements(room.store.routines.catalog)
             ) as GymResult.Ok).value
-            room.store.start(lowerA.id)
-            room.store.choose("back-squat")
-            room.store.logSet(60.0, 5)
-            room.store.logSet(80.0, 5)
+            room.store.workout.start(lowerA.id)
+            room.store.workout.choose("back-squat")
+            room.store.workout.logSet(60.0, 5)
+            room.store.workout.logSet(80.0, 5)
         }
         room.store.observeEngine()
         compose.setContent {
@@ -554,7 +554,7 @@ class LoggerScreenTests {
             compose.onNodeWithText("Delete set").performClick()
             compose.waitForIdle()
 
-            compose.runOnIdle { assertTrue("the window settled", room.store.withheld.isEmpty()) }
+            compose.runOnIdle { assertTrue("the window settled", room.store.held.withheld.isEmpty()) }
             assertEquals(listOf("Set 1, current" to false), ledger())
         } } finally { scope.cancel() }
     }
@@ -591,7 +591,7 @@ class LoggerScreenTests {
     fun aRowMaybeOnTheLogIsADoorWhoseFixSavesOffline() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, logged = true, unanswered = true).use { room ->
-            compose.runOnIdle { assertEquals(1, room.store.stalled.size) }
+            compose.runOnIdle { assertEquals(1, room.store.workout.stalled.size) }
             val row = compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 5 reps, on this device"))
             row.assertIsDisplayed()
             row.assertHasClickAction()
@@ -605,12 +605,12 @@ class LoggerScreenTests {
             compose.onNodeWithText("Fix set").assertDoesNotExist()
             compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 6 reps, on this device")).assertIsDisplayed()
             compose.runOnIdle {
-                assertEquals(listOf(6), room.store.sets.map { it.reps })
-                assertEquals(setOf(room.store.sets.single().id), room.store.stalled)
-                assertEquals("the correction stands in the replica", room.store.sets,
+                assertEquals(listOf(6), room.store.workout.sets.map { it.reps })
+                assertEquals(setOf(room.store.workout.sets.single().id), room.store.workout.stalled)
+                assertEquals("the correction stands in the replica", room.store.workout.sets,
                     room.training.details().single().sets)
                 assertEquals("and waits behind the send that never came back",
-                    listOf(Triple("sent", room.store.sets.single().id, 5L), Triple("ready", room.store.sets.single().id, 6L)),
+                    listOf(Triple("sent", room.store.workout.sets.single().id, 5L), Triple("ready", room.store.workout.sets.single().id, 6L)),
                     room.outbox().map { entry ->
                         val write = entry.member("intent").member("d").arr().single()
                         Triple(entry.member("state").str(), write.member("id").str(), write.member("f").member("reps").arr().first().long())
@@ -658,8 +658,8 @@ class LoggerScreenTests {
             compose.onNodeWithText("Kind").assertDoesNotExist()
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
-                assertEquals(listOf(20.0 to 5), room.store.sets.map { it.weightKg to it.reps })
-                assertEquals(preferences, room.store.preferences)
+                assertEquals(listOf(20.0 to 5), room.store.workout.sets.map { it.weightKg to it.reps })
+                assertEquals(preferences, room.store.workout.preferences)
                 assertEquals(emptyList<HapticFeedbackType>(), sensations)
             }
         } } finally { scope.cancel() }
@@ -755,9 +755,9 @@ class LoggerScreenTests {
     fun fixSetIsTitledByTheRacksCountOnceAnEarlierSetIsDeleted() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, loggedTwice = true).use { room ->
-            val (first, second) = room.store.todaySets.sortedBy { it.completedAtMs }
+            val (first, second) = room.store.workout.todaySets.sortedBy { it.completedAtMs }
             assertEquals(listOf(1, 2), listOf(first.setNumber, second.setNumber))
-            runBlocking { assertNull(room.store.delete(Deletion.Set(room.store.session!!.id, first))) }
+            runBlocking { assertNull(room.store.deletions.delete(Deletion.Set(room.store.workout.session!!.id, first))) }
 
             compose.onNode(hasContentDescription("Set 1, logged, 65 kg total, 5 reps")).performClick()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()

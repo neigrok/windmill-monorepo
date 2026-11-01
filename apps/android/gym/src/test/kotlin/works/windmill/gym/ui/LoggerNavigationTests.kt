@@ -55,10 +55,10 @@ class LoggerNavigationTests {
         try {
             runBlocking {
                 room.select(null)
-                val exercise = (room.store.create(name, "dumbbell") as GymResult.Ok).value
-                val routine = (room.store.saveRoutine(RoutineDraft(name = "Single").adding(exercise.id)) as GymResult.Ok).value
-                room.store.start(routine.id)
-                room.store.choose(exercise.id)
+                val exercise = (room.store.routines.create(name, "dumbbell") as GymResult.Ok).value
+                val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Single").adding(exercise.id)) as GymResult.Ok).value
+                room.store.workout.start(routine.id)
+                room.store.workout.choose(exercise.id)
             }
             compose.setContent {
                 val density = LocalDensity.current
@@ -97,10 +97,10 @@ class LoggerNavigationTests {
             runBlocking {
                 room.select("first")
                 room.pull(EngineRoomFixture.server())
-                val routine = (room.store.saveRoutine(RoutineDraft(name = "First")
+                val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "First")
                     .adding("bench-press").adding("barbell-row")) as GymResult.Ok).value
-                room.store.start(routine.id)
-                room.store.choose("bench-press")
+                room.store.workout.start(routine.id)
+                room.store.workout.choose("bench-press")
             }
             compose.setContent {
                 CompositionLocalProvider(LocalTelemetry provides telemetry) {
@@ -111,7 +111,7 @@ class LoggerNavigationTests {
                 .config[SemanticsActions.CustomActions].single()
             compose.runOnIdle { hold = true; firstNext.action() }
             compose.waitUntil(10_000) { pending.isNotEmpty() }
-            compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("barbell-row", room.store.workout.exerciseId) }
             compose.onNodeWithText("Log set").assertIsNotEnabled()
             val oldRead = pending.remove()
 
@@ -120,10 +120,10 @@ class LoggerNavigationTests {
                 scope.async {
                     room.select("second")
                     room.pull(EngineRoomFixture.server())
-                    val routine = (room.store.saveRoutine(RoutineDraft(name = "Second")
+                    val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Second")
                         .adding("bench-press").adding("overhead-press")) as GymResult.Ok).value
-                    room.store.start(routine.id)
-                room.store.choose("bench-press")
+                    room.store.workout.start(routine.id)
+                room.store.workout.choose("bench-press")
                 }
             }
             compose.waitUntil(10_000) { compose.runOnIdle { arrival.isCompleted } }
@@ -136,7 +136,7 @@ class LoggerNavigationTests {
             compose.waitUntil(10_000) { pending.isNotEmpty() }
             compose.runOnIdle { oldRead.run() }
             compose.onNodeWithText("Log set").assertIsNotEnabled()
-            compose.runOnIdle { assertEquals("overhead-press", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("overhead-press", room.store.workout.exerciseId) }
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), events)
 
             compose.runOnIdle { hold = false; while (pending.isNotEmpty()) pending.remove().run() }

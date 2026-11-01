@@ -83,12 +83,12 @@ class WorkoutRecoveryTests {
     // A finished workout off the routine `name`, one set of it, on this phone's own log.
     private fun pastWorkout(room: EngineRoomFixture, name: String, weightKg: Double, reps: Int) {
         runBlocking {
-            val routine = (room.store.saveRoutine(RoutineDraft(name = name).adding("bench-press")) as GymResult.Ok).value
-            room.store.start(routine.id)
-            room.store.choose("bench-press")
-            room.store.logSet(weightKg, reps)
+            val routine = (room.store.routines.saveRoutine(RoutineDraft(name = name).adding("bench-press")) as GymResult.Ok).value
+            room.store.workout.start(routine.id)
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(weightKg, reps)
             room.now += 60_000
-            room.store.finish()
+            room.store.workout.finish()
         }
     }
 
@@ -177,11 +177,11 @@ class WorkoutRecoveryTests {
             runBlocking {
                 room.select(null)
                 room.startExternalWorkout()
-                room.store.choose("bench-press")
-                room.store.logSet(60.0, 5)
+                room.store.workout.choose("bench-press")
+                room.store.workout.logSet(60.0, 5)
             }
-            val live = room.store.session!!
-            val original = room.store.sets.single()
+            val live = room.store.workout.session!!
+            val original = room.store.workout.sets.single()
             val load = hasContentDescription("Load, kg total") and hasAnyAncestor(isDialog())
             holdReads = true
             restored.setContent {
@@ -192,12 +192,12 @@ class WorkoutRecoveryTests {
             }
             compose.waitUntil(10_000) { waiting.isNotEmpty() }
             compose.runOnIdle {
-                assertFalse(room.store.canFinish)
-                assertEquals(null, room.store.session)
+                assertFalse(room.store.workout.canFinish)
+                assertEquals(null, room.store.workout.session)
                 holdReads = false
                 while (true) (waiting.poll() ?: break).run()
             }
-            compose.waitUntil(10_000) { compose.runOnIdle { room.store.canFinish } }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.workout.canFinish } }
             compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Set 1, logged, 60 kg total, 5 reps, on this device")).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("Set 1, logged, 60 kg total, 5 reps, on this device").performClick()
             compose.onNodeWithText("Set note").performTextInput("controlled tempo")
@@ -207,7 +207,7 @@ class WorkoutRecoveryTests {
             compose.runOnIdle { holdReads = true }
             restored.emulateSavedInstanceStateRestore()
             compose.waitUntil(10_000) { waiting.isNotEmpty() }
-            compose.runOnIdle { assertEquals(null, room.store.session) }
+            compose.runOnIdle { assertEquals(null, room.store.workout.session) }
             compose.onNodeWithText("Fix set").assertDoesNotExist()
             compose.runOnIdle {
                 holdReads = false
@@ -242,7 +242,7 @@ class WorkoutRecoveryTests {
         val live = runBlocking {
             room.select("u1")
             val opened = room.startExternalWorkout()
-            room.store.choose("bench-press"); room.store.logSet(60.0, 8)
+            room.store.workout.choose("bench-press"); room.store.workout.logSet(60.0, 8)
             opened
         }
         var showing by mutableStateOf(true)
@@ -283,10 +283,10 @@ class WorkoutRecoveryTests {
         var room = EngineRoomFixture(tmp.root, firstScope)
         val account = room.account("u1")
         runBlocking {
-            room.select("u1"); room.startExternalWorkout(); room.store.choose("bench-press"); room.store.logSet(60.0, 8)
+            room.select("u1"); room.startExternalWorkout(); room.store.workout.choose("bench-press"); room.store.workout.logSet(60.0, 8)
         }
-        val localId = room.store.session!!.id
-        val setId = room.store.sets.single().id
+        val localId = room.store.workout.session!!.id
+        val setId = room.store.workout.sets.single().id
         var instances = 0
         var showing by mutableStateOf(true)
         val restored = StateRestorationTester(compose)
@@ -479,7 +479,7 @@ class WorkoutRecoveryTests {
         val live = runBlocking {
             room.select("u1")
             val opened = room.startExternalWorkout()
-            room.store.choose("bench-press")
+            room.store.workout.choose("bench-press")
             opened
         }
         var showing by mutableStateOf(true)
@@ -514,12 +514,12 @@ class WorkoutRecoveryTests {
             val connection = compose.runOnIdle { currentScope.async { room.pull(server); current.connect(account) } }
             compose.waitUntil(10_000) { compose.runOnIdle { connection.isCompleted } }
             runBlocking { connection.await() }
-            compose.runOnIdle { assertEquals(listOf(80.0), current.lastTime!!.sets.map { it.weightKg }) }
+            compose.runOnIdle { assertEquals(listOf(80.0), current.workout.lastTime!!.sets.map { it.weightKg }) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
-                assertEquals(listOf(92.0 to 6), current.sets.map { it.weightKg to it.reps })
+                assertEquals(listOf(92.0 to 6), current.workout.sets.map { it.weightKg to it.reps })
                 assertEquals(listOf(92.0 to 6), runBlocking { room.training.session(live.id) }!!.sets.map { it.weightKg to it.reps })
                 assertEquals(2, instances)
             }
@@ -538,11 +538,11 @@ class WorkoutRecoveryTests {
         val account = room.account("u1")
         val held = room.store
         runBlocking {
-            room.select("u1"); room.startExternalWorkout(held); held.choose("bench-press"); held.logSet(60.0, 8)
+            room.select("u1"); room.startExternalWorkout(held); held.workout.choose("bench-press"); held.workout.logSet(60.0, 8)
             room.sync(EngineRoomFixture.server()); held.refreshEngine()
         }
-        val sessionId = held.session!!.id
-        val logged = held.sets.single()
+        val sessionId = held.workout.session!!.id
+        val logged = held.workout.sets.single()
         var showing by mutableStateOf(true)
         compose.setContent { if (showing) GymMaterial { GymRoom(account, held) } }
         try {
@@ -576,8 +576,8 @@ class WorkoutRecoveryTests {
             compose.runOnIdle {
                 val fixed = logged.copy(note = "Live retained note", rpe = 9.5)
                 assertEquals(listOf(fixed), runBlocking { room.training.session(sessionId) }!!.sets)
-                assertEquals(60.0, held.sets.single().weightKg, 0.0)
-                assertEquals(8, held.sets.single().reps)
+                assertEquals(60.0, held.workout.sets.single().weightKg, 0.0)
+                assertEquals(8, held.workout.sets.single().reps)
             }
         } finally {
             compose.runOnIdle { showing = false }

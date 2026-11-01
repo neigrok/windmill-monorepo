@@ -209,14 +209,14 @@ class GymEngineSessionTests {
                         beforeAccountChange = source.store::prepareEngineTransition).use { session ->
                     signIn(session); source.selected = "A"
                     source.store.connect(source.account())
-                    assertEquals(original.session.id, source.store.session!!.id)
+                    assertEquals(original.session.id, source.store.workout.session!!.id)
                     source.sync(server)
                     assertEquals(original, source.training.session(workout.id))
                     assertEquals(listOf("remoteset"), source.training.session("remote01")!!.sets.map { it.id })
                     withContext(Dispatchers.IO) { withTimeout(2_000) { source.engine.notices("gym").notices.first { it.isNotEmpty() } } }
                     source.store.refreshEngine()
-                    assertEquals("remote01", source.store.session!!.id)
-                    assertEquals(listOf("remoteset"), source.store.sets.map { it.id })
+                    assertEquals("remote01", source.store.workout.session!!.id)
+                    assertEquals(listOf("remoteset"), source.store.workout.sets.map { it.id })
                     source.training.dismissRefusals()
                     assertEquals(original, source.training.session(workout.id))
                     snapshot = source.engine.snapshot()

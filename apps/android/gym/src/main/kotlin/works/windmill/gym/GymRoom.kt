@@ -293,7 +293,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     // Opened over whatever is standing; the door is where the receipt will land.
     fun review(proposalId: String, routineId: String, door: String) {
-        if (store.session != null) { note = "Finish this session"; return }
+        if (store.workout.session != null) { note = "Finish this session"; return }
         reviewing = Reviewing(proposalId, routineId, door)
     }
 
@@ -331,19 +331,19 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         receipts = receipts + (door to receipts[door].orEmpty() + line)
     }
 
-    val workout = store.notification.collectAsState().value
-    val liveSession = store.session
+    val workout = store.workout.notification.collectAsState().value
+    val liveSession = store.workout.session
     val live = liveSession != null
-    val loggerShown = live && !store.loggerHidden
+    val loggerShown = live && !store.workout.loggerHidden
     fun hideWorkout() {
-        val result = workout?.key?.let { store.setLoggerHidden(it, true) }
-            ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
+        val result = workout?.key?.let { store.workout.setLoggerHidden(it, true) }
+            ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: "The workout is not ready.")
         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "hide",
             "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
         if (result is WorkoutChange.Unavailable) note = result.reason
     }
     val screen = when {
-        store.recoveryDraft != null -> "workout_fix"
+        store.recovery.fixDraft != null -> "workout_fix"
         reviewing != null -> "proposal"
         finished != null -> "finish"
         building != null -> "routine_editor"
@@ -377,22 +377,22 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
     SideEffect { shell.present(destinations) }
 
-    LaunchedEffect(store.workoutOpenRequest, workout?.key, store.accountReady) {
-        if (store.workoutOpenRequest <= 0) return@LaunchedEffect
-        val requested = store.workoutOpenKey ?: return@LaunchedEffect
-        if (store.accountReady && workout?.key != requested) {
-            store.acknowledgeWorkoutRequest()
+    LaunchedEffect(store.workout.workoutOpenRequest, workout?.key, store.seat.accountReady) {
+        if (store.workout.workoutOpenRequest <= 0) return@LaunchedEffect
+        val requested = store.workout.workoutOpenKey ?: return@LaunchedEffect
+        if (store.seat.accountReady && workout?.key != requested) {
+            store.workout.acknowledgeWorkoutRequest()
             return@LaunchedEffect
         }
-        if (workout?.key == requested && store.setLoggerHidden(requested, false) == WorkoutChange.Saved) {
+        if (workout?.key == requested && store.workout.setLoggerHidden(requested, false) == WorkoutChange.Saved) {
             navigator.reset()
             selectedRoutineId = null
-            store.acknowledgeWorkoutRequest()
+            store.workout.acknowledgeWorkoutRequest()
         }
     }
 
-    LaunchedEffect(store.routinesOpenRequest) {
-        if (store.routinesOpenRequest > 0) {
+    LaunchedEffect(store.workout.routinesOpenRequest) {
+        if (store.workout.routinesOpenRequest > 0) {
             note = null
             chooseTab(Tab.Routines)
             if (building == null && !savingRoutine && !pushedDraftOpen && reviewing == null && navigator.away.none { it is Away.NoteEditor }) {
@@ -400,7 +400,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 selectedRoutineId = null
                 pruneReceipts()
             }
-            store.acknowledgeRoutinesRequest()
+            store.workout.acknowledgeRoutinesRequest()
         }
     }
 
@@ -431,8 +431,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     }
 
-    LaunchedEffect(account.user?.id, account.resolved, store.accountReady) {
-        if (account.resolved && store.accountReady) account.user?.id?.let { store.coach.adoptPhoneDraft(it) }
+    LaunchedEffect(account.user?.id, account.resolved, store.seat.accountReady) {
+        if (account.resolved && store.seat.accountReady) account.user?.id?.let { store.coach.adoptPhoneDraft(it) }
     }
 
     // A phone draft moving into the account chooses its chat first; a fresh chat waits for it.
@@ -472,10 +472,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // instant a settle writes a delete, or a second delete joins the window, this effect
     // is cancelled and the transient is redrawn for what is left. An Undo offered over a delete
     // already sent is a lie.
-    val takeable = store.holding
-    LaunchedEffect(takeable?.subjectId, store.withheld.size) {
-        val said = Withheld.line(store.withheld) ?: return@LaunchedEffect
-        val left = store.wayBackLeftMs
+    val takeable = store.deletions.holding
+    LaunchedEffect(takeable?.subjectId, store.held.withheld.size) {
+        val said = Withheld.line(store.held.withheld) ?: return@LaunchedEffect
+        val left = store.deletions.wayBackLeftMs
         if (left <= 0) return@LaunchedEffect
         val decided = withTimeoutOrNull(left) {
             transient.showSnackbar(
@@ -489,7 +489,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
         if (decided == SnackbarResult.ActionPerformed) {
             // A closed offer cannot promise that Undo restored the row.
-            if (store.keepWithheld() == null && store.deleteRefused == null) {
+            if (store.deletions.keepWithheld() == null && store.deletions.deleteRefused == null) {
                 transient.showSnackbar(Withheld.alreadyGone, duration = SnackbarDuration.Short)
             }
             return@LaunchedEffect
@@ -498,8 +498,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     // The existing recovery band reports a failed hold or Undo once.
-    LaunchedEffect(store.deleteRefused) {
-        val refused = store.deleteRefused ?: return@LaunchedEffect
+    LaunchedEffect(store.deletions.deleteRefused) {
+        val refused = store.deletions.deleteRefused ?: return@LaunchedEffect
         // It takes the transient off whatever is standing there: a way back must never hide a
         // refusal, and another window's Undo is still offered when this one has been read.
         transient.currentSnackbarData?.dismiss()
@@ -509,7 +509,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         // like one that worked. Cleared only once it HAS been said, so a room torn down mid-sentence
         // still owes it.
         transient.showSnackbar(refused, duration = SnackbarDuration.Long)
-        store.clearDeleteRefused()
+        store.deletions.clearDeleteRefused()
     }
 
     // Workout windows follow the room; durable weights follow the process.
@@ -519,18 +519,18 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             if (event == Lifecycle.Event.ON_RESUME) {
                 store.coach.refreshAnonymousAccess()
                 // Read again on every return: the timeout is changed in system settings, away from here.
-                store.undoWindowMs = accessibleUndoWindowMs(context)
+                store.deletions.undoWindowMs = accessibleUndoWindowMs(context)
             }
             // The transient goes down with what it was offering: an Undo left standing over an act
             // that was let go would offer a way back to something that never happened.
-            if (event == Lifecycle.Event.ON_STOP && store.abandonWithheld()) {
+            if (event == Lifecycle.Event.ON_STOP && store.deletions.abandonWithheld()) {
                 transient.currentSnackbarData?.dismiss()
             }
         }
         lifecycleOwner.lifecycle.addObserver(watcher)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(watcher)
-            store.abandonWithheld()
+            store.deletions.abandonWithheld()
         }
     }
 
@@ -551,7 +551,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             starting = true
             try {
                 note = null
-                val opened = store.start(routineId)
+                val opened = store.workout.start(routineId)
                 if (opened is GymResult.Failed) {
                     note = opened.why.line("nothing started")
                     return@launch
@@ -564,8 +564,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     notificationPrefs.edit().putBoolean("requested", true).apply()
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
-                val movement = LiveOrder.resume(store.order, store.sets) ?: return@launch
-                store.choose(movement)
+                val movement = LiveOrder.resume(store.workout.order, store.workout.sets) ?: return@launch
+                store.workout.choose(movement)
             } finally {
                 starting = false
             }
@@ -576,12 +576,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         scope.launch {
             val owner = currentAccount.user?.id
             note = null
-            when (val ended = store.finish()) {
+            when (val ended = store.workout.finish()) {
                 is FinishOutcome.Closed -> {
                     if (owner != currentAccount.user?.id) return@launch
                     sessionStates.removeState("${Frame.Workout(navigator.tab).key}:${ended.detail.session.id}")
                     if (ended.detail.sets.isNotEmpty()) haptics.finished()
-                    navigator.reset(listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail)))
+                    navigator.reset(listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.routines.catalog), ended.detail)))
                     pruneReceipts()
                     finished = FinishedSession(ended.detail.session, ended.detail.sets, review = null,
                         reviewRead = false, suggestsKeep = ended.detail.sets.isNotEmpty() &&
@@ -593,11 +593,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
     }
 
-    val receipt = finished?.let { store.retainedSession(SessionDetail(it.session, it.sets)) }
-    LaunchedEffect(receipt, account.resolved, store.accountReady, store.replicaReadRevision) {
-        if (!account.resolved || account.user?.id.orEmpty() != seat || !store.accountReady) return@LaunchedEffect
+    val receipt = finished?.let { store.history.retainedSession(SessionDetail(it.session, it.sets)) }
+    LaunchedEffect(receipt, account.resolved, store.seat.accountReady, store.seat.replicaReadRevision) {
+        if (!account.resolved || account.user?.id.orEmpty() != seat || !store.seat.accountReady) return@LaunchedEffect
         val saved = receipt ?: return@LaunchedEffect
-        val detail = when (val read = store.finishedSession(saved.session.id)) {
+        val detail = when (val read = store.history.finishedSession(saved.session.id)) {
             is GymResult.Failed -> return@LaunchedEffect
             is GymResult.Ok -> read.value
         }
@@ -609,9 +609,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             return@LaunchedEffect
         }
         finished = finished?.copy(session = detail.session, sets = detail.sets)
-        if (navigator.away.isEmpty()) navigator.reset(listOf(Away.Session(SessionSummary(detail.session, detail.sets, store.catalog), detail)))
+        if (navigator.away.isEmpty()) navigator.reset(listOf(Away.Session(SessionSummary(detail.session, detail.sets, store.routines.catalog), detail)))
         val owner = currentAccount.user?.id
-        val review = store.review(detail.session.id)
+        val review = store.history.review(detail.session.id)
         if (owner == currentAccount.user?.id && receipt?.session?.id == detail.session.id) {
             finished = finished?.copy(review = review, reviewRead = true)
         }
@@ -620,11 +620,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     fun discard(sessionId: String, source: String, snapshot: SessionDetail? = null) {
         if (discardPrompt != null || discarding || queuedFinishShare != null) return
         val standing = (navigator.away.lastOrNull() as? Away.Session)?.takeIf { it.summary.id == sessionId }
-        val detail = snapshot ?: standing?.detail?.let(store::retainedSession)
-        val summary = detail?.let { SessionSummary(it.session, it.sets, store.catalog) }
-            ?: store.allSessions.firstOrNull { it.id == sessionId } ?: standing?.summary ?: return
+        val detail = snapshot ?: standing?.detail?.let(store.history::retainedSession)
+        val summary = detail?.let { SessionSummary(it.session, it.sets, store.routines.catalog) }
+            ?: store.history.allSessions.firstOrNull { it.id == sessionId } ?: standing?.summary ?: return
         note = null
-        discardPrompt = WorkoutDiscardPrompt(summary, detail, source, store.workoutReplica, store.accountKey == Seat.anonymous)
+        discardPrompt = WorkoutDiscardPrompt(summary, detail, source, store.seat.replica, store.seat.accountKey == Seat.anonymous)
         telemetry.event("gym_action", mapOf("screen" to source, "action" to "discard", "state" to "shown"))
     }
 
@@ -634,14 +634,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     fun openCoachWorkout(id: String) {
-        val owner = store.accountKey
+        val owner = store.seat.accountKey
         scope.launch {
-            when (val read = store.sessionDetail(id)) {
-                is GymResult.Ok -> if (owner == store.accountKey) {
+            when (val read = store.history.sessionDetail(id)) {
+                is GymResult.Ok -> if (owner == store.seat.accountKey) {
                     val detail = read.value
-                    look(Away.Session(SessionSummary(detail.session, detail.sets, store.catalog), detail))
+                    look(Away.Session(SessionSummary(detail.session, detail.sets, store.routines.catalog), detail))
                 }
-                is GymResult.Failed -> if (owner == store.accountKey) note = read.why.line("that workout didn’t open")
+                is GymResult.Failed -> if (owner == store.seat.accountKey) note = read.why.line("that workout didn’t open")
             }
         }
     }
@@ -663,7 +663,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     LaunchedEffect(queuedFinishShare, finishShareReady, account.resolved, account.user?.id,
-        account.identityRevision, store.accountReady, shell.signInAttempts.active, shell.signInAttempts.result) {
+        account.identityRevision, store.seat.accountReady, shell.signInAttempts.active, shell.signInAttempts.result) {
         val request = queuedFinishShare ?: return@LaunchedEffect
         val result = shell.signInAttempts.result?.takeIf { it.id == request }
         val owner = queuedFinishShareOwner ?: result?.userId
@@ -689,8 +689,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             } finally { closingFinish = false }
             return@LaunchedEffect
         }
-        if (!account.resolved || !account.isSignedIn || !store.accountReady) return@LaunchedEffect
-        if (owner == null || account.user?.id != owner || store.accountKey != Seat.of(owner)) return@LaunchedEffect
+        if (!account.resolved || !account.isSignedIn || !store.seat.accountReady) return@LaunchedEffect
+        if (owner == null || account.user?.id != owner || store.seat.accountKey != Seat.of(owner)) return@LaunchedEffect
         val authenticatedOwner = owner
         queuedFinishShareOwner = authenticatedOwner
         try {
@@ -717,8 +717,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (savingRoutine) return
         val initiatingOwner = currentAccount.user?.id
         val initiatingIdentity = currentAccount.identityRevision
-        val initiatingAccountKey = store.accountKey
-        val initiatingReplica = store.editReplica
+        val initiatingAccountKey = store.seat.accountKey
+        val initiatingReplica = store.seat.replica
         val attempt = Any()
         val prepared = if (draft.id == null && draft.creationId == null) draft.copy(creationId = Ids.routine()) else draft
         building = prepared
@@ -726,12 +726,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         savingRoutine = true
         fun ownsAttempt() = routineSaveAttempt === attempt && currentAccount.user?.id == initiatingOwner &&
             currentAccount.identityRevision == initiatingIdentity &&
-            store.accountKey == initiatingAccountKey && store.editReplica == initiatingReplica
+            store.seat.accountKey == initiatingAccountKey && store.seat.replica == initiatingReplica
         scope.launch(routineSaveContext.minusKey(Job)) {
             try {
                 if (!ownsAttempt()) return@launch
                 note = null
-                val written = store.saveRoutine(prepared, initiatingAccountKey, initiatingReplica)
+                val written = store.routines.saveRoutine(prepared, initiatingAccountKey, initiatingReplica)
                 if (!ownsAttempt()) return@launch
                 when (written) {
                     is GymResult.Failed -> note = written.why.line("${draft.name} wasn’t saved")
@@ -753,8 +753,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     suspend fun destroy(routineId: String): Boolean {
-        val named = store.routine(routineId)?.name ?: return true
-        val failure = store.delete(Deletion.Routine(routineId, named))
+        val named = store.routines.routine(routineId)?.name ?: return true
+        val failure = store.deletions.delete(Deletion.Routine(routineId, named))
         if (failure != null) {
             note = failure.line("$named is still in your program")
             return false
@@ -770,7 +770,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     key(seat) {
         if (account.resolved && account.user?.id.orEmpty() == seat) {
             val origin = account.origin
-            val sharing = remember(origin) { WorkoutShareActions(origin, store::share, store::revokeShare) }
+            val sharing = remember(origin) { WorkoutShareActions(origin, store.sharing::share, store.sharing::revokeShare) }
             val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
             val clipboard = LocalClipboard.current
             val logShareScope = key(account.identityRevision, store) { rememberCoroutineScope() }
@@ -780,15 +780,15 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             fun shareWorkout(sessionId: String) {
                 val owner = account.user?.id
                 val revision = account.identityRevision
-                val storeSeat = store.accountKey
+                val storeSeat = store.seat.accountKey
                 logShareScope.launch {
                     if (!currentAccount.resolved || owner != currentAccount.user?.id ||
-                        revision != currentAccount.identityRevision || storeSeat != store.accountKey) return@launch
+                        revision != currentAccount.identityRevision || storeSeat != store.seat.accountKey) return@launch
                     note = null
-                    val minted = store.share(sessionId)
+                    val minted = store.sharing.share(sessionId)
                     currentCoroutineContext().ensureActive()
                     if (!currentAccount.resolved || owner != currentAccount.user?.id ||
-                        revision != currentAccount.identityRevision || storeSeat != store.accountKey) return@launch
+                        revision != currentAccount.identityRevision || storeSeat != store.seat.accountKey) return@launch
                     when (minted) {
                         is GymResult.Ok -> {
                             try {
@@ -854,9 +854,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             }
 
             finished?.let { original ->
-                val canonical = store.retainedSession(SessionDetail(original.session, original.sets))
+                val canonical = store.history.retainedSession(SessionDetail(original.session, original.sets))
                 val ended = original.copy(session = canonical.session,
-                    sets = canonical.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets })
+                    sets = canonical.sets.filterNot { it.id in store.held.withheldIds || it.id in store.held.deletedSets })
                 WindmillSheet(
                     onDismissRequest = {
                         finishStates.removeState(original.session.id)
@@ -876,7 +876,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     finishStates.SaveableStateProvider(original.session.id) {
                         FinishScreen(
                             finished = ended,
-                            catalog = store.catalog,
+                            catalog = store.routines.catalog,
                             onDone = {
                                 if (!closingFinish && queuedFinishShare == null) {
                                     telemetry.event("gym_action", mapOf("screen" to "finish", "action" to "done", "outcome" to "ok"))
@@ -916,7 +916,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             val owner = currentAccount.user?.id
                             scope.launch {
                                 try {
-                                    val failure = store.discardWorkout(prompt.summary.id, prompt.screen, prompt.replica, prompt.anonymous)
+                                    val failure = store.workout.discardWorkout(prompt.summary.id, prompt.screen, prompt.replica, prompt.anonymous)
                                     if (owner != currentAccount.user?.id) return@launch
                                     discardPrompt = null
                                     if (failure != null) {
@@ -951,8 +951,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             }
 
             val youInitial = account.user?.email?.take(1) ?: ""
-            val recoveryRead = store.recovery?.takeIf { it.belongsTo(account) }
-            val fixRead = store.recoveryDraft?.read
+            val recoveryRead = store.recovery.latest?.takeIf { it.belongsTo(account) }
+            val fixRead = store.recovery.fixDraft?.read
             if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(store, currentOwner = { fixRead.belongsTo(currentAccount) })
 
             @Composable
@@ -982,7 +982,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
                 onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
                 onSignIn = shell.openSignIn,
-                onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
+                onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
                 onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
                 onAskNew = { askSomethingNew() },
                 seed = "",
@@ -1024,8 +1024,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             }
 
             // What a way back is named after: the screen beneath, else the tab, or the logger when it stands.
-            fun wayBackTo(under: Away?, tab: Tab): String = under?.wayBack(store.catalog)
-                ?: if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
+            fun wayBackTo(under: Away?, tab: Tab): String = under?.wayBack(store.routines.catalog)
+                ?: if (loggerShown) store.workout.session?.plan?.routine ?: Readout.noRoutine else tab.title
 
             @Composable
             fun PushedScreen(frame: Frame.Pushed) {
@@ -1109,7 +1109,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         seat = youInitial,
                         composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
                         onSignIn = shell.openSignIn,
-                        onBuildRoutine = { building = RoutineDraft(position = store.allRoutines.size) },
+                        onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
                         onAskNew = { askSomethingNew() },
                         store = store,
                         origin = origin,
@@ -1167,8 +1167,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     if (frame is Frame.Root && liveSession != null && selectedRoutineId == null && reviewing == null) WorkoutBar(
                                         session = liveSession,
                                         onOpen = {
-                                            val result = workout?.key?.let { store.setLoggerHidden(it, false) }
-                                                ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
+                                            val result = workout?.key?.let { store.workout.setLoggerHidden(it, false) }
+                                                ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: "The workout is not ready.")
                                             telemetry.event("gym_action", mapOf("screen" to "workout_bar", "action" to "open",
                                                 "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
                                             if (result is WorkoutChange.Unavailable) note = result.reason
@@ -1217,7 +1217,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                         onClose = { building = null },
                                         say = { note = it },
                                         // An edit returns to its routine's sheet; a new draft to what it was opened over.
-                                        backTo = selectedRoutineId?.let { store.routine(it)?.name }
+                                        backTo = selectedRoutineId?.let { store.routines.routine(it)?.name }
                                             ?: wayBackTo(navigator.away.lastOrNull(), frame.tab),
                                     )
                                 }

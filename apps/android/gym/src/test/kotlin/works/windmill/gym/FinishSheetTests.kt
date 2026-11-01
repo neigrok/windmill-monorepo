@@ -69,6 +69,7 @@ import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.GymMaterial
@@ -145,8 +146,8 @@ class FinishSheetTests {
     private fun finishAWorkout(room: EngineRoomFixture, sets: Int = 1) {
         runBlocking {
             room.startExternalWorkout()
-            room.store.choose("back-squat")
-            repeat(sets) { room.store.logSet(100.0, 5) }
+            room.store.workout.choose("back-squat")
+            repeat(sets) { room.store.workout.logSet(100.0, 5) }
         }
         show(room)
         compose.waitForIdle()
@@ -171,8 +172,8 @@ class FinishSheetTests {
     private fun startAWorkout(room: EngineRoomFixture) {
         val started = room.scope.async {
             room.startExternalWorkout()
-            room.store.choose("back-squat")
-            room.store.logSet(100.0, 5)
+            room.store.workout.choose("back-squat")
+            room.store.workout.logSet(100.0, 5)
         }
         compose.waitUntil(10_000) { compose.runOnIdle { started.isCompleted } }
         runBlocking { started.await() }
@@ -224,14 +225,14 @@ class FinishSheetTests {
             runBlocking {
                 room.select(null)
                 room.startExternalWorkout()
-                room.store.choose("back-squat")
-                room.store.logSet(100.0, 5)
+                room.store.workout.choose("back-squat")
+                room.store.workout.logSet(100.0, 5)
             }
-            val live = room.store.session!!
-            val sets = room.store.sets.toList()
+            val live = room.store.workout.session!!
+            val sets = room.store.workout.sets.toList()
             val account = room.account()
             compose.setContent { if (showing) GymMaterial { GymRoom(account, room.store) } }
-            compose.waitUntil(10_000) { compose.runOnIdle { room.store.canFinish } }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.workout.canFinish } }
             compose.onNodeWithText("Finish").assertIsEnabled()
             val reconnect = compose.runOnIdle {
                 holdReads = true
@@ -239,14 +240,14 @@ class FinishSheetTests {
             }
             compose.waitUntil(10_000) { compose.runOnIdle { waiting.isNotEmpty() } }
             compose.runOnIdle {
-                assertEquals(live, room.store.session)
-                assertEquals(false, room.store.canFinish)
+                assertEquals(live, room.store.workout.session)
+                assertEquals(false, room.store.workout.canFinish)
             }
             val before = room.engine.snapshot()
             compose.onNodeWithText("Finish").assertIsNotEnabled().performClick()
             compose.runOnIdle {
                 assertEquals(before, room.engine.snapshot())
-                assertEquals(live, room.store.session)
+                assertEquals(live, room.store.workout.session)
                 assertEquals(emptyList<Pair<String, Map<String, String>>>(), events.filter { it.first == "gym_session_finished" })
                 assertEquals(emptyList<String>(), failures)
                 holdReads = false
@@ -260,8 +261,8 @@ class FinishSheetTests {
                 val closed = room.training.session(live.id)!!
                 assertEquals(sets, closed.sets)
                 assertTrue(closed.session.finishedAtMs != null)
-                assertEquals(null, room.store.session)
-                assertEquals(false, room.store.canFinish)
+                assertEquals(null, room.store.workout.session)
+                assertEquals(false, room.store.workout.canFinish)
                 assertEquals(listOf("gym_session_finished" to emptyMap<String, String>()), events.filter { it.first == "gym_session_finished" })
                 assertEquals(emptyList<String>(), failures)
             }
@@ -283,34 +284,34 @@ class FinishSheetTests {
             val store = room.store
             val live = runBlocking {
                 val opened = room.startExternalWorkout()
-                store.choose("back-squat")
-                store.logSet(100.0, 5)
-                store.logSet(110.0, 3)
+                store.workout.choose("back-squat")
+                store.workout.logSet(100.0, 5)
+                store.workout.logSet(110.0, 3)
                 opened
             }
-            val performed = store.sets.toList()
+            val performed = store.workout.sets.toList()
             show(room)
             compose.waitForIdle()
             finish()
 
             val closed = runBlocking { room.training.session(live.id) }!!
             compose.runOnIdle {
-                assertEquals(null, store.session)
-                assertEquals(false, store.isFinishing)
+                assertEquals(null, store.workout.session)
+                assertEquals(false, store.workout.isFinishing)
                 assertEquals(performed, closed.sets)
-                assertEquals(SessionDetail(closed.session, performed), store.retainedSession(SessionDetail(closed.session, emptyList())))
+                assertEquals(SessionDetail(closed.session, performed), store.history.retainedSession(SessionDetail(closed.session, emptyList())))
             }
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
             compose.onAllNodesWithText("830 kg").onLast().assertIsDisplayed()
             compose.onNodeWithText("Routines").assertDoesNotExist()
             compose.runOnIdle {
-                assertEquals(runBlocking { room.training.sessions(TrainingStore.logPage, null, null) }, store.allSessions)
-                assertEquals(listOf(live.id), store.allSessions.map { it.id })
+                assertEquals(runBlocking { room.training.sessions(HistoryReads.logPage, null, null) }, store.history.allSessions)
+                assertEquals(listOf(live.id), store.history.allSessions.map { it.id })
             }
             compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
             compose.onNodeWithContentDescription("Set 1, 100 kg total, 5 reps").assertIsDisplayed()
             compose.onNodeWithContentDescription("Set 2, 110 kg total, 3 reps").assertIsDisplayed()
-            assertEquals(SessionDetail(closed.session, performed), store.retainedSession(SessionDetail(closed.session, emptyList())))
+            assertEquals(SessionDetail(closed.session, performed), store.history.retainedSession(SessionDetail(closed.session, emptyList())))
         }
     }
 
@@ -524,7 +525,7 @@ class FinishSheetTests {
         }
         inRoom(telemetry = telemetry) { room ->
             finishAWorkout(room)
-            val id = room.store.recent.single().id
+            val id = room.store.history.recent.single().id
             val before = room.engine.snapshot()
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
@@ -540,7 +541,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
                 assertEquals(null, runBlocking { room.training.session(id) })
-                assertEquals(emptyList<works.windmill.gym.store.Withheld>(), room.store.withheld)
+                assertEquals(emptyList<works.windmill.gym.store.Withheld>(), room.store.held.withheld)
                 assertEquals(listOf(
                     mapOf("screen" to "finish", "action" to "discard", "state" to "shown"),
                     mapOf("screen" to "finish", "action" to "discard", "outcome" to "cancelled"),
@@ -577,7 +578,7 @@ class FinishSheetTests {
         val opened = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
         inRoom(server, seat = null) { room ->
-            runBlocking { room.startExternalWorkout(); room.store.choose("back-squat"); room.store.logSet(100.0, 5) }
+            runBlocking { room.startExternalWorkout(); room.store.workout.choose("back-squat"); room.store.workout.logSet(100.0, 5) }
             val restoration = StateRestorationTester(compose)
             show(room, restoration)
             finish()
@@ -658,7 +659,7 @@ class FinishSheetTests {
         }
         inRoom(telemetry = telemetry) { room ->
             finishAWorkout(room)
-            val id = room.store.recent.single().id
+            val id = room.store.history.recent.single().id
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
             val old = compose.onNodeWithText("Discard").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
@@ -741,12 +742,12 @@ class FinishSheetTests {
         }
         inRoom(telemetry = telemetry) { room ->
             finishAWorkout(room)
-            val id = room.store.recent.single().id
+            val id = room.store.history.recent.single().id
             val server = EngineRoomFixture.server()
             runBlocking { room.sync(server) }
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
-            val opening = room.store.workoutReplica
+            val opening = room.store.seat.replica
             compose.runOnIdle {
                 runBlocking {
                     room.store.prepareEngineTransition()
@@ -754,7 +755,7 @@ class FinishSheetTests {
                     room.selected = null
                     room.select("u1"); room.pull(server); room.store.refreshEngine()
                 }
-                assertTrue(opening != room.store.workoutReplica)
+                assertTrue(opening != room.store.seat.replica)
             }
             compose.onNodeWithText("Discard").performClick()
             compose.waitUntil(10_000) { compose.runOnIdle { events.isNotEmpty() } }
@@ -777,11 +778,11 @@ class FinishSheetTests {
     @Test
     fun recreationAfterAcceptedDiscardDoesNotRestoreTheDeletedReceipt() {
         inRoom { room ->
-            runBlocking { room.startExternalWorkout(); room.store.choose("back-squat"); room.store.logSet(100.0, 5) }
+            runBlocking { room.startExternalWorkout(); room.store.workout.choose("back-squat"); room.store.workout.logSet(100.0, 5) }
             val restoration = StateRestorationTester(compose)
             show(room, restoration)
             finish()
-            val id = room.store.recent.single().id
+            val id = room.store.history.recent.single().id
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
             compose.onNodeWithText("Discard this workout?").assertIsDisplayed()
@@ -802,7 +803,7 @@ class FinishSheetTests {
         inRoom(seat = null) { room ->
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
-            val id = room.store.recent.single().id
+            val id = room.store.history.recent.single().id
             val beforeDiscard = compose.runOnIdle { saveRoom() }
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
@@ -863,7 +864,7 @@ class FinishSheetTests {
         val opened = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
         inRoom(server, seat = null) { room ->
-            runBlocking { room.startExternalWorkout(); room.store.choose("back-squat"); room.store.logSet(100.0, 5) }
+            runBlocking { room.startExternalWorkout(); room.store.workout.choose("back-squat"); room.store.workout.logSet(100.0, 5) }
             suppliedRegistry = SaveableStateRegistry(null) { true }
             show(room)
             finish()

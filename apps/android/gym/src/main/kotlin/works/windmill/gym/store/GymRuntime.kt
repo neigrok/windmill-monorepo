@@ -25,7 +25,7 @@ class GymRuntime(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val authorityRevision: () -> Long = { 0 },
 ) : WorkoutCommands {
-    override val notification: StateFlow<WorkoutNotification?> get() = store.notification
+    override val notification: StateFlow<WorkoutNotification?> get() = store.workout.notification
     private var restored = false
     private var authority: Triple<String?, Boolean, Long>? = null
 
@@ -34,26 +34,26 @@ class GymRuntime(
         if (!restored) {
             restored = store.restoreWorkout(current.first, current.second)
             if (!restored) return@withContext
-        } else if (current != authority) store.revokeWorkoutAuthority()
+        } else if (current != authority) store.workout.revokeWorkoutAuthority()
         authority = current
-        store.authorizeWorkout(current.second && store.accountKey == Seat.of(current.first))
-        store.reconcileWorkoutTime()
+        store.workout.authorizeWorkout(current.second && store.seat.accountKey == Seat.of(current.first))
+        store.workout.reconcileWorkoutTime()
     }
 
     override suspend fun logSet(command: LogSetCommand): LogSetAcceptance = withContext(dispatcher) {
         restoreLocal()
-        store.acceptSet(command)
+        store.workout.acceptSet(command)
     }
 
     override suspend fun setHidden(key: WorkoutKey, hidden: Boolean): WorkoutChange = withContext(dispatcher) {
         restoreLocal()
-        store.showWorkout(key, hidden)
+        store.workout.showWorkout(key, hidden)
     }
 
     override suspend fun openWorkout(key: WorkoutKey): Boolean = withContext(dispatcher) {
         restoreLocal()
         if (notification.value?.key != key) return@withContext false
-        store.requestWorkout()
+        store.workout.requestWorkout()
         true
     }
 

@@ -43,9 +43,9 @@ class OnThisPhoneScreenTests {
     private fun inspect(room: EngineRoomFixture, fixes: Boolean = false) {
         compose.setContent { WindmillMaterial { GymMaterial {
             CompositionLocalProvider(LocalTelemetry provides telemetry) {
-                val read = room.store.recovery
+                val read = room.store.recovery.latest
                 read?.workouts?.firstOrNull()?.let { row -> WorkoutInspectScreen(room.store, read, row, {}, { read.belongsTo(room.account()) }) }
-                if (fixes) WorkoutFixScreen(room.store) { room.store.recoveryDraft?.read?.belongsTo(room.account()) == true }
+                if (fixes) WorkoutFixScreen(room.store) { room.store.recovery.fixDraft?.read?.belongsTo(room.account()) == true }
             }
         } } }
     }
@@ -124,17 +124,17 @@ class OnThisPhoneScreenTests {
             compose.onNodeWithText("Fix workout").performClick()
             compose.onNodeWithText("Save and retry").assertIsNotEnabled()
             compose.runOnIdle {
-                val opening = requireNotNull(room.store.recoveryDraft)
+                val opening = requireNotNull(room.store.recovery.fixDraft)
                 val set = opening.copy.sets.single()
-                room.store.changeRecoveryFix(opening, opening.copy.copy(
+                room.store.recovery.changeFix(opening, opening.copy.copy(
                     session = opening.copy.session.copy(startedAtMs = room.now - 90_000, finishedAtMs = room.now - 1_000),
                     sets = listOf(set.copy(weightKg = 81.25, completedAtMs = room.now - 60_000))))
                 assertEquals(original, room.training.imports.retainedWorkouts().single())
                 assertTrue(room.outbox().isEmpty())
             }
-            compose.waitUntil(10_000) { compose.runOnIdle { !room.store.recoveryBusy } }
+            compose.waitUntil(10_000) { compose.runOnIdle { !room.store.recovery.busy } }
             compose.onNodeWithText("Save and retry").assertIsEnabled().performClick()
-            compose.waitUntil(10_000) { compose.runOnIdle { room.store.recoveryDraft == null } }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.recovery.fixDraft == null } }
             compose.runOnIdle {
                 assertEquals(1, room.outbox().size)
                 val command = room.outbox().single().member("intent").member("cmd")
@@ -207,7 +207,7 @@ class OnThisPhoneScreenTests {
     @Test fun logHeadUsesOnlyTheAuthorityFilteredReadAcrossOriginIdentityAndTrustChanges() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         try { phone(scope).use { room ->
-            val read = requireNotNull(room.store.recovery)
+            val read = requireNotNull(room.store.recovery.latest)
             val opening = room.account()
             var account by mutableStateOf(opening)
             compose.setContent { WindmillMaterial { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {},
@@ -218,7 +218,7 @@ class OnThisPhoneScreenTests {
                 Account(opening.origin, opening.user, locallyTrusted = false), Account(opening.origin, opening.user, resolved = false))) {
                 compose.runOnIdle { account = changed }
                 compose.onNodeWithText("On this phone").assertDoesNotExist()
-                compose.runOnIdle { assertSame(read, room.store.recovery); account = opening }
+                compose.runOnIdle { assertSame(read, room.store.recovery.latest); account = opening }
                 compose.onNodeWithText("On this phone").assertIsDisplayed()
             }
         } } finally { scope.cancel() }

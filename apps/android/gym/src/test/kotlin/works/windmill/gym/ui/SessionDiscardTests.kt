@@ -48,13 +48,13 @@ class SessionDiscardTests {
             room.select("u1")
             room.pull(server)
             room.startExternalWorkout()
-            room.store.choose("bench-press")
-            room.store.logSet(weightKg = 82.5, reps = 5)
-            room.store.logSet(weightKg = 90.0, reps = 3)
-            room.store.logSet(weightKg = 90.0, reps = 3)
-            room.store.logSet(weightKg = 90.0, reps = 2)
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(weightKg = 82.5, reps = 5)
+            room.store.workout.logSet(weightKg = 90.0, reps = 3)
+            room.store.workout.logSet(weightKg = 90.0, reps = 3)
+            room.store.workout.logSet(weightKg = 90.0, reps = 2)
             room.now += 60_000
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
             room.sync(server)
             room.store.refreshEngine()
         }
@@ -63,7 +63,7 @@ class SessionDiscardTests {
     }
 
     private fun screen(room: EngineRoomFixture) {
-        val summary = room.store.recent.single()
+        val summary = room.store.history.recent.single()
         compose.setContent {
             var pending by remember { mutableStateOf(false) }
             var busy by remember { mutableStateOf(false) }
@@ -84,7 +84,7 @@ class SessionDiscardTests {
                     if (!busy && pending) {
                         busy = true
                         scope.launch {
-                            assertEquals(null, room.store.discardWorkout(summary.id))
+                            assertEquals(null, room.store.workout.discardWorkout(summary.id))
                             pending = false
                             busy = false
                         }
@@ -103,7 +103,7 @@ class SessionDiscardTests {
             compose.onNodeWithText("Discard workout").performScrollTo().assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals("and this is NOT the slight session the finish screen draws it for",
-                    works.windmill.gym.domain.sync.SessionReview.slightSets, room.store.recent.single().workingSetCount)
+                    works.windmill.gym.domain.sync.SessionReview.slightSets, room.store.history.recent.single().workingSetCount)
             }
         } } finally { scope.cancel() }
     }
@@ -112,7 +112,7 @@ class SessionDiscardTests {
     fun theSharedDialogCancelsWithoutAWriteAndConfirmsAnImmediateDiscard() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
-            val workout = room.store.recent.single()
+            val workout = room.store.history.recent.single()
             screen(room)
             val before = room.engine.snapshot()
             compose.onNodeWithText("Discard workout").performScrollTo().performClick()
@@ -125,8 +125,8 @@ class SessionDiscardTests {
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Discard this workout?").fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
                 assertEquals(null, runBlocking { room.training.session(workout.id) })
-                assertEquals(emptyList<String>(), room.store.recent.map { it.id })
-                assertEquals(emptyList<works.windmill.gym.store.Withheld>(), room.store.withheld)
+                assertEquals(emptyList<String>(), room.store.history.recent.map { it.id })
+                assertEquals(emptyList<works.windmill.gym.store.Withheld>(), room.store.held.withheld)
             }
             compose.onNodeWithText("Undo").assertDoesNotExist()
         } } finally { scope.cancel() }

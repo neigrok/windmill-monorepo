@@ -27,8 +27,8 @@ class RoutineHistoryTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select(null)
             val draft = RoutineDraft(name = "Pull", creationId = "routine_history").adding("bench-press")
-                .capturingMovements(room.store.catalog)
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
+                .capturingMovements(room.store.routines.catalog)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Ok)
             val details = mutableListOf<SessionDetail>()
             for (i in 0..50) {
                 val id = "history_${i.toString().padStart(2, '0')}"
@@ -42,15 +42,15 @@ class RoutineHistoryTests {
             }
             room.now += 1_000
             room.training.startSession(SessionStart("history_open", room.now, routineId = "routine_history"))
-            val expected = details.take(21).drop(1).reversed().map { SessionSummary(it.session, it.sets, room.store.catalog) }
+            val expected = details.take(21).drop(1).reversed().map { SessionSummary(it.session, it.sets, room.store.routines.catalog) }
             val snapshot = room.engine.snapshot()
             val controls = room.controlsFile.readBytes()
             events.clear()
             assertEquals(expected, room.training.routineHistory("routine_history"))
-            assertEquals(GymResult.Ok(expected), room.store.routineHistory("routine_history"))
+            assertEquals(GymResult.Ok(expected), room.store.history.routineHistory("routine_history"))
             assertEquals(List(20) { 2 }, expected.map { it.setCount })
             assertEquals(List(20) { listOf("bench-press", "barbell-row") }, expected.map { it.exercises })
-            assertEquals(expected.drop(1) + SessionSummary(details.first().session, details.first().sets, room.store.catalog),
+            assertEquals(expected.drop(1) + SessionSummary(details.first().session, details.first().sets, room.store.routines.catalog),
                 room.training.routineHistory("routine_history", setOf("history_20")))
             assertEquals(emptyList<SessionSummary>(), room.training.routineHistory("another_routine"))
             assertEquals(snapshot, room.engine.snapshot())
@@ -63,7 +63,7 @@ class RoutineHistoryTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope,
             readDispatcher = StandardTestDispatcher(testScheduler)).use { room ->
             room.select(null)
-            val pending = async(start = CoroutineStart.UNDISPATCHED) { room.store.routineHistory("routine_history") }
+            val pending = async(start = CoroutineStart.UNDISPATCHED) { room.store.history.routineHistory("routine_history") }
             assertFalse(pending.isCompleted)
             assertTrue(room.engine.signIn("a", mapOf("gym" to false), serverSchema = SyncSchema.registry.version).member("complete").bool())
             runCurrent()

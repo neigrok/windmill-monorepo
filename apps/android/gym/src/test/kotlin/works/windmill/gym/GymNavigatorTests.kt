@@ -345,8 +345,8 @@ class GymNavigatorTests {
             room.now = System.currentTimeMillis()
             runBlocking {
                 room.select(null)
-                room.store.weighIn(day.minusDays(1).toString(), 81.4)
-                room.store.weighIn(day.toString(), 82.4)
+                room.store.bodyweight.weighIn(day.minusDays(1).toString(), 81.4)
+                room.store.bodyweight.weighIn(day.toString(), 82.4)
             }
             room.store.observeEngine()
             val content: @androidx.compose.runtime.Composable () -> Unit = {

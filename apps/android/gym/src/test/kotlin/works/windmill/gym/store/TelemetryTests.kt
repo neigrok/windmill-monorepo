@@ -134,22 +134,22 @@ class TelemetryTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             val store = room.store
             room.select(null)
-            val routine = (store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
+            val routine = (store.routines.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
                 .adding("bench-press")) as GymResult.Ok).value
             telemetry.events.clear()
             val beforeMissing = room.engine.snapshot()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")), store.start("missing-routine"))
+            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")), store.workout.start("missing-routine"))
             assertEquals(beforeMissing, room.engine.snapshot())
-            assertNull(store.session)
+            assertNull(store.workout.session)
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
-            assertTrue(store.start(routine.id) is GymResult.Ok)
-            assertTrue(store.start(routine.id) is GymResult.Failed)
-            store.choose("bench-press")
-            val offered = requireNotNull(store.notification.value?.offer)
+            assertTrue(store.workout.start(routine.id) is GymResult.Ok)
+            assertTrue(store.workout.start(routine.id) is GymResult.Failed)
+            store.workout.choose("bench-press")
+            val offered = requireNotNull(store.workout.notification.value?.offer)
             val command = LogSetCommand(offered.key, offered.id)
-            assertTrue(store.acceptSet(command) is LogSetAcceptance.Accepted)
-            assertEquals(LogSetAcceptance.Stale, store.acceptSet(command))
-            assertTrue(store.finish() is FinishOutcome.Closed)
+            assertTrue(store.workout.acceptSet(command) is LogSetAcceptance.Accepted)
+            assertEquals(LogSetAcceptance.Stale, store.workout.acceptSet(command))
+            assertTrue(store.workout.finish() is FinishOutcome.Closed)
             assertEquals(listOf(
                 "gym_session_started" to emptyMap<String, String>(),
                 "gym_set_logged" to emptyMap<String, String>(),
@@ -163,7 +163,7 @@ class TelemetryTests {
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select(null)
-            val routine = (room.store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
+            val routine = (room.store.routines.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
                 .adding("bench-press")) as GymResult.Ok).value
             telemetry.events.clear()
             var afterDelete: Json? = null
@@ -183,13 +183,13 @@ class TelemetryTests {
                 override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {}
             }
 
-            val result = withContext(deletion) { room.store.start(routine.id) }
+            val result = withContext(deletion) { room.store.workout.start(routine.id) }
 
             assertNull(deletionFailure?.stackTraceToString(), deletionFailure)
             assertNotNull("the selected routine was removed before the action decision", afterDelete)
             assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")), result)
             assertEquals(afterDelete, room.engine.snapshot())
-            assertNull(room.store.session)
+            assertNull(room.store.workout.session)
             assertTrue(room.training.details().isEmpty())
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
@@ -200,7 +200,7 @@ class TelemetryTests {
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select(null)
-            val routine = (room.store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
+            val routine = (room.store.routines.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Workout")
                 .adding("bench-press")) as GymResult.Ok).value
             telemetry.events.clear()
             var afterExternalStart: List<Json>? = null
@@ -222,14 +222,14 @@ class TelemetryTests {
                 override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {}
             }
 
-            val result = withContext(externalStart) { room.store.start(routine.id) }
+            val result = withContext(externalStart) { room.store.workout.start(routine.id) }
 
             assertNull(externalStartFailure?.stackTraceToString(), externalStartFailure)
             assertNotNull("the external workout opened before the action decision", afterExternalStart)
             assertEquals(GymResult.Failed(WriteFailure.Refused("A workout is already open. Finish it first.")), result)
             assertEquals(afterExternalStart, room.outbox())
-            assertEquals("external1", room.store.session?.id)
-            assertNull(room.store.session?.routineId)
+            assertEquals("external1", room.store.workout.session?.id)
+            assertNull(room.store.workout.session?.routineId)
             assertEquals(listOf("external1"), room.training.details().map { it.session.id })
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
@@ -241,28 +241,28 @@ class TelemetryTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select("account")
             val day = "2026-01-01"
-            assertNull(room.store.weighIn(day, 182.0))
+            assertNull(room.store.bodyweight.weighIn(day, 182.0))
             telemetry.events.clear()
-            val original = room.store.bodyweight
-            room.store.withhold(Deletion.Bodyweight(day))
+            val original = room.store.bodyweight.drawn
+            room.store.deletions.withhold(Deletion.Bodyweight(day))
             runCurrent()
-            val held = room.store.withheld
+            val held = room.store.held.withheld
             room.engine.failNextCommit()
-            assertNotNull(room.store.weighIn(day, 82.45))
-            assertEquals(held, room.store.withheld)
-            assertTrue(room.store.bodyweight.isEmpty())
+            assertNotNull(room.store.bodyweight.weighIn(day, 82.45))
+            assertEquals(held, room.store.held.withheld)
+            assertTrue(room.store.bodyweight.drawn.isEmpty())
             assertEquals(emptyList<Any>(), room.training.weighins())
             assertEquals(listOf("gym_action" to mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "held")), telemetry.events)
             assertEquals(listOf("gym.weighIn"), telemetry.failures.map { it.first })
-            assertNotNull(room.store.keepWithheld())
-            assertEquals(original, room.store.bodyweight)
+            assertNotNull(room.store.deletions.keepWithheld())
+            assertEquals(original, room.store.bodyweight.drawn)
 
-            room.store.withhold(Deletion.Bodyweight(day))
+            room.store.deletions.withhold(Deletion.Bodyweight(day))
             runCurrent()
-            assertNull(room.store.weighIn(day, 82.45))
-            assertTrue(room.store.withheld.isEmpty())
-            assertEquals(82.45, room.store.bodyweight.single().weightKg, 0.0)
-            assertNotNull(room.store.weighIn(day, Double.NaN))
+            assertNull(room.store.bodyweight.weighIn(day, 82.45))
+            assertTrue(room.store.held.withheld.isEmpty())
+            assertEquals(82.45, room.store.bodyweight.drawn.single().weightKg, 0.0)
+            assertNotNull(room.store.bodyweight.weighIn(day, Double.NaN))
             assertEquals(listOf(
                 "gym_action" to mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "held"),
                 "gym_action" to mapOf("screen" to "bodyweight", "action" to "undo", "outcome" to "ok"),
@@ -277,23 +277,23 @@ class TelemetryTests {
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select("account")
-            for (index in 0..2) assertTrue(room.store.saveNote("private_note_$index", NoteWrite("Private title $index", "Private body")) is GymResult.Ok)
-            assertNull(room.store.delete(Deletion.Note("private_note_1")))
+            for (index in 0..2) assertTrue(room.store.notes.saveNote("private_note_$index", NoteWrite("Private title $index", "Private body")) is GymResult.Ok)
+            assertNull(room.store.deletions.delete(Deletion.Note("private_note_1")))
             telemetry.events.clear()
             val visible = listOf("private_note_0", "private_note_2")
             val moved = visible.reversed()
-            assertTrue(room.store.reorderNotes("private_note_2", visible) is GymResult.Ok)
-            assertTrue(room.store.reorderNotes("private_note_0", visible.dropLast(1)) is GymResult.Failed)
+            assertTrue(room.store.notes.reorderNotes("private_note_2", visible) is GymResult.Ok)
+            assertTrue(room.store.notes.reorderNotes("private_note_0", visible.dropLast(1)) is GymResult.Failed)
             val before = room.engine.snapshot()
             room.engine.failNextCommit()
-            assertTrue(room.store.reorderNotes("private_note_0", moved) is GymResult.Failed)
+            assertTrue(room.store.notes.reorderNotes("private_note_0", moved) is GymResult.Failed)
             assertEquals(before, room.engine.snapshot())
             assertTrue(telemetry.events.isEmpty())
             assertEquals(listOf("gym.reorderNotes"), telemetry.failures.map { it.first })
 
-            assertTrue(room.store.reorderNotes("private_note_0", moved) is GymResult.Ok)
-            assertTrue(room.store.reorderNotes("private_note_0", moved) is GymResult.Ok)
-            assertEquals(emptyList<String>(), room.store.withheld.map { it.subjectId })
+            assertTrue(room.store.notes.reorderNotes("private_note_0", moved) is GymResult.Ok)
+            assertTrue(room.store.notes.reorderNotes("private_note_0", moved) is GymResult.Ok)
+            assertEquals(emptyList<String>(), room.store.held.withheld.map { it.subjectId })
             assertEquals(listOf("gym_note_moved" to emptyMap<String, String>()), telemetry.events)
         }
     }

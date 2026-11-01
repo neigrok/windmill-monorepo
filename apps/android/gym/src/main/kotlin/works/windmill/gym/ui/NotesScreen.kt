@@ -60,13 +60,13 @@ fun NotesScreen(
     var failure by remember { mutableStateOf<String?>(null) }
     var order by remember { mutableStateOf<List<Note>?>(null) }
     var savingOrder by remember { mutableStateOf(false) }
-    val hasRead = read && store.notesRead
+    val hasRead = read && store.notes.notesRead
     LaunchedEffect(store, isSignedIn, attempt) {
         if (!isSignedIn) return@LaunchedEffect
         reading = true
         failure = null
         try {
-            when (val result = store.readNotes()) {
+            when (val result = store.notes.readNotes()) {
                 is GymResult.Ok -> read = true
                 is GymResult.Failed -> failure = result.why.line("Your notes could not be read.")
             }
@@ -79,23 +79,23 @@ fun NotesScreen(
         say(null)
         scope.launch {
             try {
-                val result = store.reorderNotes(moved, next.map { it.id })
+                val result = store.notes.reorderNotes(moved, next.map { it.id })
                 if (result is GymResult.Failed) say(result.why.line("The order stayed as it was."))
             } finally { order = null; savingOrder = false }
         }
     }
     GymScreen(title = Notes.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize()) {
-            NoteList(order ?: store.notes, enabled = !savingOrder,
+            NoteList(order ?: store.notes.all, enabled = !savingOrder,
                 modifier = Modifier.weight(1f), onOpen = { onEdit(it, "") },
                 onMove = { if (!savingOrder) order = it }, onSettle = ::reorder,
                 onDelete = { note ->
-                    val problem = store.delete(Deletion.Note(note.id))
+                    val problem = store.deletions.delete(Deletion.Note(note.id))
                     problem?.line("that note is still here")
                 },
                 header = {
                     Text(Notes.honesty, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.ink)
-                    if (isSignedIn) Refusals(store.noteRefusals, store.catalog, store::clearRefusals)
+                    if (isSignedIn) Refusals(store.notes.noteRefusals, store.routines.catalog, store::clearRefusals)
                     when {
                         !isSignedIn -> Text(Notes.signedOut, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.inkDim)
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -105,7 +105,7 @@ fun NotesScreen(
                         }
                         !hasRead -> Text("Reading your notes…", style = WindmillFont.body(16), color = skin.inkDim)
                     }
-                    if (isSignedIn && hasRead && failure == null && store.noteCount == 0) {
+                    if (isSignedIn && hasRead && failure == null && store.notes.noteCount == 0) {
                         Notes.placeholders.forEach { title ->
                             Row(Modifier.fillMaxWidth().heightIn(min = 70.dp)
                                 .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) }
@@ -120,10 +120,10 @@ fun NotesScreen(
                 }, showRows = isSignedIn && hasRead && failure == null,
                 footer = {
                     if (isSignedIn && hasRead && failure == null) {
-                        if (store.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = skin.inkDim)
+                        if (store.notes.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = skin.inkDim)
                     }
                 })
-            if (!isSignedIn || (hasRead && failure == null && store.noteCount < Notes.maxNotes)) {
+            if (!isSignedIn || (hasRead && failure == null && store.notes.noteCount < Notes.maxNotes)) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
                     Button(onClick = { if (isSignedIn) onEdit(null, "") else onSignIn() },
                         enabled = !savingOrder, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
@@ -291,7 +291,7 @@ fun NoteEditorScreen(
         said = null
         scope.launch {
             try {
-                when (val result = store.saveNote(id, NoteWrite(title.trim(), body.trim()))) {
+                when (val result = store.notes.saveNote(id, NoteWrite(title.trim(), body.trim()))) {
                     is GymResult.Ok -> onDone()
                     is GymResult.Failed -> said = result.why.line("The note stayed as it was.")
                 }
@@ -319,7 +319,7 @@ fun NoteEditorScreen(
                 saving = true
                 scope.launch {
                     try {
-                        val failure = store.delete(Deletion.Note(note.id, Deletion.Note.Origin.Editor))
+                        val failure = store.deletions.delete(Deletion.Note(note.id, Deletion.Note.Origin.Editor))
                         if (failure == null) onDone() else said = failure.line("that note is still here")
                     } finally { saving = false }
                 }

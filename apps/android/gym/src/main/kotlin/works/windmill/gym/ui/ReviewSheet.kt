@@ -104,10 +104,10 @@ fun ReviewSheet(
     }
     val seen = seenDocument == document
 
-    LaunchedEffect(proposalId, asked, store.settledProposals[proposalId]) {
+    LaunchedEffect(proposalId, asked, store.routines.settledProposals[proposalId]) {
         gone = false
         proposal = null
-        when (val read = store.proposal(proposalId)) {
+        when (val read = store.routines.proposal(proposalId)) {
             is ProposalRead.Found -> {
                 proposal = read.proposal
                 if (read.proposal.receipt != null) said = null
@@ -121,8 +121,8 @@ fun ReviewSheet(
     // routine moved on the log, was edited here and not yet confirmed, or left sight, and the log
     // will refuse the tap. A window taking the row off the routines home changes none of it.
     val standing = proposal
-    val outOfDate = proposalId in store.outOfDateProposals
-    val decidable = standing != null && standing.isPending && !outOfDate && !overtaken && store.session == null
+    val outOfDate = proposalId in store.routines.outOfDateProposals
+    val decidable = standing != null && standing.isPending && !outOfDate && !overtaken && store.workout.session == null
 
     fun decide(apply: Boolean) {
         val open = proposal ?: return
@@ -132,7 +132,7 @@ fun ReviewSheet(
         scope.launch {
             try {
                 said = null
-                val outcome = if (apply) store.applyProposal(open.id) else store.dismissProposal(open.id)
+                val outcome = if (apply) store.routines.applyProposal(open.id) else store.routines.dismissProposal(open.id)
                 when (outcome) {
                     is ProposalOutcome.Decided -> {
                         proposal = outcome.proposal
@@ -154,7 +154,7 @@ fun ReviewSheet(
                         proposal = null
                         gone = true
                     }
-                    is ProposalOutcome.Failed -> said = if (apply && store.removalPending(open.id))
+                    is ProposalOutcome.Failed -> said = if (apply && store.routines.removalPending(open.id))
                         "Still waiting for the log. Retry to check this removal."
                         else outcome.why.line(if (apply) "nothing was applied" else "it is still waiting")
                 }
@@ -178,8 +178,8 @@ fun ReviewSheet(
                 .padding(bottom = WindmillSpace.x4),
         ) {
             if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
-            if (store.session != null) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
-            if (store.session == null) standing?.let { Body(it, store.catalog, outOfDate) }
+            if (store.workout.session != null) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
+            if (store.workout.session == null) standing?.let { Body(it, store.routines.catalog, outOfDate) }
             standing?.let { proposal ->
                 onAsk?.let { ask ->
                     Row(
@@ -203,9 +203,9 @@ fun ReviewSheet(
         standing?.let { proposal ->
             var receiptVisible by remember(proposal.id) { mutableStateOf(false) }
             val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
-            val seat = store.accountKey
+            val seat = store.seat.accountKey
             LaunchedEffect(proposal, receiptVisible, lifecycle, seat) {
-                if (receiptVisible && lifecycle == Lifecycle.State.RESUMED) store.proposalReceiptShown(proposal, seat)
+                if (receiptVisible && lifecycle == Lifecycle.State.RESUMED) store.routines.proposalReceiptShown(proposal, seat)
             }
             Foot(proposal, decidable, deciding, seen, said, onDecide = ::decide,
                 receiptModifier = Modifier.onGloballyPositioned { receiptVisible = !it.boundsInWindow().isEmpty })

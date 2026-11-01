@@ -49,12 +49,12 @@ class LogRowLayoutTests {
                 phone.now = now - 86_400_000
                 phone.select("u1")
                 phone.pull(server)
-                val pushA = (phone.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
-                phone.store.start(pushA.id)
-                phone.store.choose("bench-press")
-                phone.store.logSet(62.5, 8)
+                val pushA = (phone.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+                phone.store.workout.start(pushA.id)
+                phone.store.workout.choose("bench-press")
+                phone.store.workout.logSet(62.5, 8)
                 phone.now += 3_600_000
-                assertTrue(phone.store.finish() is FinishOutcome.Closed)
+                assertTrue(phone.store.workout.finish() is FinishOutcome.Closed)
                 phone.sync(server)
             } } } finally { phoneScope.cancel() }
             room.now = now
@@ -89,7 +89,7 @@ class LogRowLayoutTests {
             assertEquals("1 set · 1 h 00 min", layout.layoutInput.text.text)
             compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
             compose.onNode(hasText("Push A") and hasClickAction()).performClick()
-            assertEquals("the row opens the one session the log holds", room.store.recent, opened)
+            assertEquals("the row opens the one session the log holds", room.store.history.recent, opened)
         } } finally { scope.cancel() }
     }
 }

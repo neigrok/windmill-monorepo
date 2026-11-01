@@ -27,7 +27,7 @@ class ProgressReadTests {
             room.workout(80.0)
             runCurrent()
             val expected = StatsProgress.of(room.training.details(), room.engine.physNow(), complete = false)
-            assertEquals(GymResult.Ok(expected), room.store.loadProgress())
+            assertEquals(GymResult.Ok(expected), room.store.history.loadProgress())
             EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
                 other.now = room.now + 600_000
                 other.select("a")
@@ -38,12 +38,12 @@ class ProgressReadTests {
             }
             room.sync(server)
             assertEquals(2, room.training.details().size)
-            assertEquals("a second read shares the first", GymResult.Ok(expected), room.store.loadProgress())
-            assertEquals(expected, room.store.progress)
+            assertEquals("a second read shares the first", GymResult.Ok(expected), room.store.history.loadProgress())
+            assertEquals(expected, room.store.history.progress)
             val fresh = StatsProgress.of(room.training.details(), room.engine.physNow())
-            assertEquals(GymResult.Ok(fresh), room.store.loadProgress(force = true))
-            assertEquals(fresh, room.store.progress)
-            assertNull(room.store.progressFailure)
+            assertEquals(GymResult.Ok(fresh), room.store.history.loadProgress(force = true))
+            assertEquals(fresh, room.store.history.progress)
+            assertNull(room.store.history.progressFailure)
         }
     }
 
@@ -52,10 +52,10 @@ class ProgressReadTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
             val session = room.workout(80.0)
-            assertEquals(listOf(session.id), (room.store.loadProgress() as GymResult.Ok).value.sessions.map { it.sessionId })
+            assertEquals(listOf(session.id), (room.store.history.loadProgress() as GymResult.Ok).value.sessions.map { it.sessionId })
             room.select("b")
-            assertEquals(emptyList<ProgressSession>(), room.store.progress!!.sessions)
-            assertNull(room.store.progressFailure)
+            assertEquals(emptyList<ProgressSession>(), room.store.history.progress!!.sessions)
+            assertNull(room.store.history.progressFailure)
         }
     }
 
@@ -65,18 +65,18 @@ class ProgressReadTests {
             room.select("a")
             val session = room.workout(80.0)
             runCurrent()
-            assertTrue(room.store.loadProgress() is GymResult.Ok)
+            assertTrue(room.store.history.loadProgress() is GymResult.Ok)
             val set = room.training.session(session.id)!!.sets.single()
-            assertTrue(room.store.fixSet(session.id, set.id, SetFix(weightKg = 90.0)) is FixOutcome.Corrected)
+            assertTrue(room.store.workout.fixSet(session.id, set.id, SetFix(weightKg = 90.0)) is FixOutcome.Corrected)
             runCurrent()
-            val read = room.store.progress!!
+            val read = room.store.history.progress!!
             val expected = StatsProgress.of(room.training.details(), read.asOf, complete = false)
             assertEquals(expected, read)
             assertEquals(listOf(90.0), read.sessions.flatMap { it.movements }.map { it.heaviest.weightKg })
-            room.store.withhold(Deletion.Session(session.id))
-            assertEquals(emptyList<ProgressSession>(), room.store.progress!!.sessions)
-            room.store.keepWithheld()
-            assertEquals(expected, room.store.progress)
+            room.store.deletions.withhold(Deletion.Session(session.id))
+            assertEquals(emptyList<ProgressSession>(), room.store.history.progress!!.sessions)
+            room.store.deletions.keepWithheld()
+            assertEquals(expected, room.store.history.progress)
         }
     }
 
@@ -85,14 +85,14 @@ class ProgressReadTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server)
-            assertTrue(other.store.create("Bench", "barbell", "private-bench") is GymResult.Ok)
+            assertTrue(other.store.routines.create("Bench", "barbell", "private-bench") is GymResult.Ok)
             other.sync(server)
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a"); room.pull(server); room.store.refreshEngine()
             room.store.observeEngine()
             runCurrent()
-            val renamed = room.store.edit("private-bench", "Bench Press")
+            val renamed = room.store.history.edit("private-bench", "Bench Press")
             val confirmed = room.training.catalogue().single { it.id == "private-bench" }
             assertEquals(GymResult.Ok(confirmed), renamed)
             assertEquals("Bench Press", confirmed.name)
@@ -102,11 +102,11 @@ class ProgressReadTests {
                     state.snapshot.records.any { it.id.toString() == "private-bench" && it.values["name"] == Json.of("Bench Press") } } }
             }
             runCurrent()
-            assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })
+            assertEquals(listOf(confirmed), room.store.routines.catalog.filter { it.id == "private-bench" })
             room.store.connect(room.account())
-            assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })
+            assertEquals(listOf(confirmed), room.store.routines.catalog.filter { it.id == "private-bench" })
             room.sync(server); room.store.refreshEngine()
-            assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })
+            assertEquals(listOf(confirmed), room.store.routines.catalog.filter { it.id == "private-bench" })
         }
     }
 }

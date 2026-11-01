@@ -62,11 +62,11 @@ class RoutinePlanRaceTests {
                 val draft = RoutineDraft(name = "Only first", creationId = "routine_first").adding("bench-press")
                 telemetry.events.clear()
                 armed = true
-                assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), room.store.saveRoutine(draft))
+                assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), room.store.routines.saveRoutine(draft))
                 assertNull(hookFailure?.stackTraceToString(), hookFailure)
                 assertNotNull(switched)
                 assertEquals(switched, room.engine.snapshot())
-                assertEquals(emptyList<Routine>(), room.store.routines)
+                assertEquals(emptyList<Routine>(), room.store.routines.all)
                 assertEquals(emptyList<Routine>(), room.training.program())
                 assertEquals(listOf("gym_action" to mapOf("screen" to "routine_editor", "action" to "save", "outcome" to "refused")), telemetry.events)
                 assertEquals(emptyList<String>(), telemetry.failures)
@@ -98,28 +98,28 @@ class RoutinePlanRaceTests {
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), CoroutineScope(backgroundScope.coroutineContext + hook), telemetry = telemetry).use {
             room = it; room.select("first")
-            val movement = room.store.catalog.single { it.id == "bench-press" }
+            val movement = room.store.routines.catalog.single { it.id == "bench-press" }
             val draft = RoutineDraft(name = "Exact saved", creationId = "routine_exact",
                 entries = listOf(RoutineEntry(1, movement.id, listOf(SetTarget(8, 12.505)))),
                 movements = listOf(RoutineMovement(movement, movement)))
             val expected = Routine("routine_exact", "Exact saved", entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 12.51)))))
-            val beforeCatalog = room.store.catalog
+            val beforeCatalog = room.store.routines.catalog
             telemetry.events.clear(); armed = true
-            assertEquals(GymResult.Ok(expected), room.store.saveRoutine(draft))
+            assertEquals(GymResult.Ok(expected), room.store.routines.saveRoutine(draft))
             assertNull(hookFailure?.stackTraceToString(), hookFailure)
             assertEquals(expected, accepted)
             assertNotNull(switched)
             assertEquals(switched, room.engine.snapshot())
             assertEquals(emptyList<Routine>(), room.training.program())
-            assertEquals(emptyList<Routine>(), room.store.routines)
-            assertEquals(beforeCatalog, room.store.catalog)
+            assertEquals(emptyList<Routine>(), room.store.routines.all)
+            assertEquals(beforeCatalog, room.store.routines.catalog)
             assertEquals(listOf(
                 "gym_action" to mapOf("screen" to "routine_editor", "action" to "save", "outcome" to "ok"),
                 "gym_routine_saved" to mapOf("action" to "create"),
             ), telemetry.events)
             assertEquals(emptyList<String>(), telemetry.failures)
             room.store.connect(room.account())
-            assertEquals(emptyList<Routine>(), room.store.routines)
+            assertEquals(emptyList<Routine>(), room.store.routines.all)
         }
     }
 
@@ -143,19 +143,19 @@ class RoutinePlanRaceTests {
             val draft = RoutineDraft(name = "Accepted", creationId = "routine_cancelled").adding("bench-press")
             val expected = Routine("routine_cancelled", "Accepted", entries = listOf(RoutineEntry(1, "bench-press")))
             telemetry.events.clear(); armed = true
-            val caller = async(callerJob, start = CoroutineStart.UNDISPATCHED) { room.store.saveRoutine(draft) }
+            val caller = async(callerJob, start = CoroutineStart.UNDISPATCHED) { room.store.routines.saveRoutine(draft) }
             runCurrent()
             assertTrue(cancelledAtBoundary)
             assertTrue(caller.isCancelled)
             assertEquals(listOf(expected), room.training.program())
-            assertEquals(listOf(expected), room.store.routines)
+            assertEquals(listOf(expected), room.store.routines.all)
             assertEquals(listOf(
                 "gym_action" to mapOf("screen" to "routine_editor", "action" to "save", "outcome" to "ok"),
                 "gym_routine_saved" to mapOf("action" to "create"),
             ), telemetry.events)
             assertEquals(emptyList<String>(), telemetry.failures)
             val restored = room.freshStore(); restored.connect(room.account())
-            assertEquals(listOf(expected), restored.routines)
+            assertEquals(listOf(expected), restored.routines.all)
         }
     }
 
@@ -171,7 +171,7 @@ class RoutinePlanRaceTests {
             room.training.editExercise(base.id, base.name, "dumbbell", 2, base)
             val before = room.engine.snapshot()
             assertEquals(GymResult.Failed(WriteFailure.Refused("Reopen this routine to review its movement targets before saving.")),
-                room.store.saveRoutine(restored))
+                room.store.routines.saveRoutine(restored))
             assertEquals(before, room.engine.snapshot())
             assertEquals(listOf(opened), room.training.program())
             assertEquals(listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(5, 80.0)))), restored.entries)
@@ -182,15 +182,15 @@ class RoutinePlanRaceTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
             val draft = RoutineDraft(name = "Only once", creationId = "routine_hidden").adding("bench-press")
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Ok)
             room.training.deleteRoutine("routine_hidden")
             val hidden = room.engine.snapshot()
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Failed)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Failed)
             assertEquals(hidden, room.engine.snapshot())
             assertEquals(emptyList<Routine>(), room.training.program())
             room.engine.releaseHeld(true)
             val deleted = room.engine.snapshot()
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Failed)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Failed)
             assertEquals(deleted, room.engine.snapshot())
             assertEquals(emptyList<Routine>(), room.training.program())
         }
@@ -202,11 +202,11 @@ class RoutinePlanRaceTests {
             val movement = Exercise("ex_deleted", "Gone movement", equipment = "other", custom = true)
             val draft = RoutineDraft(name = "Only once", creationId = "routine_movement")
                 .staging(RoutineMovement(null, movement), TargetEntry.Reading.Open)
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Ok)
             val outcome = room.engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.delete(Gym.Types.exercise, RecordID(movement.id)))))
             assertTrue(outcome is works.windmill.sync.api.CommitOutcome.Committed)
             val deleted = room.engine.snapshot()
-            assertTrue(room.store.saveRoutine(draft) is GymResult.Failed)
+            assertTrue(room.store.routines.saveRoutine(draft) is GymResult.Failed)
             assertEquals(deleted, room.engine.snapshot())
             assertEquals(emptyList<Exercise>(), room.training.catalogue().filter { it.id == movement.id })
         }

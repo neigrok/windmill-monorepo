@@ -68,24 +68,24 @@ class WorkoutTileRoutingTests {
             }
             for (tab in listOf("The log", "Coach")) {
                 compose.onNode(hasText(tab) and hasClickAction()).performClick()
-                compose.runOnIdle { room.store.requestRoutines() }
+                compose.runOnIdle { room.store.workout.requestRoutines() }
                 compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             }
             compose.runOnIdle { shell.destinations.single { it.id == "notes" }.onOpen() }
             compose.onNodeWithText("Notes").assertIsDisplayed()
-            compose.runOnIdle { room.store.requestRoutines() }
+            compose.runOnIdle { room.store.workout.requestRoutines() }
             compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             compose.onNodeWithContentDescription("New routine").performClick()
             compose.onNode(hasSetTextAction()).performTextInput("Unfinished routine")
-            compose.runOnIdle { room.store.requestRoutines() }
+            compose.runOnIdle { room.store.workout.requestRoutines() }
             compose.onNodeWithText("Unfinished routine").assertIsDisplayed()
             compose.onNodeWithContentDescription("Back to Routines").assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("Unfinished routine").assertIsDisplayed()
             compose.onNodeWithContentDescription("Back to Routines").assertIsDisplayed()
             compose.runOnIdle {
-                assertNull(room.store.session)
-                assertTrue(room.store.routines.isEmpty())
+                assertNull(room.store.workout.session)
+                assertTrue(room.store.routines.all.isEmpty())
                 assertEquals(emptyList<Pair<String, Map<String, String>>>(), events.filter { it.first == "gym_session_started" })
                 assertEquals(listOf("routines", "log", "routines", "coach", "routines", "notes", "routines", "routine_editor", "routine_editor"),
                     events.filter { it.first == "gym_screen_viewed" }.map { it.second["screen"] })
@@ -104,13 +104,13 @@ class WorkoutTileRoutingTests {
         val room = EngineRoomFixture(temporary.newFolder(), scope).apply { now = 1_700_000_000_000L }
         runBlocking {
             room.select(null)
-            val routine = (room.store.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Push A")
+            val routine = (room.store.routines.saveRoutine(works.windmill.gym.presentation.RoutineDraft(name = "Push A")
                 .adding("bench-press")) as works.windmill.gym.store.GymResult.Ok).value
-            room.store.start(routine.id)
-            room.store.choose("bench-press")
-            room.store.logSet(40.0, 8)
+            room.store.workout.start(routine.id)
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(40.0, 8)
             room.now += 60_000
-            room.store.finish()
+            room.store.workout.finish()
         }
         val before = room.training.details()
         val account = room.account()
@@ -123,7 +123,7 @@ class WorkoutTileRoutingTests {
             compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).fetchSemanticsNodes().isNotEmpty() }
             compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).performClick()
             compose.onNodeWithText("Set note").performTextInput("Unfinished set note")
-            compose.runOnIdle { room.store.requestRoutines() }
+            compose.runOnIdle { room.store.workout.requestRoutines() }
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("Unfinished set note").assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
@@ -131,8 +131,8 @@ class WorkoutTileRoutingTests {
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("Unfinished set note").assertIsDisplayed()
             compose.runOnIdle {
-                assertEquals(0L, room.store.routinesOpenRequest)
-                assertNull(room.store.session)
+                assertEquals(0L, room.store.workout.routinesOpenRequest)
+                assertNull(room.store.workout.session)
                 assertEquals(before, room.training.details())
             }
         } finally {
@@ -148,18 +148,18 @@ class WorkoutTileRoutingTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val room = EngineRoomFixture(temporary.newFolder(), scope)
         runBlocking { room.select(null) }
-        room.store.requestRoutines()
+        room.store.workout.requestRoutines()
         val account = room.account()
         var shown by mutableStateOf(true)
         val restored = StateRestorationTester(compose)
         restored.setContent { if (shown) GymMaterial { GymRoom(account, room.store) } }
         try {
             compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
-            compose.runOnIdle { assertEquals(0L, room.store.routinesOpenRequest) }
+            compose.runOnIdle { assertEquals(0L, room.store.workout.routinesOpenRequest) }
             compose.onNode(hasText("Coach") and hasClickAction()).performClick()
             restored.emulateSavedInstanceStateRestore()
             compose.onNode(hasText("Coach") and hasClickAction()).assertIsSelected()
-            compose.runOnIdle { assertNull(room.store.session); assertTrue(room.store.routines.isEmpty()) }
+            compose.runOnIdle { assertNull(room.store.workout.session); assertTrue(room.store.routines.all.isEmpty()) }
         } finally {
             compose.runOnIdle { shown = false }
             compose.waitForIdle()

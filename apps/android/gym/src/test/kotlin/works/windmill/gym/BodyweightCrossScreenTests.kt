@@ -52,11 +52,11 @@ class BodyweightCrossScreenTests {
             room.now = System.currentTimeMillis()
             runBlocking {
                 room.select(null)
-                room.store.weighIn(day.minusDays(1).toString(), 81.4)
-                room.store.weighIn(day.toString(), 82.4)
+                room.store.bodyweight.weighIn(day.minusDays(1).toString(), 81.4)
+                room.store.bodyweight.weighIn(day.toString(), 82.4)
             }
             room.store.observeEngine()
-            val original = room.store.bodyweight
+            val original = room.store.bodyweight.drawn
             compose.setContent { if (showing) CompositionLocalProvider(LocalTelemetry provides telemetry) {
                 GymMaterial { GymRoom(room.account(), room.store) }
             } }
@@ -75,22 +75,22 @@ class BodyweightCrossScreenTests {
                 compose.onNodeWithText("the log didn’t answer — that weigh-in is still on the log").assertIsDisplayed()
                 compose.onNodeWithText("Undo").assertDoesNotExist()
                 compose.runOnIdle {
-                    assertEquals(original, room.store.bodyweight)
+                    assertEquals(original, room.store.bodyweight.drawn)
                     assertEquals(emptyList<Any>(), room.engine.undoOffers())
                     assertEquals(listOf("gym.deleteWeighIn"), failures)
                     assertEquals(listOf(mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "failed")), actions)
                 }
                 return
             }
-            val held = compose.runOnIdle { room.store.withheld.single() }
+            val held = compose.runOnIdle { room.store.held.withheld.single() }
             if (fromBodyweight) compose.onNodeWithContentDescription("Back to The log").performClick()
             else compose.onNodeWithTag("weight:${day.minusDays(1)}").performClick()
-            compose.runOnIdle { assertEquals(held, room.store.withheld.single()) }
+            compose.runOnIdle { assertEquals(held, room.store.held.withheld.single()) }
             compose.onNodeWithText("Undo").assertIsDisplayed().performClick()
             if (fromBodyweight) compose.onNodeWithTag("weight:$day").assertIsDisplayed()
             else compose.onNode(hasText("82.4 kg") and hasText(Bodyweight.listDay(day)) and hasClickAction()).assertIsDisplayed()
             compose.runOnIdle {
-                assertEquals(original, room.store.bodyweight)
+                assertEquals(original, room.store.bodyweight.drawn)
                 assertEquals(emptyList<Any>(), room.engine.undoOffers())
                 assertEquals(emptyList<String>(), failures)
                 assertEquals(listOf(mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "held"),

@@ -45,7 +45,7 @@ class CreateMovementTargetTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             runBlocking { room.select(null) }
             val before = room.engine.snapshot()
-            val movement = room.store.catalog.first { it.id == "bench-press" }
+            val movement = room.store.routines.catalog.first { it.id == "bench-press" }
             var label by mutableStateOf("Add")
             var commits = 0
             compose.setContent { GymMaterial {
@@ -161,7 +161,7 @@ class CreateMovementTargetTests {
                 TargetEntry.Reading.Scheme(List(3) { SetTarget(11, 25.0) }))
             assertEquals(listOf(uniform), changes)
             assertEquals(before, room.engine.snapshot())
-            assertEquals(emptyList<Exercise>(), room.store.catalog.filter { it.custom })
+            assertEquals(emptyList<Exercise>(), room.store.routines.catalog.filter { it.custom })
             compose.onNodeWithText("Meadows 🏋 row").performClick()
             compose.onNodeWithText("Vary by set").performScrollTo().performClick()
             compose.onNodeWithContentDescription("Set 1 load").performTextReplacement("20")
@@ -194,7 +194,7 @@ class CreateMovementTargetTests {
             compose.waitForIdle()
             assertEquals(listOf(draft), changes)
             assertEquals(listOf("Staged only"), draft.movements.map { it.current.name })
-            assertEquals(emptyList<Exercise>(), room.store.catalog.filter { it.custom })
+            assertEquals(emptyList<Exercise>(), room.store.routines.catalog.filter { it.custom })
             assertEquals(before, room.engine.snapshot())
         } } finally { scope.cancel() }
     }

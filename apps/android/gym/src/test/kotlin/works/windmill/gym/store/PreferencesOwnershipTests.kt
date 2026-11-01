@@ -32,14 +32,14 @@ class PreferencesOwnershipTests {
             room.select("a")
             room.seedFeedback(a)
             room.select("b"); room.pull(server); room.store.refreshEngine()
-            assertEquals(b, room.store.preferences)
+            assertEquals(b, room.store.workout.preferences)
             assertEquals(b, room.training.settings())
             assertEquals("only the first account owes the log its document",
                 listOf("a" to "prefs"), room.outbox().map { owed ->
                     owed.member("lineage").str() to owed.member("intent").member("d").arr().single().member("t").str()
                 })
             room.select("a")
-            assertEquals(a, room.store.preferences)
+            assertEquals(a, room.store.workout.preferences)
             assertEquals(a, room.training.settings())
         }
     }
@@ -53,14 +53,14 @@ class PreferencesOwnershipTests {
             room.select("a")
             room.seedFeedback(old)
             room.seedFeedback(latest)
-            assertEquals(latest, room.store.preferences)
+            assertEquals(latest, room.store.workout.preferences)
             room.sync(server); room.store.refreshEngine()
-            assertEquals(latest, room.store.preferences)
+            assertEquals(latest, room.store.workout.preferences)
             assertEquals(latest, room.training.settings())
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server); other.store.refreshEngine()
-            assertEquals(latest, other.store.preferences)
+            assertEquals(latest, other.store.workout.preferences)
         }
     }
 
@@ -79,13 +79,13 @@ class PreferencesOwnershipTests {
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = boundary).use { room ->
             room.select("a")
-            val first = async { room.store.readConnectedLog() }
+            val first = async { room.store.sharing.readConnectedLog() }
             runCurrent()
             val expected = ConnectedLog.state(emptyList(), listOf(latest))
-            assertEquals(expected, room.store.refreshConnectedLog())
+            assertEquals(expected, room.store.sharing.refreshConnectedLog())
             release.complete(Unit); first.await()
-            assertEquals(expected, room.store.connectedLog)
-            assertEquals(expected, room.store.readConnectedLog())
+            assertEquals(expected, room.store.sharing.connectedLog)
+            assertEquals(expected, room.store.sharing.readConnectedLog())
             assertEquals(2, reads)
         }
     }

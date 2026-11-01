@@ -308,15 +308,15 @@ class CoachOwnershipTests {
             EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = FakeGymRest()).use { room ->
                 val server = EngineRoomFixture.server()
                 room.select("a")
-                val routine = (room.store.saveRoutine(RoutineDraft(name = "A's routine")
-                    .adding("bench-press", listOf(SetTarget(5, 80.0))).capturingMovements(room.store.catalog)) as GymResult.Ok).value
+                val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "A's routine")
+                    .adding("bench-press", listOf(SetTarget(5, 80.0))).capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
                 room.sync(server)
                 val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
                 assertTrue(runner.run(ProposeRoutine(Id("proposal1", SyncProposal), Id(routine.id, SyncRoutine), routine.name,
                     listOf(SyncEntry(Id("bench-press", SyncExercise), listOf(SyncTarget(6, 82.5)))), "Progress")) is Outcome.Committed)
                 room.sync(server)
                 room.store.refreshEngine()
-                val result = async { if (applying) room.store.applyProposal("proposal1") else room.store.dismissProposal("proposal1") }
+                val result = async { if (applying) room.store.routines.applyProposal("proposal1") else room.store.routines.dismissProposal("proposal1") }
                 runCurrent()
                 server.refuse(code = code)
                 room.sync(server)
@@ -324,8 +324,8 @@ class CoachOwnershipTests {
                 room.select("b")
                 advanceTimeBy(25); runCurrent()
                 assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("The account changed. Open this again.")), result.await())
-                assertEquals(emptyMap<String, Proposal>(), room.store.settledProposals)
-                assertEquals(emptyList<Routine>(), room.store.allRoutines)
+                assertEquals(emptyMap<String, Proposal>(), room.store.routines.settledProposals)
+                assertEquals(emptyList<Routine>(), room.store.routines.all)
             }
         }
     }
@@ -336,21 +336,21 @@ class CoachOwnershipTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server)
             for ((id, title, body) in listOf(Triple("note000a", "First", "Original"), Triple("note000b", "Second", "Keep"),
-                    Triple("note000c", "Third", "Last"))) assertTrue(other.store.saveNote(id, NoteWrite(title, body)) is GymResult.Ok)
+                    Triple("note000c", "Third", "Last"))) assertTrue(other.store.notes.saveNote(id, NoteWrite(title, body)) is GymResult.Ok)
             other.sync(server)
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = FakeGymRest()).use { room ->
             room.select("a"); room.pull(server)
             val store = room.store
-            val (first, second, third) = (store.readNotes() as GymResult.Ok).value
-            val saved = (store.saveNote(first.id, NoteWrite("First", "Accepted edit")) as GymResult.Ok).value
-            assertNull(store.delete(Deletion.Note(second.id)))
-            assertTrue(store.reorderNotes(first.id, listOf(third.id, third.id)) is GymResult.Failed)
-            assertTrue(store.reorderNotes(first.id, listOf(third.id, first.id)) is GymResult.Ok)
-            assertEquals(listOf(third.copy(position = 0), saved.copy(position = 1)), store.notes)
-            assertEquals(2, store.noteCount)
-            assertNull(store.keepWithheld())
-            assertEquals(listOf(third.copy(position = 0), saved.copy(position = 1)), store.notes)
+            val (first, second, third) = (store.notes.readNotes() as GymResult.Ok).value
+            val saved = (store.notes.saveNote(first.id, NoteWrite("First", "Accepted edit")) as GymResult.Ok).value
+            assertNull(store.deletions.delete(Deletion.Note(second.id)))
+            assertTrue(store.notes.reorderNotes(first.id, listOf(third.id, third.id)) is GymResult.Failed)
+            assertTrue(store.notes.reorderNotes(first.id, listOf(third.id, first.id)) is GymResult.Ok)
+            assertEquals(listOf(third.copy(position = 0), saved.copy(position = 1)), store.notes.all)
+            assertEquals(2, store.notes.noteCount)
+            assertNull(store.deletions.keepWithheld())
+            assertEquals(listOf(third.copy(position = 0), saved.copy(position = 1)), store.notes.all)
         }
     }
 

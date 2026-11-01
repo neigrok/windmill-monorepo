@@ -62,19 +62,19 @@ class SessionScreenPaintTests {
                 room.select("u1")
                 room.pull(server)
                 room.startExternalWorkout()
-                room.store.choose("bench-press")
-                room.store.logSet(weightKg = 75.0, reps = 8)
-                room.store.logSet(weightKg = 75.0, reps = 6)
-                room.store.logSet(weightKg = 80.0, reps = 8)
-                room.store.choose("overhead-press")
-                room.store.logSet(weightKg = 47.5, reps = 6)
+                room.store.workout.choose("bench-press")
+                room.store.workout.logSet(weightKg = 75.0, reps = 8)
+                room.store.workout.logSet(weightKg = 75.0, reps = 6)
+                room.store.workout.logSet(weightKg = 80.0, reps = 8)
+                room.store.workout.choose("overhead-press")
+                room.store.workout.logSet(weightKg = 47.5, reps = 6)
                 room.now += 60_000
-                assertTrue(room.store.finish() is FinishOutcome.Closed)
+                assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
                 room.sync(server)
                 room.store.refreshEngine()
             }
             room.store.observeEngine()
-            val summary = room.store.recent.single()
+            val summary = room.store.history.recent.single()
             var dark by mutableStateOf(true)
             compose.setContent {
                 contentView = LocalView.current

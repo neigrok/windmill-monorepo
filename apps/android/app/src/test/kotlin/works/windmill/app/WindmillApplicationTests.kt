@@ -192,7 +192,7 @@ class WindmillApplicationTests {
             // way back; blocking this thread would starve that resume, so the looper turns until the write lands.
             val written = CoroutineScope(Dispatchers.Main.immediate).async {
                 app.gym.restoreLocal()
-                app.gym.store.weighIn("2026-09-01", 81.25)
+                app.gym.store.bodyweight.weighIn("2026-09-01", 81.25)
             }
             val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
             while (!written.isCompleted) {
@@ -200,28 +200,28 @@ class WindmillApplicationTests {
                 shadowOf(Looper.getMainLooper()).idle()
             }
             assertNull(runBlocking { written.await() })
-            app.gym.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            app.gym.store.deletions.withhold(Deletion.Bodyweight("2026-09-01"))
             shadowOf(Looper.getMainLooper()).idle()
             val store = app.gym.store
-            val hold = store.withheld.single()
+            val hold = store.held.withheld.single()
 
             activity.recreate()
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(750))
             assertSame(store, app.gym.store)
             assertEquals(Lifecycle.State.RESUMED, ProcessLifecycleOwner.get().lifecycle.currentState)
-            assertEquals(hold, store.withheld.single())
+            assertEquals(hold, store.held.withheld.single())
             assertEquals(hold.untilMs, app.engineSession.engine.undoOffers().single().releaseAt)
 
             activity.pause().stop()
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(750))
             assertEquals(Lifecycle.State.CREATED, ProcessLifecycleOwner.get().lifecycle.currentState)
             assertEquals(emptyList<Any>(), app.engineSession.engine.undoOffers())
-            assertNull(store.keepWithheld())
-            assertEquals(emptyList<Any>(), store.bodyweight)
+            assertNull(store.deletions.keepWithheld())
+            assertEquals(emptyList<Any>(), store.bodyweight.drawn)
             activity.restart().start().resume()
             shadowOf(Looper.getMainLooper()).idle()
-            assertNull(store.holding)
-            assertNull(store.keepWithheld())
+            assertNull(store.deletions.holding)
+            assertNull(store.deletions.keepWithheld())
         } finally {
             activity.pause().stop().destroy()
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(750))
@@ -252,7 +252,7 @@ class WindmillApplicationTests {
             fun weighIn(): Any? {
                 val written = CoroutineScope(Dispatchers.Main.immediate).async {
                     app.gym.restoreLocal()
-                    app.gym.store.weighIn(java.time.LocalDate.now().toString(), 81.25)
+                    app.gym.store.bodyweight.weighIn(java.time.LocalDate.now().toString(), 81.25)
                 }
                 val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
                 while (!written.isCompleted) {

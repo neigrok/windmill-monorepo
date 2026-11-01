@@ -60,7 +60,7 @@ class LoggerTransientTests {
         runBlocking {
             room.select("u1")
             room.startExternalWorkout()
-            room.store.choose("bench-press")
+            room.store.workout.choose("bench-press")
         }
     }
 
@@ -76,7 +76,7 @@ class LoggerTransientTests {
         try {
             val store = room.store
             live(room)
-            val sessionId = store.session!!.id
+            val sessionId = store.workout.session!!.id
             compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
             compose.waitForIdle()
             val logBefore = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
@@ -84,14 +84,14 @@ class LoggerTransientTests {
             compose.onNodeWithText("Log set").performClick()
             compose.waitForIdle()
             compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
-            val logged = compose.runOnIdle { store.sets.single() }
+            val logged = compose.runOnIdle { store.workout.sets.single() }
             assertEquals("the set is on the log the moment it is logged",
                 listOf(TrainingSet(id = logged.id, exerciseId = "bench-press", weightKg = 20.0, reps = 5,
                     completedAtMs = logged.completedAtMs)),
                 runBlocking { room.training.session(sessionId) }!!.sets)
 
-            compose.runOnIdle { runBlocking { assertNull(store.weighIn("2026-09-01", 81.25)) } }
-            compose.runOnIdle { store.withhold(Deletion.Bodyweight("2026-09-01")) }
+            compose.runOnIdle { runBlocking { assertNull(store.bodyweight.weighIn("2026-09-01", 81.25)) } }
+            compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight("2026-09-01")) }
             val said = "Weigh-in deleted."
             compose.waitUntil(10_000) { compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
@@ -112,9 +112,9 @@ class LoggerTransientTests {
 
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.runOnIdle {
-                assertEquals(listOf(logged), store.sets)
-                assertEquals(listOf(81.25), store.bodyweight.map { it.weightKg })
-                assertEquals(emptyList<WithheldDelete>(), store.withheld)
+                assertEquals(listOf(logged), store.workout.sets)
+                assertEquals(listOf(81.25), store.bodyweight.drawn.map { it.weightKg })
+                assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
             }
         } finally {
             compose.runOnIdle { showing = false }
@@ -133,8 +133,8 @@ class LoggerTransientTests {
             live(room)
             compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
             compose.waitForIdle()
-            compose.runOnIdle { runBlocking { assertNull(store.weighIn("2026-09-01", 81.25)) } }
-            compose.runOnIdle { store.withhold(Deletion.Bodyweight("2026-09-01")) }
+            compose.runOnIdle { runBlocking { assertNull(store.bodyweight.weighIn("2026-09-01", 81.25)) } }
+            compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight("2026-09-01")) }
             compose.waitUntil(10_000) { compose.onAllNodesWithText(Withheld.undo).fetchSemanticsNodes().isNotEmpty() }
 
             compose.mainClock.autoAdvance = false

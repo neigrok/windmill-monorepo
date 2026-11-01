@@ -45,12 +45,12 @@ class MovementCreationTests {
             val saved = room.engine.snapshot()
             assertEquals(expected, room.training.createExercise(write))
             assertEquals(saved, room.engine.snapshot())
-            assertEquals(GymResult.Ok(expected), room.store.create(write.name, write.equipment, write.id, write.loadCount))
+            assertEquals(GymResult.Ok(expected), room.store.routines.create(write.name, write.equipment, write.id, write.loadCount))
             assertEquals(saved, room.engine.snapshot())
             val live = room.startExternalWorkout()
-            assertEquals(MovementCreateOutcome.Added(expected), room.store.createForWorkout(write, live.id))
-            assertEquals(listOf(expected.id), room.store.order)
-            assertEquals(expected, room.store.catalog.single { it.id == expected.id })
+            assertEquals(MovementCreateOutcome.Added(expected), room.store.workout.createForWorkout(write, live.id))
+            assertEquals(listOf(expected.id), room.store.workout.order)
+            assertEquals(expected, room.store.routines.catalog.single { it.id == expected.id })
         }
     }
 
@@ -58,25 +58,25 @@ class MovementCreationTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
             val routine = RoutineDraft(name = "Pull", creationId = "routine_pull").adding("bench-press", listOf(SetTarget(8, 70.0)))
-            assertTrue(room.store.saveRoutine(routine.capturingMovements(room.store.catalog)) is GymResult.Ok)
-            val live = (room.store.start("routine_pull") as GymResult.Ok).value
-            room.store.choose("bench-press")
-            room.store.logSet(70.0, 8)
-            room.store.editRack(72.5, 9)
-            val sets = room.store.sets
+            assertTrue(room.store.routines.saveRoutine(routine.capturingMovements(room.store.routines.catalog)) is GymResult.Ok)
+            val live = (room.store.workout.start("routine_pull") as GymResult.Ok).value
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(70.0, 8)
+            room.store.workout.editRack(72.5, 9)
+            val sets = room.store.workout.sets
             val program = room.training.program()
             val write = ExerciseWrite("ex_pair", "Shrug", Exercise.unclassified, "dumbbell", loadCount = 2)
-            val first = room.store.createForWorkout(write, live.id) as MovementCreateOutcome.Added
-            assertEquals(first, room.store.createForWorkout(write, live.id))
-            assertEquals(live.id, room.store.session?.id)
-            assertEquals(sets, room.store.sets)
+            val first = room.store.workout.createForWorkout(write, live.id) as MovementCreateOutcome.Added
+            assertEquals(first, room.store.workout.createForWorkout(write, live.id))
+            assertEquals(live.id, room.store.workout.session?.id)
+            assertEquals(sets, room.store.workout.sets)
             assertEquals(program, room.training.program())
-            assertEquals(listOf("bench-press", "ex_pair"), room.store.order)
-            assertEquals("ex_pair", room.store.exerciseId)
+            assertEquals(listOf("bench-press", "ex_pair"), room.store.workout.order)
+            assertEquals("ex_pair", room.store.workout.exerciseId)
             assertEquals(listOf(first.movement), room.training.catalogue().filter { it.id == write.id })
-            room.store.choose("bench-press")
-            assertEquals(72.5, room.store.rack!!.weightKg, 0.0)
-            assertEquals(9, room.store.rack!!.reps)
+            room.store.workout.choose("bench-press")
+            assertEquals(72.5, room.store.workout.rack!!.weightKg, 0.0)
+            assertEquals(9, room.store.workout.rack!!.reps)
         }
     }
 
@@ -95,14 +95,14 @@ class MovementCreationTests {
             val controls = room.controlsFile.readBytes()
             events.clear(); failures.clear()
             room.engine.failNextCommit()
-            assertEquals(MovementCreateOutcome.Failed(WriteFailure.NoAnswer), room.store.createForWorkout(write, live.id))
+            assertEquals(MovementCreateOutcome.Failed(WriteFailure.NoAnswer), room.store.workout.createForWorkout(write, live.id))
             assertEquals(before, room.engine.snapshot())
             assertArrayEquals(controls, room.controlsFile.readBytes())
             assertEquals(listOf("gym.create"), failures)
             assertEquals(listOf(mapOf("screen" to "movement_form", "action" to "create", "outcome" to "failed")), events)
-            val accepted = room.store.createForWorkout(write, live.id) as MovementCreateOutcome.Added
+            val accepted = room.store.workout.createForWorkout(write, live.id) as MovementCreateOutcome.Added
             assertEquals(listOf(accepted.movement), room.training.catalogue().filter { it.id == write.id })
-            assertEquals(listOf(write.id), room.store.order)
+            assertEquals(listOf(write.id), room.store.workout.order)
         }
     }
 
@@ -120,12 +120,12 @@ class MovementCreationTests {
         }).use { room ->
             room.select("a")
             val live = room.startExternalWorkout()
-            room.store.choose("bench-press"); room.store.logSet(60.0, 8)
-            val sets = room.store.sets
+            room.store.workout.choose("bench-press"); room.store.workout.logSet(60.0, 8)
+            val sets = room.store.workout.sets
             val write = ExerciseWrite("ex_once", "Shrug", Exercise.unclassified, "dumbbell", loadCount = 2)
             val controls = room.controlsFile.readBytes()
             events.clear(); failures.clear(); failInsertion = true
-            val failed = room.store.createForWorkout(write, live.id) as MovementCreateOutcome.Failed
+            val failed = room.store.workout.createForWorkout(write, live.id) as MovementCreateOutcome.Failed
             val created = requireNotNull(failed.created)
             assertEquals(WriteFailure.NoAnswer, failed.why)
             assertEquals(listOf(created), room.training.catalogue().filter { it.id == write.id })
@@ -134,11 +134,11 @@ class MovementCreationTests {
             assertEquals(listOf("gym.choose"), failures)
             val restarted = room.freshStore()
             restarted.connect(room.account())
-            assertEquals(MovementCreateOutcome.Added(created), restarted.createForWorkout(write, live.id))
+            assertEquals(MovementCreateOutcome.Added(created), restarted.workout.createForWorkout(write, live.id))
             assertEquals(owed, room.outbox())
-            assertEquals(sets, restarted.sets)
-            assertEquals(listOf("bench-press", write.id), restarted.order)
-            assertEquals(write.id, restarted.exerciseId)
+            assertEquals(sets, restarted.workout.sets)
+            assertEquals(listOf("bench-press", write.id), restarted.workout.order)
+            assertEquals(write.id, restarted.workout.exerciseId)
             assertEquals(listOf(
                 mapOf("screen" to "movement_form", "action" to "create", "outcome" to "ok"),
                 mapOf("screen" to "movement_form", "action" to "add", "outcome" to "failed"),
@@ -152,13 +152,13 @@ class MovementCreationTests {
             room.select(null)
             val live = room.startExternalWorkout()
             val write = ExerciseWrite("ex_kept", "Kept", Exercise.unclassified, "other", loadCount = 1)
-            val caller = launch(start = CoroutineStart.UNDISPATCHED) { room.store.createForWorkout(write, live.id) }
+            val caller = launch(start = CoroutineStart.UNDISPATCHED) { room.store.workout.createForWorkout(write, live.id) }
             caller.cancel()
             advanceUntilIdle()
-            val accepted = room.store.createForWorkout(write, live.id) as MovementCreateOutcome.Added
+            val accepted = room.store.workout.createForWorkout(write, live.id) as MovementCreateOutcome.Added
             assertEquals(listOf(accepted.movement), room.training.catalogue().filter { it.id == write.id })
-            assertEquals(listOf(write.id), room.store.order)
-            assertEquals(write.id, room.store.exerciseId)
+            assertEquals(listOf(write.id), room.store.workout.order)
+            assertEquals(write.id, room.store.workout.exerciseId)
         }
     }
 
@@ -166,18 +166,18 @@ class MovementCreationTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
             val first = room.startExternalWorkout()
-            val oldAccount = room.store.accountKey
-            val oldReplica = room.store.workoutReplica
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            val oldAccount = room.store.seat.accountKey
+            val oldReplica = room.store.seat.replica
+            assertTrue(room.store.workout.finish() is FinishOutcome.Closed)
             val next = room.startExternalWorkout()
             val write = ExerciseWrite("ex_stale", "Stale", Exercise.unclassified, "other", loadCount = 1)
             val before = room.engine.snapshot()
             val controls = room.controlsFile.readBytes()
-            assertTrue(room.store.createForWorkout(write, first.id, oldAccount, oldReplica) is MovementCreateOutcome.Failed)
+            assertTrue(room.store.workout.createForWorkout(write, first.id, oldAccount, oldReplica) is MovementCreateOutcome.Failed)
             assertEquals(before, room.engine.snapshot())
             assertArrayEquals(controls, room.controlsFile.readBytes())
-            assertEquals(next.id, room.store.session?.id)
-            assertEquals(emptyList<String>(), room.store.order)
+            assertEquals(next.id, room.store.workout.session?.id)
+            assertEquals(emptyList<String>(), room.store.workout.order)
             assertTrue(room.engine.signIn("a", mapOf("gym" to false), serverSchema = SyncSchema.registry.version).member("complete").bool())
             val adopted = room.engine.snapshot()
             try {

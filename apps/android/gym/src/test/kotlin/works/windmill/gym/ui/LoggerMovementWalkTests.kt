@@ -58,11 +58,11 @@ class LoggerMovementWalkTests {
             room.pull(EngineRoomFixture.server())
             room.startExternalWorkout()
             // The walk is what the session HOLDS, in the order it was walked.
-            room.store.choose("bench-press")
-            room.store.choose("barbell-row")
-            if (threeMovements) room.store.choose("cable-fly")
-            room.store.choose("bench-press")
-            repeat(loggedSets) { room.store.logSet(60.0, 5) }
+            room.store.workout.choose("bench-press")
+            room.store.workout.choose("barbell-row")
+            if (threeMovements) room.store.workout.choose("cable-fly")
+            room.store.workout.choose("bench-press")
+            repeat(loggedSets) { room.store.workout.logSet(60.0, 5) }
         }
         room.store.observeEngine()
         compose.setContent {
@@ -107,7 +107,7 @@ class LoggerMovementWalkTests {
                 listOf("Next movement"), actions.map { it.label })
 
             compose.runOnIdle { actions.single().action?.invoke() }
-            compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("barbell-row", room.store.workout.exerciseId) }
 
             val back = title("Barbell Row").fetchSemanticsNode()
                 .config.getOrNull(SemanticsActions.CustomActions).orEmpty()
@@ -121,15 +121,15 @@ class LoggerMovementWalkTests {
         try { logger(scope).use { room ->
             // Away from the strip at either edge, which belongs to the system and never to the walk.
             title("Bench Press").performTouchInput { swipeLeft(startX = width * 0.85f, endX = width * 0.15f) }
-            compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("barbell-row", room.store.workout.exerciseId) }
 
             title("Barbell Row").performTouchInput { swipeRight(startX = width * 0.15f, endX = width * 0.85f) }
-            compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("bench-press", room.store.workout.exerciseId) }
 
             title("Bench Press").performTouchInput { swipeRight(startX = width * 0.15f, endX = width * 0.85f) }
             compose.runOnIdle {
                 assertEquals("and the walk does not wrap round at its ends",
-                    "bench-press", room.store.exerciseId)
+                    "bench-press", room.store.workout.exerciseId)
             }
         } } finally { scope.cancel() }
     }
@@ -138,26 +138,26 @@ class LoggerMovementWalkTests {
     fun swipesAcrossClocksRackAndLogButtonMoveOnceWithoutLoggingOrChangingClockAnchors() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, threeMovements = true, loggedSets = 1).use { room ->
-            val session = room.store.session
-            val sets = room.store.sets.toList()
+            val session = room.store.workout.session
+            val sets = room.store.workout.sets.toList()
 
             val weight = compose.onNode(hasContentDescription("Load, kg total")).fetchSemanticsNode().boundsInRoot
             compose.onRoot().performTouchInput {
                 swipe(weight.center, weight.center - Offset(width * 0.35f, 0f))
             }
-            compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("barbell-row", room.store.workout.exerciseId) }
             compose.onNodeWithText("Set weight").assertDoesNotExist()
             compose.onNodeWithText("Log set").performTouchInput { swipeRight(startX = width * 0.15f, endX = width * 0.85f) }
-            compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("bench-press", room.store.workout.exerciseId) }
 
             val clock = compose.onNode(hasContentDescription("Workout time,", substring = true)).fetchSemanticsNode().boundsInRoot
             compose.onRoot().performTouchInput {
                 swipe(Offset(width * 0.8f, clock.center.y), Offset(width * 0.2f, clock.center.y))
             }
             compose.runOnIdle {
-                assertEquals("barbell-row", room.store.exerciseId)
-                assertEquals(session, room.store.session)
-                assertEquals(sets, room.store.sets)
+                assertEquals("barbell-row", room.store.workout.exerciseId)
+                assertEquals(session, room.store.workout.session)
+                assertEquals(sets, room.store.workout.sets)
             }
         } } finally { scope.cancel() }
     }
@@ -172,7 +172,7 @@ class LoggerMovementWalkTests {
                 moveTo(center + Offset(-220f, -70f))
                 up()
             }
-            compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
+            compose.runOnIdle { assertEquals("bench-press", room.store.workout.exerciseId) }
             compose.onNodeWithText("Log set").performTouchInput {
                 down(center)
                 moveTo(center + Offset(-150f, 0f))
@@ -182,8 +182,8 @@ class LoggerMovementWalkTests {
                 swipe(Offset(1f, height * 0.6f), Offset(width * 0.7f, height * 0.6f))
             }
             compose.runOnIdle {
-                assertEquals("bench-press", room.store.exerciseId)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
+                assertEquals("bench-press", room.store.workout.exerciseId)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
             }
         } } finally { scope.cancel() }
     }
@@ -192,7 +192,7 @@ class LoggerMovementWalkTests {
     fun aSecondPointerCanTakeOverOneNativeSwipeWithoutLogging() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, threeMovements = true).use { room ->
-            val session = room.store.session
+            val session = room.store.workout.session
             compose.onNodeWithText("Log set").performTouchInput {
                 down(0, Offset(width * 0.9f, centerY))
                 moveTo(0, Offset(width * 0.65f, centerY), delayMillis = 300)
@@ -203,9 +203,9 @@ class LoggerMovementWalkTests {
                 up(1)
             }
             compose.runOnIdle {
-                assertEquals("barbell-row", room.store.exerciseId)
-                assertEquals(session, room.store.session)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.sets)
+                assertEquals("barbell-row", room.store.workout.exerciseId)
+                assertEquals(session, room.store.workout.session)
+                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
             }
         } } finally { scope.cancel() }
     }
@@ -220,8 +220,8 @@ class LoggerMovementWalkTests {
                 up()
             }
             compose.runOnIdle {
-                assertEquals("bench-press", room.store.exerciseId)
-                assertEquals(0, room.store.sets.size)
+                assertEquals("bench-press", room.store.workout.exerciseId)
+                assertEquals(0, room.store.workout.sets.size)
             }
         } } finally { scope.cancel() }
     }
@@ -234,11 +234,11 @@ class LoggerMovementWalkTests {
                 down(center)
                 moveTo(center + Offset(-180f, 0f))
             }
-            compose.runOnIdle { runBlocking { room.store.choose("barbell-row") } }
+            compose.runOnIdle { runBlocking { room.store.workout.choose("barbell-row") } }
             compose.onRoot().performTouchInput { up() }
             compose.runOnIdle {
-                assertEquals("barbell-row", room.store.exerciseId)
-                assertEquals(0, room.store.sets.size)
+                assertEquals("barbell-row", room.store.workout.exerciseId)
+                assertEquals(0, room.store.workout.sets.size)
             }
             title("Barbell Row").assertIsDisplayed()
             compose.onNodeWithText("Log set").assertIsEnabled()
@@ -247,8 +247,8 @@ class LoggerMovementWalkTests {
                 swipeLeft(startX = width * 0.85f, endX = width * 0.15f)
             }
             compose.runOnIdle {
-                assertEquals("cable-fly", room.store.exerciseId)
-                assertEquals(0, room.store.sets.size)
+                assertEquals("cable-fly", room.store.workout.exerciseId)
+                assertEquals(0, room.store.workout.sets.size)
             }
             title("Cable Fly").assertIsDisplayed()
             compose.onNodeWithText("Log set").assertIsEnabled()
@@ -259,9 +259,9 @@ class LoggerMovementWalkTests {
     fun numericEditorOwnsItsDragsAndOrdinaryButtonTapsStillWork() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope).use { room ->
-            val reps = room.store.rack!!.reps
+            val reps = room.store.workout.rack!!.reps
             compose.onNodeWithContentDescription("Increase Reps").performClick()
-            compose.runOnIdle { assertEquals(reps + 1, room.store.rack!!.reps) }
+            compose.runOnIdle { assertEquals(reps + 1, room.store.workout.rack!!.reps) }
             compose.onNode(hasContentDescription("Load, kg total")).performClick()
             compose.onNodeWithContentDescription("Load, kg total").assertIsDisplayed().performTouchInput {
                 swipeLeft(startX = width * 0.85f, endX = width * 0.15f)
@@ -269,8 +269,8 @@ class LoggerMovementWalkTests {
             compose.onNodeWithContentDescription("Load, kg total").assertIsDisplayed()
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.runOnIdle {
-                assertEquals("bench-press", room.store.exerciseId)
-                assertEquals(0, room.store.sets.size)
+                assertEquals("bench-press", room.store.workout.exerciseId)
+                assertEquals(0, room.store.workout.sets.size)
             }
         } } finally { scope.cancel() }
     }

@@ -70,7 +70,7 @@ class RoutinesScreenTests {
     ): TrainingStore {
         runBlocking {
             room.select(null)
-            room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
+            room.store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
         }
         compose.setContent {
             RoutinesScreen(
@@ -158,7 +158,7 @@ class RoutinesScreenTests {
             runBlocking {
                 room.select(null)
                 repeat(12) { index ->
-                    assertTrue(room.store.saveRoutine(RoutineDraft(name = "Routine $index", position = index)
+                    assertTrue(room.store.routines.saveRoutine(RoutineDraft(name = "Routine $index", position = index)
                         .adding("bench-press")) is GymResult.Ok)
                 }
             }
@@ -199,7 +199,7 @@ class RoutinesScreenTests {
             val doors = mutableListOf<String>()
             val drafts = mutableListOf<RoutineDraft>()
             val store = home(room, doors, drafts)
-            val routineId = store.routines.single().id
+            val routineId = store.routines.all.single().id
 
             compose.onNodeWithContentDescription("More for Push Day").assertIsDisplayed()
             compose.onAllNodesWithText("Delete").assertCountEquals(0)
@@ -235,8 +235,8 @@ class RoutinesScreenTests {
             val server = EngineRoomFixture.server()
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("u1"); other.pull(server)
-                assertTrue(other.store.saveRoutine(routine("routine_push", "Push Day", position = 0).capturingMovements(other.store.catalog)) is GymResult.Ok)
-                assertTrue(other.store.saveRoutine(routine("routine_pull", "Pull Day", position = 1).capturingMovements(other.store.catalog)) is GymResult.Ok)
+                assertTrue(other.store.routines.saveRoutine(routine("routine_push", "Push Day", position = 0).capturingMovements(other.store.routines.catalog)) is GymResult.Ok)
+                assertTrue(other.store.routines.saveRoutine(routine("routine_pull", "Pull Day", position = 1).capturingMovements(other.store.routines.catalog)) is GymResult.Ok)
                 other.sync(server)
                 propose(other, "proposal_pull", "routine_pull", "Pull Day")
                 other.sync(server)
@@ -260,7 +260,7 @@ class RoutinesScreenTests {
             }
 
             compose.runOnIdle {
-                assertEquals(listOf("proposal_push", "proposal_pull"), store.pendingProposals.map { it.id })
+                assertEquals(listOf("proposal_push", "proposal_pull"), store.routines.pendingProposals.map { it.id })
             }
             compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
             compose.onNodeWithText("1 change").assertIsDisplayed()
@@ -283,7 +283,7 @@ class RoutinesScreenTests {
             val store = room.store
             val kept = runBlocking {
                 room.select(null)
-                (store.saveRoutine(RoutineDraft(name = "Push Day")
+                (store.routines.saveRoutine(RoutineDraft(name = "Push Day")
                     .adding("bench-press")) as GymResult.Ok).value
             }
 
@@ -317,9 +317,9 @@ class RoutinesScreenTests {
             val store = room.store
             runBlocking {
                 room.select(null)
-                store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press").adding("barbell-row"))
+                store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press").adding("barbell-row"))
             }
-            val routineId = store.routines.single().id
+            val routineId = store.routines.all.single().id
             compose.setContent {
                 RoutineSheet(
                     routineId = routineId,
@@ -357,13 +357,13 @@ class RoutinesScreenTests {
             val server = EngineRoomFixture.server()
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("u1"); other.pull(server)
-                assertTrue(other.store.create(firstName, "barbell", id = "long-row") is GymResult.Ok)
-                assertTrue(other.store.create(secondName, "barbell", id = "long-press") is GymResult.Ok)
-                assertTrue(other.store.saveRoutine(RoutineDraft(name = "Compact detail", position = 0, creationId = "routine_compact",
+                assertTrue(other.store.routines.create(firstName, "barbell", id = "long-row") is GymResult.Ok)
+                assertTrue(other.store.routines.create(secondName, "barbell", id = "long-press") is GymResult.Ok)
+                assertTrue(other.store.routines.saveRoutine(RoutineDraft(name = "Compact detail", position = 0, creationId = "routine_compact",
                     entries = listOf(
                         RoutineEntry(1, "long-row", listOf(SetTarget(8, 20.0))),
                         RoutineEntry(2, "long-press", listOf(SetTarget(6, 10.0))),
-                    )).capturingMovements(other.store.catalog)) is GymResult.Ok)
+                    )).capturingMovements(other.store.routines.catalog)) is GymResult.Ok)
                 other.sync(server)
             } }
             runBlocking { room.select("u1"); room.pull(server); room.store.refreshEngine() }
@@ -381,7 +381,7 @@ class RoutinesScreenTests {
             compose.onNodeWithText("Start workout").assertIsDisplayed()
             compose.onNodeWithText("Edit routine").assertIsDisplayed().performClick()
             compose.runOnIdle {
-                assertEquals(listOf(RoutineDraft.of(room.training.program().single { it.id == "routine_compact" }, room.store.catalog)), edited)
+                assertEquals(listOf(RoutineDraft.of(room.training.program().single { it.id == "routine_compact" }, room.store.routines.catalog)), edited)
             }
         } } finally { scope.cancel() }
     }

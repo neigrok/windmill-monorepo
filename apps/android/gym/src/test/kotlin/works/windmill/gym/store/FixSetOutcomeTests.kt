@@ -39,15 +39,15 @@ class FixSetOutcomeTests {
         EngineRoomFixture(temporary.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select(null)
             val session = room.workout(finish = false)
-            val set = room.store.sets.single()
+            val set = room.store.workout.sets.single()
             val fix = SetFix(weightKg = 12.5, reps = 8, note = "private note", rpe = 8.5, rpeNamed = true)
             telemetry.events.clear()
-            assertEquals(FixOutcome.Corrected(fix.corrected(set)), room.store.fixSet(session.id, set.id, fix, FixOrigin.Workout))
-            assertEquals(listOf(fix.corrected(set)), room.store.sets)
+            assertEquals(FixOutcome.Corrected(fix.corrected(set)), room.store.workout.fixSet(session.id, set.id, fix, FixOrigin.Workout))
+            assertEquals(listOf(fix.corrected(set)), room.store.workout.sets)
             assertEquals(listOf(fix.corrected(set)), room.training.session(session.id)!!.sets)
             val snapshot = room.engine.snapshot()
             assertEquals(FixOutcome.Gone("that set is no longer on this device"),
-                room.store.fixSet(session.id, "missing", fix, FixOrigin.Workout))
+                room.store.workout.fixSet(session.id, "missing", fix, FixOrigin.Workout))
             assertEquals(snapshot, room.engine.snapshot())
             assertEquals(listOf(
                 "gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok"),
@@ -73,7 +73,7 @@ class FixSetOutcomeTests {
             telemetry.events.clear()
             hold = true
             val caller = async(start = CoroutineStart.UNDISPATCHED) {
-                room.store.fixSet(session.id, set.id, SetFix(weightKg = 90.0), FixOrigin.Session)
+                room.store.workout.fixSet(session.id, set.id, SetFix(weightKg = 90.0), FixOrigin.Session)
             }
             assertFalse(caller.isCompleted)
             assertEquals(1, waiting.size)
@@ -82,10 +82,10 @@ class FixSetOutcomeTests {
             hold = false
             while (waiting.isNotEmpty()) waiting.removeFirst().run()
             runCurrent()
-            assertEquals(listOf(450.0), room.store.logged.map { it.tonnageKg })
+            assertEquals(listOf(450.0), room.store.history.logged.map { it.tonnageKg })
             val restored = room.freshStore()
             restored.connect(room.account())
-            assertEquals(listOf(set.copy(weightKg = 90.0)), (restored.sessionDetail(session.id) as GymResult.Ok).value.sets)
+            assertEquals(listOf(set.copy(weightKg = 90.0)), (restored.history.sessionDetail(session.id) as GymResult.Ok).value.sets)
             assertEquals(listOf("gym_action" to mapOf("screen" to "session", "action" to "fix", "outcome" to "ok")), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
         }
@@ -108,23 +108,23 @@ class FixSetOutcomeTests {
             telemetry.events.clear()
             hold = true
             val caller = async(start = CoroutineStart.UNDISPATCHED) {
-                room.store.fixSet(session.id, set.id, SetFix(weightKg = 90.0), FixOrigin.Session)
+                room.store.workout.fixSet(session.id, set.id, SetFix(weightKg = 90.0), FixOrigin.Session)
             }
             assertEquals(1, waiting.size)
             hold = false
             room.select("second")
             val next = room.workout(load = 25.0, movement = "back-squat", finish = false)
-            val nextSets = room.store.sets
-            val nextRack = room.store.rack
-            val nextLog = room.store.logged
+            val nextSets = room.store.workout.sets
+            val nextRack = room.store.workout.rack
+            val nextLog = room.store.history.logged
             val otherEvents = telemetry.events.toList()
             while (waiting.isNotEmpty()) waiting.removeFirst().run()
             runCurrent()
             assertEquals(FixOutcome.Corrected(set.copy(weightKg = 90.0)), caller.await())
-            assertEquals(next, room.store.session)
-            assertEquals(nextSets, room.store.sets)
-            assertEquals(nextRack, room.store.rack)
-            assertEquals(nextLog, room.store.logged)
+            assertEquals(next, room.store.workout.session)
+            assertEquals(nextSets, room.store.workout.sets)
+            assertEquals(nextRack, room.store.workout.rack)
+            assertEquals(nextLog, room.store.history.logged)
             assertEquals(otherEvents, telemetry.events)
             assertEquals(listOf("gym_action" to mapOf("screen" to "session", "action" to "fix", "outcome" to "ok")),
                 telemetry.events.filter { it.first == "gym_action" })
@@ -144,9 +144,9 @@ class FixSetOutcomeTests {
             assertEquals(listOf("bad-instant"), room.training.imports.refusals().map { it.code })
             telemetry.events.clear()
             val fix = SetFix(reps = 9, note = "private note")
-            assertEquals(FixOutcome.Corrected(fix.corrected(set)), room.store.fixSet(session.id, set.id, fix, FixOrigin.Session))
+            assertEquals(FixOutcome.Corrected(fix.corrected(set)), room.store.workout.fixSet(session.id, set.id, fix, FixOrigin.Session))
             assertEquals(listOf(fix.corrected(set)), room.training.imports.refusals().single().sets)
-            assertEquals(listOf(fix.corrected(set)), (room.store.sessionDetail(session.id) as GymResult.Ok).value.sets)
+            assertEquals(listOf(fix.corrected(set)), (room.store.history.sessionDetail(session.id) as GymResult.Ok).value.sets)
             assertEquals(listOf("gym_action" to mapOf("screen" to "session", "action" to "fix", "outcome" to "ok")), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
         }
@@ -170,10 +170,10 @@ class FixSetOutcomeTests {
                 val snapshot = room.engine.snapshot()
                 telemetry.events.clear()
                 room.engine.failNextCommit()
-                assertEquals(FixOutcome.Failed(WriteFailure.NoAnswer), room.store.fixSet(session.id, set.id,
+                assertEquals(FixOutcome.Failed(WriteFailure.NoAnswer), room.store.workout.fixSet(session.id, set.id,
                     SetFix(reps = 9), if (imported) FixOrigin.Session else FixOrigin.Workout))
                 assertEquals(snapshot, room.engine.snapshot())
-                assertEquals(listOf(set), (room.store.sessionDetail(session.id) as GymResult.Ok).value.sets)
+                assertEquals(listOf(set), (room.store.history.sessionDetail(session.id) as GymResult.Ok).value.sets)
                 assertEquals(listOf("gym_action" to mapOf("screen" to if (imported) "session" else "workout",
                     "action" to "fix", "outcome" to "failed")), telemetry.events)
                 assertEquals(listOf("gym.fixSet"), telemetry.failures.map { it.first })
@@ -198,25 +198,25 @@ class FixSetOutcomeTests {
             telemetry.events.clear()
             fail = true
             assertEquals(FixOutcome.Corrected(set.copy(reps = 9)),
-                room.store.fixSet(session.id, set.id, SetFix(reps = 9), FixOrigin.Workout))
+                room.store.workout.fixSet(session.id, set.id, SetFix(reps = 9), FixOrigin.Workout))
             assertEquals(listOf(set.copy(reps = 9)), room.training.session(session.id)!!.sets)
-            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workoutFailure)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutFailure)
             assertEquals(listOf("gym.fixSet" to failure), telemetry.failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
             val note = room.training.writeNote("note_after_fix", works.windmill.gym.presentation.NoteWrite("Recovery", "Unrelated read"))
             repeat(3) { room.store.refreshEngine() }
             room.sync(server)
             runCurrent()
-            assertEquals(listOf(note.copy(updatedAtMs = room.now)), room.store.notes)
+            assertEquals(listOf(note.copy(updatedAtMs = room.now)), room.store.notes.all)
             assertEquals(listOf(set.copy(reps = 9)), room.training.session(session.id)!!.sets)
-            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workoutFailure)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutFailure)
             assertEquals(listOf("gym.fixSet" to failure), telemetry.failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
             fail = false
             val restored = room.freshStore()
             restored.connect(room.account())
-            assertEquals(listOf(set.copy(reps = 9)), restored.sets)
-            assertNull(restored.workoutFailure)
+            assertEquals(listOf(set.copy(reps = 9)), restored.workout.sets)
+            assertNull(restored.workout.workoutFailure)
             assertEquals(listOf("gym.fixSet" to failure), telemetry.failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
         }
@@ -249,15 +249,15 @@ class FixSetOutcomeTests {
                 room.select(if (anonymous) null else "first")
                 if (!anonymous) room.pull(EngineRoomFixture.server())
                 val session = room.workout(finish = false)
-                val set = room.store.sets.single()
+                val set = room.store.workout.sets.single()
                 telemetry.events.clear()
                 armed = true
                 assertEquals(FixOutcome.Failed(WriteFailure.Refused("The account changed. Open this again.")),
-                    room.store.fixSet(session.id, set.id, SetFix(reps = 9), FixOrigin.Workout))
+                    room.store.workout.fixSet(session.id, set.id, SetFix(reps = 9), FixOrigin.Workout))
                 assertNull(hookFailure?.stackTraceToString(), hookFailure)
                 assertNotNull(switched)
                 assertEquals(switched, room.engine.snapshot())
-                assertEquals(listOf(set), room.store.sets)
+                assertEquals(listOf(set), room.store.workout.sets)
                 assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused")), telemetry.events)
                 assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
             }
@@ -293,23 +293,23 @@ class FixSetOutcomeTests {
             room.select("first"); room.pull(server)
             sessionId = room.workout(finish = false).id
             room.sync(server); room.store.refreshEngine()
-            val set = room.store.sets.single()
+            val set = room.store.workout.sets.single()
             assertEquals(1, set.setNumber)
             telemetry.events.clear()
             armed = true
             val corrected = set.copy(weightKg = 12.51, note = "  exact bytes  ")
-            assertEquals(FixOutcome.Corrected(corrected), room.store.fixSet(sessionId, set.id,
+            assertEquals(FixOutcome.Corrected(corrected), room.store.workout.fixSet(sessionId, set.id,
                 SetFix(weightKg = 12.505, note = "  exact bytes  "), FixOrigin.Workout))
             assertNull(hookFailure?.stackTraceToString(), hookFailure)
             assertEquals(listOf(corrected), accepted)
             assertNotNull(switched)
             assertEquals(switched, room.engine.snapshot())
             assertEquals(emptyList<works.windmill.gym.presentation.SessionDetail>(), room.training.details())
-            assertEquals(listOf(set), room.store.sets)
+            assertEquals(listOf(set), room.store.workout.sets)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
             room.store.connect(room.account())
-            assertEquals(emptyList<TrainingSet>(), room.store.sets)
+            assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
         }
     }
 

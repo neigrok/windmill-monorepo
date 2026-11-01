@@ -39,8 +39,8 @@ class EngineNotesScreenTests {
                 condition()
             }
         } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
-            throw AssertionError("notesRead=${room.store.notesRead}; notes=${room.store.notes.map { it.id }}; " +
-                "noteRefusals=${room.store.noteRefusals.size}; " +
+            throw AssertionError("notesRead=${room.store.notes.notesRead}; notes=${room.store.notes.all.map { it.id }}; " +
+                "noteRefusals=${room.store.notes.noteRefusals.size}; " +
                 "noticeIds=${room.engine.notices("gym").notices.value.map { it.id }}", timeout)
         }
     }
@@ -55,7 +55,7 @@ class EngineNotesScreenTests {
             compose.onNodeWithText(Notes.add).assertDoesNotExist()
             val server = EngineRoomFixture.server()
             compose.runOnIdle { room.pull(server) }
-            waitForNotebook(room) { room.store.notesRead }
+            waitForNotebook(room) { room.store.notes.notesRead }
             compose.onNodeWithText(Notes.placeholders.first()).assertIsDisplayed()
             compose.onNodeWithText(Notes.add).assertIsDisplayed()
         } } finally { scope.cancel() }
@@ -70,13 +70,13 @@ class EngineNotesScreenTests {
             val server = EngineRoomFixture.server()
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("A"); other.pull(server)
-                assertTrue(other.store.saveNote("note0001", NoteWrite("Coach tone", "Be direct.")) is GymResult.Ok)
+                assertTrue(other.store.notes.saveNote("note0001", NoteWrite("Coach tone", "Be direct.")) is GymResult.Ok)
                 other.sync(server)
             } }
             compose.runOnIdle { room.pull(server) }
-            waitForNotebook(room) { room.store.notes.any { it.id == "note0001" } }
+            waitForNotebook(room) { room.store.notes.all.any { it.id == "note0001" } }
             compose.onNodeWithText("Coach tone").assertIsDisplayed()
-            compose.runOnIdle { assertEquals(listOf("note0001"), room.store.notes.map { it.id }) }
+            compose.runOnIdle { assertEquals(listOf("note0001"), room.store.notes.all.map { it.id }) }
         } } finally { scope.cancel() }
     }
 
@@ -88,14 +88,14 @@ class EngineNotesScreenTests {
             room.store.observeEngine()
             show(room)
             compose.runOnIdle { runBlocking {
-                assertTrue(room.store.saveNote("note0001", NoteWrite("Coach tone", "Be direct.")) is GymResult.Ok)
+                assertTrue(room.store.notes.saveNote("note0001", NoteWrite("Coach tone", "Be direct.")) is GymResult.Ok)
                 server.refuse(code = "cap", detail = Json.objectOf("type" to Json.of("note"), "cap" to Json.of(10)))
                 room.sync(server)
             } }
-            waitForNotebook(room) { room.store.noteRefusals.isNotEmpty() && room.store.notes.isEmpty() }
+            waitForNotebook(room) { room.store.notes.noteRefusals.isNotEmpty() && room.store.notes.all.isEmpty() }
             compose.onNodeWithText("The log has reached its limit. Remove an entry first.").assertIsDisplayed()
             compose.runOnIdle {
-                assertTrue(room.store.notes.isEmpty())
+                assertTrue(room.store.notes.all.isEmpty())
                 assertFalse("the submitted body remains inspectable in the engine refusal", room.engine.notices("gym").notices.value.isEmpty())
             }
         } } finally { scope.cancel() }

@@ -107,7 +107,7 @@ class ReviewSheetTests {
     private fun routineFor(room: EngineRoomFixture, server: ModelServer, name: String, changes: List<ProposalChange>): Routine = runBlocking {
         val draft = changes.filter { it.kind != ChangeKind.Added }
             .fold(RoutineDraft(name = name)) { draft, change -> draft.adding(change.exerciseId, change.before!!.sets) }
-        (room.store.saveRoutine(draft.capturingMovements(room.store.catalog)) as GymResult.Ok).value.also { room.sync(server) }
+        (room.store.routines.saveRoutine(draft.capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value.also { room.sync(server) }
     }
 
     // Coach, or a connected agent, writes the proposal on the server, and this phone pulls it.
@@ -342,16 +342,16 @@ class ReviewSheetTests {
         val decided = mutableListOf<Proposal>()
         sheet(store, decided)
         compose.onNodeWithText("Apply").assertIsEnabled()
-        val live = compose.runOnIdle { runBlocking { (store.start(routine.id) as GymResult.Ok).value } }
+        val live = compose.runOnIdle { runBlocking { (store.workout.start(routine.id) as GymResult.Ok).value } }
         compose.onNodeWithText("Finish this session").assertIsDisplayed()
         compose.onNodeWithText("Apply").assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals(live, store.session)
+            assertEquals(live, store.workout.session)
             assertEquals(pending, runBlocking { room.training.proposal("proposal1") })
             assertEquals(emptyList<Proposal>(), decided)
             assertEquals(emptyList<String>(), decisions(room))
-            runBlocking { assertTrue(store.finish() is FinishOutcome.Closed) }
+            runBlocking { assertTrue(store.workout.finish() is FinishOutcome.Closed) }
         }
         compose.onNodeWithText("Finish this session").assertDoesNotExist()
         compose.onNodeWithText("Apply").assertIsEnabled()
@@ -665,7 +665,7 @@ class ReviewSheetTests {
         val changes = listOf(retarget("bench-press", 1))
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes, summary = "Exact server prose.", pull = false)
-        val program = room.store.allRoutines
+        val program = room.store.routines.all
         val decided = mutableListOf<Proposal>()
         val visit = mutableStateOf(0)
         compose.setContent {
@@ -685,7 +685,7 @@ class ReviewSheetTests {
         compose.onNodeWithText("Apply").assertIsEnabled()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals(program, room.store.allRoutines)
+            assertEquals(program, room.store.routines.all)
             assertEquals(ProposalState.Pending, runBlocking { room.training.proposal("proposal1") }?.state)
             assertEquals(emptyList<Proposal>(), decided)
             assertEquals(emptyList<String>(), decisions(room))
@@ -703,11 +703,11 @@ class ReviewSheetTests {
             before = ProposalTargets(List(3) { SetTarget(5) }), loggedSets = 2))
         val routine = routineFor(room, server, "Push Day", removal)
         val closed = runBlocking {
-            assertTrue(store.start(routine.id) is GymResult.Ok)
-            store.choose("bench-press")
-            store.logSet(20.0, 8)
-            store.logSet(60.0, 5)
-            (store.finish() as FinishOutcome.Closed).detail
+            assertTrue(store.workout.start(routine.id) is GymResult.Ok)
+            store.workout.choose("bench-press")
+            store.workout.logSet(20.0, 8)
+            store.workout.logSet(60.0, 5)
+            (store.workout.finish() as FinishOutcome.Closed).detail
         }
         assertEquals(listOf(20.0 to 8, 60.0 to 5), closed.sets.map { it.weightKg to it.reps })
         room.sync(server)
@@ -727,18 +727,18 @@ class ReviewSheetTests {
         compose.onNode(hasText("Remove Push Day") and !hasClickAction()).assertIsDisplayed()
         compose.onNodeWithText("The whole routine is removed from your program. Every set you logged against it stays in the log.")
             .assertIsDisplayed()
-        compose.waitUntil { store.logged.any { it.id == closed.session.id } }
-        val logged = store.logged
+        compose.waitUntil { store.history.logged.any { it.id == closed.session.id } }
+        val logged = store.history.logged
         compose.onNode(hasText("Remove Push Day") and hasClickAction()).assertIsEnabled().performClick()
         receipt(room, server, decided)
         compose.runOnIdle {
             assertEquals(listOf(pending.copy(state = ProposalState.Applied)), decided)
-            assertEquals(emptyList<Routine>(), store.allRoutines)
+            assertEquals(emptyList<Routine>(), store.routines.all)
             assertEquals(emptyList<Routine>(), room.training.program())
             assertEquals(history, room.training.details())
-            assertEquals(logged, store.logged)
-            runBlocking { assertEquals(GymResult.Ok(confirmed), store.sessionDetail(closed.session.id)) }
-            runBlocking { assertEquals(ProposalRead.Found(decided.single()), store.proposal(pending.id)) }
+            assertEquals(logged, store.history.logged)
+            runBlocking { assertEquals(GymResult.Ok(confirmed), store.history.sessionDetail(closed.session.id)) }
+            runBlocking { assertEquals(ProposalRead.Found(decided.single()), store.routines.proposal(pending.id)) }
         }
         compose.onNode(hasText("Remove Push Day") and hasClickAction()).assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
@@ -748,7 +748,7 @@ class ReviewSheetTests {
             runBlocking {
                 cold.selected = "u1"
                 cold.store.connect(cold.account())
-                assertEquals(ProposalRead.Gone, cold.store.proposal(pending.id))
+                assertEquals(ProposalRead.Gone, cold.store.routines.proposal(pending.id))
             }
             displayed.value = cold.store
         }
@@ -759,7 +759,7 @@ class ReviewSheetTests {
         compose.onNodeWithText(requireNotNull(decided.single().receipt)).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(history, cold.training.details())
-            assertEquals(logged, cold.store.logged)
+            assertEquals(logged, cold.store.history.logged)
         }
         scope.cancel()
     }
@@ -805,17 +805,17 @@ class ReviewSheetTests {
         compose.onNodeWithText(waiting).assertDoesNotExist()
         compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsNotDisplayed()
         compose.runOnIdle {
-            assertEquals(mapOf(pending.id to settled), room.store.unseenRemovalReceipts)
+            assertEquals(mapOf(pending.id to settled), room.store.routines.unseenRemovalReceipts)
             offscreen.value = false
         }
         compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
         compose.runOnIdle {
-            assertEquals(mapOf(pending.id to settled), room.store.unseenRemovalReceipts)
+            assertEquals(mapOf(pending.id to settled), room.store.routines.unseenRemovalReceipts)
             owner.lifecycle.currentState = Lifecycle.State.RESUMED
         }
-        compose.waitUntil(5_000) { room.store.unseenRemovalReceipts.isEmpty() }
+        compose.waitUntil(5_000) { room.store.routines.unseenRemovalReceipts.isEmpty() }
         compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
-        compose.runOnIdle { runBlocking { assertEquals(ProposalRead.Found(settled), room.store.proposal(pending.id)) } }
+        compose.runOnIdle { runBlocking { assertEquals(ProposalRead.Found(settled), room.store.routines.proposal(pending.id)) } }
         scope.cancel()
     }
 
@@ -833,7 +833,7 @@ class ReviewSheetTests {
             runBlocking {
                 other.select("u1"); other.pull(server)
                 val held = other.training.program().single()
-                assertTrue(other.store.saveRoutine(RoutineDraft.of(held).named("Push Day B")) is GymResult.Ok)
+                assertTrue(other.store.routines.saveRoutine(RoutineDraft.of(held).named("Push Day B")) is GymResult.Ok)
                 other.sync(server)
             }
         }
@@ -863,24 +863,24 @@ class ReviewSheetTests {
         sheet(store, mutableListOf())
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsEnabled()
         val edited = runBlocking {
-            (store.saveRoutine(RoutineDraft.of(routine).named("Push Day B")) as GymResult.Ok).value.also {
+            (store.routines.saveRoutine(RoutineDraft.of(routine).named("Push Day B")) as GymResult.Ok).value.also {
                 room.sync(server)
                 store.refreshEngine()
             }
         }
         assertEquals(ProposalState.Superseded, runBlocking { room.training.proposal("proposal1") }?.state)
-        assertEquals(2, store.allRoutines.single().revision)
+        assertEquals(2, store.routines.all.single().revision)
 
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         compose.onNodeWithText(supersededSentence).assertIsDisplayed()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertDoesNotExist()
 
-        compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Routine(edited.id, edited.name))) } }
+        compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Routine(edited.id, edited.name))) } }
 
         compose.runOnIdle {
             assertEquals("the row is off the routines home", emptyList<String>(),
-                         store.routines.map { it.id })
-            assertEquals(emptyList<String>(), store.allRoutines.map { it.id })
+                         store.routines.all.map { it.id })
+            assertEquals(emptyList<String>(), store.routines.all.map { it.id })
         }
         compose.onNodeWithText(supersededSentence).assertIsDisplayed()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertDoesNotExist()
@@ -902,10 +902,10 @@ class ReviewSheetTests {
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsEnabled()
 
         runBlocking {
-            assertTrue(store.saveRoutine(RoutineDraft.of(routine).named("Push Day B")) is GymResult.Ok)
+            assertTrue(store.routines.saveRoutine(RoutineDraft.of(routine).named("Push Day B")) is GymResult.Ok)
             store.refreshEngine()
         }
-        assertEquals("the log has not counted the edit", routine.revision, store.allRoutines.single().revision)
+        assertEquals("the log has not counted the edit", routine.revision, store.routines.all.single().revision)
 
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         compose.onNodeWithText(supersededSentence).assertIsDisplayed()

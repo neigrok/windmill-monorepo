@@ -180,9 +180,9 @@ class LargestTypeTests {
             val presses = listOf("bench-press", "incline-bench-press", "close-grip-bench-press", "overhead-press",
                 "push-press", "dumbbell-bench-press", "incline-dumbbell-press", "dumbbell-shoulder-press")
             val routine = runBlocking {
-                val saved = (room.store.saveRoutine(presses.fold(RoutineDraft(name = "Push Day")) { draft, press ->
+                val saved = (room.store.routines.saveRoutine(presses.fold(RoutineDraft(name = "Push Day")) { draft, press ->
                     draft.adding(press).targeting(press, List(3) { SetTarget(5) })
-                }.capturingMovements(room.store.catalog)) as GymResult.Ok).value
+                }.capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
                 room.sync(server)
                 saved
             }
@@ -248,8 +248,8 @@ class LargestTypeTests {
         try { store(scope, server).use { room ->
             runBlocking {
                 room.startExternalWorkout()
-                room.store.choose("bench-press")
-                room.store.logSet(60.0, 5)
+                room.store.workout.choose("bench-press")
+                room.store.workout.logSet(60.0, 5)
                 room.sync(server)
                 room.store.refreshEngine()
             }
@@ -294,8 +294,8 @@ class LargestTypeTests {
         val room = store(scope, server)
         runBlocking {
             room.startExternalWorkout()
-            walk.forEach { room.store.choose(it) }
-            room.store.choose(walk.first())
+            walk.forEach { room.store.workout.choose(it) }
+            room.store.workout.choose(walk.first())
         }
         compose.setContent {
             GymMaterial {
@@ -457,8 +457,8 @@ class LargestTypeTests {
         try { store(scope, server).use { room ->
             runBlocking {
                 room.startExternalWorkout()
-                room.store.choose("bench-press")
-                repeat(4) { room.store.logSet(22.5, 5) }
+                room.store.workout.choose("bench-press")
+                repeat(4) { room.store.workout.logSet(22.5, 5) }
                 room.sync(server)
                 room.store.refreshEngine()
             }

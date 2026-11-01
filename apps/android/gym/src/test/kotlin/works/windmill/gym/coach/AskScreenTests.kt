@@ -104,7 +104,7 @@ class AskScreenTests {
         }
 
     private fun saved(room: EngineRoomFixture, server: ModelServer, draft: RoutineDraft): Routine = runBlocking {
-        (room.store.saveRoutine(draft.capturingMovements(room.store.catalog)) as GymResult.Ok).value.also { room.sync(server) }
+        (room.store.routines.saveRoutine(draft.capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value.also { room.sync(server) }
     }
 
     // Coach writes a proposal on the server, and this phone pulls it.
@@ -132,7 +132,7 @@ class AskScreenTests {
 
     // A decision waits for the server's receipt, so the phone syncs while it is pending.
     private fun applied(room: EngineRoomFixture, server: ModelServer, id: String) = runBlocking {
-        val decision = async { room.store.applyProposal(id) }
+        val decision = async { room.store.routines.applyProposal(id) }
         while (room.outbox().isEmpty() && !decision.isCompleted) yield()
         room.sync(server)
         decision.await() as ProposalOutcome.Decided
@@ -1015,7 +1015,7 @@ class AskScreenTests {
         compose.runOnIdle { receipts = listOf(requireNotNull(settled.proposal.receipt)) }
         compose.onNodeWithText(requireNotNull(settled.proposal.receipt)).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(Ask.promise).assertDoesNotExist()
-        compose.runOnIdle { assertEquals(emptyList<String>(), room.store.routines.map { it.id }) }
+        compose.runOnIdle { assertEquals(emptyList<String>(), room.store.routines.all.map { it.id }) }
         scope.cancel()
     }
 
@@ -1082,16 +1082,16 @@ class AskScreenTests {
             proposals = listOf("proposal1")))) }
         compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
         compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
-        val before = compose.runOnIdle { room.store.caughtUpTo }
+        val before = compose.runOnIdle { room.store.routines.caughtUpTo }
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.runOnIdle { assertTrue("not reported before the phone reads past the miss", events.none { it.first == "gym_proposal_missing" }) }
         compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
         saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
         compose.waitUntil(5_000) { compose.runOnIdle { events.any { it.first == "gym_proposal_missing" } } }
         saved(room, server, RoutineDraft(name = "Legs").adding("back-squat", List(3) { SetTarget(5) }))
-        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.size == 2 } }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.all.size == 2 } }
         compose.runOnIdle {
-            assertTrue(room.store.caughtUpTo!! > before!!)
+            assertTrue(room.store.routines.caughtUpTo!! > before!!)
             assertEquals(listOf("gym_proposal_missing" to emptyMap<String, String>()), events.filter { it.first == "gym_proposal_missing" })
         }
         compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
@@ -1110,7 +1110,7 @@ class AskScreenTests {
             runBlocking { other.select("u1") }
         }, server, RoutineDraft(name = "Push A").adding("bench-press", List(3) { SetTarget(5) }))
         room.store.observeEngine()
-        assertNull(room.store.caughtUpTo)
+        assertNull(room.store.routines.caughtUpTo)
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
         compose.setContent {
@@ -1124,7 +1124,7 @@ class AskScreenTests {
         compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.runOnIdle { room.pull(server) }
-        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.size == 1 } }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.all.size == 1 } }
         compose.mainClock.advanceTimeBy(1_000)
         compose.runOnIdle { assertTrue("a pull that only brings the phone level reports nothing", events.none { it.first == "gym_proposal_missing" }) }
         compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
@@ -1247,7 +1247,7 @@ class AskScreenTests {
             proposals = listOf("proposal1")))) }
         compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
         compose.runOnIdle { pulls.value = pulls.value.sending(replica) }
-        compose.waitUntil(5_000) { compose.runOnIdle { room.store.pulled.sent == 1L } }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.pulled.sent == 1L } }
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.runOnIdle {
             assertEquals(1, asked)
@@ -1290,7 +1290,7 @@ class AskScreenTests {
         compose.runOnIdle { thread = listOf(thread[0].copy(answer = AskAnswer("The first answer.", read, proposals = listOf("proposal1"))), thread[1]) }
         compose.onNodeWithText("The first answer.").assertIsDisplayed()
         saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
-        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.size == 1 } }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.all.size == 1 } }
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs / 2)
         compose.runOnIdle { thread = listOf(thread[0], thread[1].copy(answer = AskAnswer("The second answer.", read, proposals = listOf("proposal2")))) }
         compose.onNodeWithText("The second answer.").assertIsDisplayed()

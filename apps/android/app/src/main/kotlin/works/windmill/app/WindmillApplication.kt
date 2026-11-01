@@ -218,7 +218,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             getSystemService(NotificationManager::class.java),
             getSystemService(KeyguardManager::class.java), telemetry = telemetry)
         workoutNotifications.start()
-        workoutTile = WorkoutTile(gym, ComponentName(this, MainActivity::class.java), store::requestRoutines, telemetry)
+        workoutTile = WorkoutTile(gym, ComponentName(this, MainActivity::class.java), store.workout::requestRoutines, telemetry)
         store.observeEngine()
         scope.launch { engine.revisions().collect { accountDeletion.refreshCount() } }
         val manager = getSystemService(ConnectivityManager::class.java)

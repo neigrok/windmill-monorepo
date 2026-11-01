@@ -70,17 +70,17 @@ fun LogScreen(
     val scope = rememberCoroutineScope()
     val nowMs = now()
     val zone = ZoneId.systemDefault()
-    val progress = store.progress.takeIf { store.progressFailure == null }
-    val historyRead = store.historyRead
-    val oldestDay = if (store.older == Older.End) null else {
-        store.allSessions.minOfOrNull { it.startedAtMs }
+    val progress = store.history.progress.takeIf { store.history.progressFailure == null }
+    val historyRead = store.history.historyRead
+    val oldestDay = if (store.history.older == Older.End) null else {
+        store.history.allSessions.minOfOrNull { it.startedAtMs }
             ?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
             ?: Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
     }
-    val timeline = logTimeline(store.recent, progress, store.bodyweight, nowMs, zone, oldestDay)
+    val timeline = logTimeline(store.history.recent, progress, store.bodyweight.drawn, nowMs, zone, oldestDay)
     val days = LogReadout.days(timeline, nowMs, zone)
     val marked = timeline.filterIsInstance<LogEntry.Moment.Best>().mapTo(mutableSetOf()) { it.best.sessionId }
-    val logHolds = store.allSessions.any { !it.session.isOpen }
+    val logHolds = store.history.allSessions.any { !it.session.isOpen }
     var weighingIn by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
@@ -98,10 +98,10 @@ fun LogScreen(
     }
     val firstDay = days.firstOrNull()?.date
     LaunchedEffect(firstDay) { if (pinned.top) listState.scrollToItem(0) }
-    LaunchedEffect(store.accountKey) { store.loadProgress() }
+    LaunchedEffect(store.seat.accountKey) { store.history.loadProgress() }
     // The reading foot shows once its wait passes 400 ms, timed here rather than in the list so scrolling keeps it.
-    val reading = store.older == Older.Reading
-    LaunchedEffect(reading) { if (reading) { delay(400); store.showReading() } }
+    val reading = store.history.older == Older.Reading
+    LaunchedEffect(reading) { if (reading) { delay(400); store.history.showReading() } }
     fun close() {
         if (saving || closing) return
         closing = true
@@ -122,16 +122,16 @@ fun LogScreen(
                 if (recovery?.workouts?.isNotEmpty() == true) item("on-this-phone") {
                     OnThisPhoneSection(recovery, onList = { onOpenRecovery(null) }, onInspect = { onOpenRecovery(it) })
                 }
-                if (store.progressFailure != null) item("progress-failed") {
+                if (store.history.progressFailure != null) item("progress-failed") {
                     Column {
                         Text("Progress unavailable", style = WindmillFont.body(16), color = skin.ink)
-                        Text(store.progressFailure!!.line("Your progress could not be read."), style = WindmillFont.body(14), color = skin.inkDim)
-                        TextButton(onClick = { scope.launch { store.loadProgress(force = true) } }) { Text("Try again") }
+                        Text(store.history.progressFailure!!.line("Your progress could not be read."), style = WindmillFont.body(14), color = skin.inkDim)
+                        TextButton(onClick = { scope.launch { store.history.loadProgress(force = true) } }) { Text("Try again") }
                     }
-                } else if (store.progressLoading && store.progress == null) item("progress-reading") {
+                } else if (store.history.progressLoading && store.history.progress == null) item("progress-reading") {
                     Text("Reading progress…", style = WindmillFont.body(14), color = skin.inkDim)
                 }
-                if (timeline.isEmpty() && store.older == Older.End && !logHolds) item("empty") {
+                if (timeline.isEmpty() && store.history.older == Older.End && !logHolds) item("empty") {
                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text("No workouts yet", style = WindmillFont.body(28, FontWeight.Bold).copy(lineHeight = 39.sp), color = skin.ink)
                         Text("Your training will land here.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
@@ -154,15 +154,15 @@ fun LogScreen(
                                 }
                             }
                             is LogEntry.Weight -> DeleteSwipeRow("Delete weigh-in", onDelete = {
-                                store.withhold(Deletion.Bodyweight(entry.entry.dateLocal))
+                                store.deletions.withhold(Deletion.Bodyweight(entry.entry.dateLocal))
                                 false
                             }) {
-                                WeightRow(entry, LogReadout.weight(entry, store.bodyweight, zone, historyRead)) {
+                                WeightRow(entry, LogReadout.weight(entry, store.bodyweight.drawn, zone, historyRead)) {
                                     telemetry.event("gym_action", mapOf("screen" to "log", "action" to "open_bodyweight", "outcome" to "ok"))
                                     onOpenBodyweight()
                                 }
                             }
-                            is LogEntry.Moment -> MomentRow(entry, LogReadout.moment(entry, store.catalog, zone)) {
+                            is LogEntry.Moment -> MomentRow(entry, LogReadout.moment(entry, store.routines.catalog, zone)) {
                                 if (entry is LogEntry.Moment.Best) {
                                     telemetry.event("gym_action", mapOf("screen" to "log", "action" to "open_record", "outcome" to "ok"))
                                     onOpenMovement(entry.best.exerciseId, entry.best.sessionId)
@@ -171,9 +171,9 @@ fun LogScreen(
                         }
                     }
                 }
-                if (store.older != Older.End || logHolds || timeline.isNotEmpty()) {
-                    item("foot") { LogFoot(store.older, store.readingShown, store.allSessions.lastOrNull { !it.session.isOpen },
-                        onLoad = { scope.launch { store.loadOlder() } }, onRetry = { scope.launch { store.retryLog() } }) }
+                if (store.history.older != Older.End || logHolds || timeline.isNotEmpty()) {
+                    item("foot") { LogFoot(store.history.older, store.history.readingShown, store.history.allSessions.lastOrNull { !it.session.isOpen },
+                        onLoad = { scope.launch { store.history.loadOlder() } }, onRetry = { scope.launch { store.history.retryLog() } }) }
                 }
             }
         }
@@ -190,13 +190,13 @@ fun LogScreen(
                         refused = null
                         scope.launch {
                             try {
-                                val failure = store.weighIn(date, kg)
+                                val failure = store.bodyweight.weighIn(date, kg)
                                 if (failure != null) refused = failure.line("That weigh-in could not be saved.")
                                 else { saving = false; close() }
                             } finally { saving = false }
                         }
                     }
-                }, onDelete = null, draftKey = "${store.accountKey}:new")
+                }, onDelete = null, draftKey = "${store.seat.accountKey}:new")
         }
     }
 }

@@ -214,7 +214,7 @@ class FixSheetStateTests {
                 events.clear()
                 compose.setContent { if (shown) GymMaterial {
                     FixSheet(held, "Bench Press", 1, null, origin = FixOrigin.Session,
-                        onSave = { room.store.fixSet(session.id, held.id, it, FixOrigin.Session) },
+                        onSave = { room.store.workout.fixSet(session.id, held.id, it, FixOrigin.Session) },
                         onSaved = { saved++ }, onDelete = {})
                 } }
                 compose.onNodeWithText("Set note").performTextInput("  exact note\n  ")

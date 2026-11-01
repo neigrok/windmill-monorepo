@@ -47,7 +47,7 @@ class RowReturnReplayTests {
         runBlocking {
             room.select("u1")
             room.pull(server)
-            assertTrue(room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) is GymResult.Ok)
+            assertTrue(room.store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) is GymResult.Ok)
             room.sync(server)
             room.store.refreshEngine()
         }
@@ -65,7 +65,7 @@ class RowReturnReplayTests {
                 onOpenRoutine = {},
                 onDeleteRoutine = { id ->
                     deletes += id
-                    room.store.delete(Deletion.Routine(id, room.store.routine(id)?.name ?: "?")) == null
+                    room.store.deletions.delete(Deletion.Routine(id, room.store.routines.routine(id)?.name ?: "?")) == null
                 },
                 onReview = {},
             )
@@ -89,7 +89,7 @@ class RowReturnReplayTests {
             val deletes = mutableListOf<String>()
             home(room, deletes)
 
-            val routineId = room.store.routines.single().id
+            val routineId = room.store.routines.all.single().id
             compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
             compose.runOnIdle {
                 assertEquals(1, deletes.size)
@@ -99,14 +99,14 @@ class RowReturnReplayTests {
             // The window closes and the delete goes out; the log refuses it, and the row is back:
             // nothing the log holds was crossed out.
             compose.runOnIdle {
-                assertEquals("the settled row has left the list", emptyList<String>(), room.store.routines.map { it.id })
+                assertEquals("the settled row has left the list", emptyList<String>(), room.store.routines.all.map { it.id })
                 assertEquals("one delete on the wire", listOf(routineId), routineDeletes(room))
                 server.refuse(code = "stale")
                 room.sync(server)
             }
             compose.waitUntil(2_000) {
                 shadowOf(Looper.getMainLooper()).idle()
-                room.store.routines.map { it.id } == listOf(routineId)
+                room.store.routines.all.map { it.id } == listOf(routineId)
             }
             compose.waitForIdle()
             compose.mainClock.advanceTimeBy(window * 3)
@@ -115,7 +115,7 @@ class RowReturnReplayTests {
             compose.runOnIdle {
                 assertEquals("one swipe is one delete", 1, deletes.size)
                 assertEquals("and the row coming back sent no second delete", emptyList<String>(), routineDeletes(room))
-                assertEquals("nothing is held any more", emptyList<Any>(), room.store.withheld)
+                assertEquals("nothing is held any more", emptyList<Any>(), room.store.held.withheld)
             }
             compose.onNodeWithText("Push Day").assertIsDisplayed()
         } } finally { scope.cancel() }
@@ -133,13 +133,13 @@ class RowReturnReplayTests {
             compose.onNodeWithText("Push Day").assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals(1, deletes.size)
-                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Any>(), room.store.held.withheld)
                 assertEquals(emptyList<Json>(), room.outbox())
             }
             compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
             compose.runOnIdle {
                 assertEquals(2, deletes.size)
-                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Any>(), room.store.held.withheld)
                 assertEquals(1, routineDeletes(room).size)
             }
             compose.onNodeWithText("Push Day").assertDoesNotExist()
