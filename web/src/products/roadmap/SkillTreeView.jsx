@@ -357,7 +357,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const boardSwitchRef = useRef(null); // G's switch while the desktop offers one, else null
   const [boardQuery, setBoardQuery] = useState(() => new BoardQuery()); // sort, kinds, search and branch, for this visit
   const viewBranch = useCallback((id) => setBoardQuery((query) => query.inBranch(id)), []); // a step's View branch
-  const stepDetailOpen = () => rootRef.current?.querySelector('.st-board-step-layer') != null; // '/' and G wait while it is
+  const stepDetailOpenRef = useRef(false); // '/' and G wait while a step's page or modal is open
   const switchFocusRef = useRef(false);
   const [sheetHeld, setSheetHeld] = useState(false);
   const [coachAllowed, setCoachAllowed] = useState(false);
@@ -883,7 +883,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
       const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
-      const boardAction = stepDetailOpen() ? null : boardKey(event, typing);
+      const boardAction = stepDetailOpenRef.current ? null : boardKey(event, typing);
       if (boardAction === 'find' && boardActiveRef.current) {
         const find = rootRef.current?.querySelector('.st-board-find-input');
         if (!find) return;
@@ -1342,6 +1342,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // A card opens its step: the modal from 744px, the pushed page below. The step rides the URL, so a link lands on it and
   // Back leaves it; selection follows the open step and, on close, returns to the card the visit began on.
   const detailId = boardActive && tree && stepAddress.id !== null && tree.nodesById.has(stepAddress.id) ? stepAddress.id : null;
+  stepDetailOpenRef.current = detailId !== null;
   useEffect(() => {
     if (detailId !== null) setSelectedId(detailId);
   }, [detailId, setSelectedId]);
@@ -1359,6 +1360,10 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(id);
     switchView('tree');
     sceneRef.current?.revealNode(id);
+  };
+  const viewBranchFromDetail = (id) => {
+    stepAddress.close();
+    viewBranch(id);
   };
   const deleteStepFromDetail = (id) => {
     stepAddress.close();
@@ -1846,6 +1851,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             onComplete={(id) => completeStep(id, { quiet: true })}
             onReset={resetStep}
             onOpenInGraph={openStepInGraph}
+            onViewBranch={viewBranchFromDetail}
             onDelete={deleteStepFromDetail}
             onNotify={showToast}
           />

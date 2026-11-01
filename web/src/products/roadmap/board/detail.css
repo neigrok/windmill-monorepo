@@ -397,3 +397,25 @@
 .st-board-step-menu-item--danger svg {
   color: var(--color-danger);
 }
+
+/* ---- View branch: the Board scoped to this step, its ancestors and descendants. ---- */
+.st-board-step-explore {
+  display: flex;
+  justify-content: flex-end;
+}
+.st-board-step-view-branch {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.st-board-step-view-branch:hover {
+  background: var(--surface-hover);
+}

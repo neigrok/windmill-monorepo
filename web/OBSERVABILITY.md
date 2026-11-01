@@ -101,7 +101,7 @@ nothing, and no kind name, step, title or search text is reported. Opening a ste
 `door` (`card`, `step` for a row inside another step, or `link` for a step link the page arrived at); going back to a step
 already open emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
 and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
-(which also emits `roadmap_view_switch`), `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
+(which also emits `roadmap_view_switch`), `viewBranch`, `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
 write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
 static Sentry operation `roadmap-board-step` and closes it. The switch, the tabs, the rail, Show all, the controls, the states and
 the step's page and modal exist only while the Board's development gate

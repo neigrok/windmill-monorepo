@@ -14,24 +14,26 @@ import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { StepDetail } from '/src/products/roadmap/board/StepDetail.jsx';
 import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
+import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { advanceProgress } from '/src/products/roadmap/model/progress.js';
 import { toggleSubtask } from '/src/products/roadmap/model/NodeWorkspace.js';
 
 const noop = () => {};
 const call = (line) => (window.calls ??= []).push(line);
 
-window.openRoom = ({ nodes, completed, breakpoint, editable = true, workspaces = {} }) => {
+window.openRoom = ({ nodes, completed, breakpoint, editable = true, workspaces = {}, kinds = [] }) => {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
   function Room() {
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
     const [spaces, setSpaces] = useState(workspaces);
+    const [query, setQuery] = useState(() => new BoardQuery({ kinds }));
     const address = useStepAddress();
     const mark = (id, target) => setProgress((current) => advanceProgress(current, [id], target, Date.now()));
     return React.createElement('div', { style: { position: 'fixed', inset: 0 } },
       React.createElement('div', { className: 'st-view-layer--board is-active', style: { position: 'absolute', inset: 0, zIndex: 18 } },
         React.createElement(BoardView, { tree, completed: progress.completed, completedAt: progress.completedAt, selectedId,
-          onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, breakpoint, active: true, onSwitchView: noop })),
+          onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, breakpoint, active: true, onSwitchView: noop, query, onQuery: setQuery })),
       address.id && React.createElement(StepDetail, {
         tree, completed: progress.completed, completedAt: progress.completedAt, address, breakpoint, roadmapTitle: 'Learn to sail',
         editable, deletable: true, stepLink: 'https://windmill.test/t/sail#?step=' + address.id,
@@ -45,6 +47,7 @@ window.openRoom = ({ nodes, completed, breakpoint, editable = true, workspaces =
         onComplete: (id) => { call('complete ' + id); mark(id, 'complete'); },
         onReset: (id) => { call('reset ' + id); mark(id, 'none'); },
         onOpenInGraph: (id) => call('graph ' + id),
+        onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
         onDelete: (id) => call('delete ' + id),
         onNotify: (message) => call('notify ' + message),
       }));
@@ -97,14 +100,14 @@ const learnToSailNodes = [
   { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
 ];
 
-async function openRoom({ viewport, breakpoint, nodes = learnToSailNodes, editable = true, workspaces = {}, clock = false, permissions = [] }, errors) {
+async function openRoom({ viewport, breakpoint, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], clock = false, permissions = [] }, errors) {
   const context = await browser.newContext({ viewport, permissions });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   if (clock) await page.clock.install();
   await page.goto(`${origin}/step-detail-test#/app/sail`);
   await page.waitForFunction(() => window.entryReady);
-  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], breakpoint, editable, workspaces });
+  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], breakpoint, editable, workspaces, kinds });
   await page.locator('.st-board-card:visible').first().waitFor();
   return page;
 }
@@ -135,11 +138,11 @@ test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, E
     assert.deepEqual([await hash(page), await page.evaluate(() => document.activeElement.getAttribute('role'))], ['#/app/sail?step=wind', 'dialog']);
 
     const stops = [];
-    for (let press = 0; press < 8; press += 1) {
+    for (let press = 0; press < 9; press += 1) {
       await page.keyboard.press('Tab');
       stops.push(await focusedName(page));
     }
-    assert.deepEqual(stops, ['More', 'Close', 'Overview', 'Sailing basics', 'Name the boat parts, done', 'Leave the dock, locked', 'Complete', 'More']);
+    assert.deepEqual(stops, ['More', 'Close', 'Overview', 'Sailing basics', 'Name the boat parts, done', 'Leave the dock, locked', 'View branch', 'Complete', 'More']);
     await page.keyboard.press('Shift+Tab');
     assert.equal(await focusedName(page), 'Complete');
 
@@ -336,5 +339,27 @@ test('Chromium: the step menu copies the step’s link with Link copied and open
   } finally {
     await page.context().close();
     await reader.context().close();
+  }
+});
+
+test('Chromium: View branch closes the step and scopes the Board to it; a locked step offers no View branch', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, breakpoint: 'desktop' }, errors);
+  try {
+    await card(page, 'Leave the dock').click();
+    assert.equal(await page.getByRole('button', { name: 'View branch' }).count(), 0);
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await card(page, 'Read the wind').click();
+    await page.getByRole('button', { name: 'View branch' }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert.deepEqual([await calls(page), await column(page, 'locked'), await column(page, 'upNext'), await hash(page), (await events(page)).at(-1)], [
+      ['branch wind'], ['Leave the dock', 'Sail a triangle', 'Sail solo'], ['Read the wind'], '#/app/sail',
+      'roadmap_board_step_action {"surface":"modal","action":"viewBranch"}',
+    ]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
   }
 });

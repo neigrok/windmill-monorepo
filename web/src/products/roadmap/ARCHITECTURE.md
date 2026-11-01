@@ -90,7 +90,8 @@ writes and toast nothing: the status row flips with an inline Undo for six secon
 hovering or focusing Reset previews what it returns to Locked. On the Workspace section, a step whose every subtask is
 checked offers Complete step; subtasks never complete it. The ⋯ menu copies the step's link (the roadmap's share address
 plus its step), opens the step in the Graph, and for the owner deletes it through the Graph's delete with its Undo toast.
-A visitor gets the overview and the menu without Delete. The detail offers no Edit step or View branch yet.
+The owner's up next and done steps offer View branch, which closes the step and scopes the Board to its branch. A
+visitor gets the overview and the menu without Delete. The detail offers no Edit step yet.
 
 The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
 would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap

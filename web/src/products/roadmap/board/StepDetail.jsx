@@ -51,6 +51,7 @@ export function StepDetail({
   onComplete,
   onReset,
   onOpenInGraph,
+  onViewBranch,
   onDelete,
   onNotify,
 }) {
@@ -162,7 +163,14 @@ export function StepDetail({
   const content = (
     <div id={`${sectionsId}-${shownSection}`} role={editable ? 'tabpanel' : undefined} aria-labelledby={editable ? `${sectionsId}-tab-${shownSection}` : undefined} className="st-board-step-panel">
       {shownSection === 'overview' && (
-        <Overview facts={facts} outcome={outcome} marksNeeds={surface === 'page'} onUndo={undo} onOpenStep={onOpenStep} />
+        <Overview
+          facts={facts}
+          outcome={outcome}
+          marksNeeds={surface === 'page'}
+          onUndo={undo}
+          onOpenStep={onOpenStep}
+          onViewBranch={editable && facts.column !== 'locked' ? () => { act('viewBranch'); onViewBranch(id); } : null}
+        />
       )}
       {shownSection === 'workspace' && (
         <NodeWorkspace
@@ -211,7 +219,8 @@ function StepIdentity({ step, titleId }) {
 }
 
 // The page marks a locked step's unmet needs with their column (01.07); the modal lists them plainly (03.07).
-function Overview({ facts, outcome, marksNeeds, onUndo, onOpenStep }) {
+// View branch closes the step and scopes the Board to it (11.01); the owner's up next and done steps offer it.
+function Overview({ facts, outcome, marksNeeds, onUndo, onOpenStep, onViewBranch }) {
   const description = facts.step.description?.trim() ?? '';
   const links = (facts.step.links ?? []).filter((link) => SAFE_URL.test(link.url));
   const needing = marksNeeds && facts.column === 'locked';
@@ -249,6 +258,11 @@ function Overview({ facts, outcome, marksNeeds, onUndo, onOpenStep }) {
           </h3>
           {facts.unlocks.map((related) => <RelationRow key={related.id} related={related} onOpen={onOpenStep} />)}
         </section>
+      )}
+      {onViewBranch && (
+        <div className="st-board-step-explore">
+          <button type="button" className="st-board-step-view-branch" onClick={onViewBranch}>{STEP_DETAIL.viewBranch}</button>
+        </div>
       )}
     </>
   );
