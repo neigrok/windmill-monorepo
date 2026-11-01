@@ -25,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,6 +69,7 @@ fun RoutinesScreen(
     onOpenRoutine: (String) -> Unit,
     onDeleteRoutine: suspend (String) -> Boolean,
     onReview: (Proposal) -> Unit,
+    transient: SnackbarHostState? = null,
 ) {
     val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
@@ -79,6 +81,8 @@ fun RoutinesScreen(
     GymScreen(
         title = "Routines",
         actions = { YouSeat(seat) },
+        transient = transient,
+        floatingActionButton = { GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) }) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -127,8 +131,6 @@ fun RoutinesScreen(
                     }
                 }
             }
-            GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
         }
     }
 }

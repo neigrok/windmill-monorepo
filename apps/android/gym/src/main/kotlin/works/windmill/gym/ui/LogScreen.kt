@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.gym.domain.Bodyweight
@@ -58,6 +60,7 @@ fun LogScreen(
     onOpenRecovery: (String?) -> Unit = {},
     recovery: RecoveryRead? = null,
     now: () -> Long = System::currentTimeMillis,
+    transient: SnackbarHostState? = null,
 ) {
     val skin = LocalGymColors.current
     val telemetry = LocalTelemetry.current
@@ -82,6 +85,16 @@ fun LogScreen(
     val formState = rememberSaveableStateHolder()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
     val listState = rememberLazyListState()
+    // Undo can bring a day back above the first one drawn. A log read from its top stays at its top,
+    // so the lifter sees the row come back; one scrolled down keeps its place.
+    val pinned = remember { object { var top = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.filter { !it }.collect {
+            pinned.top = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+        }
+    }
+    val firstDay = days.firstOrNull()?.date
+    LaunchedEffect(firstDay) { if (pinned.top) listState.scrollToItem(0) }
     LaunchedEffect(store.accountKey) { store.loadProgress() }
     fun close() {
         if (saving || closing) return
@@ -91,7 +104,11 @@ fun LogScreen(
             finally { closing = false }
         }
     }
-    GymScreen(title = "The log", actions = { YouSeat(seat) }) {
+    val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    GymScreen(title = "The log", actions = { YouSeat(seat) }, transient = transient, floatingActionButton = {
+        GymExtendedFab(Bodyweight.chip, onClick = { weighingIn = true }, painterResource(R.drawable.gym_native_monitor_weight),
+            expanded = atTop)
+    }) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 88.dp),
@@ -152,14 +169,6 @@ fun LogScreen(
                     item("foot") { LogFoot(store.older, store.allSessions.lastOrNull { !it.session.isOpen }, load) }
                 }
             }
-            ExtendedFloatingActionButton(
-                onClick = { weighingIn = true },
-                icon = { Icon(painterResource(R.drawable.gym_native_monitor_weight), null, Modifier.size(24.dp)) },
-                text = { Text(Bodyweight.chip, style = WindmillFont.body(16, FontWeight.Bold)) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).heightIn(min = 56.dp).semantics { contentDescription = Bodyweight.chip },
-                containerColor = skin.accentSoft.compositeOver(skin.surface),
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
         }
     }
     if (weighingIn) WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
@@ -247,7 +256,7 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val timeBelowTitle = maxWidth < 320.dp || fontScale >= 1.5f
         Row(Modifier.fillMaxWidth().testTag("session:${row.summary.id}").heightIn(min = 72.dp)
-            .background(skin.surface, RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp)).background(skin.surface)
             .combinedClickable(role = Role.Button, onClickLabel = "Open workout", onLongClickLabel = "Workout actions",
                 onClick = onOpen, onLongClick = { haptics.revealed(); menu = true })
             .semantics {

@@ -5,6 +5,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -129,6 +130,12 @@ class YouSheetTests {
         compose.onNodeWithText(if (signedIn) "Sign out" else "Sign in").assertIsDisplayed()
         val bounds = rows.map { compose.onNodeWithText(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot }
         assertTrue(bounds.zipWithNext().all { (first, next) -> first.bottom < next.top })
+        // Each row ends in an icon, not a "›" a screen reader would say: the row reads its label alone.
+        rows.forEach { label ->
+            val row = compose.onNode(hasText(label) and hasClickAction()).fetchSemanticsNode().config
+            assertEquals(label, listOf(label), row.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.map { it.text })
+            assertEquals(label, null, row.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription))
+        }
         listOf("Gym settings", "Units", "lb", "One account across Windmill.").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }

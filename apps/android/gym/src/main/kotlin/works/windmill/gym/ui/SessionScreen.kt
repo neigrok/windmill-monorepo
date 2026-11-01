@@ -295,7 +295,7 @@ fun SessionScreen(
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(skin.raised, RoundedCornerShape(16.dp))
+                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(16.dp)).background(skin.raised)
                         .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
                         Text("Share this workout", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                     }

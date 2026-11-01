@@ -1430,7 +1430,8 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      committed so always fits a request alone; §7.4 refuses one that grew past it.
 9. **Enqueue.** Each entry takes lineage A in a `bound(A)` replica, and `anon` in the `anon` replica
    (D-27).
-   - `hold` → `held` with `releaseAt = deviceNow + HOLD_MS`.
+   - `hold` → `held` with `releaseAt = deviceNow + HOLD_MS`. Android lets one gesture ask for a longer
+     hold (`Gesture.holdMs`): its weigh-in Undo lasts the system's accessibility timeout.
    - Otherwise `ready`.
 10. **Device rows.** Write `opts.local` rows into `device/<product>`. A commit with only local rows
     is legal. A key that matches no device row of the product's registry (`keyPattern`) throws.

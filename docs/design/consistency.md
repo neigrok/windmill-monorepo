@@ -703,7 +703,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11b · Deletion follows the resource.** Use the shared Material end-to-start swipe row with
   the error-red ground and trash icon (`Android / Swipe row` `337:2217`). Routine, set and note
   deletes commit immediately where their tasks specify it; workout discard and conversation delete
-  ask once. The approved Log/Weigh-in flow keeps a nine-second held weight deletion and Undo, so
+  ask once. The approved Log/Weigh-in flow keeps a held weight deletion and Undo for the system's
+  accessibility timeout, never less than nine seconds (05.17), so
   `WithheldDelete.kt` remains while that path uses it. Do not remove all holds as shared-row cleanup.
   Android routine/editor/detail-set rows use the shared ground. Immediate actions are application-owned;
   weights project exact durable receipts. The remaining row migrations belong to their screen tasks.
@@ -718,7 +719,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Workout detail set | `ui/SessionScreen.kt`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
   | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
   | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable nine-second hold | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, nine-second held delete and Undo |
+  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
   | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
 
@@ -872,7 +873,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Rack height and planned rows | *22.5 kg total* moves the unit below (O rule) and grows the rack about 80px; planned rows read *last kg total × max* | 03.34 `1742:40960` · `1742:41112` |
   | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
   | Receipt at 320dp/200% | Facts and *Performed* fall off-screen; the sheet does not grow | 03.36 `1742:41620` · `1742:41702` |
-  | Weigh-in Undo | *Weigh in* moves above the snackbar and drops under the finger when the fixed nine-second window ends | 05.17 `1742:41789` · `1742:41887`; 05.16 stays as the production picture until 05.17 ships |
+  | Weigh-in Undo | Built (task 61, awaiting merge): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887`; 05.16 stays as the production picture until 05.17 ships |
 
   Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
   Dumbbells, and iOS planned rows read *last × max* (`Readout.setTarget`). 03.34 adds a fit-first

@@ -22,6 +22,9 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -63,6 +66,34 @@ class LogWeightRowsTests {
     }
 
     @Test
+    fun weighInCollapsesToItsIconWhileTheLogIsScrolledAndKeepsItsName() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val day = LocalDate.of(2026, 10, 22)
+            room.now = day.atTime(12, 45).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            runBlocking {
+                room.select(null)
+                repeat(16) { assertNull(room.store.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
+            }
+            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            val fab = compose.onNodeWithContentDescription("Weigh in")
+            val label = compose.onNode(hasText("Weigh in"), useUnmergedTree = true)
+            val expanded = fab.getBoundsInRoot()
+            label.assertIsDisplayed()
+            compose.onNode(hasScrollAction()).performScrollToIndex(12)
+            compose.waitForIdle()
+            label.assertDoesNotExist()
+            val collapsed = fab.assertIsDisplayed().assertHasClickAction().getBoundsInRoot()
+            assertEquals(listOf(56.dp, 56.dp, expanded.right, expanded.bottom),
+                listOf(collapsed.width, collapsed.height, collapsed.right, collapsed.bottom))
+            compose.onNode(hasScrollAction()).performScrollToIndex(0)
+            compose.waitForIdle()
+            label.assertIsDisplayed()
+            assertEquals(expanded, fab.getBoundsInRoot())
+        } } finally { scope.cancel() }
+    }
+
+    @Test
     fun aWeightSwipeUsesTheDurableHoldAndUndoRestoresTheExactFact() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
@@ -83,6 +114,30 @@ class LogWeightRowsTests {
             }
             compose.onNodeWithTag("weight:$day").assertIsDisplayed()
             compose.runOnIdle { assertEquals(original, room.store.bodyweight) }
+        } } finally { scope.cancel() }
+    }
+
+    // The lazy list keeps its first drawn row in place, so a day Undo restores above it would come
+    // back out of sight. Read from the top, the log stays at the top and the row is seen returning.
+    @Test
+    fun undoBringsBackTheNewestDayIntoViewOnALogReadFromItsTop() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val day = LocalDate.of(2026, 10, 22)
+            room.now = day.atTime(12, 45).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            runBlocking {
+                room.select(null)
+                repeat(16) { assertNull(room.store.weighIn(day.minusDays(it.toLong()).toString(), 82.0 + it / 10.0)) }
+            }
+            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            val top = compose.onNodeWithTag("weight:$day").getBoundsInRoot()
+            compose.onNodeWithTag("weight:$day").performTouchInput { swipeLeft() }
+            compose.waitForIdle()
+            compose.onNodeWithTag("weight:$day").assertDoesNotExist()
+            compose.runOnIdle { room.store.keepWithheld() }
+            compose.waitForIdle()
+            assertEquals(top, compose.onNodeWithTag("weight:$day").assertIsDisplayed().getBoundsInRoot())
+            compose.onNode(hasText("Weigh in"), useUnmergedTree = true).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 }

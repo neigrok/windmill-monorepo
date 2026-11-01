@@ -82,6 +82,13 @@ optional `fontScale` from 1 to 2. The owned emulator's size, density and text sc
 before subsequent recipes or performance measurements. O recipes cover signed Display overflow at
 phone and 320dp widths, editing from `24` to `-499.99`, and 200% text.
 
+A recipe's optional `accessibility_timeout_ms` (9000–120000) sets the owned emulator's system
+accessibility timeout before its account's appearance launches, so the app reads it on resume; it
+holds for every recipe of that account, which must not ask for a different one, and an account
+whose recipes name none runs with the setting deleted. `log.json`'s 05.17 weight Undo uses 30 s:
+the app holds the Undo that long, so the recipe's Undo tap lands after the screenshot however
+slowly the hierarchy settles.
+
 `--fixture apps/android/tools/capture-recipes/number-entry-fixture.json` with
 `--scenarios apps/android/tools/capture-recipes/number-entry.json` captures the actual rack's pressed,
 changed and native-keyboard states in both appearances. These recipes opt into `workout_clock`,

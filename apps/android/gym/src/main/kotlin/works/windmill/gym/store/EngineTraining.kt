@@ -107,6 +107,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             return engine.undo(gestureId)
         }
     }
+    // A held removal lasts the window the room asked for; every other gesture keeps the engine's own.
+    private fun holding(holdMs: Long) = object : works.windmill.sync.api.Replica by writable {
+        override fun <T> commit(scope: ScopeRef, body: (works.windmill.sync.api.CommitContext) -> Pair<works.windmill.sync.api.Gesture?, T>): Pair<works.windmill.sync.api.CommitOutcome?, T> =
+            writable.commit(scope) { context -> body(context).also { (gesture, _) -> gesture?.holdMs = holdMs } }
+    }
     private val reader = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
     val imports = WorkoutImports(engine, writeAuthority)
     val anonymous: Boolean get() = read { it.isAnonymous }
@@ -118,9 +123,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 
     private fun <T> read(body: (Reader) -> T): T = reader.read(EngineSession.scope, body)
-    private suspend fun <T> writing(body: (ActionRunner) -> T): T = withGymActionContext { context ->
+    private suspend fun <T> writing(replica: works.windmill.sync.api.Replica = writable, body: (ActionRunner) -> T): T = withGymActionContext { context ->
         check(!context.insideRun) { "a run cannot enter inside a run" }
-        body(ActionRunner(writable, engine.registry, zone, context))
+        body(ActionRunner(replica, engine.registry, zone, context))
     }
     private suspend fun <L, T> apply(action: Decider<L, T, GymRefusal>): T =
         writing { runner -> runner.execute(action) }
@@ -292,7 +297,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                         "setId" to Json.of(setId), "sessionId" to Json.of(sessionId)))
                 }
             }
-        }, expectedReplica, expectedAnonymous, release = true)
+        }, expectedReplica, expectedAnonymous)
     }
     suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
         reconcileImports()
@@ -310,7 +315,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     } ?: session(id)?.session
     suspend fun discardSession(sessionId: String, expectedReplica: String = engine.activeReplica(),
         expectedAnonymous: Boolean = anonymous) {
-        remove(DiscardSession(Id(sessionId, EngineSession)), expectedReplica, expectedAnonymous, release = true)
+        remove(DiscardSession(Id(sessionId, EngineSession)), expectedReplica, expectedAnonymous)
     }
     // Before a sign-in, every signed-out workout is retained in the import journal for the account.
     fun prepareAdoption() {
@@ -551,7 +556,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         stepKg ?: ExerciseRules.defaultStepKg(equipment), aliases, loadCount)
 
     suspend fun deleteRoutine(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
-        remove(deleteRoutine(Id(id, EngineRoutine)), expectedReplica, expectedAnonymous, release = true)
+        remove(deleteRoutine(Id(id, EngineRoutine)), expectedReplica, expectedAnonymous)
     }
     fun proposal(id: String): Proposal? = read { reader ->
         val identity = Id(id, EngineProposal)
@@ -639,7 +644,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         return notes().firstOrNull { it.id == id } ?: notes().first { it.title == write.title.trim() && it.body == write.body.trim() }
     }
     suspend fun deleteNote(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
-        remove(deleteNote(Id(id, EngineNote)), expectedReplica, expectedAnonymous, release = true)
+        remove(deleteNote(Id(id, EngineNote)), expectedReplica, expectedAnonymous)
     }
     suspend fun moveNote(id: String, drawn: List<String>, withheld: Set<String>): Boolean = writing { runner ->
         val move = moveNote(Id(id, EngineNote), drawn.getOrNull(drawn.indexOf(id) - 1)?.let { Id(it, EngineNote) })
@@ -698,14 +703,15 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         return WeighIn(dateLocal, saved.values.getValue("kg").num(), saved.values.getValue("recordedAt").long())
     }
     suspend fun deleteBodyweight(dateLocal: String) { apply(deleteWeighIn(Id(dateLocal, EngineWeighIn))) }
-    suspend fun holdBodyweight(dateLocal: String, expectedReplica: String = engine.activeReplica(),
+    suspend fun holdBodyweight(dateLocal: String, holdMs: Long, expectedReplica: String = engine.activeReplica(),
         expectedAnonymous: Boolean = anonymous): CommitReceipt? =
-        remove(deleteWeighIn(Id(dateLocal, EngineWeighIn)), expectedReplica, expectedAnonymous, release = false)
+        remove(deleteWeighIn(Id(dateLocal, EngineWeighIn)), expectedReplica, expectedAnonymous, holdMs = holdMs)
 
     private data class RemovalLoaded<L>(val value: L)
 
+    // A removal is released at once, or held for `holdMs` while Undo can still take it back.
     private suspend fun <L> remove(action: Decider<L, Unit, GymRefusal>, expectedReplica: String,
-        expectedAnonymous: Boolean, release: Boolean): CommitReceipt? = writing { runner ->
+        expectedAnonymous: Boolean, holdMs: Long? = null): CommitReceipt? = writing(holdMs?.let(::holding) ?: writable) { runner ->
         val guarded = object : Action<RemovalLoaded<L>?, Boolean, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
@@ -724,7 +730,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
         when (val outcome = runner.run(guarded)) {
             is Outcome.Committed -> {
-                if (release) {
+                if (holdMs == null) {
                     try { outcome.receipt.localIds.forEach { releaseIntent(it) } }
                     catch (failure: Exception) {
                         val restored = try { engine.undo(outcome.receipt.gestureId) }

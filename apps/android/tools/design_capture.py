@@ -84,13 +84,25 @@ def validate_scenarios(scenarios):
         if not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]+[a-z]?|[a-z])|[A-Z][0-9]+)", scenario["board"]) or \
                 not re.fullmatch(r"[a-z0-9-]+", scenario["name"]) or scenario["account"] not in ("empty", "fixture"):
             raise ValueError("Recipes need a canonical board ID, a lowercase filename slug, and an empty or fixture account.")
+        if "accessibility_timeout_ms" in scenario and (type(scenario["accessibility_timeout_ms"]) is not int or
+                not 9_000 <= scenario["accessibility_timeout_ms"] <= 120_000):
+            raise ValueError("An accessibility timeout needs an integer from 9000 to 120000 ms.")
         if "frame_delay_ms" in scenario and (type(scenario["frame_delay_ms"]) is not int or
                 not 0 <= scenario["frame_delay_ms"] <= 1000 or scenario.get("settle", True) is not False):
             raise ValueError("Transient frame delays need settle:false and an integer from 0 to 1000 ms.")
 
+    for account in ("empty", "fixture"):
+        if len(accessibility_timeouts(scenarios, account)) > 1:
+            raise ValueError("One account's recipes share one accessibility timeout.")
+
     empty = [scenario for scenario in scenarios if scenario["account"] == "empty"]
     if any(scenario.get("launcher", False) for scenario in empty) and len(empty) != 1:
         raise ValueError("Launcher capture must be the only empty-account scenario in its batch.")
+
+
+def accessibility_timeouts(scenarios, account):
+    return {scenario["accessibility_timeout_ms"] for scenario in scenarios
+            if scenario["account"] == account and "accessibility_timeout_ms" in scenario}
 
 
 def read_fixture(path, capture_only=False):
@@ -605,6 +617,13 @@ class Device:
         self.run("shell", "wm", "density", str(density))
         self.run("shell", "settings", "put", "system", "font_scale", str(font_scale))
 
+    # The system's "time to take action", set before the app launches, which reads it on resume.
+    def accessibility_timeout(self, ms=None):
+        if ms is None:
+            self.run("shell", "settings", "delete", "secure", "accessibility_interactive_ui_timeout_ms")
+        else:
+            self.run("shell", "settings", "put", "secure", "accessibility_interactive_ui_timeout_ms", str(ms))
+
     def release_touch(self):
         if self.touch_point is None:
             return
@@ -914,6 +933,7 @@ def main():
                 device.run("shell", "pm", "clear", PACKAGE)
                 device.run("shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
                 device.run("shell", "cmd", "uimode", "night", value)
+                device.accessibility_timeout(next(iter(accessibility_timeouts(scenarios, account)), None))
                 device.launch(launcher=any(item.get("launcher", False) for item in scenarios if item["account"] == account))
                 if account == "fixture":
                     device.sign_in(fixture.link())
@@ -951,6 +971,7 @@ def main():
                         (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
                         manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename,
                             **({"viewport": scenario["viewport"]} if "viewport" in scenario else {}),
+                            **({"accessibilityTimeoutMs": scenario["accessibility_timeout_ms"]} if "accessibility_timeout_ms" in scenario else {}),
                             **({"frameDelayMs": scenario["frame_delay_ms"]} if "frame_delay_ms" in scenario else {})})
                         device.steps(scenario.get("after", []))
                         if completions:

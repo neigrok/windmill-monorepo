@@ -147,6 +147,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     fun malformed(label: String): Nothing = throw CommitFailure.malformed(label)
     val product = registry.product(scope) ?: malformed("scope")
     if (gesture.gestureId?.let { device.carriesGesture(it) } == true) malformed("gesture-id-taken")
+    if (gesture.hold && gesture.holdMs < 0) malformed("hold-length")
     for (write in gesture.local) if (registry.products[product]?.get("device")?.obj()?.values?.none { Pattern(it.member("keyPattern").str()).matches(write.key) } != false) malformed("device-key")
     registry.governingRecord(scope)?.let { (key, governingScope) ->
         if (replica.known.containsKey(scope.text) || replica.known.containsKey("tree/${scope.tree}") || latticeView(replica, governingScope, key, ViewMode.stored)?.life?.isAlive == false)
@@ -238,7 +239,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         val texts = intent.deltas.flatMap { d -> d.texts.keys.map { name -> Json.array(Json.of(d.key.type), d.key.id.json, Json.of(name)).jcs } }
         replica.outbox.add(Entry(Json.Obj(buildList {
             add("localId" to Json.of(localId)); add("gestureId" to Json.of(gestureId)); add("lineage" to Json.of(replica.account ?: "anon")); add("scope" to scope.json)
-            add("state" to Json.of(if (gesture.hold) "held" else "ready")); add("commitOrder" to Json.of(firstOrder + index)); add("releaseAt" to Json.of(if (gesture.hold) now - replica.meta.member("serverOffsetMs").long() + Constants.HOLD_MS else 0))
+            add("state" to Json.of(if (gesture.hold) "held" else "ready")); add("commitOrder" to Json.of(firstOrder + index)); add("releaseAt" to Json.of(if (gesture.hold) now - replica.meta.member("serverOffsetMs").long() + gesture.holdMs else 0))
             add("stamp" to stamp.json); add("intent" to intent.json)
             if (command != null && predict.isNotEmpty()) add("predict" to Json.Arr(predict.map { it.json }))
             if (texts.isNotEmpty()) add("baseTexts" to Json.Obj(texts.map { it to builder.baseTexts.getValue(it) }))
@@ -254,7 +255,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         if (values.isEmpty()) replica.device.remove(product) else replica.device[product] = Json.Obj(values.toList())
     }
     return CommitOutcome.Committed(CommitReceipt(gestureId, stamp, localIds, builder.ids,
-        if (gesture.hold && intents.isNotEmpty()) now - replica.meta.member("serverOffsetMs").long() + Constants.HOLD_MS else null,
+        if (gesture.hold && intents.isNotEmpty()) now - replica.meta.member("serverOffsetMs").long() + gesture.holdMs else null,
         retiring.map { it.gestureId }.distinct(), superseding.map { it.gestureId }.distinct()))
 }
 

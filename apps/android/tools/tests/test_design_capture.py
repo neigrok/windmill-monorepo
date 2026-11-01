@@ -462,6 +462,29 @@ class DesignCaptureTests(unittest.TestCase):
             ("shell", "settings", "put", "system", "font_scale", "1"),
         ], calls)
 
+    def test_accessibility_timeout_is_bounded_and_one_per_account(self):
+        scenario = {"board": "05.17", "name": "log-weight-undo", "account": "fixture"}
+        for timeout in [9_000, 30_000, 120_000]:
+            capture.validate_scenarios([{**scenario, "accessibility_timeout_ms": timeout}])
+        for timeout in [8_999, 120_001, 30_000.0, True, "30000"]:
+            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                capture.validate_scenarios([{**scenario, "accessibility_timeout_ms": timeout}])
+        other = {"board": "02.1", "name": "routines", "account": "fixture"}
+        capture.validate_scenarios([{**scenario, "accessibility_timeout_ms": 30_000}, other])
+        with self.assertRaises(ValueError):
+            capture.validate_scenarios([{**scenario, "accessibility_timeout_ms": 30_000}, {**other, "accessibility_timeout_ms": 20_000}])
+        self.assertEqual({30_000}, capture.accessibility_timeouts([{**scenario, "accessibility_timeout_ms": 30_000}, other], "fixture"))
+        self.assertEqual(set(), capture.accessibility_timeouts([{**scenario, "accessibility_timeout_ms": 30_000}], "empty"))
+        device = capture.Device(Path("/android-sdk"), 5582)
+        calls = []
+        device.run = lambda *args, **kwargs: calls.append(args)
+        device.accessibility_timeout(30_000)
+        device.accessibility_timeout()
+        self.assertEqual([
+            ("shell", "settings", "put", "secure", "accessibility_interactive_ui_timeout_ms", "30000"),
+            ("shell", "settings", "delete", "secure", "accessibility_interactive_ui_timeout_ms"),
+        ], calls)
+
     def test_recipes_accept_canonical_board_ids_and_reject_unsafe_output_names(self):
         for board in ("02.7", "08.21", "08.58b", "15a", "15b", "15c", "27a", "27g", "A4"):
             capture.validate_scenarios([{"board": board, "name": "signed-in", "account": "fixture"}])

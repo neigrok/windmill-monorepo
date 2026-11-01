@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,9 +67,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -647,7 +646,7 @@ private fun StrandedBand(count: Int, by: Blocker?) {
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         verticalAlignment = Alignment.Top,
     ) {
-        Icon(cloudOffGlyph, contentDescription = null, tint = skin.unsyncedInk,
+        Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = skin.unsyncedInk,
              modifier = Modifier.size(16.dp).padding(top = 1.dp))
         Text(line, style = MaterialTheme.typography.bodySmall, color = skin.inkDim,
              lineHeight = 17.sp, modifier = Modifier.weight(1f))
@@ -723,7 +722,7 @@ private fun Ledger(
                     }
                     slot.line?.let { Text(it, style = GymType.numeral(16), color = if (active) skin.inkDim else skin.ink,
                         modifier = Modifier.align(Alignment.CenterVertically)) }
-                    if (row?.isOnThisDevice == true) Icon(cloudOffGlyph, contentDescription = null, tint = skin.unsyncedInk,
+                    if (row?.isOnThisDevice == true) Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = skin.unsyncedInk,
                         modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
                 }
             }
@@ -856,31 +855,20 @@ private fun LogBand(lifted: Boolean, finishing: Boolean, enabled: Boolean, onLog
             .padding(horizontal = if (lifted) 16.dp else GymLayout.gutter)
             .padding(top = 12.dp, bottom = 16.dp),
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.logSet)
-                .clip(RoundedCornerShape(16.dp))
-                .background(if (finishing) skin.raised else skin.accent)
-                .clickable(enabled = enabled && !finishing, role = Role.Button, onClick = onLog),
-            contentAlignment = Alignment.Center,
+        // Disabled reads as 02.16's Done at 38 %; finishing reads as the raised wait.
+        Button(
+            onClick = onLog,
+            enabled = enabled && !finishing,
+            modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.logSet),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = skin.accent,
+                contentColor = skin.onAccent,
+                disabledContainerColor = if (finishing) skin.raised else skin.accent.copy(alpha = .38f),
+                disabledContentColor = if (finishing) skin.inkDim else skin.onAccent.copy(alpha = .38f),
+            ),
         ) {
-            Text("Log set", style = GymType.primary, color = if (finishing) skin.inkDim else skin.onAccent)
+            Text("Log set", style = GymType.primary)
         }
     }
 }
-
-// Material paths for the two glyphs outside the core icon artifact.
-private fun glyph(name: String, path: String): ImageVector =
-    ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp,
-                        viewportWidth = 24f, viewportHeight = 24f)
-        .addPath(pathData = PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.Black))
-        .build()
-
-private val cloudOffGlyph = glyph(
-    "Outlined.CloudOff",
-    "M24 15c0-2.64-2.05-4.78-4.65-4.96C18.67 6.59 15.64 4 12 4c-1.33 0-2.57.36-3.65.97l1.49 1.49C10.51 " +
-        "6.17 11.23 6 12 6c3.04 0 5.5 2.46 5.5 5.5v.5H19c1.66 0 3 1.34 3 3 0 1.13-.64 2.11-1.56 2.62l1.45 1.45" +
-        "C22.93 18.17 24 16.71 24 15zM4.41 3.86L3 5.27l2.77 2.77h-.42C2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6" +
-        "h11.73l2 2 1.41-1.41L4.41 3.86zM6 18c-2.21 0-4-1.79-4-4s1.79-4 4-4h1.73l8 8H6z",
-)

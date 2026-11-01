@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.materialIcon
-import androidx.compose.material.icons.materialPath
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldColors
@@ -41,7 +40,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import works.windmill.gym.R
 import androidx.compose.ui.semantics.Role
@@ -107,6 +105,9 @@ fun GymScreen(
     titleAlignment: TextAlign = TextAlign.Start,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
+    floatingActionButton: @Composable () -> Unit = {},
+    // Given to a screen with a floating button: Scaffold lays the transient above it, and the button never moves.
+    transient: SnackbarHostState? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val skin = LocalGymColors.current
@@ -141,6 +142,8 @@ fun GymScreen(
             )
         },
         bottomBar = bottomBar,
+        snackbarHost = { transient?.let { GymSnackbarHost(it, Modifier.testTag("Transient")) } },
+        floatingActionButton = floatingActionButton,
     ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) { content() }
     }
@@ -229,25 +232,3 @@ fun YouSeat(initial: String) {
         }
     }
 }
-
-// Material's own drag handle, drawn from the extended icon set's path: the room depends on the core
-// set alone, and one glyph is not a reason to pull the whole extended artifact in.
-val Icons.Filled.DragHandle: ImageVector
-    get() = dragHandle ?: materialIcon(name = "Filled.DragHandle") {
-        materialPath {
-            moveTo(20.0f, 9.0f)
-            horizontalLineTo(4.0f)
-            verticalLineToRelative(2.0f)
-            horizontalLineToRelative(16.0f)
-            verticalLineTo(9.0f)
-            close()
-            moveTo(4.0f, 15.0f)
-            horizontalLineToRelative(16.0f)
-            verticalLineToRelative(-2.0f)
-            horizontalLineTo(4.0f)
-            verticalLineToRelative(2.0f)
-            close()
-        }
-    }.also { dragHandle = it }
-
-private var dragHandle: ImageVector? = null

@@ -1,6 +1,8 @@
 package works.windmill.gym
 
 import android.app.Activity
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -513,7 +515,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) store.coach.refreshAnonymousAccess()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                store.coach.refreshAnonymousAccess()
+                // Read again on every return: the timeout is changed in system settings, away from here.
+                store.undoWindowMs = accessibleUndoWindowMs(context)
+            }
             // The transient goes down with what it was offering: an Undo left standing over an act
             // that was let go would offer a way back to something that never happened.
             if (event == Lifecycle.Event.ON_STOP && store.abandonWithheld()) {
@@ -991,7 +997,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             )
 
             @Composable
-            fun TabScreen(tab: Tab) = when (tab) {
+            fun TabScreen(tab: Tab, transient: SnackbarHostState? = null) = when (tab) {
                 Tab.Log -> LogScreen(
                     store = store,
                     seat = youInitial,
@@ -1002,6 +1008,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     onDiscardSession = { discard(it, "log") },
                     onOpenRecovery = { id -> look(if (id == null) Away.OnThisPhone else Away.InspectWorkout(id)) },
                     recovery = recoveryRead,
+                    transient = transient,
                 )
                 Tab.Coach -> CoachStance { Conversation(backTo = null, onBack = null) }
                 Tab.Routines -> RoutinesScreen(
@@ -1013,6 +1020,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     onOpenRoutine = { selectedRoutineId = it },
                     onDeleteRoutine = { destroy(it) },
                     onReview = { review(it.id, it.routineId, Reviewing.routines) },
+                    transient = transient,
                 )
             }
 
@@ -1133,6 +1141,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 val coachRoom = frame is Frame.Root && frame.tab == Tab.Coach ||
                     frame is Frame.Pushed && (frame.away is Away.Coach || frame.away is Away.Thread)
                 val loggerTransient = frame is Frame.Workout
+                // A screen with a floating button hosts the transient itself, above that button (05.17).
+                val screenTransient = loggerTransient || frame is Frame.Root && frame.tab != Tab.Coach
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = skin.canvas,
@@ -1141,7 +1151,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         if (frame.railStands || line != null || !loggerTransient) {
                             Column(Modifier.fillMaxWidth().background(skin.canvas)) {
                                 // Reserve the transient's measured height below screen-owned actions.
-                                if (standing && !loggerTransient) GymSnackbarHost(transient)
+                                if (standing && !screenTransient) GymSnackbarHost(transient)
                                 line?.let {
                                     Text(
                                         it,
@@ -1214,7 +1224,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     )
                                 }
                                 is Frame.Pushed -> PushedScreen(frame)
-                                is Frame.Root -> TabScreen(frame.tab)
+                                is Frame.Root -> TabScreen(frame.tab, transient.takeIf { standing })
                             }
                         }
                     }
@@ -1304,6 +1314,16 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
         }
         Box(Modifier.fillMaxWidth().background(skin.canvas).navigationBarsPadding())
     }
+}
+
+// The Undo carries a control and a line of text, so it waits as long as the system's accessibility
+// timeout asks for such content, and never less than nine seconds (05.17).
+internal fun accessibleUndoWindowMs(context: Context): Long {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return Withheld.windowMs
+    val accessibility = context.getSystemService(AccessibilityManager::class.java) ?: return Withheld.windowMs
+    val recommended = accessibility.getRecommendedTimeoutMillis(Withheld.windowMs.toInt(),
+        AccessibilityManager.FLAG_CONTENT_CONTROLS or AccessibilityManager.FLAG_CONTENT_TEXT)
+    return Withheld.window(recommended.toLong())
 }
 
 @DrawableRes
