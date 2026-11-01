@@ -1,7 +1,9 @@
 package works.windmill.gym.domain
 
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import works.windmill.gym.domain.sync.RecentDay
 
@@ -104,6 +106,25 @@ class RecordTests {
         assertEquals(Record.Tile("Best e1RM", "62.3", "kg · today", true), page.tiles.first())
         assertEquals(emptyList<Record.Best>(), Record.page(MovementRecord.of(squat, rows.take(2), today), today,
             StatsProgress.of(rows.take(2), today).movement(squat.id)).records)
+    }
+
+    @Test
+    fun aSlightWorkoutsNewBestIsTheLogsAndTheRecordPagesAlike() {
+        val week = 7 * 86_400_000L
+        val baseline = session("baseline", today - 2 * week, (1..4).map { set("b$it", 100.0, 10, today - 2 * week + it) })
+        val slight = session("slight", today - week, listOf(set("s1", 115.0, 8, today - week + 1)))
+        val beyond = session("beyond", today, (1..4).map { set("c$it", 120.0, 8, today + it) })
+        val rows = listOf(baseline, slight, beyond)
+        val progress = StatsProgress.of(rows, today + week)
+        val zone = ZoneId.of("UTC")
+
+        assertEquals(listOf("slight", "beyond"), progress.newBests.map { it.sessionId })
+        val page = Record.page(MovementRecord.of(squat, rows, today), today, progress.movement(squat.id))
+        assertEquals(listOf(Record.Best("115 × 8", "e1RM 145.7", "4 Aug"), Record.Best("100 × 10", "e1RM 133.3", "28 Jul")), page.records)
+        val timeline = logTimeline(rows.map { SessionSummary(it.session, it.sets, listOf(squat)) }, progress, emptyList(), today + week, zone)
+        assertTrue("the log states it once, by its woven moment", timeline.any { it is LogEntry.Moment.Best && it.best.sessionId == "slight" })
+        assertTrue("and by its dot wherever no moment states it",
+            LogReadout.row(SessionSummary(slight.session, slight.sets, listOf(squat)), progress, today + week, zone).record)
     }
 
 }

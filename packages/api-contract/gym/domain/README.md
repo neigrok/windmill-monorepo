@@ -244,7 +244,9 @@ that fact; the all-load `mostReps` read retains its own ordering. Partial histor
 `ProgressRecords` (`input:{}`) is the log's new bests. A movement's first estimate is its baseline, never a new best;
 a later estimate is a new best when, stated to a tenth of a kilogram, it beats the best before it as stated. Each names
 its session, the best it beat (`previous`), its stated `estimate` and its `gain` over that best to a tenth; the read
-also lists the sessions that set one. Partial history has none. It runs in all three; the web's log weaves no new
+also lists the sessions that set one. Partial history has none. A slight workout (fewer than four sets) sets new
+bests and record steps like any other: slightness silences only its review, which states no `record` or `against`,
+and so the session summary's `record`. It runs in all three; the web's log weaves no new
 bests yet.
 
 `PlanChanges` (`{sessionId}` → `{changes,changeCount,offer}`) is the receipt's card, drawn only for a workout whose

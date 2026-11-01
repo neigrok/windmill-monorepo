@@ -42,7 +42,7 @@ import works.windmill.sync.schema.SyncSchema
 class SharedReadParityTests {
     @Test fun everySharedReviewCaseIsTheReceiptsReview() {
         val cases = sharedCases("review")
-        assertEquals(12, cases.size)
+        assertEquals(13, cases.size)
         for (case in cases) Engine.memory(SyncSchema.registry, clock = clock(case.member("input").member("now").long())).use { engine ->
             seed(engine, case.member("input").member("records").member("drawn").arr())
             val id = case.member("input").member("input").member("args").arr().single().str()
