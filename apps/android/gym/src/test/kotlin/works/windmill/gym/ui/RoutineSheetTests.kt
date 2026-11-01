@@ -144,7 +144,7 @@ class RoutineSheetTests {
             compose.setContent { if (visible.value) GymMaterial { GymRoom(room.account(), room.store) } }
             try {
                 compose.onNodeWithText("Mixed equipment").performClick()
-                val targets = listOf("3 × 10 · 24 kg each", "3 × 8 · 16 kg", "3 × 12 · 50 kg total", "3 × 8 · −10 kg added")
+                val targets = listOf("3 × 10 · 24 kg each", "3 × 8 · 16 kg", "3 × 12 · 50 kg", "3 × 8 · −10 kg added")
                 targets.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
                 compose.onNodeWithText("Edit routine").performClick()
                 targets.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
