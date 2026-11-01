@@ -51,6 +51,9 @@ import works.windmill.platform.auth.LocalSession
 import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.auth.SecretVault
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.you.AccountDeletionRequest
+import works.windmill.platform.you.AccountDeletionStorage
+import works.windmill.platform.you.PendingAccountDeletion
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.AndroidClock
 import works.windmill.sync.engine.AndroidSqlite
@@ -199,6 +202,52 @@ class WindmillApplicationTests {
         } finally {
             activity.pause().stop().destroy()
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(750))
+            app.onTerminate()
+            Security.removeProvider("AndroidKeyStore")
+        }
+    }
+
+    @Test fun aPendingDeletionFencesGymWritesUntilItsRecordIsClearedThenTheyWorkWithoutARestart() {
+        val keystore = Keystore2()
+        Security.addProvider(keystore)
+        val lifter = User("40000000-0000-0000-0000-000000000001", "lifter@example.com")
+        val host = RuntimeEnvironment.getApplication()
+        val previousRun = SecretVault.onThisDevice()
+        PrefsSessions(host, previousRun, Telemetry.None).commit("secret-lifter", lifter)
+        EngineStorage(host, previousRun).save(lifter.id, "secret-lifter")
+        val bound = Engine.memory(SyncSchema.registry).use { it.signIn(lifter.id, mapOf("gym" to false)); it.snapshot() }
+        AndroidSqlite.open(File(host.filesDir, "sync-replica.sqlite"), SyncSchema.registry, bound, AndroidClock(host),
+            DeviceIdentities(), "r_000000000000").close()
+        val pending = PendingAccountDeletion(AccountDeletionRequest(lifter.id, "50000000-0000-0000-0000-000000000001", "ab".repeat(32),
+            System.currentTimeMillis() - 10 * 60 * 1_000L), lifter, "secret-lifter", "r_000000000000")
+        AccountDeletionStorage.onThisDevice(host, previousRun, Telemetry.None).replace(null, pending)
+        val app = WindmillApplication()
+        ContextWrapper::class.java.getDeclaredMethod("attachBaseContext", Context::class.java)
+            .apply { isAccessible = true }.invoke(app, host.baseContext)
+        try {
+            app.onCreate()
+            fun weighIn(): Any? {
+                val written = CoroutineScope(Dispatchers.Main.immediate).async {
+                    app.gym.restoreLocal()
+                    app.gym.store.weighIn(java.time.LocalDate.now().toString(), 81.25)
+                }
+                val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
+                while (!written.isCompleted) {
+                    assertTrue("the weigh-in never answered", System.nanoTime() < deadline)
+                    shadowOf(Looper.getMainLooper()).idle()
+                }
+                return runBlocking { written.await() }
+            }
+            assertTrue(app.accountDeletion.transitionPending)
+            assertNotNull(weighIn())
+
+            app.accountDeletion.storage.replace(pending, null)
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertFalse(app.accountDeletion.transitionPending)
+            assertFalse(app.auth.transitionPending)
+            assertNull(weighIn())
+        } finally {
             app.onTerminate()
             Security.removeProvider("AndroidKeyStore")
         }

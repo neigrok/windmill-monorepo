@@ -133,7 +133,8 @@ Both UUIDs use canonical lowercase spelling. `requestedAtMs` is a positive integ
 captured once with the operation. The account, operation id, proof and instant never change on a
 retry. The phone seals the proof in its account-pinned pending-deletion record; it sends the tuple
 only in the JSON body, never a URL, log or event. A new operation is admitted only when its instant
-is less than five minutes from the server clock. A known matching receipt can be read throughout
+is less than five minutes from the server clock, read once the account row is locked, so a request
+held at the lock behind a stale answer is stale too. A known matching receipt can be read throughout
 its retention period regardless of that admission window.
 
 Closure, the immutable receipt, session revocation and OAuth grant/code/token revocation commit

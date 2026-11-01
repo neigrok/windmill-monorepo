@@ -56,13 +56,13 @@ Unchanged and name-only edits preserve all legacy equipment/count values.
 
 ## Native wave (tasks 53–72)
 
-The 2026-10-31 review of the Android app (native experience on the emulator, code quality, and the Codex backlog) produced tasks 53–72. The owner approved their new boards on 2026-10-31: 00.5, 00.6, 00.7, 02.20, the 02.17 revision, 02.21, 03.33–03.36 and 05.17, all ✅ Ready for dev on the Android page. Task 65's boards 27h and D6 are 🚧 and wait for the owner. Tasks 55, 62, 63 and 64 conform to boards that were already approved; 66–71 change no visuals. The designer renumbered the Android page the same day so that no number names two screens across the phone pages; task 66 carries the map into the repo.
+The 2026-10-31 review of the Android app (native experience on the emulator, code quality, and the Codex backlog) produced tasks 53–72. The owner approved their new boards on 2026-10-31: 00.5, 00.6, 00.7, 02.20, the 02.17 revision, 02.21, 03.33–03.36 and 05.17, all ✅ Ready for dev on the Android page. The owner approved task 65's boards 27h and D6 on 2026-11-01. Tasks 55, 62, 63 and 64 conform to boards that were already approved; 66–71 change no visuals. The designer renumbered the Android page the same day so that no number names two screens across the phone pages; task 66 carries the map into the repo.
 
 | Stage | Tasks |
 |---|---|
 | A | [53](53-predictive-back-and-motion.md), [55](55-sheets-above-the-keyboard.md), [57](57-load-zero-or-more.md), [59](59-rack-fits-and-scrolls.md), [63](63-sign-in-code-keyboard.md), [66](66-board-renumber-references.md), [69](69-gym-owns-its-telemetry-schema.md), [70](70-sweep.md) |
 | B | [54](54-nav-labels-and-top-bar.md), [56](56-routine-editor-asks-before-discard.md), [58](58-planned-rows-offered-load.md), [60](60-receipt-at-large-text.md), [61](61-undo-above-a-still-fab.md), [62](62-native-buttons-and-icons.md), [64](64-accessibility-pass.md), [71](71-one-gym-domain.md), [72](72-honest-reads-before-first-pull.md) |
-| C | [67](67-theme-roles.md), [68](68-split-the-store-and-the-room.md), [65](65-delete-account-clock-and-not-deleted.md) once its boards are approved |
+| C | [67](67-theme-roles.md), [68](68-split-the-store-and-the-room.md), [65](65-delete-account-clock-and-not-deleted.md) |
 
 Stage A is on main (`70ec2dbe`, and 70 at `5e0bb26d`); its boards 00.5, 00.6, 02.21, 03.33, 03.34 and 03.35 are 🚀 In production. Stage B's visual tasks (54, 56, 58, 60, 61, 62, 64) are on main (`ef0f05fb`); their boards 00.7, 02.20, 02.17, 03.36, 05.17 and Shell 16b are 🚀 In production, and 05.16 is deleted. 71 is on main (`33848694`), and so is 72 except the parts waiting for design (its log foot's waiting copy, board 05.18, and Routines' empty line). 56 uses 53's back guard; 68 follows 53 so the room is not rewritten twice; 67 and 68 are wide refactors best done when the visual tasks have landed.
 
@@ -179,7 +179,7 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [62](62-native-buttons-and-icons.md) — Real Material buttons, a real disabled Log set, icons instead of text chevrons
 - [63](63-sign-in-code-keyboard.md) — Sign-in: a digit keyboard for the code, autofill for email and code
 - [64](64-accessibility-pass.md) — Accessibility pass: status lines announced, 48 dp targets, labels said once
-- [65](65-delete-account-clock-and-not-deleted.md) — **Pending owner approval.** Delete account: the wrong-clock refusal (27h) and a way out when nothing was deleted (D6)
+- [65](65-delete-account-clock-and-not-deleted.md) — Delete account: the wrong-clock refusal (27h) and a way out when nothing was deleted (D6)
 - [66](66-board-renumber-references.md) — Repo references follow the renumbered Android boards
 - [67](67-theme-roles.md) — Type and colour come from the theme's roles
 - [68](68-split-the-store-and-the-room.md) — Split TrainingStore into feature stores; screens take state and events

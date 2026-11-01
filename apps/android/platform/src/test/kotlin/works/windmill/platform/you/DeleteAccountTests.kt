@@ -1,7 +1,12 @@
 package works.windmill.platform.you
 
+import android.provider.Settings
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import javax.crypto.KeyGenerator
@@ -13,10 +18,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import works.windmill.platform.User
 import works.windmill.platform.auth.*
 import works.windmill.platform.design.WindmillMaterial
+import works.windmill.platform.net.Refusal
+import works.windmill.platform.net.WindmillApiException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -108,6 +117,93 @@ class DeleteAccountTests {
         compose.setContent { WindmillMaterial { YouSheet(auth, {}, deletion = store) } }
         compose.onNodeWithText("Delete account").assertDoesNotExist()
         compose.onNodeWithText("Sign in").assertExists()
+    }
+
+    private fun refusingStore(result: WindmillApiException.Refused, vararg closes: WindmillApiException) =
+        AccountDeletionStore(storage, object : AccountDeletionApi {
+            override suspend fun close(request: AccountDeletionRequest, credential: String): AccountDeletionResponse {
+                calls++; throw closes[minOf(calls, closes.size) - 1]
+            }
+            override suspend fun result(request: AccountDeletionRequest): AccountDeletionResponse = throw result
+        }, scope, { identity }, { identity = it.copy(revision = it.revision + 1); identity }, { count }, {
+            object : AuthSignOutSession {
+                override val account = user.id
+                override val unsent = count
+                override suspend fun finish(choice: AuthSignOutChoice) = error("A close that changed nothing finishes nothing")
+                override suspend fun cancel() = Unit
+            }
+        }, { _, _ -> error("A close that changed nothing finishes nothing") }, {})
+
+    @Test fun a27hClockRefusalKeepsTheEmailOffersDateAndTimeAndReadsInOrderAtTwiceTheText() {
+        val clock = refusingStore(WindmillApiException.Refused(404, Refusal(code = "unavailable")),
+            WindmillApiException.Refused(409, Refusal(code = "clock-ahead")))
+        clock.open()
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                WindmillMaterial { DeleteAccount(clock) {} }
+            }
+        }
+        val failureNode = compose.onNodeWithTag("deletion-failure", useUnmergedTree = true).fetchSemanticsNode().id
+        compose.onNodeWithTag("deletion-email").performTextInput(user.email)
+        compose.onNodeWithTag("deletion-primary").performClick()
+        assertEquals(failureNode, compose.onNodeWithTag("deletion-failure", useUnmergedTree = true).fetchSemanticsNode().id)
+        val sentence = "Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again."
+        compose.onNodeWithText(sentence).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("deletion-email").assertTextContains(user.email).assertIsNotFocused()
+        compose.onNodeWithText("Date & time").performScrollTo().assertIsDisplayed().assertHasClickAction()
+        compose.onNodeWithText("Try again").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Cancel").assertIsDisplayed()
+        val tops = listOf(sentence, "Date & time", "Try again", "Cancel").map {
+            compose.onNodeWithText(it).fetchSemanticsNode().boundsInRoot.top
+        }
+        assertEquals(tops.sorted(), tops)
+        compose.onNodeWithText("Date & time").performClick()
+        assertEquals(Settings.ACTION_DATE_SETTINGS, shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity.action)
+        assertFalse(storage.blocked)
+        assertEquals(1, calls)
+    }
+
+    @Test fun d6NotDeletedReleasesTheFenceAndTryAgainOpensAFreshConfirm() {
+        storage.replace(null, PendingAccountDeletion(AccountDeletionRequest(user.id, "50000000-0000-0000-0000-000000000001",
+            "ab".repeat(32), System.currentTimeMillis() - 10 * 60 * 1_000L), user, "secret", "replica-a"))
+        val unavailable = WindmillApiException.Refused(404, Refusal(code = "unavailable"))
+        val late = refusingStore(unavailable, unavailable)
+        late.open()
+        val exits = mutableListOf<Boolean>()
+        compose.setContent { WindmillMaterial { if (late.visible) DeleteAccount(late) { exits += it } } }
+        compose.onNodeWithText("Check again").performClick()
+        compose.onNodeWithText("Your account wasn’t deleted").assertIsDisplayed()
+        compose.onNodeWithText("The request didn’t reach Windmill in time, so nothing changed. Your account works as before.").assertIsDisplayed()
+        compose.onNodeWithText("Back to You").assertIsEnabled()
+        assertFalse(storage.blocked)
+        assertFalse(late.transitionPending)
+        compose.onNodeWithTag("deletion-primary").assertTextEquals("Try again").performClick()
+        compose.onNodeWithText("Delete your account?").assertIsDisplayed()
+        compose.onNodeWithTag("deletion-email").assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
+        compose.onNodeWithTag("deletion-primary").assertTextEquals("Delete account").assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitUntil(5_000) { exits.isNotEmpty() }
+        assertEquals(listOf(false), exits)
+    }
+
+    @Test fun theTypedEmailOutlivesLeavingAPendingCheckAndComesBackWith27h() {
+        val pending = refusingStore(WindmillApiException.Refused(404, Refusal(code = "unavailable")),
+            WindmillApiException.Timeout(java.net.SocketTimeoutException("timeout")),
+            WindmillApiException.Refused(404, Refusal(code = "unavailable")))
+        pending.open()
+        compose.setContent { WindmillMaterial { if (pending.visible) DeleteAccount(pending) {} } }
+        compose.onNodeWithTag("deletion-email").performTextInput(user.email)
+        compose.onNodeWithTag("deletion-primary").performClick()
+        compose.onNodeWithText("Checking deletion").assertIsDisplayed()
+        compose.onNodeWithText("Back to You").performClick()
+        compose.waitUntil(5_000) { !pending.visible }
+        compose.runOnIdle { pending.open() }
+        compose.onNodeWithText("Check again").performClick()
+        compose.onNodeWithText("Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again.").assertExists()
+        compose.onNodeWithTag("deletion-email").assertTextContains(user.email)
+        compose.onNodeWithTag("deletion-primary").assertTextEquals("Try again").assertIsEnabled()
+        assertFalse(storage.blocked)
+        assertEquals(2, calls)
     }
 
     @Test fun anAccountMismatchRefusalLeavesThroughTheExitSoYouReopens() {

@@ -38,7 +38,7 @@ public:
   void updateName(const UserId& userId, const std::string& name) override;
   UnixMs markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) override;
   AccountCloseResult closeWithReceipt(const UserId& userId, const AccountClosure& operation,
-      const std::string& sessionDigest, UnixMs now) override;
+      const std::string& sessionDigest, Clock& clock) override;
   ClosureReceipt closureReceipt(const UserId& userId, const AccountClosure& operation, UnixMs now) override;
   bool reviveUser(const UserId& userId, UnixMs now) override;
   std::vector<std::string> deleteUser(const UserId& userId) override;

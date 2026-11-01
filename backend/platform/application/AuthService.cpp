@@ -373,7 +373,7 @@ UnixMs AuthService::closeAccount(const UserId& userId) {
 AccountCloseResult AuthService::closeAccount(const UserId& userId, const std::string& operationId,
     const std::string& proof, UnixMs requestedAt, const std::string& sessionSecret) {
   const AccountClosure operation{operationId, tokens_.digestOf("account-closure:" + proof), requestedAt};
-  auto result = repo_.closeWithReceipt(userId, operation, tokens_.digestOf(sessionSecret), clock_.nowMs());
+  auto result = repo_.closeWithReceipt(userId, operation, tokens_.digestOf(sessionSecret), clock_);
   if (!result.revokedSessions.empty()) revocations_.revoked(result.revokedSessions);
   return result;
 }
