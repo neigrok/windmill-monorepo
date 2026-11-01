@@ -37,9 +37,6 @@
   padding-left: var(--space-4);
   padding-right: var(--space-4);
 }
-.st-board--under-topbar {
-  padding-top: calc(var(--space-6) * 2 + 68px); /* the topbar: its inset, the brand pill around the 48px switch, a gap */
-}
 
 /* ---- Identity row: title, progress, Board/Graph. ---- */
 .st-board-identity {

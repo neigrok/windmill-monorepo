@@ -1,0 +1,208 @@
+/* The Board from 744px: columns that scroll under sticky headings, and the tablet's rail. Measures from ✅ 01.01 and 05.01–05.04. */
+
+.st-board--columns {
+  overflow: hidden;
+  gap: var(--space-3); /* the drawn gap under the chrome row above the columns */
+}
+
+.st-board-columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+/* ---- A full column: Up next carries the tinted ground. ---- */
+.st-board-columns-column {
+  --st-board-column-ground: var(--surface-canvas);
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--st-board-column-ground);
+}
+.st-board-columns-column--upNext {
+  --st-board-column-ground: var(--color-brand-soft);
+}
+.st-board-columns-column > .st-board-card,
+.st-board-columns-column > .st-board-show-all {
+  flex-shrink: 0;
+}
+
+/* ---- Heading: sticky, with its count; a divider shows once the column scrolls under it. ---- */
+.st-board-columns-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 44px;
+  margin: 0;
+  padding: 0 var(--space-2);
+  /* The ground over the canvas, so cards scrolling under it never show through a translucent tint. */
+  background: linear-gradient(var(--st-board-column-ground), var(--st-board-column-ground)), var(--surface-canvas);
+}
+.st-board-columns-heading.is-scrolled::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border-default);
+}
+.st-board-columns-title {
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 25px;
+  color: var(--text-secondary);
+}
+.st-board-columns-count {
+  flex-shrink: 0;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+.st-board-columns-accent {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-brand);
+}
+.st-board-columns-heading--upNext .st-board-columns-title {
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--text-primary);
+}
+.st-board-columns-heading--upNext .st-board-columns-count {
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+}
+
+/* ---- Tablet rail: drawn 136px wide at 744 and 168px at 900. ---- */
+.st-board-columns-rail {
+  --st-board-column-ground: var(--surface-sunken);
+  flex: 0 0 clamp(136px, calc((100% - 2 * var(--space-4)) * 0.205), 168px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--st-board-column-ground);
+}
+.st-board-columns-deck {
+  display: flex;
+  flex-direction: column;
+}
+.st-board-columns-deck-layer {
+  position: relative; /* the faded layers behind stack in document order, under the front card */
+  display: flex;
+}
+.st-board-columns-deck-layer--behind-2 {
+  margin-bottom: -40px;
+  padding: 0 12px;
+  opacity: 0.6;
+}
+.st-board-columns-deck-layer--behind-1 {
+  margin-bottom: -40px;
+  padding: 0 6px;
+  opacity: 0.85;
+}
+.st-board-columns-deck-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 48px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  background: var(--surface-card);
+}
+.st-board-columns-rail--locked .st-board-columns-deck-card {
+  background: var(--surface-sunken);
+}
+.st-board-columns-deck-layer--behind-0 .st-board-columns-deck-card {
+  height: 52px;
+}
+.st-board-columns-deck-rail {
+  flex-shrink: 0;
+  width: 4px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--st-board-rail);
+}
+.st-board-columns-deck-title {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 19px;
+  color: var(--text-primary);
+}
+.st-board-columns-show {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-columns-show svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-board-columns-rail--done .st-board-columns-show svg {
+  transform: rotate(-90deg);
+}
+.st-board-columns-rail--locked .st-board-columns-show svg {
+  transform: rotate(90deg);
+}
+@media (hover: hover) {
+  .st-board-columns-show:hover {
+    background: var(--surface-hover);
+  }
+}
+.st-board-columns-show:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}

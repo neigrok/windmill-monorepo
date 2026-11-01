@@ -11,6 +11,7 @@ export const LABELS = {
   newStep: 'New step',
   recolor: 'Recolor',
   undo: 'Undo',
+  show: 'Show',
   allSubtasksDone: 'All subtasks done · Complete step',
 };
 

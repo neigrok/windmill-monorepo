@@ -1,11 +1,12 @@
-// The Board view layer: the identity row where no chrome carries one, the device notice, then Locked, Up next and Done as plain stacks.
+// The Board view layer: the identity row where no chrome carries one, the device notice, then the columns for the band.
 
 import React, { useMemo, useState } from 'react';
 import './board.css';
 import { Board } from './Board.js';
-import { StepCard } from './StepCard.jsx';
+import { BoardColumns } from './BoardColumns.jsx';
+import { PhoneSegments } from './PhoneSegments.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
-import { COLUMN_TITLES, columnHeadingLabel, formatCount, progressFigure, progressLabel, showAllDone } from './copy.js';
+import { progressFigure, progressLabel } from './copy.js';
 
 export default function BoardView({
   tree,
@@ -16,20 +17,20 @@ export default function BoardView({
   title,
   notice = null,
   identity = false,
-  phone = false,
+  breakpoint,
   onSwitchView,
-  underTopbar = false,
+  topInset = 0,
   laneInset = 0,
 }) {
   const board = useMemo(() => new Board(tree, { completed, completedAt }), [tree, completed, completedAt]);
   const [doneExpanded, setDoneExpanded] = useState(false);
-  const recentDone = board.recentDone();
-  const cardsOf = (column) => (column.name === 'done' && !doneExpanded ? recentDone.cards : column.cards);
+  const onToggleDone = () => setDoneExpanded((expanded) => !expanded);
+  const phone = breakpoint === 'phone';
 
   return (
     <div
-      className={`st-board ${phone ? 'st-board--phone' : ''} ${underTopbar ? 'st-board--under-topbar' : ''}`}
-      style={{ paddingBottom: laneInset }}
+      className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
+      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + var(--space-3))` : undefined, paddingBottom: laneInset }}
     >
       {identity && (
         <header className="st-board-identity">
@@ -42,23 +43,9 @@ export default function BoardView({
         </header>
       )}
       {notice}
-      {board.columns.map((column) => (
-        <section key={column.name} className="st-board-column">
-          <h2 className="st-board-column-heading" aria-label={columnHeadingLabel({ column: column.name, count: column.count })}>
-            {COLUMN_TITLES[column.name]} {formatCount(column.count)}
-          </h2>
-          <div className="st-board-column-cards">
-            {cardsOf(column).map((card) => (
-              <StepCard key={card.id} card={card} selected={card.id === selectedId} onSelect={onSelect} />
-            ))}
-          </div>
-          {column.name === 'done' && recentDone.folded && !doneExpanded && (
-            <button type="button" className="st-board-show-all" onClick={() => setDoneExpanded(true)}>
-              {showAllDone({ total: recentDone.total })}
-            </button>
-          )}
-        </section>
-      ))}
+      {phone
+        ? <PhoneSegments board={board} selectedId={selectedId} onSelect={onSelect} doneExpanded={doneExpanded} onToggleDone={onToggleDone} />
+        : <BoardColumns board={board} band={breakpoint} selectedId={selectedId} onSelect={onSelect} doneExpanded={doneExpanded} onToggleDone={onToggleDone} />}
     </div>
   );
 }

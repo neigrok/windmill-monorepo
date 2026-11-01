@@ -52,6 +52,7 @@ test('copy — one word per state, one title per column, one label per sort', ()
     newStep: 'New step',
     recolor: 'Recolor',
     undo: 'Undo',
+    show: 'Show',
     allSubtasksDone: 'All subtasks done · Complete step',
   });
 });

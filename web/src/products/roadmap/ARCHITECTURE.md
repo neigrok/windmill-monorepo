@@ -28,6 +28,13 @@ across. The desktop editor's topbar carries the Board/Graph switch on both views
 identity row carries it, and the Graph's rides the action lane on phones and tablets. A desktop
 visitor's Graph has no switch yet. Graph keyboard shortcuts do not act on the Board.
 
+From 1024px the Board stands Locked, Up next and Done side by side, each column scrolling under its
+sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures. From
+744px one side column folds to a rail, Done first; Show swaps which one, and Up next never folds
+(`columnStage` in `BoardColumns.jsx`). Below 744px `PhoneSegments` takes the columns. Keyboard focus
+entering the cards lands on the first Up next card. The layer stays mounted across Board/Graph
+switches, so each column keeps its scroll.
+
 ## Package map
 
 | Area | Responsibility |

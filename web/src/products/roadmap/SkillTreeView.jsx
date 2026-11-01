@@ -334,6 +334,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [laneInset, setLaneInset] = useState(0); // px
+  const [topbarBottom, setTopbarBottom] = useState(0); // px
   const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
@@ -1704,9 +1705,9 @@ export function SkillTreeView({ treeId, demo = false }) {
               title={tree.title}
               notice={deviceNotice}
               identity={readOnly}
-              phone={phone}
+              breakpoint={breakpoint}
               onSwitchView={switchView}
-              underTopbar={!readOnly}
+              topInset={readOnly ? 0 : topbarBottom}
               laneInset={lanePill || laneTend || laneShare ? laneInset : 0}
             />
           </ErrorBoundary>
@@ -1749,6 +1750,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onShowAll={handleShowAll}
           viewSwitch={viewSwitch}
           board={boardActive}
+          onBottom={setTopbarBottom}
           onShare={() => setShareOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
