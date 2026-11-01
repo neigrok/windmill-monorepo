@@ -530,18 +530,18 @@ struct WorkoutRack: View {
         }
       }.buttonStyle(GymInstrumentButtonStyle()).font(.body.monospacedDigit())
       HStack(spacing: RoomSpace.related) {
-        Button { workout.reps = max(1, workout.reps - 1) } label: {
+        Button { workout.reps = max(SetRules.loggedReps.lowerBound, workout.reps - 1) } label: {
           Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())
-        }.accessibilityLabel("Fewer reps").accessibilityIdentifier("workout-reps-minus").disabled(workout.reps <= 1)
+        }.accessibilityLabel("Fewer reps").accessibilityIdentifier("workout-reps-minus").disabled(workout.reps <= SetRules.loggedReps.lowerBound)
         Button(action: editReps) {
           Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
             .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
         }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityHint("Opens the reps wheel.")
           .accessibilityIdentifier("workout-reps")
-        Button { workout.reps = min(99, workout.reps + 1) } label: {
+        Button { workout.reps = min(SetRules.loggedReps.upperBound, workout.reps + 1) } label: {
           Image(systemName: "plus").frame(width: 56, height: 56).contentShape(Rectangle())
-        }.accessibilityLabel("More reps").accessibilityIdentifier("workout-reps-plus").disabled(workout.reps >= 99)
+        }.accessibilityLabel("More reps").accessibilityIdentifier("workout-reps-plus").disabled(workout.reps >= SetRules.loggedReps.upperBound)
       }.buttonStyle(GymInstrumentButtonStyle()).font(.title3.weight(.medium))
       Button { workout.logSet() } label: {
         Text("Log set").font(.headline).frame(maxWidth: .infinity, minHeight: 32)

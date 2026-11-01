@@ -1876,7 +1876,7 @@
   }
 }
 
-/* ---- The phone list view: the list layer cross-fades over the still-mounted canvas and stays mounted once shown. Phone only — the layer classes are never applied above 743px. ---- */
+/* ---- View layers: the phone list, and the Board while its gate is open, cross-fade over the still-mounted canvas and stay mounted once shown. The list never shows above 743px; the Board shows on every band. ---- */
 .st-canvas--layer {
   transition: opacity 240ms var(--ease-standard);
 }

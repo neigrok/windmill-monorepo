@@ -14,6 +14,13 @@ extension XCUIElement {
 }
 
 extension XCUIApplication {
+  // A room in the open room menu, found by its `room-…` identifier or by its room's title; the menu's own button, which
+  // carries the current room's title, never is one.
+  func roomItem(_ room: String) -> XCUIElement {
+    buttons.matching(NSPredicate(format: "identifier == %@ OR (label == %@ AND identifier != %@)",
+                                 "room-" + room.lowercased(), room, "room-menu")).firstMatch
+  }
+
   // The workout's movement header: a menu VoiceOver hears as Movement options, its value the movement it stands on.
   func movementHeader(_ movement: String) -> XCUIElement {
     buttons.matching(NSPredicate(format: "identifier == %@ AND value == %@", "workout-movement-menu", movement)).firstMatch

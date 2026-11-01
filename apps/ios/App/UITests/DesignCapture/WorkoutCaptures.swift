@@ -202,7 +202,7 @@ final class WorkoutCaptures: DesignCapture {
       app.buttons["edit-sets-set-1"].tap()
       app.typeLoad("12.5", into: "edit-sets-load")
       app.buttons["edit-sets-save"].tap()
-      XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 1, current, target 12.5 kilograms, 8 reps"))
+      XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 1, current, 12.5 kilograms, 8 reps"))
       menu.tap()
       XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5)); app.buttons["Add movement"].tap()
       XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
@@ -215,7 +215,7 @@ final class WorkoutCaptures: DesignCapture {
       app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "15 reps")
       app.buttons["edit-sets-add"].tap()
       app.buttons["edit-sets-save"].tap()
-      XCTAssertTrue(open.waitForLabel("Set 1, current, target 15 kilograms, 15 reps"))
+      XCTAssertTrue(open.waitForLabel("Set 1, current, 15 kilograms, 15 reps"))
       app.buttons["workout-finish"].tap()
       XCTAssertTrue(app.switches["workout-receipt-save-plan"].waitForExistence(timeout: 15))
       return app

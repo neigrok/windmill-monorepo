@@ -17,9 +17,9 @@ import XCTest
     XCTAssertTrue(menu.waitForExistence(timeout: 10))
     XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 5))
     menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
-    let item = app.buttons.matching(NSPredicate(format: "identifier == %@ AND enabled == true", "room-\(room.lowercased())")).firstMatch
+    let item = app.roomItem(room)
     XCTAssertTrue(item.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["room-journal"].exists && app.buttons["room-gym"].exists)
+    XCTAssertTrue(app.roomItem("Journal").exists && app.roomItem("Gym").exists)
     XCTAssertFalse(app.buttons["about-windmill"].exists, "The room menu holds only the rooms; You holds the settings")
     let visibleItem = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
       guard let snapshot = try? item.snapshot() else { return false }

@@ -33,9 +33,9 @@ export function MobileChrome({
 
   const cameraGroupRight = tablet && panelOpen ? TABLET_PANEL_WIDTH + 24 : 12;
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
-  const listView = view === 'list';
+  const canvasView = view === 'tree';
 
-  // The list view never renders this: the list header owns the sign-in line as its notice row.
+  // The list and the Board never render this: each carries the device notice under its header.
   const signInNudge = onSignInToKeep ? (
     <button
       type="button"
@@ -75,7 +75,7 @@ export function MobileChrome({
         }}
       />
 
-      {!listView && (
+      {canvasView && (
       <>
       {/* Plaque — a label, never a menu; sits below the status-bar-safe area */}
       <div
@@ -243,8 +243,8 @@ export function MobileChrome({
       </button>
       )}
 
-      {/* Camera group — Focus reads the step you are on, All steps shows the whole roadmap; it sits under the wordmark, clear of the lane, the sheet and the fork pill. The list has no camera. */}
-      {!listView && (
+      {/* Camera group — Focus reads the step you are on, All steps shows the whole roadmap; it sits under the wordmark, clear of the lane, the sheet and the fork pill. The list and the Board have no camera. */}
+      {canvasView && (
         <div
           className="st-view-actions"
           role="group"

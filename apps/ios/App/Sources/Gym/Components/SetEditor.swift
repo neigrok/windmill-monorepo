@@ -42,8 +42,8 @@ nonisolated enum LoadText {
 // it is typed in, `weightKg` holds the load the field stands for: a readable value, else the load it opened on, which is
 // what the field shows again when it lets go. Bodyweight and Other add ± to the keyboard row, the pad having no minus,
 // unless the host draws its own; ± flips the load, whatever is typed. `focus` asks for the keyboard; whether the field is
-// being typed in comes from the text field's own editing callback, since SwiftUI's focus does not report back from the
-// rack's reach band.
+// being typed in comes from the text field's own editing callback, SwiftUI's focus not reporting back from the rack's
+// reach band.
 struct LoadField: View {
   @Binding var weightKg: Double
   let basis: MovementEquipment
@@ -88,8 +88,8 @@ struct LoadField: View {
   }
 }
 
-// Reps on one native wheel, 1 to 99, the unit beside the selected row as Clock's timer draws it. A count outside the band
-// keeps its row, so the wheel never moves a number it opened on.
+// Reps on one native wheel over the logged band, 1 to 99, the unit beside the selected row as Clock's timer draws it. A
+// count outside the band keeps its row, so the wheel never moves a number it opened on.
 struct RepsWheel: View {
   @Binding var reps: Int
   let identifier: String
@@ -101,7 +101,7 @@ struct RepsWheel: View {
   }
 
   static func counts(around reps: Int) -> [Int] {
-    (1...99).contains(reps) ? Array(1...99) : (Array(1...99) + [reps]).sorted()
+    SetRules.loggedReps.contains(reps) ? Array(SetRules.loggedReps) : (Array(SetRules.loggedReps) + [reps]).sorted()
   }
 
   var body: some View {
@@ -165,12 +165,12 @@ struct SetFields: View {
     completedAt = set.completedAt
   }
 
-  var noteBytes: Int { note.utf8.count }
-  var noteCounter: String? { noteBytes >= 3_200 ? "\(noteBytes) of 4000 bytes" : nil }
+  var noteBytes: Int { SetRules.note.measure(note) }
+  var noteCounter: String? { noteBytes >= SetRules.note.max * 4 / 5 ? "\(noteBytes) of \(SetRules.note.max) bytes" : nil }
   var problem: String? {
     guard weightKg.isFinite else { return "That is not a number yet." }
-    guard (1...99).contains(reps) else { return "Whole reps, 1–99." }
-    guard noteBytes <= 4_000 else { return "A set note runs to 4000 bytes." }
+    guard SetRules.loggedReps.contains(reps) else { return "Whole reps, \(SetRules.loggedReps.lowerBound)–\(SetRules.loggedReps.upperBound)." }
+    guard noteBytes <= SetRules.note.max else { return "A set note runs to \(SetRules.note.max) bytes." }
     return nil
   }
   var value: TrainingSet {
@@ -270,7 +270,7 @@ struct SetEditor: View {
             if !draft.note.isEmpty { Button("Clear note") { draft.note = "" } }
             if let counter = draft.noteCounter {
               Text(counter).font(.caption.monospacedDigit())
-                .foregroundStyle(draft.noteBytes > 4_000 ? GymPalette.alarm : GymPalette.inkDim)
+                .foregroundStyle(draft.noteBytes > SetRules.note.max ? GymPalette.alarm : GymPalette.inkDim)
             }
           }
           if !logged {

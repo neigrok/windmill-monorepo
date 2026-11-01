@@ -24,6 +24,7 @@ export { Tooltip } from './feedback/Tooltip.jsx';
 export { Ghost, GhostBar } from './feedback/Ghost.jsx';
 export { Dialog } from './feedback/Dialog.jsx';
 export { Toast } from './feedback/Toast.jsx';
+export { ErrorBoundary } from './feedback/ErrorBoundary.jsx';
 
 // navigation
 export { Tabs } from './navigation/Tabs.jsx';

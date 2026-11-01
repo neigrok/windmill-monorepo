@@ -110,21 +110,7 @@ struct ChangeCard: ViewModifier {
   var stroke: Color?
   func body(content: Content) -> some View {
     content.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
-      .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-      .overlay { if let stroke { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(stroke, lineWidth: 1) } }
-  }
-}
-
-// A card's decision, 52 pt and the full width: prominent on the accent, or quiet on the canvas; a destructive quiet one
-// takes system red for its label.
-struct ChangeCardButtonStyle: ButtonStyle {
-  var prominent = false
-  @Environment(\.isEnabled) var enabled
-  func makeBody(configuration: Configuration) -> some View {
-    let label = prominent ? GymPalette.onAccent : configuration.role == .destructive ? GymPalette.destructive : GymPalette.ink
-    configuration.label.font(.headline).foregroundStyle(label)
-      .frame(maxWidth: .infinity, minHeight: 52).padding(.horizontal, RoomSpace.inset)
-      .background(prominent ? GymPalette.accent : GymPalette.canvas, in: Capsule())
-      .opacity(enabled ? 1 : 0.5).scaleEffect(configuration.isPressed ? 0.98 : 1).contentShape(Capsule())
+      .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.coachCardRadius, style: .continuous))
+      .overlay { if let stroke { RoundedRectangle(cornerRadius: RoomSpace.coachCardRadius, style: .continuous).stroke(stroke, lineWidth: 1) } }
   }
 }

@@ -222,7 +222,7 @@ struct RootScreen: View {
               RoomDoor(room: .journal, line: "Write tonight’s page") { model.openJournal() }
               RoomDoor(room: .gym, line: "Log today’s sets") { model.openRoom(.gym) }
             }.padding(.horizontal, -8)
-            if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(ShellType.action).foregroundStyle(ShellPalette.inkDim).frame(maxWidth: .infinity, minHeight: 52).padding(.top, 10) }
+            if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(ShellType.action).foregroundStyle(ShellPalette.inkDim).frame(maxWidth: .infinity, minHeight: RoomSpace.controlHeight).padding(.top, 10) }
             if model.keptWork {
               Text("Changes you kept will return when you sign in to the same account.").font(ShellType.meta).foregroundStyle(ShellPalette.inkDim).padding(.top, 8)
             }

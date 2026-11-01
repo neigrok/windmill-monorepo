@@ -2,7 +2,7 @@ import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, viewSwitch = null, board = false, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   const activityHint = keyHint('Activity feed');
   const focusHint = keyHint('Focus on a step');
   const showAllHint = keyHint('All steps');
@@ -13,6 +13,7 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFo
           <span className="st-brand-name">Windmill</span>
         </a>
         {titleSlot ?? (title && <span className="st-brand-title" style={{ marginLeft: 'var(--space-2)' }}>{title}</span>)}
+        {viewSwitch}
       </div>
 
       <div className="st-controls">
@@ -24,36 +25,40 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFo
             </button>
           </Tooltip>
         )}
-        <Tooltip label={readyCount > 0 ? `What’s next (${activityHint})` : `Activity (${activityHint})`} side="bottom">
-          <button
-            type="button"
-            className={`st-activity-chip ${activityOpen ? 'st-activity-chip--on' : ''} ${activityPing ? 'st-activity-chip--ping' : ''}`}
-            onClick={onToggleActivity}
-            aria-pressed={activityOpen}
-          >
-            <Icon name="bell" size={14} />
-            <span>{readyCount > 0 ? `Next · ${readyCount}` : 'Activity'}</span>
-            {activityUnread > 0 && <span className="st-activity-chip-badge">{activityUnread}</span>}
-          </button>
-        </Tooltip>
+        {!board && (
+          <Tooltip label={readyCount > 0 ? `What’s next (${activityHint})` : `Activity (${activityHint})`} side="bottom">
+            <button
+              type="button"
+              className={`st-activity-chip ${activityOpen ? 'st-activity-chip--on' : ''} ${activityPing ? 'st-activity-chip--ping' : ''}`}
+              onClick={onToggleActivity}
+              aria-pressed={activityOpen}
+            >
+              <Icon name="bell" size={14} />
+              <span>{readyCount > 0 ? `Next · ${readyCount}` : 'Activity'}</span>
+              {activityUnread > 0 && <span className="st-activity-chip-badge">{activityUnread}</span>}
+            </button>
+          </Tooltip>
+        )}
         <Tooltip label="Share roadmap" side="bottom">
           <IconButton icon={<Icon name="share" />} label="Share roadmap" size="sm" onClick={onShare} />
         </Tooltip>
-        <div className="st-zoom-group">
-          <Tooltip label="Zoom out" side="bottom">
-            <IconButton icon={<Icon name="zoom-out" />} label="Zoom out" size="sm" onClick={onZoomOut} />
-          </Tooltip>
-          <Tooltip label="Zoom in" side="bottom">
-            <IconButton icon={<Icon name="zoom-in" />} label="Zoom in" size="sm" onClick={onZoomIn} />
-          </Tooltip>
-          <Tooltip label={focusHint ? `Read the step you are on (${focusHint})` : 'Read the step you are on'} side="bottom">
-            {/* The tooltip is hover-only, so the key itself is on the button: a keyboard reader hears it too. */}
-            <button type="button" className="st-view-action" onClick={onFocus} aria-keyshortcuts={focusHint || undefined}>Focus</button>
-          </Tooltip>
-          <Tooltip label={showAllHint ? `Show the whole roadmap (${showAllHint})` : 'Show the whole roadmap'} side="bottom">
-            <button type="button" className="st-view-action" onClick={onShowAll} aria-keyshortcuts={showAllHint || undefined}>All steps</button>
-          </Tooltip>
-        </div>
+        {!board && (
+          <div className="st-zoom-group">
+            <Tooltip label="Zoom out" side="bottom">
+              <IconButton icon={<Icon name="zoom-out" />} label="Zoom out" size="sm" onClick={onZoomOut} />
+            </Tooltip>
+            <Tooltip label="Zoom in" side="bottom">
+              <IconButton icon={<Icon name="zoom-in" />} label="Zoom in" size="sm" onClick={onZoomIn} />
+            </Tooltip>
+            <Tooltip label={focusHint ? `Read the step you are on (${focusHint})` : 'Read the step you are on'} side="bottom">
+              {/* The tooltip is hover-only, so the key itself is on the button: a keyboard reader hears it too. */}
+              <button type="button" className="st-view-action" onClick={onFocus} aria-keyshortcuts={focusHint || undefined}>Focus</button>
+            </Tooltip>
+            <Tooltip label={showAllHint ? `Show the whole roadmap (${showAllHint})` : 'Show the whole roadmap'} side="bottom">
+              <button type="button" className="st-view-action" onClick={onShowAll} aria-keyshortcuts={showAllHint || undefined}>All steps</button>
+            </Tooltip>
+          </div>
+        )}
       </div>
     </div>
   );

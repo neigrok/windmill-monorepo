@@ -494,6 +494,31 @@ and Android disagree.
   from the lifter's state and never from capability copy — *Build me a routine* with no routines,
   *How did today go?* after a workout today. A tap fills the composer without sending, and the
   capsule leaves with the first message. It waits on the owner and is not drawn.
+- **iOS card radii (build drift, needs a Figma decision).** One card role is drawn at three radii, named in
+  `RoomSpace` (`Theme/TypeScale.swift`): `cardRadius` 16 pt for the room's cards (the transient band, workout
+  ledger and fact tiles, Journal echoes), `coachCardRadius` 22 pt continuous for Coach's conversation cards
+  (`ChangeCard`), and `weighInRadius` 24 pt for the weigh-in sheet's weight, date and Delete weigh-in cards
+  (`Gym/Log/BodyweightScreen.swift`); the share sheet's preview card is 12 pt (`SessionShareSheet.swift`). For the
+  designer: one radius for the card role, or a named role for each that differs. The build changes after the drawing.
+- **Coach card decisions are hand-drawn (build drift, needs a Figma decision).** Apply, Reject and Sign in on Coach's
+  cards (`RoomDecisionStyle` in `Theme/RoomControls.swift`) are full-width 52 pt capsules drawn by hand: the accent
+  with an on-accent label, or the canvas with an ink label (system red on a destructive button), at 50 % while
+  disabled and 98 % while pressed, the same on iOS 18 and iOS 26. Every other primary (`RoomPrimaryStyle`: the
+  routine sheet's Start, the rack's Log set, the receipt's Done) is the system's prominent glass on iOS 26 and the
+  bordered prominent button on iOS 18. For the
+  designer: whether card decisions take the system's prominent and plain glass, or stay a drawn card-decision component.
+- **The weigh-in builds its own form rows (build drift, needs a Figma decision).** The weigh-in sheet
+  (`BodyweightScreen.swift`, `fields`) draws its weight field, date row and Delete weigh-in as separate 52 pt
+  rows on 24 pt card shapes in a scroll view, with its own accent focus stroke, where Fix set, Fix workout, the
+  rename sheet and the movement picker use a native grouped `Form`. For the designer: whether the weigh-in becomes
+  a native grouped form (with the content-sized sheet and graphical calendar of 10y) or keeps its drawn rows.
+- **A machine's load unit has two answers (build drift, needs a design/product decision).** The domain's
+  `Readout.loadUnit` (`apps/ios/Domain/Sources/GymDomain/TrainingReads.swift`, held by the shared `loadUnit` vector)
+  reads a machine's load as *kg total*, like a barbell's, and a workout plan's swap keeps the targets only between
+  movements of one unit. The app's `MovementEquipment.unit` (`Gym/Components/MovementEquipment.swift`) draws a
+  machine's load as plain *kg* on the rack, Fix set, Edit sets and the routine editor, with cable, kettlebell and
+  Other; Gym's 11e names *kg total* for barbell/machine. For the designer and the owner: which unit a machine's load
+  shows, after which both sources speak it.
 
 ## Onboarding
 
@@ -584,6 +609,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `web/src/shell/chrome/chrome.css` (room-switcher pills at a fixed 30px height with
   `white-space: nowrap`, 32px grid gutters) defines a reflow. The Shell owner draws and builds it at
   320px with 200% text.
+- **Board · the step card's note says "steps away".** The Step card component description (351:5672)
+  words the Locked reason as *Needs <step> · <longest chain> steps away*. The owner ruling,
+  `board/copy.js` and the card state sheets (353:5571, 353:5686, 353:5801) say *Needs Read the wind ·
+  1 to go*. Correct the description.
+- **Board · two pairs of view glyphs.** The phone identity row (258:1397) draws Board as three
+  outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
+  strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
+  icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

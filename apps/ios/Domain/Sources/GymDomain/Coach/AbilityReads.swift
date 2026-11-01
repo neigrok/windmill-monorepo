@@ -35,7 +35,7 @@ public enum CoachDocuments {
   public static func exercise(_ value: Exercise) -> JSON {
     .object(omittingNil: ["id": value.id.json, "name": .string(value.name), "pattern": .string(value.pattern),
                          "equipment": .string(value.equipment), "stepKg": .of(value.stepKg), "custom": .bool(!SeedExercises.contains(value.id)),
-                         "loadCount": value.equipment == "dumbbell" ? JSON(value.loadCount) : nil,
+                         "loadCount": Equipment(value.equipment) == .dumbbell ? JSON(value.loadCount) : nil,
                          "aliases": value.aliases.isEmpty ? nil : .array(value.aliases.map(JSON.string))])
   }
 

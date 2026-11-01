@@ -270,12 +270,12 @@ jobs:
           - shard: gym-integration
             tests: >-
               -only-testing:WindmillUITests/GymIntegrationFlowTests
+              -only-testing:WindmillUITests/GymRecoveryFlowTests
           - shard: gym-journal
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
               -only-testing:WindmillUITests/GymAnonymousCoachFlowTests
               -only-testing:WindmillUITests/GymWorkoutFlowTests
-              -only-testing:WindmillUITests/GymRecoveryFlowTests
               -only-testing:WindmillUITests/JournalFlowTests
               -only-testing:WindmillUITests/JournalEchoFlowTests
           - shard: shell-offline-system

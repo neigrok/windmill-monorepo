@@ -45,13 +45,13 @@ enum MovementPickerOptions {
 
   static func matching(query: String, catalogue: [Exercise], selected: Set<ID<Exercise>>,
                        log: TrainingLog?, featured: [ID<Exercise>]? = nil, readFailed: Bool = false) -> Result {
-    let term = MovementName.trimmed(query).lowercased()
+    let term = NameField.movement.trimmed(query).lowercased()
     let featured = term.isEmpty ? featured ?? mostTrained(catalogue: catalogue, log: log) : []
     // A logged movement adds its last effort and when, bodyweight alone as its reps; before its first log the equipment says enough.
     let makeRow = { (exercise: Exercise, alias: String?) -> Row in
       var meta: String?
       if let log, case let last = log.lastTime(for: exercise.id), let set = last.sets.last, let session = last.session {
-        let effort = exercise.equipment == "bodyweight" && set.weightKg == 0 ? GymCount.of(set.reps, "rep") : Readout.effort(weightKg: set.weightKg, reps: set.reps)
+        let effort = Equipment(exercise.equipment) == .bodyweight && set.weightKg == 0 ? GymCount.of(set.reps, "rep") : Readout.effort(weightKg: set.weightKg, reps: set.reps)
         meta = "\(effort) · \(Readout.ago(session.startedAt, now: log.moment.now, zone: log.moment.zone))"
       }
       return Row(exercise: exercise, meta: meta, alias: alias, selected: selected.contains(exercise.id))
@@ -64,9 +64,9 @@ enum MovementPickerOptions {
     }
     let matches = term.isEmpty ? rest : Array(rest.prefix(7))
     let unread = readFailed || catalogue.isEmpty ? catalogueUnread : nil
-    let exact = catalogue.contains { ([$0.name] + $0.aliases).contains { MovementName.trimmed($0).lowercased() == term } }
+    let exact = catalogue.contains { ([$0.name] + $0.aliases).contains { NameField.movement.trimmed($0).lowercased() == term } }
     return Result(six: six, matches: matches, unread: unread,
-                  create: term.isEmpty || exact || unread != nil ? nil : MovementName.capped(MovementName.trimmed(query)))
+                  create: term.isEmpty || exact || unread != nil ? nil : NameField.movement.taken(from: query))
   }
 }
 
@@ -83,25 +83,25 @@ struct MovementPickerRanking {
 struct MovementCreationDraft: Identifiable {
   let id: ID<Exercise>
   var name: String
-  var equipment = "barbell"
+  var equipment = Equipment.barbell.rawValue
   var loadCount = 2
   var sets: [SetTarget]?
   var refusal: String?
 
   var exercise: Exercise {
-    Exercise(id: id, name: MovementName.trimmed(name), pattern: "isolation", equipment: equipment,
+    Exercise(id: id, name: NameField.movement.trimmed(name), pattern: "isolation", equipment: equipment,
              stepKg: ExerciseRules.defaultStepKg(equipment: equipment), loadCount: loadCount)
   }
 
   var problem: String? {
-    if let problem = MovementName.problem(name) { return problem }
+    if let problem = NameField.movement.problem(name) { return problem }
     if !MovementEquipment.choices.contains(equipment) { return "check the movement name and equipment" }
     return nil
   }
 
   // A draft reopens as the owner left it; a nameless one takes the search it opens from.
   mutating func takeQuery(_ query: String) {
-    if MovementName.trimmed(name).isEmpty { name = MovementName.capped(MovementName.trimmed(query)) }
+    if NameField.movement.trimmed(name).isEmpty { name = NameField.movement.taken(from: query) }
   }
 }
 
@@ -176,7 +176,7 @@ struct MovementPicker: View {
     .navigationTitle(purpose.title)
     .toolbar {
       ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
-      if MovementName.trimmed(externalQuery?.wrappedValue ?? query).isEmpty {
+      if NameField.movement.trimmed(externalQuery?.wrappedValue ?? query).isEmpty {
         ToolbarItem(placement: .topBarTrailing) {
           Button("New movement", systemImage: "plus") { create() }.labelStyle(.iconOnly)
             .disabled(gym.accountTransition).accessibilityIdentifier("gym-new-movement")
@@ -292,7 +292,7 @@ struct CreateMovementSheet: View {
         Section {
           TextField("Name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).onSubmit { nameFocused = false }
             .disabled(busy).accessibilityIdentifier("gym-movement-name")
-          if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          if let counter = NameField.movement.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
           MovementEquipmentPicker(equipment: $draft.equipment, loadCount: $draft.loadCount, identifier: "gym-movement-equipment").disabled(busy)
         }
 
@@ -301,14 +301,14 @@ struct CreateMovementSheet: View {
     .modifier(GymPage()).accessibilityIdentifier("gym-movement-creation")
     .navigationTitle("Create movement")
     .sheetCommit("Add", identifier: "gym-movement-create-commit",
-                 disabled: gym.accountTransition || MovementName.trimmed(draft.name).isEmpty, busy: busy,
+                 disabled: gym.accountTransition || NameField.movement.trimmed(draft.name).isEmpty, busy: busy,
                  dismiss: { if let onCancel { onCancel() } else { dismiss() } }, commit: add)
     .reachBand {
       GymTransient(gym: gym, message: draft.refusal, dismiss: { draft.refusal = nil }, errorIdentifier: "gym-movement-creation-refusal")
     }
     .interactiveDismissDisabled(busy)
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen]) }
-    .onChange(of: draft.name) { _, value in draft.name = MovementName.capped(value); draft.refusal = nil }
+    .onChange(of: draft.name) { _, value in draft.name = NameField.movement.capped(value); draft.refusal = nil }
     .onChange(of: draft.equipment) { _, _ in draft.refusal = nil }
   }
 

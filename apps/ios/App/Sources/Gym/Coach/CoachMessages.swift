@@ -220,7 +220,7 @@ struct CoachAnswerView: View {
         }
       }
       if ended, offersSignIn, message.calls.contains(where: { $0.outcome == .refused(.seatRequired) }) {
-        Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
+        Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(RoomDecisionStyle(.prominent))
           .accessibilityIdentifier("coach-sign-in")
       }
       // One answer may carry a change to this workout and one to a routine, each decided on its own card (08.56).
