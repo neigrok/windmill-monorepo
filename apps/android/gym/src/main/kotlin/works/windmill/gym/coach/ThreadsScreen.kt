@@ -70,7 +70,7 @@ interface ThreadsEvents {
 // The conversation list over Coach's store.
 class ThreadsBinding(private val coach: CoachStore) : ThreadsState, ThreadsEvents {
     override val accountKey: String get() = coach.accountKey
-    override val threads: List<AskThread> get() = coach.threads
+    override val threads: List<AskThread> get() = coach.allThreads
     override val nextThreadCursor: String? get() = coach.nextThreadCursor
     override fun draft(id: String): CoachDraft = coach.draft(id)
     override fun draftSaved(id: String): Boolean = coach.draftSaved(id)

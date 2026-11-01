@@ -346,16 +346,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         catch (_: Exception) { note = "Your conversation couldn’t be saved. Try again." }
     }
 
-    // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
-    // tab change and sheet; the clock that closes a window is the store's own, one per delete, so a
-    // screen going away settles nothing.
-    //
-    // Said for as long as a way back is open and never a moment longer: the span is the store's
-    // `undoWindowMs` and never a snackbar default, and the store says how much is left — the room
-    // reads no clock of its own. The key is everything that could change what is offered, so the
-    // instant a settle writes a delete, or a second delete joins the window, this effect
-    // is cancelled and the transient is redrawn for what is left. An Undo offered over a delete
-    // already sent is a lie.
+    // The transient is the room's and follows the lifter through every pop, tab change and sheet; a
+    // weigh-in's hold is the engine's, so a screen going away releases nothing. It is said while the
+    // newest hold's offer is open, for the span the store reports, and redrawn whenever a hold joins
+    // or leaves.
     val takeable = store.deletions.holding
     LaunchedEffect(takeable?.subjectId, store.held.withheld.size) {
         val said = Withheld.line(store.held.withheld) ?: return@LaunchedEffect
@@ -396,7 +390,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         store.deletions.clearDeleteRefused()
     }
 
-    // Workout windows follow the room; durable weights follow the process.
+    // A return re-reads the system's Undo timeout and Coach's anonymous access.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->

@@ -48,8 +48,6 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     // Photo orientation for Coach: the framework ExifInterface misreads some streams on API 26–28.
     implementation(libs.androidx.exifinterface)
-    implementation(libs.compose.ui.tooling.preview)
-    debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

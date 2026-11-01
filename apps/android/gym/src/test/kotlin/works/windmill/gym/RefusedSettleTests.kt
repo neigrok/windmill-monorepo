@@ -90,7 +90,7 @@ class RefusedSettleTests {
             compose.waitForIdle()
             compose.runOnIdle {
                 assertEquals(1, deletes)
-                assertEquals(listOf("thr_1"), store.coach.threads.map { it.id })
+                assertEquals(listOf("thr_1"), store.coach.allThreads.map { it.id })
                 assertEquals(emptyList<Withheld>(), store.held.withheld)
                 assertEquals(listOf("gym.deleteThread"), failures)
                 assertEquals(listOf("gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "failed")),

@@ -124,8 +124,8 @@ frozen routine lineage are never silently changed.
 workout already on the log), `HistoryReads` (log pages and foot, opened details, record, routine
 history, progress), `RoutinesStore` (routines, movement catalogue, proposals), `RecoveryStore`
 (imports and On this phone), `DeletionsStore` (withheld deletes and their Undo), `BodyweightStore`,
-`NotesStore` and `SharingStore` (connected log and share links). `HeldDeletes` is the one filter
-every list reads. `TrainingStore` composes them with `CoachStore` and moves them together on a
+`NotesStore` and `SharingStore` (connected log and share links). `HeldDeletes` holds the weigh-in holds and
+the room's settled set deletes: weigh-in lists read the first and set lists the second. `TrainingStore` composes them with `CoachStore` and moves them together on a
 change of account, an engine refresh, a restore and an account transition. Screens take a narrow
 state interface and an events interface, bound to the stores by a `…Binding` class beside each
 screen; previews draw each screen's main states in Dark and Daylight. The stores run training reads

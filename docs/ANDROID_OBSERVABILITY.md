@@ -74,7 +74,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.deleteNote` | gym | Deleting a note fails |
 | `gym.deleteSet` | gym | Deleting a set fails |
 | `gym.deleteThread` | gym | Deleting a Coach conversation fails |
-| `gym.deleteWeighIn` | gym | Holding, keeping or settling a deleted weigh-in fails |
+| `gym.deleteWeighIn` | gym | Holding or undoing a deleted weigh-in fails; the engine releases it |
 | `gym.discard` | gym | Discarding a workout fails |
 | `gym.dismissProposal` | gym | Dismissing a Coach routine proposal fails |
 | `gym.dropRoutine` | gym | Deleting a routine fails |

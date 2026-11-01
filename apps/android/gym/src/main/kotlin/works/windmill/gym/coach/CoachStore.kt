@@ -495,8 +495,6 @@ class CoachStore internal constructor(
     // Newest first; every screen reads the same list so settled deletes stay removed.
     private var conversations: List<AskThread> by mutableStateOf(emptyList())
     private var conversationsOwner: String? = null
-    // Undo hides rows; the empty stance still counts everything the account holds.
-    val threads: List<AskThread> get() = allThreads
     val allThreads: List<AskThread> get() {
         val seat = archiveOwner
         restoreArchive(seat)
