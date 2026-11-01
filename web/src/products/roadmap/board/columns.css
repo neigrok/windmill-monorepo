@@ -16,6 +16,7 @@
 
 /* ---- A full column: Up next carries the tinted ground. ---- */
 .st-board-columns-column {
+  overflow-anchor: none; /* ColumnCards keeps the view still as cards above it settle */
   --st-board-column-ground: var(--surface-canvas);
   flex: 1 1 0;
   min-width: 0;

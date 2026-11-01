@@ -34,7 +34,7 @@ function acting(state, action, run) {
 export function BoardSkeleton({ phone }) {
   if (phone) {
     return (
-      <div className="st-board-phone" aria-busy="true">
+      <div className="st-board-phone" aria-busy="true" tabIndex={-1}>
         <div className="st-board-phone-panes">
           <div className="st-board-phone-pane is-shown">
             <h2 className="st-board-phone-heading">{COLUMN_TITLES.upNext}</h2>
@@ -46,7 +46,7 @@ export function BoardSkeleton({ phone }) {
     );
   }
   return (
-    <div className="st-board-columns" aria-busy="true">
+    <div className="st-board-columns" aria-busy="true" tabIndex={-1}>
       {COLUMNS.map((column) => (
         <section key={column} className={`st-board-columns-column st-board-columns-column--${column}`}>
           <h2 className={`st-board-columns-heading st-board-columns-heading--${column}`}>

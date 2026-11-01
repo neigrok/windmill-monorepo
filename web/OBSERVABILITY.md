@@ -92,7 +92,11 @@ nothing. A press on an action of the Board's states emits
 (`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
 storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board`,
 drops the Board until that roadmap is opened again and shows the Graph. Loading a roadmap reports to Sentry whatever the
-gate: `HttpTreeRepository` reports the static operation `roadmap-tree-load` when the server answers 5xx or the request
-is lost while the browser believes it is online, and stays silent on a refusal (4xx) or a request lost offline. Any
-other failure that stops the load, except a tree neither the server nor this device has, reports `roadmap-load`. No
-tree, step, title, identifier, status text or exception message is reported.
+gate: `HttpTreeRepository` reports the static operation `roadmap-tree-load` when the server answers 5xx, answers 200
+with something that is not a tree (an app shell a proxy served, say), or the request is lost while the page is visible,
+the browser believes it is online and the roadmap is still wanted. It stays silent on a refusal (4xx), a request lost
+offline or behind a hidden page, and a load aborted because the roadmap was left. Any other failure that stops the load,
+except a tree neither the server nor this device has, reports `roadmap-load` with its stack frames (file, line, column
+and function name only). Settings' Export all reads each server roadmap through the same repository under its own static
+operation, `roadmap-export-load`, by the same rules. No tree, step, title, identifier, status text or exception message
+is reported.

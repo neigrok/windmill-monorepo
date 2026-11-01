@@ -971,6 +971,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     let cancelled = false;
     let autoOpenTimer = null;
     let unknownTree = false;
+    const wanted = new AbortController();
+    const { signal } = wanted;
     setLoading(true);
     setLoadError(false);
     setSelectedId(null);
@@ -988,7 +990,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       // Confirm who holds this device before anything is read from it or written to it.
       await resolveDeviceOwner();
       let seed = null;
-      try { seed = await repo.loadTree(); } catch { /* fall through to the blob */ }
+      try { seed = await repo.loadTree({ signal }); } catch { /* fall through to the blob */ }
+      if (cancelled) return;
       if (!seed) {
         seed = await loadDeviceTree(treeId);
         if (!seed) {
@@ -1000,8 +1003,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       const nextTree = new SkillTree(treeData);
       const progress = demo
         ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
-        : await repo.loadProgress(treeData);
-      const serverActivity = await repo.loadActivity({ limit: 200 });
+        : await repo.loadProgress(treeData, { signal });
+      const serverActivity = await repo.loadActivity({ limit: 200, signal });
       if (cancelled) return;
       const overlay = progress;
       const states = UnlockRules.derive(nextTree, overlay);
@@ -1098,12 +1101,13 @@ export function SkillTreeView({ treeId, demo = false }) {
     loadTree().catch((err) => {
       if (cancelled) return;
       console.warn('[tree] load failed', treeId, err);
-      if (!unknownTree) captureError('roadmap', 'roadmap-load', '', '#/app');
+      if (!unknownTree) captureError('roadmap', 'roadmap-load', err?.stack ?? '', '#/app');
       setLoadError(true);
       setLoading(false);
     });
     return () => {
       cancelled = true;
+      wanted.abort();
       clearTimeout(autoOpenTimer);
       cancelNextUpSelect();
       collabRef.current?.close();
@@ -1260,7 +1264,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const listShownRef = useRef(false);
   if (listActive) listShownRef.current = true;
   const listMounted = listReady && listShownRef.current;
-  // The Board stays mounted through a reload or an emptied tree, so its scroll and fold survive; only a crash drops it.
+  // The Board stays mounted through a reload or an emptied tree, so Done's fold survives (its columns, and their scroll,
+  // give way to the skeleton or the empty roadmap); only a crash drops it.
   const boardShownRef = useRef(false);
   if (boardActive) boardShownRef.current = true;
   const boardMounted = BOARD_OPEN && !boardCrashed && boardShownRef.current;

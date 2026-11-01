@@ -115,6 +115,16 @@ window.openState = ({ nodes, completed = [], breakpoint, loading = false, failed
         onSelect: () => {}, breakpoint, active: true, identity: true, title: 'Learn to sail', onSwitchView: () => {},
         onRetry: call('retry'), onShare: owner ? call('share') : undefined, onNewStep: owner ? call('newStep') : undefined })));
 };
+window.openReload = (nodes, completed) => {
+  function Room() {
+    const [load, setLoad] = useState({ tree: null, loading: false, failed: true });
+    window.finishLoad = (succeeded) => setLoad({ tree: succeeded ? new SkillTree({ id: 'sail', title: 'Learn to sail', nodes }) : null, loading: false, failed: !succeeded });
+    return React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
+      React.createElement(BoardView, { ...load, completed: new Set(completed), completedAt: {}, selectedId: null, onSelect: () => {},
+        breakpoint: 'desktop', active: true, onSwitchView: () => {}, onRetry: () => setLoad({ tree: null, loading: true, failed: false }) }));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
 window.coverBeneath = coverBeneath;
 window.entryReady = true;
 `;
@@ -280,6 +290,48 @@ test('Chromium: Try again on a load error reloads and emits once, with only the 
     await page.getByRole('button', { name: 'Try again' }).click();
     assert.deepEqual([await page.evaluate(() => window.calls), await events(page)],
       [['retry'], ['roadmap_board_state_action {"state":"error","action":"retry"}']]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: after Try again focus rests on the skeleton, then lands on the columns’ tab stop, or on Try again if the load fails again', async () => {
+  await ready;
+  const errors = [];
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(`${origin}/board-view-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(([nodes]) => openReload(nodes, ['course', 'parts', 'rig']), [learnToSailNodes]);
+    const where = () => page.evaluate(() => (document.activeElement.getAttribute('aria-busy') === 'true' ? 'skeleton' : document.activeElement.querySelector('.st-board-card-title')?.textContent ?? document.activeElement.textContent));
+    await page.getByRole('button', { name: 'Try again' }).focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await where(), 'skeleton');
+    await page.evaluate(() => finishLoad(false));
+    await page.getByRole('button', { name: 'Try again' }).waitFor();
+    assert.equal(await where(), 'Try again');
+    await page.keyboard.press('Enter');
+    await page.evaluate(() => finishLoad(true));
+    await page.locator('.st-board-card').first().waitFor();
+    assert.equal(await where(), 'Read the wind');
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: while hidden the Board skips the host’s renders, and catches up the moment it is shown', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ width: 1440, height: 900 }, 'desktop', errors);
+  try {
+    await page.evaluate(() => setActive(false));
+    await page.evaluate(() => selectElsewhere('wind'));
+    assert.equal(await page.locator('.st-board-card[aria-current="true"]').count(), 0);
+    await page.evaluate(() => setActive(true));
+    assert.equal(await page.locator('.st-board-card[aria-current="true"] .st-board-card-title').textContent(), 'Read the wind');
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

@@ -354,9 +354,92 @@ test('Chromium: a step that just became up next wakes and settles; the Board’s
     assert.deepEqual(await page.locator('.st-board-card.is-arrived').evaluateAll((cards) => cards.map((card) => [
       card.querySelector('.st-board-card-title').textContent, getComputedStyle(card).animationName,
     ])), [['Leave the dock', 'st-board-card-wake, st-board-card-settle']]);
-    await page.locator('.st-board-card.is-arrived').focus();
-    assert.equal(await page.locator('.st-board-card.is-arrived').evaluate((card) => getComputedStyle(card).animationName), 'none');
     await page.waitForFunction(() => document.querySelectorAll('.st-board-card.is-arrived').length === 0, null, { timeout: 4000 });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: focus landing on an arriving step ends its wake for good, so leaving it never replays the wake', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.evaluate(() => complete('wind'));
+    await page.locator('.st-board-card.is-arrived').focus();
+    const dock = page.locator('.st-board-card[data-step-id="dock"]');
+    assert.deepEqual(await dock.evaluate((card) => [card.className, getComputedStyle(card).animationName]), ['st-board-card st-board-card--upNext', 'none']);
+    await page.getByRole('button', { name: 'After the Board' }).focus();
+    assert.deepEqual(await dock.evaluate((card) => [card.className, getComputedStyle(card).opacity]), ['st-board-card st-board-card--upNext', '1']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: a focused card whose step moves to another column hands focus to the new tab stop instead of the page', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.locator('.st-board-card[tabindex="0"]').focus();
+    assert.equal(await focused(page), 'Read the wind');
+    await page.evaluate(() => complete('wind'));
+    await page.waitForFunction(() => document.activeElement !== document.body);
+    assert.deepEqual([await focused(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: as cards above the view settle to their measured heights, what is in view stays where it was', async () => {
+  await ready;
+  const errors = [];
+  // Every third excerpt is set in the widest glyphs, so its estimate falls a line short until the card is measured.
+  const words = 'Work out departure arrival and the fallback harbour for each gate before you commit to the route plan a coastal passage'.split(' ');
+  const text = (seed, count) => Array.from({ length: count }, (_, index) => words[(seed * 7 + index) % words.length]).join(' ');
+  const nodes = Array.from({ length: 1500 }, (_, index) => ({
+    id: `d${index}`, label: text(index, 1 + (index % 9)), prerequisites: [],
+    description: index % 3 === 0 ? 'MMMM WWWW MMMM WWWW MMMM WWWW MMMM WWWW MMMM WWWW' : text(index + 2, 2 + ((index * 7) % 26)),
+  }));
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.map((node) => node.id) }, errors);
+  try {
+    await page.getByRole('button', { name: 'Show all 1,500' }).click();
+    const drift = await page.locator('.st-board-columns-column--done').evaluate(async (column) => {
+      const frames = async (count) => { for (let index = 0; index < count; index += 1) await new Promise((resolve) => requestAnimationFrame(resolve)); };
+      column.scrollTop = 80000;
+      await frames(6);
+      const viewTop = column.getBoundingClientRect().top + 60;
+      const anchor = [...column.querySelectorAll('.st-board-card')].find((card) => card.getBoundingClientRect().top >= viewTop);
+      const before = anchor.getBoundingClientRect().top;
+      for (let step = 0; step < 4; step += 1) {
+        column.scrollTop -= 150;
+        await frames(3);
+      }
+      const scrolled = 600;
+      return { connected: anchor.isConnected, drift: Math.round(anchor.getBoundingClientRect().top - before - scrolled) };
+    });
+    assert.deepEqual(drift, { connected: true, drift: 0 });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: a later change that brings no arrival leaves the wake on its first clock', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.evaluate(() => complete('wind'));
+    await page.locator('.st-board-card.is-arrived').waitFor();
+    const woke = Date.now();
+    await page.waitForTimeout(1600);
+    await page.evaluate(() => complete('bowline'));
+    await page.waitForFunction(() => document.querySelectorAll('.st-board-card.is-arrived').length === 0, null, { timeout: 2000 });
+    assert.ok(Date.now() - woke < 3000, `the wake settled ${Date.now() - woke} ms after it began`);
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

@@ -72,10 +72,11 @@ function focusInView(element) {
   element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
-// Holds the roving stop for a container of columns. A move to a card the column has not rendered yet pins it as
-// pending; once it renders, it takes focus and scrolls in under the sticky heading.
+// Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
+// a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
 export function useRovingFocus(layout) {
   const ref = useRef(null);
+  const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
   const [pending, setPending] = useState(null);
   const stop = entryStop(layout, memory);
@@ -87,18 +88,37 @@ export function useRovingFocus(layout) {
     if (element) focusInView(element);
   }, [pending]);
 
+  useEffect(() => {
+    const lost = focused.current;
+    if (lost === null || lost.isConnected) return;
+    focused.current = null;
+    const fallen = document.activeElement === null || document.activeElement === document.body;
+    const element = fallen && stop !== null ? elementOfStop(ref.current, stop) : null;
+    if (element) focusInView(element);
+  });
+
   const onFocus = (event) => {
-    const focused = stopOfElement(event.target);
-    if (focused === null || (memory.last === focused.column && memory.byColumn[focused.column] === focused.id)) return;
-    setMemory({ last: focused.column, byColumn: { ...memory.byColumn, [focused.column]: focused.id } });
+    const at = stopOfElement(event.target);
+    if (at === null) return;
+    focused.current = event.target;
+    if (memory.last === at.column && memory.byColumn[at.column] === at.id) return;
+    setMemory({ last: at.column, byColumn: { ...memory.byColumn, [at.column]: at.id } });
+  };
+
+  // Focus leaving on purpose lets go of the element; one that left because its element unmounted is caught above.
+  const onBlur = (event) => {
+    const element = event.target;
+    queueMicrotask(() => {
+      if (element.isConnected && focused.current === element) focused.current = null;
+    });
   };
 
   const onKeyDown = (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const from = stopOfElement(event.target);
     if (from === null) return;
-    const focused = event.target.getBoundingClientRect();
-    const y = (focused.top + focused.bottom) / 2;
+    const box = event.target.getBoundingClientRect();
+    const y = (box.top + box.bottom) / 2;
     const nearest = (column) => nearestStop(y, [...ref.current.querySelectorAll(`[data-column="${column.name}"] :is(.st-board-card, .st-board-show-all)`)]
       .map((element) => ({ id: stopOfElement(element).id, ...element.getBoundingClientRect().toJSON() }))) ?? column.stops[0];
     const to = moveStop(layout, from, event.key, nearest);
@@ -110,9 +130,7 @@ export function useRovingFocus(layout) {
   };
 
   const stopIn = (column) => (stop?.column === column ? stop.id : undefined);
-  const pinnedIn = (column) => [stop, pending]
-    .filter((held) => held?.column === column && typeof held.id === 'string')
-    .map((held) => held.id);
+  const pendingIn = (column) => (pending?.column === column ? pending.id : undefined);
 
-  return { ref, stopIn, pinnedIn, onFocus, onKeyDown };
+  return { ref, stopIn, pendingIn, onFocus, onBlur, onKeyDown };
 }

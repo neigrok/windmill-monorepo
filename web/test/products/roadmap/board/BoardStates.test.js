@@ -50,7 +50,7 @@ test('BoardStates — from 744px the skeleton holds the three columns with their
   const card = '<span class="st-board-skeleton-card st-board-skeleton-card--columns" aria-hidden="true"><span class="st-board-skeleton-rail"></span>'
     + '<span class="st-board-skeleton-lines"><span class="st-board-skeleton-line"></span><span class="st-board-skeleton-line"></span></span></span>';
   assert.equal(frame({ loading: true }), [
-    '<div class="st-board-columns" aria-busy="true">',
+    '<div class="st-board-columns" aria-busy="true" tabindex="-1">',
     '<section class="st-board-columns-column st-board-columns-column--locked"><h2 class="st-board-columns-heading st-board-columns-heading--locked">',
     `<span class="st-board-columns-title">Locked</span></h2>${card}${card}${card}</section>`,
     '<section class="st-board-columns-column st-board-columns-column--upNext"><h2 class="st-board-columns-heading st-board-columns-heading--upNext">',
@@ -70,7 +70,7 @@ test('BoardStates — the phone skeleton holds Up next over the band, whose tabs
     '<div class="st-board-switch st-board-switch--phone" role="group" aria-label="View">',
     '<button type="button" class="st-board-switch-option" aria-label="Board" aria-pressed="true"><svg/></button>',
     '<button type="button" class="st-board-switch-option" aria-label="Graph" aria-pressed="false"><svg/></button></div></header>',
-    '<div class="st-board-phone" aria-busy="true"><div class="st-board-phone-panes"><div class="st-board-phone-pane is-shown">',
+    '<div class="st-board-phone" aria-busy="true" tabindex="-1"><div class="st-board-phone-panes"><div class="st-board-phone-pane is-shown">',
     `<h2 class="st-board-phone-heading">Up next</h2>${card('reason')}${card('plain')}${card('reason')}</div></div>`,
     `<div class="st-board-phone-band st-board-quiet-band" aria-hidden="true"><div class="st-board-phone-segments">${tab('Locked', false)}${tab('Up next', true)}${tab('Done', false)}</div></div>`,
     '</div>',

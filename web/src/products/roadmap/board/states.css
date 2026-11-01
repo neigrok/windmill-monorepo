@@ -1,5 +1,10 @@
 /* The Board's states: skeleton, load error, empty roadmap and Roadmap complete, in the columns' frame grammar. */
 
+/* ---- The skeleton takes focus after Try again so it is not lost; a still region, it draws no ring. ---- */
+[aria-busy="true"]:focus {
+  outline: none;
+}
+
 /* ---- Skeleton card: from 744px the sunken ground breathes; on the phone a still card outline. ---- */
 .st-board-skeleton-card {
   flex-shrink: 0;

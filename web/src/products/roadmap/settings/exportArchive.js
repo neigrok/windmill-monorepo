@@ -6,6 +6,7 @@ import { ProgressLattice } from '../sync/progressLattice.js';
 import { SyncStore } from '../sync/SyncStore.js';
 import { TreeLattice } from '../sync/lattice.js';
 import { serializePlan } from '../paste/planGrammar.js';
+import { captureError } from '../../../telemetry/sentry.js';
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -48,9 +49,14 @@ export async function buildExportArchive() {
   return { count: files.length };
 }
 
-// The progress overlay already falls back to the document's seed statuses.
+// The progress overlay already falls back to the document's seed statuses. Its reads report as the export's, so a failed
+// export never reads as a roadmap that would not open.
 async function loadServerTree(treeId) {
-  const repository = new HttpTreeRepository({ treeId });
+  const repository = new HttpTreeRepository({
+    treeId,
+    operation: 'roadmap-export-load',
+    reportFailure: (operation) => captureError('roadmap', operation, '', '#/settings'),
+  });
   const treeData = await repository.loadTree().catch(() => null);
   if (!treeData) return null;
   const overlay = await repository.loadProgress(treeData);

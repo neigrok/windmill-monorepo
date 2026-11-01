@@ -10,6 +10,9 @@ import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, bo
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { progressFigure, progressLabel } from './copy.js';
 
+// Where focus lands once a retried load settles: the columns' tab stop, or the state's own button.
+const FOCUS_AFTER_LOAD = '[data-column] [tabindex="0"], [data-column][tabindex="0"], .st-board-state button';
+
 // Everything painted beneath the opaque Board leaves the tab order and the accessibility tree while it is shown: the
 // layer's siblings stacked under it, the Graph's own overlays among them, and any that mount while it stays.
 export function coverBeneath(layer) {
@@ -32,7 +35,7 @@ export function coverBeneath(layer) {
   };
 }
 
-export default function BoardView({
+function BoardView({
   tree,
   completed,
   completedAt,
@@ -62,6 +65,7 @@ export default function BoardView({
   const [shown, setShown] = useState('upNext');
   const [wasRevealing, setWasRevealing] = useState(false);
   const boardRef = useRef(null);
+  const retried = useRef(false);
   const phone = breakpoint === 'phone';
   const revealing = active && board !== null;
 
@@ -80,6 +84,19 @@ export default function BoardView({
     if (!revealing) return;
     boardRef.current?.querySelector('.st-board-card[aria-current="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
   }, [revealing]);
+
+  // After Try again, focus follows the Board through its frames: the skeleton while it loads, then the columns' tab stop,
+  // or Try again or New step if the roadmap failed again or came back empty.
+  useEffect(() => {
+    if (!retried.current) return;
+    if (frame !== 'loading') retried.current = false;
+    boardRef.current?.querySelector(frame === 'loading' ? '[aria-busy="true"]' : FOCUS_AFTER_LOAD)?.focus();
+  }, [frame]);
+
+  const retry = () => {
+    retried.current = true;
+    onRetry();
+  };
 
   const onExpandDone = () => setDoneExpanded(true);
   const complete = board !== null && board.overall.done === board.overall.total;
@@ -104,7 +121,7 @@ export default function BoardView({
       )}
       {notice}
       {frame === 'loading' && <BoardSkeleton phone={phone} />}
-      {frame === 'error' && <LoadError phone={phone} onRetry={onRetry} />}
+      {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}
       {frame === 'empty' && <EmptyRoadmap onNewStep={onNewStep} />}
       {frame === 'columns' && (
         <UpNextRest.Provider
@@ -139,3 +156,6 @@ export default function BoardView({
     </div>
   );
 }
+
+// While the Board stays hidden it skips the host's renders; it catches up on everything the moment it is shown.
+export default React.memo(BoardView, (previous, next) => !previous.active && !next.active);

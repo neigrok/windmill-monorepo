@@ -1,11 +1,11 @@
 // From 744px: Locked · Up next · Done side by side, each scrolling under its sticky heading. At 1024px and up
 // all three stand; below it one side column folds to a rail and Show swaps which one, Up next never folds.
 
-import React, { useContext, useId, useEffect, useRef, useState } from 'react';
+import React, { useContext, useId, useEffect, useMemo, useRef, useState } from 'react';
 import './columns.css';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
-import { Chevron, ColumnCards, useArrivals } from './StepCard.jsx';
+import { Chevron, ColumnCards, useArrivals } from './ColumnCards.jsx';
 import { UpNextRest } from './BoardStates.jsx';
 import { RAIL, columnStops, useRovingFocus } from './traversal.js';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount, showColumn } from './copy.js';
@@ -31,13 +31,17 @@ export function railToReveal(railed, column) {
 export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone }) {
   const showPressed = useRef(false);
   const stage = columnStage({ band, railed });
-  const arrived = useArrivals(board);
+  const [arrived, settle] = useArrivals(board);
   const upNextRest = useContext(UpNextRest);
-  const shown = Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })]));
-  const roving = useRovingFocus(board.columns.map((column) => ({
+  const shown = useMemo(
+    () => Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })])),
+    [board, doneExpanded],
+  );
+  const layout = useMemo(() => board.columns.map((column) => ({
     name: column.name,
     stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(shown[column.name]),
-  })));
+  })), [shown, band, railed]);
+  const roving = useRovingFocus(layout);
 
   // The rail that was pressed has stood up and a new rail took its place, so focus moves to that rail's Show.
   useEffect(() => {
@@ -57,8 +61,13 @@ export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSe
     onExpandDone();
   };
 
+  const focus = (event) => {
+    roving.onFocus(event);
+    settle(event.target.dataset.stepId);
+  };
+
   return (
-    <div className="st-board-columns" ref={roving.ref} onFocus={roving.onFocus} onKeyDown={roving.onKeyDown}>
+    <div className="st-board-columns" ref={roving.ref} onFocus={focus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
       {board.columns.map((column) => (stage[column.name] === 'rail'
         ? (
           <ColumnRail
@@ -74,7 +83,7 @@ export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSe
               <ColumnCards
                 shown={shown[column.name]}
                 stopId={roving.stopIn(column.name)}
-                pinned={roving.pinnedIn(column.name)}
+                pendingId={roving.pendingIn(column.name)}
                 arrived={arrived}
                 selectedId={selectedId}
                 onSelect={onSelect}

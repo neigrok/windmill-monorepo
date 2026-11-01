@@ -41,17 +41,23 @@ top when it stands again.
 While the Board is shown, `coverBeneath` in `BoardView.jsx` makes everything stacked under its layer
 inert, the Graph's overlays and legend included.
 
-Each column renders only the cards in view plus ten either side (`ColumnCards` in `StepCard.jsx`),
-measuring each card as it renders and standing a spacer in for every stretch it skips. The roving
-stop and the selected step always render, so focus and a reveal reach them anywhere in the column.
+Each column renders only the cards in view plus ten either side (`ColumnCards.jsx`), estimating an
+unmeasured card's height from its text and the column's width, measuring each card as it renders and
+standing a spacer in for every stretch it skips. It keeps the first card in view still as cards above it
+settle, in place of the browser's scroll anchoring, which the columns turn off and WebKit lacks. The
+roving stop and the selected step always render, so focus and a reveal reach them anywhere in the column.
 Above twelve, Done folds to its twelve newest completions and a Show all row (`Board.shownCards`).
-The columns are one tab stop with roving focus (`traversal.js`): Tab enters on the card last focused,
-else the first Up next card; Up and Down move within a column, Home and End to its ends, and Left and
-Right to the neighbouring column's card at the nearest height, skipping an empty column and stopping
-on a rail's Show. Enter is the card's own button and selects its step. On phones each pane is one tab
-stop of its own with the same Up, Down, Home and End, and the tabs keep their own arrow keys. A step
-that becomes up next, or a new step that is not done, wakes once while the Board stays mounted
-(`arrivals` in `Board.js`); reduced motion fades it in, and focus landing on it ends the wake.
+The columns are one tab stop with roving focus (`traversal.js`). A stop is a card, the Show all row or a
+rail's Show. Tab enters on the stop last focused while it still stands, else the stop a column last
+held (Up next's before the others'), else the first Up next card, else the first stop of any column. Up and
+Down move within a column, Home and End to its ends, and Left and Right to the neighbouring column's
+stop at the nearest height, skipping an empty column; a rail offers only its Show. Enter is the stop's
+own button, so a card selects its step. A focused stop that unmounts hands focus to the new stop, and
+after Try again focus rests on the skeleton until the roadmap loads. On phones each pane is one tab stop
+of its own with the same Up, Down, Home and End, and the tabs keep their own arrow keys. A step that
+becomes up next, or a new step that is not done, wakes once while the Board stays mounted (`arrivals` in
+`Board.js`); reduced motion fades it in, and focus landing on it ends the wake. While hidden the Board
+skips the host's renders and catches up when shown, so a step that arrived meanwhile wakes then.
 
 The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
 would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap
