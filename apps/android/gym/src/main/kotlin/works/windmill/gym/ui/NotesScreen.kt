@@ -1,7 +1,9 @@
 package works.windmill.gym.ui
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -37,14 +40,68 @@ import works.windmill.gym.presentation.Ids
 import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.Notes
+import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.store.Deletion
+import works.windmill.gym.store.DeletionsStore
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.NotesStore
+import works.windmill.gym.store.RefusedWrite
+import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
+
+// What the notes list draws: the seat's notes, how many, whether they are read, and the writes the log refused.
+@Stable
+interface NotesState {
+    val notes: List<Note>
+    val noteCount: Int
+    val notesRead: Boolean
+    val noteRefusals: List<RefusedWrite>
+    val catalog: List<Exercise>
+}
+
+// What the notes list asks of the stores.
+interface NotesEvents {
+    suspend fun readNotes(): GymResult<List<Note>>
+    suspend fun reorderNotes(moved: String, drawn: List<String>): GymResult<List<Note>>
+    suspend fun delete(deletion: Deletion.Note): WriteFailure?
+    fun clearRefusals()
+}
+
+// What the note editor asks of the stores.
+interface NoteEditorEvents {
+    suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note>
+    suspend fun delete(deletion: Deletion.Note): WriteFailure?
+}
+
+// The notes list and the note editor over the room's stores.
+class NotesBinding(
+    private val notebook: NotesStore,
+    private val routines: RoutinesStore,
+    private val deletions: DeletionsStore,
+    private val dismissRefusals: () -> Unit,
+) : NotesState, NotesEvents, NoteEditorEvents {
+    constructor(store: TrainingStore) : this(store.notes, store.routines, store.deletions, store::clearRefusals)
+
+    override val notes: List<Note> get() = notebook.all
+    override val noteCount: Int get() = notebook.noteCount
+    override val notesRead: Boolean get() = notebook.notesRead
+    override val noteRefusals: List<RefusedWrite> get() = notebook.noteRefusals
+    override val catalog: List<Exercise> get() = routines.catalog
+
+    override suspend fun readNotes(): GymResult<List<Note>> = notebook.readNotes()
+    override suspend fun reorderNotes(moved: String, drawn: List<String>): GymResult<List<Note>> = notebook.reorderNotes(moved, drawn)
+    override suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note> = notebook.saveNote(id, write)
+    override suspend fun delete(deletion: Deletion.Note): WriteFailure? = deletions.delete(deletion)
+    override fun clearRefusals() = dismissRefusals()
+}
 
 @Composable
 fun NotesScreen(
-    store: TrainingStore,
+    state: NotesState,
+    events: NotesEvents,
     isSignedIn: Boolean,
     backTo: String,
     onBack: () -> Unit,
@@ -60,13 +117,13 @@ fun NotesScreen(
     var failure by remember { mutableStateOf<String?>(null) }
     var order by remember { mutableStateOf<List<Note>?>(null) }
     var savingOrder by remember { mutableStateOf(false) }
-    val hasRead = read && store.notes.notesRead
-    LaunchedEffect(store, isSignedIn, attempt) {
+    val hasRead = read && state.notesRead
+    LaunchedEffect(events, isSignedIn, attempt) {
         if (!isSignedIn) return@LaunchedEffect
         reading = true
         failure = null
         try {
-            when (val result = store.notes.readNotes()) {
+            when (val result = events.readNotes()) {
                 is GymResult.Ok -> read = true
                 is GymResult.Failed -> failure = result.why.line("Your notes could not be read.")
             }
@@ -79,23 +136,23 @@ fun NotesScreen(
         say(null)
         scope.launch {
             try {
-                val result = store.notes.reorderNotes(moved, next.map { it.id })
+                val result = events.reorderNotes(moved, next.map { it.id })
                 if (result is GymResult.Failed) say(result.why.line("The order stayed as it was."))
             } finally { order = null; savingOrder = false }
         }
     }
     GymScreen(title = Notes.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize()) {
-            NoteList(order ?: store.notes.all, enabled = !savingOrder,
+            NoteList(order ?: state.notes, enabled = !savingOrder,
                 modifier = Modifier.weight(1f), onOpen = { onEdit(it, "") },
                 onMove = { if (!savingOrder) order = it }, onSettle = ::reorder,
                 onDelete = { note ->
-                    val problem = store.deletions.delete(Deletion.Note(note.id))
+                    val problem = events.delete(Deletion.Note(note.id))
                     problem?.line("that note is still here")
                 },
                 header = {
                     Text(Notes.honesty, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.ink)
-                    if (isSignedIn) Refusals(store.notes.noteRefusals, store.routines.catalog, store::clearRefusals)
+                    if (isSignedIn) Refusals(state.noteRefusals, state.catalog, events::clearRefusals)
                     when {
                         !isSignedIn -> Text(Notes.signedOut, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.inkDim)
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -105,7 +162,7 @@ fun NotesScreen(
                         }
                         !hasRead -> Text("Reading your notes…", style = WindmillFont.body(16), color = skin.inkDim)
                     }
-                    if (isSignedIn && hasRead && failure == null && store.notes.noteCount == 0) {
+                    if (isSignedIn && hasRead && failure == null && state.noteCount == 0) {
                         Notes.placeholders.forEach { title ->
                             Row(Modifier.fillMaxWidth().heightIn(min = 70.dp)
                                 .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) }
@@ -120,10 +177,10 @@ fun NotesScreen(
                 }, showRows = isSignedIn && hasRead && failure == null,
                 footer = {
                     if (isSignedIn && hasRead && failure == null) {
-                        if (store.notes.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = skin.inkDim)
+                        if (state.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = skin.inkDim)
                     }
                 })
-            if (!isSignedIn || (hasRead && failure == null && store.notes.noteCount < Notes.maxNotes)) {
+            if (!isSignedIn || (hasRead && failure == null && state.noteCount < Notes.maxNotes)) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
                     Button(onClick = { if (isSignedIn) onEdit(null, "") else onSignIn() },
                         enabled = !savingOrder, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
@@ -268,9 +325,9 @@ private fun NoteList(
 
 @Composable
 fun NoteEditorScreen(
+    events: NoteEditorEvents,
     note: Note?,
     seedTitle: String,
-    store: TrainingStore,
     backTo: String,
     onBack: () -> Unit,
     onDone: () -> Unit,
@@ -291,7 +348,7 @@ fun NoteEditorScreen(
         said = null
         scope.launch {
             try {
-                when (val result = store.notes.saveNote(id, NoteWrite(title.trim(), body.trim()))) {
+                when (val result = events.saveNote(id, NoteWrite(title.trim(), body.trim()))) {
                     is GymResult.Ok -> onDone()
                     is GymResult.Failed -> said = result.why.line("The note stayed as it was.")
                 }
@@ -319,7 +376,7 @@ fun NoteEditorScreen(
                 saving = true
                 scope.launch {
                     try {
-                        val failure = store.deletions.delete(Deletion.Note(note.id, Deletion.Note.Origin.Editor))
+                        val failure = events.delete(Deletion.Note(note.id, Deletion.Note.Origin.Editor))
                         if (failure == null) onDone() else said = failure.line("that note is still here")
                     } finally { saving = false }
                 }
@@ -348,5 +405,52 @@ private fun NoteField(label: String, value: String, onValue: (String) -> Unit, p
                 contentDescription = "$label field"
                 problem?.let { error(it) }
             })
+    }
+}
+
+private data class NotesPreviewState(override val notes: List<Note>) : NotesState {
+    override val noteCount: Int get() = notes.size
+    override val notesRead: Boolean = true
+    override val noteRefusals: List<RefusedWrite> = emptyList()
+    override val catalog: List<Exercise> = emptyList()
+}
+
+// Answers the list's read with the preview's notes; writes change nothing.
+private class NotesPreviewEvents(private val notes: List<Note>) : NotesEvents, NoteEditorEvents {
+    override suspend fun readNotes(): GymResult<List<Note>> = GymResult.Ok(notes)
+    override suspend fun reorderNotes(moved: String, drawn: List<String>): GymResult<List<Note>> = GymResult.Ok(notes)
+    override suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note> = GymResult.Ok(Note(id, title = write.title, body = write.body))
+    override suspend fun delete(deletion: Deletion.Note): WriteFailure? = null
+    override fun clearRefusals() = Unit
+}
+
+private val notesPreviewNotes = listOf(
+    Note("note_goal", 0, "What I am training for", "A 100 kg bench by spring.\nStay pain-free in the left shoulder."),
+    Note("note_knee", 1, "Knee", "Box squats when it aches; no lunges."),
+    Note("note_tone", 2, "Tone"),
+)
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun NotesListPreview() {
+    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
+        GymMaterial {
+            val events = NotesPreviewEvents(notesPreviewNotes)
+            NotesScreen(NotesPreviewState(notesPreviewNotes), events, isSignedIn = true, backTo = "Coach", onBack = {},
+                onEdit = { _, _ -> }, onSignIn = {}, say = {})
+        }
+    }
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun NoteEditorPreview() {
+    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
+        GymMaterial {
+            NoteEditorScreen(NotesPreviewEvents(notesPreviewNotes), notesPreviewNotes.first(), "", backTo = Notes.title,
+                onBack = {}, onDone = {})
+        }
     }
 }

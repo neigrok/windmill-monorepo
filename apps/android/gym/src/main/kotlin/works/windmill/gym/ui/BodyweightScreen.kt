@@ -1,8 +1,10 @@
 package works.windmill.gym.ui
 
+import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +33,8 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +66,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
@@ -74,10 +79,40 @@ import works.windmill.gym.presentation.DatedPoint
 import works.windmill.gym.presentation.DatedSeries
 import works.windmill.gym.presentation.ParsedWeight
 import works.windmill.gym.presentation.WeighIn
+import works.windmill.gym.store.BodyweightStore
 import works.windmill.gym.store.Deletion
+import works.windmill.gym.store.DeletionsStore
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
+
+// What the bodyweight page draws: the drawn series, the series a held delete still stands on, and whether it is read.
+@Stable
+interface BodyweightState {
+    val weighIns: List<WeighIn>
+    val allWeighIns: List<WeighIn>
+    val bodyweightRead: Boolean
+}
+
+// What the bodyweight page asks of the stores.
+interface BodyweightEvents {
+    suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure?
+    fun withhold(deletion: Deletion.Bodyweight)
+}
+
+// The bodyweight page over the room's stores.
+class BodyweightBinding(private val bodyweight: BodyweightStore, private val deletions: DeletionsStore) : BodyweightState, BodyweightEvents {
+    constructor(store: TrainingStore) : this(store.bodyweight, store.deletions)
+
+    override val weighIns: List<WeighIn> get() = bodyweight.drawn
+    override val allWeighIns: List<WeighIn> get() = bodyweight.allWeighIns
+    override val bodyweightRead: Boolean get() = bodyweight.bodyweightRead
+
+    override suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? = bodyweight.weighIn(dateLocal, weightKg)
+    override fun withhold(deletion: Deletion.Bodyweight) = deletions.withhold(deletion)
+}
 
 @Composable
 internal fun WeighInHandle() {
@@ -241,7 +276,7 @@ private val weighInSaver = listSaver<WeighIn?, Any?>(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, say: (String?) -> Unit,
+fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: String, onBack: () -> Unit, say: (String?) -> Unit,
     onDraftOpen: (Boolean) -> Unit = {}) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
@@ -259,8 +294,8 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
     var refused by rememberSaveable { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
     val sheetStates = rememberSaveableStateHolder()
-    val rows = Bodyweight.windowed(store.bodyweight.drawn, ChartWindow.All, today)
-    val standing = Bodyweight.windowed(store.bodyweight.allWeighIns, ChartWindow.All, today)
+    val rows = Bodyweight.windowed(state.weighIns, ChartWindow.All, today)
+    val standing = Bodyweight.windowed(state.allWeighIns, ChartWindow.All, today)
     val shown = Bodyweight.windowed(rows, window, today)
 
     fun close(after: () -> Unit = {}) {
@@ -280,15 +315,15 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
     GymScreen(title = Bodyweight.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (!store.bodyweight.bodyweightRead) {
+            if (!state.bodyweightRead) {
                 Text("Reading your weigh-ins…", style = WindmillFont.body(16), color = skin.inkDim)
             }
             if (standing.isEmpty()) {
-                if (store.bodyweight.bodyweightRead) {
+                if (state.bodyweightRead) {
                     Text(Bodyweight.nothingYet, style = WindmillFont.body(16), color = skin.inkDim)
                 }
             } else {
-                if (store.bodyweight.bodyweightRead) {
+                if (state.bodyweightRead) {
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(skin.surface).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -327,7 +362,7 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
                         key(entry.dateLocal) {
                             DeleteSwipeRow(Bodyweight.deleteRow, onDelete = {
                                 say(null)
-                                store.deletions.withhold(Deletion.Bodyweight(entry.dateLocal))
+                                events.withhold(Deletion.Bodyweight(entry.dateLocal))
                                 false
                             }) {
                                 Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).background(skin.canvas)
@@ -361,7 +396,7 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
                             refused = null
                             scope.launch {
                                 try {
-                                    val failed = store.bodyweight.weighIn(dateLocal, weightKg)
+                                    val failed = events.weighIn(dateLocal, weightKg)
                                     if (failed != null) refused = failed.line("that weigh-in wasn’t saved")
                                     saving = false
                                     if (failed == null) close()
@@ -369,9 +404,41 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
                             }
                         }
                     },
-                    onDelete = { close { say(null); store.deletions.withhold(Deletion.Bodyweight(open.dateLocal)) } },
+                    onDelete = { close { say(null); events.withhold(Deletion.Bodyweight(open.dateLocal)) } },
                 )
             }
         }
     }
 }
+
+private data class BodyweightPreviewState(override val weighIns: List<WeighIn>) : BodyweightState {
+    override val allWeighIns: List<WeighIn> get() = weighIns
+    override val bodyweightRead: Boolean = true
+}
+
+private object BodyweightPreviewEvents : BodyweightEvents {
+    override suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? = null
+    override fun withhold(deletion: Deletion.Bodyweight) = Unit
+}
+
+@Composable
+private fun BodyweightPreview(state: BodyweightState) {
+    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
+        GymMaterial { BodyweightScreen(state, BodyweightPreviewEvents, backTo = "The log", onBack = {}, say = {}) }
+    }
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun BodyweightSeriesPreview() {
+    val today = LocalDate.now()
+    BodyweightPreview(BodyweightPreviewState(listOf(83.4, 83.1, 82.9, 83.0, 82.6, 82.4).mapIndexed { index, kg ->
+        WeighIn(today.minusDays(50L - index * 10L).toString(), kg)
+    }))
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun BodyweightEmptyPreview() = BodyweightPreview(BodyweightPreviewState(emptyList()))

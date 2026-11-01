@@ -1,8 +1,10 @@
 package works.windmill.gym.ui
 
+import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -29,9 +31,11 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
@@ -43,17 +47,86 @@ import works.windmill.gym.presentation.LogReadout
 import works.windmill.gym.presentation.LogEntry
 import works.windmill.gym.presentation.logTimeline
 import works.windmill.gym.presentation.SessionSummary
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.PlanSnapshot
+import works.windmill.gym.presentation.StatsProgress
+import works.windmill.gym.presentation.TopSet
+import works.windmill.gym.presentation.WeighIn
+import works.windmill.gym.store.BodyweightStore
 import works.windmill.gym.store.Deletion
+import works.windmill.gym.store.DeletionsStore
+import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.Older
+import works.windmill.gym.store.RoutinesStore
+import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.RecoveryRead
+import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
+
+// What the log draws: the account's workouts, weigh-ins and progress, and how far back the log is read.
+@Stable
+interface LogState {
+    val accountKey: String
+    val older: Older
+    val readingShown: Boolean
+    val allSessions: List<SessionSummary>
+    val recent: List<SessionSummary>
+    val progress: StatsProgress?
+    val progressFailure: WriteFailure?
+    val progressLoading: Boolean
+    val historyRead: Boolean
+    val weighIns: List<WeighIn>
+    val catalog: List<Exercise>
+}
+
+// What the log asks of the stores.
+interface LogEvents {
+    suspend fun loadProgress(force: Boolean = false)
+    fun showReading()
+    suspend fun loadOlder()
+    suspend fun retryLog()
+    fun withhold(deletion: Deletion.Bodyweight)
+    suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure?
+}
+
+// The log over the room's stores.
+class LogBinding(
+    private val seat: TrainingSeat,
+    private val history: HistoryReads,
+    private val bodyweight: BodyweightStore,
+    private val routines: RoutinesStore,
+    private val deletions: DeletionsStore,
+) : LogState, LogEvents {
+    constructor(store: TrainingStore) : this(store.seat, store.history, store.bodyweight, store.routines, store.deletions)
+
+    override val accountKey: String get() = seat.accountKey
+    override val older: Older get() = history.older
+    override val readingShown: Boolean get() = history.readingShown
+    override val allSessions: List<SessionSummary> get() = history.allSessions
+    override val recent: List<SessionSummary> get() = history.recent
+    override val progress: StatsProgress? get() = history.progress
+    override val progressFailure: WriteFailure? get() = history.progressFailure
+    override val progressLoading: Boolean get() = history.progressLoading
+    override val historyRead: Boolean get() = history.historyRead
+    override val weighIns: List<WeighIn> get() = bodyweight.drawn
+    override val catalog: List<Exercise> get() = routines.catalog
+
+    override suspend fun loadProgress(force: Boolean) { history.loadProgress(force) }
+    override fun showReading() = history.showReading()
+    override suspend fun loadOlder() = history.loadOlder()
+    override suspend fun retryLog() = history.retryLog()
+    override fun withhold(deletion: Deletion.Bodyweight) = deletions.withhold(deletion)
+    override suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? = bodyweight.weighIn(dateLocal, weightKg)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(
-    store: TrainingStore,
+    state: LogState,
+    events: LogEvents,
     seat: String,
     onOpenSession: (SessionSummary) -> Unit,
     onOpenBodyweight: () -> Unit,
@@ -70,17 +143,17 @@ fun LogScreen(
     val scope = rememberCoroutineScope()
     val nowMs = now()
     val zone = ZoneId.systemDefault()
-    val progress = store.history.progress.takeIf { store.history.progressFailure == null }
-    val historyRead = store.history.historyRead
-    val oldestDay = if (store.history.older == Older.End) null else {
-        store.history.allSessions.minOfOrNull { it.startedAtMs }
+    val progress = state.progress.takeIf { state.progressFailure == null }
+    val historyRead = state.historyRead
+    val oldestDay = if (state.older == Older.End) null else {
+        state.allSessions.minOfOrNull { it.startedAtMs }
             ?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
             ?: Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
     }
-    val timeline = logTimeline(store.history.recent, progress, store.bodyweight.drawn, nowMs, zone, oldestDay)
+    val timeline = logTimeline(state.recent, progress, state.weighIns, nowMs, zone, oldestDay)
     val days = LogReadout.days(timeline, nowMs, zone)
     val marked = timeline.filterIsInstance<LogEntry.Moment.Best>().mapTo(mutableSetOf()) { it.best.sessionId }
-    val logHolds = store.history.allSessions.any { !it.session.isOpen }
+    val logHolds = state.allSessions.any { !it.session.isOpen }
     var weighingIn by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
@@ -98,10 +171,10 @@ fun LogScreen(
     }
     val firstDay = days.firstOrNull()?.date
     LaunchedEffect(firstDay) { if (pinned.top) listState.scrollToItem(0) }
-    LaunchedEffect(store.seat.accountKey) { store.history.loadProgress() }
+    LaunchedEffect(state.accountKey) { events.loadProgress() }
     // The reading foot shows once its wait passes 400 ms, timed here rather than in the list so scrolling keeps it.
-    val reading = store.history.older == Older.Reading
-    LaunchedEffect(reading) { if (reading) { delay(400); store.history.showReading() } }
+    val reading = state.older == Older.Reading
+    LaunchedEffect(reading) { if (reading) { delay(400); events.showReading() } }
     fun close() {
         if (saving || closing) return
         closing = true
@@ -122,16 +195,16 @@ fun LogScreen(
                 if (recovery?.workouts?.isNotEmpty() == true) item("on-this-phone") {
                     OnThisPhoneSection(recovery, onList = { onOpenRecovery(null) }, onInspect = { onOpenRecovery(it) })
                 }
-                if (store.history.progressFailure != null) item("progress-failed") {
+                if (state.progressFailure != null) item("progress-failed") {
                     Column {
                         Text("Progress unavailable", style = WindmillFont.body(16), color = skin.ink)
-                        Text(store.history.progressFailure!!.line("Your progress could not be read."), style = WindmillFont.body(14), color = skin.inkDim)
-                        TextButton(onClick = { scope.launch { store.history.loadProgress(force = true) } }) { Text("Try again") }
+                        Text(state.progressFailure!!.line("Your progress could not be read."), style = WindmillFont.body(14), color = skin.inkDim)
+                        TextButton(onClick = { scope.launch { events.loadProgress(force = true) } }) { Text("Try again") }
                     }
-                } else if (store.history.progressLoading && store.history.progress == null) item("progress-reading") {
+                } else if (state.progressLoading && state.progress == null) item("progress-reading") {
                     Text("Reading progress…", style = WindmillFont.body(14), color = skin.inkDim)
                 }
-                if (timeline.isEmpty() && store.history.older == Older.End && !logHolds) item("empty") {
+                if (timeline.isEmpty() && state.older == Older.End && !logHolds) item("empty") {
                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text("No workouts yet", style = WindmillFont.body(28, FontWeight.Bold).copy(lineHeight = 39.sp), color = skin.ink)
                         Text("Your training will land here.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
@@ -154,15 +227,15 @@ fun LogScreen(
                                 }
                             }
                             is LogEntry.Weight -> DeleteSwipeRow("Delete weigh-in", onDelete = {
-                                store.deletions.withhold(Deletion.Bodyweight(entry.entry.dateLocal))
+                                events.withhold(Deletion.Bodyweight(entry.entry.dateLocal))
                                 false
                             }) {
-                                WeightRow(entry, LogReadout.weight(entry, store.bodyweight.drawn, zone, historyRead)) {
+                                WeightRow(entry, LogReadout.weight(entry, state.weighIns, zone, historyRead)) {
                                     telemetry.event("gym_action", mapOf("screen" to "log", "action" to "open_bodyweight", "outcome" to "ok"))
                                     onOpenBodyweight()
                                 }
                             }
-                            is LogEntry.Moment -> MomentRow(entry, LogReadout.moment(entry, store.routines.catalog, zone)) {
+                            is LogEntry.Moment -> MomentRow(entry, LogReadout.moment(entry, state.catalog, zone)) {
                                 if (entry is LogEntry.Moment.Best) {
                                     telemetry.event("gym_action", mapOf("screen" to "log", "action" to "open_record", "outcome" to "ok"))
                                     onOpenMovement(entry.best.exerciseId, entry.best.sessionId)
@@ -171,9 +244,9 @@ fun LogScreen(
                         }
                     }
                 }
-                if (store.history.older != Older.End || logHolds || timeline.isNotEmpty()) {
-                    item("foot") { LogFoot(store.history.older, store.history.readingShown, store.history.allSessions.lastOrNull { !it.session.isOpen },
-                        onLoad = { scope.launch { store.history.loadOlder() } }, onRetry = { scope.launch { store.history.retryLog() } }) }
+                if (state.older != Older.End || logHolds || timeline.isNotEmpty()) {
+                    item("foot") { LogFoot(state.older, state.readingShown, state.allSessions.lastOrNull { !it.session.isOpen },
+                        onLoad = { scope.launch { events.loadOlder() } }, onRetry = { scope.launch { events.retryLog() } }) }
                 }
             }
         }
@@ -190,13 +263,13 @@ fun LogScreen(
                         refused = null
                         scope.launch {
                             try {
-                                val failure = store.bodyweight.weighIn(date, kg)
+                                val failure = events.weighIn(date, kg)
                                 if (failure != null) refused = failure.line("That weigh-in could not be saved.")
                                 else { saving = false; close() }
                             } finally { saving = false }
                         }
                     }
-                }, onDelete = null, draftKey = "${store.seat.accountKey}:new")
+                }, onDelete = null, draftKey = "${state.accountKey}:new")
         }
     }
 }
@@ -312,3 +385,69 @@ private fun LogFoot(older: Older, readingShown: Boolean, first: SessionSummary?,
     if (older == Older.Failed) Text("That read failed.", Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         style = WindmillFont.body(14), color = skin.inkDim)
 }
+
+private data class LogPreviewState(
+    override val older: Older = Older.End,
+    override val readingShown: Boolean = false,
+    override val allSessions: List<SessionSummary> = emptyList(),
+    override val progress: StatsProgress? = null,
+    override val historyRead: Boolean = true,
+    override val weighIns: List<WeighIn> = emptyList(),
+) : LogState {
+    override val accountKey: String = "preview"
+    override val recent: List<SessionSummary> get() = allSessions
+    override val progressFailure: WriteFailure? = null
+    override val progressLoading: Boolean = false
+    override val catalog: List<Exercise> = listOf(Exercise("bench-press", "Bench Press"), Exercise("overhead-press", "Overhead Press"),
+        Exercise("back-squat", "Back Squat"), Exercise("deadlift", "Deadlift"))
+}
+
+private object LogPreviewEvents : LogEvents {
+    override suspend fun loadProgress(force: Boolean) = Unit
+    override fun showReading() = Unit
+    override suspend fun loadOlder() = Unit
+    override suspend fun retryLog() = Unit
+    override fun withhold(deletion: Deletion.Bodyweight) = Unit
+    override suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? = null
+}
+
+private val logPreviewNow = LocalDateTime.of(2026, 10, 28, 19, 30).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+private fun logPreviewWorkout(id: String, routine: String, daysAgo: Long, sets: Int, tonnageKg: Double, top: TopSet, exercises: List<String>): SessionSummary {
+    val started = logPreviewNow - daysAgo * 86_400_000 - 3_600_000
+    return SessionSummary(id, started, started + 3_300_000, plan = PlanSnapshot(routine), setCount = sets,
+        workingSetCount = sets, tonnageKg = tonnageKg, exercises = exercises, topSet = top)
+}
+
+@Composable
+private fun LogPreview(state: LogState) {
+    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
+        GymMaterial {
+            LogScreen(state, LogPreviewEvents, seat = "V", onOpenSession = {}, onOpenBodyweight = {}, onShareSession = {},
+                onDiscardSession = {}, now = { logPreviewNow })
+        }
+    }
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun LogWithWorkoutsPreview() = LogPreview(LogPreviewState(
+    allSessions = listOf(
+        logPreviewWorkout("push-b", "Push B", 0, 16, 5_120.0, TopSet(82.5, 5), listOf("bench-press", "overhead-press")),
+        logPreviewWorkout("legs-a", "Legs A", 2, 14, 7_860.0, TopSet(120.0, 5), listOf("back-squat", "deadlift")),
+        logPreviewWorkout("push-a", "Push A", 4, 15, 4_880.0, TopSet(80.0, 5), listOf("bench-press", "overhead-press")),
+    ),
+    weighIns = listOf(WeighIn("2026-10-24", 82.6), WeighIn("2026-10-28", 82.3)),
+))
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun LogEmptyPreview() = LogPreview(LogPreviewState())
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Composable
+private fun LogReadingPreview() = LogPreview(LogPreviewState(older = Older.Reading, readingShown = true, historyRead = false,
+    allSessions = listOf(logPreviewWorkout("push-a", "Push A", 1, 15, 4_880.0, TopSet(80.0, 5), listOf("bench-press", "overhead-press")))))

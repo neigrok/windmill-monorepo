@@ -45,7 +45,7 @@ class NotesLayoutTests {
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(2f, 2f), LocalWindmillDark provides dark) {
                     GymMaterial { Box(Modifier.height(340.dp)) {
-                        NoteEditorScreen(null, "", store, "Notes", {}, { saved++ })
+                        NoteEditorScreen(NotesBinding(store), null, "", "Notes", {}, { saved++ })
                     } }
                 }
             }

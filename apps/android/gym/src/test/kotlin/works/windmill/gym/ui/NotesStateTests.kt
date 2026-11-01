@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.remember
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -41,7 +42,7 @@ class NotesStateTests {
             var backs = 0
             var done = 0
             compose.setContent {
-                GymMaterial { NoteEditorScreen(Note("note_tone", title = "Tone"), "", store, "Notes", { backs++ }, { done++ }) }
+                GymMaterial { NoteEditorScreen(NotesBinding(store), Note("note_tone", title = "Tone"), "", "Notes", { backs++ }, { done++ }) }
             }
             compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("  Be precise.  ")
             compose.onNodeWithText(Notes.save).performClick()
@@ -59,7 +60,7 @@ class NotesStateTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             signedIn(room, *Array(3) { "note_00$it" to NoteWrite("Title $it", "") })
-            compose.setContent { GymMaterial { NotesScreen(room.store, true, "Coach", {}, { _, _ -> }, {}, {}) } }
+            compose.setContent { GymMaterial { remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(notes, notes, true, "Coach", {}, { _, _ -> }, {}, {}) } } }
             val initial = compose.onNodeWithText("Title 2").fetchSemanticsNode().id
             val move = compose.onNodeWithText("Title 2").fetchSemanticsNode().config[SemanticsActions.CustomActions].single()
             compose.runOnIdle { move.action() }
@@ -77,7 +78,7 @@ class NotesStateTests {
             signedIn(room)
             val restored = StateRestorationTester(compose)
             var done = 0
-            restored.setContent { GymMaterial { NoteEditorScreen(null, "What I am training for", room.store, "Notes", {}, { done++ }) } }
+            restored.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store), null, "What I am training for", "Notes", {}, { done++ }) } }
             compose.onNodeWithContentDescription("Title field").performClick()
             compose.onNodeWithText("What I am training for").assertIsDisplayed()
             compose.onNodeWithText(Notes.save).assertIsNotEnabled()

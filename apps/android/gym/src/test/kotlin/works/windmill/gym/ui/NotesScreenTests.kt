@@ -1,6 +1,7 @@
 package works.windmill.gym.ui
 
 import android.os.Looper
+import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
@@ -92,15 +93,16 @@ class NotesScreenTests {
             val opened = mutableListOf<Pair<Note?, String>>()
 
             compose.setContent {
-                NotesScreen(
-                    store = room.store,
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = true,
                     backTo = "Coach",
                     onBack = {},
                     onEdit = { note, seed -> opened += note to seed },
                     onSignIn = {},
                     say = {},
-                )
+                ) }
             }
 
             compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
@@ -124,15 +126,16 @@ class NotesScreenTests {
             signedIn(room, *numbered(10))
 
             compose.setContent {
-                NotesScreen(
-                    store = room.store,
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = true,
                     backTo = "Coach",
                     onBack = {},
                     onEdit = { _, _ -> },
                     onSignIn = {},
                     say = {},
-                )
+                ) }
             }
 
             compose.onNodeWithText("note 0").assertIsDisplayed()
@@ -152,10 +155,10 @@ class NotesScreenTests {
             signedIn(room, *numbered(10))
             val store = room.store
             compose.setContent {
-                NotesScreen(
-                    store = store, isSignedIn = true, backTo = "Coach", onBack = {},
+                remember(store) { NotesBinding(store) }.let { notes -> NotesScreen(
+                    state = notes, events = notes, isSignedIn = true, backTo = "Coach", onBack = {},
                     onEdit = { _, _ -> }, onSignIn = {}, say = {},
-                )
+                ) }
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
@@ -179,10 +182,10 @@ class NotesScreenTests {
             val server = signedIn(room, *numbered(10))
             val store = room.store
             compose.setContent {
-                NotesScreen(
-                    store = store, isSignedIn = true, backTo = "Coach", onBack = {},
+                remember(store) { NotesBinding(store) }.let { notes -> NotesScreen(
+                    state = notes, events = notes, isSignedIn = true, backTo = "Coach", onBack = {},
                     onEdit = { _, _ -> }, onSignIn = {}, say = {},
-                )
+                ) }
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
@@ -206,7 +209,7 @@ class NotesScreenTests {
             var done = 0
             compose.setContent {
                 NoteEditorScreen(
-                    note = note, seedTitle = "", store = store, backTo = Notes.title,
+                    note = note, seedTitle = "", events = NotesBinding(store), backTo = Notes.title,
                     onBack = {}, onDone = { done += 1 },
                 )
             }
@@ -238,15 +241,16 @@ class NotesScreenTests {
             signedIn(room, "note_000" to NoteWrite("note 0", "line 0"))
 
             compose.setContent {
-                NotesScreen(
-                    store = room.store,
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = true,
                     backTo = "Coach",
                     onBack = {},
                     onEdit = { _, _ -> },
                     onSignIn = {},
                     say = {},
-                )
+                ) }
             }
 
             compose.onNodeWithText("note 0").assertIsDisplayed()
@@ -263,15 +267,16 @@ class NotesScreenTests {
             val doors = mutableListOf<String>()
 
             compose.setContent {
-                NotesScreen(
-                    store = room.store,
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = false,
                     backTo = "Settings",
                     onBack = {},
                     onEdit = { _, _ -> doors += "edit" },
                     onSignIn = { doors += "signIn" },
                     say = {},
-                )
+                ) }
             }
 
             compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
@@ -311,15 +316,16 @@ class NotesScreenTests {
             room.store.observeEngine()
 
             compose.setContent {
-                NotesScreen(
-                    store = room.store,
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = true,
                     backTo = "Coach",
                     onBack = {},
                     onEdit = { _, _ -> },
                     onSignIn = {},
                     say = {},
-                )
+                ) }
             }
             compose.onNodeWithText("note 0").assertIsDisplayed()
 
@@ -354,15 +360,16 @@ class NotesScreenTests {
             val server = threeNotes(room)
 
             compose.setContent {
-                NotesScreen(
-                    store = room.store,
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = true,
                     backTo = "Coach",
                     onBack = {},
                     onEdit = { _, _ -> },
                     onSignIn = {},
                     say = {},
-                )
+                ) }
             }
             compose.onNodeWithText("note 0").assertIsDisplayed()
 
@@ -389,15 +396,16 @@ class NotesScreenTests {
             val server = threeNotes(room)
 
             compose.setContent {
-                NotesScreen(
-                    store = room.store,
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = true,
                     backTo = "Coach",
                     onBack = {},
                     onEdit = { _, _ -> },
                     onSignIn = {},
                     say = {},
-                )
+                ) }
             }
             compose.onNodeWithText("note 0").assertIsDisplayed()
 
@@ -419,15 +427,16 @@ class NotesScreenTests {
             val said = mutableListOf<String?>()
 
             compose.setContent {
-                NotesScreen(
-                    store = store,
+                remember(store) { NotesBinding(store) }.let { notes -> NotesScreen(
+                    state = notes,
+                    events = notes,
                     isSignedIn = true,
                     backTo = "Coach",
                     onBack = {},
                     onEdit = { _, _ -> },
                     onSignIn = {},
                     say = { said += it },
-                )
+                ) }
             }
             compose.onNodeWithText("note 0").assertIsDisplayed()
 
@@ -454,7 +463,7 @@ class NotesScreenTests {
         val telemetry = Recorder()
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
             threeNotes(room)
-            compose.setContent { GymMaterial { NotesScreen(room.store, true, "Coach", {}, { _, _ -> }, {}, {}) } }
+            compose.setContent { GymMaterial { remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(notes, notes, true, "Coach", {}, { _, _ -> }, {}, {}) } } }
             compose.onNodeWithText("note 0").assertIsDisplayed()
             compose.runOnIdle { telemetry.events.clear() }
             val handle = compose.onNodeWithContentDescription("Reorder note 0")
@@ -487,7 +496,7 @@ class NotesScreenTests {
         val telemetry = Recorder()
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
             threeNotes(room)
-            compose.setContent { GymMaterial { NotesScreen(room.store, true, "Coach", {}, { _, _ -> }, {}, {}) } }
+            compose.setContent { GymMaterial { remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(notes, notes, true, "Coach", {}, { _, _ -> }, {}, {}) } } }
             val row = compose.onNodeWithText("note 0").assertIsDisplayed()
             val left = row.getBoundsInRoot().left
             compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
@@ -521,8 +530,8 @@ class NotesScreenTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
             signedIn(room, "note_001" to NoteWrite("Private title", "Private body"))
             var done = 0
-            compose.setContent { GymMaterial { NoteEditorScreen(
-                Note("note_001", title = "Private title", body = "Private body"), "", room.store, "Notes", {}, { done++ }) } }
+            compose.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store),
+                Note("note_001", title = "Private title", body = "Private body"), "", "Notes", {}, { done++ }) } }
             compose.onNodeWithText(Notes.save).assertIsNotEnabled()
             compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
             compose.onNodeWithText(Notes.delete).performScrollTo().performClick()

@@ -69,7 +69,7 @@ class LogMomentTests {
             room.store.observeEngine()
             val opened = mutableListOf<Pair<String, String>>()
             val latestBest = hasTestTag("best:bench-press:${latest.id}")
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, onOpenMovement = { exercise, session -> opened += exercise to session }, now = { now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, onOpenMovement = { exercise, session -> opened += exercise to session }, now = { now }) } } }
             compose.onNodeWithText("Today · 24 Sep").assertIsDisplayed()
             compose.onNode(latestBest).performClick()
             assertEquals(listOf("bench-press" to latest.id), opened)
@@ -146,7 +146,7 @@ class LogMomentTests {
                 assertEquals(emptyList<SessionSummary>(), room.store.history.recent)
             }
             room.store.observeEngine()
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { now }) } } }
             compose.onNodeWithText("Bench Press · new best").assertDoesNotExist()
             compose.onNodeWithText("No workouts yet").assertDoesNotExist()
             compose.onNodeWithText("Load older").assertIsDisplayed().performClick()
@@ -172,7 +172,7 @@ class LogMomentTests {
                 days.forEach { day -> room.trained("Workout $day", at(day), listOf("bench-press" to 60.0), reps = 12) }
             }
             room.store.observeEngine()
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { now }) } } }
             compose.onNode(hasScrollAction()).performScrollToNode(hasText("Trained 5 of 5 weeks"))
             compose.onNodeWithText("Trained 5 of 5 weeks").assertIsDisplayed()
             compose.onNodeWithText("Trained 5 of 5 weeks").assertHasNoClickAction()

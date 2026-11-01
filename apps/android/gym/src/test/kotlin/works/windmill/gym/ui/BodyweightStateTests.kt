@@ -61,7 +61,7 @@ class BodyweightStateTests {
             room.now = System.currentTimeMillis()
             runBlocking { room.select("u1") }
             room.store.observeEngine()
-            compose.setContent { GymMaterial { BodyweightScreen(room.store, "The log", {}, {}) } }
+            compose.setContent { GymMaterial { BodyweightBinding(room.store).let { bodyweight -> BodyweightScreen(bodyweight, bodyweight, "The log", {}, {}) } } }
             compose.onNodeWithText("Reading your weigh-ins…").assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.nothingYet).assertDoesNotExist()
             compose.onNodeWithText("90 days").assertDoesNotExist()
@@ -121,7 +121,7 @@ class BodyweightStateTests {
                 val store = remember { room.freshStore(held).also { current = it; instances++ } }
                 DisposableEffect(held) { onDispose { held.cancel() } }
                 LaunchedEffect(store) { store.connect(room.account()) }
-                GymMaterial { BodyweightScreen(store, "The log", {}, {}) }
+                GymMaterial { BodyweightBinding(store).let { bodyweight -> BodyweightScreen(bodyweight, bodyweight, "The log", {}, {}) } }
             }
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(Bodyweight.listDay(day)).fetchSemanticsNodes().isNotEmpty()
@@ -163,7 +163,7 @@ class BodyweightStateTests {
                 room.store.refreshEngine()
             }
             val restored = StateRestorationTester(compose)
-            restored.setContent { GymMaterial { BodyweightScreen(room.store, "The log", {}, {}) } }
+            restored.setContent { GymMaterial { BodyweightBinding(room.store).let { bodyweight -> BodyweightScreen(bodyweight, bodyweight, "The log", {}, {}) } } }
             compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
             compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
             restored.emulateSavedInstanceStateRestore()

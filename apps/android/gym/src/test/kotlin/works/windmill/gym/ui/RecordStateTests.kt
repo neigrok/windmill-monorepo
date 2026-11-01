@@ -50,7 +50,7 @@ class RecordStateTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
-            compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
+            compose.setContent { GymMaterial { RecordBinding(store).let { record -> RecordScreen(record, record, movement.id, "The log", {}) } } }
             compose.onNodeWithText("Nothing logged for this movement yet. The first set you log lands here.").assertIsDisplayed()
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Edit movement").performClick()
@@ -71,7 +71,7 @@ class RecordStateTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
             val renamed = movement.copy(name = "Paused Bench", aliases = listOf("Bench Press"))
-            compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
+            compose.setContent { GymMaterial { RecordBinding(store).let { record -> RecordScreen(record, record, movement.id, "The log", {}) } } }
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Edit movement").performClick()
             compose.onNodeWithContentDescription("Movement name").performTextReplacement("Paused Bench")
@@ -95,7 +95,7 @@ class RecordStateTests {
             val server = EngineRoomFixture.server()
             runBlocking { room.select("a"); room.workout(); room.store.observeEngine() }
             compose.runOnIdle { assertFalse(room.training.firstPullComplete) }
-            compose.setContent { GymMaterial { RecordScreen("bench-press", room.store, "The log", {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { RecordBinding(room.store).let { record -> RecordScreen(record, record, "bench-press", "The log", {}, now = { room.now }) } } }
             compose.onNodeWithText("Recent sets").assertIsDisplayed()
             compose.onNodeWithText("Estimated strength").assertDoesNotExist()
             compose.onNodeWithText("Last 12 weeks · 1 workout").assertDoesNotExist()
@@ -126,8 +126,8 @@ class RecordStateTests {
                 room.store.refreshEngine()
             }
             var focus by mutableStateOf<String?>(null)
-            compose.setContent { GymMaterial { RecordScreen("bench-press", room.store, "The log", {},
-                focusSessionId = focus, now = { now }) } }
+            compose.setContent { GymMaterial { RecordBinding(room.store).let { record -> RecordScreen(record, record, "bench-press", "The log", {},
+                focusSessionId = focus, now = { now }) } } }
             compose.onNodeWithText("90 kg est · today · 90 × 1").assertIsDisplayed()
             compose.onNodeWithText("85 kg est · today · 85 × 1").assertDoesNotExist()
             val winner = compose.onNodeWithContentDescription("90 kg est · today · 90 × 1, standing best", useUnmergedTree = true)

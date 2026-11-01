@@ -65,7 +65,7 @@ class LogStateTests {
                     }
                 }
                 DisposableEffect(storeScope) { onDispose { storeScope.cancel() } }
-                GymMaterial { LogScreen(store, "A", {}, {}, {}, {}, now = { room.now }) }
+                GymMaterial { LogBinding(store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } }
             }
             compose.runOnIdle { room.now = day.plusDays(1).atTime(0, 1).atZone(zone).toInstant().toEpochMilli() }
             compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
@@ -106,7 +106,7 @@ class LogStateTests {
             compose.mainClock.autoAdvance = false
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(2f, 2f)) {
-                    GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) }
+                    GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } }
                 }
             }
             compose.mainClock.advanceTimeByFrame()
@@ -142,7 +142,7 @@ class LogStateTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, pullAgain = { asked++; true }, pulls = pulls).use { room ->
             runBlocking { room.select("a"); room.store.observeEngine() }
             val replica = room.engine.activeReplica()
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.mainClock.advanceTimeBy(500)
             compose.onNodeWithText("Reading your log…").assertIsDisplayed()
             compose.onNodeWithText("Retry").assertDoesNotExist()
@@ -196,7 +196,7 @@ class LogStateTests {
             val replica = room.engine.activeReplica()
             pulls.value = Pulls(replica, blocked = true)
             runBlocking { room.store.observeEngine() }
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.mainClock.advanceTimeBy(500)
             compose.onNodeWithText("That read failed.").assertIsDisplayed()
             compose.onNodeWithText("Reading your log…").assertDoesNotExist()
@@ -233,7 +233,7 @@ class LogStateTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, pulls = pulls).use { room ->
             runBlocking { room.select("a"); room.workout(); room.store.observeEngine() }
             val replica = room.engine.activeReplica()
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.runOnIdle { pulls.value = Pulls(replica, sent = 1, ended = 0) }
             compose.mainClock.advanceTimeBy(500)
             compose.onNodeWithText("Reading your log…").assertIsDisplayed()
@@ -259,7 +259,7 @@ class LogStateTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, pullAgain = { asked++; true }, pulls = pulls).use { room ->
             runBlocking { room.select("a"); room.store.observeEngine() }
             val replica = room.engine.activeReplica()
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.runOnIdle { pulls.value = Pulls(replica, sent = 1, ended = 1, failed = true) }
             compose.onNodeWithText("Retry").performClick()
             compose.waitUntil(5_000) { compose.runOnIdle { asked == 1 } }
@@ -288,7 +288,7 @@ class LogStateTests {
                 room.store.observeEngine()
                 room.store.refreshEngine()
             }
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
             compose.runOnIdle { runBlocking { room.store.history.loadOlder() } }
             compose.runOnIdle {
@@ -324,7 +324,7 @@ class LogStateTests {
                 room.store.observeEngine()
                 room.store.refreshEngine()
             }
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
             compose.runOnIdle { runBlocking { room.store.history.loadOlder() } }
             compose.runOnIdle { assertEquals(2, room.store.history.logged.single { it.id == oldest }.setCount) }
@@ -352,7 +352,7 @@ class LogStateTests {
             runBlocking { room.select("a") }
             repeat(2) { logged(it) }
             runBlocking { room.store.observeEngine(); room.store.refreshEngine() }
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.Reading } }
             compose.runOnIdle {
                 (2 until HistoryReads.logPage + 1).forEach(::logged)
@@ -383,7 +383,7 @@ class LogStateTests {
                 assertNull(room.store.bodyweight.weighIn("2027-01-10", 82.0))
                 room.store.observeEngine()
             }
-            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.mainClock.advanceTimeBy(500)
             compose.onNodeWithText("Reading your log…").assertIsDisplayed()
             compose.onAllNodes(SemanticsMatcher("a workout row") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("session:") == true })
