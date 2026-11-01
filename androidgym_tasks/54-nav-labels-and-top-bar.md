@@ -7,9 +7,9 @@
 - 00.1 Room chrome, top app bar: [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38215)
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `GymRoom.kt`'s `TabRail` draws the M3 `NavigationBar`, at least 80 dp tall and growing with its labels. `RailLabels` measures each label: it keeps one line while it clears each neighbouring label by 8 dp and stays inside the bar, and otherwise wraps at its spaces. A label is never shrunk or ellipsized and may spill past its own item into the width a neighbour leaves. At 320 dp with 200 % text: *Routines*, *The / log*, *Coach*.
+- `RoomChrome.kt`'s `TabRail` draws the M3 `NavigationBar`, at least 80 dp tall and growing with its labels. `RailLabels` measures each label: it keeps one line while it clears each neighbouring label by 8 dp and stays inside the bar, and otherwise wraps at its spaces. A label is never shrunk or ellipsized and may spill past its own item into the width a neighbour leaves. At 320 dp with 200 % text: *Routines*, *The / log*, *Coach*.
 - `ui/GymScreen.kt`'s `TopAppBar` carries `TopAppBarDefaults.pinnedScrollBehavior()` over the screen's content, so every screen drawn through `GymScreen` tints its bar from the canvas to the card ground (`skin.surface`) once content scrolls under it, and back at the top.
-- Tests: `GymRailTests` (whole labels at 320 dp / 200 % and 100 %, the wrapping rule), `ui/GymScreenTests` (the bar's ground at rest, scrolled and back). The rig captures `00.7-nav-large` and `00.1-bars-log-scrolled` (`tools/capture-recipes/room-chrome.json`) and recaptures `02.1-routines-large` (`routines-list.json`).
+- Tests: `RoomChromeTests` (whole labels at 320 dp / 200 % and 100 %, the wrapping rule), `ui/GymScreenTests` (the bar's ground at rest, scrolled and back). The rig captures `00.7-nav-large` and `00.1-bars-log-scrolled` (`tools/capture-recipes/room-chrome.json`) and recaptures `02.1-routines-large` (`routines-list.json`).
 
 **Change**
 - **Labels (00.7):**

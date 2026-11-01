@@ -1,8 +1,12 @@
-package works.windmill.gym.store
+package works.windmill.gym
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
+import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -11,15 +15,27 @@ import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
-class FinishReceiptsTests {
+class RoomSheetsTests {
+    @get:Rule val compose = createComposeRule()
+
+    private fun holding(phone: SharedPreferences): Context =
+        object : ContextWrapper(ApplicationProvider.getApplicationContext<Context>()) {
+            override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences = phone
+        }
+
     @Test
     fun onlyTheFirstAnonymousReceiptKeepsItsOfferAcrossStoreRecreation() {
         val phone = ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("receipt-test", 0)
         phone.edit().clear().commit()
-        val receipts = FinishReceipts(phone, Telemetry.None)
+        lateinit var receipts: FinishFlow
+        lateinit var recreated: FinishFlow
+        compose.setContent {
+            receipts = rememberFinishFlow(Telemetry.None, holding(phone))
+            recreated = rememberFinishFlow(Telemetry.None, holding(phone))
+        }
+        compose.waitForIdle()
         assertEquals(false, receipts.suggestsKeep("signed-in", anonymous = false))
         assertEquals(true, receipts.suggestsKeep("first", anonymous = true))
-        val recreated = FinishReceipts(phone, Telemetry.None)
         assertEquals(true, recreated.suggestsKeep("first", anonymous = true))
         assertEquals(false, recreated.suggestsKeep("first", anonymous = false))
         assertEquals(false, recreated.suggestsKeep("second", anonymous = true))
@@ -43,7 +59,10 @@ class FinishReceiptsTests {
                 }
             }
         }
-        assertEquals(false, FinishReceipts(failed, telemetry).suggestsKeep("private-session", anonymous = true))
+        lateinit var receipts: FinishFlow
+        compose.setContent { receipts = rememberFinishFlow(telemetry, holding(failed)) }
+        compose.waitForIdle()
+        assertEquals(false, receipts.suggestsKeep("private-session", anonymous = true))
         assertEquals(listOf("gym.finishReceipt"), failures)
         assertEquals(emptyMap<String, Any>(), phone.all)
     }
