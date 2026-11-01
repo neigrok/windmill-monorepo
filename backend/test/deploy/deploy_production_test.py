@@ -104,6 +104,8 @@ def docker_shim(arguments):
                                       "id": state.get("serverImageId", "sha256:" + "a" * 64)})
     elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"]:
         status, output = 0, state.get("candidateImageId", "sha256:" + "a" * 64)
+    elif arguments in (["image", "prune", "-af"], ["builder", "prune", "-af"]):
+        status, output = 0, ""
     elif arguments[:2] == ["run", "--rm"]:
         status, output = (1, "PRIVATE_DEPLOY_SECRET") if state.get("missingMetadata") else (
             0, json.dumps(state.get("candidateMetadata", {"schema": 7, "minSchema": 4})))
@@ -313,6 +315,8 @@ class DeployProductionTest(unittest.TestCase):
         self.assert_rejected_candidate_changes_nothing_live("pull", [
             ["compose", "version"],
             ["compose", "--env-file", ".env.next", "-f", "docker-compose.next.yml", "config", "-q"],
+            ["image", "prune", "-af"],
+            ["builder", "prune", "-af"],
             ["compose", "--env-file", ".env.next", "-f", "docker-compose.next.yml", "pull"]])
 
     def test_a_recreated_caddy_still_serving_the_old_file_fails_the_deploy(self):

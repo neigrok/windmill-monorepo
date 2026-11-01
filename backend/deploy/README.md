@@ -16,7 +16,7 @@ acknowledgement described below; ordinary backend batches cannot make that cutof
                    └▶ build-and-push (slim runtime image ─▶ ghcr.io)
                         └▶ deploy.yml, automatically, on that run's success
 
- (or by hand) run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ pull + up + migrate
+ (or by hand) run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ prune + pull + up + migrate
 
  VPS
  ┌──────────────────── docker compose (private network) ────────────────────┐
@@ -38,6 +38,7 @@ acknowledgement described below; ordinary backend batches cannot make that cutof
 | Deploy to the VPS (automatic on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | Promote the candidate files and prove Caddy loaded them (runs on the VPS) | `deploy/deploy-production.sh` |
+| Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |
@@ -150,6 +151,11 @@ must be public.
   The cutover evidence purge does not touch this directory. Host-managed cron jobs and provider
   backup policies must be checked on the host and with the provider.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
+- **Disk**: every deploy prunes images no container uses and the Docker build cache before it pulls,
+  so the host keeps the live images plus the candidate; volumes are never pruned. Actions → Ops · VPS
+  disk → `report` prints `df`, Docker usage, image and container sizes and `~/windmill` by folder;
+  `clean` also prunes images and build cache and, where the deploy user has passwordless sudo, trims the
+  systemd journal to 200 MB. Neither touches volumes, containers or `~/windmill/backups`.
 
 ## Coordinated client cutoff
 
