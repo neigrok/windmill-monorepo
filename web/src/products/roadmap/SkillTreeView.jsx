@@ -9,7 +9,7 @@ import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { useViewMode } from './ui/useViewMode.js';
 import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
-import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
+import { MobileChrome, FORK_PILL } from './ui/mobile/MobileChrome.jsx';
 import { TendBar } from './tending/TendBar.jsx';
 import { useTend } from './tending/useTend.js';
 import { fetchTending } from './tending/tendingClient.js';
@@ -21,7 +21,7 @@ import { ActionLane, LaneButton } from './ui/mobile/ActionLane.jsx';
 import ListView from './list/ListView.jsx';
 import ViewPill from './list/ViewPill.jsx';
 import { SwitcherSheet } from './list/SwitcherSheet.jsx';
-import BoardView from './board/BoardView.jsx';
+import BoardView, { coverBeneath } from './board/BoardView.jsx';
 import { ViewSwitch } from './board/ViewSwitch.jsx';
 import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
@@ -53,7 +53,7 @@ import { renameLocalTree, deleteLocalTree, loadDeviceTree } from './sync/localTr
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { LocalTreeRegistry, resolveDeviceOwner, confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
-import { ViewPrefs, initialView, viewToShow, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
+import { ViewPrefs, initialView, boardCanShow, viewToShow, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
@@ -81,8 +81,7 @@ const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const BOARD_OPEN = boardOpen();
-// The reader's Fork this tree pill: 18px off the bottom edge and 50px tall, as MobileChrome places it.
-const FORK_PILL_FOOTPRINT = 18 + 50;
+const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const NEXT_UP_SELECT_MS = 540;
@@ -971,6 +970,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     let cancelled = false;
     let autoOpenTimer = null;
+    let unknownTree = false;
+    const wanted = new AbortController();
+    const { signal } = wanted;
     setLoading(true);
     setLoadError(false);
     setSelectedId(null);
@@ -988,17 +990,21 @@ export function SkillTreeView({ treeId, demo = false }) {
       // Confirm who holds this device before anything is read from it or written to it.
       await resolveDeviceOwner();
       let seed = null;
-      try { seed = await repo.loadTree(); } catch { /* fall through to the blob */ }
+      try { seed = await repo.loadTree({ signal }); } catch { /* fall through to the blob */ }
+      if (cancelled) return;
       if (!seed) {
         seed = await loadDeviceTree(treeId);
-        if (!seed) throw new Error(`tree ${treeId}: unknown to the server, and not this device's to open`);
+        if (!seed) {
+          unknownTree = true;
+          throw new Error(`tree ${treeId}: unknown to the server, and not this device's to open`);
+        }
       }
       const treeData = seed;
       const nextTree = new SkillTree(treeData);
       const progress = demo
         ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
-        : await repo.loadProgress(treeData);
-      const serverActivity = await repo.loadActivity({ limit: 200 });
+        : await repo.loadProgress(treeData, { signal });
+      const serverActivity = await repo.loadActivity({ limit: 200, signal });
       if (cancelled) return;
       const overlay = progress;
       const states = UnlockRules.derive(nextTree, overlay);
@@ -1090,14 +1096,18 @@ export function SkillTreeView({ treeId, demo = false }) {
       session.start();
     }
 
+    // The repository reports its own transport failures, and a tree neither the server nor this device has is an
+    // expected answer; anything else that stops the load reports `roadmap-load`.
     loadTree().catch((err) => {
       if (cancelled) return;
       console.warn('[tree] load failed', treeId, err);
+      if (!unknownTree) captureError('roadmap', 'roadmap-load', err?.stack ?? '', '#/app');
       setLoadError(true);
       setLoading(false);
     });
     return () => {
       cancelled = true;
+      wanted.abort();
       clearTimeout(autoOpenTimer);
       cancelNextUpSelect();
       collabRef.current?.close();
@@ -1225,16 +1235,27 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // The initial view is decided ONCE, the moment the tree is ready: on phones, and on every band while the Board is open.
   const phone = breakpoint === 'phone';
+  const owner = treeMine && !shared && !demo && !demotion;
   if (view === null && (phone || BOARD_OPEN) && tree) {
-    const owner = treeMine && !shared && !demo && !demotion;
     setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN }));
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
   }, [view, treeId]);
   const listReady = phone && !loading && !!tree && tree.nodes.length > 0;
-  const boardReady = BOARD_OPEN && !boardCrashed && !loading && !!tree && tree.nodes.length > 0;
-  const shownView = viewToShow(view, { boardReady });
+  // Until the tree arrives, the Board's skeleton or load error stands where the Board would open: the saved choice, or
+  // the owner's default anywhere but a share or the demo.
+  const openingView = view ?? (BOARD_OPEN && !tree
+    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, empty: false, born: peekBorn(treeId), boardOpen: true })
+    : null);
+  const boardFacts = {
+    crashed: boardCrashed,
+    loaded: !loading && !loadError && !!tree,
+    empty: tree?.nodes.length === 0,
+    canAddFirstStep: owner && !readOnly,
+  };
+  const boardAvailable = BOARD_OPEN && boardCanShow(boardFacts);
+  const shownView = viewToShow(openingView, boardFacts);
   const listActive = listReady && shownView === 'list';
   const boardActive = shownView === 'board';
   boardActiveRef.current = boardActive;
@@ -1243,10 +1264,13 @@ export function SkillTreeView({ treeId, demo = false }) {
   const listShownRef = useRef(false);
   if (listActive) listShownRef.current = true;
   const listMounted = listReady && listShownRef.current;
-  // The Board stays mounted through a reload or an emptied tree, so its scroll and fold survive; only a crash drops it.
+  // The Board stays mounted through a reload or an emptied tree, so Done's fold survives (its columns, and their scroll,
+  // give way to the skeleton or the empty roadmap); only a crash drops it.
   const boardShownRef = useRef(false);
   if (boardActive) boardShownRef.current = true;
-  const boardMounted = BOARD_OPEN && !boardCrashed && !!tree && boardShownRef.current;
+  const boardMounted = BOARD_OPEN && !boardCrashed && boardShownRef.current;
+  const boardLayerRef = useRef(null);
+  useEffect(() => (boardActive ? coverBeneath(boardLayerRef.current) : undefined), [boardActive]);
 
   const layerActive = listActive || boardActive;
   const canvasView = shownView !== 'list' && shownView !== 'board';
@@ -1276,6 +1300,16 @@ export function SkillTreeView({ treeId, demo = false }) {
     const shownSwitch = boardActive && readOnly ? '.st-view-layer--board' : '.st-topbar, .st-action-lane';
     rootRef.current?.querySelector(`:is(${shownSwitch}) .st-board-switch-option[aria-pressed="true"]`)?.focus();
   }, [shownView, boardActive, readOnly]);
+
+  const retryLoad = useCallback(() => setReloadKey((key) => key + 1), []);
+
+  // The Board has no step editor yet: its New step plants the step on the Graph, whose step panel names it, and leaves
+  // the saved choice on the Board.
+  const newStepFromBoard = useCallback(() => {
+    setView('tree');
+    if ((editorRef.current?.treeData.nodes.length ?? 0) === 0) handleCreateRoot();
+    else handleNextUpAddStep();
+  }, [handleCreateRoot, handleNextUpAddStep]);
 
   const handleBoardCrash = useCallback(() => {
     captureError('roadmap', 'roadmap-board', '', '#/app');
@@ -1571,7 +1605,12 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const mobileSurface = activeSurface({ multiMode, aim, removing, selectedNode });
 
-  const viewSwitch = boardReady ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} /> : null;
+  // While the Board stands in for a roadmap that has not loaded, the topbar names nothing and offers no Share; a failed
+  // load offers no Graph either, whose load error would cover the topbar with no way back.
+  const boardAwaitsRoadmap = boardActive && !boardFacts.loaded;
+  const viewSwitch = boardAvailable && !(boardActive && loadError)
+    ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} />
+    : null;
   // The Board carries its switch in its identity row; the Graph's rides the topbar, or the lane on phones and tablets.
   const lanePill = BOARD_OPEN
     ? (readOnly && breakpoint !== 'desktop' && !boardActive ? viewSwitch : null)
@@ -1698,15 +1737,17 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {boardMounted && (
-        <div className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
+        <div ref={boardLayerRef} className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
           <ErrorBoundary fallback={null} onCrash={handleBoardCrash}>
             <BoardView
               tree={tree}
               completed={completed}
               completedAt={completedAt}
+              loading={loading}
+              failed={loadError}
               selectedId={selectedId}
               onSelect={setSelectedId}
-              title={tree.title}
+              title={tree?.title}
               notice={deviceNotice}
               identity={readOnly}
               breakpoint={breakpoint}
@@ -1714,6 +1755,9 @@ export function SkillTreeView({ treeId, demo = false }) {
               topInset={readOnly ? 0 : topbarBottom}
               active={boardActive}
               bottomInset={forkPresent ? FORK_PILL_FOOTPRINT : 0}
+              onRetry={retryLoad}
+              onShare={owner ? () => setShareOpen(true) : undefined}
+              onNewStep={owner ? newStepFromBoard : undefined}
             />
           </ErrorBoundary>
         </div>
@@ -1737,9 +1781,9 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       ) : (
         <ControlBar
-          title={tree?.title}
+          title={boardAwaitsRoadmap ? undefined : tree?.title}
           onTend={canTend ? () => setTendOpen(true) : undefined}
-          titleSlot={
+          titleSlot={boardAwaitsRoadmap ? null : (
             <TreeSwitcher
               current={{ id: treeId, title: tree?.title, done: shareStats?.done, total: shareStats?.total, dominantKind: shareStats?.dominantKind }}
               listTrees={listAllTrees}
@@ -1748,7 +1792,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onPreviewTitle={previewTreeTitle}
               onDelete={handleDeleteTree}
             />
-          }
+          )}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onFocus={handleFocus}
@@ -1756,7 +1800,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           viewSwitch={viewSwitch}
           board={boardActive}
           onBottom={BOARD_OPEN ? setTopbarBottom : undefined}
-          onShare={() => setShareOpen(true)}
+          onShare={boardAwaitsRoadmap ? undefined : () => setShareOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}
@@ -2143,12 +2187,12 @@ export function SkillTreeView({ treeId, demo = false }) {
         onStanceChange={setTreeVisibility}
       />
 
-      {loading && !loadError && <div className="st-loading"><span className="st-loading-msg">Planting the tree…</span></div>}
-      {loadError && (
+      {loading && !loadError && !boardActive && <div className="st-loading"><span className="st-loading-msg">Planting the tree…</span></div>}
+      {loadError && !boardActive && (
         <div className="st-load-error">
           <p className="st-loading-msg">Couldn’t load this roadmap. It may have moved, or the server is unreachable.</p>
           <div className="st-load-error-actions">
-            <Button onClick={() => setReloadKey((k) => k + 1)}>Try again</Button>
+            <Button onClick={retryLoad}>Try again</Button>
             <a href="#/app" className="st-load-error-link">Your trees</a>
           </div>
         </div>

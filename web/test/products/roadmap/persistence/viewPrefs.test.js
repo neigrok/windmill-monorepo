@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ViewPrefs, initialView, viewToShow, stampBorn, peekBorn, clearBorn } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
+import { ViewPrefs, initialView, boardCanShow, viewToShow, stampBorn, peekBorn, clearBorn } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
 
 function memoryStorage() {
   const map = new Map();
@@ -125,12 +125,39 @@ test('initialView — with the Board open, an empty or just-born tree still open
   assert.equal(initialView({ saved: 'board', owner: true, empty: false, born: true, boardOpen: true }), 'tree');
 });
 
+test('boardCanShow — the Board shows while its roadmap loads or fails to, and once loaded with steps', () => {
+  assert.deepEqual([
+    boardCanShow({ loaded: false }),
+    boardCanShow({ loaded: false, empty: true }),
+    boardCanShow({ loaded: true, empty: false }),
+  ], [true, true, true]);
+});
+
+test('boardCanShow — a crashed Board never shows, loading or loaded', () => {
+  assert.deepEqual([
+    boardCanShow({ crashed: true, loaded: false }),
+    boardCanShow({ crashed: true, loaded: true, empty: false, canAddFirstStep: true }),
+  ], [false, false]);
+});
+
+test('boardCanShow — a roadmap with no steps shows only where New step can plant the first one', () => {
+  assert.deepEqual([
+    boardCanShow({ loaded: true, empty: true, canAddFirstStep: true }),
+    boardCanShow({ loaded: true, empty: true, canAddFirstStep: false }),
+  ], [true, false]);
+});
+
 test('viewToShow — a Board that cannot show shows the Graph; every other view shows as chosen', () => {
-  assert.equal(viewToShow('board', { boardReady: true }), 'board');
-  assert.equal(viewToShow('board', { boardReady: false }), 'tree');
-  assert.equal(viewToShow('list', { boardReady: false }), 'list');
-  assert.equal(viewToShow('tree', { boardReady: true }), 'tree');
-  assert.equal(viewToShow(null, { boardReady: false }), null);
+  assert.deepEqual([
+    viewToShow('board', { loaded: false }),
+    viewToShow('board', { loaded: true, empty: false }),
+    viewToShow('board', { loaded: true, empty: true, canAddFirstStep: true }),
+    viewToShow('board', { loaded: true, empty: true, canAddFirstStep: false }),
+    viewToShow('board', { crashed: true, loaded: true }),
+    viewToShow('list', { loaded: true, empty: true }),
+    viewToShow('tree', { loaded: false }),
+    viewToShow(null, { loaded: false }),
+  ], ['board', 'board', 'board', 'tree', 'tree', 'list', 'tree', null]);
 });
 
 test('birth stamp — peek reads without consuming; clear removes only the tree it names', () => {

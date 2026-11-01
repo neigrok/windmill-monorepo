@@ -37,7 +37,7 @@ function cardMarkup(id, props = {}) {
 
 test('StepCard — a Locked card sits at the dimmed tier and names what it needs and how many steps are left', () => {
   assert.equal(cardMarkup('dock'), [
-    '<button type="button" class="st-board-card st-board-card--locked" style="--st-board-rail:var(--kind-terracotta)">',
+    '<button type="button" class="st-board-card st-board-card--locked" style="--st-board-rail:var(--kind-terracotta)" data-step-id="dock" tabindex="0">',
     '<span class="st-board-card-rail" aria-hidden="true"></span>',
     '<span class="st-board-card-content">',
     '<span class="st-board-card-title">Leave the dock</span>',
@@ -49,7 +49,7 @@ test('StepCard — a Locked card sits at the dimmed tier and names what it needs
 
 test('StepCard — several missing prerequisites name the first and count the rest; no description means no excerpt', () => {
   assert.equal(cardMarkup('solo'), [
-    '<button type="button" class="st-board-card st-board-card--locked" style="--st-board-rail:var(--kind-gold)">',
+    '<button type="button" class="st-board-card st-board-card--locked" style="--st-board-rail:var(--kind-gold)" data-step-id="solo" tabindex="0">',
     '<span class="st-board-card-rail" aria-hidden="true"></span>',
     '<span class="st-board-card-content">',
     '<span class="st-board-card-title">Sail solo</span>',
@@ -60,7 +60,7 @@ test('StepCard — several missing prerequisites name the first and count the re
 
 test('StepCard — an Up next card names the step it opens', () => {
   assert.equal(cardMarkup('wind'), [
-    '<button type="button" class="st-board-card st-board-card--upNext" style="--st-board-rail:var(--kind-sky)">',
+    '<button type="button" class="st-board-card st-board-card--upNext" style="--st-board-rail:var(--kind-sky)" data-step-id="wind" tabindex="0">',
     '<span class="st-board-card-rail" aria-hidden="true"></span>',
     '<span class="st-board-card-content">',
     '<span class="st-board-card-title">Read the wind</span>',
@@ -72,7 +72,7 @@ test('StepCard — an Up next card names the step it opens', () => {
 
 test('StepCard — an Up next card that opens nothing has no reason line', () => {
   assert.equal(cardMarkup('bowline'), [
-    '<button type="button" class="st-board-card st-board-card--upNext" style="--st-board-rail:var(--kind-olive)">',
+    '<button type="button" class="st-board-card st-board-card--upNext" style="--st-board-rail:var(--kind-olive)" data-step-id="bowline" tabindex="0">',
     '<span class="st-board-card-rail" aria-hidden="true"></span>',
     '<span class="st-board-card-content">',
     '<span class="st-board-card-title">Tie a bowline</span>',
@@ -83,7 +83,7 @@ test('StepCard — an Up next card that opens nothing has no reason line', () =>
 
 test('StepCard — a Done card keeps its excerpt, drops the reason line and marks itself when selected', () => {
   assert.equal(cardMarkup('rig', { selected: true }), [
-    '<button type="button" class="st-board-card st-board-card--done" style="--st-board-rail:var(--kind-terracotta)" aria-current="true">',
+    '<button type="button" class="st-board-card st-board-card--done" style="--st-board-rail:var(--kind-terracotta)" data-step-id="rig" tabindex="0" aria-current="true">',
     '<span class="st-board-card-rail" aria-hidden="true"></span>',
     '<span class="st-board-card-content">',
     '<span class="st-board-card-title">Rig the boat</span>',
@@ -95,7 +95,12 @@ test('StepCard — a Done card keeps its excerpt, drops the reason line and mark
 test('StepCard — a click selects the card’s step', () => {
   const selected = [];
   const card = learnToSailBoard().upNext.cards[0];
-  const element = StepCard({ card, onSelect: (id) => selected.push(id) });
+  const element = StepCard.type({ card, onSelect: (id) => selected.push(id) });
   element.props.onClick();
   assert.deepEqual(selected, ['wind']);
+});
+
+test('StepCard — a step that just arrived wakes by class, and a card off the roving stop leaves the tab order', () => {
+  assert.equal(cardMarkup('dock', { arrived: true, tabIndex: -1 }).split('>')[0],
+    '<button type="button" class="st-board-card st-board-card--locked is-arrived" style="--st-board-rail:var(--kind-terracotta)" data-step-id="dock" tabindex="-1"');
 });

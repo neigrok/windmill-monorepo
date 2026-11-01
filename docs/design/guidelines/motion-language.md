@@ -85,6 +85,11 @@ Two intensities, by the tier the node *lands on*:
   cycles, decaying** (peaks α .42/+3px, then .34/+1.5px), then rest. Marks the newly-available
   frontier after a ceremony. DOM: `wm-pulse-echo` (2400ms, once).
 - **Shared phase**: all oscillating halos lock to one global clock.
+- **Arrived card** (Board, DOM): a step card that just became up next, or was just created in
+  Locked, wakes (fade, scale 1→1.02→1, 480ms `--ease-soft`) while its brand edge and
+  `--kind-terracotta-glow` settle to rest over the pulse's two cycles (2400ms `--ease-glow`).
+  The glow stays inside the 8px gutter its column and neighbours give it: **3px ring + 8px blur**
+  at each peak, **1px ring + 4px blur** at the dip between them.
 
 ## 3. Cascade & stagger rules
 
@@ -125,6 +130,7 @@ waveforms via the `uMotion` uniform; the JS timeline collapses to endpoint keyfr
 | toast | opacity fades only, no rise |
 | crown | frozen at mid-amplitude (α .28 — exactly a standard halo) |
 | pulse ×2 | **skip** entirely |
+| Arrived card | 150ms fade-in; no scale, no glow |
 | cascade | one simultaneous 280ms cross-fade, no stagger |
 | feedback: hover/press scale | skip scale; keep ring/colour change + tooltip |
 | feedback: chrome fades (150ms opacity) | keep |

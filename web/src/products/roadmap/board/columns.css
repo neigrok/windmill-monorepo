@@ -16,6 +16,7 @@
 
 /* ---- A full column: Up next carries the tinted ground. ---- */
 .st-board-columns-column {
+  overflow-anchor: none; /* ColumnCards keeps the view still as cards above it settle */
   --st-board-column-ground: var(--surface-canvas);
   flex: 1 1 0;
   min-width: 0;
@@ -32,8 +33,7 @@
 .st-board-columns-column--upNext {
   --st-board-column-ground: var(--color-brand-soft);
 }
-.st-board-columns-column > .st-board-card,
-.st-board-columns-column > .st-board-show-all {
+.st-board-columns-column > * {
   flex-shrink: 0;
 }
 
@@ -111,6 +111,21 @@
   padding: 0 var(--space-2) var(--space-2);
   border-radius: var(--radius-lg);
   background: var(--st-board-column-ground);
+}
+/* The rail's heading stacks: the title keeps the 44px row the full columns' titles stand in, the count chip sits under it
+   on the card surface, one step off the sunken rail. */
+.st-board-columns-rail .st-board-columns-heading {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  height: auto;
+}
+.st-board-columns-rail .st-board-columns-title {
+  max-width: 100%;
+  line-height: 44px;
+}
+.st-board-columns-rail .st-board-columns-count {
+  background: var(--surface-card);
 }
 .st-board-columns-deck {
   display: flex;

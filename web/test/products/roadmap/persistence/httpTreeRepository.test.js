@@ -40,7 +40,7 @@ test('loadTree returns the document plus what the server knows about it', async 
   await withFetch(() => ok({ data: SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000 }), async (calls) => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const tree = await repo.loadTree();
-    assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1', init: { credentials: 'include' } }]);
+    assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1', init: { credentials: 'include', signal: undefined } }]);
     assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000 });
   });
 });
@@ -52,10 +52,86 @@ test('loadTree fills the three server facts a bare answer omits', async () => {
   });
 });
 
-test('loadTree throws on a status, so the caller can fall back to the local blob', async () => {
+test('loadTree throws on a status, so the caller can fall back to the local blob; a refusal reports nothing', async () => {
   await withFetch(() => status(404), async () => {
-    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
+    const reported = [];
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
     await assert.rejects(() => repo.loadTree(), /loadTree t_1: HTTP 404/);
+    assert.deepEqual(reported, []);
+  });
+});
+
+test('loadTree reports a server failure under its static operation, with no id, then throws', async () => {
+  await withFetch(() => status(503), async () => {
+    const reported = [];
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+    await assert.rejects(() => repo.loadTree(), /loadTree t_1: HTTP 503/);
+    assert.deepEqual(reported, ['roadmap-tree-load']);
+  });
+});
+
+// A request that fails to reach the server, under the page's visibility and the browser's belief about the network.
+async function loseRequest({ visibility = 'visible', onLine = true, failure = new TypeError('Failed to fetch'), abortFirst = false } = {}) {
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const realDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine }, configurable: true });
+  Object.defineProperty(globalThis, 'document', { value: { visibilityState: visibility }, configurable: true });
+  const reported = [];
+  const wanted = new AbortController();
+  if (abortFirst) wanted.abort();
+  try {
+    await withFetch((_url, init) => {
+      assert.equal(init.signal, wanted.signal);
+      throw failure;
+    }, async () => {
+      const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+      await assert.rejects(() => repo.loadTree({ signal: wanted.signal }), (error) => error === failure);
+    });
+    return reported;
+  } finally {
+    if (realNavigator) Object.defineProperty(globalThis, 'navigator', realNavigator);
+    else delete globalThis.navigator;
+    if (realDocument) Object.defineProperty(globalThis, 'document', realDocument);
+    else delete globalThis.document;
+  }
+}
+
+test('loadTree reports a request lost while the page is visible, online and still waiting for the tree', async () => {
+  assert.deepEqual(await loseRequest(), ['roadmap-tree-load']);
+});
+
+test('loadTree stays silent on a request lost offline, behind a hidden page, or aborted because nobody wants the tree', async () => {
+  const abort = Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+  assert.deepEqual([
+    await loseRequest({ onLine: false }),
+    await loseRequest({ visibility: 'hidden' }),
+    await loseRequest({ failure: abort }),
+    await loseRequest({ abortFirst: true }),
+  ], [[], [], [], []]);
+});
+
+test('loadTree reports a 200 that is not a tree, such as a proxy serving the app shell, and throws', async () => {
+  const answers = [
+    { ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } },
+    ok({ data: { title: 'no nodes' } }),
+    ok({ error: 'nope' }),
+  ];
+  for (const answer of answers) {
+    const reported = [];
+    await withFetch(() => answer, async () => {
+      const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+      await assert.rejects(() => repo.loadTree(), /loadTree t_1: the answer is not a tree/);
+    });
+    assert.deepEqual(reported, ['roadmap-tree-load']);
+  }
+});
+
+test('loadTree reports under the operation its owner names', async () => {
+  await withFetch(() => status(502), async () => {
+    const reported = [];
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', operation: 'roadmap-export-load', reportFailure: (operation) => reported.push(operation) });
+    await assert.rejects(() => repo.loadTree(), /HTTP 502/);
+    assert.deepEqual(reported, ['roadmap-export-load']);
   });
 });
 
@@ -74,7 +150,7 @@ test('loadProgress folds the server frame into the overlay to open at, credentia
       completedAt: { a: 1700000000000 },
       server: true,
     });
-    assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1/progress', init: { credentials: 'include' } }]);
+    assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1/progress', init: { credentials: 'include', signal: undefined } }]);
   });
 });
 
@@ -120,7 +196,7 @@ test('loadActivity carries the cursor and the cap, and a miss is silence, not a 
   await withFetch(() => ok({ events: [{ id: 'e1', verb: 'added' }] }), async (calls) => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     assert.deepEqual(await repo.loadActivity({ since: 7, limit: 50 }), [{ id: 'e1', verb: 'added' }]);
-    assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1/activity?since=7&limit=50', init: { credentials: 'include' } }]);
+    assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1/activity?since=7&limit=50', init: { credentials: 'include', signal: undefined } }]);
   });
   await withFetch(() => ok({}), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });

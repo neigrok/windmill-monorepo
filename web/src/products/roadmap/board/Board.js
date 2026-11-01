@@ -84,14 +84,30 @@ export class Board {
     return COLUMN_OF_STATE[this.states.get(id)] ?? null;
   }
 
-  // Above twelve the Done column folds to its twelve newest completions and a Show all row.
-  recentDone() {
-    return {
-      cards: this.done.cards.slice(0, DONE_RECENT_LIMIT),
-      total: this.done.count,
-      folded: this.done.count > DONE_RECENT_LIMIT,
-    };
+  // The cards a column shows: above twelve, Done folds to its twelve newest completions and a Show all row until expanded.
+  shownCards(name, { doneExpanded = false } = {}) {
+    const column = this[name];
+    const folded = name === 'done' && !doneExpanded && column.count > DONE_RECENT_LIMIT;
+    return { cards: folded ? column.cards.slice(0, DONE_RECENT_LIMIT) : column.cards, folded, total: column.count };
   }
+
+  recentDone() {
+    return this.shownCards('done');
+  }
+}
+
+// The steps that arrived between two Boards of one roadmap: a step that became up next, or a new step that is not done.
+// A reset back to Up next is a downward change and stays quiet; a roadmap with no step in common arrives whole, so nothing wakes.
+export function arrivals(previous, next) {
+  const arrived = new Set();
+  let shared = false;
+  for (const [id, state] of next.states) {
+    const before = previous.states.get(id);
+    shared ||= before !== undefined;
+    if (state === 'available' && before === 'locked') arrived.add(id);
+    if (state !== 'complete' && before === undefined) arrived.add(id);
+  }
+  return shared ? arrived : new Set();
 }
 
 function unknownLast(valueA, valueB, compare) {

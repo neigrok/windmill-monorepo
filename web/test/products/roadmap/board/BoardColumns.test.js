@@ -1,11 +1,14 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+import { createServer } from 'vite';
 
 register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { BoardColumns, columnStage, swapRail, railToReveal, enterAtUpNext } = await import('../../../../src/products/roadmap/board/BoardColumns.jsx');
+const { BoardColumns, columnStage, swapRail, railToReveal } = await import('../../../../src/products/roadmap/board/BoardColumns.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
 const { Board } = await import('../../../../src/products/roadmap/board/Board.js');
 
@@ -130,41 +133,452 @@ test('BoardColumns — a rail over fewer than three cards stacks only what it ha
   assert.deepEqual(lines.slice(lines.indexOf('rail done')), ['rail done', '  heading Done, 1 step', '  deck 0 behind · terracotta', '    front Rig the boat', '  button Show Done']);
 });
 
-function focusArrival({ from = 'before', keyboard = true, onFirstUpNext = false, upNextEmpty = false } = {}) {
-  const moves = [];
-  const firstUpNext = { focus: () => moves.push('first Up next') };
-  const previous = from === null ? null : { name: from };
-  const target = onFirstUpNext ? firstUpNext : { focus: () => moves.push('target') };
-  target.matches = (selector) => selector === '.st-board-card:focus-visible' && keyboard;
-  enterAtUpNext({
-    relatedTarget: previous,
-    target,
-    currentTarget: {
-      DOCUMENT_POSITION_PRECEDING: 2,
-      DOCUMENT_POSITION_FOLLOWING: 4,
-      contains: (node) => node?.name === 'inside',
-      compareDocumentPosition: (node) => (node.name === 'before' ? 2 : 4),
-      querySelector: (selector) => (selector === '.st-board-columns-column--upNext .st-board-card' && !upNextEmpty ? firstUpNext : null),
-    },
-  });
-  return moves;
-}
-
-test('enterAtUpNext — tabbing forward into any card from before the columns lands on the first Up next card', () => {
-  assert.deepEqual(focusArrival(), ['first Up next']);
-});
-
-test('enterAtUpNext — backward entry, focus from nowhere, moves between cards, pointer presses, Up next itself and an empty Up next stay put', () => {
-  assert.deepEqual(focusArrival({ from: 'after' }), []);
-  assert.deepEqual(focusArrival({ from: null }), []);
-  assert.deepEqual(focusArrival({ from: 'inside' }), []);
-  assert.deepEqual(focusArrival({ keyboard: false }), []);
-  assert.deepEqual(focusArrival({ onFirstUpNext: true }), []);
-  assert.deepEqual(focusArrival({ upNextEmpty: true }), []);
-});
-
 test('BoardColumns — the rail heading counts compactly from 1,000 and keeps the whole number in its spoken name', () => {
   const board = learnToSail({ extraDone: 1200 });
   const html = renderToStaticMarkup(React.createElement(BoardColumns, { board, band: 'tablet', onSelect: () => {}, onExpandDone: () => {} }));
-  assert.deepEqual(/<section class="st-board-columns-rail[^"]*" aria-labelledby="[^"]+"><h2 [^>]*aria-label="([^"]+)">.*?columns-count">([^<]+)</.exec(html).slice(1), ['Done, 1,203 steps', '1.2k']);
+  assert.deepEqual(/<section class="st-board-columns-rail[^"]*" aria-labelledby="[^"]+" data-column="done"><h2 [^>]*aria-label="([^"]+)">.*?columns-count">([^<]+)</.exec(html).slice(1), ['Done, 1,203 steps', '1.2k']);
+});
+
+test('BoardColumns — the columns are one tab stop: the first Up next card, with the rail’s Show and every other card out of the tab order', () => {
+  const html = renderToStaticMarkup(React.createElement(BoardColumns, { board: learnToSail(), band: 'tablet', onSelect: () => {}, onExpandDone: () => {} }));
+  assert.deepEqual([...html.matchAll(/<button [^>]*?(?:data-step-id="(\w+)" )?tabindex="(-?\d)"[^>]*>/g)].map(([element, id, tabIndex]) => `${id ?? /class="([\w-]+)"/.exec(element)[1]} ${tabIndex}`), [
+    'dock -1', 'triangle -1', 'solo -1', 'wind 0', 'bowline -1', 'st-board-columns-show -1',
+  ]);
+});
+
+const root = fileURLToPath(new URL('../../../../', import.meta.url));
+const entry = `
+import React, { useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import '/src/styles/fonts.js';
+import '/src/styles/global.css';
+import '/src/products/roadmap/board/board.css';
+import { BoardColumns, DEFAULT_RAIL, swapRail } from '/src/products/roadmap/board/BoardColumns.jsx';
+import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
+import { Board } from '/src/products/roadmap/board/Board.js';
+
+window.openBoard = (nodes, initiallyCompleted, band) => {
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
+  function Room() {
+    const [completed, setCompleted] = useState(initiallyCompleted);
+    const [selectedId, setSelectedId] = useState(null);
+    const [railed, setRailed] = useState(DEFAULT_RAIL);
+    const [doneExpanded, setDoneExpanded] = useState(false);
+    window.complete = (id) => setCompleted((current) => [...current, id]);
+    window.selectElsewhere = setSelectedId;
+    window.selected = selectedId;
+    const board = useMemo(() => new Board(tree, { completed: new Set(completed),
+      completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) }), [completed]);
+    const edge = (label, side) => React.createElement('button', { type: 'button', style: { position: 'fixed', [side]: 0, left: 0, zIndex: 2 } }, label);
+    return React.createElement(React.Fragment, null,
+      edge('Before the Board', 'top'),
+      React.createElement('div', { className: 'st-board st-board--columns', style: { height: '100vh' } },
+        React.createElement(BoardColumns, { board, band, railed, onShowRail: () => setRailed(swapRail), selectedId, onSelect: setSelectedId,
+          doneExpanded, onExpandDone: () => setDoneExpanded(true) })),
+      edge('After the Board', 'bottom'));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.entryReady = true;
+`;
+
+let server, browser, origin;
+const ready = (async () => {
+  server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-board-columns-test`,
+    plugins: [{ name: 'board-columns-test', enforce: 'pre',
+      resolveId(id) {
+        if (id === '/board-columns-entry.js') return '\0board-columns-entry';
+        if (id.endsWith('/telemetry/beacon.js')) return '\0board-columns-beacon';
+      },
+      load(id) {
+        if (id === '\0board-columns-entry') return entry;
+        if (id === '\0board-columns-beacon') {
+          return 'export function track(name, props) { (window.events ??= []).push(`${name} ${JSON.stringify(props)}`); }\n'
+            + 'export function reportError() {}\nexport function routeFamily(route) { return route; }';
+        }
+      },
+      configureServer(server) {
+        server.middlewares.use('/board-columns-test', (_request, response) => {
+          response.setHeader('Content-Type', 'text/html');
+          response.end('<!doctype html><meta name="viewport" content="width=device-width"><title>Board columns test</title><div id="root"></div><script type="module" src="/board-columns-entry.js"></script>');
+        });
+      },
+    }], optimizeDeps: { include: ['react', 'react-dom/client'] },
+    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
+  await server.listen(0);
+  origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+  browser = await chromium.launch({ headless: true });
+})();
+after(async () => {
+  try { await ready; } finally { await browser?.close(); await server?.close(); }
+});
+
+const learnToSailNodes = [
+  { id: 'course', label: 'Choose a sailing course', prerequisites: [], color: 'terracotta' },
+  { id: 'parts', label: 'Name the boat parts', prerequisites: ['course'], color: 'sky' },
+  { id: 'rig', label: 'Rig the boat', prerequisites: ['parts'], color: 'terracotta' },
+  { id: 'bowline', label: 'Tie a bowline', prerequisites: ['parts'], color: 'olive' },
+  { id: 'wind', label: 'Read the wind', prerequisites: ['parts'], color: 'sky' },
+  { id: 'dock', label: 'Leave the dock', prerequisites: ['rig', 'wind'], color: 'terracotta' },
+  { id: 'triangle', label: 'Sail a triangle', prerequisites: ['dock'], color: 'olive' },
+  { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
+];
+
+// The 5,000-step fixture: 3,200 Done, 30 Up next, 1,770 Locked waiting on the first Up next step, each card with an excerpt.
+function coastalNodes() {
+  const described = (node) => ({ ...node, description: 'Work out departure, arrival and the fallback harbour for each gate before you commit to the route.' });
+  return [
+    ...Array.from({ length: 3200 }, (_, index) => described({ id: `d${index}`, label: `Done ${index}`, prerequisites: [] })),
+    ...Array.from({ length: 30 }, (_, index) => described({ id: `u${index}`, label: `Up next ${index}`, prerequisites: [] })),
+    ...Array.from({ length: 1770 }, (_, index) => described({ id: `l${index}`, label: `Locked ${index}`, prerequisites: ['u0'] })),
+  ];
+}
+
+async function openBoardPage({ viewport, band, nodes = learnToSailNodes, completed = ['course', 'parts', 'rig'], reducedMotion = 'no-preference' }, errors) {
+  const page = await browser.newPage({ viewport, reducedMotion });
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(`${origin}/board-columns-test`);
+  await page.waitForFunction(() => window.entryReady);
+  await page.evaluate(([nodes, completed, band]) => openBoard(nodes, completed, band), [nodes, completed, band]);
+  await page.locator('.st-board-card').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  return page;
+}
+
+const focused = (page) => page.evaluate(() => {
+  const element = document.activeElement;
+  return element.querySelector('.st-board-card-title')?.textContent ?? element.textContent;
+});
+const events = (page) => page.evaluate(() => window.events ?? []);
+
+test('Chromium: the columns are one tab stop that Tab enters from either side on the first Up next card, then on the card last focused', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.getByRole('button', { name: 'Before the Board' }).focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await focused(page), 'Read the wind');
+    await page.keyboard.press('Tab');
+    assert.equal(await focused(page), 'After the Board');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await focused(page), 'Read the wind');
+
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    assert.equal(await focused(page), 'Name the boat parts');
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: with every column scrolling, Tab and Shift+Tab each cross the Board in exactly one stop', async () => {
+  await ready;
+  const errors = [];
+  const nodes = coastalNodes();
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
+  try {
+    assert.deepEqual(await page.locator('.st-board-columns-column').evaluateAll((columns) => columns.map((column) => column.scrollHeight > column.clientHeight)), [true, true, true]);
+    const walk = async (from, key) => {
+      await page.getByRole('button', { name: from }).focus();
+      const stops = [];
+      for (let step = 0; step < 6; step += 1) {
+        await page.keyboard.press(key);
+        const name = await focused(page);
+        stops.push(name);
+        if (name === 'Before the Board' || name === 'After the Board') break;
+      }
+      return stops;
+    };
+    assert.deepEqual(await walk('Before the Board', 'Tab'), ['Up next 0', 'After the Board']);
+    assert.deepEqual(await walk('After the Board', 'Shift+Tab'), ['Up next 0', 'Before the Board']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: on the desktop the arrow keys rove every card, Locked included, across columns at the nearest height; Enter selects', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.locator('.st-board-card[tabindex="0"]').focus();
+    const visits = [];
+    for (const key of ['ArrowDown', 'ArrowLeft', 'ArrowDown', 'End', 'Home', 'ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'End', 'ArrowUp']) {
+      await page.keyboard.press(key);
+      visits.push(`${key} → ${await focused(page)}`);
+    }
+    assert.deepEqual(visits, [
+      'ArrowDown → Tie a bowline',
+      'ArrowLeft → Sail a triangle',
+      'ArrowDown → Sail solo',
+      'End → Sail solo',
+      'Home → Leave the dock',
+      'ArrowLeft → Leave the dock',
+      'ArrowRight → Read the wind',
+      'ArrowRight → Rig the boat',
+      'ArrowRight → Rig the boat',
+      'End → Choose a sailing course',
+      'ArrowUp → Name the boat parts',
+    ]);
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => window.selected), 'parts');
+    assert.equal(await page.locator('.st-board-card[aria-current="true"]').getAttribute('tabindex'), '0');
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: on a tablet the arrow keys cross into the rail’s Show and back out, and Show hands focus to the new rail', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 900, height: 960 }, band: 'tablet' }, errors);
+  try {
+    await page.locator('.st-board-card[tabindex="0"]').focus();
+    const visits = [];
+    for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'Enter', 'ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft']) {
+      await page.keyboard.press(key);
+      visits.push(`${key} → ${await focused(page)}`);
+    }
+    assert.deepEqual(visits, [
+      'ArrowRight → ShowShow Done',
+      'ArrowDown → ShowShow Done',
+      'ArrowLeft → Tie a bowline',
+      'Enter → Tie a bowline',
+      'ArrowRight → ShowShow Done',
+      'ArrowRight → ShowShow Done',
+      'ArrowLeft → Tie a bowline',
+      'ArrowLeft → Sail a triangle',
+    ]);
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    assert.equal(await focused(page), 'ShowShow Locked');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await focused(page), 'Name the boat parts');
+    assert.deepEqual(await page.locator('[tabindex="0"]').evaluateAll((elements) => elements.map((element) => element.textContent)), ['Name the boat parts']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: at 744 the rail stacks its heading, so Locked stands whole over its compact count on the card surface', async () => {
+  await ready;
+  const errors = [];
+  const nodes = coastalNodes();
+  const page = await openBoardPage({ viewport: { width: 744, height: 960 }, band: 'tablet', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
+  try {
+    await page.getByRole('button', { name: 'Show Done' }).click();
+    const heading = await page.locator('.st-board-columns-rail').evaluate((rail) => {
+      const title = rail.querySelector('.st-board-columns-title');
+      const count = rail.querySelector('.st-board-columns-count');
+      const titleBox = title.getBoundingClientRect();
+      const countBox = count.getBoundingClientRect();
+      const show = rail.querySelector('.st-board-columns-show').getBoundingClientRect();
+      const fill = (element) => getComputedStyle(element).backgroundColor;
+      const probe = document.createElement('i');
+      probe.style.backgroundColor = 'var(--surface-card)';
+      rail.append(probe);
+      const card = fill(probe);
+      probe.remove();
+      return {
+        rail: Math.round(rail.getBoundingClientRect().width),
+        title: `${title.textContent} · ${title.scrollWidth <= title.clientWidth ? 'whole' : 'clipped'} · ${Math.round(titleBox.height)}px row`,
+        count: `${count.textContent} · ${countBox.top >= titleBox.bottom - 0.5 ? 'under the title' : 'beside it'} · ${fill(count) === card ? 'card fill' : 'other fill'}`,
+        show: `${Math.round(show.height)}px · ${Math.round(show.width) === Math.round(rail.clientWidth - 16) ? 'full width' : 'narrower'}`,
+      };
+    });
+    assert.deepEqual(heading, { rail: 136, title: 'Locked · whole · 44px row', count: '1.8k · under the title · card fill', show: '44px · full width' });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: a step that just became up next wakes and settles; the Board’s first paint wakes nothing', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    assert.equal(await page.locator('.st-board-card.is-arrived').count(), 0);
+    await page.evaluate(() => complete('wind'));
+    await page.locator('.st-board-columns-column--upNext .st-board-card.is-arrived').waitFor();
+    assert.deepEqual(await page.locator('.st-board-card.is-arrived').evaluateAll((cards) => cards.map((card) => [
+      card.querySelector('.st-board-card-title').textContent, getComputedStyle(card).animationName,
+    ])), [['Leave the dock', 'st-board-card-wake, st-board-card-settle']]);
+    await page.waitForFunction(() => document.querySelectorAll('.st-board-card.is-arrived').length === 0, null, { timeout: 4000 });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: focus landing on an arriving step ends its wake for good, so leaving it never replays the wake', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.evaluate(() => complete('wind'));
+    await page.locator('.st-board-card.is-arrived').focus();
+    const dock = page.locator('.st-board-card[data-step-id="dock"]');
+    assert.deepEqual(await dock.evaluate((card) => [card.className, getComputedStyle(card).animationName]), ['st-board-card st-board-card--upNext', 'none']);
+    await page.getByRole('button', { name: 'After the Board' }).focus();
+    assert.deepEqual(await dock.evaluate((card) => [card.className, getComputedStyle(card).opacity]), ['st-board-card st-board-card--upNext', '1']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: a focused card whose step moves to another column hands focus to the new tab stop instead of the page', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.locator('.st-board-card[tabindex="0"]').focus();
+    assert.equal(await focused(page), 'Read the wind');
+    await page.evaluate(() => complete('wind'));
+    await page.waitForFunction(() => document.activeElement !== document.body);
+    assert.deepEqual([await focused(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: as cards above the view settle to their measured heights, what is in view stays where it was', async () => {
+  await ready;
+  const errors = [];
+  // Every third excerpt is set in the widest glyphs, so its estimate falls a line short until the card is measured.
+  const words = 'Work out departure arrival and the fallback harbour for each gate before you commit to the route plan a coastal passage'.split(' ');
+  const text = (seed, count) => Array.from({ length: count }, (_, index) => words[(seed * 7 + index) % words.length]).join(' ');
+  const nodes = Array.from({ length: 1500 }, (_, index) => ({
+    id: `d${index}`, label: text(index, 1 + (index % 9)), prerequisites: [],
+    description: index % 3 === 0 ? 'MMMM WWWW MMMM WWWW MMMM WWWW MMMM WWWW MMMM WWWW' : text(index + 2, 2 + ((index * 7) % 26)),
+  }));
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.map((node) => node.id) }, errors);
+  try {
+    await page.getByRole('button', { name: 'Show all 1,500' }).click();
+    const drift = await page.locator('.st-board-columns-column--done').evaluate(async (column) => {
+      const frames = async (count) => { for (let index = 0; index < count; index += 1) await new Promise((resolve) => requestAnimationFrame(resolve)); };
+      column.scrollTop = 80000;
+      await frames(6);
+      const viewTop = column.getBoundingClientRect().top + 60;
+      const anchor = [...column.querySelectorAll('.st-board-card')].find((card) => card.getBoundingClientRect().top >= viewTop);
+      const before = anchor.getBoundingClientRect().top;
+      for (let step = 0; step < 4; step += 1) {
+        column.scrollTop -= 150;
+        await frames(3);
+      }
+      const scrolled = 600;
+      return { connected: anchor.isConnected, drift: Math.round(anchor.getBoundingClientRect().top - before - scrolled) };
+    });
+    assert.deepEqual(drift, { connected: true, drift: 0 });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: a later change that brings no arrival leaves the wake on its first clock', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.evaluate(() => complete('wind'));
+    await page.locator('.st-board-card.is-arrived').waitFor();
+    const woke = Date.now();
+    await page.waitForTimeout(1600);
+    await page.evaluate(() => complete('bowline'));
+    await page.waitForFunction(() => document.querySelectorAll('.st-board-card.is-arrived').length === 0, null, { timeout: 2000 });
+    assert.ok(Date.now() - woke < 3000, `the wake settled ${Date.now() - woke} ms after it began`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: with reduced motion an arriving step only fades in', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', reducedMotion: 'reduce' }, errors);
+  try {
+    await page.evaluate(() => complete('wind'));
+    await page.locator('.st-board-card.is-arrived').waitFor();
+    assert.equal(await page.locator('.st-board-card.is-arrived').evaluate((card) => getComputedStyle(card).animationName), 'st-board-card-fade');
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: 5,000 steps render a window per column; End and Home rove past unrendered cards, and a selected card always renders', async () => {
+  await ready;
+  const errors = [];
+  const nodes = coastalNodes();
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
+  try {
+    const rendered = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('[data-column]')]
+      .map((column) => [column.dataset.column, column.querySelectorAll('.st-board-card').length])));
+    assert.deepEqual(await rendered(), { locked: 17, upNext: 18, done: 12 });
+
+    await page.getByRole('button', { name: 'Show all 3,200' }).click();
+    assert.equal(await focused(page), 'Done 3187');
+    await page.keyboard.press('End');
+    await page.waitForFunction(() => document.activeElement.textContent.startsWith('Done 0'));
+    const done = await page.locator('.st-board-columns-column--done').evaluate((column) => {
+      const view = column.getBoundingClientRect();
+      const card = document.activeElement.getBoundingClientRect();
+      return { inView: card.top >= view.top && card.bottom <= view.bottom, rendered: column.querySelectorAll('.st-board-card').length };
+    });
+    assert.equal(done.inView, true);
+    assert.ok(done.rendered <= 40, `${done.rendered} Done cards rendered`);
+    await page.keyboard.press('Home');
+    assert.equal(await focused(page), 'Done 3199');
+
+    await page.evaluate(() => selectElsewhere('l1500'));
+    assert.equal(await page.locator('.st-board-card[aria-current="true"] .st-board-card-title').textContent(), 'Locked 1500');
+    assert.deepEqual(await events(page), ['roadmap_board_done_expand {"band":"desktop"}']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: scrolling a 1,770-card column end to end keeps the window small and the heading sticky', async (t) => {
+  await ready;
+  const errors = [];
+  const nodes = coastalNodes();
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
+  try {
+    const run = await page.locator('.st-board-columns-column--locked').evaluate(async (column) => {
+      const longTasks = [];
+      new PerformanceObserver((list) => longTasks.push(...list.getEntries().map((entry) => entry.duration))).observe({ type: 'longtask' });
+      const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+      let most = 0;
+      const started = performance.now();
+      for (let top = 0; top < column.scrollHeight; top += 1000) {
+        column.scrollTop = top;
+        await frame();
+        await frame();
+        most = Math.max(most, column.querySelectorAll('.st-board-card').length);
+      }
+      const heading = column.querySelector('.st-board-columns-heading').getBoundingClientRect().top - column.getBoundingClientRect().top;
+      const last = column.querySelector('.st-board-card:last-of-type .st-board-card-title')?.textContent;
+      return { most, heading, last, frames: Math.ceil(column.scrollHeight / 1000), ms: Math.round(performance.now() - started), longTasks };
+    });
+    t.diagnostic(`1,770-card Locked: ${run.frames} scroll steps in ${run.ms} ms, at most ${run.most} cards rendered, ${run.longTasks.length} long tasks (${run.longTasks.map(Math.round).join(', ') || 'none'} ms)`);
+    assert.ok(run.most <= 45, `${run.most} cards rendered at once`);
+    assert.deepEqual([run.heading, run.last], [0, 'Locked 1769']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
 });

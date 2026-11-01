@@ -7,6 +7,8 @@ import { TABLET_PANEL_WIDTH } from '../viewport.js';
 
 const SAFE_TOP = 'var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px))';
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
+// The reader's Fork this tree pill, above the bottom safe area; whatever must clear it reads its geometry here.
+export const FORK_PILL = { bottom: 18, height: 50 };
 
 export function MobileChrome({
   title,
@@ -215,7 +217,7 @@ export function MobileChrome({
         onPointerCancel={() => setPressed(false)}
         style={{
           position: 'absolute',
-          bottom: `calc(${SAFE_BOTTOM} + 18px)`,
+          bottom: `calc(${SAFE_BOTTOM} + ${FORK_PILL.bottom}px)`,
           left: tablet ? 'calc(env(safe-area-inset-left, 0px) + 20px)' : '50%',
           transform: `${tablet ? '' : 'translateX(-50%) '}scale(${pressed ? 0.97 : 1})`,
           pointerEvents: 'auto',
@@ -223,7 +225,7 @@ export function MobileChrome({
           alignItems: 'center',
           justifyContent: 'center',
           gap: 8,
-          height: 50,
+          height: FORK_PILL.height,
           padding: '0 22px',
           border: 'none',
           borderRadius: 'var(--radius-full)',
