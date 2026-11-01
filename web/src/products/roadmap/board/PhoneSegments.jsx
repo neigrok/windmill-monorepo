@@ -1,9 +1,11 @@
-// Below 744px: one column at a time over the bottom band's Locked · Up next · Done tabs; each column's pane keeps its scroll.
+// Below 744px: one column at a time over the bottom band's Locked · Up next · Done tabs; each column's pane keeps its scroll
+// and its own place for the arrow keys, which move between its cards.
 
 import React, { useId, useRef, useState } from 'react';
 import './phone.css';
 import { track } from '../../../telemetry/beacon.js';
-import { ColumnCards } from './StepCard.jsx';
+import { ColumnCards, useArrivals } from './StepCard.jsx';
+import { columnStops, useRovingFocus } from './traversal.js';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount } from './copy.js';
 
 const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
@@ -40,11 +42,18 @@ export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, done
     setScrolled((current) => (current[name] === away ? current : { ...current, [name]: away }));
   };
 
-  const recentDone = board.recentDone();
+  const arrived = useArrivals(board);
+  const shownCards = Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })]));
+  const roving = useRovingFocus([{ name: shown, stops: columnStops(shownCards[shown]) }]);
+
+  const expandDone = () => {
+    track('roadmap_board_done_expand', { band: 'phone' });
+    onExpandDone();
+  };
 
   return (
     <div className="st-board-phone">
-      <div className="st-board-phone-panes">
+      <div className="st-board-phone-panes" ref={roving.ref} onFocus={roving.onFocus} onKeyDown={roving.onKeyDown}>
         {board.columns.map((column) => (
           <div
             key={column.name}
@@ -53,16 +62,18 @@ export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, done
             aria-labelledby={tabId(column.name)}
             className={`st-board-phone-pane ${column.name === shown ? 'is-shown' : ''} ${scrolled[column.name] ? 'is-scrolled' : ''}`}
             tabIndex={column.count === 0 ? 0 : undefined}
+            data-column={column.name}
             onScroll={(event) => handleScroll(column.name, event)}
           >
             <h2 className="st-board-phone-heading">{COLUMN_TITLES[column.name]}</h2>
             <ColumnCards
-              column={column}
-              recentDone={recentDone}
-              doneExpanded={doneExpanded}
+              shown={shownCards[column.name]}
+              stopId={roving.stopIn(column.name)}
+              pinned={roving.pinnedIn(column.name)}
+              arrived={arrived}
               selectedId={selectedId}
               onSelect={onSelect}
-              onExpandDone={onExpandDone}
+              onExpandDone={expandDone}
             />
           </div>
         ))}

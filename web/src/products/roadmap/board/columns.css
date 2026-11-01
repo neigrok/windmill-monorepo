@@ -32,8 +32,7 @@
 .st-board-columns-column--upNext {
   --st-board-column-ground: var(--color-brand-soft);
 }
-.st-board-columns-column > .st-board-card,
-.st-board-columns-column > .st-board-show-all {
+.st-board-columns-column > * {
   flex-shrink: 0;
 }
 

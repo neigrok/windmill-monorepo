@@ -37,8 +37,8 @@ function tab(name, title, count, spoken, selected) {
     + `<span class="st-board-phone-segment-surface"><span class="st-board-phone-segment-label">${title}</span><span class="st-board-phone-segment-count">${count}</span></span></button>`;
 }
 
-function card(column, kind, title, { reason = null, excerpt = null, selected = false } = {}) {
-  return `<button type="button" class="st-board-card st-board-card--${column}" style="--st-board-rail:var(--kind-${kind})"${selected ? ' aria-current="true"' : ''}>`
+function card(column, kind, id, title, { reason = null, excerpt = null, selected = false, stop = false } = {}) {
+  return `<button type="button" class="st-board-card st-board-card--${column}" style="--st-board-rail:var(--kind-${kind})" data-step-id="${id}" tabindex="${stop ? 0 : -1}"${selected ? ' aria-current="true"' : ''}>`
     + '<span class="st-board-card-rail" aria-hidden="true"></span><span class="st-board-card-content">'
     + `<span class="st-board-card-title">${title}</span>`
     + (reason ? `<span class="st-board-card-reason">${reason}</span>` : '')
@@ -47,26 +47,26 @@ function card(column, kind, title, { reason = null, excerpt = null, selected = f
 }
 
 function pane(name, title, shown, cards) {
-  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} ">`
-    + `<h2 class="st-board-phone-heading">${title}</h2>${cards.join('')}</div>`;
+  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} " data-column="${name}">`
+    + `<h2 class="st-board-phone-heading">${title}</h2><div class="st-board-cards">${cards.join('')}</div></div>`;
 }
 
 function learnToSailMarkup(shown, selectedId = null) {
   return [
     '<div class="st-board-phone"><div class="st-board-phone-panes">',
     pane('locked', 'Locked', shown === 'locked', [
-      card('locked', 'terracotta', 'Leave the dock', { reason: 'Needs Read the wind · 1 to go' }),
-      card('locked', 'olive', 'Sail a triangle', { reason: 'Needs Leave the dock · 2 to go' }),
-      card('locked', 'gold', 'Sail solo', { reason: 'Needs Sail a triangle +1 · 4 to go' }),
+      card('locked', 'terracotta', 'dock', 'Leave the dock', { reason: 'Needs Read the wind · 1 to go', stop: shown === 'locked' }),
+      card('locked', 'olive', 'triangle', 'Sail a triangle', { reason: 'Needs Leave the dock · 2 to go' }),
+      card('locked', 'gold', 'solo', 'Sail solo', { reason: 'Needs Sail a triangle +1 · 4 to go' }),
     ]),
     pane('upNext', 'Up next', shown === 'upNext', [
-      card('upNext', 'sky', 'Read the wind', { reason: 'Unlocks Leave the dock' }),
-      card('upNext', 'olive', 'Tie a bowline', { excerpt: 'Tie a secure loop.' }),
+      card('upNext', 'sky', 'wind', 'Read the wind', { reason: 'Unlocks Leave the dock', stop: shown === 'upNext' }),
+      card('upNext', 'olive', 'bowline', 'Tie a bowline', { excerpt: 'Tie a secure loop.' }),
     ]),
     pane('done', 'Done', shown === 'done', [
-      card('done', 'terracotta', 'Rig the boat'),
-      card('done', 'sky', 'Name the boat parts', { selected: selectedId === 'parts' }),
-      card('done', 'terracotta', 'Choose a sailing course', { excerpt: 'Book a beginner course.' }),
+      card('done', 'terracotta', 'rig', 'Rig the boat', { stop: shown === 'done' }),
+      card('done', 'sky', 'parts', 'Name the boat parts', { selected: selectedId === 'parts' }),
+      card('done', 'terracotta', 'course', 'Choose a sailing course', { excerpt: 'Book a beginner course.' }),
     ]),
     '</div><div class="st-board-phone-band"><div class="st-board-phone-segments" role="tablist" aria-label="Columns">',
     tab('locked', 'Locked', '3', 'Locked, 3 steps', shown === 'locked'),
@@ -76,7 +76,7 @@ function learnToSailMarkup(shown, selectedId = null) {
   ].join('');
 }
 
-test('PhoneSegments — Up next shows first; every column has a pane labelled by its tab, and every tab its count', () => {
+test('PhoneSegments — Up next shows first; every column has a pane labelled by its tab, and every tab its count; the first card is the pane’s one tab stop', () => {
   assert.equal(markup(), learnToSailMarkup('upNext'));
 });
 
@@ -148,8 +148,18 @@ let server, browser, origin;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-phone-segments-test`,
     plugins: [{ name: 'phone-segments-test',
-      resolveId(id) { if (id === '/phone-segments-entry.js') return '\0phone-segments-entry'; },
-      load(id) { if (id === '\0phone-segments-entry') return entry; },
+      enforce: 'pre',
+      resolveId(id) {
+        if (id === '/phone-segments-entry.js') return '\0phone-segments-entry';
+        if (id.endsWith('/telemetry/beacon.js')) return '\0phone-segments-beacon';
+      },
+      load(id) {
+        if (id === '\0phone-segments-entry') return entry;
+        if (id === '\0phone-segments-beacon') {
+          return 'export function track(name, props) { (window.events ??= []).push(`${name} ${JSON.stringify(props)}`); }\n'
+            + 'export function reportError() {}\nexport function routeFamily(route) { return route; }';
+        }
+      },
       configureServer(server) {
         server.middlewares.use('/phone-segments-test', (_request, response) => {
           response.setHeader('Content-Type', 'text/html');
@@ -189,6 +199,8 @@ const shown = (page) => page.evaluate(() => {
     panes: visible.map((pane) => `${pane.querySelector('.st-board-phone-heading').textContent} · ${pane.querySelectorAll('.st-board-card').length} cards · ${pane.scrollTop}`),
   };
 });
+const focusedName = (page) => page.evaluate(() => document.activeElement.querySelector('.st-board-card-title')?.textContent ?? document.activeElement.textContent);
+const events = (page) => page.evaluate(() => window.events ?? []);
 const scrollShown = (page, top) => page.locator('.st-board-phone-pane.is-shown').evaluate((pane, top) => { pane.scrollTop = top; }, top);
 
 test('Chromium: tapping a tab shows its column, and each column keeps its own scroll across tabs and the Graph', async () => {
@@ -196,11 +208,11 @@ test('Chromium: tapping a tab shows its column, and each column keeps its own sc
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
   try {
-    assert.deepEqual(await shown(page), { tab: 'Up next, 30 steps', panes: ['Up next · 30 cards · 0'] });
+    assert.deepEqual(await shown(page), { tab: 'Up next, 30 steps', panes: ['Up next · 22 cards · 0'] });
     await scrollShown(page, 600);
 
     await page.getByRole('tab', { name: 'Locked, 1,770 steps' }).click();
-    assert.deepEqual(await shown(page), { tab: 'Locked, 1,770 steps', panes: ['Locked · 1770 cards · 0'] });
+    assert.deepEqual(await shown(page), { tab: 'Locked, 1,770 steps', panes: ['Locked · 19 cards · 0'] });
     await scrollShown(page, 9000);
 
     await page.getByRole('tab', { name: 'Up next, 30 steps' }).click();
@@ -214,7 +226,7 @@ test('Chromium: tapping a tab shows its column, and each column keeps its own sc
     assert.deepEqual(await shown(page), { tab: 'Up next, 30 steps', panes: ['Up next · 30 cards · 600'] });
 
     await page.getByRole('tab', { name: 'Locked, 1,770 steps' }).click();
-    assert.deepEqual(await shown(page), { tab: 'Locked, 1,770 steps', panes: ['Locked · 1770 cards · 9000'] });
+    assert.deepEqual(await shown(page), { tab: 'Locked, 1,770 steps', panes: ['Locked · 31 cards · 9000'] });
     assert.deepEqual(errors, []);
   } finally {
     await page.close();
@@ -235,10 +247,10 @@ test('Chromium: arrow keys, Home and End move between tabs, choosing and focusin
     }
     assert.deepEqual(visits, [
       'ArrowRight → Done, 3,200 steps · 0 · Done · 12 cards · 0',
-      'ArrowRight → Locked, 1,770 steps · 0 · Locked · 1770 cards · 0',
+      'ArrowRight → Locked, 1,770 steps · 0 · Locked · 19 cards · 0',
       'ArrowLeft → Done, 3,200 steps · 0 · Done · 12 cards · 0',
       'End → Done, 3,200 steps · 0 · Done · 12 cards · 0',
-      'Home → Locked, 1,770 steps · 0 · Locked · 1770 cards · 0',
+      'Home → Locked, 1,770 steps · 0 · Locked · 19 cards · 0',
     ]);
     assert.deepEqual(errors, []);
   } finally {
@@ -246,7 +258,7 @@ test('Chromium: arrow keys, Home and End move between tabs, choosing and focusin
   }
 });
 
-test('Chromium: Done shows its twelve newest and a Show all row that unfolds the rest', async () => {
+test('Chromium: Done shows its twelve newest and the drawn Show all row; End reaches it, Enter unfolds the rest into its place', async () => {
   await ready;
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
@@ -254,10 +266,60 @@ test('Chromium: Done shows its twelve newest and a Show all row that unfolds the
     await page.getByRole('tab', { name: 'Done, 3,200 steps' }).click();
     assert.deepEqual(await shown(page), { tab: 'Done, 3,200 steps', panes: ['Done · 12 cards · 0'] });
     assert.equal(await page.locator('.st-board-phone-pane.is-shown .st-board-card-title').first().textContent(), 'Done 3199');
-    await page.getByRole('button', { name: 'Show all 3,200' }).dispatchEvent('click');
+    assert.deepEqual(await page.locator('.st-board-show-all').evaluate((row) => {
+      const style = getComputedStyle(row);
+      const sunken = getComputedStyle(document.documentElement).getPropertyValue('--surface-sunken').trim();
+      const probe = document.createElement('i');
+      probe.style.color = sunken;
+      document.body.append(probe);
+      const expected = getComputedStyle(probe).color;
+      probe.remove();
+      return { height: row.offsetHeight, fillsPane: row.offsetWidth === row.parentElement.clientWidth - 32, sunken: style.backgroundColor === expected, chevron: row.querySelector('svg').getAttribute('width') };
+    }), { height: 48, fillsPane: true, sunken: true, chevron: '18' });
+
+    await page.locator('.st-board-phone-pane.is-shown .st-board-card[tabindex="0"]').focus();
+    await page.keyboard.press('End');
+    assert.equal(await focusedName(page), 'Show all 3,200');
+    await page.keyboard.press('Enter');
     assert.equal(await page.evaluate(() => window.expansions), 1);
-    assert.deepEqual(await shown(page), { tab: 'Done, 3,200 steps', panes: ['Done · 3200 cards · 0'] });
+    assert.equal(await focusedName(page), 'Done 3187');
     assert.equal(await page.getByRole('button', { name: 'Show all 3,200' }).count(), 0);
+
+    await page.keyboard.press('End');
+    await page.waitForFunction(() => document.activeElement.textContent === 'Done 0');
+    const pane = await page.locator('.st-board-phone-pane.is-shown').evaluate((element) => {
+      const view = element.getBoundingClientRect();
+      const last = document.activeElement.getBoundingClientRect();
+      return { lastInView: last.top >= view.top && last.bottom <= view.bottom, rendered: element.querySelectorAll('.st-board-card').length };
+    });
+    assert.equal(pane.lastInView, true);
+    assert.ok(pane.rendered < 40, `${pane.rendered} cards rendered`);
+    assert.deepEqual(await events(page), ['roadmap_board_column {"column":"done"}', 'roadmap_board_done_expand {"band":"phone"}']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: inside a pane the arrow keys move between its cards, and the pane keeps that card as its one tab stop', async () => {
+  await ready;
+  const errors = [];
+  const page = await openCoast({ width: 390, height: 844 }, errors);
+  try {
+    await page.locator('.st-board-phone-pane.is-shown .st-board-card[tabindex="0"]').focus();
+    const visits = [];
+    for (const key of ['ArrowDown', 'ArrowDown', 'ArrowUp', 'End', 'Home', 'ArrowUp', 'ArrowLeft']) {
+      await page.keyboard.press(key);
+      visits.push(`${key} → ${await focusedName(page)}`);
+    }
+    assert.deepEqual(visits, [
+      'ArrowDown → Up next 1', 'ArrowDown → Up next 2', 'ArrowUp → Up next 1', 'End → Up next 29',
+      'Home → Up next 0', 'ArrowUp → Up next 0', 'ArrowLeft → Up next 0',
+    ]);
+    await page.keyboard.press('End');
+    await page.getByRole('tab', { name: 'Locked, 1,770 steps' }).click();
+    await page.getByRole('tab', { name: 'Up next, 30 steps' }).click();
+    assert.deepEqual(await page.locator('.st-board-phone-pane.is-shown .st-board-card[tabindex="0"] .st-board-card-title').allTextContents(), ['Up next 29']);
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

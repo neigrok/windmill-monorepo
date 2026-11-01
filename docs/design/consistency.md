@@ -617,6 +617,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
   strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
   icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
+- **Board · two Show all rows.** The component 🧩 Board / Show all row (369:10031) is a 48px
+  `surface/sunken` row with a chevron, 800-weight label. Desktop 06.01 (399:32785, 399:33254) draws its
+  own row instead: 44px, `surface/card` with a `border/default` stroke, 700-weight label, no chevron.
+  `board/StepCard.jsx` builds the component on every band. Redraw 06.01 with the component.
+- **Board · the rail heading at 744.** The tablet rail is 136px at 744 (05.04 377:15141); its
+  heading leaves 104px for the title, the gap and the count chip. Every rail drawing counts 3, so
+  none shows *Locked* with a four-digit count, and the build clips the title (*Loc… 1.8k*). Draw the
+  rail heading with a long title and a compact four-digit count.
+- **Board · the rail count chip.** The Column rail (377:14324) fills the rail and its count chip
+  with `surface/sunken`, so the chip disappears and only the number shows. `columns.css` builds it
+  as drawn. Pick a chip fill that reads on the rail, or drop the chip there.
+- **Board · the Arrived glow by the column edge.** The Arrived card (395:25709, 403:11642) draws a
+  36px glow on a loose specimen. In a column the card sits 8px from the column's scrolling edge, so the
+  glow is cut at the sides. Say whether that cut is accepted or how much room the column gives it.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

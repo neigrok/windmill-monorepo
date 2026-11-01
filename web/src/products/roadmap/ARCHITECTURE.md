@@ -33,11 +33,23 @@ sticky heading and starting just under the topbar, whose content bottom `Control
 the gate is open. From 744px to 1023px one side column folds to a rail, Done first; Show swaps which
 one, and Up next never folds (`columnStage` in `BoardColumns.jsx`). Phones show one column at a time
 behind Locked · Up next · Done tabs in a bottom band (`PhoneSegments.jsx`). No band draws the action
-lane on the Board; a reader's Fork pill lifts the columns and the band clear of it. From 744px, tabbing
-forward into the cards lands on the first Up next card. Shown with a step selected, the Board opens
-that step's column (its tab, past the Done fold, or out of the rail) and scrolls its card into view.
-The layer stays mounted across Board/Graph switches, so each column keeps its scroll there. Crossing
-744px rebuilds the columns, and a column that folds to a rail starts at the top when it stands again.
+lane on the Board; a reader's Fork pill lifts the columns and the band clear of it. Shown with a step
+selected, the Board opens that step's column (its tab, past the Done fold, or out of the rail) and
+scrolls its card into view. The layer stays mounted across Board/Graph switches, so each column keeps
+its scroll there. Crossing 744px rebuilds the columns, and a column that folds to a rail starts at the
+top when it stands again.
+
+Each column renders only the cards in view plus ten either side (`ColumnCards` in `StepCard.jsx`),
+measuring each card as it renders and standing a spacer in for every stretch it skips. The roving
+stop and the selected step always render, so focus and a reveal reach them anywhere in the column.
+Above twelve, Done folds to its twelve newest completions and a Show all row (`Board.shownCards`).
+The columns are one tab stop with roving focus (`traversal.js`): Tab enters on the card last focused,
+else the first Up next card; Up and Down move within a column, Home and End to its ends, and Left and
+Right to the neighbouring column's card at the nearest height, skipping an empty column and stopping
+on a rail's Show. Enter is the card's own button and selects its step. On phones each pane is one tab
+stop of its own with the same Up, Down, Home and End, and the tabs keep their own arrow keys. A step
+that becomes up next, or a new step that is not done, wakes once while the Board stays mounted
+(`arrivals` in `Board.js`); reduced motion fades it in, and focus landing on it ends the wake.
 
 ## Package map
 

@@ -202,7 +202,7 @@ test('Chromium: a step selected in the rail column stands it when the Board is s
   }
 });
 
-test('Chromium: tabbing forward into the columns lands on the first Up next card; tabbing back in stays on the last card', async () => {
+test('Chromium: tabbing into the columns from either side lands on the first Up next card', async () => {
   await ready;
   const errors = [];
   const page = await openBoardPage({ width: 1440, height: 900 }, 'desktop', errors);
@@ -212,7 +212,7 @@ test('Chromium: tabbing forward into the columns lands on the first Up next card
     assert.equal(await focused(page), 'Read the wind');
     await page.getByRole('button', { name: 'After the Board' }).focus();
     await page.keyboard.press('Shift+Tab');
-    assert.equal(await focused(page), 'Choose a sailing course');
+    assert.equal(await focused(page), 'Read the wind');
     assert.deepEqual(errors, []);
   } finally {
     await page.close();
