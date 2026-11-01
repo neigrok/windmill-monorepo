@@ -84,27 +84,16 @@ AiInstallationNetwork AiInstallations::network(const std::string& canonicalIp, l
 }
 
 AiInstallationIssue AiInstallations::issue(const std::string& canonicalIp) {
-  WriteObservation observation{"ai.installation.issue", "platform", "REST"};
-  WriteContext context{observation};
-  try {
-    if (!anonymousEnabled()) {
-      observation.finish("anonymous_ai_unavailable");
-      return {AiInstallationCode::Unavailable};
-    }
-    const long long atMs = clock_.nowMs();
-    const auto ceiling = network(canonicalIp, atMs, true);
-    const auto token = tokens_.mint();
-    if (!validAiInstallationCredential(token.secret) || token.digest.size() != 64)
-      throw std::runtime_error("ai_installation_token_failed");
-    const AiInstallationRow row{"installation_" + token.digest, token.digest, atMs};
-    const auto code = repository_.issue(row, ceiling);
-    observation.finish(std::string(aiInstallationCodeName(code)));
-    if (code != AiInstallationCode::Ok) return {code};
-    return {code, token.secret, AiInstallationPrincipal{row.id, std::nullopt}};
-  } catch (...) {
-    observation.failUnknown();
-    throw;
-  }
+  if (!anonymousEnabled()) return {AiInstallationCode::Unavailable};
+  const long long atMs = clock_.nowMs();
+  const auto ceiling = network(canonicalIp, atMs, true);
+  const auto token = tokens_.mint();
+  if (!validAiInstallationCredential(token.secret) || token.digest.size() != 64)
+    throw std::runtime_error("ai_installation_token_failed");
+  const AiInstallationRow row{"installation_" + token.digest, token.digest, atMs};
+  const auto code = repository_.issue(row, ceiling);
+  if (code != AiInstallationCode::Ok) return {code};
+  return {code, token.secret, AiInstallationPrincipal{row.id, std::nullopt}};
 }
 
 std::optional<AiInstallationPrincipal> AiInstallations::authenticate(const std::string& credential) {
@@ -116,7 +105,7 @@ std::optional<AiInstallationPrincipal> AiInstallations::authenticate(const std::
 
 AiInstallationCode AiInstallations::admitGeneration(const AiInstallationPrincipal& principal,
                                                    const std::string& requestId, const std::string& canonicalIp) {
-  WriteObservation observation{"ai.installation.admit", "platform", "REST"};
+  WriteObservation observation{"ai.installation.admit", "platform", "rest"};
   WriteContext context{observation};
   try {
     if (!anonymousEnabled()) {

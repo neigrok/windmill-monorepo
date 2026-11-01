@@ -36,8 +36,8 @@ void runSurviving(const std::string& pool, std::function<void()> job) {
 
 }
 
-WorkerPool::WorkerPool(std::string name, std::size_t threads, std::size_t queueCeiling)
-    : name_(std::move(name)), queueCeiling_(queueCeiling) {
+WorkerPool::WorkerPool(std::string name, std::size_t threads, std::size_t queueCeiling, std::shared_ptr<FailureWindow> saturated)
+    : name_(std::move(name)), queueCeiling_(queueCeiling), saturated_(std::move(saturated)) {
   if (threads == 0) throw std::invalid_argument(name_ + " needs at least one worker thread");
   workers_.reserve(threads);
   try {
@@ -54,8 +54,13 @@ WorkerPool::~WorkerPool() {
 
 bool WorkerPool::post(std::function<void()> job) {
   {
-    std::lock_guard lock{mutex_};
-    if (stopping_ || jobs_.size() >= queueCeiling_) return false;
+    std::unique_lock lock{mutex_};
+    if (stopping_) return false;
+    if (jobs_.size() >= queueCeiling_) {
+      lock.unlock();
+      if (saturated_) saturated_->report("pool=" + name_);
+      return false;
+    }
     jobs_.push_back(std::move(job));
   }
   wake_.notify_one();

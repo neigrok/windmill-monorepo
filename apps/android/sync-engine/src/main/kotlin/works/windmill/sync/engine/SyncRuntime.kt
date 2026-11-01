@@ -37,6 +37,15 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     private val liveWake = Channel<Unit>(Channel.CONFLATED)
     private val wait = SenderWait()
     private val helloWait = SenderWait()
+    // §7.5 the live socket's reopen backoff: its own `k` and the 30 s ceiling, stepped only by the live worker. A wake from a pull or a
+    // frame never cuts it short. A close the client made, a return to the foreground or the network, or a socket nobody wanted (no seat)
+    // opens at once when wanted, keeping `k`; a re-authentication opens it at once from k = 0.
+    private val liveWait = SenderWait()
+    private val liveReauthenticated = java.util.concurrent.atomic.AtomicBoolean()
+    private val liveClosedByClient = java.util.concurrent.atomic.AtomicReference<LiveConnection?>()
+    // How a live step ended (§7.5): `refused` an open that failed and `dropped` a socket the server or the network ended,
+    // both reconnects; `closed` a close the client made, or a step that opened nothing because no socket is wanted.
+    private enum class LiveEnd { refused, dropped, closed }
     private val heldWake = Channel<Unit>(Channel.CONFLATED)
     private val pullWaits = mutableMapOf<ScopeRef, SenderWait>()
     @Volatile private var pullFloor = 0L
@@ -95,6 +104,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         finally { task.cancel(); timer.cancel() }
     }
     private fun wakeAll() { senderWake.trySend(Unit); pullerWake.trySend(Unit); liveWake.trySend(Unit) }
+    // Set before the old token's socket closes, so the live worker resets `k` once that close has ended its step.
+    private fun reopenLiveFresh() { liveReauthenticated.set(true); liveWake.trySend(Unit) }
+    // §7.5 a close the client makes: its socket's end pulls nothing and raises no backoff.
+    private fun closeLive() { socket?.let { open -> liveClosedByClient.set(open); open.close() }; socket = null }
+    private fun liveWanted() = activityAllowed() && foreground && online && seat() != null
     private fun launchWorker(operation: EngineOperation, body: suspend CoroutineScope.() -> Unit) = scope.launch {
         try { body() }
         catch (cancelled: CancellationException) { throw cancelled }
@@ -154,23 +168,37 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             catch (_: Exception) { engine.report(EngineOperation.pull, EngineOutcome.failure) }
             wait(pullerWake, 1_000)
         } }
-        launchWorker(EngineOperation.live) { var k = 0
+        launchWorker(EngineOperation.live) { var readiness = readinessGeneration; var reopenNow = false; var faulted = false
             while (isActive && !closed) {
-                if (!activityAllowed() || !foreground || !online || seat() == null) { socket?.close(); socket = null; wait(liveWake, 30_000); continue }
-                try { liveStep() }
-                catch (_: CancellationException) { if (!isActive) break }
-                catch (_: LiveEnded) { /* Its end is already reported. */ }
-                catch (_: Exception) { engine.report(EngineOperation.live, EngineOutcome.failure) }
-                // §7.5: a socket that stayed open 30 s resets the reopen backoff, however it ended.
-                if (socketOpenedAt?.let { mono() - it >= 30_000 } == true) k = 0
-                socketOpenedAt = null
-                if (activityAllowed() && foreground && online && seat() != null) {
+                try {
+                    if (readinessGeneration != readiness) { readiness = readinessGeneration; reopenNow = true }
+                    if (!liveWanted()) { faulted = false; reopenNow = true; closeLive(); wait(liveWake, 30_000); continue }
+                    faulted = false
+                    if (liveReauthenticated.getAndSet(false)) liveWait.kick(mono()) else if (reopenNow) liveWait.ask(mono())
+                    reopenNow = false
+                    val pause = liveWait.until - mono()
+                    if (pause > 0) { wait(liveWake, pause); continue }
+                    val end = liveStep()
+                    // §7.5: a socket that stayed open 30 s resets the reopen backoff, however it ended.
+                    if (socketOpenedAt?.let { mono() - it >= 30_000 } == true) liveWait.kick(mono())
+                    socketOpenedAt = null
+                    // §7.5: a close the client made pulls nothing, and a socket still wanted opens again at once. A failed open or
+                    // an ended socket is a reconnect: the puller runs at once, and the next open waits out the backoff.
+                    if (end == LiveEnd.closed || !liveWanted()) { liveWait.ask(mono()); continue }
                     engine.subscriptions(products).forEach(pullWanted::add); pullerWake.trySend(Unit)
-                    val pause = engine.draw(minOf(30_000L, 1_000L shl minOf(k++, 5)).toInt()).toLong()
-                    wait(liveWake, pause)
+                    liveWait.backoff(mono(), engine::draw, liveHint = true)
+                    wait(liveWake, liveWait.until - mono())
+                } catch (cancelled: CancellationException) { if (!isActive) break }
+                catch (_: Exception) {
+                    // The seat could not be read (its token's storage, the replica): reported once a run, then the whole backoff,
+                    // which no wake cuts short.
+                    if (!faulted) engine.report(EngineOperation.live, EngineOutcome.failure)
+                    faulted = true
+                    liveWait.backoff(mono(), engine::draw, liveHint = true)
+                    while (isActive && liveWait.until > mono()) wait(liveWake, liveWait.until - mono())
                 }
             }
-            socket?.close(); socket = null
+            closeLive()
         }
     }
     private fun <T> storageIO(body: () -> T): T = try { body() }
@@ -214,7 +242,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             reconnected
         }
         engine.networkStatus(online = online)
-        if (!online) { socket?.close(); socket = null }
+        if (!online) closeLive()
         if (reconnected) launchWorker(EngineOperation.hello) {
             val account = engine.lock.withLock { engine.device.current().takeIf { it.state == "bound" }?.account }
             account?.let { storageIO { tokens.token(it) } }?.let { hello(it, activityAllowed) }
@@ -233,7 +261,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     }
     suspend fun leave() {
         engine.lock.withLock { if (foreground) { foreground = false; readinessGeneration++ } }
-        socket?.close(); socket = null
+        closeLive()
         engine.lock.withLock { if (activityAllowed()) engine.releaseHeld(true) }
         if (online && wait.leaveMayPush(mono())) deadline(2_000) { senderStep(leaving = true) }
         wakeAll()
@@ -281,7 +309,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             bound
         }
         if (alreadyBound) {
-            engine.reauthenticate(); socket?.close(); socket = null; wakeAll()
+            engine.reauthenticate(); reopenLiveFresh(); closeLive(); wakeAll()
             launchWorker(EngineOperation.hello) { hello(token) }
             return SignInSession(this, account, emptyMap(), Json.objectOf("complete" to Json.of(true), "due" to Json.array()))
         }
@@ -306,7 +334,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             if (engine.device.meta["pendingSignIn"]?.get("account") != Json.of(account)) throw EngineError(EngineError.Code.signInEnded)
             engine.signIn(account, holds, serverSchema = serverSchema)
         }
-        socket?.close(); socket = null
+        closeLive()
         wakeAll(); return SignInSession(this, account, holds, result, serverSchema)
     }
     internal fun finishSignIn(session: SignInSession, answers: Map<String, LineageAnswer>) {
@@ -315,7 +343,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             engine.signIn(session.account, session.holdsRecords, answers.mapValues { it.value.name }, session.decisions.associate { it.product to it.counted }, session.serverSchema)
         }
         if (!result.member("complete").bool()) throw EngineError(EngineError.Code.signInChanged)
-        socket?.close(); socket = null; wakeAll()
+        closeLive(); wakeAll()
     }
     internal fun cancelSignIn() { engine.report(EngineOperation.lifecycle, EngineOutcome.success) }
     suspend fun abandonSignIn(account: String, token: String): Boolean = signInTurn.withLock {
@@ -353,7 +381,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                     if (signOutHold != account || signOutSerial != hold) throw EngineError(EngineError.Code.signOutEnded)
                     if (engine.device.current().let { it.state != "bound" || it.account != account }) throw EngineError(EngineError.Code.notSignedIn)
                 }
-                socket?.close(); socket = null
+                closeLive()
                 SignOutSession(this@SyncRuntime, account, hold, engine.signOut()).also { wakeAll() }
             } }
         } catch (failure: Throwable) {
@@ -381,7 +409,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     }
     fun reauthenticate(token: String) {
         val account = engine.lock.withLock { engine.device.current().account } ?: throw EngineError(EngineError.Code.notSignedIn)
-        storageIO { tokens.save(account, token) }; engine.reauthenticate(); socket?.close(); socket = null; launchWorker(EngineOperation.lifecycle) { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
+        storageIO { tokens.save(account, token) }; engine.reauthenticate(); reopenLiveFresh(); closeLive(); launchWorker(EngineOperation.lifecycle) { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
         launchWorker(EngineOperation.hello) { hello(token) }
     }
     suspend fun senderStep(leaving: Boolean = false): Boolean = runSenderStep(leaving, false)
@@ -558,19 +586,28 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         true
     }
-    private suspend fun liveStep() = liveTurn.withLock {
-        if (!activityAllowed() || !foreground || !online || closed) return@withLock
-        val seat = seat() ?: return@withLock
+    // One open of the live socket and its life, run by the live worker. An exception it did not expect is reported here and
+    // ends the step as a socket that failed.
+    private suspend fun liveStep(): LiveEnd = try { liveTurn.withLock { liveOpen() } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { engine.report(EngineOperation.live, EngineOutcome.failure); LiveEnd.dropped }
+    private suspend fun liveOpen(): LiveEnd {
+        if (!activityAllowed() || !foreground || !online || closed) return LiveEnd.closed
+        val seat = seat() ?: return LiveEnd.closed
         val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.openLive(seat.token!!) } ?: Reply.Unreachable
-        if (!activityAllowed() || !current(seat) || !foreground || !online || closed) { (reply as? Reply.Answer)?.value?.close(); return@withLock }
-        // §7.5: a handshake's 426 proves nothing on its own; the pull the failed open runs hears the server's own verdict.
+        if (!activityAllowed() || !current(seat) || !foreground || !online || closed) { (reply as? Reply.Answer)?.value?.close(); return LiveEnd.closed }
+        // §7.5: a handshake's 426 or 503 proves nothing on its own; the pull the failed open runs hears the server's own verdict.
         if (reply is Reply.Failed) {
             if (reply.response.status == 401) engine.write(EngineOperation.live) { it.meta = it.meta.with("authPaused" to Json.of(true)) }
-            return@withLock
+            return LiveEnd.refused
         }
-        val connection = (reply as? Reply.Answer)?.value ?: return@withLock
+        val connection = (reply as? Reply.Answer)?.value ?: return LiveEnd.refused
+        // §7.5: an open after a failed open or an ended socket pulls every scope once they are followed, for what changed while
+        // no socket followed them.
+        var catchUp = liveWait.k > 0
         socket = connection; socketOpenedAt = mono()
-        try { coroutineScope {
+        fun ended() = if (liveClosedByClient.compareAndSet(connection, null)) LiveEnd.closed else LiveEnd.dropped
+        return try { coroutineScope {
             val following = mutableSetOf<ScopeRef>()
             var heard = mono(); var pongDue: Long? = null
             val incoming = Channel<Json?>(1)
@@ -587,14 +624,15 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                     engine.lock.withLock { batch.forEach { engine.doubts.followed(it, mono()) } }
                 }
                 following.clear(); following.addAll(scopes)
+                if (catchUp) { catchUp = false; engine.subscriptions(products).forEach(pullWanted::add); pullerWake.trySend(Unit) }
                 if (pongDue?.let { mono() >= it } == true) {
                     engine.report(EngineOperation.live, EngineOutcome.timeout, "unreachable"); throw LiveEnded("live-pong-timeout")
                 }
                 if (pongDue == null && mono() - heard >= Constants.LIVE_PING_MS) { connection.send(Json.objectOf("op" to Json.of("ping"))); pongDue = mono() + Constants.LIVE_PONG_MS }
                 val item = withTimeoutOrNull(1_000) { incoming.receiveCatching() }
-                if (!activityAllowed() || !current(seat)) break
+                if (!activityAllowed() || !current(seat)) return@coroutineScope LiveEnd.closed
                 if (item == null) continue
-                val frame = item.getOrNull() ?: break
+                val frame = item.getOrNull() ?: return@coroutineScope ended()
                 heard = mono(); if (frame.member("op").str() == "pong") pongDue = null
                 val op = frame.member("op").str()
                 if (op in setOf("gone", "not-found")) { val target = ScopeRef(frame.member("scope")); following.remove(target); engine.lock.withLock { engine.doubts.unfollowed(target, mono()) } }
@@ -603,15 +641,16 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 } }
                 if (outcome == "pull") { pullWanted.add(ScopeRef(frame.member("scope"))); pullerWake.trySend(Unit) }
                 if (outcome == "ignored" && op in setOf("gone", "not-found")) engine.lock.withLock { engine.doubts.end(ScopeRef(frame.member("scope")), mono(), engine::draw) }
-                if (outcome == "paused") break
-            } } finally { reader.cancel(); following.forEach { target -> engine.lock.withLock { engine.doubts.unfollowed(target, mono()) } } }
-        } } finally { connection.close(); socket = null }
+                if (outcome == "paused") return@coroutineScope LiveEnd.closed
+            }; LiveEnd.closed } finally { reader.cancel(); following.forEach { target -> engine.lock.withLock { engine.doubts.unfollowed(target, mono()) } } }
+        } } catch (_: LiveEnded) { ended() }
+        finally { connection.close(); socket = null; liveClosedByClient.compareAndSet(connection, null) }
     }
     suspend fun shutdown(timeoutMs: Long = 2_000) {
         close()
         withTimeoutOrNull(timeoutMs) { scope.coroutineContext[Job]?.join() }
     }
     override fun close() {
-        if (!closed) { closed = true; activePush?.cancel(); socket?.close(); socket = null; scope.cancel(); senderWake.close(); pullerWake.close(); liveWake.close(); heldWake.close() }
+        if (!closed) { closed = true; activePush?.cancel(); closeLive(); scope.cancel(); senderWake.close(); pullerWake.close(); liveWake.close(); heldWake.close() }
     }
 }

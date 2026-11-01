@@ -155,7 +155,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `session_seal` | platform | Sealing a secret fails |
 | `session_sign_out_decode` | platform | The saved sign-out choice cannot be decoded |
 | `session_user_decode` | platform | The saved user cannot be decoded |
-| `sync_<operation>` | app | The sync engine files a fault, by engine operation: `commit`, `read`, `undo`, `release`, `dismiss`, `storage`, `writer`, `shutdown`, `sync`, `hello`, `push`, `pull`, `live`, `lifecycle` or `subscription` |
+| `sync_<operation>` | app | The sync engine files a fault, by engine operation: `commit`, `read`, `undo`, `release`, `dismiss`, `storage`, `writer`, `shutdown`, `sync`, `hello`, `push`, `pull`, `live`, `lifecycle` or `subscription`. A request's fault that repeats its operation's last files none until the operation is answered; lost network and the statuses the server answers on purpose (400, 401, 403, 404, 409, 410, 422, 426, 429, a push's 413, the server's own 503 `unavailable` in the sync envelope, and any 503 at the live upgrade, whose body is not read) file none; a bare or foreign 503 (an edge, a maintenance page) is a fault |
 | `telemetry_credential` | platform | The credential for event delivery cannot be read |
 | `telemetry_delivery` | platform | An event batch fails to reach the intake, other than by lost network; once until a batch lands |
 | `telemetry_enqueue` | platform | An event cannot be queued |

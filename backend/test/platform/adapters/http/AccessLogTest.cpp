@@ -1,7 +1,10 @@
 #include "platform/adapters/http/AccessLog.h"
+#include "platform/adapters/http/JsonReply.h"
+#include "platform/adapters/http/WriteRoutes.h"
 
 #include "test/testing.h"
 
+#include <stdexcept>
 #include <string>
 
 using namespace wm;
@@ -17,6 +20,49 @@ TEST(access_log_levels_split_our_failures_from_refusals_from_traffic) {
   CHECK(severityForStatus(499) == Severity::warn);
   CHECK(severityForStatus(500) == Severity::error);
   CHECK(severityForStatus(503) == Severity::error);
+}
+
+// An expected 5xx refusal is a refusal on the access log too, on a write route or a read route WriteRoutes declared; a
+// request whose write observation failed or reported is an error whatever it answered, as are a server failure and a
+// 503 nobody declared.
+TEST(access_log_reads_an_expected_5xx_refusal_as_a_warning_and_keeps_failures_errors) {
+  const auto answer = [](drogon::HttpStatusCode status, const char* code) { return error(status, "PRIVATE BODY", code); };
+  const auto request = [](drogon::HttpMethod method, const std::string& path) {
+    auto incoming = drogon::HttpRequest::newHttpRequest();
+    incoming->setMethod(method);
+    incoming->setPath(path);
+    return incoming;
+  };
+  const auto written = [&](const std::string& operation) {
+    auto incoming = request(drogon::Post, "/v1/test/access");
+    beginWriteRequest(incoming, {"/v1/test/access", operation, "platform", "rest", {drogon::Post}});
+    return incoming;
+  };
+  declareReadRoute({"/v1/test/access/{id}/current", "platform.GET.v1.ai.installations.current", "platform", "rest", {drogon::Get}});
+  const auto read = request(drogon::Get, "/v1/test/access/private-id/current");
+  const auto unrouted = request(drogon::Get, "/v1/test/unrouted");
+
+  CHECK(accessSeverity(written("ai.installation.issue"), answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::warn);
+  CHECK(accessSeverity(written("roadmap.POST.v1.compose"), answer(drogon::k503ServiceUnavailable, "compose-unavailable")) == Severity::warn);
+  CHECK(accessSeverity(read, answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::warn);
+  CHECK(accessSeverity(unrouted, answer(drogon::k503ServiceUnavailable, "unavailable")) == Severity::warn);
+  CHECK(accessSeverity(unrouted, answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::error);
+  CHECK(accessSeverity(written("ai.installation.issue"), answer(drogon::k503ServiceUnavailable, "ai_accounting_unavailable")) == Severity::error);
+  CHECK(accessSeverity(unrouted, answer(drogon::k500InternalServerError, "unavailable")) == Severity::error);
+  CHECK(accessSeverity(unrouted, answer(drogon::k502BadGateway, "")) == Severity::error);
+  CHECK(accessSeverity(unrouted, answer(drogon::k404NotFound, "not_found")) == Severity::warn);
+  CHECK(accessSeverity(unrouted, drogon::HttpResponse::newHttpResponse()) == Severity::info);
+
+  const auto failed = written("sync.push");
+  writeHttpFailure(failed, std::runtime_error("PRIVATE FAILURE"));
+  CHECK(accessSeverity(failed, answer(drogon::k503ServiceUnavailable, "unavailable")) == Severity::error);
+  const auto reported = written("platform.DELETE.v1.me");
+  {
+    WriteContext context(*beginWriteRequest(reported));
+    reportCurrentWriteFailure(std::runtime_error("PRIVATE FAILURE"));
+  }
+  CHECK(accessSeverity(reported, answer(drogon::k503ServiceUnavailable, "temporarily_unavailable")) == Severity::error);
+  CHECK(accessSeverity(reported, drogon::HttpResponse::newHttpResponse()) == Severity::error);
 }
 
 TEST(access_log_line_carries_the_verb_route_status_cost_and_caller) {

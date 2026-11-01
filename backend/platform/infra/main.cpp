@@ -151,8 +151,10 @@ struct SyncEngine {
         physicalClock(std::make_shared<wm::sync::PhysicalClock>(clock)),
         live(std::make_shared<wm::sync::SyncLive>(*this->catalog, store, limits)),
         changes{live}, admission(*this->catalog, store, changes, serverClock, errors, limits),
-        service(std::make_shared<wm::sync::SyncService>(*this->catalog, store, admission, *physicalClock)),
-        workers(std::make_shared<wm::WorkerPool>("sync", workerCount, queueCeiling)) {}
+        service(std::make_shared<wm::sync::SyncService>(*this->catalog, store, admission, *physicalClock,
+                                                        std::make_shared<wm::FailureWindow>(errors, "sync.push.bind_unavailable"))),
+        workers(std::make_shared<wm::WorkerPool>("sync", workerCount, queueCeiling,
+                                                 std::make_shared<wm::FailureWindow>(errors, "worker_pool.saturated"))) {}
 
   ~SyncEngine() { stop(); }
   void stop() {
@@ -514,7 +516,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     aiInstallations->start();
   }
   auto aiInstallationApi = std::make_shared<AiInstallationApi>(aiInstallations, authService, entitlements, sentry, installationProxy);
-  auto aiInstallationWorkers = std::make_shared<WorkerPool>("ai-installation-http", 2, 16);
+  auto aiInstallationWorkers = std::make_shared<WorkerPool>("ai-installation-http", 2, 16,
+                                                           std::make_shared<FailureWindow>(*sentry, "worker_pool.saturated"));
   lifetime.onStop([aiInstallationWorkers] { aiInstallationWorkers->stopAndJoin(); }, aiInstallationApi, authService,
                   aiInstallations, entitlements, sentry);
 

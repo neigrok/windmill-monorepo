@@ -371,7 +371,7 @@ bool AnthropicComposer::configured() const { return !apiKey_.empty() && !budget_
 
 void AnthropicComposer::compose(const std::string& text,
                                 std::function<void(std::optional<std::string>)> done) {
-  auto observation = std::make_shared<WriteObservation>("roadmap.compose.buffered", "roadmap", "REST", "", failures_.get());
+  auto observation = std::make_shared<WriteObservation>("roadmap.compose.buffered", "roadmap", "rest", "", failures_.get());
   WriteContext context{*observation};
   auto refusal = std::make_shared<std::string>();
   done = [observation, refusal, done = std::move(done)](std::optional<std::string> reply) {
@@ -491,7 +491,7 @@ std::function<void()> AnthropicComposer::composeStream(
     const std::string& text,
     std::function<void(const std::string&)> onDelta,
     std::function<void(bool)> onDone) {
-  auto observation = std::make_shared<WriteObservation>("roadmap.compose.stream", "roadmap", "REST", "", failures_.get());
+  auto observation = std::make_shared<WriteObservation>("roadmap.compose.stream", "roadmap", "rest", "", failures_.get());
   WriteContext context{*observation};
   auto refusal = std::make_shared<std::string>();
   if (budget_) {

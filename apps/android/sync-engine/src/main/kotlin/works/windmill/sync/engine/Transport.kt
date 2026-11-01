@@ -34,6 +34,10 @@ sealed interface Reply<out T> {
 data class SyncResponse(val status: Int, val body: Json? = null) {
     // §9.6: the server's own 426 names its cause; a bare 426, a proxy's or a captive portal's, is a failure like any other.
     val requiresUpgrade: Boolean get() = status == 426 && body?.get("error") == Json.of("upgrade-required")
+    // §9.6: the server's own 503 is its `unavailable` in the sync envelope; a bare or foreign 503, an edge's with no upstream or a
+    // maintenance page's, is a failure like any other.
+    val unavailable: Boolean get() = status == 503 && body?.get("error") == Json.of("unavailable") &&
+        body["serverTime"]?.orNull()?.let { runCatching { it.long(0) }.isSuccess } == true && body["epoch"]?.orNull()?.let { runCatching { it.str() }.isSuccess } == true
     // §9.1: an answer handled as a 401: a 401, an `account-mismatch`, or a 200 or 409 served as anyone but `account`.
     internal fun unauthenticated(account: String?) = status == 401 || status == 409 && body?.get("error") == Json.of("account-mismatch") ||
         status in setOf(200, 409) && account != null && body?.get("as") != Json.of(account)
@@ -84,10 +88,12 @@ internal fun validateFrame(frame: Json) {
     }
     frame["as"]?.orNull()?.str()
 }
-// The statuses the server answers on purpose: a refusal each, never a fault. A push also expects 413, which §7.4 halves or refuses too-large.
+// §9.6 the statuses the server answers on purpose: a refusal each, never a fault. A push also expects 413, which §7.4 halves or refuses
+// too-large; every request expects the server's own 503 (`SyncResponse.unavailable`), and the live upgrade any 503, whose body it cannot read.
 internal object ExpectedStatuses {
     val all = setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)
     val push = all + 413
+    val liveUpgrade = all + 503
 }
 // Why a request or live socket failed, by its exception and causes; only `unreachable` (lost network) is no fault. `TelemetryPolicy.networkLoss` copies that rule, pinned by failure-kinds.tsv.
 internal fun failureKind(failure: Throwable): String? {
@@ -130,8 +136,8 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         telemetry.offer(operation, outcome, kind, status, fault && outages.put(operation, key) == key)
     }
     private fun failed(operation: EngineOperation, failure: Throwable) = failed(operation, EngineOutcome.failure, failureKind(failure), cause = failure)
-    private fun failed(operation: EngineOperation, status: Int, expected: Set<Int>) =
-        if (status in expected) failed(operation, EngineOutcome.refused, null, status) else failed(operation, EngineOutcome.failure, "http", status)
+    private fun failed(operation: EngineOperation, status: Int, refused: Boolean) =
+        if (refused) failed(operation, EngineOutcome.refused, null, status) else failed(operation, EngineOutcome.failure, "http", status)
     private fun request(kind: String, body: Json?, token: String?): Request = Request.Builder()
         .url(base.newBuilder().addPathSegments("v1/sync/$kind").build()).header("Sync-Schema", schema.toString())
         .apply { if (token != null) header("Authorization", "Bearer $token") }
@@ -165,7 +171,7 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
                             when {
                                 it.code == 200 -> { validateResponse(kind, answer.body ?: throw JsonError("response")); outages.remove(operation) }
                                 kind == "push" && answer.malformedConflict(body?.get("account")?.str()) -> if (current()) failed(operation, EngineOutcome.failure, "malformed")
-                                else -> if (current()) failed(operation, it.code, expected)
+                                else -> if (current()) failed(operation, it.code, it.code in expected || answer.unavailable)
                             }
                             Reply.Answer(answer)
                         } catch (failure: Exception) {
@@ -253,7 +259,7 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
             // Cancelling an ended socket calls back here, sometimes before cancel returns.
             if (ended.get()) return
             if (status == null) fail { failed(EngineOperation.live, failure) }
-            else fail(Reply.Failed(SyncResponse(status))) { failed(EngineOperation.live, status, ExpectedStatuses.all) }
+            else fail(Reply.Failed(SyncResponse(status))) { failed(EngineOperation.live, status, status in ExpectedStatuses.liveUpgrade) }
         }
     }
     override fun close() {
