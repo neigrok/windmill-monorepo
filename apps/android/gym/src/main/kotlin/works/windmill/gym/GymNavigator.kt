@@ -22,6 +22,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -394,7 +395,8 @@ internal fun GymStage(
     val slidePx = with(LocalDensity.current) { NavigationMotion.sharedAxisSlide.roundToPx() }
     val latest by rememberUpdatedState(standing)
     val latestAnimate by rememberUpdatedState(animate)
-    val latestOnBack by rememberUpdatedState(onBack)
+    // Held by identity: two references to one local function compare equal whatever they captured, so an equality check keeps the first.
+    val latestOnBack by remember { mutableStateOf(onBack, referentialEqualityPolicy()) }.apply { value = onBack }
 
     LaunchedEffect(frame, gesture.phase) {
         when (gesture.phase) {

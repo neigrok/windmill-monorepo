@@ -1,6 +1,6 @@
 # On this phone: the head of The log, the list, Inspect, Fix workout, Discard, and the sign-in decision
 
-**Status:** On main at `8b6c63ac`. The nine paired recovery/sign-in states, their captions and section are 🚀 In production on the canonical Android page (`56:2`). The coordinated app release remains pending.
+**Status:** On main at `8b6c63ac`. The nine paired recovery/sign-in states, their captions and section are 🚀 In production on the canonical Android page (`56:2`). Android 0.14.0 carries it.
 
 **Approved flow:** [Log backdrop](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — human-approved 2026-10-25 and 🚀 In production with task 22. The On this phone recovery flow is linked below; compose it with the approved chronological Log, without a Bodyweight header.
 

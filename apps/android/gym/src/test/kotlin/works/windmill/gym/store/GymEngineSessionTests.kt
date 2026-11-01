@@ -1,14 +1,32 @@
 package works.windmill.gym.store
 
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
+import works.windmill.gym.telemetry.GymEvents
 import works.windmill.platform.User
+import works.windmill.platform.auth.AuthSignOutChoice
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.net.WindmillJson
+import works.windmill.platform.telemetry.AndroidTelemetry
+import works.windmill.platform.telemetry.EventBatchIn
+import works.windmill.platform.telemetry.EventSchemas
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.NewID
@@ -19,6 +37,8 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.modelserver.Credential
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class GymEngineSessionTests {
     @get:Rule val tmp = TemporaryFolder()
     private val gym = ScopeRef.product("gym")
@@ -147,6 +167,94 @@ class GymEngineSessionTests {
                 assertEquals("anon", active(engine).member("meta").member("state").str())
             }
         }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aKeptSignOutsOutcomeReachesTheIntakeOnceTheAccountHasEnded() = runTest {
+        val intake = MockWebServer()
+        intake.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val batch = WindmillJson.decodeFromString<EventBatchIn>(request.body.clone().readUtf8())
+                return MockResponse().setResponseCode(202).setBody("{\"accepted\":${batch.events.size}}")
+            }
+        }
+        intake.start()
+        try {
+            val context = RuntimeEnvironment.getApplication()
+            context.getSharedPreferences("works.windmill.telemetry", 0).edit().clear().commit()
+            var credential: String? = "token-A"
+            val telemetry = AndroidTelemetry(context, intake.url("/"), "android-test", "verification", "test", "123",
+                "A", { credential }, backgroundScope, GymEvents.schemas)
+            val engine = Engine.memory(SyncSchema.registry)
+            engine.signIn("A", mapOf("gym" to false))
+            val tokens = Tokens().apply { save("A", "token-A") }
+            val runtime = SyncRuntime(engine, transport(false), tokens, "test", activityAllowed = { false })
+            // Blocking, so the queue cannot deliver until the account has ended, as the auth store ends it.
+            runBlocking {
+                GymEngineSession(engine, runtime, telemetry, clearAccountCredential = tokens::delete).use { session ->
+                    session.prepareSignOut("A").finish(AuthSignOutChoice.Keep)
+                    session.cleanupSignOut("A")
+                }
+            }
+            credential = null
+            telemetry.identity(null)
+            telemetry.event("auth_signed_out")
+            runCurrent()
+            val request = withContext(Dispatchers.IO) { intake.takeRequest(10, TimeUnit.SECONDS) }
+            assertNotNull("the signed-out shelf reaches the intake", request)
+            assertNull(request!!.getHeader("Authorization"))
+            val batch = WindmillJson.decodeFromString<EventBatchIn>(request.body.readUtf8())
+            assertEquals(listOf("gym_sign_out" to mapOf("action" to "keep", "outcome" to "completed"), "auth_signed_out" to emptyMap()),
+                batch.events.map { event -> event.name to event.props.mapValues { it.value.content } - EventSchemas.commonKeys })
+        } finally {
+            intake.shutdown()
+        }
+    }
+
+    @Test fun deletionEndsTheAccountWithoutTellingASignOut() = runBlocking {
+        val events = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        val engine = Engine.memory(SyncSchema.registry)
+        localMovement(engine)
+        engine.signIn("A", mapOf("gym" to false))
+        val replica = engine.activeReplica()
+        val tokens = Tokens().apply { save("A", "token-A") }
+        val runtime = SyncRuntime(engine, transport(false), tokens, "test", activityAllowed = { false })
+        GymEngineSession(engine, runtime, telemetry, clearAccountCredential = tokens::delete).use { session ->
+            session.prepareAccountDeletion("A").cancel()
+            assertEquals("A", active(engine).member("meta").member("account").str())
+            session.finishAccountDeletion("A", replica, session.prepareAccountDeletion("A"))
+            assertEquals("anon", active(engine).member("meta").member("state").str())
+            assertEquals(emptyList<String>(), engine.dormantReplicas().map { it.account })
+        }
+        assertEquals(emptyList<String>(), events)
+    }
+
+    @Test fun anUnaskedSignOutTellsNoOutcomeAndARecoveredChoiceTellsItsOwn() = runBlocking {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        val engine = Engine.memory(SyncSchema.registry)
+        localMovement(engine)
+        engine.signIn("A", mapOf("gym" to false))
+        val tokens = Tokens().apply { save("A", "token-A"); save("B", "token-B") }
+        val runtime = SyncRuntime(engine, transport(false), tokens, "test", activityAllowed = { false })
+        GymEngineSession(engine, runtime, telemetry, clearAccountCredential = tokens::delete).use { session ->
+            session.signOut()
+            assertEquals("anon", active(engine).member("meta").member("state").str())
+            assertEquals(listOf("A"), engine.dormantReplicas().map { it.account })
+            assertNull(tokens.token("A"))
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), events)
+            engine.signIn("B", mapOf("gym" to false))
+            session.recoverSignOut("B", AuthSignOutChoice.Discard)
+            assertEquals("anon", active(engine).member("meta").member("state").str())
+        }
+        assertEquals(listOf("gym_sign_out" to mapOf("action" to "discard", "outcome" to "completed")), events)
     }
 
     @Test fun signOutRecoveryRefusesANewerActiveAccount() = runBlocking {

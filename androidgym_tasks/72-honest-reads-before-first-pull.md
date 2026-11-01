@@ -1,6 +1,6 @@
 # Before the first pull, nothing counts or claims from partial history
 
-**Status:** 🚀 On main (`63844df3`): the record page, the shared *new best* rule and 05.18, the log before the first pull. Routines keeps *No routines yet.* before the first pull, by the owner's ruling (ledger 11u).
+**Status:** 🚀 On main (`63844df3`), in Android 0.14.0: the record page, the shared *new best* rule and 05.18, the log before the first pull. Routines keeps *No routines yet.* before the first pull, by the owner's ruling (ledger 11u).
 
 **Figma:** 05.18 The log, reading before the first pull (🚀 In production; ledger 11u): [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1767-27118) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1767-27204).
 

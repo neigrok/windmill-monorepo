@@ -1,6 +1,6 @@
 # The log: every weigh-in in chronology, distinct rows and Weigh in FAB
 
-**Status:** On main at `f10e503c` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+**Status:** On main at `f10e503c` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. Android 0.14.0 carries it.
 
 **Approved flow:** [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — human-approved 2026-10-25.
 

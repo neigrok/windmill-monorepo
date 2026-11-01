@@ -1,6 +1,6 @@
 # The photo in the composer and its caption
 
-**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev. 01.3–01.5 match natively in Dark, Daylight and 200 % text; `photo_selected` and `photo_removed` arrive, the uploaded bytes carry no EXIF or location, a 2160 × 4800 photo arrives as 1080 × 2400, and a failed upload keeps the text and photo. There is no rig recipe: the rig cannot place a fixture photo on its emulator.
+**Status:** On main with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`), in Android 0.14.0. Its boards are 🚀 In production. 01.3–01.5 match natively in Dark, Daylight and 200 % text; `photo_selected` and `photo_removed` arrive, the uploaded bytes carry no EXIF or location, a 2160 × 4800 photo arrives as 1080 × 2400, and a failed upload keeps the text and photo. There is no rig recipe: the rig cannot place a fixture photo on its emulator.
 
 **Figma:**
 - 01.3 Screenshot, the Android photo picker: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38808) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39781)

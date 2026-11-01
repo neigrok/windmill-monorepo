@@ -23,7 +23,12 @@ data class EventBatchOut(val accepted: Int)
 private data class EventShelf(val sessionKey: String, val userId: String?, val events: List<EventIn>)
 
 @Serializable
-private data class EventStore(val shelves: List<EventShelf>)
+private data class EventStore(val shelves: List<EventShelf>) {
+    // `events` at the end of the owner's shelf; null owns the signed-out shelf. An owner without a shelf gets one.
+    fun appending(owner: String?, events: List<EventIn>): EventStore =
+        if (shelves.none { it.userId == owner }) EventStore(shelves + EventShelf(UUID.randomUUID().toString(), owner, events))
+        else EventStore(shelves.map { if (it.userId == owner) it.copy(events = it.events + events) else it })
+}
 
 internal class EventDeliveryFailure(val error: Throwable, val properties: Map<String, String>) : Exception(error)
 
@@ -106,15 +111,14 @@ class EventQueue(
     // Appended, not merged by time: a batch already in flight acknowledges the head of its shelf.
     fun retire(userId: String, carrying: Set<String>) = synchronized(lock) {
         val carried = store.shelves.filter { it.userId == userId }.flatMap { it.events }.filter { it.name in carrying }
-        val anonymous = store.shelves.firstOrNull { it.userId == null } ?: EventShelf(UUID.randomUUID().toString(), null, emptyList())
-        store = EventStore(store.shelves.filter { it !== anonymous }.map { if (it.userId == userId) it.copy(events = emptyList()) else it } +
-            anonymous.copy(events = anonymous.events + carried))
+        store = EventStore(store.shelves.map { if (it.userId == userId) it.copy(events = emptyList()) else it }).appending(null, carried)
         persist()
         wake.trySend(Unit)
         Unit
     }
 
-    fun add(name: String, properties: Map<String, String>) = synchronized(lock) {
+    // A signed-out event waits on the signed-out shelf whoever is signed in.
+    fun add(name: String, properties: Map<String, String>, signedOut: Boolean = false) = synchronized(lock) {
         if (!schemas.accepts(name)) {
             failure("telemetry_event_name", IllegalArgumentException("Invalid event name"), emptyMap())
             return@synchronized
@@ -127,10 +131,7 @@ class EventQueue(
         val props = schemas.properties(name, properties).mapValues { (key, value) ->
             if (key == "duration_ms") JsonPrimitive(value.toLongOrNull()?.coerceAtLeast(0) ?: 0) else JsonPrimitive(value)
         }
-        val event = EventIn(UUID.randomUUID().toString(), name, now(), props)
-        store = store.copy(shelves = store.shelves.map {
-            if (it.userId != currentUser) it else it.copy(events = it.events + event)
-        })
+        store = store.appending(if (signedOut) null else currentUser, listOf(EventIn(UUID.randomUUID().toString(), name, now(), props)))
         persist()
         wake.trySend(Unit)
         Unit

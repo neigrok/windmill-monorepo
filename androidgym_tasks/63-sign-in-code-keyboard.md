@@ -1,6 +1,6 @@
 # Sign-in: a digit keyboard for the code, autofill for email and code
 
-**Status:** 🚀 On main (`70ec2dbe`), not yet in a published release. Behaviour only; the Shell board is unchanged.
+**Status:** 🚀 On main (`70ec2dbe`), in Android 0.14.0. Behaviour only; the Shell board is unchanged.
 
 **Figma:** Shell 15b Sign in, code focused: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4237) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-792). The caption reads "Code takes the number keyboard".
 
