@@ -21,7 +21,6 @@ import works.windmill.sync.engine.LineageAnswer
 import works.windmill.sync.engine.SignInSession
 import works.windmill.sync.engine.SignOutChoice
 import works.windmill.sync.engine.SyncRuntime
-import works.windmill.sync.engine.anonCount
 import works.windmill.sync.engine.discardDormant
 import works.windmill.sync.core.*
 
@@ -45,12 +44,6 @@ class GymEngineSession(
     var decisionBusy by mutableStateOf(false)
         private set
     private var answer: CompletableDeferred<Unit>? = null
-
-    val anonymousCounts: Map<String, Int> get() {
-        val snapshot = engine.snapshot()
-        val anon = snapshot.member("replicas").arr().firstOrNull { it.member("meta").member("state").str() == "anon" } ?: return emptyMap()
-        return engine.anonCount(anon.member("meta").member("replica").str(), "gym").obj().mapValues { it.value.long().toInt() }
-    }
 
     override suspend fun signedIn(user: User, token: String, restoring: Boolean) {
         val snapshot = engine.snapshot()
@@ -227,20 +220,3 @@ class GymEngineSession(
 
 val LocalGymEngineSession = staticCompositionLocalOf<GymEngineSession?> { null }
 
-fun gymLineageCounts(counts: Map<String, Int>): String = counts.toSortedMap().entries.filter { it.value > 0 }.joinToString(" · ") { (type, amount) ->
-    if (type == "pending") return@joinToString "$amount saved item${if (amount == 1) "" else "s"} awaiting sync"
-    val noun = when (type) {
-        "session" -> "workout"
-        "set" -> "set"
-        "routine" -> "routine"
-        "exercise" -> "movement"
-        "weighin" -> "weigh-in"
-        "note" -> "note"
-        "prefs" -> "setting"
-        "exerciseName" -> "movement name"
-        "routineCreation" -> "routine creation"
-        "pending" -> "saved item awaiting sync"
-        else -> "record"
-    }
-    "$amount $noun${if (amount == 1) "" else "s"}"
-}

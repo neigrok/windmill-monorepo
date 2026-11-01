@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasParent
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
@@ -150,7 +149,7 @@ class LargestTypeTests {
                         receipts = emptyList(), lookedAt = emptySet(), asking = false,
                         cap = AskCap.Ceiling, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
                         origin = "https://windmill.works", backTo = null, onBack = null,
-                        onThreads = {}, onNotes = {}, onReview = {},
+                        onThreads = {}, onReview = {},
                     )
                 }
             }
@@ -447,7 +446,6 @@ class LargestTypeTests {
             }
         } } finally { scope.cancel() }
     }
-
 
     // 03.35: at 320 dp and 200 % the page scrolls as one and the ledger window scrolls its five rows; each can be read
     // whole above the pinned Log set, which never leaves the window.

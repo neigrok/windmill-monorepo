@@ -2,28 +2,12 @@ package works.windmill.platform.design
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsPropertyKey
-import androidx.compose.ui.semantics.SemanticsPropertyReceiver
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -160,53 +144,4 @@ object WindmillMotion {
     const val fastMs = 150
     const val baseMs = 280
     const val slowMs = 480
-}
-
-enum class ActionWeight { Primary, Quiet }
-
-// The colour a capsule is filled with, declared on its node so a test can read what a room painted
-// it in without rendering pixels. A Quiet capsule is unfilled.
-val CapsuleFill = SemanticsPropertyKey<Color>("CapsuleFill")
-var SemanticsPropertyReceiver.capsuleFill by CapsuleFill
-
-@Composable
-fun ActionCapsule(
-    label: String,
-    weight: ActionWeight,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(WindmillRadius.full)
-    val palette = LocalWindmillPalette.current
-    val fill = when (weight) {
-        ActionWeight.Primary -> palette.accent
-        ActionWeight.Quiet -> Color.Transparent
-    }
-    Box(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .alpha(if (enabled) 1f else 0.4f)
-            .clip(shape)
-            .then(
-                when (weight) {
-                    ActionWeight.Primary -> Modifier.background(fill)
-                    ActionWeight.Quiet -> Modifier.border(1.dp, palette.lineStrong, shape)
-                }
-            )
-            .semantics { capsuleFill = fill }
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(vertical = WindmillSpace.x3),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            style = WindmillFont.body(16, FontWeight.SemiBold),
-            color = when (weight) {
-                ActionWeight.Primary -> palette.onAccent
-                ActionWeight.Quiet -> palette.ink
-            },
-        )
-    }
 }

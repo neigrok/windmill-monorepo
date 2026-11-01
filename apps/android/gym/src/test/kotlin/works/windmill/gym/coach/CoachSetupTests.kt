@@ -90,7 +90,7 @@ class CoachSetupTests {
             val id = room.store.coach.freshChat(setup = true)
             var thread by mutableStateOf(emptyList<AskExchange>())
             compose.setContent { GymMaterial { AskScreen(room.store, thread, emptyList(), emptySet(), false, null,
-                {}, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = id,
+                {}, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = id,
                 onBuildRoutine = {}) } }
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
             compose.runOnIdle { thread = listOf(AskExchange("A real question", requestId = "accepted")) }
@@ -114,7 +114,7 @@ class CoachSetupTests {
             val restore = StateRestorationTester(compose)
             restore.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { GymMaterial {
                 AskScreen(room.store, emptyList(), emptyList(), emptySet(), false, null, {}, {}, {}, "", "http://localhost",
-                    onThreads = {}, onNotes = {}, onReview = {}, conversationId = id, onBuildRoutine = {})
+                    onThreads = {}, onReview = {}, conversationId = id, onBuildRoutine = {})
             } } }
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
             restore.emulateSavedInstanceStateRestore()

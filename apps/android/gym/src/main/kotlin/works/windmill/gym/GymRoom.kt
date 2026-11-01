@@ -955,7 +955,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val fixRead = store.recoveryDraft?.read
             if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(store, currentOwner = { fixRead.belongsTo(currentAccount) })
 
-
             @Composable
             fun CoachStance(otherwise: @Composable () -> Unit) = when {
                 !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
@@ -990,7 +989,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 onNewDraft = { askSomethingNew(it) },
                 onThreads = { look(Away.Threads) },
                 onConnections = { look(Away.Connections) },
-                onNotes = { look(Away.Notes) },
                 origin = origin,
                 backTo = backTo,
                 onBack = onBack,
@@ -1116,7 +1114,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         store = store,
                         origin = origin,
                         onThreads = { look(Away.Threads) },
-                        onNotes = { look(Away.Notes) },
                         onConnections = { look(Away.Connections) },
                         onOpenRoutine = { selectedRoutineId = it },
                         onOpenWorkout = ::openCoachWorkout,

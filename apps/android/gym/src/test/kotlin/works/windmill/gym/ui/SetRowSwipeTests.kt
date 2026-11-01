@@ -29,10 +29,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.presentation.SessionSummary
-import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
-import works.windmill.sync.core.Json
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")

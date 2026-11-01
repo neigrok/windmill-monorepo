@@ -7,7 +7,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.presentation.WorkoutChange
-import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.signOut

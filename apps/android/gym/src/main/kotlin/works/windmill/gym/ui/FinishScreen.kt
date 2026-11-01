@@ -87,8 +87,6 @@ import works.windmill.platform.design.WindmillSpace
 
 // Receipt totals come from committed sets; optional review adds the personal record.
 object Finish {
-    const val discard = "Discard session"
-
     fun day(atMs: Long): String = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)
         .format(Instant.ofEpochMilli(atMs).atZone(ZoneId.systemDefault()))
 

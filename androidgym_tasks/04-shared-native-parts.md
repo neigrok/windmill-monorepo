@@ -17,9 +17,8 @@ in `ui/NativeControls.kt`, `ui/NumberStepper.kt` and `ui/RowSwipe.kt`. The human
 (2026-10-26) supplies the Display overflow and focused expansion rules. Full gym Debug passes
 1,196 checks with 17 opt-in wire skips; all 33 focused Release and 32 capture-tool checks pass.
 API 37 Dark/Daylight specimens verify full signed loads, native minus input, caret ends, 320dp/200%
-text, pressed controls, menus and settled swipe removal. Existing screen consumers keep their current
-controls until their numbered migration tasks; `RowDeleteGround` remains for those consumers,
-and bidirectional Assembly/Refusal rows retain their own semantics.
+text, pressed controls, menus and settled swipe removal. Bidirectional Assembly/Refusal rows retain
+their own semantics.
 
 **Change**
 - Build these once, in `ui/`, matching 00.4 in both modes:

@@ -4,17 +4,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -42,7 +36,6 @@ data class GymColors(
     val onError: Color,
     val scrim: Color,
 ) {
-    val weightInk = ink
     val targetInk = accent
     val unsyncedInk = inkFaint
 }
@@ -140,11 +133,3 @@ object GymLayout {
     val contentTop = WindmillSpace.x2      // first content under the top bar
 }
 
-// Compose has no dashed border modifier, so it is drawn rather than declared.
-fun Modifier.dashedEdge(color: Color, radius: Dp, width: Dp = 1.dp): Modifier = drawBehind {
-    drawRoundRect(
-        color = color,
-        cornerRadius = CornerRadius(radius.toPx()),
-        style = Stroke(width = width.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f))),
-    )
-}

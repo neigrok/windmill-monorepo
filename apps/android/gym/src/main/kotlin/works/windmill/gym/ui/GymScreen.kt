@@ -23,12 +23,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -147,35 +145,6 @@ fun GymScreen(
     ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) { content() }
     }
-}
-
-// Every typed field in the room, dressed from the room's own scheme rather than from a colour
-// literal: the ground is the card ground, the focused edge is the accent, and a refusal is brick.
-@Composable
-fun gymFieldColours(): TextFieldColors {
-    val scheme = MaterialTheme.colorScheme
-    return OutlinedTextFieldDefaults.colors(
-        focusedTextColor = scheme.onSurface,
-        unfocusedTextColor = scheme.onSurface,
-        disabledTextColor = scheme.onSurfaceVariant,
-        cursorColor = scheme.primary,
-        focusedBorderColor = scheme.primary,
-        unfocusedBorderColor = scheme.outline,
-        disabledBorderColor = scheme.outlineVariant,
-        focusedContainerColor = scheme.surfaceContainerHighest,
-        unfocusedContainerColor = scheme.surfaceContainerHighest,
-        disabledContainerColor = scheme.surfaceContainerHighest,
-        focusedPlaceholderColor = scheme.onSurfaceVariant,
-        unfocusedPlaceholderColor = scheme.onSurfaceVariant,
-        focusedLabelColor = scheme.onSurfaceVariant,
-        unfocusedLabelColor = scheme.onSurfaceVariant,
-        errorBorderColor = scheme.error,
-        errorCursorColor = scheme.error,
-        errorTextColor = scheme.onSurface,
-        errorContainerColor = scheme.surfaceContainerHighest,
-        errorPlaceholderColor = scheme.onSurfaceVariant,
-        errorLabelColor = scheme.error,
-    )
 }
 
 // The planning forms' outlined fields speak the platform's own type: body-large for what is typed,

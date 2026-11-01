@@ -341,7 +341,6 @@ data class SetFix(
 // sheet offers the half-point band a lifter actually uses; the note is theirs and nothing reads it
 // back to Coach.
 object SetEffort {
-    const val rpeLabel = "RPE"
     val rpeBand: List<Double> = generateSequence(6.0) { it + 0.5 }.takeWhile { it <= 10.0 }.toList()
     // The seat that means nothing was said, and it says so in words: a bare `—` is read out as
     // nothing at all, so a lifter on TalkBack would hear an unlabelled seat where the way back is.

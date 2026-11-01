@@ -141,7 +141,7 @@ class WorkoutTileService : TileService() {
                 if (Build.VERSION.SDK_INT >= 34) startActivityAndCollapse(PendingIntent.getActivity(this@WorkoutTileService,
                     0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
                 else {
-                    @Suppress("DEPRECATION")
+                    @Suppress("DEPRECATION", "StartActivityAndCollapseDeprecated")
                     startActivityAndCollapse(intent)
                 }
             }

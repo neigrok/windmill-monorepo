@@ -753,7 +753,7 @@ class CoachStore internal constructor(
     // A save the log confirmed stands even when this phone fails to keep its copy.
     suspend fun confirmRoutine(threadId: String, requestId: String, draft: CoachRoutineDraft): DraftOutcome {
         val seat = owner ?: return DraftOutcome.Failed(Ask.draftSignIn)
-        val authority = admit(requireNotNull(seat))
+        val authority = admit(seat)
         val coach = rest() ?: return DraftOutcome.Failed(Ask.draftSignIn)
         return scope.async {
             routineConfirmation.withLock {
@@ -841,19 +841,19 @@ class CoachStore internal constructor(
         if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
         val coach = rest() ?: return complete(AskOutcome.Refused(signInFirst))
         if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-        var snapshot = seat?.let { localCoach?.snapshot(it, requestId) }
+        var snapshot = localCoach?.snapshot(seat, requestId)
         var photoUpload = false
         return try {
-            val saved = seat?.let { localCoach?.pending(it)?.firstOrNull { it.requestId == requestId } }
+            val saved = localCoach?.pending(seat)?.firstOrNull { it.requestId == requestId }
             val request = saved ?: AskQuestion(thread = threadId, question = question, requestId = requestId,
                 attachmentIds = listOfNotNull(photo?.id),
                 purpose = if (draft(seat, threadId).setup || archive[seat to threadId]?.setup == true) "routine_setup" else "conversation")
             require(request.thread == threadId && request.question == question) { "A retry must keep the original message." }
             requestAdmission.check()
-            if (seat != null) persistRequest(requestAdmission) { localCoach?.keep(seat, request) }
+            persistRequest(requestAdmission) { localCoach?.keep(seat, request) }
             requestAdmission.check()
             if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-            if (photo != null && seat != null && snapshot == null) {
+            if (photo != null && snapshot == null) {
                 val file = localCoach?.photoFile(seat, photo.id)
                 if (file?.isFile == true) {
                     photoUpload = true
@@ -870,7 +870,7 @@ class CoachStore internal constructor(
             onUpload(null)
             val accept: suspend (AskGeneration) -> Unit = { next ->
                 if (seat == owner && requestAdmission.active != false && snapshot != next && (snapshot == null || next.revision >= snapshot!!.revision)) {
-                    if (seat != null) retainSnapshot(seat, next, requestAdmission)
+                    retainSnapshot(seat, next, requestAdmission)
                     requestAdmission.check()
                     if (seat == owner) {
                         snapshot = next
@@ -896,7 +896,7 @@ class CoachStore internal constructor(
             requestAdmission.check()
             if (answered.proposals.isNotEmpty() || answered.results.isNotEmpty()) onProgramChanged()
             if (answered.generation?.status == "failed") return complete(AskOutcome.Failed(Ask.interrupted, snapshot))
-            if (seat != null) clearRequest(seat, threadId, requestId, requestAdmission)
+            clearRequest(seat, threadId, requestId, requestAdmission)
             requestAdmission.check()
             if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
             complete(AskOutcome.Answered(answered))
@@ -914,12 +914,12 @@ class CoachStore internal constructor(
                 requestAdmission.check()
                 if (authoritative != null && (snapshot == null || authoritative.revision >= snapshot!!.revision)) {
                     snapshot = authoritative
-                    if (seat != null) retainSnapshot(seat, authoritative, requestAdmission)
+                    retainSnapshot(seat, authoritative, requestAdmission)
                     requestAdmission.check()
                     if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
                 }
                 if (snapshot?.status in listOf("completed", "stopped")) {
-                    if (seat != null) clearRequest(seat, threadId, requestId, requestAdmission)
+                    clearRequest(seat, threadId, requestId, requestAdmission)
                     requestAdmission.check()
                     if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
                     return complete(AskOutcome.Answered(requireNotNull(snapshot).response()))
@@ -965,7 +965,7 @@ class CoachStore internal constructor(
         val seat = owner
         if (seat == null) return GymResult.Ok(allThreads)
         val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
-        val authority = admit(requireNotNull(seat))
+        val authority = admit(seat)
         return conversationWrite.withLock {
             if (!authority.active || seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
             try {
@@ -1001,7 +1001,7 @@ class CoachStore internal constructor(
             return GymResult.Ok(local)
         }
         val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
-        val authority = admit(requireNotNull(seat))
+        val authority = admit(seat)
         return try {
             val read = coach.thread(id, before)
             if (!authority.active || seat != owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
@@ -1015,7 +1015,7 @@ class CoachStore internal constructor(
                 }
                 return GymResult.Failed(WriteFailure.Refused(noSuchThread))
             }
-            if (before == null && seat != null) {
+            if (before == null) {
                 val prior = chat(id) ?: LocalChat(id, createdAtMs = read.createdAtMs, updatedAtMs = read.askedAtMs)
                 val turns = read.exchanges()
                 val acceptedRefusal = prior.exchanges.lastOrNull()?.let { last ->
@@ -1030,7 +1030,7 @@ class CoachStore internal constructor(
                     cap = prior.cap.takeUnless { acceptedRefusal }, absent = prior.absent && !acceptedRefusal,
                     history = read.copy(turns = emptyList(), generation = null, nextCursor = oldestCursor)))
             }
-            if (seat != null && !isAsking(id) && read.generation?.status in listOf("completed", "stopped")) {
+            if (!isAsking(id) && read.generation?.status in listOf("completed", "stopped")) {
                 try { authority.write { localCoach?.clear(seat, id, requireNotNull(read.generation).requestId) } }
                 catch (failure: Exception) {
                     telemetry.unexpected("gym.saveConversation", failure)

@@ -230,7 +230,6 @@ object LiveLines {
     }
 }
 
-
 class WorkoutClocks(session: Session, sets: List<TrainingSet>, nowMs: Long) {
     val latestSetAtMs: Long? = sets.maxOfOrNull { it.completedAtMs }
     val workoutMs: Long = ((session.finishedAtMs ?: nowMs) - session.startedAtMs).coerceAtLeast(0)

@@ -44,6 +44,8 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
 - Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- The app's lint reads `:platform`, `:gym` and `:sync-engine` with it, so an unused resource in any
+  of them fails the build.
 - Sync foundation checks read the shared registries and corpora directly; the schema generator and
   independent JCS oracle checks also require Python 3 and Node.js.
 - `-Pwindmill.apiBase=http://10.0.2.2:8088` targets the host's local backend from an emulator.

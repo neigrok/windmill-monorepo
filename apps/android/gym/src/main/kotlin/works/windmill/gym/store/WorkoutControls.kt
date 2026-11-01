@@ -50,6 +50,9 @@ class WorkoutControls private constructor(
     companion object {
         // Resolved by the room edge against context.filesDir; this file touches no android class.
         const val fileName = "windmill-gym-sets.json"
+
+        // Strict on unknown keys: a workout field this build cannot read marks the document unreadable.
+        private val workoutJson = Json { explicitNulls = false }
     }
 
     // The file holds one document per seat; only the seat in hand is reachable.
@@ -96,7 +99,7 @@ class WorkoutControls private constructor(
                 val authority = fields.getValue("workout") as? JsonObject
                     ?: throw SerializationException("Workout controls must be an object")
                 val current = JsonObject(authority - setOf("rest", "attemptedRest", "alertAccess", "restAlerts"))
-                val workout = Json { explicitNulls = false }.decodeFromJsonElement(WorkoutState.serializer(), current)
+                val workout = workoutJson.decodeFromJsonElement(WorkoutState.serializer(), current)
                 return diskJson.decodeFromJsonElement(Held.serializer(), fields).copy(workout = workout)
             } catch (error: Exception) {
                 telemetry.failure("gym.storage.decode", error)

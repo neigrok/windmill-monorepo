@@ -1,6 +1,5 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.Notes
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineEntry
 import kotlinx.serialization.SerialName
@@ -242,8 +241,6 @@ object Ask {
 
     const val connect = "Connect your own"
 
-    const val notesDoor = "Notes"
-
     const val promise =
         "Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal."
 
@@ -253,7 +250,6 @@ object Ask {
     const val draftRetry = "Couldn’t save the routine. Try again."
     const val draftSignIn = "Sign in again to save this routine."
 
-
     const val interrupted = "Response interrupted. Retry to continue this response."
     const val stopped = "Response stopped."
 
@@ -261,7 +257,6 @@ object Ask {
 
     const val notHere = "This Windmill does not have Coach. You can still read your log."
     const val accountRequired = "I need your account to change a routine. Sign in, then ask again."
-
 
     // One phrase per tool the catalog offers Coach, in the lifter's words — the same table the web
     // draws from. A tool absent here is dropped from the step list, never printed by name.

@@ -81,7 +81,6 @@ data class ImportRecovery(val id: String, val workout: SavedWorkout?, val refusa
     val operationsOnly: Boolean get() = refusals.isNotEmpty() && refusals.all { it.kind == "operation" } || openings.isNotEmpty() && openings.none { it.id == id }
 }
 
-
 data class ImportOperation(val token: String, val sessionId: String, val entry: OwedSet)
 data class ImportDeletion(val token: String, val sessionId: String, val setId: String)
 
@@ -808,17 +807,12 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         opening: ImportOpening? = null, allowed: () -> Boolean = { true }) =
         editAndRetry(id, Json.parse(diskJson.encodeToString(SavedWorkout.serializer(), corrected)), markFinished = markFinished,
             expectedReplica = expectedReplica, expectedAnonymous = expectedAnonymous, opening = opening, allowed = allowed)
-    fun replaceStartAndRetry(id: String, corrected: Session, opening: ImportOpening? = null, allowed: () -> Boolean = { true }) {
-        check(corrected.id == id && corrected.isOpen) { "An unfinished workout keeps its identity and remains unfinished." }
-        editAndRetry(id, null, Json.parse(diskJson.encodeToString(Session.serializer(), corrected)), opening = opening, allowed = allowed)
-    }
-
     fun replaceOpenAndRetry(id: String, corrected: SavedWorkout, opening: ImportOpening, allowed: () -> Boolean) {
         check(corrected.session.id == id && corrected.session.isOpen)
         editAndRetry(id, null, correctedOpen = corrected, opening = opening, allowed = allowed)
     }
 
-    private fun editAndRetry(id: String, corrected: Json?, correctedStart: Json? = null, correctedOpen: SavedWorkout? = null,
+    private fun editAndRetry(id: String, corrected: Json?, correctedOpen: SavedWorkout? = null,
         markFinished: Boolean = false, expectedReplica: String? = null, expectedAnonymous: Boolean? = null,
         opening: ImportOpening? = null, allowed: () -> Boolean = { true }) {
         val admitted = engine.commitWithPrerequisites(scope) { context ->
@@ -840,14 +834,14 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             if (item["state"] != Json.of("refused") && !(item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull"))) return@commitWithPrerequisites null to true
             val before = item.member("source")
             if (corrected != null && unknownFinishedFields(before)) throw IllegalStateException(reason("source-needs-update"))
-            var source = corrected?.let { editedFinished(before, decode(it, SavedWorkout.serializer()), markFinished) } ?: correctedOpen?.let { editedStart(before, it) } ?: correctedStart?.let { before.changed("session" to it) } ?: before
+            var source = corrected?.let { editedFinished(before, decode(it, SavedWorkout.serializer()), markFinished) } ?: correctedOpen?.let { editedStart(before, it) } ?: before
             if (corrected != null && !markFinished) {
                 val closure = before["session"]?.obj().orEmpty().filterKeys { it in setOf("closedItself", "closedBy") }
                 source = source.changed("session" to Json.Obj((source.member("session").obj() + closure).toList()))
             }
             val kind = item.member("kind").str()
             check(corrected == null || kind == "finished") { "Only a finished workout can be edited here." }
-            check(correctedStart == null && correctedOpen == null || kind == "start") { "Only an unfinished workout can be edited here." }
+            check(correctedOpen == null || kind == "start") { "Only an unfinished workout can be edited here." }
             if (kind in setOf("finished", "start")) check(source.member("session").member("id").str() == id) { "A saved workout keeps its identity." }
             val childWrites = if (correctedOpen == null) emptyList() else all.mapNotNull { (childKey, childJournal) ->
                 val previous = childJournal["items"]?.obj().orEmpty()

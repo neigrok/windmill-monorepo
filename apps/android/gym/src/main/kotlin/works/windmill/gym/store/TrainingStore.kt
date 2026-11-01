@@ -870,11 +870,6 @@ class TrainingStore(
         return requireNotNull(engineObservation)
     }
 
-    suspend fun retryImport(id: String) {
-        training.imports.retry(id)
-        training.reconcileImports()
-    }
-
     suspend fun refreshEngine() {
         if (!workoutAuthority(owner)) return
         pendingConnection?.let { account ->

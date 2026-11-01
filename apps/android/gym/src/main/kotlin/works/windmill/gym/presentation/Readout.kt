@@ -89,7 +89,6 @@ object Readout {
 
     const val noRoutine = "Free workout"
 
-
     // The shared readout states an estimate to a tenth.
     fun estimatedWeight(e1rm: Double): String = works.windmill.gym.domain.sync.Readout.estimatedWeight(e1rm)
 

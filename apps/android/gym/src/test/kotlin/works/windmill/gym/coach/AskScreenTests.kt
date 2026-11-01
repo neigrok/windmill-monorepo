@@ -2,7 +2,6 @@ package works.windmill.gym.coach
 
 import works.windmill.gym.ui.*
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
@@ -25,8 +24,6 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -36,7 +33,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import kotlinx.coroutines.CoroutineScope
@@ -163,7 +159,6 @@ class AskScreenTests {
                 backTo = null,
                 onBack = null,
                 onThreads = { doors += "threads" },
-                onNotes = { doors += "notes" },
                 onConnections = { doors += "connections" },
                 onSignIn = { doors += "signIn" },
                 onReview = {}, seat = "A",
@@ -185,7 +180,7 @@ class AskScreenTests {
         runBlocking { room.select("u1") }
         val sent = mutableListOf<String>()
         compose.setContent { GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
-            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "chat-123") } }
+            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = "chat-123") } }
         compose.onNodeWithText("2 days").performScrollTo().performClick()
         compose.onNodeWithText("3 days").performScrollTo().performClick()
         compose.onNodeWithText("Bodyweight").performScrollTo().performClick()
@@ -242,7 +237,7 @@ class AskScreenTests {
         runBlocking { room.select("u1") }
         val sent = mutableListOf<String>()
         compose.setContent { GymMaterial { AskScreen(room.store, emptyList(), emptyList(), emptySet(), false, null,
-            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "account-chat") } }
+            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = "account-chat") } }
         compose.onNodeWithText("Draft kept on this phone").assertIsDisplayed()
         compose.onNodeWithContentDescription("Question").performTextReplacement("Just typed")
         compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
@@ -281,7 +276,7 @@ class AskScreenTests {
         runBlocking { room.select("u1") }
         var shown by mutableStateOf(true)
         compose.setContent { if (shown) GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
-            {}, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "account-chat") } }
+            {}, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = "account-chat") } }
         compose.runOnIdle { unreadable = true }
         compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
         compose.onNodeWithText("Your draft couldn’t be saved. Try again.").assertIsDisplayed()
@@ -306,7 +301,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, listOf(generation?.exchange() ?: AskExchange("Question", requestId = "request-a")),
                 emptyList(), emptySet(), generation?.terminal != true, null, onAsk = {}, onRetry = {}, onAskNew = {},
-                seed = "", origin = "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {},
+                seed = "", origin = "https://windmill.works", onThreads = {}, onReview = {},
                 conversationId = "thread-a", onStop = {})
         }
         compose.mainClock.advanceTimeByFrame()
@@ -341,7 +336,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, listOf(older, newer), emptyList(), emptySet(), false, null,
                 onAsk = {}, onRetry = { retried += it }, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
+                onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
         compose.onNodeWithText(Ask.interrupted).assertIsDisplayed()
         compose.onNodeWithText("Try again").performScrollTo().performClick()
@@ -358,7 +353,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), busy, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a",
+                onThreads = {}, onReview = {}, conversationId = "thread-a",
                 onStop = { generation = generation.copy(status = "stopped", revision = 3); busy = false })
         }
         compose.onNodeWithText("First words").assertIsDisplayed()
@@ -385,7 +380,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, emptyList(), emptyList(), emptySet(), false, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, onPhotoAsk = { text, attachment -> sent += text to attachment })
+                onThreads = {}, onReview = {}, onPhotoAsk = { text, attachment -> sent += text to attachment })
         }
         compose.onNodeWithContentDescription("Add photo").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").performClick()
@@ -404,7 +399,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, earlier + generation.exchange(), emptyList(), emptySet(), true, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a", onStop = {})
+                onThreads = {}, onReview = {}, conversationId = "thread-a", onStop = {})
         }
         compose.onNodeWithText("Question 1").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { generation = generation.copy(answer = "New streamed words.\n".repeat(20), revision = 2) }
@@ -422,7 +417,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, thread, emptyList(), emptySet(), false, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
+                onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
         compose.onNodeWithText("Question 7").performScrollTo().assertIsDisplayed()
         val before = compose.onNodeWithText("Question 7").getUnclippedBoundsInRoot().top
@@ -444,7 +439,7 @@ class AskScreenTests {
             clipboard = LocalClipboard.current
             AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
+                onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
         compose.onNodeWithText("Partial café").performTouchInput { longClick() }
         compose.onNodeWithText("Copy answer").assertIsDisplayed()
@@ -700,7 +695,7 @@ class AskScreenTests {
                 store = room.store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
                 asking = false, cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
                 origin = "https://windmill.works", backTo = null, onBack = null,
-                onThreads = {}, onNotes = {}, onReview = {},
+                onThreads = {}, onReview = {},
             )
         }
         compose.onNodeWithText("1 change").performScrollTo().assertIsDisplayed()
@@ -733,7 +728,7 @@ class AskScreenTests {
                 store = room.store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
                 asking = false, cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
                 origin = "https://windmill.works", backTo = null, onBack = null,
-                onThreads = {}, onNotes = {}, onReview = {},
+                onThreads = {}, onReview = {},
             )
         }
         compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
@@ -772,7 +767,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, thread, emptyList(), emptySet(), false, null,
                 onAsk = { sent += it }, onRetry = { sent += "retry" }, onAskNew = {},
-                seed = seed, origin = "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {},
+                seed = seed, origin = "https://windmill.works", onThreads = {}, onReview = {},
                 onNewDraft = { seed = it; thread = emptyList() })
         }
         compose.onNodeWithContentDescription("Question").assertDoesNotExist()
@@ -792,7 +787,7 @@ class AskScreenTests {
         var thread by mutableStateOf(listOf(AskExchange("First question", AskAnswer("Long history. ".repeat(500), ReadTally(0, 0, 0)))))
         compose.setContent {
             AskScreen(store, thread, emptyList(), emptySet(), false, null, onAsk = {}, onRetry = {}, onAskNew = {},
-                seed = "", origin = "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+                seed = "", origin = "https://windmill.works", onThreads = {}, onReview = {})
         }
         compose.runOnIdle {
             thread = thread + AskExchange("Second question", AskAnswer("A fast complete answer.", ReadTally(0, 0, 0)))
@@ -818,7 +813,7 @@ class AskScreenTests {
             Box(Modifier.height(height)) {
                 AskScreen(store, thread, emptyList(), emptySet(), thread.last().pending, null,
                     onAsk = { sent += it; thread = thread + AskExchange(it) }, onRetry = {}, onAskNew = {},
-                    seed = "", origin = "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+                    seed = "", origin = "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
         compose.onNodeWithContentDescription("Question").performTextReplacement("Second question")
@@ -858,7 +853,7 @@ class AskScreenTests {
                     val answer = if (thread.isEmpty()) "A much longer training history. ".repeat(200) else "The new answer is here."
                     thread = thread + AskExchange(it, AskAnswer(answer, ReadTally(0, 0, 0)))
                 }, onRetry = {}, onAskNew = { conversation = ""; thread = emptyList() }, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = conversation,
+                onThreads = {}, onReview = {}, conversationId = conversation,
                 onNewDraft = { conversation = ""; thread = emptyList() })
         }
         compose.runOnIdle { conversation = ""; thread = emptyList() }
@@ -886,7 +881,7 @@ class AskScreenTests {
         val thread = listOf(AskExchange("What next?", AskAnswer("The original answer.", ReadTally(0, 0, 0), proposals = listOf("prop_gone"))))
         compose.setContent {
             AskScreen(store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "", "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {})
+                onThreads = {}, onReview = {})
         }
         compose.onNodeWithText("The original answer.").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
@@ -929,7 +924,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a", onStop = {})
+                onThreads = {}, onReview = {}, conversationId = "thread-a", onStop = {})
         }
         fun shown(): String = compose.onAllNodes(hasText("word", substring = true), useUnmergedTree = true)
             .fetchSemanticsNodes().joinToString("") { node -> node.config[SemanticsProperties.Text].joinToString("") { it.text } }
@@ -977,7 +972,7 @@ class AskScreenTests {
         compose.setContent {
             AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), true, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
-                onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a", onStop = {})
+                onThreads = {}, onReview = {}, conversationId = "thread-a", onStop = {})
         }
         fun shown(): String = compose.onAllNodes(hasText("word", substring = true), useUnmergedTree = true)
             .fetchSemanticsNodes().joinToString("") { node -> node.config[SemanticsProperties.Text].joinToString("") { it.text } }
@@ -1005,7 +1000,7 @@ class AskScreenTests {
         var receipts by mutableStateOf<List<String>>(emptyList())
         compose.setContent {
             AskScreen(room.store, listOf(answered), receipts, emptySet(), false, null, {}, {}, {}, "",
-                "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+                "https://windmill.works", onThreads = {}, onReview = {})
         }
         compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
             .performScrollTo().assertIsDisplayed()
@@ -1040,7 +1035,7 @@ class AskScreenTests {
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
                 AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
-                    "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+                    "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
         compose.runOnIdle { thread = listOf(thread.single().copy(answer = AskAnswer("The answer stays readable.", read,
@@ -1074,7 +1069,7 @@ class AskScreenTests {
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
                 AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
-                    "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+                    "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
         compose.runOnIdle { thread = listOf(thread.single().copy(answer = AskAnswer("The answer stays readable.", read,
@@ -1115,7 +1110,7 @@ class AskScreenTests {
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
                 AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
-                    "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+                    "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
         compose.runOnIdle { thread = listOf(thread.single().copy(answer = AskAnswer("The answer stays readable.", read,
@@ -1147,7 +1142,7 @@ class AskScreenTests {
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
                 AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
-                    "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+                    "https://windmill.works", onThreads = {}, onReview = {})
             }
         }
         compose.runOnIdle { thread = listOf(thread[0].copy(answer = AskAnswer("The first answer.", read, proposals = listOf("proposal1"))), thread[1]) }

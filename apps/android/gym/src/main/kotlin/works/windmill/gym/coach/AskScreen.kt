@@ -1,7 +1,5 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.ui.Chevron
-import works.windmill.gym.ui.GymLayout
 import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.LocalGymColors
@@ -25,7 +23,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -92,7 +89,6 @@ fun AskScreen(
     onBack: (() -> Unit)? = null,
     seat: String? = null,
     onThreads: () -> Unit,
-    onNotes: () -> Unit,
     onReview: (Proposal) -> Unit,
     onConnections: (() -> Unit)? = null,
     onNewDraft: (String) -> Unit = { onAskNew() },
@@ -148,7 +144,6 @@ fun AskScreen(
     }
     val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
-
 
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.

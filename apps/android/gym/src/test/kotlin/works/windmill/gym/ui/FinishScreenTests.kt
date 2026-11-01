@@ -1,22 +1,16 @@
 package works.windmill.gym.ui
 
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextReplacement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,7 +21,6 @@ import works.windmill.gym.presentation.AgainstMovement
 import works.windmill.gym.presentation.Effort
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.PersonalRecord
-import works.windmill.gym.presentation.Program
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.Session
@@ -267,7 +260,6 @@ class FinishTests {
     }
 }
 
-
 class RecordEstimateFormattingTests {
     private val bench = listOf(Exercise("bench-press", "Bench Press"))
 
@@ -445,7 +437,7 @@ class ShareWithCoachTests {
         assertEquals(1, discards)
         compose.onNodeWithText("Save a routine").assertDoesNotExist()
         compose.onNodeWithText("Share this workout").assertDoesNotExist()
-        compose.onNodeWithText(Finish.discard).assertDoesNotExist()
+        compose.onNodeWithText("Discard").assertDoesNotExist()
     }
 
     @Test
