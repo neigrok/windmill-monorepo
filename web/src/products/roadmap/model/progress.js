@@ -19,20 +19,6 @@ export function advanceProgress(progress, ids, target, now) {
   return { completed, completedAt };
 }
 
-// One step's mark and completion time put back as `snapshot` held them, every other step left as `progress` has it.
-export function restoreProgress(progress, snapshot, id) {
-  const completed = new Set(progress.completed);
-  const completedAt = { ...progress.completedAt };
-  if (snapshot.completed.has(id)) {
-    completed.add(id);
-    completedAt[id] = snapshot.completedAt[id];
-  } else {
-    completed.delete(id);
-    delete completedAt[id];
-  }
-  return { completed, completedAt };
-}
-
 export function progressChanges(tree, before, after) {
   const previousStates = UnlockRules.derive(tree, before);
   const nextStates = UnlockRules.derive(tree, after);

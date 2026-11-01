@@ -84,8 +84,9 @@ window below that; below 744px a page pushed over the Board, which stays mounted
 Crossing 744px swaps the frame inside the same layer. The open step rides the hash as `?step=<id>` (`stepAddress.js`).
 Each step opened from a card or from another step is a history entry, so Back steps out one step at a time and the page's
 back row names the screen it returns to; closing pops the whole visit, and a link lands owner and visitor alike on the
-Board with that step open. A step the loaded roadmap no longer holds leaves the URL in place, so restoring it reopens
-nothing. While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape, wherever focus is,
+Board with that step open. A view reads a step only on its own roadmap's route, and once that roadmap has loaded without
+the step, the step leaves the URL in place, so restoring it reopens nothing; with the gate closed the URL is never
+touched. While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape, wherever focus is,
 closes the modal or steps the page back. When the element holding focus gives way (an action replaced, Undo expiring, a
 workspace edit ending) focus lands on the status row, or the dialog where there is none. Closing returns focus to the card
 the visit began on, or to the columns' tab stop once that card has gone (deleted, or outside the branch View branch
@@ -93,9 +94,9 @@ scoped). `StepFacts.js` reads the step off the
 whole roadmap, whatever the Board filters: its column, its prerequisites and the steps it unlocks with their columns, what
 Complete would open and how many steps Reset would lock. Complete and Reset act in place through the Graph's progress
 writes and toast nothing: the status row flips with an inline Undo for six seconds and a line names what moved, and
-hovering or focusing Reset previews what it returns to Locked. Undo puts back the step's mark and completion time as they
-were, with no ceremony or activity; the progress lattice dates the mark it sends anew, so synced progress carries the
-time of the Undo. On the Workspace section, a step whose every subtask is checked offers Complete step, which returns to
+hovering or focusing Reset previews what it returns to Locked. Undo puts back the step's mark with no ceremony or activity, but not its completion
+time: the progress lattice dates every mark it sends, so an Undo of Reset completes the step at the Undo's time and it
+heads Done. On the Workspace section, a step whose every subtask is checked offers Complete step, which returns to
 the overview's status row; subtasks never complete it. The ⋯ menu copies the step's link (the roadmap's share address
 plus its step) only while the roadmap is public or unlisted, opens the step in the Graph, and for the owner deletes it
 through the Graph's delete with its Undo toast.

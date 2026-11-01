@@ -26,7 +26,7 @@ import { ViewSwitch } from './board/ViewSwitch.jsx';
 import { BoardQuery } from './board/Board.js';
 import { FindStep } from './board/BoardControls.jsx';
 import { StepDetail } from './board/StepDetail.jsx';
-import { useStepAddress, hashWithStep } from './board/stepAddress.js';
+import { useStepAddress, hashWithStep, stepIsStale } from './board/stepAddress.js';
 import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
@@ -61,7 +61,7 @@ import { ViewPrefs, initialView, boardCanShow, viewToShow, peekBorn, clearBorn }
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
-import { advanceProgress, restoreProgress, progressChanges, milestoneAnnouncement } from './model/progress.js';
+import { advanceProgress, progressChanges, milestoneAnnouncement } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -1346,7 +1346,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   stepDetailOpenRef.current = detailId !== null;
   // A step the loaded roadmap no longer holds (deleted here or elsewhere, or a stale link) leaves the URL, so restoring
   // it later never reopens it.
-  const staleStep = !loading && tree && stepAddress.id !== null && !tree.nodesById.has(stepAddress.id);
+  const staleStep = stepIsStale({ boardOpen: BOARD_OPEN, loading, tree, treeId, stepId: stepAddress.id });
   useEffect(() => {
     if (staleStep) stepAddress.drop();
   }, [staleStep, stepAddress.drop]);
@@ -1379,6 +1379,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const handleStepCrash = (error) => {
     captureError('roadmap', 'roadmap-board-step', error?.stack ?? '', '#/app');
     stepAddress.close();
+    requestAnimationFrame(() => {
+      const stops = boardLayerRef.current?.querySelectorAll('[data-column] [tabindex="0"], [data-column][tabindex="0"]') ?? [];
+      [...stops].find((element) => element.getClientRects().length > 0)?.focus();
+    });
   };
   // A step's link opens for anyone only where the roadmap itself does: public or unlisted, on the server.
   const stepShareUrl = !demo && (treeVisibility === 'public' || treeVisibility === 'unlisted') ? treeShareUrl(treeId) : null;
@@ -1596,11 +1600,10 @@ export function SkillTreeView({ treeId, demo = false }) {
     pushProgress(id, 'none');
   }
 
-  // The step page and modal's Undo: the step's mark and completion time as they were, with no ceremony and no activity.
-  // The progress lattice dates every mark anew, so once synced progress is adopted, here or on another device, the step
-  // carries the time of the Undo.
+  // The step page and modal's Undo: the step's mark goes back as it was, with no ceremony and no activity. Its completion
+  // time cannot: the progress lattice dates every mark it sends, so an Undo of Reset completes the step at the Undo's time.
   function restoreStep(id, snapshot) {
-    const next = restoreProgress({ completed, completedAt }, snapshot, id);
+    const next = advanceProgress({ completed, completedAt }, [id], snapshot.completed.has(id) ? 'complete' : 'none', Date.now());
     setCompleted(next.completed);
     setCompletedAt(next.completedAt);
     witnessProgress(next);

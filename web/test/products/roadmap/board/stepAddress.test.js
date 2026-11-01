@@ -27,3 +27,19 @@ test('hashWithStep — sets or drops the step and keeps the route and every othe
     '#',
   ]);
 });
+
+test('stepIsStale — only with the gate open, once this view’s own roadmap has loaded without the step', async () => {
+  const { stepIsStale } = await import('../../../../src/products/roadmap/board/stepAddress.js');
+  const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
+  const sail = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [{ id: 'wind', label: 'Read the wind', prerequisites: [] }] });
+  const asked = { boardOpen: true, loading: false, tree: sail, treeId: 'sail', stepId: 'gone' };
+  assert.deepEqual([
+    stepIsStale(asked),
+    stepIsStale({ ...asked, boardOpen: false }),
+    stepIsStale({ ...asked, loading: true }),
+    stepIsStale({ ...asked, tree: null }),
+    stepIsStale({ ...asked, treeId: 'sea' }),
+    stepIsStale({ ...asked, stepId: 'wind' }),
+    stepIsStale({ ...asked, stepId: null }),
+  ], [true, false, false, false, false, false, false]);
+});

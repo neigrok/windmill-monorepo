@@ -6,16 +6,16 @@ import { createServer } from 'vite';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { StepDetail } from '/src/products/roadmap/board/StepDetail.jsx';
-import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
+import { useStepAddress, stepIsStale } from '/src/products/roadmap/board/stepAddress.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
-import { advanceProgress, restoreProgress } from '/src/products/roadmap/model/progress.js';
+import { advanceProgress } from '/src/products/roadmap/model/progress.js';
 import { toggleSubtask } from '/src/products/roadmap/model/NodeWorkspace.js';
 
 const noop = () => {};
@@ -23,10 +23,28 @@ const call = (line) => (window.calls ??= []).push(line);
 const bandOf = (width) => (width < 744 ? 'phone' : width < 1024 ? 'tablet' : 'desktop');
 const without = (steps, id) => steps.filter((step) => step.id !== id).map((step) => ({ ...step, prerequisites: step.prerequisites.filter((need) => need !== id) }));
 
-window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true }) => {
-  function Room() {
-    const [steps, setSteps] = useState(nodes);
-    const tree = useMemo(() => new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: steps }), [steps]);
+// Like the shell: the route follows the URL in a transition, and each roadmap is its own view, keyed by its id, that
+// loads its tree a beat after it mounts.
+window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {} }) => {
+  const trees = { sail: nodes, ...others };
+  const routeTree = () => window.location.hash.split('?')[0].replace('#/app/', '');
+  function App() {
+    const [treeId, setTreeId] = useState(routeTree);
+    useEffect(() => {
+      const follow = () => startTransition(() => setTreeId(routeTree()));
+      window.addEventListener('hashchange', follow);
+      window.addEventListener('popstate', follow);
+      return () => {
+        window.removeEventListener('hashchange', follow);
+        window.removeEventListener('popstate', follow);
+      };
+    }, []);
+    return React.createElement(Room, { key: treeId, treeId });
+  }
+  function Room({ treeId }) {
+    const [steps, setSteps] = useState(null);
+    useEffect(() => { Promise.resolve().then(() => setSteps(trees[treeId])); }, []);
+    const tree = useMemo(() => (steps === null ? null : new SkillTree({ id: treeId, title: 'Learn to sail', nodes: steps })), [steps]);
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
     const [spaces, setSpaces] = useState(workspaces);
@@ -38,16 +56,18 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
       window.addEventListener('resize', follow);
       return () => window.removeEventListener('resize', follow);
     }, []);
-    const stale = address.id !== null && !tree.nodesById.has(address.id);
+    const stale = stepIsStale({ boardOpen: gate, loading: tree === null, tree, treeId, stepId: address.id });
     useEffect(() => { if (stale) address.drop(); }, [stale]);
     const mark = (id, target) => setProgress((current) => advanceProgress(current, [id], target, Date.now()));
-    window.restoreSteps = () => setSteps(nodes);
+    window.restoreSteps = () => setSteps(trees[treeId]);
+    if (tree === null) return null;
+    const open = gate && address.id !== null && tree.nodesById.has(address.id);
     return React.createElement('div', { style: { position: 'fixed', inset: 0 } },
       React.createElement('div', { className: 'st-view-layer--board is-active', style: { position: 'absolute', inset: 0, zIndex: 18 } },
         React.createElement(BoardView, { tree, completed: progress.completed, completedAt: progress.completedAt, selectedId,
           onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, onAnchor: setSelectedId, breakpoint, active: true,
           onSwitchView: noop, query, onQuery: setQuery })),
-      address.id && !stale && React.createElement(StepDetail, {
+      open && React.createElement(StepDetail, {
         tree, completed: progress.completed, completedAt: progress.completedAt, address, breakpoint, roadmapTitle: 'Learn to sail',
         editable, deletable: true, stepLink: linked ? 'https://windmill.test/t/sail#?step=' + address.id : null,
         workspace: spaces[address.id] ?? { subtasks: [], note: '', links: [] },
@@ -59,14 +79,14 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         onClose: () => { const origin = address.trail[0]; address.close(); setSelectedId(origin); },
         onComplete: (id) => { call('complete ' + id); mark(id, 'complete'); },
         onReset: (id) => { call('reset ' + id); mark(id, 'none'); },
-        onRestore: (id, snapshot) => { call('restore ' + id); setProgress((current) => restoreProgress(current, snapshot, id)); },
+        onRestore: (id, snapshot) => { call('restore ' + id); mark(id, snapshot.completed.has(id) ? 'complete' : 'none'); },
         onOpenInGraph: (id) => call('graph ' + id),
         onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
         onDelete: (id) => { call('delete ' + id); address.close(); setSteps((current) => without(current, id)); },
         onNotify: (message) => call('notify ' + message),
       }));
   }
-  createRoot(document.getElementById('root')).render(React.createElement(Room));
+  createRoot(document.getElementById('root')).render(React.createElement(App));
 };
 window.entryReady = true;
 `;
@@ -114,14 +134,14 @@ const learnToSailNodes = [
   { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
 ];
 
-async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, clock = false, permissions = [] }, errors) {
+async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {}, start = '#/app/sail', clock = false, permissions = [] }, errors) {
   const context = await browser.newContext({ viewport, permissions });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   if (clock) await page.clock.install();
-  await page.goto(`${origin}/step-detail-test#/app/sail`);
+  await page.goto(`${origin}/step-detail-test${start}`);
   await page.waitForFunction(() => window.entryReady);
-  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked });
+  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, gate, others });
   await page.locator('.st-board-card:visible').first().waitFor();
   return page;
 }
@@ -472,7 +492,7 @@ test('Chromium: Undo expiring and a workspace edit ending hand focus to the stat
   }
 });
 
-test('Chromium: Undo after Reset gives the step back its completion time, so Done keeps its order', async () => {
+test('Chromium: Undo after Reset gives the step back its mark, quietly; it completes at the Undo’s time, so it heads Done', async () => {
   await ready;
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
@@ -481,8 +501,8 @@ test('Chromium: Undo after Reset gives the step back its completion time, so Don
     await card(page, 'Name the boat parts').click();
     await page.getByRole('button', { name: 'Reset' }).click();
     await page.getByRole('button', { name: 'Undo' }).click();
-    assert.deepEqual([await column(page, 'done'), await calls(page)],
-      [['Rig the boat', 'Name the boat parts', 'Choose a sailing course'], ['reset parts', 'restore parts']]);
+    assert.deepEqual([await column(page, 'done'), await status(page), await calls(page)],
+      [['Name the boat parts', 'Rig the boat', 'Choose a sailing course'], ['Done'], ['reset parts', 'restore parts']]);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();
@@ -555,6 +575,57 @@ test('Chromium: with no link to share, the step menu offers no Copy link', async
     await card(page, 'Read the wind').click();
     await page.getByRole('button', { name: 'More' }).click();
     assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Open in Graph', 'Delete step']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+const sea = { sea: [{ id: 'tide', label: 'Read the tide', prerequisites: [], color: 'sky' }] };
+
+test('Chromium: arriving at a step link from another roadmap opens the step once its own roadmap loads, and keeps it in the URL', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sea' }, errors);
+  try {
+    await page.evaluate(() => { window.location.hash = '#/app/sail?step=wind'; });
+    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
+    assert.deepEqual([await hash(page), await events(page)], ['#/app/sail?step=wind', ['roadmap_board_step_open {"surface":"modal","column":"upNext","door":"link"}']]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: Back from another roadmap into a step link keeps the step and opens it again', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sail?step=wind' }, errors);
+  try {
+    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
+    await page.evaluate(() => { window.location.hash = '#/app/sea'; });
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.evaluate(() => window.history.back());
+    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
+    assert.equal(await hash(page), '#/app/sail?step=wind');
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: with the Board’s gate closed a step in the URL is left alone — a stale one, and one met again on Back', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sail?step=nope', gate: false }, errors);
+  try {
+    assert.equal(await hash(page), '#/app/sail?step=nope');
+    await page.evaluate(() => { window.location.hash = '#/app/sail?step=wind'; });
+    await page.evaluate(() => { window.location.hash = '#/app/sea'; });
+    await page.locator('.st-board-card-title', { hasText: 'Read the tide' }).waitFor();
+    await page.evaluate(() => window.history.back());
+    await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor();
+    assert.deepEqual([await hash(page), await page.getByRole('dialog').count(), await events(page)], ['#/app/sail?step=wind', 0, []]);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();

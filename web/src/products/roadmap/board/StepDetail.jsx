@@ -129,7 +129,7 @@ export function StepDetail({
   const act = (action, extra = {}) => track('roadmap_board_step_action', { surface, action, ...extra });
 
   // Complete from the subtask offer comes back to the overview, where the status row says what happened and offers Undo.
-  // Undo gives the step back exactly as it was before: its mark and its completion time.
+  // Undo gives the step back the mark it had before, with no ceremony and no activity.
   const complete = (action) => {
     const before = { completed, completedAt };
     onComplete(id);
