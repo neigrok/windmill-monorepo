@@ -293,6 +293,22 @@ class GymNavigatorTests {
         assertEquals(listOf("kept away:2:bodyweight", "kept away:1:notes", "back", "kept away:1:notes", "back"), order)
     }
 
+    @Test
+    fun backReachesTheLatestCallbackEvenWhenItIsTheSameLocalFunction() {
+        val heard = mutableListOf<String>()
+        var drawn by mutableStateOf("first")
+        compose.setContent {
+            activity = LocalActivity.current as ComponentActivity
+            val navigator = remember { GymNavigator(away = listOf(Away.Notes)) }
+            val seen = drawn
+            fun goBack(means: BackMeans) { heard += "$seen ${means.name}" }
+            GymStage(navigator.standing(building = false, logger = false), navigator.guards, onBack = ::goBack) { frame -> Text(frame.key) }
+        }
+        compose.runOnIdle { drawn = "second" }
+        compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
+        compose.runOnIdle { assertEquals(listOf("second PopOnePushedScreen"), heard) }
+    }
+
     private fun startGesture() {
         compose.runOnIdle {
             activity.onBackPressedDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 400f, 0f, BackEventCompat.EDGE_LEFT))

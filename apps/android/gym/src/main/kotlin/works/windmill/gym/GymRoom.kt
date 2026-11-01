@@ -220,7 +220,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val liveSession = store.workout.session
     val live = liveSession != null
     val loggerShown = live && !store.workout.loggerHidden
-    // Asks of the workout open at the moment of the act, not of one a composition drew: Back holds this across compositions.
+    // Asks of the workout open at the moment of the act.
     fun showLogger(shown: Boolean, screen: String, action: String) {
         val result = store.workout.notification.value?.key?.let { store.workout.setLoggerHidden(it, !shown) }
             ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: "The workout is not ready.")
