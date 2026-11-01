@@ -90,14 +90,14 @@ class RecordTests {
         assertEquals(2, unread.estimates.size)
         assertEquals(Record.Page("Back Squat", "Barbell", emptyList(), emptyList(),
             listOf(Record.Day("today", "110 × 5"), Record.Day("13 Jul", "100 × 5")), null, null, false),
-            Record.page(MovementRecord.of(squat, history), today, unread))
+            Record.page(MovementRecord.of(squat, history, today), today, unread))
         assertEquals(Record.Page("Back Squat", "Barbell", emptyList(), emptyList(), emptyList(), null, null, false),
             Record.page(MovementRecord(squat), today, StatsProgress.of(emptyList(), today, complete = false).movement(squat.id)))
         assertEquals(Record.Page("Back Squat", "Barbell",
             listOf(Record.Tile("Best e1RM", "128.3", "kg · today", true), Record.Tile("Heaviest", "110", "kg · 5 reps", false)),
             listOf(Record.Best("100 × 5", "e1RM 116.7", "13 Jul")),
             listOf(Record.Day("today", "110 × 5"), Record.Day("13 Jul", "100 × 5")), null, null, true),
-            Record.page(MovementRecord.of(squat, history), today, StatsProgress.of(history, today).movement(squat.id)))
+            Record.page(MovementRecord.of(squat, history, today), today, StatsProgress.of(history, today).movement(squat.id)))
     }
 
     @Test
