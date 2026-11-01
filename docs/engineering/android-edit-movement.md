@@ -23,7 +23,7 @@ records are retained without coercion. The conditional database upgrade widens t
 checks once; an unchanged reapplication keeps their identities and every existing trigger.
 
 The deployment compatibility guard and Android fresh-hello delivery gate are on main. Production's
-hello advertised schema 11 / minimum 11 when last verified, on 2026-10-30. Android keeps queued writes ready against a server below its registry
+hello advertised schema 12 / minimum 11 when last verified, on 2026-11-01. Android keeps queued writes ready against a server below its registry
 minimum. Existing iOS/web selectors cannot originate Other. Any rollback after Other data exists
 must retain Other, finite unbounded loads and nullable metrics, on a schema 11 / minimum 11 or later image.
 
