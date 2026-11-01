@@ -15,7 +15,7 @@
         "wait": "Load, kg total"
       },
       {
-        "wait": "Set 1, current, target 75 kg total, 8 reps"
+        "wait_contains": "Set 1, current, "
       }
     ]
   },
@@ -53,7 +53,7 @@
         "tap": "Log set"
       },
       {
-        "wait_contains": "Set 2, current, target"
+        "wait_contains": "Set 2, current, "
       }
     ]
   },
@@ -93,7 +93,7 @@
         "tap": "Log set"
       },
       {
-        "wait": "Set 2, current, target 24 kg each, 10 reps"
+        "wait_contains": "Set 2, current, "
       }
     ],
     "after": [
@@ -136,7 +136,7 @@
         "tap": "Log set"
       },
       {
-        "wait": "Set 2, current, target 10 kg added, 8 reps"
+        "wait_contains": "Set 2, current, "
       }
     ]
   },

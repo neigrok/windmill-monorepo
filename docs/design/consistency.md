@@ -900,6 +900,25 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,
   once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
   becomes **Retry** · *That read failed.*, which no Android board draws.
+- **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
+  (Pixel 8 profile, API 37); none of these has a board to settle it:
+  - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
+    the status-bar strip above it on the canvas, so a scrolled screen shows a two-tone seam. 00.1
+    draws no scrolled state.
+  - *Receipt actions.* *Share with Coach* and *Done* are M3 buttons 56 dp tall; 03.36 draws them
+    72 dp tall at 200 % and 03.15 at 56 dp.
+  - *Navigation pill.* M3 draws the active-tab indicator 64 × 28 dp at 320 dp / 200 %; 00.7 draws
+    56 × 32 dp.
+  - *Rack.* At 22.5 kg the load chips step ±5 (the load band) where 03.34 draws ±10, and a logged
+    row ends in a text ✓ where 03.34 draws a check icon.
+  - *Dialogs.* The discard questions measure about 319 dp wide against 312 dp on 02.20 and 02.17,
+    so *Changes to this movement won't be kept.* fits one line where 02.17 wraps it; the Daylight
+    scrim reads #5e5c5b against the board's #6a6866.
+  - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
+    the unit (`ui/ReviewSheet.kt:384` over `domain/Proposal.kt`); every other Android readout spaces it.
+  - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
+    (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
+    (`web/src/products/gym/log.js`).
 
 ### Parity rulings (owner, 2026-10-22)
 
