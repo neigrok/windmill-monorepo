@@ -939,7 +939,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     after a delete the rows that remain renumber. Fix set keeps *Set N* in its title, N by the
     same count. Built on Android (`ui/SessionScreen.kt` `Performed.Row.position`, passed to
     `ui/FixSheet.kt`). Board 05.3b *Quiet set count* (Dark `1782:26943`, Daylight `1782:27019`,
-    caption `1782:27095`, in section 05, ✅ Ready for dev) draws the count in JetBrains Mono 12/16 in
+    caption `1782:27095`, in section 05, 🚀 In production) draws the count in JetBrains Mono 12/16 in
     text/tertiary, in a 24 dp column on the load's baseline, inside each movement's one group of
     sets. Revisions 05.14b (`1793:27005`, `1793:27113`, caption `1793:27221`), 05.4b (`1793:27226`,
     `1793:27317`, caption `1793:27408`; the swipe, rows renumber), 05.5b (`1793:27413`,

@@ -1,6 +1,6 @@
 # Delete account: an honest wrong-clock refusal (27h) and a way out when nothing was deleted (D6)
 
-**Status:** Built on branch `wave-65` (from the native wave), not on main. The owner approved the boards on 2026-11-01; 27h and D6 are ✅ Ready for dev and built. JVM, Robolectric and backend Postgres tests cover the logic; the Done-when lines for matching the boards and for local-stack acceptance stay open (see Open).
+**Status:** 🚀 On main (`63844df3`). The owner approved the boards on 2026-11-01; 27h and D6 are 🚀 In production. On the local stack, a clock 8 minutes slow showed 27h with no fence left, an offline send checked after more than 5 minutes showed D6 with gym writes working again, and both matched their Dark boards. Daylight and the lost-reply case (27d) were not run there (see Open).
 
 **Figma** (Shell file, Android page):
 - 27h Couldn't delete, date and time: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=139-2733) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=139-2786), caption `139:2838`
@@ -14,7 +14,7 @@
 - **Unchanged:** inside the 5-minute window Check deletion re-sends the identical close first; a committed close whose reply was lost ends on 27d through the receipt.
 - **Events:** `account_delete` `outcome` `clock_refused` and `not_deleted`; `action` `retry` (D6 Try again) and `date_time` (with `outcome` `failed` when settings cannot open). Every refusal is a log line, not an Issue.
 - **Tests:** `AccountDeletionTests` (8-minute-slow clock, clock-ahead, 27h well inside the window, D6 near its edge, offline then back past the window, restart then D6, 401 and 35 days stay on D3, lost reply ends deleted, Date & time events), `DeleteAccountTests` (27h at 200 % text in reading order with the settings intent, its error line one node whose text changes; D6 lifts the fence and Try again opens an empty 27a; the email outlives D1 → Back → Check again → 27h), `PgAccountClosureTest` (a close held at the lock past the window never commits after a stale answer), `WindmillApplicationTests` (a pending record fences gym writes and clearing it lets a weigh-in land without a restart).
-- **Open:** no local-stack acceptance has run (emulator, airplane mode, clock moved 8 minutes back). The only renders of 27h and D6 in both modes came from a scratch Robolectric test that is not committed, not from the capture rig. If date settings cannot open, the tap only emits `date_time` `failed`; the boards draw no copy for that case.
+- **Open:** Daylight was compared only in Robolectric renders from a scratch test, and the lost-reply case that ends on 27d was not run on the local stack. If date settings cannot open, the tap only emits `date_time` `failed`; the boards draw no copy for that case.
 
 **Change**
 - **27h:**

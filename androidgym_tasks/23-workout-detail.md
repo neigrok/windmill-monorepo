@@ -1,6 +1,6 @@
 # Workout detail
 
-**Status:** On main at `cadb48f6` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+**Status:** On main at `cadb48f6` in batch `b40dd5e0`, and the quiet set count (05.3b and its revisions) at `63844df3`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
 
 **Approved flow:** [Log / Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — human-approved 2026-10-25. Workout discard uses the approved [Finish overflow confirmation](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362); weight Undo remains separate.
 
