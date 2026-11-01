@@ -202,11 +202,12 @@ class LargestTypeTests {
             room.pull(server)
             runBlocking { room.store.refreshEngine() }
 
+            val review = ReviewBinding(room.store)
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
                     Box(Modifier.fillMaxWidth().height(700.dp)) {
                         ReviewSheet(
-                            proposalId = "proposal1", store = room.store,
+                            proposalId = "proposal1", state = review, events = review,
                             onAsk = null, onDecided = {},
                         )
                     }

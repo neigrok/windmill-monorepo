@@ -76,11 +76,12 @@ class SessionScreenPaintTests {
             room.store.observeEngine()
             val summary = room.store.history.recent.single()
             var dark by mutableStateOf(true)
+            val sessionPage = SessionBinding(room.store)
             compose.setContent {
                 contentView = LocalView.current
                 CompositionLocalProvider(LocalWindmillDark provides dark) {
                     GymMaterial {
-                        SessionScreen(summary = summary, store = room.store,
+                        SessionScreen(summary = summary, state = sessionPage, events = sessionPage,
                             sharing = WorkoutShareActions("https://windmill.works", { error("no link is minted here") },
                                 { error("no link is revoked here") }),
                             backTo = "The log", onBack = {}, say = {}, onOpenMovement = {}, onDiscard = {})

@@ -78,11 +78,12 @@ class SetRowSwipeTests {
         summary: SessionSummary,
         standing: MutableState<Boolean> = mutableStateOf(true),
     ): MutableState<Boolean> {
+        val sessionPage = SessionBinding(room.store)
         compose.setContent {
             if (standing.value) {
                 SessionScreen(
                     summary = summary,
-                    store = room.store,
+                    state = sessionPage, events = sessionPage,
                     sharing = doors,
                     backTo = "The log",
                     onBack = {},

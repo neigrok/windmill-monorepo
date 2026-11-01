@@ -72,9 +72,10 @@ class RoutinesScreenTests {
             room.select(null)
             room.store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
         }
+        val routinesHome = RoutinesBinding(room.store)
         compose.setContent {
             RoutinesScreen(
-                store = room.store,
+                state = routinesHome, events = routinesHome,
                 lookedAt = emptySet(),
                 seat = "s",
                 onBuild = { drafts += it },
@@ -129,10 +130,11 @@ class RoutinesScreenTests {
             runBlocking { room.select(null) }
             var scale by mutableStateOf(1f)
             val drafts = mutableListOf<RoutineDraft>()
+            val routinesHome = RoutinesBinding(room.store)
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale)) {
                     GymMaterial {
-                        RoutinesScreen(room.store, emptySet(), "", { drafts += it }, {}, { true }, {})
+                        RoutinesScreen(routinesHome, routinesHome, emptySet(), "", { drafts += it }, {}, { true }, {})
                     }
                 }
             }
@@ -163,10 +165,11 @@ class RoutinesScreenTests {
                 }
             }
             val drafts = mutableListOf<RoutineDraft>()
+            val routinesHome = RoutinesBinding(room.store)
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
                     GymMaterial {
-                        RoutinesScreen(room.store, emptySet(), "", { drafts += it }, {}, { true }, {})
+                        RoutinesScreen(routinesHome, routinesHome, emptySet(), "", { drafts += it }, {}, { true }, {})
                     }
                 }
             }
@@ -247,9 +250,10 @@ class RoutinesScreenTests {
             runBlocking { room.select("u1"); room.pull(server); room.store.refreshEngine() }
             val store = room.store
             val reviewed = mutableListOf<String>()
+            val routinesHome = RoutinesBinding(store)
             compose.setContent {
                 RoutinesScreen(
-                    store = store,
+                    state = routinesHome, events = routinesHome,
                     lookedAt = emptySet(),
                     seat = "s",
                     onBuild = {},
@@ -288,9 +292,10 @@ class RoutinesScreenTests {
             }
 
             val doors = mutableListOf<String>()
+            val routinesHome = RoutinesBinding(store)
             compose.setContent {
                 RoutinesScreen(
-                    store = store,
+                    state = routinesHome, events = routinesHome,
                     lookedAt = emptySet(),
                     seat = "",
                     onBuild = { doors += "build" },
@@ -320,10 +325,11 @@ class RoutinesScreenTests {
                 store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press").adding("barbell-row"))
             }
             val routineId = store.routines.all.single().id
+            val routinesHome = RoutinesBinding(store)
             compose.setContent {
                 RoutineSheet(
                     routineId = routineId,
-                    store = store,
+                    state = routinesHome,
                     onDismiss = {},
                     onStart = { started += it },
                     onBuild = {},
@@ -368,9 +374,10 @@ class RoutinesScreenTests {
             } }
             runBlocking { room.select("u1"); room.pull(server); room.store.refreshEngine() }
             val edited = mutableListOf<RoutineDraft>()
+            val routinesHome = RoutinesBinding(room.store)
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
-                    RoutineSheet("routine_compact", room.store, {}, {}, { edited += it })
+                    RoutineSheet("routine_compact", routinesHome, {}, {}, { edited += it })
                 }
             }
             val first = compose.onNodeWithText("$firstName · yours").performScrollTo().assertIsDisplayed()

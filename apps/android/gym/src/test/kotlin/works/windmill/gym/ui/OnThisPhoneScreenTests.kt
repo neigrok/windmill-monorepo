@@ -41,11 +41,12 @@ class OnThisPhoneScreenTests {
         }
     }
     private fun inspect(room: EngineRoomFixture, fixes: Boolean = false) {
+        val recovery = RecoveryBinding(room.store)
         compose.setContent { WindmillMaterial { GymMaterial {
             CompositionLocalProvider(LocalTelemetry provides telemetry) {
                 val read = room.store.recovery.latest
-                read?.workouts?.firstOrNull()?.let { row -> WorkoutInspectScreen(room.store, read, row, {}, { read.belongsTo(room.account()) }) }
-                if (fixes) WorkoutFixScreen(room.store) { room.store.recovery.fixDraft?.read?.belongsTo(room.account()) == true }
+                read?.workouts?.firstOrNull()?.let { row -> WorkoutInspectScreen(recovery, recovery, read, row, {}, { read.belongsTo(room.account()) }) }
+                if (fixes) WorkoutFixScreen(recovery, recovery) { room.store.recovery.fixDraft?.read?.belongsTo(room.account()) == true }
             }
         } } }
     }
@@ -180,7 +181,8 @@ class OnThisPhoneScreenTests {
                 listOf(TrainingSet("set00001", "bench-press", weightKg = 80.0, reps = 5, completedAtMs = 2_000)))
             val row = ImportRecovery(copy.session.id, copy, emptyList(), listOf(ImportOpening("set00001", "replica", false, emptyMap())))
             val read = RecoveryRead("https://test.invalid", "A", 0, "replica", listOf(row))
-            compose.setContent { WindmillMaterial { GymMaterial { WorkoutInspectScreen(room.store, read, row, {}, { true }) } } }
+            val recovery = RecoveryBinding(room.store)
+            compose.setContent { WindmillMaterial { GymMaterial { WorkoutInspectScreen(recovery, recovery, read, row, {}, { true }) } } }
             compose.onNodeWithText("Sets").assertIsDisplayed()
             compose.onAllNodesWithText("1").assertCountEquals(2)
             compose.onNodeWithText("0").assertDoesNotExist()
@@ -195,7 +197,8 @@ class OnThisPhoneScreenTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val row = ImportRecovery("opaque", null, listOf(ImportRefusal("opaque", null, emptyList(), emptyList(), "source-unreadable", WorkoutImports.reason("source-unreadable"), kind = "operation")), emptyList())
             val read = RecoveryRead("https://test.invalid", "A", 0, "replica", listOf(row))
-            compose.setContent { WindmillMaterial { GymMaterial { WorkoutInspectScreen(room.store, read, row, {}, { true }) } } }
+            val recovery = RecoveryBinding(room.store)
+            compose.setContent { WindmillMaterial { GymMaterial { WorkoutInspectScreen(recovery, recovery, read, row, {}, { true }) } } }
             compose.onNodeWithText("Open Windmill").assertIsDisplayed()
             compose.onNodeWithText("Sets").assertDoesNotExist()
             compose.onNodeWithText("0").assertDoesNotExist()

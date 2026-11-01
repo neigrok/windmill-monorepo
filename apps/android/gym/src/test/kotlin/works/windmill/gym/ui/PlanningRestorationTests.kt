@@ -96,9 +96,10 @@ class PlanningRestorationTests {
                 .targeting("bench-press", listOf(SetTarget(8, 60.0), SetTarget(6, 65.0), SetTarget(4, 70.0)))
             var draft by mutableStateOf(original)
             val restorer = StateRestorationTester(compose)
+            val builder = RoutineBuilderBinding(store)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithContentDescription("Set 3 load").performTextReplacement("1e999")
@@ -133,9 +134,10 @@ class PlanningRestorationTests {
             var draft by mutableStateOf(RoutineDraft(name = "Push"))
             val before = room.engine.snapshot()
             val restorer = StateRestorationTester(compose)
+            val builder = RoutineBuilderBinding(store)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasSetTextAction() and hasText("Search movements")).performTextReplacement("Zercher")
@@ -249,9 +251,10 @@ class PlanningRestorationTests {
                 .targeting("chin-up", listOf(SetTarget(8, -10.0), SetTarget(6, -5.0)))
             var draft by mutableStateOf(original)
             val restorer = StateRestorationTester(compose)
+            val builder = RoutineBuilderBinding(store)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Chin Up").performClick()
             uniformTargets()

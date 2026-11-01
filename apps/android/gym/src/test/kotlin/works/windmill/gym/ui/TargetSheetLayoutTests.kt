@@ -49,8 +49,9 @@ class TargetSheetLayoutTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             runBlocking { room.select(null) }
             var draft by mutableStateOf(lowerA)
+            val builder = RoutineBuilderBinding(room.store)
             compose.setContent {
-                RoutineBuilder(draft = draft, store = room.store, saving = false, onDraft = { draft = it }, onSave = {}, onClose = {}, say = {}, backTo = "Routines")
+                RoutineBuilder(draft = draft, state = builder, events = builder, saving = false, onDraft = { draft = it }, onSave = {}, onClose = {}, say = {}, backTo = "Routines")
             }
             compose.onNodeWithText("Back Squat").performClick()
 

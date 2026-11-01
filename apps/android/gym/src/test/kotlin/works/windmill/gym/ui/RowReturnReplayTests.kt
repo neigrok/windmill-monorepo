@@ -56,9 +56,10 @@ class RowReturnReplayTests {
     }
 
     private fun home(room: EngineRoomFixture, deletes: MutableList<String>) {
+        val routinesHome = RoutinesBinding(room.store)
         compose.setContent {
             RoutinesScreen(
-                store = room.store,
+                state = routinesHome, events = routinesHome,
                 lookedAt = emptySet(),
                 seat = "s",
                 onBuild = {},

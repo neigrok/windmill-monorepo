@@ -35,6 +35,7 @@ class TargetSheetSignKeyTests {
         inputs: MutableList<Int>? = null): () -> RoutineDraft {
         runBlocking { room.select(null) }
         var draft by mutableStateOf(opening)
+        val builder = RoutineBuilderBinding(room.store)
         compose.setContent {
             GymMaterial {
                 InterceptPlatformTextInput({ request, _ ->
@@ -42,7 +43,7 @@ class TargetSheetSignKeyTests {
                     request.createInputConnection(info)
                     inputs?.add(info.inputType)
                     awaitCancellation()
-                }) { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}, "Routines") }
+                }) { RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines") }
             }
         }
         compose.onNodeWithText(movement).performClick()

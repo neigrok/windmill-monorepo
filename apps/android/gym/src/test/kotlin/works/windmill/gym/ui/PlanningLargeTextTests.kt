@@ -57,9 +57,10 @@ class PlanningLargeTextTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
             var draft by mutableStateOf(RoutineDraft(name = "Pull").adding("chin-up"))
+            val builder = RoutineBuilderBinding(store)
             compose.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Chin Up").performClick()
             val sets = compose.onNodeWithContentDescription("Sets").fetchSemanticsNode().positionInRoot

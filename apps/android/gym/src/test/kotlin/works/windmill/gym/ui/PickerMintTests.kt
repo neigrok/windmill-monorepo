@@ -56,11 +56,12 @@ class PickerMintTests {
         room.now = System.currentTimeMillis()
         runBlocking { room.select(null) }
         room.store.observeEngine()
+        val builder = RoutineBuilderBinding(room.store)
         compose.setContent {
             contentView = LocalView.current
             RoutineBuilder(
                 draft = draft.value,
-                store = room.store,
+                state = builder, events = builder,
                 saving = false,
                 onDraft = { draft.value = it },
                 onSave = {},

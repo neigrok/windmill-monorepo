@@ -115,16 +115,21 @@ import works.windmill.gym.ui.PhoneRecovery
 import works.windmill.gym.ui.OnThisPhoneScreen
 import works.windmill.gym.ui.WorkoutInspectScreen
 import works.windmill.gym.ui.WorkoutFixScreen
+import works.windmill.gym.ui.RecoveryBinding
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.NoteEditorScreen
 import works.windmill.gym.ui.NotesScreen
 import works.windmill.gym.ui.RecordScreen
+import works.windmill.gym.ui.ReviewBinding
 import works.windmill.gym.ui.ReviewSheet
 import works.windmill.gym.ui.RoutineBuilder
+import works.windmill.gym.ui.RoutineBuilderBinding
 import works.windmill.gym.ui.RoutineSheet
+import works.windmill.gym.ui.RoutinesBinding
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.rememberGymHaptics
+import works.windmill.gym.ui.SessionBinding
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.coach.ThreadScreen
 import works.windmill.gym.coach.ThreadsScreen
@@ -829,10 +834,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     scrimColor = skin.scrim,
                 ) {
                     BackHandler(enabled = reviewBusy) {}
+                    val proposalReview = remember(store) { ReviewBinding(store) }
                     ReviewSheet(
                         onBusy = { reviewBusy = it },
                         proposalId = open.proposalId,
-                        store = store,
+                        state = proposalReview,
+                        events = proposalReview,
                         // Offered only where Coach itself is: an account, and a deployment that has one.
                         onAsk = if (account.isSignedIn && !askAbsent) {
                             { about ->
@@ -938,10 +945,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 )
             }
 
+            val routinesHome = remember(store) { RoutinesBinding(store) }
             if (building == null) selectedRoutineId?.let { id ->
                 RoutineSheet(
                     routineId = id,
-                    store = store,
+                    state = routinesHome,
                     onDismiss = { selectedRoutineId = null },
                     onStart = { open(it) },
                     onBuild = { building = it },
@@ -953,7 +961,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val youInitial = account.user?.email?.take(1) ?: ""
             val recoveryRead = store.recovery.latest?.takeIf { it.belongsTo(account) }
             val fixRead = store.recovery.fixDraft?.read
-            if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(store, currentOwner = { fixRead.belongsTo(currentAccount) })
+            val recovery = remember(store) { RecoveryBinding(store) }
+            if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(recovery, recovery, currentOwner = { fixRead.belongsTo(currentAccount) })
 
             @Composable
             fun CoachStance(otherwise: @Composable () -> Unit) = when {
@@ -1011,7 +1020,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 )
                 Tab.Coach -> CoachStance { Conversation(backTo = null, onBack = null) }
                 Tab.Routines -> RoutinesScreen(
-                    store = store,
+                    state = routinesHome,
+                    events = routinesHome,
                     lookedAt = lookedAtIds,
                     seat = youInitial,
                     // A routine starts from its plan sheet.
@@ -1069,23 +1079,27 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     is Away.Session -> if (finished?.let { it.session.id == standing.summary.id && it.sets.isEmpty() } == true) {
                         GymScreen(title = standing.summary.plan?.routine ?: Readout.noRoutine,
                             onBack = { back() }, backTo = backTo) { }
-                    } else SessionScreen(
-                        summary = standing.summary,
-                        seed = standing.detail,
-                        store = store,
-                        sharing = sharing,
-                        backTo = backTo,
-                        onBack = { back() },
-                        say = { note = it },
-                        onOpenMovement = { look(Away.Movement(it)) },
-                        onDiscard = { discard(it, "session") },
-                        onDraftOpen = { pushedDraftOpen = it },
-                    )
+                    } else {
+                        val sessionPage = remember(store) { SessionBinding(store) }
+                        SessionScreen(
+                            summary = standing.summary,
+                            seed = standing.detail,
+                            state = sessionPage,
+                            events = sessionPage,
+                            sharing = sharing,
+                            backTo = backTo,
+                            onBack = { back() },
+                            say = { note = it },
+                            onOpenMovement = { look(Away.Movement(it)) },
+                            onDiscard = { discard(it, "session") },
+                            onDraftOpen = { pushedDraftOpen = it },
+                        )
+                    }
                     Away.OnThisPhone -> if (recoveryRead != null) OnThisPhoneScreen(recoveryRead,
                         onBack = { back() }, onInspect = { look(Away.InspectWorkout(it)) }) else TabScreen(frame.tab)
                     is Away.InspectWorkout -> if (recoveryRead != null) {
                         val row = recoveryRead.workouts.firstOrNull { it.id == standing.id }
-                        if (row != null) WorkoutInspectScreen(store, recoveryRead, row, onBack = { back() },
+                        if (row != null) WorkoutInspectScreen(recovery, recovery, recoveryRead, row, onBack = { back() },
                             currentOwner = { recoveryRead.belongsTo(currentAccount) })
                         else LaunchedEffect(standing.id) { back() }
                     } else TabScreen(frame.tab)
@@ -1208,9 +1222,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 )
                                 // A day being built outranks a tab and nothing else, and it covers the rail.
                                 is Frame.Draft -> (building?.also { leavingDraft.draft = it } ?: leavingDraft.draft)?.let { draft ->
+                                    val builder = remember(store) { RoutineBuilderBinding(store) }
                                     RoutineBuilder(
                                         draft = draft,
-                                        store = store,
+                                        state = builder,
+                                        events = builder,
                                         saving = savingRoutine,
                                         onDraft = { building = it },
                                         onSave = { building?.let(::write) },

@@ -91,7 +91,8 @@ class CreateMovementTargetTests {
             var draft by mutableStateOf(RoutineDraft(name = "Push").adding("bench-press",
                 List(3) { SetTarget(8, 75.0) }))
             val before = room.engine.snapshot()
-            compose.setContent { GymMaterial { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}, "Routines") } }
+            val builder = RoutineBuilderBinding(room.store)
+            compose.setContent { GymMaterial { RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines") } }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithText("Vary by set").performScrollTo().performClick()
             val field = compose.onNodeWithContentDescription("Set 1 load")
@@ -136,8 +137,9 @@ class CreateMovementTargetTests {
             val changes = mutableListOf<RoutineDraft>()
             val before = room.engine.snapshot()
             val restorer = StateRestorationTester(compose)
+            val builder = RoutineBuilderBinding(room.store)
             restorer.setContent { GymMaterial {
-                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
@@ -183,8 +185,9 @@ class CreateMovementTargetTests {
             var draft by mutableStateOf(RoutineDraft(name = "Pull"))
             val changes = mutableListOf<RoutineDraft>()
             val before = room.engine.snapshot()
+            val builder = RoutineBuilderBinding(room.store)
             compose.setContent { GymMaterial {
-                RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
