@@ -170,7 +170,7 @@ class CoachDraftTests {
             local.savePhoto(phone, photo.id, byteArrayOf(1, 2, 3))
             local.saveChat(phone, LocalChat("phone-chat"), true); local.saveDraft(phone, "phone-chat", CoachDraft("Phone", photo))
             var owner: String? = "alice"
-            val store = CoachStore({ owner }, { emptySet() }, {}, { FakeGymRest() }, local, Telemetry.None, System::nanoTime,
+            val store = CoachStore({ owner }, {}, { FakeGymRest() }, local, Telemetry.None, System::nanoTime,
                 backgroundScope, StandardTestDispatcher(testScheduler))
             val adoption = async(start = CoroutineStart.UNDISPATCHED) { store.adoptPhoneDraft("alice") }
             owner = "bob"; store.resetThreads()
@@ -271,7 +271,7 @@ class CoachDraftTests {
                 override fun event(name: String, properties: Map<String, String>) { events += name to properties }
                 override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
             }
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, local, telemetry, System::nanoTime,
+            val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, local, telemetry, System::nanoTime,
                 backgroundScope, StandardTestDispatcher(testScheduler))
             store.chat("account-chat")
             var flushes = 0
@@ -321,7 +321,7 @@ class CoachDraftTests {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {}
         }
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, local, telemetry, System::nanoTime,
+        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, local, telemetry, System::nanoTime,
             backgroundScope, StandardTestDispatcher(testScheduler))
         val prepared = kotlinx.coroutines.CompletableDeferred<Pair<CoachAttachment, ByteArray>>()
         val importing = async { store.importPhoto("account-chat") { prepared.await() } }
@@ -357,7 +357,7 @@ class CoachDraftTests {
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
         var owner: String? = null
-        val store = CoachStore({ owner }, { emptySet() }, {}, { FakeGymRest() }, local, telemetry, System::nanoTime,
+        val store = CoachStore({ owner }, {}, { FakeGymRest() }, local, telemetry, System::nanoTime,
             backgroundScope, StandardTestDispatcher(testScheduler))
         store.saveDraft("phone-chat", CoachDraft("Phone", photo))
         owner = "alice"; store.resetThreads()
@@ -409,7 +409,7 @@ class CoachDraftTests {
         }
         val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         try {
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, local, Telemetry.None, System::nanoTime, scope,
+            val store = CoachStore({ "alice" }, {}, { api }, local, Telemetry.None, System::nanoTime, scope,
                 StandardTestDispatcher(testScheduler))
             val ordinary = store.freshChat()
             assertTrue(store.submit(ordinary, "Ordinary")); runCurrent()

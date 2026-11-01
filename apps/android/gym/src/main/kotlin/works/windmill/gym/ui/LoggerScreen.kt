@@ -173,8 +173,7 @@ interface LoggerState {
     val workoutFailure: String?
     val canFinish: Boolean
     val catalog: List<Exercise>
-    val recent: List<SessionSummary>
-    val withheldIds: Set<String>
+    val allSessions: List<SessionSummary>
     val deletedSets: Set<String>
     fun lastTimeOf(movement: String): LastTime
 }
@@ -228,8 +227,7 @@ class LoggerBinding(
     override val workoutFailure: String? get() = workout.workoutFailure
     override val canFinish: Boolean get() = workout.canFinish
     override val catalog: List<Exercise> get() = routines.catalog
-    override val recent: List<SessionSummary> get() = history.recent
-    override val withheldIds: Set<String> get() = held.withheldIds
+    override val allSessions: List<SessionSummary> get() = history.allSessions
     override val deletedSets: Set<String> get() = held.deletedSets
     override fun lastTimeOf(movement: String): LastTime = workout.lastTimeOf(movement)
 
@@ -474,7 +472,7 @@ fun LoggerScreen(
               interactionSource = bodyDrag,
           )) {
         val clocks = state.session?.let { session ->
-            WorkoutClocks(session, state.sets.filterNot { it.id in state.withheldIds || it.id in state.deletedSets }, nowMs)
+            WorkoutClocks(session, state.sets.filterNot { it.id in state.deletedSets }, nowMs)
         }
         if (movement == null) {
             Column(Modifier.fillMaxSize().padding(horizontal = GymLayout.gutter)) {
@@ -493,7 +491,7 @@ fun LoggerScreen(
                     taken = state.order,
                     lastSets = state.lastSets,
                     nowMs = nowMs,
-                    sessions = state.recent,
+                    sessions = state.allSessions,
                     title = "What are you lifting?",
                     subtitle = if (state.session?.plan == null) null else "nothing in this plan is left to walk",
                     onPick = { picked -> scope.launch { events.choose(picked) } },
@@ -529,7 +527,7 @@ fun LoggerScreen(
                         val visible = kotlin.math.abs(pager.currentPage - page + pager.currentPageOffsetFraction) < 1f
                         val enabled = active && ready
                         val today = state.sets.filter {
-                            it.exerciseId == pageMovement && it.id !in state.withheldIds && it.id !in state.deletedSets
+                            it.exerciseId == pageMovement && it.id !in state.deletedSets
                         }
                         val exercise = state.catalog.firstOrNull { it.id == pageMovement }
                         val unit = Readout.loadUnit(exercise)
@@ -599,7 +597,7 @@ fun LoggerScreen(
 
     // Fix set stands on a row the ledger draws and is titled by that row's count. A fix for a set that has since left
     // the ledger, held or deleted, has nothing to stand on.
-    val drawnToday = state.todaySets.filter { it.id !in state.withheldIds && it.id !in state.deletedSets }
+    val drawnToday = state.todaySets.filter { it.id !in state.deletedSets }
     val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> drawnToday.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
@@ -615,7 +613,7 @@ fun LoggerScreen(
             sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.setId}" else open.javaClass.simpleName) {
             when (open) {
                 LoggerSheet.Assembly -> AssemblySheet(
-                    rows = LiveLines.assemblyRows(state.order, state.sets.filterNot { it.id in state.withheldIds || it.id in state.deletedSets }, state.session?.plan,
+                    rows = LiveLines.assemblyRows(state.order, state.sets.filterNot { it.id in state.deletedSets }, state.session?.plan,
                                                   state.catalog, state.exerciseId, state.stalled),
                     routine = state.session?.plan?.routine,
                     onJump = { move(it) },
@@ -648,7 +646,7 @@ fun LoggerScreen(
                     taken = state.order,
                     lastSets = state.lastSets,
                     nowMs = nowMs,
-                    sessions = state.recent,
+                    sessions = state.allSessions,
                     title = "Add movement",
                     onPick = { move(it, fromPicker = true) },
                     onCreate = { write ->
@@ -1017,7 +1015,7 @@ private data class LoggerPreviewState(
     override val isFinishing: Boolean = false,
     override val lastSets: Map<String, LastSet>? = emptyMap(),
     override val catalog: List<Exercise> = TheSix.movements,
-    override val recent: List<SessionSummary> = emptyList(),
+    override val allSessions: List<SessionSummary> = emptyList(),
 ) : LoggerState {
     override val accountKey: String get() = "preview"
     override val replica: String? get() = null
@@ -1030,7 +1028,6 @@ private data class LoggerPreviewState(
     override val refusals: List<RefusedWrite> get() = emptyList()
     override val workoutFailure: String? get() = null
     override val canFinish: Boolean get() = session != null && !isFinishing
-    override val withheldIds: Set<String> get() = emptySet()
     override val deletedSets: Set<String> get() = emptySet()
     override fun lastTimeOf(movement: String): LastTime = LastTime(Id(movement, DomainExercise))
 }

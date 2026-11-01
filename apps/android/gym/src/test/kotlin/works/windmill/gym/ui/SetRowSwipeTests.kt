@@ -71,7 +71,7 @@ class SetRowSwipeTests {
         return room
     }
 
-    private fun session(room: EngineRoomFixture): SessionSummary = room.store.history.recent.single()
+    private fun session(room: EngineRoomFixture): SessionSummary = room.store.history.allSessions.single()
 
     private fun screen(
         room: EngineRoomFixture,

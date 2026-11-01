@@ -51,7 +51,6 @@ class CoachAdmission internal constructor(
 
 class CoachStore internal constructor(
     private val accountOwner: () -> String?,
-    private val withheldIds: () -> Set<String>,
     private val onProgramChanged: () -> Unit,
     private val rest: () -> GymRest?,
     private val localCoach: LocalCoach?,
@@ -497,7 +496,7 @@ class CoachStore internal constructor(
     private var conversations: List<AskThread> by mutableStateOf(emptyList())
     private var conversationsOwner: String? = null
     // Undo hides rows; the empty stance still counts everything the account holds.
-    val threads: List<AskThread> get() = allThreads.filterNot { it.id in withheldIds() }
+    val threads: List<AskThread> get() = allThreads
     val allThreads: List<AskThread> get() {
         val seat = archiveOwner
         restoreArchive(seat)

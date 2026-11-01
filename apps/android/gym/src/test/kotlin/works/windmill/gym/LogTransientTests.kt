@@ -47,7 +47,7 @@ class LogTransientTests {
     // The room flushes through the engine as it leaves, so the screen goes before the engine closes.
     private var showing by mutableStateOf(true)
 
-    // The log draws only what the wall clock has reached, so the workouts happen in its past.
+    // The log draws only what the wall clock has reached, so the weigh-ins happen in its past.
     private val past = 1_700_000_000_000L
 
     @Test fun instrumentRaisesUndoAboveAStillWeighIn() = undoAboveAStillAction(true, 1f)
@@ -57,12 +57,14 @@ class LogTransientTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val room = EngineRoomFixture(tmp.newFolder(), scope).apply { now = past }
         try {
-            val (one, two) = runBlocking {
+            val (one, two) = listOf("2023-11-10", "2023-11-12")
+            runBlocking {
                 room.select("a")
-                listOf(room.workout(), room.workout(100.0, "back-squat")).map { it.id }
+                assertNull(room.store.bodyweight.weighIn(one, 82.4))
+                assertNull(room.store.bodyweight.weighIn(two, 82.1))
             }
-            val original = room.training.details()
             val store = room.store
+            val weighed = store.bodyweight.drawn
             compose.setContent {
                 if (showing) CompositionLocalProvider(LocalWindmillDark provides dark, LocalDensity provides Density(2f, fontScale)) {
                     GymMaterial { GymRoom(room.account(), store) }
@@ -70,7 +72,7 @@ class LogTransientTests {
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             val before = compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot()
-            compose.runOnIdle { store.deletions.withhold(Deletion.Session(one)); store.deletions.withhold(Deletion.Session(two)) }
+            compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight(one)); store.deletions.withhold(Deletion.Bodyweight(two)) }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
             val snackbar = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion) and
                 SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss), useUnmergedTree = true)
@@ -85,16 +87,15 @@ class LogTransientTests {
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.runOnIdle {
                 assertEquals(listOf(one), store.held.withheld.map { it.subjectId })
-                assertEquals(listOf(two), store.history.recent.map { it.id })
-                assertEquals(original, room.training.details())
+                assertEquals(listOf(two), store.bodyweight.drawn.map { it.dateLocal })
             }
             assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot())
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.waitForIdle()
             compose.runOnIdle {
                 assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
-                assertEquals(listOf(two, one), store.history.recent.map { it.id })
-                assertEquals(original, room.training.details())
+                assertEquals(weighed, store.bodyweight.drawn)
+                assertEquals(emptyList<Any>(), room.engine.undoOffers())
             }
             assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot())
         } finally {

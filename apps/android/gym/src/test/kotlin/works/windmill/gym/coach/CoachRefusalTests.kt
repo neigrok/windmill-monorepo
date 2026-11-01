@@ -53,7 +53,7 @@ class CoachRefusalTests {
                     return photo
                 }
             }
-            fun store(local: LocalCoach) = CoachStore({ "alice" }, { emptySet() }, {}, { rest }, local, telemetry,
+            fun store(local: LocalCoach) = CoachStore({ "alice" }, {}, { rest }, local, telemetry,
                 System::nanoTime, backgroundScope, StandardTestDispatcher(testScheduler))
             val store = store(disk)
             val chat = store.freshChat(id = "thread-a")
@@ -90,7 +90,7 @@ class CoachRefusalTests {
             disk.keep("alice", request)
             val before = LocalCoach(file).archivedChat("alice", chat.id)
             val server = FakeGymRest()
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { server }, disk, Telemetry.None,
+            val store = CoachStore({ "alice" }, {}, { server }, disk, Telemetry.None,
                 System::nanoTime, backgroundScope, StandardTestDispatcher(testScheduler))
             repeat(2) { store.resumeChats(); runCurrent() }
             assertEquals(emptyList<AskQuestion>(), server.asked)
@@ -118,7 +118,7 @@ class CoachRefusalTests {
                 refuseAsk = refusal
                 if (running) conversations[request.thread] = AskThread(request.thread, generation = generation)
             }
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { server }, disk, Telemetry.None,
+            val store = CoachStore({ "alice" }, {}, { server }, disk, Telemetry.None,
                 System::nanoTime, backgroundScope, StandardTestDispatcher(testScheduler))
             store.ask(request.thread, request.question, "request-a")
             assertEquals(listOf(request), disk.pending("alice"))
@@ -157,7 +157,7 @@ class CoachRefusalTests {
                     return photo
                 }
             }
-            fun store(local: LocalCoach) = CoachStore({ "alice" }, { emptySet() }, {}, { rest }, local, telemetry,
+            fun store(local: LocalCoach) = CoachStore({ "alice" }, {}, { rest }, local, telemetry,
                 System::nanoTime, backgroundScope, StandardTestDispatcher(testScheduler))
             val store = store(disk)
             val chat = store.freshChat(id = "thread-a")
@@ -195,7 +195,7 @@ class CoachRefusalTests {
             disk.saveChat("alice", LocalChat("thread-a", exchanges = listOf(refusal), cap = "Allowance"))
             disk.saveDraft("alice", "thread-a", draft)
             val before = file.readText()
-            fun store(local: LocalCoach) = CoachStore({ "alice" }, { emptySet() }, {}, { rest }, local, Telemetry.None,
+            fun store(local: LocalCoach) = CoachStore({ "alice" }, {}, { rest }, local, Telemetry.None,
                 System::nanoTime, backgroundScope, StandardTestDispatcher(testScheduler))
             repeat(2) {
                 val reopened = LocalCoach(file)
@@ -247,7 +247,7 @@ class CoachRefusalTests {
             if (kind == "snapshot") disk.record("alice", generation)
             val before = file.readText()
             val rest = FakeGymRest()
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { rest }, disk, Telemetry.None,
+            val store = CoachStore({ "alice" }, {}, { rest }, disk, Telemetry.None,
                 System::nanoTime, backgroundScope)
             assertEquals(GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
                 store.thread("thread-a", "older".takeIf { kind == "pagination" }))
@@ -265,7 +265,7 @@ class CoachRefusalTests {
             disk.saveChat("alice", LocalChat("thread-a", exchanges = listOf(refusal), cap = "Daily"))
             val before = file.readText()
             val rest = FakeGymRest().apply { refuseThreads = failure }
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { rest }, disk, Telemetry.None,
+            val store = CoachStore({ "alice" }, {}, { rest }, disk, Telemetry.None,
                 System::nanoTime, backgroundScope)
             assertEquals(GymResult.Failed(WriteFailure(failure)), store.thread("thread-a"))
             assertEquals(listOf("thread"), rest.calls)

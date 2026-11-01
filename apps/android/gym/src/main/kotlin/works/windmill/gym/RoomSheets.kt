@@ -335,7 +335,7 @@ internal class FinishFlow(
         finished?.let { original ->
             val canonical = store.history.retainedSession(SessionDetail(original.session, original.sets))
             val ended = original.copy(session = canonical.session,
-                sets = canonical.sets.filterNot { it.id in store.held.withheldIds || it.id in store.held.deletedSets })
+                sets = canonical.sets.filterNot { it.id in store.held.deletedSets })
             WindmillSheet(
                 onDismissRequest = {
                     states.removeState(original.session.id)

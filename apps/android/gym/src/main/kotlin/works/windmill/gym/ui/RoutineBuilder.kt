@@ -106,7 +106,6 @@ import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.RoutineRules
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.HeldDeletes
 import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
@@ -122,12 +121,11 @@ import androidx.compose.runtime.setValue
 @Stable
 interface RoutineBuilderState {
     val catalog: List<Exercise>
-    val recent: List<SessionSummary>
+    val allSessions: List<SessionSummary>
     val accountKey: String
     val replica: String?
     val replicaReadRevision: Long
     val accountReady: Boolean
-    val withheldIds: Set<String>
 }
 
 // What the routine builder asks of the stores.
@@ -138,19 +136,17 @@ interface RoutineBuilderEvents {
 // The routine builder over the room's stores.
 class RoutineBuilderBinding(
     private val seat: TrainingSeat,
-    private val held: HeldDeletes,
     private val routines: RoutinesStore,
     private val history: HistoryReads,
 ) : RoutineBuilderState, RoutineBuilderEvents {
-    constructor(store: TrainingStore) : this(store.seat, store.held, store.routines, store.history)
+    constructor(store: TrainingStore) : this(store.seat, store.routines, store.history)
 
     override val catalog: List<Exercise> get() = routines.catalog
-    override val recent: List<SessionSummary> get() = history.recent
+    override val allSessions: List<SessionSummary> get() = history.allSessions
     override val accountKey: String get() = seat.accountKey
     override val replica: String? get() = seat.replica
     override val replicaReadRevision: Long get() = seat.replicaReadRevision
     override val accountReady: Boolean get() = seat.accountReady
-    override val withheldIds: Set<String> get() = held.withheldIds
     override suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> = history.routineHistory(routineId)
 }
 
@@ -284,7 +280,7 @@ fun RoutineBuilder(
     }
 
     var history by remember(state.accountKey, state.replica, draft.id) { mutableStateOf(emptyList<SessionSummary>()) }
-    LaunchedEffect(state.accountKey, state.replica, state.replicaReadRevision, state.accountReady, state.withheldIds, draft.id) {
+    LaunchedEffect(state.accountKey, state.replica, state.replicaReadRevision, state.accountReady, draft.id) {
         val id = draft.id ?: return@LaunchedEffect
         if (!state.accountReady) { history = emptyList(); return@LaunchedEffect }
         history = when (val read = events.routineHistory(id)) {
@@ -365,7 +361,7 @@ fun RoutineBuilder(
                 }
                 BuilderSheet.Picker -> MovementPicker(
                     catalog = state.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
-                    nowMs = 0, sessions = state.recent, title = "Add movement",
+                    nowMs = 0, sessions = state.allSessions, title = "Add movement",
                     onPick = { id ->
                         val movement = draft.movement(id, state.catalog)
                         if (movement == null) say("That movement is no longer on the log.")
@@ -603,12 +599,11 @@ private fun BuildStep(
 
 private data class PreviewRoutineBuilderState(
     override val catalog: List<Exercise> = TheSix.movements,
-    override val recent: List<SessionSummary> = emptyList(),
+    override val allSessions: List<SessionSummary> = emptyList(),
     override val accountKey: String = "preview",
     override val replica: String? = "replica-preview",
     override val replicaReadRevision: Long = 1,
     override val accountReady: Boolean = true,
-    override val withheldIds: Set<String> = emptySet(),
 ) : RoutineBuilderState
 
 // A new draft has no history to read, and nothing answers.

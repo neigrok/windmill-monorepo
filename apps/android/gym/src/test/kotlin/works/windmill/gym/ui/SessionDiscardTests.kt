@@ -63,7 +63,7 @@ class SessionDiscardTests {
     }
 
     private fun screen(room: EngineRoomFixture) {
-        val summary = room.store.history.recent.single()
+        val summary = room.store.history.allSessions.single()
         val sessionPage = SessionBinding(room.store)
         compose.setContent {
             var pending by remember { mutableStateOf(false) }
@@ -104,7 +104,7 @@ class SessionDiscardTests {
             compose.onNodeWithText("Discard workout").performScrollTo().assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals("and this is NOT the slight session the finish screen draws it for",
-                    works.windmill.gym.domain.sync.SessionReview.slightSets, room.store.history.recent.single().workingSetCount)
+                    works.windmill.gym.domain.sync.SessionReview.slightSets, room.store.history.allSessions.single().workingSetCount)
             }
         } } finally { scope.cancel() }
     }
@@ -113,7 +113,7 @@ class SessionDiscardTests {
     fun theSharedDialogCancelsWithoutAWriteAndConfirmsAnImmediateDiscard() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
-            val workout = room.store.history.recent.single()
+            val workout = room.store.history.allSessions.single()
             screen(room)
             val before = room.engine.snapshot()
             compose.onNodeWithText("Discard workout").performScrollTo().performClick()
@@ -126,7 +126,7 @@ class SessionDiscardTests {
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Discard this workout?").fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
                 assertEquals(null, runBlocking { room.training.session(workout.id) })
-                assertEquals(emptyList<String>(), room.store.history.recent.map { it.id })
+                assertEquals(emptyList<String>(), room.store.history.allSessions.map { it.id })
                 assertEquals(emptyList<works.windmill.gym.store.Withheld>(), room.store.held.withheld)
             }
             compose.onNodeWithText("Undo").assertDoesNotExist()

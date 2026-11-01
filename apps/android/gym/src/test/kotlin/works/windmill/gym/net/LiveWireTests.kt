@@ -617,7 +617,7 @@ class LiveWireTests {
                 drain(RecordKey(Gym.Types.note, RecordID(id)))
             }
             val expected = listOf(noteIds[1], noteIds[0], noteIds[2])
-            assertTrue(adapter.moveNote(noteIds[0], expected, emptySet()))
+            assertTrue(adapter.moveNote(noteIds[0], expected))
             assertEquals(expected, adapter.notes().map { it.id })
             drain(RecordKey(Gym.Types.note, RecordID(noteIds[0])))
             Engine.memory(SyncSchema.registry, clock = probeClock).use { phone ->

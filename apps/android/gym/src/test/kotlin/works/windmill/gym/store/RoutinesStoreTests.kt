@@ -579,9 +579,9 @@ class RoutinesStoreTests {
 
             assertNotNull("a session ran under it, and the phone can see that",
                 room.store.routines.all.single().lastTrainedAtMs)
-            assertEquals(room.store.history.recent.single().startedAtMs, room.store.routines.all.single().lastTrainedAtMs)
+            assertEquals(room.store.history.allSessions.single().startedAtMs, room.store.routines.all.single().lastTrainedAtMs)
 
-            assertTrue(room.store.workout.discard(room.store.history.recent.single().id))
+            assertTrue(room.store.workout.discard(room.store.history.allSessions.single().id))
             runCurrent()
             room.store.refreshEngine()
             assertNull(room.store.routines.all.single().lastTrainedAtMs)

@@ -100,11 +100,10 @@ class StanceReadsTheAccountTests {
         return runBlocking { workout.await() }
     }
 
-    // The log's own two silences. `No workouts yet` is the never-trained stance and `opening the
-    // log…` is the read still in flight; a window holding the only row is neither, and the account
-    // still has the workout the head would otherwise be counting.
+    // `No workouts yet` is the never-trained stance: it is not drawn over a workout the account holds, and a
+    // discard leaves the READ, so the invitation becomes true rather than never being drawn again.
     @Test
-    fun theLogDrawsNeitherSilenceOverASessionTheAccountStillHolds() {
+    fun theLogInvitesTheFirstWorkoutOnlyOnceTheAccountHoldsNone() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val room = room(scope)
         val store = room.store
@@ -114,21 +113,10 @@ class StanceReadsTheAccountTests {
                 onShareSession = {}, onDiscardSession = {}) }
         }
         compose.onNodeWithText("No workouts yet").assertDoesNotExist()
-
-        compose.runOnIdle { store.deletions.withhold(Deletion.Session(session.id)) }
-
-        compose.onNodeWithText("No workouts yet").assertDoesNotExist()
         compose.onNodeWithText("Your training will land here.").assertDoesNotExist()
         compose.onNodeWithText("opening the log…").assertDoesNotExist()
-        compose.runOnIdle {
-            assertEquals("the row is off the screen", emptyList<String>(), store.history.recent.map { it.id })
-            assertEquals("and still on the account, which is what Undo puts back",
-                listOf(session.id), store.history.allSessions.map { it.id })
-        }
 
-        // And the second half: the settled delete leaves the READ, so the invitation becomes true
-        // rather than never being drawn again.
-        val deleted = compose.runOnIdle { scope.async { store.deletions.settleWithheld(session.id) } }
+        val deleted = compose.runOnIdle { scope.async { store.workout.discard(session.id) } }
         compose.waitUntil(10_000) { compose.runOnIdle { deleted.isCompleted } }
         runBlocking { deleted.await() }
         compose.runOnIdle { assertEquals(emptyList<String>(), store.history.allSessions.map { it.id }) }
@@ -206,16 +194,12 @@ class StanceReadsTheAccountTests {
                 onShareSession = {}, onDiscardSession = {}) }
         }
         compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
-
-        compose.runOnIdle { store.deletions.withhold(Deletion.Session(old.id)) }
-
-        compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("First workout · ${Readout.date(newMs)}").assertDoesNotExist()
 
-        // And the settled delete moves it, once, to the day the account actually started on. The
-        // re-read is not enough on its own: a row deeper than the page it answers with is folded
-        // straight back in, so the discard has to leave the READ itself.
-        val deleted = compose.runOnIdle { scope.async { store.deletions.settleWithheld(old.id) } }
+        // A discard moves it, once, to the day the account actually started on. The re-read is not enough on
+        // its own: a row deeper than the page it answers with is folded straight back in, so the discard has
+        // to leave the READ itself.
+        val deleted = compose.runOnIdle { scope.async { store.workout.discard(old.id) } }
         compose.waitUntil(10_000) { compose.runOnIdle { deleted.isCompleted } }
         runBlocking { deleted.await() }
         compose.runOnIdle {
@@ -270,38 +254,4 @@ class StanceReadsTheAccountTests {
         scope.cancel()
     }
 
-    // `Your first session` is a stance about the ACCOUNT written into the finish receipt, and the
-    // receipt is raised the instant a workout closes — with any window still open. A session deleted
-    // a moment ago is still the account's, so the workout just finished is not the first.
-    @Test
-    fun theFinishReceiptIsNotAFirstSessionOverALogHoldingAnother() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        // Long enough that the receipt is read while the window is still open, not after it settles.
-        val room = room(scope, undoWindowMs = 120_000, startingAt = 1_700_000_000_000L)
-        val store = room.store
-        val old = oneWorkout(room)
-        room.now = 1_800_000_000_000L
-        val started = scope.async {
-            room.startExternalWorkout()
-            store.workout.choose("back-squat")
-            store.workout.logSet(100.0, 5)
-        }
-        compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idle(); started.isCompleted }
-        runBlocking { started.await() }
-        store.deletions.withhold(Deletion.Session(old.id))
-
-        compose.setContent { GymMaterial { GymRoom(account, store) } }
-        compose.waitForIdle()
-        compose.onNodeWithText("Finish").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isNotEmpty()
-        }
-
-        compose.runOnIdle {
-            assertEquals("one row drawn", 1, store.history.recent.size)
-            assertEquals("and two on the account", 2, store.history.allSessions.size)
-        }
-        compose.onNodeWithText("Your first session").assertDoesNotExist()
-        scope.cancel()
-    }
 }

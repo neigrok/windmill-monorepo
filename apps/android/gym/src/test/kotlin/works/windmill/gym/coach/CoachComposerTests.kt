@@ -161,7 +161,7 @@ class CoachComposerTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val disk = LocalCoach(File(tmp.root, "captions.json"))
         var owner by mutableStateOf<String?>(null)
-        val store = CoachStore({ owner }, { emptySet() }, {}, { null }, disk,
+        val store = CoachStore({ owner }, {}, { null }, disk,
             works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
         val chat = "caption-chat"
         store.freshChat(id = chat)
@@ -190,7 +190,7 @@ class CoachComposerTests {
 
     @Test fun anonymousSendUsesItsExistingFourThousandByteBoundWithoutChangingTheBuffer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = CoachStore({ null }, { emptySet() }, {}, { null }, LocalCoach(File(tmp.root, "anonymous.json")),
+        val store = CoachStore({ null }, {}, { null }, LocalCoach(File(tmp.root, "anonymous.json")),
             works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
         val chat = store.freshChat()
         compose.setContent { CoachComposer(store, chat, "", false, { _, _ -> error("No automatic Send") }, null, null, true) }

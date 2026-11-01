@@ -28,7 +28,7 @@ class BodyweightStore(
     val drawn: List<WeighIn>
         get() = series.filterNot { it.dateLocal in held.withheldIds }
     // A held last row keeps the chart's existing stance while Undo remains available.
-    val allWeighIns: List<WeighIn> get() = (series + held.withheld.mapNotNull { it.receipt?.weighIn })
+    val allWeighIns: List<WeighIn> get() = (series + held.withheld.map { it.receipt.weighIn })
         .distinctBy { it.dateLocal }.sortedBy { it.dateLocal }
     // An unread account replica is not an empty series.
     var bodyweightRead by mutableStateOf(false)
@@ -74,7 +74,7 @@ class BodyweightStore(
                 val saved = training.putBodyweight(dateLocal, weightKg, replica, anonymous)
                 if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChanged)
                 // A successful whole-record rewrite retires this day's receipt projection.
-                held.release(dateLocal)?.receipt?.let {
+                held.release(dateLocal)?.let {
                     telemetry.event("gym_action", mapOf("screen" to "bodyweight", "action" to "cancel", "outcome" to "rewritten"))
                 }
                 series = (series.filterNot { it.dateLocal == dateLocal } + saved).sortedBy { it.dateLocal }

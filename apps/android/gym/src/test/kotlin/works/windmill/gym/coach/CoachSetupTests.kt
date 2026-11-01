@@ -71,9 +71,9 @@ class CoachSetupTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val file = File(temporary.root, "coach.json")
         try {
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, LocalCoach(file), Telemetry.None, System::nanoTime, scope)
+            val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, LocalCoach(file), Telemetry.None, System::nanoTime, scope)
             val setup = store.freshChat(setup = true)
-            val restored = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, LocalCoach(file), Telemetry.None, System::nanoTime, scope)
+            val restored = CoachStore({ "alice" }, {}, { FakeGymRest() }, LocalCoach(file), Telemetry.None, System::nanoTime, scope)
             assertTrue(restored.chat(setup)!!.setup)
             assertEquals(emptyList<AskExchange>(), restored.chat(setup)!!.exchanges)
             val ordinary = restored.freshChat()

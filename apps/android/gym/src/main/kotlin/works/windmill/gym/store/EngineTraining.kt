@@ -394,10 +394,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
     }
-    fun routineHistory(routineId: String, excluded: Set<String> = emptySet()): List<SessionSummary> = read {
+    fun routineHistory(routineId: String): List<SessionSummary> = read {
         val catalog = catalogue()
         details().asSequence()
-            .filter { !it.session.isOpen && it.session.routineId == routineId && it.session.id !in excluded }
+            .filter { !it.session.isOpen && it.session.routineId == routineId }
             .sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
             .take(20)
             .map { SessionSummary(it.session, it.sets, catalog) }
@@ -652,13 +652,13 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     suspend fun deleteNote(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
         remove(deleteNote(Id(id, EngineNote)), expectedReplica, expectedAnonymous)
     }
-    suspend fun moveNote(id: String, drawn: List<String>, withheld: Set<String>): Boolean = writing { runner ->
+    suspend fun moveNote(id: String, drawn: List<String>): Boolean = writing { runner ->
         val move = moveNote(Id(id, EngineNote), drawn.getOrNull(drawn.indexOf(id) - 1)?.let { Id(it, EngineNote) })
         val action = object : Action<Pair<MoveLoaded<EngineNote>, List<String>>, Unit, GymRefusal> {
             override val scope = move.scope
             override val refusals = GymRefusal
             override fun load(read: Reader) = move.load(read) to read.repository(EngineNote).all(ViewMode.drawn)
-                .map { it.id.text }.filterNot { it in withheld }
+                .map { it.id.text }
             override fun decide(loaded: Pair<MoveLoaded<EngineNote>, List<String>>, ids: IDSource): Decision<Unit, GymRefusal> {
                 val visible = loaded.second
                 if (id !in visible || drawn.size != visible.size || drawn.toSet().size != drawn.size ||

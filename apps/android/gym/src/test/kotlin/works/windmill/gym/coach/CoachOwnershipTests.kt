@@ -378,7 +378,7 @@ class CoachOwnershipTests {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
-        val store = CoachStore({ owner }, { emptySet() }, { refreshes++ }, { api }, disk, telemetry, System::nanoTime, backgroundScope)
+        val store = CoachStore({ owner }, { refreshes++ }, { api }, disk, telemetry, System::nanoTime, backgroundScope)
         assertEquals(emptyList<List<String>>(), calls)
         assertEquals(DraftOutcome.Failed(Ask.draftRetry), store.confirmRoutine("thread-a", "request-a", draft))
         assertNull(disk.confirmed("alice", "request-a"))
@@ -407,7 +407,7 @@ class CoachOwnershipTests {
             override fun event(name: String, properties: Map<String, String>) { events += "$name:${properties["outcome"]}" }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
-        val store = CoachStore({ "alice" }, { emptySet() }, { fail("Nothing was saved") }, { api }, LocalCoach(File(tmp.root, "refusals")),
+        val store = CoachStore({ "alice" }, { fail("Nothing was saved") }, { api }, LocalCoach(File(tmp.root, "refusals")),
             telemetry, System::nanoTime, backgroundScope)
         val answers = listOf(
             WindmillApiException.Refused(404, Refusal(code = "coach-draft-not-found")) to DraftOutcome.Closed(Ask.draftGone),
@@ -449,7 +449,7 @@ class CoachOwnershipTests {
             override fun event(name: String, properties: Map<String, String>) { events += "$name:${properties["outcome"]}" }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = fail("Unexpected $operation")
         }
-        val store = CoachStore({ "alice" }, { emptySet() }, { refreshes++ }, { api }, LocalCoach(file), telemetry, System::nanoTime, backgroundScope)
+        val store = CoachStore({ "alice" }, { refreshes++ }, { api }, LocalCoach(file), telemetry, System::nanoTime, backgroundScope)
         val screen = async { store.confirmRoutine("thread-a", "request-a", draft) }
         started.await()
         screen.cancel()
@@ -479,7 +479,7 @@ class CoachOwnershipTests {
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
         val disk = LocalCoach(File(tmp.root, "full-disk")) { _, _ -> throw java.io.IOException("disk full") }
-        val store = CoachStore({ "alice" }, { emptySet() }, { refreshes++ }, { api }, disk, telemetry, System::nanoTime, backgroundScope)
+        val store = CoachStore({ "alice" }, { refreshes++ }, { api }, disk, telemetry, System::nanoTime, backgroundScope)
         assertEquals(DraftOutcome.Saved(generation), store.confirmRoutine("thread-a", "request-a", draft))
         assertEquals(generation, store.confirmedGeneration("request-a"))
         assertEquals(1, refreshes)
@@ -502,7 +502,7 @@ class CoachOwnershipTests {
                     revision = 3, routineDrafts = listOf(draft.copy(state = "saved"))))
             }
         }
-        val store = CoachStore({ owner }, { emptySet() }, { fail("Foreign program refresh") }, { api }, disk,
+        val store = CoachStore({ owner }, { fail("Foreign program refresh") }, { api }, disk,
             works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, backgroundScope)
         val result = async { store.confirmRoutine("thread-a", "request-a", draft) }
         started.await()

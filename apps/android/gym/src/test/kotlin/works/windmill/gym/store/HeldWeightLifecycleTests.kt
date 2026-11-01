@@ -87,7 +87,6 @@ class HeldWeightLifecycleTests {
             runCurrent()
             val hold = room.store.held.withheld.single()
             room.now += 3_000
-            assertFalse(room.store.deletions.abandonWithheld())
             room.store.refreshEngine()
             assertEquals(hold, room.store.held.withheld.single())
             room.store.deletions.withhold(Deletion.Bodyweight("2026-09-01"))

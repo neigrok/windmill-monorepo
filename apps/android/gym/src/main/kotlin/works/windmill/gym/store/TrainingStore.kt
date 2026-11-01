@@ -49,18 +49,18 @@ class TrainingStore(
     val seat = TrainingSeat(controls, training, telemetry, readDispatcher, workoutAuthority)
     val held = HeldDeletes()
     val routines = RoutinesStore(seat, controls, training, scope, telemetry, mintRoutine, mintExercise)
-    val notes = NotesStore(seat, held, controls, training, telemetry)
+    val notes = NotesStore(seat, controls, training, telemetry)
     val bodyweight = BodyweightStore(seat, held, controls, training, telemetry, now)
     val sharing = SharingStore(seat, training, rest)
     val recovery = RecoveryStore(seat, controls, training, scope, telemetry, readDispatcher, now, refresh = ::refreshEngine)
-    val history: HistoryReads = HistoryReads(seat, held, controls, training, routines, recovery, scope, telemetry, pullAgain, pulls,
+    val history: HistoryReads = HistoryReads(seat, controls, training, routines, recovery, scope, telemetry, pullAgain, pulls,
         followOpenWorkout = { open -> workout.follow(open) })
     val workout = WorkoutSession(seat, held, controls, training, history, routines, scope, telemetry, now, mintSession, mintSet,
         workoutClock, refresh = ::refreshEngine)
     val deletions = DeletionsStore(seat, held, controls, training, bodyweight, routines, notes, workout, scope, telemetry, now,
         undoWindowMs)
     val coach = CoachStore(
-        accountOwner = { seat.owner }, withheldIds = { held.withheldIds },
+        accountOwner = { seat.owner },
         onProgramChanged = { scope.launch { seat.tried("gym.refreshWorkout") { routines.readProgram() } } },
         rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos, scope = scope,
         onboarding = coachOnboarding,

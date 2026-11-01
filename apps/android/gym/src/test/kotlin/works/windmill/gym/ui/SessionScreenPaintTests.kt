@@ -74,7 +74,7 @@ class SessionScreenPaintTests {
                 room.store.refreshEngine()
             }
             room.store.observeEngine()
-            val summary = room.store.history.recent.single()
+            val summary = room.store.history.allSessions.single()
             var dark by mutableStateOf(true)
             val sessionPage = SessionBinding(room.store)
             compose.setContent {

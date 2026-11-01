@@ -32,7 +32,6 @@ class BodyweightWriteTests {
             val held = room.engine.snapshot()
             permitted = false
             assertNull(room.store.deletions.keepWithheld())
-            assertTrue(room.store.deletions.settleWithheld(offer.subjectId) is WriteFailure.Refused)
             assertEquals(held, room.engine.snapshot())
             assertEquals(listOf(offer), room.store.held.withheld)
             permitted = true

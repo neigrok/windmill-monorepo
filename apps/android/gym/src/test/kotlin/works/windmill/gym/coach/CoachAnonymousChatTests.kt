@@ -54,7 +54,7 @@ class CoachAnonymousChatTests {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val coordinator = CoachOnboardingStore(local, installation(), api, { origin.takeIf { owner == null } }, backgroundScope,
             storageDispatcher = dispatcher, requestId = { id })
-        val store = CoachStore({ owner }, { emptySet() }, {}, { null }, local, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ owner }, {}, { null }, local, Telemetry.None, System::nanoTime,
             backgroundScope, dispatcher, coordinator)
         store.refreshAnonymousAccess(); runCurrent()
         assertEquals(AnonymousCoachAccess.Available, store.anonymousAccess)
@@ -85,7 +85,7 @@ class CoachAnonymousChatTests {
         assertFalse(store.isAsking(original))
         store.keepPosition(original, 91, false)
         assertEquals(emptyList<AskExchange>(), local.archivedChat(origin.owner, original)!!.exchanges)
-        val restored = CoachStore({ owner }, { emptySet() }, {}, { null }, LocalCoach(File(temporary.root, "archive")), Telemetry.None,
+        val restored = CoachStore({ owner }, {}, { null }, LocalCoach(File(temporary.root, "archive")), Telemetry.None,
             System::nanoTime, backgroundScope, dispatcher, coordinator)
         assertEquals(listOf(exchange), restored.chat(original)!!.exchanges)
         assertEquals(91, restored.chat(original)!!.scroll)
@@ -105,7 +105,7 @@ class CoachAnonymousChatTests {
         }
         val dispatcher = StandardTestDispatcher(testScheduler)
         val coordinator = CoachOnboardingStore(local, identity, api, { origin }, backgroundScope, storageDispatcher = dispatcher)
-        val store = CoachStore({ null }, { emptySet() }, {}, { null }, local, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
             backgroundScope, dispatcher, coordinator)
         val chat = store.freshChat("Earlier input")
         store.refreshAnonymousAccess(); runCurrent()
@@ -135,13 +135,13 @@ class CoachAnonymousChatTests {
             val dispatcher = StandardTestDispatcher(testScheduler)
             val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope,
                 telemetry = telemetry, storageDispatcher = dispatcher, requestId = { id })
-            val store = CoachStore({ null }, { emptySet() }, {}, { null }, local, telemetry, System::nanoTime,
+            val store = CoachStore({ null }, {}, { null }, local, telemetry, System::nanoTime,
                 backgroundScope, dispatcher, coordinator)
             store.refreshAnonymousAccess(); runCurrent()
             val chat = store.freshChat()
             assertTrue(store.submit(chat, "Retained input")); runCurrent()
             val other = store.freshChat("Other draft")
-            val restored = CoachStore({ null }, { emptySet() }, {}, { null }, LocalCoach(file), telemetry, System::nanoTime,
+            val restored = CoachStore({ null }, {}, { null }, LocalCoach(file), telemetry, System::nanoTime,
                 backgroundScope, dispatcher, coordinator)
             val exchange = restored.chat(chat)!!.exchanges.single()
             assertEquals(if (code == "subject_exhausted") AskCap.Allowance.wordless else "Server budget sentence", exchange.trouble)
@@ -163,13 +163,13 @@ class CoachAnonymousChatTests {
             override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer = throw refusal
         }
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val store = CoachStore({ "account" }, { emptySet() }, {}, { api }, disk, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ "account" }, {}, { api }, disk, Telemetry.None, System::nanoTime,
             backgroundScope, dispatcher)
         val chat = store.freshChat()
         assertTrue(store.submit(chat, "Refused input"))
         runCurrent()
         assertEquals(CoachDraft("Refused input"), store.draft(chat))
-        val restored = CoachStore({ "account" }, { emptySet() }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime,
+        val restored = CoachStore({ "account" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime,
             backgroundScope, dispatcher)
         assertEquals("Daily", restored.chat(chat)!!.cap)
         assertEquals(1_800_000_000_123L, restored.chat(chat)!!.exchanges.single().retryAtMs)
@@ -198,7 +198,7 @@ class CoachAnonymousChatTests {
             override suspend fun start(body: String, credential: String): CoachOnboardingResponse = error("unexpected POST")
             override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
         }, { origin }, backgroundScope)
-        val store = CoachStore({ null }, { emptySet() }, {}, { null }, local, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
             backgroundScope, StandardTestDispatcher(testScheduler), coordinator)
         assertEquals(CoachDraft(), store.draft("original"))
         assertEquals(listOf(photo), store.chat("original")!!.exchanges.single().attachments)
@@ -230,7 +230,7 @@ class CoachAnonymousChatTests {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope,
             storageDispatcher = dispatcher, requestId = { ids.removeFirst() })
-        val store = CoachStore({ null }, { emptySet() }, {}, { null }, local, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
             backgroundScope, dispatcher, coordinator)
         store.refreshAnonymousAccess(); runCurrent()
         val chat = store.freshChat()
@@ -269,7 +269,7 @@ class CoachAnonymousChatTests {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope, telemetry,
             storageDispatcher = dispatcher, requestId = { ids.removeFirst() })
-        val store = CoachStore({ null }, { emptySet() }, {}, { null }, local, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
             backgroundScope, dispatcher, coordinator)
         store.refreshAnonymousAccess(); runCurrent()
         val chat = store.freshChat()
@@ -297,7 +297,7 @@ class CoachAnonymousChatTests {
             }
             override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
         }
-        val before = CoachStore({ null }, { emptySet() }, {}, { null }, dead, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
+        val before = CoachStore({ null }, {}, { null }, dead, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
             CoachOnboardingStore(dead, installation(), stalled, { origin }, backgroundScope, storageDispatcher = dispatcher, requestId = { id }))
         before.refreshAnonymousAccess(); runCurrent()
         val chat = before.freshChat()
@@ -310,7 +310,7 @@ class CoachAnonymousChatTests {
             override suspend fun get(requestId: String, credential: String) =
                 CoachOnboardingResponse(id, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "Answer")
         }
-        val after = CoachStore({ null }, { emptySet() }, {}, { null }, relaunched, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
+        val after = CoachStore({ null }, {}, { null }, relaunched, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
             CoachOnboardingStore(relaunched, installation(), answering, { origin }, backgroundScope, storageDispatcher = dispatcher, requestId = { id }))
         after.resumeAnonymous(); repeat(50) { runCurrent() }
         assertEquals(CoachDraft(), after.draft(chat))
@@ -333,7 +333,7 @@ class CoachAnonymousChatTests {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope,
             storageDispatcher = dispatcher, requestId = { id })
-        val store = CoachStore({ null }, { emptySet() }, {}, { null }, local, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
             backgroundScope, dispatcher, coordinator)
         store.refreshAnonymousAccess(); runCurrent()
         val chat = store.freshChat()

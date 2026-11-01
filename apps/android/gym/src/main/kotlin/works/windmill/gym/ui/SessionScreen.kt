@@ -96,9 +96,8 @@ import androidx.compose.runtime.setValue
 @Stable
 interface SessionState {
     val catalog: List<Exercise>
-    val recent: List<SessionSummary>
+    val allSessions: List<SessionSummary>
     val deletedSets: Set<String>
-    val withheldIds: Set<String>
     fun retainedSession(detail: SessionDetail): SessionDetail
 }
 
@@ -121,9 +120,8 @@ class SessionBinding(
     constructor(store: TrainingStore) : this(store.history, store.held, store.routines, store.workout, store.deletions)
 
     override val catalog: List<Exercise> get() = routines.catalog
-    override val recent: List<SessionSummary> get() = history.recent
+    override val allSessions: List<SessionSummary> get() = history.allSessions
     override val deletedSets: Set<String> get() = held.deletedSets
-    override val withheldIds: Set<String> get() = held.withheldIds
     override fun retainedSession(detail: SessionDetail): SessionDetail = history.retainedSession(detail)
     override suspend fun sessionDetail(sessionId: String, seed: SessionDetail?): GymResult<SessionDetail> =
         history.sessionDetail(sessionId, seed)
@@ -285,14 +283,14 @@ fun SessionScreen(
 
     val currentDetail = detail?.let(state::retainedSession)
     val readId = currentDetail?.session?.id ?: summary.id
-    val visibleSets = currentDetail?.sets?.filterNot { it.id in state.deletedSets || it.id in state.withheldIds }
+    val visibleSets = currentDetail?.sets?.filterNot { it.id in state.deletedSets }
     val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), state.catalog) }
-        ?: state.recent.firstOrNull { it.id == summary.id } ?: summary
+        ?: state.allSessions.firstOrNull { it.id == summary.id } ?: summary
     var shareOpen by rememberSaveable(summary.id) { mutableStateOf(false) }
     // Null until the read lands, distinct from a workout with no sets.
     val movements = currentDetail?.let { held ->
         Performed.movements(
-            held.sets.filterNot { it.id in state.deletedSets || it.id in state.withheldIds },
+            held.sets.filterNot { it.id in state.deletedSets },
             state.catalog,
             held.session.plan,
         )
@@ -552,9 +550,8 @@ private fun headLine(summary: SessionSummary): String = listOfNotNull(
 
 private data class PreviewSessionState(
     override val catalog: List<Exercise> = TheSix.movements,
-    override val recent: List<SessionSummary> = emptyList(),
+    override val allSessions: List<SessionSummary> = emptyList(),
     override val deletedSets: Set<String> = emptySet(),
-    override val withheldIds: Set<String> = emptySet(),
 ) : SessionState {
     override fun retainedSession(detail: SessionDetail): SessionDetail = detail
 }

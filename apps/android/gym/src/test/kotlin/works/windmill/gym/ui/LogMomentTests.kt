@@ -112,53 +112,6 @@ class LogMomentTests {
     }
 
     @Test
-    fun holdingEveryLoadedWorkoutKeepsOlderReachableWithoutLeakingOlderMoments() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val now = LocalDate.of(2026, 9, 24).atTime(18, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val server = EngineRoomFixture.server()
-        try { EngineRoomFixture(tmp.newFolder(), scope, undoWindowMs = 60_000).use { room ->
-            // Fifty empty workouts a minute apart this evening, and under them a bench best from ninety
-            // days ago over its baseline the week before, all logged on another phone.
-            val phoneScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-            val recent = try { EngineRoomFixture(tmp.newFolder(), phoneScope).use { phone -> runBlocking {
-                phone.select("a")
-                phone.pull(server)
-                phone.trained("Oldest workout", now - 97L * 86_400_000, listOf("bench-press" to 75.0))
-                phone.trained("Older workout", now - 90L * 86_400_000, listOf("bench-press" to 80.0))
-                val recent = (49 downTo 0).map { index ->
-                    phone.now = now - index * 60_000 - 1_000
-                    val session = phone.startExternalWorkout()
-                    phone.now += 1_000
-                    assertTrue(phone.store.workout.finish() is FinishOutcome.Closed)
-                    session.id
-                }
-                phone.sync(server)
-                recent
-            } } } finally { phoneScope.cancel() }
-            room.now = now
-            runBlocking {
-                room.select("a")
-                room.pull(server)
-                room.store.refreshEngine()
-                room.store.history.recent.toList().forEach { room.store.deletions.withhold(Deletion.Session(it.id)) }
-                assertEquals(Older.More, room.store.history.older)
-                assertEquals(recent.toSet(), room.store.held.withheldIds)
-                assertEquals(emptyList<SessionSummary>(), room.store.history.recent)
-            }
-            room.store.observeEngine()
-            compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { now }) } } }
-            compose.onNodeWithText("Bench Press · new best").assertDoesNotExist()
-            compose.onNodeWithText("No workouts yet").assertDoesNotExist()
-            compose.onNodeWithText("Load older").assertIsDisplayed().performClick()
-            compose.waitUntil(10_000) { compose.runOnIdle { room.store.history.older == Older.End } }
-            compose.onNodeWithText("Older workout").assertIsDisplayed()
-            compose.onNodeWithText("Bench Press · new best").assertIsDisplayed()
-            compose.onNodeWithText("Load older").assertDoesNotExist()
-            compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
-        } } finally { scope.cancel() }
-    }
-
-    @Test
     fun aCompletedMonthIsANoninteractiveSummaryInItsDatedSection() {
         val zone = ZoneId.systemDefault()
         fun at(day: String) = LocalDate.parse(day).atTime(18, 0).atZone(zone).toInstant().toEpochMilli()

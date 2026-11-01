@@ -14,7 +14,6 @@ import works.windmill.platform.telemetry.Telemetry
 // The notebook of the seat in hand. The first pull distinguishes an unread notebook from an empty one.
 class NotesStore(
     private val seat: TrainingSeat,
-    private val held: HeldDeletes,
     private val controls: WorkoutControls,
     private val training: EngineTraining,
     private val telemetry: Telemetry,
@@ -117,7 +116,7 @@ class NotesStore(
         return notebookWrite.withLock {
             if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
             try {
-                val changed = training.moveNote(moved, drawn, held.withheldIds)
+                val changed = training.moveNote(moved, drawn)
                 if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
                 val written = training.notes()
                 notebook = written

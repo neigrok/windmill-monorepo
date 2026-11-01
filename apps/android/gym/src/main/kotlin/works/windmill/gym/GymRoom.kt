@@ -405,17 +405,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 // Read again on every return: the timeout is changed in system settings, away from here.
                 store.deletions.undoWindowMs = accessibleUndoWindowMs(context)
             }
-            // The transient goes down with what it was offering: an Undo left standing over an act
-            // that was let go would offer a way back to something that never happened.
-            if (event == Lifecycle.Event.ON_STOP && store.deletions.abandonWithheld()) {
-                transient.currentSnackbarData?.dismiss()
-            }
         }
         lifecycleOwner.lifecycle.addObserver(watcher)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(watcher)
-            store.deletions.abandonWithheld()
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(watcher) }
     }
 
     // The visible logger keeps the screen on.

@@ -333,11 +333,11 @@ class HistoryReadsTests {
             room.store.refreshEngine()
 
             assertEquals(Older.End, room.store.history.older)
-            assertEquals(listOf(ended.id), room.store.history.recent.map { it.id })
+            assertEquals(listOf(ended.id), room.store.history.allSessions.map { it.id })
             assertEquals("saved on this device is the only thing it is", setOf(ended.id), room.store.workout.deviceOnlySessionIds)
             assertEquals("and the row carries what the log's own row would",
-                listOf(1), room.store.history.recent.map { it.workingSetCount })
-            assertEquals(listOf(500.0), room.store.history.recent.map { it.tonnageKg })
+                listOf(1), room.store.history.allSessions.map { it.workingSetCount })
+            assertEquals(listOf(500.0), room.store.history.allSessions.map { it.tonnageKg })
             runCurrent()
         }
     }

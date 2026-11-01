@@ -525,7 +525,7 @@ class FinishSheetTests {
         }
         inRoom(telemetry = telemetry) { room ->
             finishAWorkout(room)
-            val id = room.store.history.recent.single().id
+            val id = room.store.history.allSessions.single().id
             val before = room.engine.snapshot()
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
@@ -659,7 +659,7 @@ class FinishSheetTests {
         }
         inRoom(telemetry = telemetry) { room ->
             finishAWorkout(room)
-            val id = room.store.history.recent.single().id
+            val id = room.store.history.allSessions.single().id
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
             val old = compose.onNodeWithText("Discard").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
@@ -742,7 +742,7 @@ class FinishSheetTests {
         }
         inRoom(telemetry = telemetry) { room ->
             finishAWorkout(room)
-            val id = room.store.history.recent.single().id
+            val id = room.store.history.allSessions.single().id
             val server = EngineRoomFixture.server()
             runBlocking { room.sync(server) }
             compose.onNodeWithContentDescription("More").performClick()
@@ -782,7 +782,7 @@ class FinishSheetTests {
             val restoration = StateRestorationTester(compose)
             show(room, restoration)
             finish()
-            val id = room.store.history.recent.single().id
+            val id = room.store.history.allSessions.single().id
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
             compose.onNodeWithText("Discard this workout?").assertIsDisplayed()
@@ -803,7 +803,7 @@ class FinishSheetTests {
         inRoom(seat = null) { room ->
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
-            val id = room.store.history.recent.single().id
+            val id = room.store.history.allSessions.single().id
             val beforeDiscard = compose.runOnIdle { saveRoom() }
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()

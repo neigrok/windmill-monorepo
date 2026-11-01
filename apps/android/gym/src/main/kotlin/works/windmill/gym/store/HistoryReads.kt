@@ -27,7 +27,6 @@ import works.windmill.sync.engine.Pulls
 // record, a routine's history and the progress read.
 class HistoryReads(
     private val seat: TrainingSeat,
-    private val held: HeldDeletes,
     private val controls: WorkoutControls,
     private val training: EngineTraining,
     private val routines: RoutinesStore,
@@ -50,10 +49,6 @@ class HistoryReads(
     // what the log's empty stance and the first-session line are read from.
     val allSessions: List<SessionSummary>
         get() = (logged + shelved).sortedByDescending { it.startedAtMs }
-    // A session inside its undo window is off the log as far as every screen is concerned; only Undo
-    // puts it back.
-    val recent: List<SessionSummary>
-        get() = allSessions.filterNot { it.id in held.withheldIds }
     private var foot: Older by mutableStateOf(Older.More)
     // How the sync runtime's pulls stand, as the screens read them, and how they stood when Retry last asked for one.
     var pulled: Pulls by mutableStateOf(pulls.value)
@@ -102,12 +97,7 @@ class HistoryReads(
         private set
     var progressFailure: WriteFailure? by mutableStateOf(null)
         private set
-    val progress: StatsProgress?
-        get() {
-            val read = progressCache ?: return null
-            val heldSessions = held.withheld.mapNotNull { (it.deletion as? Deletion.Session)?.sessionId }.toSet()
-            return read.without(heldSessions)
-        }
+    val progress: StatsProgress? get() = progressCache
 
     internal var logReadReady by mutableStateOf(false)
         private set
@@ -309,7 +299,7 @@ class HistoryReads(
     suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
         if (!seat.accountReady) return GymResult.Failed(WriteFailure.Refused(accountChanged))
         return try {
-            GymResult.Ok(seat.readTraining { training.routineHistory(routineId, held.withheldIds) })
+            GymResult.Ok(seat.readTraining { training.routineHistory(routineId) })
         } catch (_: TrainingReadChanged) {
             GymResult.Failed(WriteFailure.Refused(accountChanged))
         } catch (cancelled: CancellationException) { throw cancelled }

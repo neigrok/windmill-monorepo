@@ -432,12 +432,12 @@ class TrainingStoreTests {
             val original = room.training.session(finished.id)!!
             assertEquals(listOf(82.5), original.sets.map { it.weightKg })
             room.select(null); room.select("bob")
-            assertEquals("B's room draws none of A's workout", emptyList<String>(), room.store.history.recent.map { it.id })
+            assertEquals("B's room draws none of A's workout", emptyList<String>(), room.store.history.allSessions.map { it.id })
             assertTrue("B's replica contains none of A's training", room.training.details().isEmpty())
             assertTrue(room.engine.dormantReplicas().any { it.account == "alice" && it.unsent > 0 })
             room.select("alice")
             assertEquals(original, room.training.session(finished.id))
-            assertEquals(listOf(finished.id), room.store.history.recent.map { it.id })
+            assertEquals(listOf(finished.id), room.store.history.allSessions.map { it.id })
             assertEquals("A's owed set is kept in full under the same identity", listOf(82.5), room.training.session(finished.id)!!.sets.map { it.weightKg })
         }
     }

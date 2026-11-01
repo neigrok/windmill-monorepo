@@ -255,7 +255,7 @@ class WorkoutSession(
         catch (failure: Exception) { seat.reportFailure("gym.workout_controls", failure); refuseWorkout(); return }
         rack = state.rack
         val movement = controls.chosenMovement
-        val rows = controls.sets.filterNot { it.id in held.withheldIds || it.id in held.deletedSets }
+        val rows = controls.sets.filterNot { it.id in held.deletedSets }
         workoutFacts.value = WorkoutNotification(WorkoutKey(seat.accountKey, live.id), live,
             movement?.let { Readout.movement(it, routines.catalog) } ?: "Choose a movement", rows, state, ready)
     }

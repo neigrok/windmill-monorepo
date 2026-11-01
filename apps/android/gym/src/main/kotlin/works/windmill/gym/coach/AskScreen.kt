@@ -518,7 +518,7 @@ private object PreviewAskEvents : AskEvents {
 private fun AskPreview(dark: Boolean, setup: Boolean, thread: List<AskExchange>) {
     val scope = rememberCoroutineScope()
     val coach = remember {
-        CoachStore({ "preview-lifter" }, { emptySet() }, {}, { null }, null, Telemetry.None, { 0L }, scope)
+        CoachStore({ "preview-lifter" }, {}, { null }, null, Telemetry.None, { 0L }, scope)
             .also { it.freshChat(id = "preview-chat", setup = setup) }
     }
     CompositionLocalProvider(LocalWindmillDark provides dark) {

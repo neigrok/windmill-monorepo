@@ -89,7 +89,7 @@ class LogRowLayoutTests {
             assertEquals("1 set · 1 h 00 min", layout.layoutInput.text.text)
             compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
             compose.onNode(hasText("Push A") and hasClickAction()).performClick()
-            assertEquals("the row opens the one session the log holds", room.store.history.recent, opened)
+            assertEquals("the row opens the one session the log holds", room.store.history.allSessions, opened)
         } } finally { scope.cancel() }
     }
 }

@@ -114,7 +114,7 @@ class CoachDeletionTests {
     @Test fun pendingDeletionAllowsArchiveReadsButPositionSelectionAndSendWriteNothing() = runTest {
         var blocked = false
         val disk = LocalCoach(File(tmp.root, "read-only-pending"), writesAllowed = { !blocked })
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, backgroundScope)
+        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, backgroundScope)
         store.freshChat(id = "chat-a")
         store.saveDraft("chat-a", CoachDraft("Retained draft"))
         val retained = disk.chats("alice")
@@ -159,7 +159,7 @@ class CoachDeletionTests {
         disk.savePhoto(phone, photo.id, byteArrayOf(1, 2, 3))
         disk.saveChat(phone, LocalChat("phone-chat"), true)
         disk.saveDraft(phone, "phone-chat", CoachDraft("Phone draft", photo))
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime,
             backgroundScope, StandardTestDispatcher(testScheduler))
         val adoption = async(start = CoroutineStart.UNDISPATCHED) { runCatching { store.adoptPhoneDraft("alice") } }
         store.eraseOwner("alice")
@@ -187,7 +187,7 @@ class CoachDeletionTests {
             }
         }
         val disk = LocalCoach(File(tmp.root, "late-reply"))
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, disk, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ "alice" }, {}, { api }, disk, Telemetry.None, System::nanoTime,
             backgroundScope, StandardTestDispatcher(testScheduler))
         store.freshChat(id = "chat-a")
         val reply = async { runCatching { store.ask("chat-a", "Question", "request-a") } }
@@ -219,7 +219,7 @@ class CoachDeletionTests {
         }
         val disk = LocalCoach(File(tmp.root, "late-photo-confirm"))
         var refreshes = 0
-        val store = CoachStore({ "alice" }, { emptySet() }, { refreshes++ }, { api }, disk, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ "alice" }, { refreshes++ }, { api }, disk, Telemetry.None, System::nanoTime,
             backgroundScope, StandardTestDispatcher(testScheduler))
         store.freshChat(id = "chat-a")
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
@@ -256,7 +256,7 @@ class CoachDeletionTests {
         }
         val file = File(tmp.root, "late-terminal")
         val disk = LocalCoach(file)
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, disk, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ "alice" }, {}, { api }, disk, Telemetry.None, System::nanoTime,
             backgroundScope, storage)
         store.freshChat(id = "chat-a")
         val result = async { runCatching { store.ask("chat-a", "Old question", "request-a") } }
@@ -290,7 +290,7 @@ class CoachDeletionTests {
         disk.saveChat("alice", chat)
         disk.keep("alice", request)
         val api = FakeGymRest()
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, disk, Telemetry.None, System::nanoTime,
+        val store = CoachStore({ "alice" }, {}, { api }, disk, Telemetry.None, System::nanoTime,
             backgroundScope, StandardTestDispatcher(testScheduler))
         val before = file.readBytes()
         blocked = true
@@ -335,7 +335,7 @@ class CoachDeletionTests {
             disk.saveChat("alice", LocalChat("thread-a", exchanges = listOf(AskExchange("Question",
                 trouble = Ask.capReached, requestId = "request-a", terminalRefusal = true)), cap = "Daily"))
             disk.saveChat("bob", LocalChat("bob-chat"))
-            val store = CoachStore({ owner }, { emptySet() }, {}, { rest }, disk, Telemetry.None,
+            val store = CoachStore({ owner }, {}, { rest }, disk, Telemetry.None,
                 System::nanoTime, backgroundScope)
             val reading = async { store.thread("thread-a") }
             runCurrent()

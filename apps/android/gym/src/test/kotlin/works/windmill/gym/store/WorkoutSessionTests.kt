@@ -248,15 +248,15 @@ class WorkoutSessionTests {
             runCurrent()
             assertFalse(ended.isOpen)
             assertNull(room.store.workout.session)
-            assertEquals(listOf("session01"), room.store.history.recent.map { it.id })
-            assertEquals(listOf(1), room.store.history.recent.map { it.setCount })
+            assertEquals(listOf("session01"), room.store.history.allSessions.map { it.id })
+            assertEquals(listOf(1), room.store.history.allSessions.map { it.setCount })
             snapshot = room.engine.snapshot(); clock = room.now
         }
 
         EngineRoomFixture(folder, backgroundScope, snapshot).use { relaunched ->
             relaunched.now = clock; relaunched.engine.start()
             relaunched.select(null)
-            assertEquals(listOf("session01"), relaunched.store.history.recent.map { it.id })
+            assertEquals(listOf("session01"), relaunched.store.history.allSessions.map { it.id })
             assertEquals("the phone's replica is the one owner of a finished signed-out session",
                 listOf(82.5), relaunched.training.details().single().sets.map { it.weightKg })
             runCurrent()
@@ -392,7 +392,7 @@ class WorkoutSessionTests {
             assertEquals(listOf(90.0),
                 (room.store.history.sessionDetail(ended.id) as GymResult.Ok).value.sets.map { it.weightKg })
             assertEquals("the row the log screen draws moved with it",
-                listOf(270.0), room.store.history.recent.map { it.tonnageKg })
+                listOf(270.0), room.store.history.allSessions.map { it.tonnageKg })
             val before = owed(room)
             assertEquals("a row this workout does not hold is not one a fix can reach",
                 FixOutcome.Gone("that set is no longer on the log"),

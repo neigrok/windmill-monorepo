@@ -15,6 +15,7 @@ import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WeighIn
 import works.windmill.sync.engine.signIn
 
 class WithheldWindowTests {
@@ -58,33 +59,12 @@ class WithheldWindowTests {
     }
 
     @Test
-    fun testASessionWithheldIsOffTheLogAndItsSetsSurviveAnUndo() = runTest {
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            room.select("u1")
-            val session = room.workout(82.5)
-            runCurrent()
-
-            room.store.deletions.withhold(Deletion.Session(session.id))
-
-            assertEquals("the row is off the log", emptyList<String>(), room.store.history.recent.map { it.id })
-            assertEquals("and the workout is still on the account", listOf(session.id),
-                room.training.details().map { it.session.id })
-            assertEquals("Session deleted.", Withheld.line(room.store.held.withheld))
-
-            assertNotNull(room.store.deletions.keepWithheld())
-            assertEquals(listOf(session.id), room.store.history.recent.map { it.id })
-            assertEquals(listOf(82.5), room.training.session(session.id)!!.sets.map { it.weightKg })
-        }
-    }
-
-    @Test
     fun aSettledSetDeleteSurvivesLeavingTheRoom() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
             val session = room.workout()
             val taken = room.training.session(session.id)!!.sets.single()
             assertNull(room.store.deletions.delete(Deletion.Set(session.id, taken)))
-            assertFalse(room.store.deletions.abandonWithheld())
             assertEquals(emptyList<WithheldDelete>(), room.store.held.withheld)
             assertNull(room.store.deletions.keepWithheld())
             advanceTimeBy(Withheld.windowMs * 2)
@@ -159,12 +139,13 @@ class WithheldWindowTests {
         }
     }
     @Test fun weightUndoNamesOneOfferAndCountsSeveralWithoutExposingDates() {
-        val first = WithheldDelete(Deletion.Bodyweight("2026-09-01"), 10_000)
-        val second = WithheldDelete(Deletion.Bodyweight("2026-09-02"), 10_000)
+        fun held(day: String) = WithheldDelete(Deletion.Bodyweight(day), 10_000,
+            HeldWeightReceipt("replica", anonymous = false, gestureId = "gesture-$day", localIds = emptyList(), weighIn = WeighIn(day, 80.0)))
+        val first = held("2026-09-01")
+        val second = held("2026-09-02")
         assertEquals("Weigh-in deleted.", Withheld.line(listOf(first)))
         assertEquals("2 deleted.", Withheld.line(listOf(first, second)))
         assertNull(Withheld.line(emptyList()))
-        assertNull(Withheld.line(listOf(first.copy(sent = true))))
         assertEquals("The Undo window closed.", Withheld.alreadyGone)
         assertEquals("Undo", Withheld.undo)
     }

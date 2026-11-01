@@ -94,7 +94,7 @@ class EngineLifecycleStoreTests {
             assertFalse(detail.session.isOpen)
             assertEquals(live.id, room.store.workout.session!!.id)
             assertEquals(listOf(140.0), room.store.workout.sets.map { it.weightKg })
-            assertEquals(setOf(first.id, live.id), room.store.history.recent.map { it.id }.toSet())
+            assertEquals(setOf(first.id, live.id), room.store.history.allSessions.map { it.id }.toSet())
         }
     }
 
@@ -143,7 +143,7 @@ class EngineLifecycleStoreTests {
             val before = outbox(engine).size
             repeat(3) { room.store.connect(account("A")) }
             assertEquals(before, outbox(engine).size)
-            assertEquals(listOf(session.id), room.store.history.recent.map { it.id })
+            assertEquals(listOf(session.id), room.store.history.allSessions.map { it.id })
             assertEquals(1, room.gym.session(session.id)!!.sets.size)
         }
     }
@@ -155,7 +155,7 @@ class EngineLifecycleStoreTests {
         engine(snapshot).use { restored ->
             val room = room(restored); room.store.connect(account())
             assertEquals(original, WorkoutImports(restored).refusals().single())
-            assertEquals(listOf(original.session!!.id), room.store.history.recent.map { it.id })
+            assertEquals(listOf(original.session!!.id), room.store.history.allSessions.map { it.id })
         }
     }
 
@@ -194,7 +194,7 @@ class EngineLifecycleStoreTests {
             val room = room(engine); room.store.connect(account()); val session = room.workout(finish = false); room.add(engine)
             engine.releaseHeld(true); engine.nextPush(); room.store.prepareEngineTransition(); engine.signOut("keep")
             room.store.connect(account()); engine.signIn("B", mapOf("gym" to false)); room.store.connect(account("B"))
-            assertNull(room.store.workout.session); assertTrue(room.store.history.recent.isEmpty())
+            assertNull(room.store.workout.session); assertTrue(room.store.history.allSessions.isEmpty())
             assertNull(room.gym.session(session.id)); assertTrue(engine.dormantReplicas().single { it.account == "A" }.sent > 0)
         }
     }
@@ -318,7 +318,7 @@ class EngineLifecycleStoreTests {
             assertEquals(Json.of(1), question.member("count").member("session"))
             assertEquals(Json.of(1), question.member("count").member("set"))
             assertEquals(session.id, room.gym.sessions(50, null, null).single().id)
-            room.add(engine); assertEquals(session.id, room.store.history.recent.single().id)
+            room.add(engine); assertEquals(session.id, room.store.history.allSessions.single().id)
         }
     }
 

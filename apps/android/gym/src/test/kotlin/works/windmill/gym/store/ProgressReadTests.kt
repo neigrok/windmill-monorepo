@@ -60,7 +60,7 @@ class ProgressReadTests {
     }
 
     @Test
-    fun aCorrectionReachesTheProgressReadAndAHeldSessionSharesOneFilter() = runTest {
+    fun aCorrectionReachesTheProgressRead() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
             val session = room.workout(80.0)
@@ -73,10 +73,6 @@ class ProgressReadTests {
             val expected = StatsProgress.of(room.training.details(), read.asOf, complete = false)
             assertEquals(expected, read)
             assertEquals(listOf(90.0), read.sessions.flatMap { it.movements }.map { it.heaviest.weightKg })
-            room.store.deletions.withhold(Deletion.Session(session.id))
-            assertEquals(emptyList<ProgressSession>(), room.store.history.progress!!.sessions)
-            room.store.deletions.keepWithheld()
-            assertEquals(expected, room.store.history.progress)
         }
     }
 

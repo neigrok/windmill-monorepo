@@ -65,7 +65,7 @@ class CoachRequestLifecycleTests {
                 }
             }
             val file = File(tmp.root, "stop-$retry")
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
+            val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
             val chat = store.freshChat()
             assertTrue(store.submit(chat, "Question A", requestId = "request-a"))
             until { firstEntered.isCompleted }
@@ -99,7 +99,7 @@ class CoachRequestLifecycleTests {
                     if (asked.size == 1) "failed" else "completed", "Answer ${asked.size}", revision = 1).response()
             }
         }
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, LocalCoach(File(tmp.root, "older-retry")), Telemetry.None,
+        val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(File(tmp.root, "older-retry")), Telemetry.None,
             System::nanoTime, backgroundScope)
         val chat = store.freshChat()
         assertTrue(store.submit(chat, "Question A", requestId = "request-a")); until { !store.isAsking(chat) }
@@ -137,7 +137,7 @@ class CoachRequestLifecycleTests {
                     AskGeneration("generation-a", requestId, "Question", "stopped", "Earlier stopped text", revision = 2)
             }
             val file = File(tmp.root, "stop-io-$beforeClear")
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, LocalCoach(file), Telemetry.None,
+            val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None,
                 System::nanoTime, backgroundScope, storageDispatcher = io)
             val chat = store.freshChat()
             assertTrue(store.submit(chat, "Question", requestId = "request-a"))
@@ -190,14 +190,14 @@ class CoachRequestLifecycleTests {
         val disk = LocalCoach(file)
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         disk.savePhoto("alice", photo.id, byteArrayOf(1, 2, 3))
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, disk, Telemetry.None, System::nanoTime, backgroundScope)
+        val store = CoachStore({ "alice" }, {}, { api }, disk, Telemetry.None, System::nanoTime, backgroundScope)
         val chat = store.freshChat()
         store.saveDraft(chat, CoachDraft("Question", photo))
         assertTrue(store.submit(chat, "Question", photo, "request-a"))
         until { firstUpload.isCompleted }
         store.stopChat(chat)
         assertFalse(store.isAsking(chat))
-        val restored = CoachStore({ "alice" }, { emptySet() }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
+        val restored = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
         assertEquals(emptyList<AskQuestion>(), restored.pendingQuestions())
         assertEquals(CoachDraft("Question", photo), restored.draft(chat))
         assertEquals("Upload cancelled. Retry to send this photo.", restored.chat(chat)?.exchanges?.single()?.trouble)
@@ -236,7 +236,7 @@ class CoachRequestLifecycleTests {
         disk.saveChat("alice", LocalChat(request.thread))
         disk.keep("alice", request)
         disk.record("alice", AskGeneration("generation-a", "request-a", "Question", "failed", "Partial", revision = 3))
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, disk, Telemetry.None,
+        val store = CoachStore({ "alice" }, {}, { api }, disk, Telemetry.None,
             System::nanoTime, backgroundScope, storageDispatcher = io)
         val reading = async { store.thread("thread-a") }
         runCurrent()
@@ -266,7 +266,7 @@ class CoachRequestLifecycleTests {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, telemetry,
+        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, telemetry,
             System::nanoTime, backgroundScope)
         val chat = store.freshChat("Retained caption")
         events.clear()
@@ -308,7 +308,7 @@ class CoachRequestLifecycleTests {
                 override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
             }
             val disk = LocalCoach(File(tmp.root, "prepare-" + (initialOwner ?: "anonymous")))
-            val store = CoachStore({ owner }, { emptySet() }, {}, { FakeGymRest() }, disk, telemetry,
+            val store = CoachStore({ owner }, {}, { FakeGymRest() }, disk, telemetry,
                 System::nanoTime, scope)
             val chat = store.freshChat("Keep this text")
             events.clear()
@@ -336,7 +336,7 @@ class CoachRequestLifecycleTests {
         try {
             val file = File(tmp.root, "two-imports")
             val disk = LocalCoach(file)
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, Telemetry.None,
+            val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, Telemetry.None,
                 System::nanoTime, scope, storageDispatcher = io)
             val first = store.freshChat("First draft")
             val second = store.freshChat("Second draft")
@@ -376,7 +376,7 @@ class CoachRequestLifecycleTests {
             override fun event(name: String, properties: Map<String, String>) {}
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, telemetry, System::nanoTime, backgroundScope)
+        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, telemetry, System::nanoTime, backgroundScope)
         val chat = store.freshChat()
         assertFalse(file.exists())
         val photo = CoachAttachment("attachment-one", "image/png", 1, 1, 3)
@@ -393,7 +393,7 @@ class CoachRequestLifecycleTests {
         val prepared = CompletableDeferred<Pair<CoachAttachment, ByteArray>>()
         val file = File(tmp.root, "deleted-preparing")
         val disk = LocalCoach(file)
-        val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, backgroundScope)
+        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, backgroundScope)
         val chat = store.freshChat("Draft")
         val importing = async(start = CoroutineStart.UNDISPATCHED) { store.importPhoto(chat) { prepared.await() } }
         runCurrent()
@@ -413,7 +413,7 @@ class CoachRequestLifecycleTests {
         try {
             val file = File(tmp.root, "deleted-stored")
             val disk = LocalCoach(file)
-            val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, scope)
+            val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, scope)
             val origin = store.freshChat("Delete this draft")
             val other = store.freshChat("Keep this draft")
             val kept = CoachAttachment("attachment-kept", "image/png", 1, 1, 3)

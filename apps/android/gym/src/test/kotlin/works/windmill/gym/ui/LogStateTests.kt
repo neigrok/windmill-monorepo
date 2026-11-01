@@ -359,7 +359,7 @@ class LogStateTests {
                 room.pull(EngineRoomFixture.server())
             }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
-            compose.runOnIdle { assertEquals("the head page and the row below it", HistoryReads.logPage + 1, room.store.history.recent.size) }
+            compose.runOnIdle { assertEquals("the head page and the row below it", HistoryReads.logPage + 1, room.store.history.allSessions.size) }
         } } finally { scope.cancel() }
     }
 

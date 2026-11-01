@@ -50,8 +50,6 @@ class RoutineHistoryTests {
             assertEquals(GymResult.Ok(expected), room.store.history.routineHistory("routine_history"))
             assertEquals(List(20) { 2 }, expected.map { it.setCount })
             assertEquals(List(20) { listOf("bench-press", "barbell-row") }, expected.map { it.exercises })
-            assertEquals(expected.drop(1) + SessionSummary(details.first().session, details.first().sets, room.store.routines.catalog),
-                room.training.routineHistory("routine_history", setOf("history_20")))
             assertEquals(emptyList<SessionSummary>(), room.training.routineHistory("another_routine"))
             assertEquals(snapshot, room.engine.snapshot())
             assertArrayEquals(controls, room.controlsFile.readBytes())

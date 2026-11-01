@@ -73,7 +73,6 @@ interface LogState {
     val older: Older
     val readingShown: Boolean
     val allSessions: List<SessionSummary>
-    val recent: List<SessionSummary>
     val progress: StatsProgress?
     val progressFailure: WriteFailure?
     val progressLoading: Boolean
@@ -106,7 +105,6 @@ class LogBinding(
     override val older: Older get() = history.older
     override val readingShown: Boolean get() = history.readingShown
     override val allSessions: List<SessionSummary> get() = history.allSessions
-    override val recent: List<SessionSummary> get() = history.recent
     override val progress: StatsProgress? get() = history.progress
     override val progressFailure: WriteFailure? get() = history.progressFailure
     override val progressLoading: Boolean get() = history.progressLoading
@@ -150,7 +148,7 @@ fun LogScreen(
             ?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
             ?: Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
     }
-    val timeline = logTimeline(state.recent, progress, state.weighIns, nowMs, zone, oldestDay)
+    val timeline = logTimeline(state.allSessions, progress, state.weighIns, nowMs, zone, oldestDay)
     val days = LogReadout.days(timeline, nowMs, zone)
     val marked = timeline.filterIsInstance<LogEntry.Moment.Best>().mapTo(mutableSetOf()) { it.best.sessionId }
     val logHolds = state.allSessions.any { !it.session.isOpen }
@@ -395,7 +393,6 @@ private data class LogPreviewState(
     override val weighIns: List<WeighIn> = emptyList(),
 ) : LogState {
     override val accountKey: String = "preview"
-    override val recent: List<SessionSummary> get() = allSessions
     override val progressFailure: WriteFailure? = null
     override val progressLoading: Boolean = false
     override val catalog: List<Exercise> = listOf(Exercise("bench-press", "Bench Press"), Exercise("overhead-press", "Overhead Press"),

@@ -287,7 +287,7 @@ class EngineTrainingTests {
                 assertTrue("offline finish queues its dependent command", room.store.workout.finish() is FinishOutcome.Closed)
                 room.store.refreshEngine()
                 assertEquals(setOf(opened.id), room.store.workout.deviceOnlySessionIds)
-                assertEquals(room.store.history.recent.single().id, LogReadout.row(room.store.history.recent.single(),
+                assertEquals(room.store.history.allSessions.single().id, LogReadout.row(room.store.history.allSessions.single(),
                     null, room.now, java.time.ZoneId.systemDefault()).summary.id)
                 val server = EngineRoomFixture.server()
                 room.sync(server); room.store.refreshEngine()
@@ -635,14 +635,14 @@ class EngineTrainingTests {
             }
             val standing = positions()
             val before = engine.snapshot().jcs
-            try { gym.moveNote("note0001", listOf("note0002", "note0001", "note_missing"), emptySet()); fail("An order must name every note.") } catch (_: TrainingRefused) {}
+            try { gym.moveNote("note0001", listOf("note0002", "note0001", "note_missing")); fail("An order must name every note.") } catch (_: TrainingRefused) {}
             assertEquals(before, engine.snapshot().jcs)
             val order = listOf("note0002", "note0001", "note0003")
-            assertTrue(gym.moveNote("note0001", order, emptySet()))
+            assertTrue(gym.moveNote("note0001", order))
             assertEquals(order, gym.notes().map { it.id })
             assertEquals(standing.filterKeys { it != "note0001" }, positions().filterKeys { it != "note0001" })
             val moved = engine.snapshot()
-            assertFalse(gym.moveNote("note0001", order, emptySet()))
+            assertFalse(gym.moveNote("note0001", order))
             assertEquals(moved, engine.snapshot())
             gym.putBodyweight("2026-01-01", 70.0)
             assertEquals(WeighIn("2026-01-01", 80.0, now), gym.putBodyweight("2026-01-01", 80.0))
