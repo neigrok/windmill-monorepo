@@ -118,9 +118,19 @@ frozen routine lineage are never silently changed.
 
 ## Training runtime
 
-`TrainingStore` keeps the training interface and runs training reads and writes through
-`EngineTraining` and `:gym:domain`; a write commits to the selected replica at once and the engine
-delivers it. Bulk history, session and progress reads use an injected background dispatcher;
+`gym/store/` holds one feature store per screen family, each constructor-injected with the shared
+`TrainingSeat` (whose replica is in hand, whether this phone may write it, and the one guarded read):
+`WorkoutSession` (the workout in hand: rack, sets, movement walk, finish, and corrections to a set or
+workout already on the log), `HistoryReads` (log pages and foot, opened details, record, routine
+history, progress), `RoutinesStore` (routines, movement catalogue, proposals), `RecoveryStore`
+(imports and On this phone), `DeletionsStore` (withheld deletes and their Undo), `BodyweightStore`,
+`NotesStore` and `SharingStore` (connected log and share links). `HeldDeletes` is the one filter
+every list reads. `TrainingStore` composes them with `CoachStore` and moves them together on a
+change of account, an engine refresh, a restore and an account transition. Screens take a narrow
+state interface and an events interface, bound to the stores by a `…Binding` class beside each
+screen; previews draw each screen's main states in Dark and Daylight. The stores run training reads
+and writes through `EngineTraining` and `:gym:domain`; a write commits to the selected replica at
+once and the engine delivers it. Bulk history, session and progress reads use an injected background dispatcher;
 Compose state and writes remain on the main dispatcher. Parsed history is shared per replica and
 engine revision, including device-journal changes, and expires at the next session auto-close
 boundary. A superseded read cannot publish into a different seat. Pending status shown by the
@@ -184,7 +194,7 @@ The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns chat selection,
 thread reads, retries, streaming and confirmed conversation deletion in the application scope;
-`TrainingStore` composes it with the current account and routine refresh. `LocalCoach` atomically
+`TrainingStore` composes it with the seat's account and the routines' refresh. `LocalCoach` atomically
 retains stable chat identities, selected chat, drafts, prepared photos, turns, request identities,
 confirmations and scroll position. An upload cancellation retires automatic resume and keeps its
 draft for explicit Retry. Request callbacks and Stop replies remain bound to their admitted attempt,
