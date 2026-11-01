@@ -2096,11 +2096,12 @@ class TrainingStore(
         // The owner and live session still have to match after every suspended read.
         val seat = owner
         val live = controls.session?.id
+        val walkedTo = logged.lastOrNull()
         val page = tried("gym.loadLog") {
             if (controls.writable) training.recoverAcceptedSets(controls)
             readTraining {
                 if (training.planUnreadable) telemetry.failure("gym.loadLog", IllegalStateException("unreadable-frozen-plan"))
-                training.sessions(limit = logPage, before = null, beforeId = null) to readDelivery()
+                training.sessions(limit = logPage, before = null, beforeId = null, through = walkedTo) to readDelivery()
             }
         }
         if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
@@ -2109,9 +2110,9 @@ class TrainingStore(
             foot = footAfter(null)
             return
         }
-        // A re-read is of the HEAD and does not undo a walk: it can land while a thumb is halfway down
-        // the log. The fresh page is authoritative over the span it covers, and every row OLDER than
-        // its last one survives, keyed on both halves of the cursor.
+        // A re-read covers the head and every row walked below it, so each row the log holds reflects the
+        // replica, and it does not undo a walk: it can land while a thumb is halfway down the log. Any row
+        // OLDER than its last one survives, keyed on both halves of the cursor.
         deliveryRead = page.second
         val rows = page.first
         val edge = rows.lastOrNull()
@@ -2126,9 +2127,9 @@ class TrainingStore(
         shelved = refused
         tried("gym.loadLog") { readRecovery() }
         if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
-        // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
-        // whole of what is held.
-        if (deeper.isEmpty()) foot = footAfter(rows)
+        // The foot is about the deepest row in hand, so it is recomputed only when no walk reached past the
+        // head page; once the first pull has landed, a walked log stops reading.
+        if (rows.size <= logPage && deeper.isEmpty()) foot = footAfter(rows)
         else if (foot == Older.Reading && !logUnread) foot = Older.More
 
         val open = try { readTraining { training.openWorkout() } }

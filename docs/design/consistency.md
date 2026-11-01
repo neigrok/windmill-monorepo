@@ -970,7 +970,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   (`coach/AskScreen.kt`), because no board draws a waiting state for it. A miss settles 10 s after it,
   once the phone reads further into the account or a pull asked after its wait lands caught up; the
   wait's end asks for that pull, so an idle account settles too, and the place then reads *This
-  proposal is no longer available.*
+  proposal is no longer available.* `gym_proposal_missing` counts only answers this visit waited
+  for: a proposal deleted before the visit, as on a reopened thread, draws the line and sends
+  nothing.
 
 ### Parity rulings (owner, 2026-10-22)
 

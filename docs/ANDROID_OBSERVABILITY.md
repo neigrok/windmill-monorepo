@@ -205,7 +205,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_coach_routine_confirm` | gym | `outcome`: `started`, `saved`, `refused`, `failed` |
 | `gym_import_recovery` | gym | `action`: `inspect`, `keep`, `retry`, `fix`, `discard`; `state`: `opened`, `started`, `shown`, `date_opened`, `time_opened`, `date_confirmed`, `time_confirmed`, `date_cancelled`, `time_cancelled`, `marked_finished`, `link_changed`, `set_opened`, `set_staged`, `set_removed`; `outcome`: `ok`, `completed`, `refused`, `failed`, `cancelled` |
 | `gym_note_moved` | gym | none |
-| `gym_proposal_missing` | gym | none. A proposal named by an answer the Coach room waited for has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account or a pull sent after the wait ended has landed caught up (the wait's end asks for one); once per proposal while the room stays composed |
+| `gym_proposal_missing` | gym | none. Counts only answers this visit of the Coach room waited for; a proposal deleted before the visit, as on a reopened thread, draws the line and sends nothing. A proposal named by such an answer has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account or a pull sent after the wait ended has landed caught up (the wait's end asks for one); once per proposal while the room stays composed |
 | `gym_proposal_outcome` | gym | `action`: `apply`, `dismiss`; `outcome`: `decided`, `moved`, `gone`, `settled`, `failed` |
 | `gym_proposal_receipt_shown` | gym | `outcome`: `applied` |
 | `gym_routine_saved` | gym | `action`: `create`, `update` |
@@ -220,7 +220,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `onboarding_exited` | gym, app | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `outcome`: `skipped`, `completed`, `back`, `closed` |
 | `onboarding_opened` | gym | `state`: `first_launch`, `replay` |
 | `onboarding_page_viewed` | gym | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym` |
-| `sync_connectivity` | app | `state`: `online`, `offline` |
+| `sync_connectivity` | app | `state`: `online`, `offline`, as the default network's own callback reports it: offline once that network is lost |
 | `sync_engine` | app | A sync engine result other than success: `operation` (the engine operation), `outcome`: `refused`, `failure`, `timeout`; `failure_kind` (the engine's code); `status` |
 
 ### gym_action labels

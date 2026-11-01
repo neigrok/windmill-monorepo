@@ -377,14 +377,18 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }.mapTo(sessions) { it.member("sessionId").str() }
         sessions
     } + imports.operations().map { it.sessionId } + imports.retainedWorkouts().map { it.session.id }
-    fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> = read {
+    // The log newest first below the cursor: `limit` rows, or as many as reach down to `through`, the deepest row the
+    // reader holds, so a re-read covers every row it has walked.
+    fun sessions(limit: Int, before: Long?, beforeId: String?, through: SessionSummary? = null): List<SessionSummary> = read {
         val history = details()
         if (!anonymous && !firstPullComplete && history.isEmpty()) throw TrainingUnanswered
         val catalog = catalogue()
         val names = catalog.associate { it.id to it.name }
-        history.sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
+        val newest = history.sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
             .filter { before == null || it.session.startedAtMs < before || it.session.startedAtMs == before && (beforeId == null || it.session.id < beforeId) }
-            .take(limit).map { detail ->
+        val reach = through?.let { deepest -> newest.count { it.session.startedAtMs > deepest.startedAtMs ||
+            it.session.startedAtMs == deepest.startedAtMs && it.session.id >= deepest.id } } ?: 0
+        newest.take(maxOf(limit, reach)).map { detail ->
                 val stale = detail.session.id in parsedLog?.staleSessions.orEmpty()
                 val summary = SessionSummary(detail.session, detail.sets, catalog)
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })

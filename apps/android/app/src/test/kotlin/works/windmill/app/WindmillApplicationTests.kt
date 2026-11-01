@@ -120,6 +120,29 @@ private class Keystore2 : Provider("AndroidKeyStore", 1.0, "keystore2 stand-in")
 class WindmillApplicationTests {
     private val sam = User("sam", "sam@example.com")
 
+    // Airplane mode loses the default network while the system still names it as active: the callback's own word is what
+    // turns the phone offline, and a late loss of a network that is no longer the default changes nothing.
+    @Test fun aLostDefaultNetworkReadsOfflineWhileTheSystemStillNamesItActive() {
+        val manager = RuntimeEnvironment.getApplication().getSystemService(android.net.ConnectivityManager::class.java)
+        val internet = org.robolectric.shadows.ShadowNetworkCapabilities.newInstance().also {
+            shadowOf(it).addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+        val wifi = requireNotNull(manager.activeNetwork)
+        shadowOf(manager).setNetworkCapabilities(wifi, internet)
+        val seen = mutableListOf<Boolean>()
+        val network = DefaultNetwork { seen += it }
+        network.onAvailable(wifi)
+        network.onCapabilitiesChanged(wifi, internet)
+        network.onLost(wifi)
+        assertEquals(wifi, manager.activeNetwork)
+        assertEquals(listOf(true, false), seen)
+        val cell = org.robolectric.shadows.ShadowNetwork.newInstance(7)
+        network.onAvailable(cell)
+        network.onCapabilitiesChanged(cell, internet)
+        network.onLost(wifi)
+        assertEquals(listOf(true, false, true), seen)
+    }
+
     @Test fun aSignedInColdStartOpensAccountAndSyncCredentialsAndSealsTheInstallationBindingOnMain() {
         val keystore = Keystore2()
         Security.addProvider(keystore)

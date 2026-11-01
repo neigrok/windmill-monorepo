@@ -229,21 +229,16 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             syncRuntime.connectivity(knownOnline ?: false)
             if (ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) engineSession.enter()
         }
-        fun updateConnectivity() {
-            val online = manager.getNetworkCapabilities(manager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        fun connectivityChanged(online: Boolean) {
             if (online == knownOnline) return
             knownOnline = online
             applyRuntimeActivity()
             telemetry.event("sync_connectivity", mapOf("state" to if (online) "online" else "offline"))
         }
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) = updateConnectivity()
-            override fun onLost(network: Network) = updateConnectivity()
-            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = updateConnectivity()
-        }
+        val callback = DefaultNetwork(::connectivityChanged)
         connectivity = manager
         networkCallback = callback
-        updateConnectivity()
+        connectivityChanged(manager.getNetworkCapabilities(manager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
         manager.registerDefaultNetworkCallback(callback)
         scope.launch {
             snapshotFlow { Triple(auth.identityRevision, auth.status, auth.transitionPending) }.collect {
@@ -266,5 +261,25 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         if (::engineSession.isInitialized) engineSession.close()
         scope.cancel()
         super.onTerminate()
+    }
+}
+
+// The default network as its own callback tells it: online while the network the system made the default can reach the
+// internet, offline once that network is lost. Inside onLost the system's active network can still name the network it is
+// losing, so nothing here asks the system again.
+internal class DefaultNetwork(private val changed: (Boolean) -> Unit) : ConnectivityManager.NetworkCallback() {
+    private var current: Network? = null
+
+    @Synchronized override fun onAvailable(network: Network) { current = network }
+
+    @Synchronized override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+        current = network
+        changed(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+    }
+
+    @Synchronized override fun onLost(network: Network) {
+        if (network != current) return
+        current = null
+        changed(false)
     }
 }

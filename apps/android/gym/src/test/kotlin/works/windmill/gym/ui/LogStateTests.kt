@@ -33,6 +33,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SetWrite
 import works.windmill.gym.store.*
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Pulls
@@ -297,6 +298,42 @@ class LogStateTests {
             }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.More } }
             compose.runOnIdle { assertEquals(TrainingStore.logPage + 2, room.store.logged.size) }
+        } } finally { scope.cancel() }
+    }
+
+    // A row reached by walking past the head page reflects the replica after new changes land: a set leaving a walked
+    // workout leaves its row too.
+    @Test
+    fun aWalkedRowFollowsChangesThatLandForItsWorkout() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val oldest = "walked000"
+            runBlocking {
+                room.select("a")
+                room.pull(EngineRoomFixture.server())
+                repeat(TrainingStore.logPage + 1) { index ->
+                    val id = "walked${index.toString().padStart(3, '0')}"
+                    val start = room.now + index * 3_600_000L
+                    room.training.startSession(SessionStart(id = id, startedAt = start))
+                    if (id == oldest) repeat(2) { set ->
+                        room.training.appendSet(id, SetWrite("set-$set", "bench-press", 80.0, 5, start + 60_000L * (set + 1)))
+                    }
+                    room.training.finishSession(id, start + 600_000)
+                }
+                room.now += (TrainingStore.logPage + 2) * 3_600_000L
+                room.store.observeEngine()
+                room.store.refreshEngine()
+            }
+            compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.older == Older.More } }
+            compose.runOnIdle { runBlocking { room.store.loadOlder() } }
+            compose.runOnIdle { assertEquals(2, room.store.logged.single { it.id == oldest }.setCount) }
+            runBlocking { room.training.deleteSet(oldest, "set-0") }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.logged.single { it.id == oldest }.setCount == 1 } }
+            compose.runOnIdle {
+                assertEquals(TrainingStore.logPage + 1, room.store.logged.size)
+                assertEquals(Older.End, room.store.older)
+            }
         } } finally { scope.cancel() }
     }
 
