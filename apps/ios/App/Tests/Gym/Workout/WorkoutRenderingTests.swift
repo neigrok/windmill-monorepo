@@ -203,19 +203,37 @@ import SyncTesting
   }
 
   // VoiceOver hears each ledger row's place and its numbers in words: a logged set as it was lifted, the current and
-  // planned rows as the plan asks, one number where it asks one, and an open target where it asks none.
+  // planned rows as the load the rack will offer by the plan's reps, and an open target past the plan.
   func testLedgerRowsSpeakTheirPlaceAndNumbersInWords() {
     let set = { (id: String, kg: Double, reps: Int) in
       TrainingSet(id: ID(RecordID(id)), sessionId: ID("session"), exerciseId: ID("back-squat"), weightKg: kg, reps: reps, completedAt: Instant(ms: 0))
     }
     let ledger = MovementLedger(sets: [set("first", 100, 1)],
-                                plan: RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 102.5), SetTarget(reps: 5), SetTarget()]))
+                                plan: RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 102.5), SetTarget(reps: 5), SetTarget()]),
+                                lastTime: LastTime(exerciseId: ID("back-squat")))
     XCTAssertEqual(ledger.rows.map { WorkoutLedgerRow(row: $0, unsent: $0.set?.id == ID("first")).spoken }, [
       "Set 1, logged, 100 kilograms, 1 rep, on this phone",
-      "Set 2, current, target 102.5 kilograms, 5 reps", "Set 3, planned, 5 reps", "Set 4, planned, open target",
+      "Set 2, current, 102.5 kilograms, 5 reps", "Set 3, planned, 102.5 kilograms, 5 reps", "Set 4, planned, 102.5 kilograms, max reps",
     ])
-    let open = MovementLedger(sets: [], plan: nil)
+    let unread = MovementLedger(sets: [], plan: RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(), SetTarget()]),
+                                lastTime: LastTime(exerciseId: ID("back-squat"), isComplete: false))
+    XCTAssertEqual(unread.rows.map { WorkoutLedgerRow(row: $0, unsent: false).spoken },
+                   ["Set 1, current, no load yet, max reps", "Set 2, planned, no load yet, max reps"])
+    let open = MovementLedger(sets: [], plan: nil, lastTime: LastTime(exerciseId: ID("back-squat")))
     XCTAssertEqual(open.rows.map { WorkoutLedgerRow(row: $0, unsent: false).spoken }, ["Set 1, current, open target"])
+  }
+
+  // A row still to lift reads the load its rack will offer, a dash while there is none, and never the word last.
+  func testRowsStillToLiftReadTheOfferedLoad() {
+    let bench = ID<Exercise>("bench-press"), plan = RoutineEntry(exerciseId: bench, sets: Array(repeating: SetTarget(), count: 3))
+    let first = TrainingSet(id: ID(RecordID("first")), sessionId: ID("session"), exerciseId: bench, weightKg: 22.5, reps: 5, completedAt: Instant(ms: 0))
+    let afterOne = MovementLedger(sets: [first], plan: plan, lastTime: LastTime(exerciseId: bench))
+    XCTAssertEqual(afterOne.rows.map(\.reading), ["22.5 × 5", "22.5 × max", "22.5 × max"])
+    let firstTime = MovementLedger(sets: [], plan: plan, lastTime: LastTime(exerciseId: bench))
+    XCTAssertEqual(firstTime.rows.map(\.reading), ["20 × max", "20 × max", "20 × max"])
+    let unread = MovementLedger(sets: [], plan: plan, lastTime: LastTime(exerciseId: bench, isComplete: false))
+    XCTAssertEqual(unread.rows.map(\.reading), ["— × max", "— × max", "— × max"])
+    XCTAssertEqual([afterOne, firstTime, unread].flatMap(\.rows).filter { $0.reading.contains("last") }, [])
   }
 
   // The rack speaks its numeral in the movement's load basis and Log set with the whole set it logs.

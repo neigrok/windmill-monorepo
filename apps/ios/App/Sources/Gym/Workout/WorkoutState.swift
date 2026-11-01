@@ -40,26 +40,39 @@ nonisolated struct MovementLedger: Equatable {
     let reading: String
     // What the plan asks of a current or planned row; nil where it asks nothing, and on a logged row.
     let target: SetTarget?
+    // The load the rack will offer for a current or planned row; nil on a logged row and while it waits on last time.
+    var offered: Double? = nil
     let place: Place
     var set: TrainingSet? { if case .logged(let set) = place { set } else { nil } }
   }
   let sets: [TrainingSet]
   let plan: RoutineEntry?
+  let lastTime: LastTime
 
   var targets: [SetTarget] { plan?.sets ?? [] }
   var performed: Int { sets.count }
+  // The current row's offer, then each planned row's.
+  var offers: [Double?] { Prefill.offeredLoads(todaySets: sets, planEntry: plan, lastTime: lastTime) }
   var current: Row {
-    let target = performed < targets.count ? targets[performed] : nil
-    return Row(id: sets.count, marker: "\(performed + 1)", reading: target.map(Readout.setTarget) ?? Readout.openTarget, target: target, place: .current)
+    let target = performed < targets.count ? targets[performed] : nil, offered = offers.first ?? nil
+    return Row(id: sets.count, marker: "\(performed + 1)", reading: target.map { Self.reading($0, offered: offered) } ?? Readout.openTarget,
+               target: target, offered: offered, place: .current)
   }
   var rows: [Row] {
     let logged = sets.enumerated().map { index, set in
       Row(id: index, marker: SetRow.marker(set, in: sets), reading: Readout.effort(weightKg: set.weightKg, reps: set.reps), target: nil, place: .logged(set))
     }
+    let offers = offers
     let ahead = targets.indices.dropFirst(performed + 1).map { index in
-      Row(id: sets.count + index - performed, marker: "\(index + 1)", reading: Readout.setTarget(targets[index]), target: targets[index], place: .planned)
+      let offered = offers[index - performed]
+      return Row(id: sets.count + index - performed, marker: "\(index + 1)", reading: Self.reading(targets[index], offered: offered),
+                 target: targets[index], offered: offered, place: .planned)
     }
     return logged + [current] + ahead
+  }
+  // A row still to lift reads the load the rack will offer, or a dash while there is none to name, by the plan's reps.
+  static func reading(_ target: SetTarget, offered: Double?) -> String {
+    "\(offered.map { Readout.weight($0) } ?? "—") × \(Readout.repTarget(target.reps))"
   }
   // Planned rows state the plan, so the line under the name speaks only for a planned movement that holds no targets.
   var planLine: String? { plan != nil && targets.isEmpty ? "plan \(Readout.openTarget)" : nil }
@@ -386,8 +399,10 @@ struct FinishWorkout: Action {
     restReaches += 1
     gym.telemetry.event("gym_rest_target_reached", properties: ["screen": "workout"])
   }
+  // With no log read yet, the movement's last time is not known.
   func ledger(_ id: ID<Exercise>) -> MovementLedger {
-    MovementLedger(sets: sets.filter { $0.exerciseId == id }, plan: session?.plan?.entries.first { $0.exerciseId == id })
+    MovementLedger(sets: sets.filter { $0.exerciseId == id }, plan: session?.plan?.entries.first { $0.exerciseId == id },
+                   lastTime: gym.log?.lastTime(for: id) ?? LastTime(exerciseId: id, isComplete: false))
   }
   // The clocks read the log's time, which stamped the start and the sets; this phone's time stands in when it cannot be read.
   var clocks: WorkoutClocks? {
@@ -465,7 +480,8 @@ struct FinishWorkout: Action {
   func rackFollows(from previous: Session, to next: Session) -> Bool {
     guard let selected, rackBase == nil, rackPrefilled else { return false }
     let slot = { (session: Session) in
-      MovementLedger(sets: self.currentSets, plan: session.plan?.entries.first { $0.exerciseId == selected }).current.target
+      MovementLedger(sets: self.currentSets, plan: session.plan?.entries.first { $0.exerciseId == selected },
+                     lastTime: LastTime(exerciseId: selected, isComplete: false)).current.target
     }
     return slot(previous) != slot(next)
   }

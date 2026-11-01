@@ -127,18 +127,35 @@ data class Prefill(val weightKg: Double = emptyBarKg, val reps: Int = emptyBarRe
     companion object {
         const val emptyBarKg = 20.0
         const val emptyBarReps = 5
-        fun of(todaySets: List<TrainingSet>, planEntry: RoutineEntry?, lastTime: LastTime?): Prefill {
+        fun of(todaySets: List<TrainingSet>, planEntry: RoutineEntry?, lastTime: LastTime?): Prefill =
+            at(todaySets.size, todaySets.lastOrNull()?.let { Prefill(it.weightKg, maxOf(1, it.reps)) }, planEntry, lastTime)
+
+        // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered as though
+        // the one before it were logged as offered. A load that would come from a last time not read yet is null.
+        fun offeredLoads(todaySets: List<TrainingSet>, planEntry: RoutineEntry?, lastTime: LastTime): List<Double?> {
             val scheme = planEntry?.sets.orEmpty()
-            val sticky = todaySets.lastOrNull()
+            val slots = todaySets.size until scheme.size
+            if (lastTime.session != null || lastTime.isComplete) {
+                var sticky = todaySets.lastOrNull()?.let { Prefill(it.weightKg, maxOf(1, it.reps)) }
+                return slots.map { slot -> at(slot, sticky, planEntry, lastTime).also { sticky = it }.weightKg }
+            }
+            val straight = scheme.all { it == scheme.first() }
+            var sticky: Double? = todaySets.lastOrNull()?.weightKg
+            return slots.map { slot -> (if (straight) sticky ?: scheme.first().weightKg else scheme[slot].weightKg).also { sticky = it } }
+        }
+
+        // The offer at a slot, `sticky` being the set logged just before it.
+        fun at(slot: Int, sticky: Prefill?, planEntry: RoutineEntry?, lastTime: LastTime?): Prefill {
+            val scheme = planEntry?.sets.orEmpty()
             val history = lastTime?.sets.orEmpty()
             val straight = scheme.firstOrNull()?.let { first -> scheme.all { it == first } } ?: true
             if (scheme.isNotEmpty() && !straight) {
-                val slot = scheme.getOrNull(todaySets.size)
-                val lastNth = history.getOrNull(todaySets.size)
-                return Prefill(slot?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: emptyBarKg,
-                    maxOf(1, slot?.reps ?: lastNth?.reps ?: sticky?.reps ?: emptyBarReps))
+                val target = scheme.getOrNull(slot)
+                val lastNth = history.getOrNull(slot)
+                return Prefill(target?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: emptyBarKg,
+                    maxOf(1, target?.reps ?: lastNth?.reps ?: sticky?.reps ?: emptyBarReps))
             }
-            if (sticky != null) return Prefill(sticky.weightKg, maxOf(1, sticky.reps))
+            if (sticky != null) return sticky
             val planned = scheme.firstOrNull()
             return Prefill(planned?.weightKg ?: history.lastOrNull()?.weightKg ?: emptyBarKg,
                 maxOf(1, planned?.reps ?: history.firstOrNull()?.reps ?: emptyBarReps))

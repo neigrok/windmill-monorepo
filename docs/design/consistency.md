@@ -869,13 +869,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Dirty routine draft on Back (4k) | Back drops a new draft with no question | 02.20 `1742:39519` · `1742:39682` |
   | Movement editor discard wording | The dialog's dismiss says *Cancel* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
-  | Rack height and planned rows | *22.5 kg total* moves the unit below (O rule) and grows the rack about 80px; planned rows read *last kg total × max* | 03.34 `1742:40960` · `1742:41112` |
+  | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the rack will offer, *22.5 kg total × max*, or *— × max* while last time is unread | 03.34 `1742:40960` · `1742:41112` |
   | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
   | Receipt at 320dp/200% | Facts and *Performed* fall off-screen; the sheet does not grow | 03.36 `1742:41620` · `1742:41702` |
   | Weigh-in Undo | *Weigh in* moves above the snackbar and drops under the finger when the fixed nine-second window ends | 05.17 `1742:41789` · `1742:41887`; 05.16 stays as the production picture until 05.17 ships |
 
   Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
-  Dumbbells, and iOS planned rows read *last × max* (`Readout.setTarget`). 03.34 adds a fit-first
+  Dumbbells, and iOS planned rows read the load the rack will offer, as 03.34 draws. 03.34 adds a fit-first
   step to the O rule for the rack. 02.20 draws the routine Name field in the outlined
   floating-label idiom the movement sheet uses; 02.3, 02.5 and the other editor boards still draw a
   label above the field.

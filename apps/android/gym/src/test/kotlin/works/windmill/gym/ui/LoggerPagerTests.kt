@@ -117,7 +117,7 @@ class LoggerPagerTests {
 
             compose.onNodeWithText("Bench Press").assertIsDisplayed()
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-            compose.onNode(hasContentDescription("Set 1, current, target 60 kg total, 8 reps")).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 1, current, 60 kg total, 8 reps")).assertIsDisplayed()
             compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
             compose.onNodeWithText("Log set").assertIsNotEnabled()
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
@@ -288,7 +288,7 @@ class LoggerPagerTests {
             }
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-            compose.onNode(hasContentDescription("Set 1, current, target 60 kg total, 8 reps")).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 1, current, 60 kg total, 8 reps")).assertIsDisplayed()
             compose.onNode((hasContentDescription("Load, kg total") and hasText("60"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("8"))).assertIsDisplayed()
             compose.onNode(hasContentDescription("Exercise 2 of 2")).assertIsDisplayed()

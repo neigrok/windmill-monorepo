@@ -399,9 +399,14 @@ struct WorkoutLedgerRow: View {
     switch row.place {
     case .logged(let set):
       return "Set \(row.marker), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
-    case .current: return "Set \(row.marker), current, \(Self.asked(row.target).map { "target " + $0 } ?? "open target")"
-    case .planned: return "Set \(row.marker), planned, \(Self.asked(row.target) ?? "open target")"
+    case .current: return "Set \(row.marker), current, \(row.target.map { Self.offered(row.offered, by: $0) } ?? "open target")"
+    case .planned: return "Set \(row.marker), planned, \(row.target.map { Self.offered(row.offered, by: $0) } ?? "open target")"
     }
+  }
+
+  // A row still to lift in words: the load the rack will offer, and the plan's reps.
+  static func offered(_ kg: Double?, by target: SetTarget) -> String {
+    "\(kg.map { "\(Readout.weight($0)) kilograms" } ?? "no load yet"), \(target.reps.map { GymCount.of($0, "rep") } ?? "max reps")"
   }
 
   // The numbers the plan asks for, in words: the load, the reps, or both; nil when it asks for neither.
