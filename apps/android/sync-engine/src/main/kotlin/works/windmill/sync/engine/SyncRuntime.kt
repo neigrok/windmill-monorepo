@@ -577,8 +577,15 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             val reader = launch { try { while (isActive) { val frame = connection.receive(); incoming.send(frame); if (frame == null) break } } finally { incoming.close() } }
             try { while (isActive && activityAllowed() && current(seat) && foreground && online && !closed) {
                 val scopes = engine.subscriptions(products).filter { engine.lock.withLock { (it in following || engine.doubts.mayFollow(it)) && !engine.awaitsGoverningCreate(engine.device.current(), it) && engine.device.current().cursors[it.text]?.get("digestStop") != Json.of(appVersion) } }.toSet()
-                for (scope in following - scopes) { connection.send(Json.objectOf("op" to Json.of("unsub"), "scope" to scope.json)); engine.lock.withLock { engine.doubts.unfollowed(scope, mono()) } }
-                for (scope in scopes - following) { connection.send(Json.objectOf("op" to Json.of("sub"), "scope" to scope.json)); engine.lock.withLock { engine.doubts.followed(scope, mono()) } }
+                // §9.5: `sub` and `unsub` name their scopes as an array, at most a pull's worth to a frame.
+                for (batch in (following - scopes).chunked(Constants.PULL_MAX_SCOPES)) {
+                    connection.send(Json.objectOf("op" to Json.of("unsub"), "scopes" to Json.Arr(batch.map { it.json })))
+                    engine.lock.withLock { batch.forEach { engine.doubts.unfollowed(it, mono()) } }
+                }
+                for (batch in (scopes - following).chunked(Constants.PULL_MAX_SCOPES)) {
+                    connection.send(Json.objectOf("op" to Json.of("sub"), "scopes" to Json.Arr(batch.map { it.json })))
+                    engine.lock.withLock { batch.forEach { engine.doubts.followed(it, mono()) } }
+                }
                 following.clear(); following.addAll(scopes)
                 if (pongDue?.let { mono() >= it } == true) {
                     engine.report(EngineOperation.live, EngineOutcome.timeout, "unreachable"); throw LiveEnded("live-pong-timeout")

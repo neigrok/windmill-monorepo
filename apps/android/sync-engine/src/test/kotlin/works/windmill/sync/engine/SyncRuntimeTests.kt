@@ -1200,6 +1200,31 @@ class SyncRuntimeTests {
         }
     }
 
+    // §9.5 on the wire: a server reading `scopes` follows nothing a frame names any other way.
+    @Test fun theLiveSocketFollowsItsScopesInOneSubFrameOfScopes() = runBlocking {
+        val sleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() }
+        MockWebServer().use { server ->
+            val first = CompletableDeferred<String>()
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (request.path?.startsWith("/v1/sync/live") != true) return MockResponse().setResponseCode(503)
+                    return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                        override fun onMessage(webSocket: WebSocket, text: String) { first.complete(text) }
+                    })
+                }
+            }
+            Engine.memory(registry, null, Clock(), Identities(), "r_aaaaaaaaaaaa").use { engine ->
+                engine.signIn("A", mapOf("probe" to false))
+                HTTPTransport("http://127.0.0.1:${server.port}/", registry.version.toInt(), EngineTelemetry { }, okhttp3.OkHttpClient()).use { transport ->
+                    SyncRuntime(engine, transport, Tokens().also { it.save("A", "token:A") }, "1", sleeper, listOf("probe")).use { runtime ->
+                        runtime.enter()
+                        assertEquals("""{"op":"sub","scopes":["self/probe"]}""", withTimeout(5_000) { first.await() })
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun aLiveSocketTheNetworkDropsIsReportedOnceByItsTransportAsUnreachable() = runBlocking {
         val events = CopyOnWriteArrayList<EngineEvent>()
         // The runtime is done with the dropped socket once it pauses to reconnect, or reconnects at once on a wake left from before the drop.
