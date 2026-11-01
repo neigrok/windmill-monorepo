@@ -57,7 +57,7 @@ fun logTimeline(
     moments += facts.newBests.map { LogEntry.Moment.Best(it) }
 
     val trainedDays = facts.sessions.map { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate() }
-    trainedDays.groupBy { YearMonth.from(it) }.toSortedMap().forEach { (month, days) ->
+    if (facts.isComplete) trainedDays.groupBy { YearMonth.from(it) }.toSortedMap().forEach { (month, days) ->
         if (month >= YearMonth.from(today)) return@forEach
         val firstWeek = month.atDay(1).with(monday)
         val lastWeek = month.atEndOfMonth().with(monday)

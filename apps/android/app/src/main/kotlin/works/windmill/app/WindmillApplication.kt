@@ -165,7 +165,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             }, telemetry = telemetry,
             localCoach = localCoach,
             coachOnboarding = coachOnboarding,
-            pullAgain = syncRuntime::pullAgain,
+            pullAgain = syncRuntime::pullAgain, pulls = syncRuntime.pulls,
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = {
             val revision = auth.accountOperationRevision

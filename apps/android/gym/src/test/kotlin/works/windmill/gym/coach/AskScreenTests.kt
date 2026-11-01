@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.After
@@ -72,6 +73,7 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.domain.kit.Id
 import works.windmill.sync.core.Json
+import works.windmill.sync.engine.Pulls
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.modelserver.ServerCall
 import works.windmill.gym.domain.sync.Exercise as SyncExercise
@@ -891,22 +893,27 @@ class AskScreenTests {
         scope.cancel()
     }
 
-    // A dead row of the proposal is gone at once. A miss with no row settles only once its wait has passed and the phone,
-    // caught up at or after the miss, has read further: the read that first finds it caught up is where it measures from.
+    // A dead row of the proposal is gone at once. A miss with no row settles only once its wait has passed and either the
+    // phone, caught up at or after the miss, has read further, or a pull has landed since the wait ended.
     @Test
     fun aMissIsGoneAtOnceWithADeadRowAndOtherwiseOnceItSettles() {
-        val dead = AnsweredProposals.Miss().read(recorded = true, caughtUpTo = null)
+        val dead = AnsweredProposals.Miss().read(recorded = true, caughtUpTo = null, caughtUpPull = 0)
         assertEquals(AnsweredProposals.Miss(recorded = true), dead)
         assertTrue(dead.gone)
-        val behind = AnsweredProposals.Miss().read(recorded = false, caughtUpTo = null)
-        val level = behind.read(recorded = false, caughtUpTo = 7).copy(waited = true)
-        assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, waited = true), level)
+        val behind = AnsweredProposals.Miss().read(recorded = false, caughtUpTo = null, caughtUpPull = 3)
+        val level = behind.read(recorded = false, caughtUpTo = 7, caughtUpPull = 3).copy(waitedAt = 3)
+        assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, waitedAt = 3), level)
         assertFalse(level.gone)
-        assertEquals(level, level.read(recorded = false, caughtUpTo = 7))
-        val past = level.read(recorded = false, caughtUpTo = 8)
-        assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, readPast = true, waited = true), past)
+        assertEquals(level, level.read(recorded = false, caughtUpTo = 7, caughtUpPull = 3))
+        val past = level.read(recorded = false, caughtUpTo = 8, caughtUpPull = 3)
+        assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, readPast = true, waitedAt = 3), past)
         assertTrue(past.gone)
-        assertEquals(past, past.read(recorded = false, caughtUpTo = null))
+        assertEquals(past, past.read(recorded = false, caughtUpTo = null, caughtUpPull = 3))
+        val pulled = level.read(recorded = false, caughtUpTo = 7, caughtUpPull = 4)
+        assertEquals(AnsweredProposals.Miss(caughtUpAt = 7, waitedAt = 3, pulledPast = true), pulled)
+        assertTrue(pulled.gone)
+        assertEquals("a pull before the wait ended settles nothing", AnsweredProposals.Miss(caughtUpAt = 7),
+            AnsweredProposals.Miss(caughtUpAt = 7).read(recorded = false, caughtUpTo = 7, caughtUpPull = 9))
     }
 
     // Snapshots land about once a second; what each one adds after the room mounted is paced by
@@ -1124,6 +1131,142 @@ class AskScreenTests {
         saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
         compose.waitUntil(5_000) { compose.runOnIdle { events.any { it.first == "gym_proposal_missing" } } }
         compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        scope.cancel()
+    }
+
+    // On an idle account nothing new would ever arrive. The wait's end asks for one pull, and once it lands with no row the
+    // proposal is no longer available and reported once; later pulls ask and report nothing more.
+    @Test
+    fun anIdleAccountSettlesADeletedProposalAfterTheWaitAndOnePull() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val pulls = MutableStateFlow(Pulls())
+        var asked = 0
+        lateinit var room: EngineRoomFixture
+        room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), pulls = pulls, pullAgain = {
+            asked++
+            room.pull(server)
+            pulls.value = pulls.value.sending(room.engine.activeReplica()).let { it.ending(room.engine.activeReplica(), it.sent, landed = true, caughtUp = true) }
+            true
+        }).also { rooms += it }
+        runBlocking { room.select("u1") }
+        room.pull(server)
+        room.store.observeEngine()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
+                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                    "https://windmill.works", onThreads = {}, onReview = {})
+            }
+        }
+        compose.runOnIdle { thread = listOf(thread.single().copy(answer = AskAnswer("The answer stays readable.", read,
+            proposals = listOf("proposal1")))) }
+        compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs - 1_000)
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, asked) }
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.line).fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.runOnIdle { pulls.value = pulls.value.sending(room.engine.activeReplica()).let { it.ending(room.engine.activeReplica(), it.sent, landed = true, caughtUp = true) } }
+        compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
+        compose.runOnIdle {
+            assertEquals(1, asked)
+            assertEquals(listOf("gym_proposal_missing" to emptyMap<String, String>()), events.filter { it.first == "gym_proposal_missing" })
+        }
+        scope.cancel()
+    }
+
+    // The proposal reaches the server after its answer but the account stays idle: the pull the wait's end asks for
+    // brings it, and the card is drawn with nothing reported missing.
+    @Test
+    fun aProposalBroughtByTheWaitsPullDrawsItsCard() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val pulls = MutableStateFlow(Pulls())
+        var asked = 0
+        lateinit var room: EngineRoomFixture
+        room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), pulls = pulls, pullAgain = {
+            asked++
+            room.pull(server)
+            pulls.value = pulls.value.sending(room.engine.activeReplica()).let { it.ending(room.engine.activeReplica(), it.sent, landed = true, caughtUp = true) }
+            true
+        }).also { rooms += it }
+        runBlocking { room.select("u1") }
+        val routine = saved(room, server, RoutineDraft(name = "Push A").adding("bench-press", List(3) { SetTarget(5) }))
+        room.store.observeEngine()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
+                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                    "https://windmill.works", onThreads = {}, onReview = {})
+            }
+        }
+        compose.runOnIdle { thread = listOf(thread.single().copy(answer = AskAnswer("The answer stays readable.", read,
+            proposals = listOf("proposal1")))) }
+        compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
+        propose(room, server, "proposal1", routine, listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
+            exerciseId = "bench-press", before = ProposalTargets(List(3) { SetTarget(5) }),
+            after = ProposalTargets(List(2) { SetTarget(5) }))), "Use one lighter set.", pull = false)
+        compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Proposal · Push A").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Proposal · Push A").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(1, asked)
+            assertEquals(emptyList<String>(), events.map { it.first }.filter { it == "gym_proposal_missing" })
+        }
+        scope.cancel()
+    }
+
+    // Only a pull sent after the wait ended confirms there is no row: one already in flight when the wait ended lands
+    // without settling the miss, and so does the first page of a backlog with more to read.
+    @Test
+    fun aMissSettlesOnlyOnAPullSentAfterItsWaitThatLandsCaughtUp() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val pulls = MutableStateFlow(Pulls())
+        var asked = 0
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), pulls = pulls, pullAgain = { asked++; true })
+            .also { rooms += it }
+        runBlocking { room.select("u1") }
+        room.pull(server)
+        room.store.observeEngine()
+        val replica = room.engine.activeReplica()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        var thread by mutableStateOf(listOf(AskExchange("What next?", requestId = "request1")))
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides recorder(events)) {
+                AskScreen(room.store, thread, emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                    "https://windmill.works", onThreads = {}, onReview = {})
+            }
+        }
+        compose.runOnIdle { thread = listOf(thread.single().copy(answer = AskAnswer("The answer stays readable.", read,
+            proposals = listOf("proposal1")))) }
+        compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
+        compose.runOnIdle { pulls.value = pulls.value.sending(replica) }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.pulled.sent == 1L } }
+        compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
+        compose.runOnIdle {
+            assertEquals(1, asked)
+            pulls.value = pulls.value.ending(replica, 1, landed = true, caughtUp = true)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.runOnIdle { pulls.value = pulls.value.sending(replica).let { it.ending(replica, it.sent, landed = true, caughtUp = false) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(emptyList<String>(), events.map { it.first }.filter { it == "gym_proposal_missing" })
+            pulls.value = pulls.value.sending(replica).let { it.ending(replica, it.sent, landed = true, caughtUp = true) }
+        }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.line).fetchSemanticsNodes().size == 1 }
+        compose.runOnIdle {
+            assertEquals(1, asked)
+            assertEquals(listOf("gym_proposal_missing" to emptyMap<String, String>()), events.filter { it.first == "gym_proposal_missing" })
+        }
         scope.cancel()
     }
 

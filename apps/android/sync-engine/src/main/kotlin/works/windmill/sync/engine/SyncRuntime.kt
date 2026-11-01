@@ -4,6 +4,11 @@ import kotlin.concurrent.withLock
 import kotlinx.coroutines.*
 import works.windmill.sync.api.CommitFailure
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import works.windmill.sync.core.*
@@ -19,6 +24,20 @@ interface ForkGuardStore {
     fun save(value: String)
 }
 interface EngineSleeper { suspend fun sleep(ms: Long) }
+// How the pulls of `replica` stand: `sent` numbers the pulls asked of the server and `ended` counts those that ended;
+// `caughtUp` is the number of the latest one that landed with every scope it named caught up; `failed` says the latest
+// to end did not land, and `blocked` that no pull can be attempted now.
+data class Pulls(val replica: String? = null, val sent: Long = 0, val ended: Long = 0, val caughtUp: Long = 0,
+    val failed: Boolean = false, val blocked: Boolean = false) {
+    fun of(replica: String): Pulls = if (replica == this.replica) this else Pulls(replica, blocked = blocked)
+    fun sending(replica: String): Pulls = of(replica).let { it.copy(sent = it.sent + 1) }
+    fun ending(replica: String, number: Long, landed: Boolean, caughtUp: Boolean): Pulls = if (replica != this.replica) this else
+        copy(ended = ended + 1, failed = !landed, caughtUp = if (caughtUp) maxOf(this.caughtUp, number) else this.caughtUp)
+    // Nothing more is coming for a reader who asked at `asked`: no pull can run, or the latest failed with none in flight
+    // and ended after the ask.
+    fun stalled(asked: Pulls?): Boolean = blocked ||
+        failed && sent == ended && (asked == null || asked.replica != replica || ended > asked.ended)
+}
 object CoroutineSleeper : EngineSleeper { override suspend fun sleep(ms: Long) { delay(ms) } }
 
 class SyncRuntime(private val engine: Engine, private val transport: SyncTransport, private val tokens: SessionTokens,
@@ -56,6 +75,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     @Volatile private var closed = false
     @Volatile private var readinessGeneration = 0L
     @Volatile var upgradeRequired = false; private set
+    private val endedPulls = MutableStateFlow(Pulls())
+    val pulls: StateFlow<Pulls> = endedPulls.asStateFlow()
     @Volatile private var socket: LiveConnection? = null
     private var socketOpenedAt: Long? = null
     @Volatile private var signOutHold: String? = null
@@ -163,7 +184,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             wait(senderWake, 1_000)
         } }
         launchWorker(EngineOperation.pull) { while (isActive && !closed) {
-            try { if (activityAllowed() && foreground && online) pullerStep() }
+            try { publishPullable(); if (activityAllowed() && foreground && online) pullerStep() }
             catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
             catch (_: Exception) { engine.report(EngineOperation.pull, EngineOutcome.failure) }
             wait(pullerWake, 1_000)
@@ -517,6 +538,17 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         return if (draining) again else true
     }
     private fun pulling() = activityAllowed() && !closed && foreground && online && !upgradeRequired
+    // Whether a pull could be attempted at all: on the network, no upgrade required, a seat to pull as, and a subscribed
+    // scope not stopped at this version's digest. Re-read each turn of the puller and published beside the pulls.
+    private fun publishPullable() {
+        val replica = engine.lock.withLock { engine.device.current().id }
+        val blocked = !activityAllowed() || closed || !online || upgradeRequired || pullSeat() == null ||
+            engine.lock.withLock {
+                val cursors = engine.device.current().cursors
+                engine.subscriptions(products).all { cursors[it.text]?.get("digestStop") == Json.of(appVersion) }
+            }
+        endedPulls.update { it.of(replica).copy(blocked = blocked) }
+    }
     suspend fun pullerStep(): Boolean = pullerTurn.withLock {
         if (!pulling() || mono() < pullFloor) return@withLock false
         val seat = pullSeat() ?: return@withLock false
@@ -549,39 +581,49 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             pulled.forEach { pullWanted.remove(it) }
             val send = engine.clock.reading()
             if (!activityAllowed() || !current(seat)) break
-            val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.pull(request, seat.token) } ?: Reply.Unreachable
-            val recv = engine.clock.reading()
-            if (!activityAllowed()) break
-            val response = reply.answer
-            if (response?.requiresUpgrade == true) { requireUpgrade(); break }
-            if (!current(seat)) break
-            if (response != null) {
-                val outcomes = engine.lock.withLock {
-                    if (!activityAllowed() || !current(seat)) return@withLock emptyList()
-                    engine.onPullResponse(request, response, RequestTiming(send, recv), appVersion = appVersion, replicaID = seat.replica)
-                }
-                for (result in outcomes) {
-                    val target = ScopeRef(result.member("scope"))
-                    val outcome = result.member("outcome").str()
-                    engine.lock.withLock {
-                        if (outcome == "ignored") engine.doubts.end(target, mono(), engine::draw)
-                        else if (outcome == "applied") engine.doubts.rows(target, mono())
+            // Every pull sent ends once, in `pulls`: landed when its answer was applied, caught up when no scope it named has more
+            // to read, and unlanded when it failed or a change of seat or activity cut it short.
+            val number = endedPulls.updateAndGet { it.sending(seat.replica) }.sent
+            var landed = false
+            var caughtUp = false
+            try {
+                val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.pull(request, seat.token) } ?: Reply.Unreachable
+                val recv = engine.clock.reading()
+                if (!activityAllowed()) break
+                val response = reply.answer
+                if (response?.requiresUpgrade == true) { requireUpgrade(); break }
+                if (!current(seat)) break
+                if (response != null) {
+                    val outcomes = engine.lock.withLock {
+                        if (!activityAllowed() || !current(seat)) return@withLock null
+                        engine.onPullResponse(request, response, RequestTiming(send, recv), appVersion = appVersion, replicaID = seat.replica)
+                    } ?: break
+                    for (result in outcomes) {
+                        val target = ScopeRef(result.member("scope"))
+                        val outcome = result.member("outcome").str()
+                        engine.lock.withLock {
+                            if (outcome == "ignored") engine.doubts.end(target, mono(), engine::draw)
+                            else if (outcome == "applied") engine.doubts.rows(target, mono())
+                        }
+                        if (outcome in setOf("stale", "reset", "partial", "unsettled")) pullWanted.add(target)
                     }
-                    if (outcome in setOf("stale", "reset", "partial", "unsettled")) pullWanted.add(target)
-                }
-                if (response.status == 200) {
-                    for (target in pulled) { pullWaits.getValue(target).kick(mono()); nextPull[target] = mono() + Constants.PULL_FALLBACK_MS }
-                    response.body?.items("pages")?.filter { it.flag("more") }?.forEach { pullWanted.add(ScopeRef(it.member("scope"))) }
-                } else {
-                    if (response.status == 503) pullFloor = mono() + (response.body?.get("retryAfterMs")?.long() ?: 0)
-                    for (target in pulled) {
-                        pullWanted.add(target)
-                        if (response.status == 503) pullWaits.getValue(target).unavailable(mono(), response.body?.get("retryAfterMs")?.long() ?: 0, engine::draw, socket != null)
-                        else pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null)
+                    if (response.status == 200) {
+                        val more = response.body?.items("pages")?.filter { it.flag("more") }.orEmpty()
+                        landed = true
+                        caughtUp = more.isEmpty() && outcomes.all { it.member("outcome").str() in setOf("applied", "ignored") }
+                        for (target in pulled) { pullWaits.getValue(target).kick(mono()); nextPull[target] = mono() + Constants.PULL_FALLBACK_MS }
+                        more.forEach { pullWanted.add(ScopeRef(it.member("scope"))) }
+                    } else {
+                        if (response.status == 503) pullFloor = mono() + (response.body?.get("retryAfterMs")?.long() ?: 0)
+                        for (target in pulled) {
+                            pullWanted.add(target)
+                            if (response.status == 503) pullWaits.getValue(target).unavailable(mono(), response.body?.get("retryAfterMs")?.long() ?: 0, engine::draw, socket != null)
+                            else pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null)
+                        }
+                        if (response.status == 503) break
                     }
-                    if (response.status == 503) break
-                }
-            } else for (target in pulled) { pullWanted.add(target); pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null) }
+                } else for (target in pulled) { pullWanted.add(target); pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null) }
+            } finally { endedPulls.update { it.ending(seat.replica, number, landed, caughtUp) } }
             engine.lock.withLock { for (target in dueDoubts.filter { it in pulled }) engine.doubts.repulled(target, mono(), engine::draw) }
         }
         true

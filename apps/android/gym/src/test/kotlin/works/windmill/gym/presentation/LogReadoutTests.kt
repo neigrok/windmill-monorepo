@@ -62,7 +62,9 @@ class LogReadoutTests {
             LogReadout.moment(LogEntry.Moment.Best(best), catalog, zone))
         val entry = WeighIn("2026-09-24", 82.4, at)
         assertEquals(LogReadout.Weight("82.4 kg", "0.5 kg down since August", "12:45"),
-            LogReadout.weight(LogEntry.Weight(entry, at), listOf(entry, WeighIn("2026-08-30", 82.9, previousAt)), zone))
-        assertEquals(LogReadout.Weight("82.4 kg", null, null), LogReadout.weight(LogEntry.Weight(entry, null), listOf(entry), zone))
+            LogReadout.weight(LogEntry.Weight(entry, at), listOf(entry, WeighIn("2026-08-30", 82.9, previousAt)), zone, complete = true))
+        assertEquals(LogReadout.Weight("82.4 kg", null, null), LogReadout.weight(LogEntry.Weight(entry, null), listOf(entry), zone, complete = true))
+        assertEquals("before the first pull no change since is claimed", LogReadout.Weight("82.4 kg", null, "12:45"),
+            LogReadout.weight(LogEntry.Weight(entry, at), listOf(entry, WeighIn("2026-08-30", 82.9, previousAt)), zone, complete = false))
     }
 }

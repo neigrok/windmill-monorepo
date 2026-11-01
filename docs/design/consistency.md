@@ -925,20 +925,14 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   drawn only for an unknown result (*Deletion unconfirmed*); Android still shows it while the
   confirmed closure waits for local cleanup, where it is no longer true. Designer to draw the
   subtitle for D4's state.
-- **11u · The log before the first pull (🚧, awaiting owner).** On an account this phone has not
-  pulled yet, the log's foot shows **Retry** over *That read failed.* (`ui/LogScreen.kt` `LogFoot`),
-  but nothing failed: the log is waiting for the first pull (task 72). It keeps that foot when the
-  phone holds workouts logged here, and claims no first workout until the pull lands. Board 05.18 *Reading your
-  log* (Dark `1767:27118`, Daylight `1767:27204`, caption `1767:27286`, in section 05) draws the
-  wait: the workouts this phone holds, with no new best, record dot, weekly line or change since,
-  and a foot reading *Reading your log…* over an M3 indeterminate linear indicator, with no button,
-  once the wait passes 400 ms. When the pull lands, the usual foot returns; when it fails, the foot
-  becomes **Retry** · *That read failed.*, which no Android board draws. A movement's record page
-  before the first pull lists the days this phone holds under *Recent sets* (`ui/RecordScreen.kt`);
-  designer to say whether that heading stays before the pull lands.
-  - *Routines before the first pull.* Routines reads *No routines yet.* (`ui/RoutinesScreen.kt`)
-    while the account it has not pulled holds routines. Owner to say what Routines shows while it
-    waits.
+- **11u · Before the first pull.** The log builds 05.18 (task 72): when the first pull fails or none
+  can run (offline), its foot becomes **Retry** · *That read failed.*, which the caption names for a
+  failed pull and no Android board draws.
+  A movement's record page before the first pull lists the days this phone holds under *Recent sets*
+  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands.
+  - *Routines before the first pull (owner ruling, 2026-11-01).* Routines reads *No routines yet.*
+    (`ui/RoutinesScreen.kt`) while the account it has not pulled holds routines; the owner keeps
+    that line for now.
   - *Set numbers on a workout (owner ruling, 2026-11-01).* Each set row on a workout page leads
     with a quiet count: a bare digit with no *Set* word, the set's position within its movement
     counted 1..N in logged order, never the server's set number, so it never reads *2, 3, 1*;
@@ -973,7 +967,10 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     (`web/src/products/gym/log.js`).
 - **11w · An answer's proposal still arriving (designer).** Coach can answer before its proposal
   reaches the phone; until the miss settles, Android draws nothing in the card's place
-  (`coach/AskScreen.kt`), because no board draws a waiting state for it.
+  (`coach/AskScreen.kt`), because no board draws a waiting state for it. A miss settles 10 s after it,
+  once the phone reads further into the account or a pull asked after its wait lands caught up; the
+  wait's end asks for that pull, so an idle account settles too, and the place then reads *This
+  proposal is no longer available.*
 
 ### Parity rulings (owner, 2026-10-22)
 

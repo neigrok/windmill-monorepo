@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Mutex
@@ -73,6 +75,7 @@ import works.windmill.gym.coach.onboarding.CoachOnboardingStore
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.engine.Pulls
 import works.windmill.sync.schema.Gym
 
 data class RecoveryRead(val origin: String, val userId: String, val identityRevision: Long, val replica: String,
@@ -109,7 +112,8 @@ class TrainingStore(
     coachOnboarding: CoachOnboardingStore? = null,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.Default,
     // Asks the sync runtime for the account's copy again; false when it is not pulling.
-    private val pullAgain: suspend () -> Boolean = { false },
+    internal val pullAgain: suspend () -> Boolean = { false },
+    private val pulls: StateFlow<Pulls> = MutableStateFlow(Pulls()),
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds },
@@ -575,15 +579,37 @@ class TrainingStore(
     // puts it back.
     val recent: List<SessionSummary>
         get() = allSessions.filterNot { it.id in withheldIds }
-    var older: Older by mutableStateOf(Older.More)
+    private var foot: Older by mutableStateOf(Older.More)
+    // How the sync runtime's pulls stand, as the screens read them, and how they stood when Retry last asked for one.
+    var pulled: Pulls by mutableStateOf(pulls.value)
         private set
+    private var retried: Pulls? by mutableStateOf(null)
     // Before the first pull the phone holds part of the account at most, the same completeness the record page reads:
-    // the log's end is unknown, so a short page leaves the foot unread rather than claiming a first workout.
+    // the log's end is unknown, so a short or unanswered page's foot is still reading rather than claiming a first
+    // workout, until no pull of this replica can run or the latest failed since Retry asked for one.
     private val logUnread: Boolean get() = !training.anonymous && !training.firstPullComplete
-    private fun footAfter(page: List<SessionSummary>): Older = when {
-        page.size >= logPage -> Older.More
-        logUnread -> Older.Failed
+    val historyRead: Boolean get() = !logUnread
+    private fun footAfter(page: List<SessionSummary>?): Older = when {
+        page != null && page.size >= logPage -> Older.More
+        logUnread -> Older.Reading
+        page == null -> Older.Failed
         else -> Older.End
+    }
+    val older: Older get() =
+        if (foot == Older.Reading && pulled.replica == controls.engineReplica && pulled.stalled(retried)) Older.Failed else foot
+    // The first pull's wait as the person sees it: the screen shows its bar once the wait passes 400 ms, and how the wait
+    // ended is told once, `read` when the pull lands and `failed` when the foot turns to Retry.
+    var readingShown by mutableStateOf(false)
+        private set
+    fun showReading() {
+        if (older != Older.Reading || readingShown) return
+        readingShown = true
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "first_pull", "state" to "shown"))
+    }
+    private fun footSettled(now: Older) {
+        if (now == Older.Reading || now == Older.Loading || !readingShown) return
+        readingShown = false
+        telemetry.event("gym_action", mapOf("screen" to "log", "action" to "first_pull", "outcome" to if (now == Older.Failed) "failed" else "read"))
     }
     var session: Session? by mutableStateOf(null)                        // the open one, or none
         private set
@@ -764,7 +790,9 @@ class TrainingStore(
             refusals = emptyList()
             logged = emptyList()
             shelved = emptyList()
-            older = Older.More
+            foot = Older.More
+            retried = null
+            readingShown = false
             deliveryRead = DeliveryRead()
             enginePendingSessions = emptySet()
             bodyweightRead = false
@@ -863,6 +891,8 @@ class TrainingStore(
             for (ignored in refreshes) tried("gym.refreshWorkout") { refreshEngine() }
         }
         scope.launch { engine.status.state.collect { refreshes.trySend(Unit) } }
+        scope.launch { pulls.collect { pulled = it } }
+        scope.launch { snapshotFlow { older }.collect { footSettled(it) } }
         scope.launch { engine.notices("gym").notices.collect { refreshes.trySend(Unit) } }
         scope.launch { engine.offers.offers.collect { refreshes.trySend(Unit) } }
         for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))
@@ -1948,10 +1978,13 @@ class TrainingStore(
         is Deletion.Bodyweight -> error("weigh-in deletion requires its engine receipt")
     }
 
-    // The foot's Retry reads the log again; on an account not pulled yet it also asks for the first pull.
+    // The foot's Retry reads the log again; on an account not pulled yet it also asks for the first pull, and the foot
+    // reads again until that pull ends.
     suspend fun retryLog() {
         val unread = logUnread
-        val asked = unread && pullAgain()
+        val before = pulls.value
+        val asked = unread && !before.blocked && pullAgain()
+        if (asked) retried = before
         loadOlder()
         val outcome = when {
             unread -> if (asked) "requested" else "refused"
@@ -1964,18 +1997,14 @@ class TrainingStore(
     // Also re-reads a first page the replica could not answer: with no rows the cursor is absent, which is
     // the top of the log. The cursor is BOTH halves of the sort key, because two sessions can share an instant.
     suspend fun loadOlder(): Unit = logRead.withLock {
-        if (older == Older.Loading || older == Older.End) return
+        if (foot == Older.Loading || foot == Older.End) return
         val seat = owner
-        older = Older.Loading
+        foot = Older.Loading
         val oldest = logged.lastOrNull()
         val page = tried("gym.loadOlder") { readTraining { training.sessions(limit = logPage, before = oldest?.startedAtMs, beforeId = oldest?.id) } }
         if (seat != owner) return
-        if (page == null) {
-            older = Older.Failed
-            return
-        }
-        logged = logged + page.filter { fresh -> logged.none { it.id == fresh.id } }
-        older = footAfter(page)
+        if (page != null) logged = logged + page.filter { fresh -> logged.none { it.id == fresh.id } }
+        foot = footAfter(page)
     }
 
     suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
@@ -2077,7 +2106,7 @@ class TrainingStore(
         if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
         if (page == null) {
             // The foot is where an unread log is said; the rows already in hand stay.
-            older = Older.Failed
+            foot = footAfter(null)
             return
         }
         // A re-read is of the HEAD and does not undo a walk: it can land while a thumb is halfway down
@@ -2099,14 +2128,15 @@ class TrainingStore(
         if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.
-        if (deeper.isEmpty()) older = footAfter(rows)
+        if (deeper.isEmpty()) foot = footAfter(rows)
+        else if (foot == Older.Reading && !logUnread) foot = Older.More
 
         val open = try { readTraining { training.openWorkout() } }
         catch (_: TrainingReadChanged) { return }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             reportFailure("gym.loadLog", failure)
-            older = Older.Failed
+            foot = Older.Failed
             return
         }
         if (!workoutAuthorized || seat != owner || live != controls.session?.id || !controls.writable) return
@@ -2208,7 +2238,7 @@ class TrainingStore(
 }
 
 // There is no state for "empty": a log with no rows has no foot.
-enum class Older { More, Loading, End, Failed }
+enum class Older { More, Loading, End, Reading, Failed }
 
 sealed interface MovementCreateOutcome {
     data class Added(val movement: Exercise) : MovementCreateOutcome

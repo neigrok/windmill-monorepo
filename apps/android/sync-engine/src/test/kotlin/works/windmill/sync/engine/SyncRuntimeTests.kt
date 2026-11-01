@@ -1102,6 +1102,73 @@ class SyncRuntimeTests {
         }
     }
 
+    // A pull answered with every scope's page complete, or with `more` on each: rows-free pages from the epoch's start.
+    private fun pages(request: Json, more: Boolean) = Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000),
+        "epoch" to Json.of("ep-1"), "as" to Json.of("A"), "pages" to Json.Arr(request.member("scopes").arr().map { asked ->
+            Json.objectOf("scope" to asked.member("scope"), "kind" to Json.of("rows"), "rows" to Json.array(),
+                "cursor" to Json.of(WireCursor("ep-1", "live", 0).text), "more" to Json.of(more), "seq" to Json.of(0),
+                "digest" to Json.of(ScopeDigest.ZERO.hex))
+        }))))
+
+    // Every pull sent is numbered and ends once: an unanswered or refused one fails, a page with more to read lands without
+    // catching up, and the pull that reads the rest lands caught up under its own number.
+    @Test fun pullsNumberEachPullAndSayHowTheLatestEnded() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            val replica = fixture.engine.activeReplica()
+            fun pulls() = fixture.runtime.pulls.value.copy(blocked = false)
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            until { pulls().ended == 1L }
+            assertEquals(Pulls(replica, sent = 1, ended = 1, caughtUp = 0, failed = true), pulls())
+            assertTrue(fixture.runtime.pullAgain())
+            val paged = fixture.pull()
+            assertEquals("a pull in flight is sent, not ended", Pulls(replica, sent = 2, ended = 1, failed = true), pulls())
+            paged.answer.complete(pages(paged.request, more = true))
+            until { pulls().ended == 2L }
+            val step = async { fixture.runtime.pullerStep() }
+            val rest = fixture.pull()
+            assertEquals("a page with more lands without catching up", Pulls(replica, sent = 3, ended = 2, caughtUp = 0), pulls())
+            rest.answer.complete(pages(rest.request, more = false))
+            step.await()
+            assertEquals(Pulls(replica, sent = 3, ended = 3, caughtUp = 3), pulls())
+        }
+    }
+
+    // No pull can be attempted off the network or without a token, and the pulls say so beside their count.
+    @Test fun pullsSayWhenNoPullCanBeAttempted() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            until { fixture.runtime.pulls.value.ended == 1L }
+            assertFalse(fixture.runtime.pulls.value.blocked)
+            fixture.runtime.connectivity(false)
+            until { fixture.runtime.pulls.value.blocked }
+            assertFalse(fixture.runtime.pullAgain())
+            fixture.runtime.connectivity(true)
+            until { !fixture.runtime.pulls.value.blocked }
+            fixture.tokens.delete("A")
+            fixture.runtime.enter()
+            until { fixture.runtime.pulls.value.blocked }
+        }
+    }
+
+    // The arithmetic the readers rely on: a pull from another replica starts afresh, an end for a replica no longer
+    // current changes nothing, and a reader who asked sees a failure only once a pull ends after the ask.
+    @Test fun pullsStallOnlyWhenNothingMoreIsComing() {
+        val one = Pulls("one").sending("one").ending("one", 1, landed = false, caughtUp = false)
+        assertEquals(Pulls("one", sent = 1, ended = 1, failed = true), one)
+        assertEquals(Pulls("two", sent = 1), one.sending("two"))
+        assertEquals(one, one.ending("two", 2, landed = true, caughtUp = true))
+        assertTrue(one.stalled(null))
+        assertFalse("asked after it ended", one.stalled(one))
+        assertTrue("asked on another replica", one.stalled(Pulls("two", ended = 5)))
+        assertFalse("a pull in flight", one.sending("one").stalled(null))
+        assertTrue("nothing can run", Pulls("one", blocked = true).stalled(Pulls("one")))
+        assertEquals(1L, Pulls("one").sending("one").ending("one", 1, landed = true, caughtUp = true).caughtUp)
+    }
+
     // With the account's token gone there is no seat to pull as, so nothing is asked and the tap says so.
     @Test fun pullAgainAsksNothingWithoutASeat() = runBlocking {
         Fixture(draw = { it / 2 }).use { fixture ->
