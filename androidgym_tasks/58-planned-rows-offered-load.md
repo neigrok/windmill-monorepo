@@ -1,6 +1,6 @@
 # Planned rows show the load the rack will offer, never the word "last"
 
-**Status:** 🔨 Built on branch `worktree-agent-acf2bb3df30dfb861`, not yet on main. The owner approved the rule on 03.34 on 2026-10-31, including iOS following it; 03.34 is 🚀 In production.
+**Status:** 🚀 On main (`ef0f05fb`) on Android and iOS, not yet in a published release. 03.34 is 🚀 In production.
 
 **Figma:** 03.34 Rack, planned rows: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40960) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41112)
 

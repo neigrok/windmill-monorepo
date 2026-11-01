@@ -1,6 +1,6 @@
 # The routine editor asks before Back discards unsaved changes; Keep editing on both discard questions
 
-**Status:** 🔨 Built on a branch, awaiting merge. The owner approved 02.20 and the revision of 02.17 on 2026-10-31; both boards stay ✅ Ready for dev until the merge.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Boards 02.20 and 02.17 are 🚀 In production.
 
 **Figma:**
 - 02.20 Routine editor, unsaved changes: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-39519) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-39682)

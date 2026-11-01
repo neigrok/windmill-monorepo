@@ -1,6 +1,6 @@
 # The Finish receipt opens full height at large text and never hides Performed
 
-**Status:** 🔨 Built on branch `worktree-agent-acf2bb3df30dfb861`, not yet on main. The owner approved 03.36 on 2026-10-31; 03.15 is approved already.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Boards 03.36 and 03.15 are 🚀 In production.
 
 **Figma:**
 - 03.36 Receipt at 200 %: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41620) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41702)

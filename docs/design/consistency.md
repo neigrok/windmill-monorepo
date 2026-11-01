@@ -865,15 +865,15 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 
   | Gap | Build today | Board (Dark · Daylight) |
   |---|---|---|
-  | In-app predictive back and navigation motion | Built (task 53, awaiting merge): `GymStage` previews pushed screens, the logger and the editor; `WindmillSheet` previews every sheet from its own window, so a busy sheet still swallows Back; shared axis X and fade-through, cuts with Remove animations | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
-  | Nav labels at 320dp/200% | Built (task 54, awaiting merge): labels stay whole, spill into a neighbour's spare width and wrap only at a space (*The / log*) | 00.7 `1745:27419` · `1745:27475` |
-  | Dirty routine draft on Back (4k) | Built (task 56, awaiting merge): Back, the gesture and the back arrow ask on an unsaved draft; a clean one leaves at once | 02.20 `1742:39519` · `1742:39682` |
-  | Movement editor discard wording | Built (task 56, awaiting merge): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
+  | In-app predictive back and navigation motion | Built (task 53): `GymStage` previews pushed screens, the logger and the editor; `WindmillSheet` previews every sheet from its own window, so a busy sheet still swallows Back; shared axis X and fade-through, cuts with Remove animations | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
+  | Nav labels at 320dp/200% | Built (task 54): labels stay whole, spill into a neighbour's spare width and wrap only at a space (*The / log*) | 00.7 `1745:27419` · `1745:27475` |
+  | Dirty routine draft on Back (4k) | Built (task 56): Back, the gesture and the back arrow ask on an unsaved draft; a clean one leaves at once | 02.20 `1742:39519` · `1742:39682` |
+  | Movement editor discard wording | Built (task 56): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
   | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the rack will offer, *22.5 kg total × max*, or *— × max* while last time is unread | 03.34 `1742:40960` · `1742:41112` |
   | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
   | Receipt at 320dp/200% | Built (task 60): the receipt opens full height, the facts wrap two to a row and the body scrolls to *Performed* under the pinned actions. A value no size fits on one line stays at the 16 sp floor and drops only its unit to the next line. *Share with Coach* and *Done* are Material filled tonal and filled buttons with one-line labels, which at 200 % run into the 24 dp side padding as the board draws them. The crown is the 24 dp drawable 8 dp before the label, where the board sets an emoji glyph at the label size | 03.36 `1742:41620` · `1742:41702` |
-  | Weigh-in Undo | Built (task 61): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887`; 05.16 stays as the production picture until 05.17 ships |
+  | Weigh-in Undo | Built (task 61): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887` |
 
   Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
   Dumbbells, and iOS planned rows read the load the rack will offer, as 03.34 draws. 03.34 adds a fit-first
@@ -1136,7 +1136,7 @@ iOS. It and the product differ in these places.
   02.6, 02.11; 11d).
 - **4k · Leaving drafts.** iOS asks *Discard routine changes?* (Discard · Keep editing) on a
   dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`). Android follows the same rule and
-  words (02.20, the revised 02.17; task 56, awaiting merge): Back, the gesture and the back arrow ask
+  words (02.20, the revised 02.17; task 56): Back, the gesture and the back arrow ask
   on an unsaved draft, and the gesture previews nothing while it would ask. Web and restored drafts
   remain open.
 - **4u · Delete scope.** Define whether a held session deletion also filters movement ranking,
@@ -1150,7 +1150,7 @@ iOS. It and the product differ in these places.
   traversal and review-gate transitions in the Android acceptance matrix. Existing source or
   representative captures do not establish the full device matrix.
 - **Narrow tab label.** At 320dp/200% text Android keeps every navigation label whole (00.7,
-  task 54, awaiting merge): *Routines* spills into its neighbour's spare width and *The log* wraps
+  task 54): *Routines* spills into its neighbour's spare width and *The log* wraps
   at its space. The 00.7 caption draws the wrapped label at a 28 sp line; Android keeps the
   label's own 16 sp line scaled to 32 sp.
 

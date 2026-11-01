@@ -1,6 +1,6 @@
 # Navigation labels stay whole at large text; the top app bar tints on scroll
 
-**Status:** 🔨 Built on a branch, awaiting merge. The owner approved 00.7 on 2026-10-31; it stays ✅ Ready for dev until the merge. The top bar's scroll tint conforms to 00.1, which is already approved.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Board 00.7 is 🚀 In production; the top bar's scroll tint conforms to 00.1, which draws no scrolled state (ledger 11v).
 
 **Figma:**
 - 00.7 Navigation bar at 320 dp / 200 %: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1745-27419) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1745-27475)

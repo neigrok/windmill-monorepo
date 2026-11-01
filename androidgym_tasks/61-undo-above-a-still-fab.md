@@ -1,6 +1,6 @@
 # Undo rises above a Weigh-in button that never moves, and lasts the system's accessibility timeout
 
-**Status:** 🔨 Built, awaiting merge. The owner approved 05.17 on 2026-10-31; once shipped, it replaces 05.16.
+**Status:** 🚀 On main (`ef0f05fb`), not yet in a published release. Board 05.17 is 🚀 In production; 05.16 is deleted.
 
 **Figma:** 05.17 Log, weigh-in Undo: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41789) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-41887). Superseded once this ships: 05.16 [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1447-20658).
 
@@ -25,6 +25,5 @@
   - The FAB's bounds are identical with and without the snackbar.
   - The hold equals the accessibility timeout when that is longer than 9 s.
   - Undo inside the window restores the weigh-in.
-- Delete Figma 05.16 after merge: superseded boards are deleted, not archived.
 
 **Depends on:** 05, 24.
