@@ -308,8 +308,8 @@ class FinishSheetTests {
                 assertEquals(listOf(live.id), store.allSessions.map { it.id })
             }
             compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-            compose.onNodeWithText("100 × 5").assertIsDisplayed()
-            compose.onNodeWithText("110 × 3").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Set 1, 100 kg total, 5 reps").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Set 2, 110 kg total, 3 reps").assertIsDisplayed()
             assertEquals(SessionDetail(closed.session, performed), store.retainedSession(SessionDetail(closed.session, emptyList())))
         }
     }

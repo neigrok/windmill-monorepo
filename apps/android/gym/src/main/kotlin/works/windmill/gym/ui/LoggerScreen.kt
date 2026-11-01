@@ -400,7 +400,7 @@ fun LoggerScreen(
                             it.exerciseId == pageMovement && it.id !in store.withheldIds && it.id !in store.deletedSets
                         }
                         val exercise = store.catalog.firstOrNull { it.id == pageMovement }
-                        val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+                        val unit = Readout.loadUnit(exercise)
                         val slots = LiveLines.slots(today, store.session?.id.orEmpty(), store.session?.plan?.entry(pageMovement), store.lastTimeOf(pageMovement),
                             store.stalled, unit)
                         var ledgerBottom by remember(pageMovement) { mutableStateOf(0.dp) }
@@ -465,8 +465,10 @@ fun LoggerScreen(
       }
     }
 
-    // A fix for a set that has since left the ledger has nothing to stand on.
-    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == fix.setId } }
+    // Fix set stands on a row the ledger draws and is titled by that row's count. A fix for a set that has since left
+    // the ledger, held or deleted, has nothing to stand on.
+    val drawnToday = store.todaySets.filter { it.id !in store.withheldIds && it.id !in store.deletedSets }
+    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> drawnToday.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
         // The picker steps back to the workout sheet. Fix set's own handlers answer Back first: a busy save
@@ -548,7 +550,7 @@ fun LoggerScreen(
                         exercise = store.catalog.firstOrNull { it.id == set.exerciseId },
                         origin = FixOrigin.Workout,
                         movement = Readout.movement(set.exerciseId, store.catalog),
-                        setNumber = set.setNumber ?: (store.todaySets.indexOfFirst { it.id == set.id } + 1),
+                        position = drawnToday.indexOf(set) + 1,
                         routine = store.session?.plan?.routine,
                         onSave = { fix ->
                             if (sessionId == null) {
@@ -798,7 +800,7 @@ private fun Rack(
     val skin = LocalGymColors.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+    val unit = Readout.loadUnit(exercise)
     val load = entry.load
     val count = entry.count
     val page = rememberScrollState()

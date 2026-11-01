@@ -48,9 +48,13 @@ object Readout {
     fun targetWithUnit(sets: List<SetTarget>): String =
         target(sets) + if (sets.any { it.weightKg != null }) "kg" else ""
 
+    // The basis a movement's load is read in: `kg total` on a barbell, `kg each` on two dumbbells.
+    fun loadUnit(exercise: Exercise?): String =
+        works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+
     fun targetWithUnit(sets: List<SetTarget>, exercise: Exercise?): String {
         if (sets.none { it.weightKg != null }) return target(sets)
-        val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+        val unit = loadUnit(exercise)
         return "${target(sets)} $unit"
     }
 

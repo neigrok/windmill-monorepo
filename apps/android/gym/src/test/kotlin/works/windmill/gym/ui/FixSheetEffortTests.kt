@@ -46,7 +46,7 @@ class FixSheetEffortTests {
                 FixSheet(
                     set = set,
                     movement = "Bench Press",
-                    setNumber = 2,
+                    position = 2,
                     routine = null,
                     onSave = { saved = it; FixOutcome.Corrected(it.corrected(set)) },
                     onDelete = {},

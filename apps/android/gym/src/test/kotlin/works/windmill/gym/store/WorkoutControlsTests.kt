@@ -55,6 +55,18 @@ class WorkoutControlsTests {
     }
 
     @Test
+    fun setsLoggedAtTheSameInstantKeepOneOrderByTheirIds() {
+        val controls = WorkoutControls(controlsFile())
+        controls.hold(Session(id = "live", startedAtMs = 1_000))
+        controls.store(aSet("set_c", at = 2_000), "live")
+        controls.store(aSet("set_a", at = 2_000), "live")
+        controls.store(aSet("set_b", at = 1_500), "live")
+        controls.store(aSet("set_d", at = 2_000), "live")
+
+        assertEquals(listOf("set_b", "set_a", "set_c", "set_d"), controls.sets.map { it.id })
+    }
+
+    @Test
     fun anUnreadableFileOpensEmptyAndRefusesToBeOverwritten() {
         val file = controlsFile()
         file.writeText("not json at all")
