@@ -18,7 +18,7 @@ Tasks **29–35, 41–42 and 44 are postponed at the user's request**. Preserve 
 
 Tasks 28 and 37 remain active for ordinary chat bubbles, composer/chrome, History and chat lifecycle. Task 37's active prerequisites are 04, 05 and 28; task 30's outcome-word changes are deferred. Keep tool-write content in its current presentation while task 35 waits. Task 49 remains active because its chips and retained draft feed chat input rather than presenting tool-action outputs.
 
-U/P additional proposals are deferred from the current release scope and remain unapproved. A and B.2 recovery proposals still require human approval. The two canonical 08.58b signed-out access screens are ✅ Ready for dev, human-approved 2026-10-28. Z zero-set Finish is 🚀 In production with task 14. D account-deletion recovery is ✅ Ready for dev, human-approved 2026-10-25; its backend receipt/recovery prerequisite is deployed in `ac1e0c75`; Android task 48 remains pending.
+U/P additional proposals are deferred from the current release scope and remain unapproved. A and B.2 recovery proposals still require human approval. The two canonical 08.58b signed-out access screens are 🚀 In production, human-approved 2026-10-28. Z zero-set Finish is 🚀 In production with task 14. D account-deletion recovery is 🚀 In production with task 48, human-approved 2026-10-25; its backend receipt/recovery prerequisite is deployed in `ac1e0c75`.
 
 ## Task matrix
 
@@ -59,7 +59,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | 33 | Postponed from release | [08.21 Target change](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37543); vary/ramp/rest states are ready. |
 | 34 | Postponed from release | [08.29 Known no-write failure](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38166) is ready; [unknown outcome drafts](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3459) need human approval. |
 | 35 | Postponed from release | [08.9 Movement receipt](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28915); note and movement-detail receipts are ready. |
-| 36 | Ready; implementation pending | [08.58 No seat](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28737), existing access states and canonical 08.58b [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306) are ready; 08.58b is human-approved 2026-10-28. The separate B.2 recovery card remains unapproved. |
+| 36 | In production | [08.58 No seat](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28737), existing access states and canonical 08.58b [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306) are 🚀 In production; 08.58b is human-approved 2026-10-28. [08.8 Day cap](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28820) stays ✅ Ready for dev while task 36 lists an open defect in it. The separate B.2 recovery card remains unapproved. |
 | 37 | Ready | [08.4 History](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28552), [08.61 Pending reply](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1442-18583) and restored draft are ready. |
 | 38 | Transport; scoped visuals | Transport, durable archive and atomic local import can proceed. Approved bound-installation access uses 36’s canonical 08.58b; other undrawn anonymous-refusal and request-recovery presentations retain their separate approval gates. |
 | 39 | Ready | [01.1 Setup greeting](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-4776); signed-in twin is ready. |
@@ -71,7 +71,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | 45 | Ready | [03.5 Hide workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41318). |
 | 46 | Ready | [Shell 16a You](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-1569); signed-in twin is ready. |
 | 47 | Ready | [Shell 16c Sign out](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1053); unconfirmed-change states are ready. |
-| 48 | Design and backend prerequisite ready; Android pending | [Shell 27a Delete account](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1269) through 27g and [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ready. D is human-approved 2026-10-25; backend reconciliation is deployed in `ac1e0c75`. Task 48 owns Android integration and acceptance. |
+| 48 | In production | [Shell 27a Delete account](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1269) through 27g and [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are 🚀 In production. D is human-approved 2026-10-25; backend reconciliation is deployed in `ac1e0c75`. |
 | 49 | Ready | [01.17 Coach choice](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40111); local retained-draft twin is ready. |
 | 50 | Ready | [02.13 Routine history](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39087). |
 | 51 | Ready | [09.3 Connected log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39148); explanation, empty and signed-out Notes states are ready. |
@@ -90,7 +90,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | P · deferred from release scope, unapproved | `android-coach-partial-drafts-design` | Pending, saved and refused account drafts together; Retry/Reject scoped to unresolved work and durable per-draft receipts. |
 | B · access approved; recovery unapproved | `android-coach-bound-installation-design` | Canonical 08.58b signed-out access retains History and Sign in with no anonymous Send; human-approved 2026-10-28. B.2 recovery of already-submitted requests remains unapproved. |
 | A · unapproved | Consistency ledger 6t | Anonymous provider refusal, truncated output, invalid/unavailable installation credentials, waiting versus local saving, and truthful Stop waiting copy. Task 38 must retain the originating draft. |
-| D · approved | `android-account-delete-recovery-design` | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25. The `account-delete-reconciliation` backend contract is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance. |
+| D · approved | `android-account-delete-recovery-design` | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is 🚀 In production, human-approved 2026-10-25. The `account-delete-reconciliation` backend contract is deployed in `ac1e0c75`; task 48 ships it in Android 0.14.0. |
 
 The [combined editor Load keyboard](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1452-22388)
 and its [Daylight twin](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1452-22836)
@@ -106,7 +106,7 @@ contains deferred U/P drafts, unapproved B.2 recovery drafts and the approved Z 
 [Anonymous refusals and access](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5069),
 [anonymous waiting and local saving](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5070)
 and [Shell deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754)
-complete the recovery handoffs. D is **✅ Ready for dev** and Z is **🚀 In production**, both human-approved 2026-10-25.
+complete the recovery handoffs. D and Z are **🚀 In production**, both human-approved 2026-10-25.
 U/P are deferred from this release scope and remain unapproved. A and B.2 remain **💡 Needs human review**
 and do not authorize visual implementation. The approved 08.58b access screens are on the Android design page. E, N and M retain their existing supported
 presentation/routes; no optional replacement is part of this review. Ready portions, domain logic

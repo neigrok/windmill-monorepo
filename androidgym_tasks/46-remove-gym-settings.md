@@ -1,6 +1,6 @@
 # Remove Gym settings and the lb toggle; You holds Notes, Connected log and About Windmill (Shell file)
 
-**Status:** On main with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`), in Android 0.14.0. Its boards are ✅ Ready for dev. Native acceptance passed on the local stack (API 37 emulator, 2026-10-31): 16a and 16b match in Dark and Daylight and at 200 % text, and `capture-recipes/you-account.json` reproduces them; Notes, Connected log and About Windmill open from You, and `gym_screen_viewed` `notes` and `connections` reach the first-party intake with no `settings` view.
+**Status:** On main with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`), in Android 0.14.0. Its boards are 🚀 In production. Native acceptance passed on the local stack (API 37 emulator, 2026-10-31): 16a and 16b match in Dark and Daylight and at 200 % text, and `capture-recipes/you-account.json` reproduces them; Notes, Connected log and About Windmill open from You, and `gym_screen_viewed` `notes` and `connections` reach the first-party intake with no `settings` view.
 
 **Figma:**
 - Shell · Android 16a You, signed out: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-1569) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-719)

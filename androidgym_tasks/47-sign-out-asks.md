@@ -1,6 +1,6 @@
 # Sign out asks first, and offers Keep or Discard for unconfirmed changes (Shell file)
 
-**Status:** On main with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`), in Android 0.14.0. Its boards are ✅ Ready for dev. Native acceptance passed on the local stack (2026-10-31): 16c and 16e match in Dark and Daylight, 16e at 200 % text, and the question survives recreation with its count. Keep sends the held changes at the next sign-in and Discard leaves none, each also after a process kill between the choice and the engine finish; `auth_sign_out` reports only a real failure. An unreadable sealed choice now finishes the sign-out as Keep at the next launch, reports once and leaves sign-in working (JVM test); native re-acceptance is pending.
+**Status:** On main with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`), in Android 0.14.0. Its boards are 🚀 In production. Native acceptance passed on the local stack (2026-10-31): 16c and 16e match in Dark and Daylight, 16e at 200 % text, and the question survives recreation with its count. Keep sends the held changes at the next sign-in and Discard leaves none, each also after a process kill between the choice and the engine finish; `auth_sign_out` reports only a real failure. An unreadable sealed choice now finishes the sign-out as Keep at the next launch, reports once and leaves sign-in working (JVM test); native re-acceptance is pending.
 
 **Figma:**
 - Shell · Android 16c Sign out?: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1053) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1215)
@@ -11,7 +11,6 @@
 - You opens the engine’s held sign-out question and displays its unconfirmed count. Cancel restores the current account; Keep and Discard finish only the prepared original account.
 - AuthStore retains the question across UI recreation. It persists the exact account and confirmed choice before engine completion, then persists cleanup owed before clearing credentials. Restart recovery never replaces Discard with Keep or signs out a newer account.
 - The transition fences product writes at entry and commit, notification actions and ordinary sync workers. Only the already-accepted workout controls drain before the held count. Startup recovery runs before runtime launch, token pruning and held-release workers.
-- Native Dark/Daylight acceptance and collector verification remain pending; this source is not marked in production.
 
 **Change**
 - **Sign out** opens the engine's sign-out first and reads `unsent`, then asks:
