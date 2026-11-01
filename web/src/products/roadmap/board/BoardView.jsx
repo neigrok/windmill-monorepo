@@ -1,11 +1,12 @@
-// The Board view layer: the identity row where no chrome carries one, the device notice, then Locked, Up next and Done as plain stacks.
+// The Board view layer: the identity row where no chrome carries one, the device notice, then the columns for the band.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './board.css';
 import { Board } from './Board.js';
-import { StepCard } from './StepCard.jsx';
+import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
+import { PhoneSegments } from './PhoneSegments.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
-import { COLUMN_TITLES, columnHeadingLabel, formatCount, progressFigure, progressLabel, showAllDone } from './copy.js';
+import { progressFigure, progressLabel } from './copy.js';
 
 export default function BoardView({
   tree,
@@ -16,20 +17,43 @@ export default function BoardView({
   title,
   notice = null,
   identity = false,
-  phone = false,
+  breakpoint,
+  active = false,
   onSwitchView,
-  underTopbar = false,
-  laneInset = 0,
+  topInset = 0,
+  bottomInset = 0,
 }) {
   const board = useMemo(() => new Board(tree, { completed, completedAt }), [tree, completed, completedAt]);
   const [doneExpanded, setDoneExpanded] = useState(false);
-  const recentDone = board.recentDone();
-  const cardsOf = (column) => (column.name === 'done' && !doneExpanded ? recentDone.cards : column.cards);
+  const [railed, setRailed] = useState(DEFAULT_RAIL);
+  const [shown, setShown] = useState('upNext');
+  const [wasActive, setWasActive] = useState(false);
+  const boardRef = useRef(null);
+  const phone = breakpoint === 'phone';
+
+  // Shown with a step selected (Graph → Board, a link): its column opens — the phone's tab, past the Done fold,
+  // out of the tablet's rail. A follow, never a pick, so it emits nothing.
+  if (active !== wasActive) {
+    setWasActive(active);
+    const column = active ? board.columnOf(selectedId) : null;
+    if (column !== null) setShown(column);
+    if (column === 'done' && !board.recentDone().cards.some((card) => card.id === selectedId)) setDoneExpanded(true);
+    if (column !== null && breakpoint === 'tablet') setRailed((current) => railToReveal(current, column));
+  }
+
+  // Then its card scrolls into view at once, so reduced motion has nothing to opt out of.
+  useEffect(() => {
+    if (!active) return;
+    boardRef.current?.querySelector('.st-board-card[aria-current="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  }, [active]);
+
+  const onExpandDone = () => setDoneExpanded(true);
 
   return (
     <div
-      className={`st-board ${phone ? 'st-board--phone' : ''} ${underTopbar ? 'st-board--under-topbar' : ''}`}
-      style={{ paddingBottom: laneInset }}
+      ref={boardRef}
+      className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
+      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + var(--space-3))` : undefined, paddingBottom: bottomInset }}
     >
       {identity && (
         <header className="st-board-identity">
@@ -42,23 +66,30 @@ export default function BoardView({
         </header>
       )}
       {notice}
-      {board.columns.map((column) => (
-        <section key={column.name} className="st-board-column">
-          <h2 className="st-board-column-heading" aria-label={columnHeadingLabel({ column: column.name, count: column.count })}>
-            {COLUMN_TITLES[column.name]} {formatCount(column.count)}
-          </h2>
-          <div className="st-board-column-cards">
-            {cardsOf(column).map((card) => (
-              <StepCard key={card.id} card={card} selected={card.id === selectedId} onSelect={onSelect} />
-            ))}
-          </div>
-          {column.name === 'done' && recentDone.folded && !doneExpanded && (
-            <button type="button" className="st-board-show-all" onClick={() => setDoneExpanded(true)}>
-              {showAllDone({ total: recentDone.total })}
-            </button>
-          )}
-        </section>
-      ))}
+      {phone
+        ? (
+          <PhoneSegments
+            board={board}
+            shown={shown}
+            onShow={setShown}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            doneExpanded={doneExpanded}
+            onExpandDone={onExpandDone}
+          />
+        )
+        : (
+          <BoardColumns
+            board={board}
+            band={breakpoint}
+            railed={railed}
+            onShowRail={() => setRailed(swapRail)}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            doneExpanded={doneExpanded}
+            onExpandDone={onExpandDone}
+          />
+        )}
     </div>
   );
 }

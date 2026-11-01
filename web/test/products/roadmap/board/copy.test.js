@@ -25,6 +25,7 @@ import {
   progressFigure,
   progressLabel,
   showAllDone,
+  showColumn,
   branchChip,
   completedToast,
   completedOutcome,
@@ -46,12 +47,14 @@ test('copy — one word per state, one title per column, one label per sort', ()
   assert.deepEqual(COLUMN_TITLES, { locked: 'Locked', upNext: 'Up next', done: 'Done' });
   assert.deepEqual(SORT_LABELS, { roadmap: 'Roadmap order', newest: 'Created · newest', oldest: 'Created · oldest' });
   assert.deepEqual(LABELS, {
+    columns: 'Columns',
     findStep: 'Find a step',
     filterByKind: 'Filter by kind',
     allKinds: 'All',
     newStep: 'New step',
     recolor: 'Recolor',
     undo: 'Undo',
+    show: 'Show',
     allSubtasksDone: 'All subtasks done · Complete step',
   });
 });
@@ -81,6 +84,7 @@ test('copy — headings, progress and the Done fold speak in steps', () => {
   assert.equal(progressLabel({ done: 3, total: 8 }), '3 of 8 steps done');
   assert.equal(progressLabel({ done: 0, total: 1 }), '0 of 1 step done');
   assert.equal(showAllDone({ total: 3200 }), 'Show all 3,200');
+  assert.deepEqual(['locked', 'done'].map((column) => showColumn({ column })), ['Show Locked', 'Show Done']);
   assert.equal(branchChip({ step: 'Read the wind' }), 'Branch · Read the wind');
 });
 

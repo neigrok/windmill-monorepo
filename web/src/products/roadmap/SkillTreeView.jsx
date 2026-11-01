@@ -81,6 +81,8 @@ const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const BOARD_OPEN = boardOpen();
+// The reader's Fork this tree pill: 18px off the bottom edge and 50px tall, as MobileChrome places it.
+const FORK_PILL_FOOTPRINT = 18 + 50;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const NEXT_UP_SELECT_MS = 540;
@@ -334,6 +336,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [laneInset, setLaneInset] = useState(0); // px
+  const [topbarBottom, setTopbarBottom] = useState(0); // px
   const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
@@ -1331,7 +1334,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const laneLift = Math.max(
     0,
     sheetOpenNow ? (mobileEditable ? 300 : 216) + 12 - 16 : 0,
-    forkPresent ? (18 + 50 + 12) - 16 : 0,
+    forkPresent ? FORK_PILL_FOOTPRINT + 12 - 16 : 0,
   );
 
   const deviceNotice = status === 'ghost' && treeMine && !demo ? (
@@ -1585,6 +1588,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const laneShare = mobileEditable && tree && tree.nodes.length > 0 ? (
     <LaneButton icon="share" label="Share" onClick={() => setShareOpen(true)} />
   ) : null;
+  // The Board draws no lane on any band: Ask AI and Share wait for its roadmap row and sheet.
+  const laneShown = (lanePill || laneTend || laneShare) && !boardActive;
   // The docked panel: the editor's dock hosts the composer, a step or the feed; a reader's dock only a step.
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
   const dockOpen = readOnly
@@ -1704,10 +1709,11 @@ export function SkillTreeView({ treeId, demo = false }) {
               title={tree.title}
               notice={deviceNotice}
               identity={readOnly}
-              phone={phone}
+              breakpoint={breakpoint}
               onSwitchView={switchView}
-              underTopbar={!readOnly}
-              laneInset={lanePill || laneTend || laneShare ? laneInset : 0}
+              topInset={readOnly ? 0 : topbarBottom}
+              active={boardActive}
+              bottomInset={forkPresent ? FORK_PILL_FOOTPRINT : 0}
             />
           </ErrorBoundary>
         </div>
@@ -1749,6 +1755,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onShowAll={handleShowAll}
           viewSwitch={viewSwitch}
           board={boardActive}
+          onBottom={BOARD_OPEN ? setTopbarBottom : undefined}
           onShare={() => setShareOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
@@ -1758,7 +1765,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {(lanePill || laneTend || laneShare) && (
+      {laneShown && (
         <ActionLane lift={laneLift} onHeight={setLaneInset} left={lanePill} center={laneTend} right={laneShare} />
       )}
 

@@ -1,13 +1,25 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, viewSwitch = null, board = false, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, viewSwitch = null, board = false, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity, onBottom }) {
+  const barRef = useRef(null);
   const activityHint = keyHint('Activity feed');
   const focusHint = keyHint('Focus on a step');
   const showAllHint = keyHint('All steps');
+  // Hands the host where the bar's content ends, measured from its top, so a layer below can start under it.
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar || !onBottom) return undefined;
+    const report = () => onBottom(bar.offsetHeight - parseFloat(getComputedStyle(bar).paddingBottom));
+    report();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(report) : null;
+    observer?.observe(bar);
+    return () => observer?.disconnect();
+  }, [onBottom]);
+
   return (
-    <div className="st-topbar">
+    <div className="st-topbar" ref={barRef}>
       <div className="st-brand">
         <a className="st-brand-home" href="#/" aria-label="Windmill — home">
           <span className="st-brand-name">Windmill</span>
