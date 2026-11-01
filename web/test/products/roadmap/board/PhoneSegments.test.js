@@ -68,11 +68,19 @@ function learnToSailMarkup(shown, selectedId = null) {
       card('done', 'sky', 'parts', 'Name the boat parts', { selected: selectedId === 'parts' }),
       card('done', 'terracotta', 'course', 'Choose a sailing course', { excerpt: 'Book a beginner course.' }),
     ]),
-    '</div><div class="st-board-phone-band"><div class="st-board-phone-segments" role="tablist" aria-label="Columns">',
+    '</div><div class="st-board-phone-band"><div class="st-board-phone-row"><div class="st-board-phone-segments" role="tablist" aria-label="Columns">',
     tab('locked', 'Locked', '3', 'Locked, 3 steps', shown === 'locked'),
     tab('upNext', 'Up next', '2', 'Up next, 2 steps', shown === 'upNext'),
     tab('done', 'Done', '3', 'Done, 3 steps', shown === 'done'),
-    '</div></div></div>',
+    '</div><button type="button" class="st-board-tool" aria-label="Sort" aria-haspopup="dialog" aria-expanded="false">',
+    '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
+    '<path d="M7 15.5V4.5M9.5 7L7 4.5L4.5 7M13 4.5V15.5M15.5 13L13 15.5L10.5 13"></path></svg></button></div>',
+    '<div class="st-board-phone-tools"><div class="st-board-find st-board-find--phone ">',
+    '<svg class="st-board-find-glyph" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" aria-hidden="true">',
+    '<path d="M12.975 8.1C12.975 10.7924 10.7924 12.975 8.1 12.975C5.40761 12.975 3.225 10.7924 3.225 8.1C3.225 5.40761 5.40761 3.225 8.1 3.225C10.7924 3.225 12.975 5.40761 12.975 8.1Z"></path>',
+    '<path d="M12 12L15.375 15.375"></path></svg>',
+    '<input class="st-board-find-input" type="search" placeholder="Find a step" aria-label="Find a step" aria-keyshortcuts="/" enterKeyHint="search" autoComplete="off" spellcheck="false" value=""/>',
+    '</div></div></div></div>',
   ].join('');
 }
 
@@ -208,7 +216,7 @@ test('Chromium: tapping a tab shows its column, and each column keeps its own sc
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
   try {
-    assert.deepEqual(await shown(page), { tab: 'Up next, 30 steps', panes: ['Up next · 22 cards · 0'] });
+    assert.deepEqual(await shown(page), { tab: 'Up next, 30 steps', panes: ['Up next · 21 cards · 0'] });
     await scrollShown(page, 600);
 
     await page.getByRole('tab', { name: 'Locked, 1,770 steps' }).click();

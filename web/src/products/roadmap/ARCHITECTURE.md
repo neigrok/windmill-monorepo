@@ -27,7 +27,24 @@ the List's place, owners open on the Board and visitors on the Graph, and the se
 across. The desktop editor's topbar carries the Board/Graph switch on both views; elsewhere the Board's
 identity row carries it, and the Graph's rides the action lane on phones and tablets. A desktop
 visitor's Graph has no switch yet. While the Board stands in for a roadmap that has not loaded, the topbar names
-none and offers no Share, and after a failed load it offers no switch. Graph keyboard shortcuts do not act on the Board.
+none and offers no Share, and after a failed load it offers no switch. Graph keyboard shortcuts do not act on the Board;
+`/` focuses *Find a step* there instead of opening Ask AI, which keeps ⌘K, and on the desktop G switches Board and Graph
+through the same switch wherever one is shown (`boardKey` in `shortcuts/shortcutMap.js`). Neither acts while typing in a
+field or while a step is open over the Board.
+
+`SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
+branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`
+scopes the Board to a step, every ancestor and every descendant; availability and progress still read the whole roadmap.
+Kinds narrow only among the kinds a roadmap wears (`kindOptions` in `model/Legend.js`), so a roadmap wearing one kind
+shows no filter and a kind with no control left hides nothing. From 744px a strip over the columns holds the branch
+scope, All and one named swatch per kind, and the sort menu (Roadmap order, or Created newest or oldest, for Locked and
+Up next; Done keeps its newest completions); *Find a step* rides the desktop editor's topbar and the identity row
+elsewhere (`board/BoardControls.jsx`). On phones the band's first row adds Sort beside the tabs and its second holds
+*Find a step* and Filter, each of Sort and Filter opening a sheet; the branch scope and a removable chip per kind on and
+for a non-default order sit over the panes, and Sort and Filter wear a dot while they narrow. A column the query emptied
+names its way out: *Clear search*, *Clear filters* (the kinds; the branch clears only on its own) or *Clear both*; from
+744px, when every column is empty, only Up next says so. A control the query took away hands focus to the columns' tab
+stop.
 
 From 1024px the Board stands Locked, Up next and Done side by side, each column scrolling under its
 sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures while
@@ -77,7 +94,7 @@ saved view.
 | Area | Responsibility |
 |---|---|
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. |
-| `board/` | The Board view behind its development gate: derived columns, cards, the Board/Graph switch and every Board string. |
+| `board/` | The Board view behind its development gate: derived columns, cards, find, filter, sort and branch scope, the Board/Graph switch and every Board string. |
 | `layout/` | Deterministic layout engines behind `index.js`. |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |

@@ -78,7 +78,7 @@ test('the two edges a room may re-hue are tokens, and only gym re-points them', 
       .filter((each) => typeof each === 'string' && each.endsWith('.css'))
       .map((each) => fs.readFileSync(path.join(SRC, room, each), 'utf8'))
       .join('\n');
-    assert.equal(/--field-focus-edge|--chip-selected-edge/.test(inside), false, room);
+    assert.equal(/(--field-focus-edge|--chip-selected-edge)\s*:/.test(inside), false, room);
   }
 });
 

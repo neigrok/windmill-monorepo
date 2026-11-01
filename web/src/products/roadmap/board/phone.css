@@ -47,7 +47,7 @@
   color: var(--text-primary);
 }
 
-/* ---- Band: the tabs in thumb reach above the home indicator. ---- */
+/* ---- Band: its rows in thumb reach above the home indicator — the tabs with Sort, then Find a step and Filter. ---- */
 .st-board-phone-band {
   flex-shrink: 0;
   display: flex;
@@ -116,7 +116,7 @@
   outline-offset: 2px;
 }
 
-/* ---- Large text: Locked and Up next share a row when they fit, Done takes the last alone; the title gives its room to the cards. ---- */
+/* ---- Large text: Locked and Up next share a row when they fit, Done takes the last with Sort; the title gives its room to the cards. ---- */
 @container st-board-phone (max-width: 15em) {
   .st-board-phone-heading {
     display: none;
@@ -135,6 +135,18 @@
   }
   .st-board-phone-segment:last-child {
     flex-basis: 100%;
+  }
+  /* Sort joins the last row of tabs, at its end. */
+  .st-board-phone-row {
+    position: relative;
+  }
+  .st-board-phone-row > .st-board-tool {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+  }
+  .st-board-phone-row .st-board-phone-segment:last-child {
+    flex: 0 1 calc(100% - 44px - var(--space-2));
   }
   .st-board-phone-segment-surface {
     align-self: stretch;

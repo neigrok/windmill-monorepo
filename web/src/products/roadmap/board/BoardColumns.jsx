@@ -7,6 +7,8 @@ import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { Chevron, ColumnCards, useArrivals } from './ColumnCards.jsx';
 import { UpNextRest } from './BoardStates.jsx';
+import { ColumnEmpty } from './BoardControls.jsx';
+import { BoardQuery } from './Board.js';
 import { RAIL, columnStops, useRovingFocus } from './traversal.js';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount, showColumn } from './copy.js';
 
@@ -27,8 +29,11 @@ export function railToReveal(railed, column) {
   return column === railed ? swapRail(railed) : railed;
 }
 
-// The columns are one tab stop: the arrow keys rove across every card, the Show all row and a rail's Show.
-export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone }) {
+// The columns are one tab stop: the arrow keys rove across every card, the Show all row and a rail's Show. A column the
+// query emptied names its way out; when every column is empty, only Up next does.
+export function BoardColumns({
+  board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), onQuery,
+}) {
   const showPressed = useRef(false);
   const stage = columnStage({ band, railed });
   const [arrived, settle] = useArrivals(board);
@@ -42,6 +47,8 @@ export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSe
     stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(shown[column.name]),
   })), [shown, band, railed]);
   const roving = useRovingFocus(layout);
+  const everyEmpty = board.columns.every((column) => column.count === 0);
+  const emptied = (column) => column.count === 0 && query.recovery !== null && (column.name === 'upNext' || !everyEmpty);
 
   // The rail that was pressed has stood up and a new rail took its place, so focus moves to that rail's Show.
   useEffect(() => {
@@ -79,7 +86,7 @@ export function BoardColumns({ board, band, railed, onShowRail, selectedId, onSe
         )
         : (
           <FullColumn key={column.name} column={column}>
-            {column.name === 'upNext' && upNextRest !== null ? upNextRest : (
+            {column.name === 'upNext' && upNextRest !== null ? upNextRest : emptied(column) ? <ColumnEmpty query={query} onQuery={onQuery} /> : (
               <ColumnCards
                 shown={shown[column.name]}
                 stopId={roving.stopIn(column.name)}

@@ -1,18 +1,23 @@
-// Below 744px: one column at a time over the bottom band's Locked · Up next · Done tabs; each column's pane keeps its scroll
-// and its own place for the arrow keys, which move between its cards.
+// Below 744px: one column at a time over the bottom band: the Locked · Up next · Done tabs with Sort, then Find a step and
+// Filter. The branch in scope and the chips for what narrows sit over the panes; each pane keeps its scroll and its own
+// place for the arrow keys, which move between its cards, and a pane the query emptied names its way out.
 
 import React, { useContext, useId, useMemo, useRef, useState } from 'react';
 import './phone.css';
 import { track } from '../../../telemetry/beacon.js';
 import { ColumnCards, useArrivals } from './ColumnCards.jsx';
 import { UpNextRest } from './BoardStates.jsx';
+import { ActiveFilters, PaneEmpty, PhoneSort, PhoneTools } from './BoardControls.jsx';
+import { BoardQuery } from './Board.js';
 import { columnStops, useRovingFocus } from './traversal.js';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount } from './copy.js';
 
 const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
 // The shown column is the host's: a pick here emits roadmap_board_column, the host following a selected step does not.
-export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, doneExpanded, onExpandDone }) {
+export function PhoneSegments({
+  board, shown, onShow, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery,
+}) {
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
   const tabs = useRef({});
   const idPrefix = useId();
@@ -64,6 +69,7 @@ export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, done
 
   return (
     <div className="st-board-phone">
+      <ActiveFilters board={board} worn={worn} query={query} onQuery={onQuery} onSelect={onSelect} />
       <div className="st-board-phone-panes" ref={roving.ref} onFocus={focus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
         {board.columns.map((column) => (
           <div
@@ -77,7 +83,7 @@ export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, done
             onScroll={(event) => handleScroll(column.name, event)}
           >
             <h2 className="st-board-phone-heading">{COLUMN_TITLES[column.name]}</h2>
-            {column.name === 'upNext' && upNextRest !== null ? upNextRest : (
+            {column.name === 'upNext' && upNextRest !== null ? upNextRest : column.count === 0 && query.recovery !== null ? <PaneEmpty query={query} onQuery={onQuery} /> : (
               <ColumnCards
                 shown={shownCards[column.name]}
                 stopId={roving.stopIn(column.name)}
@@ -92,28 +98,32 @@ export function PhoneSegments({ board, shown, onShow, selectedId, onSelect, done
         ))}
       </div>
       <div className="st-board-phone-band">
-        <div className="st-board-phone-segments" role="tablist" aria-label={LABELS.columns} onKeyDown={handleKeyDown}>
-          {board.columns.map((column) => (
-            <button
-              key={column.name}
-              ref={(node) => { tabs.current[column.name] = node; }}
-              id={tabId(column.name)}
-              type="button"
-              role="tab"
-              className="st-board-phone-segment"
-              aria-label={columnHeadingLabel({ column: column.name, count: column.count })}
-              aria-selected={column.name === shown}
-              aria-controls={panelId(column.name)}
-              tabIndex={column.name === shown ? 0 : -1}
-              onClick={() => choose(column.name)}
-            >
-              <span className="st-board-phone-segment-surface">
-                <span className="st-board-phone-segment-label">{COLUMN_TITLES[column.name]}</span>
-                <span className="st-board-phone-segment-count">{formatCount(column.count, { compact: true })}</span>
-              </span>
-            </button>
-          ))}
+        <div className="st-board-phone-row">
+          <div className="st-board-phone-segments" role="tablist" aria-label={LABELS.columns} onKeyDown={handleKeyDown}>
+            {board.columns.map((column) => (
+              <button
+                key={column.name}
+                ref={(node) => { tabs.current[column.name] = node; }}
+                id={tabId(column.name)}
+                type="button"
+                role="tab"
+                className="st-board-phone-segment"
+                aria-label={columnHeadingLabel({ column: column.name, count: column.count })}
+                aria-selected={column.name === shown}
+                aria-controls={panelId(column.name)}
+                tabIndex={column.name === shown ? 0 : -1}
+                onClick={() => choose(column.name)}
+              >
+                <span className="st-board-phone-segment-surface">
+                  <span className="st-board-phone-segment-label">{COLUMN_TITLES[column.name]}</span>
+                  <span className="st-board-phone-segment-count">{formatCount(column.count, { compact: true })}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <PhoneSort query={query} onQuery={onQuery} />
         </div>
+        <PhoneTools worn={worn} query={query} onQuery={onQuery} />
       </div>
     </div>
   );

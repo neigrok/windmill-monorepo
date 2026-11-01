@@ -3,6 +3,12 @@
 export const STATE_WORDS = { locked: 'locked', upNext: 'up next', done: 'done' };
 export const COLUMN_TITLES = { locked: 'Locked', upNext: 'Up next', done: 'Done' };
 export const SORT_LABELS = { roadmap: 'Roadmap order', newest: 'Created · newest', oldest: 'Created · oldest' };
+export const SORT_MENU = {
+  title: 'Sort',
+  created: 'Created',
+  options: { roadmap: 'Roadmap order', newest: 'Newest first', oldest: 'Oldest first' },
+  roadmapDetail: 'Closest to start, then most unlocks',
+};
 
 export const LABELS = {
   columns: 'Columns',
@@ -14,6 +20,11 @@ export const LABELS = {
   undo: 'Undo',
   show: 'Show',
   allSubtasksDone: 'All subtasks done · Complete step',
+  sort: 'Sort',
+  branch: 'Branch',
+  clearBranch: 'Clear branch',
+  clearSearch: 'Clear search',
+  close: 'Close',
 };
 
 export const VIEW_SWITCH = { group: 'View', board: 'Board', graph: 'Graph' };
@@ -28,6 +39,7 @@ export const LOAD_ERROR = {
 export const SAVE_FAILURE = { body: 'Couldn’t save. Your draft is kept.', retry: 'Retry', keepEditing: 'Keep editing' };
 export const DISCARD_DRAFT = { title: 'Discard draft?', body: 'Your changes will be lost.', keepEditing: 'Keep editing', discard: 'Discard' };
 export const FILTERED_EMPTY = { title: 'No steps match', action: 'Clear filters' };
+export const CLEAR_BOTH = 'Clear both';
 export const SYNC_STATUS = { saving: 'Saving…', saved: 'Saved', offline: 'Offline · changes will sync' };
 export const REFUSED_SYNC = { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' };
 export const ANONYMOUS_OWNER = 'Saved on this device — sign in to keep it';
@@ -149,5 +161,16 @@ export function roadmapComplete({ total }) {
 
 export function searchEmpty({ query }) {
   const asked = query.trim();
-  return { title: `No steps match “${asked}”`, clear: 'Clear search', create: `New step “${asked}”` };
+  return { title: `No steps match “${asked}”`, clear: LABELS.clearSearch, create: `New step “${asked}”` };
+}
+
+// What an emptied column says, by the way out it names: the search, the kinds or both.
+export function emptyColumn({ recovery, search }) {
+  if (recovery === 'kinds') return { title: FILTERED_EMPTY.title, action: FILTERED_EMPTY.action };
+  const { title, clear } = searchEmpty({ query: search });
+  return { title, action: recovery === 'both' ? CLEAR_BOTH : clear };
+}
+
+export function removeChip({ label }) {
+  return `Remove ${label}`;
 }

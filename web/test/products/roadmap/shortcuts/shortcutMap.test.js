@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyLabel, visibleGroups, keyHint, detectPlatform, graphOnlyKey, SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
+import { keyLabel, visibleGroups, keyHint, detectPlatform, graphOnlyKey, boardKey, SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
 
 test('keyLabel swaps the four platform keys on Windows', () => {
   assert.equal(keyLabel('⌘', 'windows'), 'Ctrl');
@@ -63,4 +63,20 @@ test('graphOnlyKey — select all, delete, the activity feed, Focus and All step
     [{ key: 'k', metaKey: true }, false],
   ];
   assert.deepEqual(keys.map(([event]) => graphOnlyKey(event)), keys.map(([, graphOnly]) => graphOnly));
+});
+
+test('boardKey — / finds and G switches, unmodified and never while typing in a field; ⌘K stays Ask AI', () => {
+  const keys = [
+    [{ key: '/' }, false, 'find'],
+    [{ key: 'g' }, false, 'switch'],
+    [{ key: 'G' }, false, 'switch'],
+    [{ key: '/' }, true, null],
+    [{ key: 'g' }, true, null],
+    [{ key: '/', metaKey: true }, false, null],
+    [{ key: 'g', ctrlKey: true }, false, null],
+    [{ key: 'g', altKey: true }, false, null],
+    [{ key: 'k', metaKey: true }, false, null],
+    [{ key: 'f' }, false, null],
+  ];
+  assert.deepEqual(keys.map(([event, typing]) => boardKey(event, typing)), keys.map(([, , action]) => action));
 });

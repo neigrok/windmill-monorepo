@@ -23,6 +23,8 @@ import ViewPill from './list/ViewPill.jsx';
 import { SwitcherSheet } from './list/SwitcherSheet.jsx';
 import BoardView, { coverBeneath } from './board/BoardView.jsx';
 import { ViewSwitch } from './board/ViewSwitch.jsx';
+import { BoardQuery } from './board/Board.js';
+import { FindStep } from './board/BoardControls.jsx';
 import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
@@ -73,7 +75,7 @@ import { TreeEditor } from './editing/TreeEditor.js';
 import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
-import { graphOnlyKey } from './shortcuts/shortcutMap.js';
+import { boardKey, graphOnlyKey } from './shortcuts/shortcutMap.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
@@ -350,6 +352,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [view, setView] = useState(null); // 'tree' | 'list' | 'board' | null when undecided
   const [boardCrashed, setBoardCrashed] = useState(false);
   const boardActiveRef = useRef(false);
+  const boardSwitchRef = useRef(null); // G's switch while the desktop offers one, else null
+  const [boardQuery, setBoardQuery] = useState(() => new BoardQuery()); // sort, kinds, search and branch, for this visit
+  const viewBranch = useCallback((id) => setBoardQuery((query) => query.inBranch(id)), []); // a step's View branch
+  const stepDetailOpen = () => rootRef.current?.querySelector('.st-board-step-layer') != null; // '/' and G wait while it is
   const switchFocusRef = useRef(false);
   const [sheetHeld, setSheetHeld] = useState(false);
   const [coachAllowed, setCoachAllowed] = useState(false);
@@ -454,7 +460,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       const meta = event.metaKey || event.ctrlKey;
       const target = event.target;
       const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
-      if ((event.key.toLowerCase() === 'k' && meta) || (event.key === '/' && !meta && !typing)) {
+      if ((event.key.toLowerCase() === 'k' && meta) || (event.key === '/' && !meta && !typing && !boardActiveRef.current)) {
         event.preventDefault();
         setTendOpen((open) => !open);
       }
@@ -875,6 +881,19 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
       const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
+      const boardAction = stepDetailOpen() ? null : boardKey(event, typing);
+      if (boardAction === 'find' && boardActiveRef.current) {
+        const find = rootRef.current?.querySelector('.st-board-find-input');
+        if (!find) return;
+        event.preventDefault();
+        find.focus();
+        return;
+      }
+      if (boardAction === 'switch' && boardSwitchRef.current) {
+        event.preventDefault();
+        boardSwitchRef.current();
+        return;
+      }
       if (event.key === 'a' && plainKey) {
         event.preventDefault();
         toggleActivity();
@@ -1611,6 +1630,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const viewSwitch = boardAvailable && !(boardActive && loadError)
     ? <ViewSwitch view={boardActive ? 'board' : 'tree'} onSwitch={switchView} phone={phone} />
     : null;
+  // G switches on the desktop wherever a switch is shown: the editor's topbar, or the Board's identity row for a reader.
+  boardSwitchRef.current = breakpoint === 'desktop' && viewSwitch && (boardActive || !readOnly)
+    ? () => switchView(boardActive ? 'tree' : 'board')
+    : null;
   // The Board carries its switch in its identity row; the Graph's rides the topbar, or the lane on phones and tablets.
   const lanePill = BOARD_OPEN
     ? (readOnly && breakpoint !== 'desktop' && !boardActive ? viewSwitch : null)
@@ -1758,6 +1781,9 @@ export function SkillTreeView({ treeId, demo = false }) {
               onRetry={retryLoad}
               onShare={owner ? () => setShareOpen(true) : undefined}
               onNewStep={owner ? newStepFromBoard : undefined}
+              query={boardQuery}
+              onQuery={setBoardQuery}
+              legend={legend}
             />
           </ErrorBoundary>
         </div>
@@ -1798,6 +1824,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onFocus={handleFocus}
           onShowAll={handleShowAll}
           viewSwitch={viewSwitch}
+          find={boardActive && boardFacts.loaded && !boardFacts.empty ? <FindStep query={boardQuery} onQuery={setBoardQuery} /> : null}
           board={boardActive}
           onBottom={BOARD_OPEN ? setTopbarBottom : undefined}
           onShare={boardAwaitsRoadmap ? undefined : () => setShareOpen(true)}
