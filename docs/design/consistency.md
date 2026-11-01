@@ -925,14 +925,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11u · Before the first pull.** The log builds 05.18 (task 72): when the first pull fails, its
   foot becomes **Retry** · *That read failed.*, which the caption names and no Android board draws.
   A movement's record page before the first pull lists the days this phone holds under *Recent sets*
-  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands. Two
-  questions for the owner:
+  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands. Owner
+  rulings 2026-11-01:
   - *Routines before the first pull.* Routines reads *No routines yet.* (`ui/RoutinesScreen.kt`)
-    while the account it has not pulled holds routines. Owner to say what Routines shows while it
-    waits.
+    while the account it has not pulled holds routines; the owner keeps that line for now.
   - *Set numbers on a workout.* The workout page lists sets in logged order but labels each with its
     server set number (`ui/SessionScreen.kt`), so sets numbered out of logged order read *2, 3, 1*.
-    Owner to say whether the label counts the rows or names the set.
+    The numbers go. A designer is updating the board; the build waits for it.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves
