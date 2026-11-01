@@ -98,8 +98,8 @@ way out, `sheet` for the filter sheet's Clear filters); `roadmap_board_branch` w
 branch scope's title returns to its step, `clear` for its ×); and `roadmap_board_menu` with only `menu` (`sort` or
 `filter`) when the sort menu or a phone sheet opens. Dismissing a menu, a sheet or a re-pick of the order in force emits
 nothing, and no kind name, step, title or search text is reported. Opening a step from the Board emits `roadmap_board_step_open` with only `surface` (`modal` or `page`), `column` (`locked`, `upNext` or `done`) and
-`door` (`card`, `step` for a row inside another step, or `link` for a step link the page arrived at); going back to a step
-already open emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
+`door` (`card`, `step` for a row inside another step, or `link` for a step link the page arrived at, including Back or Forward into a roadmap whose address names a step);
+moving back to a step already open within the same visit emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
 and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
 (which also emits `roadmap_view_switch`), `viewBranch`, `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
 write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
