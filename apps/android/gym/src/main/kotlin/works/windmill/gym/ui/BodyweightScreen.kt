@@ -1,10 +1,8 @@
 package works.windmill.gym.ui
 
-import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -33,7 +31,6 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
@@ -66,7 +63,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
@@ -84,7 +80,6 @@ import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.DeletionsStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
 
@@ -423,13 +418,10 @@ private object BodyweightPreviewEvents : BodyweightEvents {
 
 @Composable
 private fun BodyweightPreview(state: BodyweightState) {
-    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
-        GymMaterial { BodyweightScreen(state, BodyweightPreviewEvents, backTo = "The log", onBack = {}, say = {}) }
-    }
+    GymPreview { BodyweightScreen(state, BodyweightPreviewEvents, backTo = "The log", onBack = {}, say = {}) }
 }
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun BodyweightSeriesPreview() {
     val today = LocalDate.now()
@@ -438,7 +430,6 @@ private fun BodyweightSeriesPreview() {
     }))
 }
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun BodyweightEmptyPreview() = BodyweightPreview(BodyweightPreviewState(emptyList()))

@@ -1,10 +1,8 @@
 package works.windmill.gym.ui
 
-import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -31,7 +29,6 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.Instant
@@ -62,7 +59,6 @@ import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.RecoveryRead
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
 
@@ -418,16 +414,13 @@ private fun logPreviewWorkout(id: String, routine: String, daysAgo: Long, sets: 
 
 @Composable
 private fun LogPreview(state: LogState) {
-    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
-        GymMaterial {
-            LogScreen(state, LogPreviewEvents, seat = "V", onOpenSession = {}, onOpenBodyweight = {}, onShareSession = {},
-                onDiscardSession = {}, now = { logPreviewNow })
-        }
+    GymPreview {
+        LogScreen(state, LogPreviewEvents, seat = "V", onOpenSession = {}, onOpenBodyweight = {}, onShareSession = {},
+            onDiscardSession = {}, now = { logPreviewNow })
     }
 }
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun LogWithWorkoutsPreview() = LogPreview(LogPreviewState(
     allSessions = listOf(
@@ -438,13 +431,11 @@ private fun LogWithWorkoutsPreview() = LogPreview(LogPreviewState(
     weighIns = listOf(WeighIn("2026-10-24", 82.6), WeighIn("2026-10-28", 82.3)),
 ))
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun LogEmptyPreview() = LogPreview(LogPreviewState())
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun LogReadingPreview() = LogPreview(LogPreviewState(older = Older.Reading, readingShown = true, historyRead = false,
     allSessions = listOf(logPreviewWorkout("push-a", "Push A", 1, 15, 4_880.0, TopSet(80.0, 5), listOf("bench-press", "overhead-press")))))

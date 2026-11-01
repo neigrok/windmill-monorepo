@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import android.content.res.Configuration
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -10,6 +12,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
@@ -23,6 +26,16 @@ fun GymMaterial(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalGymColors provides skin, LocalWindmillPalette provides gymPalette(skin)) {
         MaterialTheme(colorScheme = gymColorScheme(skin, dark), typography = gymTypography, content = content)
     }
+}
+
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+internal annotation class DarkAndDaylight
+
+// Previews theme from the system appearance as the app does, so the rig captures Dark and Daylight by switching it.
+@Composable
+internal fun GymPreview(content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) { GymMaterial(content) }
 }
 
 fun gymPalette(skin: GymColors): WindmillPalette = WindmillPalette(

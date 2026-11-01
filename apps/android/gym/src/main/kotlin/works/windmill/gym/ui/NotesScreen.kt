@@ -1,9 +1,7 @@
 package works.windmill.gym.ui
 
-import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -30,7 +28,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -49,7 +46,6 @@ import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 
 // What the notes list draws: the seat's notes, how many, whether they are read, and the writes the log refused.
@@ -430,27 +426,21 @@ private val notesPreviewNotes = listOf(
     Note("note_tone", 2, "Tone"),
 )
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun NotesListPreview() {
-    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
-        GymMaterial {
-            val events = NotesPreviewEvents(notesPreviewNotes)
-            NotesScreen(NotesPreviewState(notesPreviewNotes), events, isSignedIn = true, backTo = "Coach", onBack = {},
-                onEdit = { _, _ -> }, onSignIn = {}, say = {})
-        }
+    GymPreview {
+        val events = NotesPreviewEvents(notesPreviewNotes)
+        NotesScreen(NotesPreviewState(notesPreviewNotes), events, isSignedIn = true, backTo = "Coach", onBack = {},
+            onEdit = { _, _ -> }, onSignIn = {}, say = {})
     }
 }
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun NoteEditorPreview() {
-    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
-        GymMaterial {
-            NoteEditorScreen(NotesPreviewEvents(notesPreviewNotes), notesPreviewNotes.first(), "", backTo = Notes.title,
-                onBack = {}, onDone = {})
-        }
+    GymPreview {
+        NoteEditorScreen(NotesPreviewEvents(notesPreviewNotes), notesPreviewNotes.first(), "", backTo = Notes.title,
+            onBack = {}, onDone = {})
     }
 }

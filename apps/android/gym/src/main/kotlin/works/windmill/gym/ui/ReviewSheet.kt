@@ -25,7 +25,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -49,7 +48,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -74,7 +72,6 @@ import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutSession
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -580,8 +577,9 @@ private class PreviewReviewEvents(private val pending: Proposal) : ReviewEvents 
     override fun proposalReceiptShown(proposal: Proposal, seatKey: String) = Unit
 }
 
+@DarkAndDaylight
 @Composable
-private fun PendingProposalPreview(dark: Boolean) {
+private fun PendingProposalPreview() {
     val pending = Proposal(
         id = "proposal-push", routineId = "routine-push",
         summary = "Bench went up clean for three sessions, so it moves up 2.5 kg.",
@@ -594,19 +592,9 @@ private fun PendingProposalPreview(dark: Boolean) {
                 ProposalTargets(List(3) { SetTarget(6, 47.5) }), ProposalTargets(List(3) { SetTarget(6, 47.5) })),
         ),
     )
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial {
-            Box(Modifier.background(LocalGymColors.current.surface)) {
-                ReviewSheet(pending.id, PreviewReviewState(), PreviewReviewEvents(pending), onAsk = {}, onDecided = {})
-            }
+    GymPreview {
+        Box(Modifier.background(LocalGymColors.current.surface)) {
+            ReviewSheet(pending.id, PreviewReviewState(), PreviewReviewEvents(pending), onAsk = {}, onDecided = {})
         }
     }
 }
-
-@Preview(name = "Pending proposal · Dark")
-@Composable
-private fun PendingProposalDarkPreview() = PendingProposalPreview(dark = true)
-
-@Preview(name = "Pending proposal · Daylight")
-@Composable
-private fun PendingProposalDaylightPreview() = PendingProposalPreview(dark = false)

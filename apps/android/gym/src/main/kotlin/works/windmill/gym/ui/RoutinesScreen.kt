@@ -29,7 +29,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +47,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
@@ -66,7 +64,6 @@ import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutSession
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 
 // What the routines home and a routine's sheet draw.
@@ -317,23 +314,22 @@ private object PreviewRoutinesEvents : RoutinesEvents {
 }
 
 @Composable
-private fun RoutinesPreview(dark: Boolean, state: PreviewRoutinesState) {
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial {
-            RoutinesScreen(state, PreviewRoutinesEvents, lookedAt = emptySet(), seat = "A", onBuild = {}, onOpenRoutine = {},
-                onDeleteRoutine = { false }, onReview = {})
-        }
+private fun RoutinesPreview(state: PreviewRoutinesState) {
+    GymPreview {
+        RoutinesScreen(state, PreviewRoutinesEvents, lookedAt = emptySet(), seat = "A", onBuild = {}, onOpenRoutine = {},
+            onDeleteRoutine = { false }, onReview = {})
     }
 }
 
 // Three routines, the most recently trained first.
+@DarkAndDaylight
 @Composable
-private fun ProgramPreview(dark: Boolean) {
+private fun ProgramPreview() {
     val day = 86_400_000L
     val today = 1_761_984_000_000L
     fun entry(position: Int, exerciseId: String, reps: Int, weightKg: Double) =
         RoutineEntry(position, exerciseId, List(3) { SetTarget(reps, weightKg) })
-    RoutinesPreview(dark, PreviewRoutinesState(all = listOf(
+    RoutinesPreview(PreviewRoutinesState(all = listOf(
         Routine("routine-push", "Push Day", 0, today - 2 * day,
             listOf(entry(1, "bench-press", 8, 75.0), entry(2, "overhead-press", 6, 47.5))),
         Routine("routine-pull", "Pull Day", 1, today - day,
@@ -343,18 +339,6 @@ private fun ProgramPreview(dark: Boolean) {
     )))
 }
 
-@Preview(name = "Routines · Dark")
+@DarkAndDaylight
 @Composable
-private fun RoutinesDarkPreview() = ProgramPreview(dark = true)
-
-@Preview(name = "Routines · Daylight")
-@Composable
-private fun RoutinesDaylightPreview() = ProgramPreview(dark = false)
-
-@Preview(name = "No routines · Dark")
-@Composable
-private fun NoRoutinesDarkPreview() = RoutinesPreview(dark = true, PreviewRoutinesState())
-
-@Preview(name = "No routines · Daylight")
-@Composable
-private fun NoRoutinesDaylightPreview() = RoutinesPreview(dark = false, PreviewRoutinesState())
+private fun NoRoutinesPreview() = RoutinesPreview(PreviewRoutinesState())

@@ -1,10 +1,8 @@
 package works.windmill.gym.ui
 
-import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDateTime
@@ -36,7 +33,6 @@ import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 
 // What a movement's record page draws: the account's progress, the catalogue it names movements from, and whose seat it is.
@@ -320,14 +316,11 @@ private object RecordPreviewEvents : RecordEvents {
         expectedAccountKey: String, expectedReplica: String?): GymResult<Exercise> = GymResult.Ok(recordPreviewBench)
 }
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun RecordWithBestPreview() {
-    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
-        GymMaterial {
-            RecordScreen(RecordPreviewState(StatsProgress.of(recordPreviewLog, recordPreviewNow)), RecordPreviewEvents, "bench-press",
-                backTo = "The log", onBack = {}, now = { recordPreviewNow })
-        }
+    GymPreview {
+        RecordScreen(RecordPreviewState(StatsProgress.of(recordPreviewLog, recordPreviewNow)), RecordPreviewEvents, "bench-press",
+            backTo = "The log", onBack = {}, now = { recordPreviewNow })
     }
 }

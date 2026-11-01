@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.foundation.MutatePriority
@@ -112,7 +113,6 @@ import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.TrainingStore
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -144,7 +144,6 @@ import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.WorkoutSession
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.gym.store.MovementCreateOutcome
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillSpace
@@ -1083,32 +1082,23 @@ private fun nothingInHand(): LoggerPreviewState {
 }
 
 @Composable
-private fun LoggerPreview(state: LoggerState, dark: Boolean) {
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial { LoggerScreen(state, LoggerPreviewEvents, say = {}, onFinish = {}) }
-    }
+private fun LoggerPreview(state: LoggerState) {
+    GymPreview { LoggerScreen(state, LoggerPreviewEvents, say = {}, onFinish = {}) }
 }
 
-@Preview(name = "Movement in hand · Dark", widthDp = 412, heightDp = 915)
-@Composable
-private fun MovementInHandDarkPreview() = LoggerPreview(benchInHand(), dark = true)
+// The logger fills the screen, so its previews render on a full phone frame.
+@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES, widthDp = 412, heightDp = 915)
+@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO, widthDp = 412, heightDp = 915)
+private annotation class DarkAndDaylightPhone
 
-@Preview(name = "Movement in hand · Daylight", widthDp = 412, heightDp = 915)
+@DarkAndDaylightPhone
 @Composable
-private fun MovementInHandDaylightPreview() = LoggerPreview(benchInHand(), dark = false)
+private fun MovementInHandPreview() = LoggerPreview(benchInHand())
 
-@Preview(name = "Picker · Dark", widthDp = 412, heightDp = 915)
+@DarkAndDaylightPhone
 @Composable
-private fun PickerDarkPreview() = LoggerPreview(nothingInHand(), dark = true)
+private fun PickerPreview() = LoggerPreview(nothingInHand())
 
-@Preview(name = "Picker · Daylight", widthDp = 412, heightDp = 915)
+@DarkAndDaylightPhone
 @Composable
-private fun PickerDaylightPreview() = LoggerPreview(nothingInHand(), dark = false)
-
-@Preview(name = "Finishing · Dark", widthDp = 412, heightDp = 915)
-@Composable
-private fun FinishingDarkPreview() = LoggerPreview(benchInHand(finishing = true), dark = true)
-
-@Preview(name = "Finishing · Daylight", widthDp = 412, heightDp = 915)
-@Composable
-private fun FinishingDaylightPreview() = LoggerPreview(benchInHand(finishing = true), dark = false)
+private fun FinishingPreview() = LoggerPreview(benchInHand(finishing = true))

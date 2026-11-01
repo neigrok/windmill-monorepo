@@ -26,7 +26,6 @@ import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -50,7 +49,6 @@ import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.*
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
 
@@ -541,7 +539,7 @@ private object PreviewRecoveryEvents : RecoveryEvents {
 
 // A workout this phone kept that overlaps one already on the account.
 @Composable
-private fun OverlappingWorkoutPreview(dark: Boolean, fixing: Boolean) {
+private fun OverlappingWorkoutPreview(fixing: Boolean) {
     val started = 1_761_984_000_000L
     val copy = SavedWorkout(
         Session("session-phone", started, started + 48 * 60_000L, "routine-push",
@@ -557,26 +555,16 @@ private fun OverlappingWorkoutPreview(dark: Boolean, fixing: Boolean) {
         listOf(ImportOpening("import-phone", "replica-phone", anonymous = true, sources = mapOf("session-phone" to "phone"))))
     val read = RecoveryRead("https://windmill.works", "user-preview", 1, "replica-phone", listOf(row))
     val state = PreviewRecoveryState(fixDraft = if (fixing) RecoveryDraft(read, row, copy) else null)
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial {
-            if (fixing) WorkoutFixScreen(state, PreviewRecoveryEvents, currentOwner = { true })
-            else WorkoutInspectScreen(state, PreviewRecoveryEvents, read, row, onBack = {}, currentOwner = { true })
-        }
+    GymPreview {
+        if (fixing) WorkoutFixScreen(state, PreviewRecoveryEvents, currentOwner = { true })
+        else WorkoutInspectScreen(state, PreviewRecoveryEvents, read, row, onBack = {}, currentOwner = { true })
     }
 }
 
-@Preview(name = "Inspect · Dark")
+@DarkAndDaylight
 @Composable
-private fun InspectDarkPreview() = OverlappingWorkoutPreview(dark = true, fixing = false)
+private fun InspectPreview() = OverlappingWorkoutPreview(fixing = false)
 
-@Preview(name = "Inspect · Daylight")
+@DarkAndDaylight
 @Composable
-private fun InspectDaylightPreview() = OverlappingWorkoutPreview(dark = false, fixing = false)
-
-@Preview(name = "Fix · Dark")
-@Composable
-private fun FixDarkPreview() = OverlappingWorkoutPreview(dark = true, fixing = true)
-
-@Preview(name = "Fix · Daylight")
-@Composable
-private fun FixDaylightPreview() = OverlappingWorkoutPreview(dark = false, fixing = true)
+private fun FixPreview() = OverlappingWorkoutPreview(fixing = true)

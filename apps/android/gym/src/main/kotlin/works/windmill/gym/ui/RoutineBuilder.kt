@@ -42,7 +42,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -84,7 +83,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
@@ -112,7 +110,6 @@ import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.net.WindmillJson
 import androidx.compose.runtime.setValue
@@ -612,23 +609,14 @@ private object PreviewRoutineBuilderEvents : RoutineBuilderEvents {
 }
 
 // A new routine, named and holding two movements.
+@DarkAndDaylight
 @Composable
-private fun DraftPreview(dark: Boolean) {
+private fun DraftPreview() {
     val draft = RoutineDraft(name = "Push Day")
         .adding("bench-press", List(3) { SetTarget(8, 75.0) })
         .adding("overhead-press", List(3) { SetTarget(6, 47.5) })
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial {
-            RoutineBuilder(draft, PreviewRoutineBuilderState(), PreviewRoutineBuilderEvents, saving = false, onDraft = {},
-                onSave = {}, onClose = {}, say = {}, backTo = "Routines")
-        }
+    GymPreview {
+        RoutineBuilder(draft, PreviewRoutineBuilderState(), PreviewRoutineBuilderEvents, saving = false, onDraft = {},
+            onSave = {}, onClose = {}, say = {}, backTo = "Routines")
     }
 }
-
-@Preview(name = "Draft · Dark")
-@Composable
-private fun DraftDarkPreview() = DraftPreview(dark = true)
-
-@Preview(name = "Draft · Daylight")
-@Composable
-private fun DraftDaylightPreview() = DraftPreview(dark = false)

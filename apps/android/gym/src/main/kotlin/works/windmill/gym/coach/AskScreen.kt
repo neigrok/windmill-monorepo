@@ -33,7 +33,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.key
@@ -57,7 +56,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -75,8 +73,8 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.sync.engine.Pulls
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
-import works.windmill.gym.ui.GymMaterial
-import works.windmill.platform.design.LocalWindmillDark
+import works.windmill.gym.ui.DarkAndDaylight
+import works.windmill.gym.ui.GymPreview
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
@@ -515,18 +513,16 @@ private object PreviewAskEvents : AskEvents {
 }
 
 @Composable
-private fun AskPreview(dark: Boolean, setup: Boolean, thread: List<AskExchange>) {
+private fun AskPreview(setup: Boolean, thread: List<AskExchange>) {
     val scope = rememberCoroutineScope()
     val coach = remember {
         CoachStore({ "preview-lifter" }, {}, { null }, null, Telemetry.None, { 0L }, scope)
             .also { it.freshChat(id = "preview-chat", setup = setup) }
     }
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial {
-            AskScreen(PreviewAsk(coach), PreviewAskEvents, thread, receipts = emptyList(), lookedAt = emptySet(), asking = false,
-                cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works", seat = "M",
-                onThreads = {}, onReview = {}, conversationId = "preview-chat")
-        }
+    GymPreview {
+        AskScreen(PreviewAsk(coach), PreviewAskEvents, thread, receipts = emptyList(), lookedAt = emptySet(), asking = false,
+            cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works", seat = "M",
+            onThreads = {}, onReview = {}, conversationId = "preview-chat")
     }
 }
 
@@ -542,18 +538,10 @@ private val previewConversation: List<AskExchange> get() {
     )
 }
 
-@Preview(name = "Ask · conversation · Dark")
+@DarkAndDaylight
 @Composable
-private fun AskConversationDark() = AskPreview(dark = true, setup = false, thread = previewConversation)
+private fun AskConversationPreview() = AskPreview(setup = false, thread = previewConversation)
 
-@Preview(name = "Ask · conversation · Daylight")
+@DarkAndDaylight
 @Composable
-private fun AskConversationDaylight() = AskPreview(dark = false, setup = false, thread = previewConversation)
-
-@Preview(name = "Ask · greeting · Dark")
-@Composable
-private fun AskGreetingDark() = AskPreview(dark = true, setup = true, thread = emptyList())
-
-@Preview(name = "Ask · greeting · Daylight")
-@Composable
-private fun AskGreetingDaylight() = AskPreview(dark = false, setup = true, thread = emptyList())
+private fun AskGreetingPreview() = AskPreview(setup = true, thread = emptyList())

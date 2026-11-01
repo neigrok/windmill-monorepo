@@ -1,9 +1,7 @@
 package works.windmill.gym.ui
 
-import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,7 +20,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -35,7 +32,6 @@ import works.windmill.gym.presentation.LogReach
 import works.windmill.gym.store.SharingStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 
 private object ConnectionType {
@@ -224,16 +220,13 @@ private object ConnectionsPreviewEvents : ConnectionsEvents {
 
 @Composable
 private fun ConnectionsPreview(log: ConnectedLogState) {
-    CompositionLocalProvider(LocalWindmillDark provides isSystemInDarkTheme()) {
-        GymMaterial {
-            ConnectedLogScreen(ConnectionsPreviewState(log), ConnectionsPreviewEvents, isSignedIn = true,
-                origin = "https://windmill.works", backTo = "Settings", onBack = {}, onSignIn = {})
-        }
+    GymPreview {
+        ConnectedLogScreen(ConnectionsPreviewState(log), ConnectionsPreviewEvents, isSignedIn = true,
+            origin = "https://windmill.works", backTo = "Settings", onBack = {}, onSignIn = {})
     }
 }
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun ConnectionsAnsweredPreview() {
     val since = System.currentTimeMillis() - 12L * 86_400_000
@@ -243,7 +236,6 @@ private fun ConnectionsAnsweredPreview() {
     )))
 }
 
-@Preview(name = "Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Daylight", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@DarkAndDaylight
 @Composable
 private fun ConnectionsNonePreview() = ConnectionsPreview(ConnectedLogState.None)

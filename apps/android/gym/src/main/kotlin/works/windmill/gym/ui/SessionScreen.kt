@@ -31,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,7 +53,6 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
@@ -87,7 +85,6 @@ import works.windmill.gym.store.WorkoutSession
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
-import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillFont
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -564,8 +561,9 @@ private object PreviewSessionEvents : SessionEvents {
     override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome = awaitCancellation()
 }
 
+@DarkAndDaylight
 @Composable
-private fun FinishedWorkoutPreview(dark: Boolean) {
+private fun FinishedWorkoutPreview() {
     val started = 1_761_984_000_000L
     val plan = PlanSnapshot("Push Day", listOf(
         PlanEntry("bench-press", List(3) { SetTarget(8, 75.0) }),
@@ -578,23 +576,13 @@ private fun FinishedWorkoutPreview(dark: Boolean) {
         TrainingSet("set-4", "overhead-press", 1, 47.5, 6, completedAtMs = started + 24 * 60_000L),
         TrainingSet("set-5", "overhead-press", 2, 47.5, 5, note = "Left shoulder tight", completedAtMs = started + 28 * 60_000L),
     ))
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial {
-            SessionScreen(
-                summary = SessionSummary(workout.session, workout.sets, TheSix.movements),
-                state = PreviewSessionState(),
-                events = PreviewSessionEvents,
-                sharing = WorkoutShareActions("https://windmill.works", { awaitCancellation() }, { awaitCancellation() }),
-                backTo = "The log", onBack = {}, say = {}, onOpenMovement = {}, onDiscard = {}, seed = workout,
-            )
-        }
+    GymPreview {
+        SessionScreen(
+            summary = SessionSummary(workout.session, workout.sets, TheSix.movements),
+            state = PreviewSessionState(),
+            events = PreviewSessionEvents,
+            sharing = WorkoutShareActions("https://windmill.works", { awaitCancellation() }, { awaitCancellation() }),
+            backTo = "The log", onBack = {}, say = {}, onOpenMovement = {}, onDiscard = {}, seed = workout,
+        )
     }
 }
-
-@Preview(name = "Finished workout · Dark")
-@Composable
-private fun FinishedWorkoutDarkPreview() = FinishedWorkoutPreview(dark = true)
-
-@Preview(name = "Finished workout · Daylight")
-@Composable
-private fun FinishedWorkoutDaylightPreview() = FinishedWorkoutPreview(dark = false)

@@ -26,7 +26,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,14 +37,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
 import works.windmill.gym.R
 import works.windmill.gym.ui.DeleteSwipeRow
-import works.windmill.gym.ui.GymMaterial
-import works.windmill.platform.design.LocalWindmillDark
+import works.windmill.gym.ui.DarkAndDaylight
+import works.windmill.gym.ui.GymPreview
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.presentation.Ids
@@ -303,11 +301,9 @@ private object PreviewThreadsEvents : ThreadsEvents {
 }
 
 @Composable
-private fun ThreadsPreview(dark: Boolean, threads: List<AskThread>) {
-    CompositionLocalProvider(LocalWindmillDark provides dark) {
-        GymMaterial {
-            ThreadsScreen(PreviewThreads(threads), PreviewThreadsEvents, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {})
-        }
+private fun ThreadsPreview(threads: List<AskThread>) {
+    GymPreview {
+        ThreadsScreen(PreviewThreads(threads), PreviewThreadsEvents, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {})
     }
 }
 
@@ -323,18 +319,10 @@ private val previewThreads: List<AskThread> get() {
     )
 }
 
-@Preview(name = "Threads · chats · Dark")
+@DarkAndDaylight
 @Composable
-private fun ThreadsChatsDark() = ThreadsPreview(dark = true, threads = previewThreads)
+private fun ThreadsChatsPreview() = ThreadsPreview(threads = previewThreads)
 
-@Preview(name = "Threads · chats · Daylight")
+@DarkAndDaylight
 @Composable
-private fun ThreadsChatsDaylight() = ThreadsPreview(dark = false, threads = previewThreads)
-
-@Preview(name = "Threads · empty · Dark")
-@Composable
-private fun ThreadsEmptyDark() = ThreadsPreview(dark = true, threads = emptyList())
-
-@Preview(name = "Threads · empty · Daylight")
-@Composable
-private fun ThreadsEmptyDaylight() = ThreadsPreview(dark = false, threads = emptyList())
+private fun ThreadsEmptyPreview() = ThreadsPreview(threads = emptyList())
