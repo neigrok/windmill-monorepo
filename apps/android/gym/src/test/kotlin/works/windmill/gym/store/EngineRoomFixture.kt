@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlin.coroutines.ContinuationInterceptor
 import org.junit.Assert.*
 import works.windmill.gym.presentation.*
@@ -46,6 +48,7 @@ internal class EngineRoomFixture(
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
     private val readDispatcher: CoroutineDispatcher? = null,
     private val pullAgain: suspend () -> Boolean = { false },
+    private val pulls: StateFlow<Pulls> = MutableStateFlow(Pulls()),
 ) : AutoCloseable {
     val scope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
     companion object {
@@ -97,7 +100,7 @@ internal class EngineRoomFixture(
             mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
             undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
             workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-            readDispatcher = reads, coachOnboarding = coachOnboarding, pullAgain = pullAgain)
+            readDispatcher = reads, coachOnboarding = coachOnboarding, pullAgain = pullAgain, pulls = pulls)
     }
     suspend fun seedFeedback(document: GymPreferences) {
         val fields = mapOf("confirmHaptic" to Json.of(document.confirmHaptic), "confirmSound" to Json.of(document.confirmSound))

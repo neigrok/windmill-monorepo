@@ -19,8 +19,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
@@ -147,7 +153,7 @@ fun LogScreen(
                                 store.withhold(Deletion.Bodyweight(entry.entry.dateLocal))
                                 false
                             }) {
-                                WeightRow(entry, LogReadout.weight(entry, store.bodyweight, zone)) {
+                                WeightRow(entry, LogReadout.weight(entry, store.bodyweight, zone, progress?.isComplete == true)) {
                                     telemetry.event("gym_action", mapOf("screen" to "log", "action" to "open_bodyweight", "outcome" to "ok"))
                                     onOpenBodyweight()
                                 }
@@ -284,6 +290,17 @@ private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit, on
     val skin = LocalGymColors.current
     if (older == Older.End) {
         if (first != null) Text("First workout · ${Readout.date(first.startedAtMs)}", style = WindmillFont.body(14), color = skin.inkDim)
+        return
+    }
+    if (older == Older.Reading) {
+        var waited by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { delay(400); waited = true }
+        if (waited) Column(Modifier.fillMaxWidth().padding(start = 16.dp, top = 4.dp, end = 16.dp)
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite; progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LinearProgressIndicator(Modifier.fillMaxWidth().clearAndSetSemantics {}, color = skin.accent, trackColor = skin.accentSoft)
+            Text("Reading your log…", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
+        }
         return
     }
     Button(onClick = if (older == Older.Failed) onRetry else onLoad, enabled = older != Older.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),

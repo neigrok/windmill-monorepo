@@ -4,6 +4,10 @@ import kotlin.concurrent.withLock
 import kotlinx.coroutines.*
 import works.windmill.sync.api.CommitFailure
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import works.windmill.sync.core.*
@@ -19,6 +23,14 @@ interface ForkGuardStore {
     fun save(value: String)
 }
 interface EngineSleeper { suspend fun sleep(ms: Long) }
+// How the pulls of `replica` have ended so far: `ended` counts them, `landed` those the server answered with the account's
+// copy, and `failed` says the latest did not land.
+data class Pulls(val replica: String? = null, val ended: Long = 0, val landed: Long = 0, val failed: Boolean = false) {
+    fun after(of: String, landing: Boolean): Pulls {
+        val earlier = if (of == replica) this else Pulls(of)
+        return Pulls(of, earlier.ended + 1, earlier.landed + if (landing) 1 else 0, !landing)
+    }
+}
 object CoroutineSleeper : EngineSleeper { override suspend fun sleep(ms: Long) { delay(ms) } }
 
 class SyncRuntime(private val engine: Engine, private val transport: SyncTransport, private val tokens: SessionTokens,
@@ -47,6 +59,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     @Volatile private var closed = false
     @Volatile private var readinessGeneration = 0L
     @Volatile var upgradeRequired = false; private set
+    private val endedPulls = MutableStateFlow(Pulls())
+    val pulls: StateFlow<Pulls> = endedPulls.asStateFlow()
     @Volatile private var socket: LiveConnection? = null
     private var socketOpenedAt: Long? = null
     @Volatile private var signOutHold: String? = null
@@ -525,7 +539,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             val recv = engine.clock.reading()
             if (!activityAllowed()) break
             val response = reply.answer
-            if (response?.requiresUpgrade == true) { requireUpgrade(); break }
+            if (response?.requiresUpgrade == true) { endedPulls.update { it.after(seat.replica, landing = false) }; requireUpgrade(); break }
             if (!current(seat)) break
             if (response != null) {
                 val outcomes = engine.lock.withLock {
@@ -541,6 +555,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                     }
                     if (outcome in setOf("stale", "reset", "partial", "unsettled")) pullWanted.add(target)
                 }
+                endedPulls.update { it.after(seat.replica, landing = response.status == 200) }
                 if (response.status == 200) {
                     for (target in pulled) { pullWaits.getValue(target).kick(mono()); nextPull[target] = mono() + Constants.PULL_FALLBACK_MS }
                     response.body?.items("pages")?.filter { it.flag("more") }?.forEach { pullWanted.add(ScopeRef(it.member("scope"))) }
@@ -553,7 +568,10 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                     }
                     if (response.status == 503) break
                 }
-            } else for (target in pulled) { pullWanted.add(target); pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null) }
+            } else {
+                endedPulls.update { it.after(seat.replica, landing = false) }
+                for (target in pulled) { pullWanted.add(target); pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null) }
+            }
             engine.lock.withLock { for (target in dueDoubts.filter { it in pulled }) engine.doubts.repulled(target, mono(), engine::draw) }
         }
         true

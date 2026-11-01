@@ -1,7 +1,13 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -11,8 +17,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,8 +31,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.Bodyweight
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.*
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.engine.Pulls
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -81,11 +93,43 @@ class LogStateTests {
         } } finally { scope.cancel() }
     }
 
-    // Signed in to an account this phone has not pulled, Retry asks for the first pull, and the log reads itself once it lands.
+    // Before the first pull the foot says nothing for 400 ms, then reads over an indeterminate bar with no button, announced
+    // once as a polite live region that carries the bar, and stays inside the gutters at 200 % text.
     @Test
-    fun retryOnAnAccountNotYetPulledAsksForTheFirstPullAgain() {
+    fun theUnreadFootSaysItIsReadingOnlyOnceTheWaitPasses400Ms() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        var pulls = 0
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking { room.select("a"); room.store.observeEngine() }
+            compose.waitUntil(5_000) { room.store.older == Older.Reading }
+            compose.mainClock.autoAdvance = false
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(2f, 2f)) {
+                    GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) }
+                }
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeBy(380)
+            compose.onNodeWithText("Reading your log…").assertDoesNotExist()
+            compose.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(40)
+            val foot = compose.onNodeWithText("Reading your log…").assertIsDisplayed()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+                .assert(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate))
+            val bounds = foot.getBoundsInRoot()
+            assertTrue("inside the gutters: $bounds", bounds.left >= 36.dp && bounds.right <= 376.dp)
+            compose.onAllNodes(hasClickAction()).filter(hasText("Retry") or hasText("Load older") or hasText("Loading"))
+                .assertCountEquals(0)
+            compose.onNodeWithText("That read failed.").assertDoesNotExist()
+        } } finally { scope.cancel() }
+    }
+
+    // A first pull that fails turns the reading foot into Retry. Retry asks for the pull and the foot reads again until a
+    // pull ends; the one that lands brings the usual foot.
+    @Test
+    fun aFailedFirstPullOffersRetryAndRetryReadsAgainUntilThePullLands() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val pulls = MutableStateFlow(Pulls())
+        var asked = 0
         val actions = mutableListOf<Map<String, String>>()
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) {
@@ -93,42 +137,72 @@ class LogStateTests {
             }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
         }
-        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, pullAgain = { pulls++; true }).use { room ->
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, pullAgain = { asked++; true }, pulls = pulls).use { room ->
             runBlocking { room.select("a"); room.store.observeEngine() }
+            val replica = room.engine.activeReplica()
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithText("Reading your log…").assertIsDisplayed()
+            compose.onNodeWithText("Retry").assertDoesNotExist()
+            compose.runOnIdle { pulls.value = Pulls(replica, ended = 1, landed = 0, failed = true) }
             compose.onNodeWithText("That read failed.").assertIsDisplayed()
+            compose.onNodeWithText("Reading your log…").assertDoesNotExist()
             compose.onNodeWithText("Retry").performClick()
-            compose.waitUntil(5_000) { compose.runOnIdle { pulls == 1 } }
-            compose.onNodeWithText("Retry").assertIsDisplayed()
+            compose.waitUntil(5_000) { compose.runOnIdle { asked == 1 } }
+            compose.onNodeWithText("Retry").assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithText("Reading your log…").assertIsDisplayed()
+            compose.onNodeWithText("Retry").assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(listOf(mapOf("screen" to "log", "action" to "retry", "outcome" to "requested")), actions)
                 room.pull(EngineRoomFixture.server())
+                pulls.value = Pulls(replica, ended = 2, landed = 1, failed = false)
             }
-            compose.waitUntil(5_000) { compose.onAllNodesWithText("Retry").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("No workouts yet").fetchSemanticsNodes().size == 1 }
+            compose.onNodeWithText("Reading your log…").assertDoesNotExist()
+            compose.onNodeWithText("Retry").assertDoesNotExist()
             compose.onNodeWithText("That read failed.").assertDoesNotExist()
-            compose.runOnIdle { assertEquals(1, pulls) }
+            compose.runOnIdle { assertEquals(1, asked) }
         } } finally { scope.cancel() }
     }
 
-    // A workout this phone logged before the first pull is part of the account at most: the foot claims no first
-    // workout and keeps Retry, and Retry still asks for the pull, until the pull lands and the log knows its end.
+    // Workouts and weigh-ins this phone holds before the first pull are part of the account at most: the log lists them
+    // and claims no new best, no full month, no change since and no first workout while it reads. Once the pull lands,
+    // the same rows say all four.
     @Test
-    fun aWorkoutLoggedBeforeTheFirstPullLeavesTheFootUnread() {
+    @Config(qualifiers = "w412dp-h2400dp-xhdpi")
+    fun beforeTheFirstPullTheLogClaimsNoBestNoFullMonthNoChangeSinceAndNoFirstWorkout() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        var pulls = 0
-        try { EngineRoomFixture(tmp.newFolder(), scope, pullAgain = { pulls++; true }).use { room ->
-            runBlocking { room.select("a"); room.workout(); room.store.observeEngine() }
+        val zone = ZoneId.systemDefault()
+        fun at(day: String) = LocalDate.parse(day).atTime(18, 0).atZone(zone).toInstant().toEpochMilli()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val today = room.now
+            runBlocking {
+                room.select("a")
+                listOf("2026-12-01" to 80.0, "2026-12-07" to 82.5, "2026-12-14" to 85.0, "2026-12-16" to 87.5,
+                    "2026-12-21" to 80.0, "2026-12-28" to 80.0).forEach { (day, load) -> room.now = at(day); room.workout(load) }
+                room.now = today
+                assertNull(room.store.weighIn("2026-11-20", 83.0))
+                assertNull(room.store.weighIn("2027-01-10", 82.0))
+                room.store.observeEngine()
+            }
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { room.now }) } }
-            compose.onNodeWithText("That read failed.").assertIsDisplayed()
-            compose.onAllNodesWithText("First workout", substring = true).assertCountEquals(0)
-            compose.onNodeWithText("Retry").performClick()
-            compose.waitUntil(5_000) { compose.runOnIdle { pulls == 1 } }
-            compose.onNodeWithText("Retry").assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithText("Reading your log…").assertIsDisplayed()
+            compose.onAllNodes(SemanticsMatcher("a workout row") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("session:") == true })
+                .assertCountEquals(6)
+            compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "New best")).assertCountEquals(0)
+            compose.onAllNodesWithText("new best", substring = true).assertCountEquals(0)
+            compose.onAllNodesWithText("Trained", substring = true).assertCountEquals(0)
+            compose.onAllNodesWithText("since", substring = true).assertCountEquals(0)
             compose.onAllNodesWithText("First workout", substring = true).assertCountEquals(0)
             compose.runOnIdle { room.pull(EngineRoomFixture.server()) }
-            compose.waitUntil(5_000) { compose.onAllNodesWithText("First workout", substring = true).fetchSemanticsNodes().size == 1 }
-            compose.onNodeWithText("Retry").assertDoesNotExist()
-            compose.onNodeWithText("That read failed.").assertDoesNotExist()
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Trained 5 of 5 weeks").fetchSemanticsNodes().size == 1 }
+            compose.onNodeWithText("Reading your log…").assertDoesNotExist()
+            compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "New best")).assertCountEquals(1)
+            compose.onAllNodesWithText("Bench Press · new best").assertCountEquals(2)
+            compose.onNodeWithText("1 kg down since November").assertIsDisplayed()
+            compose.onNodeWithText("First workout · ${Readout.date(at("2026-12-01") + 1)}").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 }

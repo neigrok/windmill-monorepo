@@ -6,6 +6,7 @@ import androidx.activity.ComponentDialog
 import androidx.test.core.app.ApplicationProvider
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -71,7 +72,8 @@ class LogTransientTests {
             val before = compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot()
             compose.runOnIdle { store.withhold(Deletion.Session(one)); store.withhold(Deletion.Session(two)) }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
-            val snackbar = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion), useUnmergedTree = true)
+            val snackbar = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion) and
+                SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss), useUnmergedTree = true)
                 .getBoundsInRoot()
             val action = compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot()
             assertEquals("Weigh in never moves for the transient", before, action)

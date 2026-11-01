@@ -54,8 +54,9 @@ object LogReadout {
             "${moment.month.format(DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH))} · full month")
     }
 
-    fun weight(weight: LogEntry.Weight, entries: List<WeighIn>, zone: ZoneId): Weight {
-        val previous = entries.filter { it.date < weight.entry.date.withDayOfMonth(1) }.maxByOrNull { it.date }
+    // Before the first pull the earlier weigh-in in hand may not be the account's, so no change since is claimed.
+    fun weight(weight: LogEntry.Weight, entries: List<WeighIn>, zone: ZoneId, complete: Boolean): Weight {
+        val previous = if (!complete) null else entries.filter { it.date < weight.entry.date.withDayOfMonth(1) }.maxByOrNull { it.date }
         val change = previous?.let {
             val difference = weight.entry.weightKg - it.weightKg
             if (difference == 0.0) null else "${Bodyweight.kilograms(kotlin.math.abs(difference))} kg ${if (difference > 0) "up" else "down"} since ${it.date.format(DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH))}"

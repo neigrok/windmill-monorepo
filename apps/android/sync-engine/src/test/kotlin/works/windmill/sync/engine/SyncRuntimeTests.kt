@@ -1077,6 +1077,28 @@ class SyncRuntimeTests {
         }
     }
 
+    // Every pull that ends is counted for its replica: an unanswered or refused one fails, and one the server answers lands.
+    @Test fun pullsCountEachEndedPullAndSayWhetherTheLatestFailed() = runBlocking {
+        Fixture(draw = { it / 2 }).use { fixture ->
+            fixture.transport.controlPulls = true
+            val replica = fixture.engine.activeReplica()
+            assertEquals(Pulls(), fixture.runtime.pulls.value)
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Unreachable)
+            assertFalse(fixture.runtime.pullerStep())
+            assertEquals(Pulls(replica, ended = 1, landed = 0, failed = true), fixture.runtime.pulls.value)
+            assertTrue(fixture.runtime.pullAgain())
+            fixture.pull().answer.complete(Reply.Failed(SyncResponse(500, Json.objectOf())))
+            assertFalse(fixture.runtime.pullerStep())
+            assertEquals(Pulls(replica, ended = 2, landed = 0, failed = true), fixture.runtime.pulls.value)
+            assertTrue(fixture.runtime.pullAgain())
+            fixture.pull().answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array()))))
+            until { fixture.runtime.pulls.value.ended == 3L }
+            assertEquals(Pulls(replica, ended = 3, landed = 1, failed = false), fixture.runtime.pulls.value)
+        }
+    }
+
     // With the account's token gone there is no seat to pull as, so nothing is asked and the tap says so.
     @Test fun pullAgainAsksNothingWithoutASeat() = runBlocking {
         Fixture(draw = { it / 2 }).use { fixture ->
