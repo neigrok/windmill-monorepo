@@ -1,5 +1,6 @@
 package works.windmill.platform.you
 
+import works.windmill.platform.design.WindmillType
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,9 +22,7 @@ import androidx.compose.ui.res.painterResource
 import works.windmill.platform.R
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthSignOutChoice
@@ -31,7 +30,6 @@ import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.SignInDoor
 import works.windmill.platform.design.LocalWindmillPalette
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSheet
 
 data class YouDestination(val id: String, val label: String, val onOpen: () -> Unit)
@@ -80,7 +78,7 @@ fun YouSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), containerColor = palette.surface,
         scrimColor = MaterialTheme.colorScheme.scrim,
         dragHandle = {
-            if (form) BottomSheetDefaults.DragHandle(color = palette.inkFaint)
+            if (form) BottomSheetDefaults.DragHandle(color = palette.inkDim)
             else Box(Modifier.fillMaxWidth().height(24.dp).semantics { contentDescription = "Drag handle" },
                 contentAlignment = Alignment.Center) {
                 Box(Modifier.size(width = 32.dp, height = 4.dp).testTag("you-sheet-handle")
@@ -96,11 +94,11 @@ fun YouSheet(
                 .padding(start = 20.dp, end = 20.dp, top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("You", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = palette.ink)
-                    if (deletionPending) Text("Deletion unconfirmed", style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.inkDim)
-                    else auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.ink) }
+                    Text("You", style = WindmillType.sheetTitle, color = palette.ink)
+                    if (deletionPending) Text("Deletion unconfirmed", style = WindmillType.paragraphLoose, color = palette.inkDim)
+                    else auth.status.user?.let { Text(it.email, style = WindmillType.paragraphLoose, color = palette.ink) }
                 }
-                auth.signOutFailure?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
+                auth.signOutFailure?.let { Text(it, style = WindmillType.supporting, color = palette.noticeInk) }
                 val rows = destinations + if (deletion != null && (deletionPending || auth.status is AuthStatus.SignedIn))
                     listOf(YouDestination("account_deletion", when {
                         !deletionPending -> "Delete account"
@@ -113,7 +111,7 @@ fun YouSheet(
                             .clickable(enabled = !busy && !auth.signOutBusy && !closing, role = Role.Button) { dismiss(after = destination.onOpen) }
                             .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(destination.label, style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp),
+                            Text(destination.label, style = WindmillType.rowLabel,
                                 color = if (destination.id == "account_deletion" && !deletionPending) MaterialTheme.colorScheme.error else palette.ink, modifier = Modifier.weight(1f))
                             Icon(painterResource(R.drawable.you_chevron), contentDescription = null,
                                 tint = palette.inkDim, modifier = Modifier.size(18.dp))

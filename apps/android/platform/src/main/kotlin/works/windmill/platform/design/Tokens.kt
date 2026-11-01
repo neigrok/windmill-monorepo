@@ -67,7 +67,6 @@ class WindmillPalette(
     val surface: Color,
     val ink: Color,
     val inkDim: Color,
-    val inkFaint: Color,
     val line: Color,
     val lineStrong: Color,
     val accent: Color,
@@ -87,7 +86,6 @@ fun brandPalette(dark: Boolean): WindmillPalette {
         surface = WindmillColor.surfaceCanvas.pick(),
         ink = WindmillColor.textPrimary.pick(),
         inkDim = WindmillColor.textSecondary.pick(),
-        inkFaint = WindmillColor.textTertiary.pick(),
         line = WindmillColor.borderSubtle.pick(),
         lineStrong = WindmillColor.borderDefault.pick(),
         accent = WindmillColor.gold400,
@@ -115,6 +113,30 @@ object WindmillFont {
         fontWeight = weight,
         fontSize = size.sp,
     )
+}
+
+// The brand's text roles in the system sans: the reading ramp every product's prose uses, and the shell's own titles.
+// `WindmillFont` builds them; screens read these roles, never a size.
+object WindmillType {
+    val body = WindmillFont.body(16)
+    val paragraph = WindmillFont.body(16).copy(lineHeight = 22.sp)
+    val paragraphLoose = WindmillFont.body(16).copy(lineHeight = 24.sp)
+    val paragraphSmall = WindmillFont.body(15).copy(lineHeight = 22.sp)
+    val label = WindmillFont.body(16, FontWeight.Bold)
+    val labelParagraph = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp)
+    val rowLabel = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp)
+    val supporting = WindmillFont.body(14)
+    val supportingParagraph = WindmillFont.body(14).copy(lineHeight = 20.sp)
+    val kicker = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp)
+    val detail = WindmillFont.body(13).copy(lineHeight = 18.sp)
+    val detailCompact = WindmillFont.body(13)
+    val detailLabel = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp)
+    val caption = WindmillFont.body(12).copy(lineHeight = 16.sp)
+    val captionCompact = WindmillFont.body(12)
+    val headline = WindmillFont.body(22, FontWeight.Bold).copy(lineHeight = 28.sp)
+    val outcomeTitle = WindmillFont.body(22, FontWeight.ExtraBold).copy(lineHeight = 28.sp)
+    val sheetTitle = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp)
+    val doorTitle = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp)
 }
 
 object WindmillSpace {

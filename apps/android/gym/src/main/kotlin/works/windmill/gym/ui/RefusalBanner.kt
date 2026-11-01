@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.RefusedChange
@@ -52,7 +51,8 @@ internal fun Refusals(refusals: List<RefusedWrite>, catalog: List<Exercise>, onD
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     val haptics = rememberGymHaptics()
     val swipe = rememberRowDismiss(settling = { it != SwipeToDismissBoxValue.Settled }) {
         haptics.revealed()
@@ -68,24 +68,24 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
         },
     ) {
         Column(
-            Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).background(skin.canvas),
+            Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).background(colors.surface),
             verticalArrangement = Arrangement.spacedBy(GymLayout.pair, Alignment.CenterVertically),
         ) {
-            Text(headline, style = MaterialTheme.typography.bodySmall, color = skin.alarmInk)
-            Text(reason, style = MaterialTheme.typography.bodySmall, color = skin.inkDim)
+            Text(headline, style = MaterialTheme.typography.bodySmall, color = gymColors.alarmInk)
+            Text(reason, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 private fun DismissGround() {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Row(
         Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).padding(horizontal = WindmillSpace.x1),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = skin.inkDim) }
-        Box { Text("Dismiss", style = GymType.numeral(11, FontWeight.Bold), color = skin.inkDim) }
+        Box { Text("Dismiss", style = GymType.dismiss, color = colors.onSurfaceVariant) }
+        Box { Text("Dismiss", style = GymType.dismiss, color = colors.onSurfaceVariant) }
     }
 }

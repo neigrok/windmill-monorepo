@@ -1,5 +1,6 @@
 package works.windmill.gym.ui.onboarding
 
+import works.windmill.gym.ui.GymMaterial
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.provider.Settings
@@ -29,7 +30,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.ui.GymSkin
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.platform.design.LocalWindmillDark
 
 @RunWith(RobolectricTestRunner::class)
@@ -76,10 +76,11 @@ class OnboardingGlimpseTests {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             contentView = LocalView.current
-            CompositionLocalProvider(LocalGymColors provides skin.value,
-                LocalWindmillDark provides (skin.value == GymSkin.Instrument)) {
-                Box(Modifier.size(354.dp, 340.dp).testTag("gym_picture")) {
-                    OnboardingGlimpse(3, active = true, reducedMotion = true, Modifier.fillMaxSize())
+            CompositionLocalProvider(LocalWindmillDark provides (skin.value == GymSkin.Instrument)) {
+                GymMaterial {
+                    Box(Modifier.size(354.dp, 340.dp).testTag("gym_picture")) {
+                        OnboardingGlimpse(3, active = true, reducedMotion = true, Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -102,9 +103,11 @@ class OnboardingGlimpseTests {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             contentView = LocalView.current
-            CompositionLocalProvider(LocalGymColors provides GymSkin.Instrument, LocalWindmillDark provides true) {
-                Box(Modifier.size(354.dp, 340.dp).testTag("gym_picture")) {
-                    OnboardingGlimpse(3, active = true, reducedMotion = false, Modifier.fillMaxSize())
+            CompositionLocalProvider(LocalWindmillDark provides true) {
+                GymMaterial {
+                    Box(Modifier.size(354.dp, 340.dp).testTag("gym_picture")) {
+                        OnboardingGlimpse(3, active = true, reducedMotion = false, Modifier.fillMaxSize())
+                    }
                 }
             }
         }

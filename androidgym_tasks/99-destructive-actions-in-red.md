@@ -7,10 +7,10 @@
 **Context:** destructive actions use the M3 error role. Three Android controls still draw in ink or in an off-role red, so the one action that cannot be undone looks like any other.
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- The log row menu's *Discard workout* is a default (ink) menu item (`ui/LogScreen.kt:353`).
-- The receipt overflow's *Discard* is ink (`ui/FinishScreen.kt:289`).
-- History's *Delete* confirm uses `skin.alarmInk` (`coach/ThreadsScreen.kt:182`), which differs from `skin.error` (`ui/GymSkin.kt:53,62`).
-- `GymMenuItem(destructive = true)` already uses `colorScheme.error` (`ui/NativeControls.kt:127`).
+- The log row menu's *Discard workout* is a default (ink) menu item (`ui/LogScreen.kt:354`).
+- The receipt overflow's *Discard* is ink (`ui/FinishScreen.kt:287`).
+- History's *Delete* confirm uses `MaterialTheme.gymColors.alarmInk` (`coach/ThreadsScreen.kt:182`), which differs from the scheme's `error` (`ui/GymSkin.kt:40,49`).
+- `GymMenuItem(destructive = true)` already uses `colorScheme.error` (`ui/NativeControls.kt:107`).
 
 **Change**
 - The two menu items use `GymMenuItem(destructive = true)`. History's confirm uses the error-role button that the other delete confirms use.

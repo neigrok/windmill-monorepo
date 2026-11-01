@@ -1,5 +1,6 @@
 package works.windmill.platform.auth
 
+import works.windmill.platform.design.WindmillType
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,18 +13,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import works.windmill.platform.User
 import works.windmill.platform.R
 import works.windmill.platform.design.LocalWindmillPalette
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.net.WindmillApiException
 
 @Composable
@@ -140,26 +138,26 @@ fun SignInDoor(
             .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(if (sentTo == null) "Sign in" else "Check your email",
-                style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = palette.ink)
+                style = WindmillType.doorTitle, color = palette.ink)
             if (sentTo == null) {
-                Text("New here? The same door creates your account.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.inkDim)
+                Text("New here? The same door creates your account.", style = WindmillType.paragraph, color = palette.inkDim)
                 DoorField("Email", "you@example.com", email, KeyboardType.Email, ContentType.EmailAddress, pending == null && !auth.handoffPending && !completed, refusal) { email = it; refusal = null }
             } else {
-                Text("Code sent to $sentTo.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.ink)
+                Text("Code sent to $sentTo.", style = WindmillType.paragraph, color = palette.ink)
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     DoorField("Code", "6-digit code", typed, KeyboardType.NumberPassword, OneTimeCode, pending == null && !auth.handoffPending && !completed, refusal) { typed = it; refusal = null }
                     Text(refusal ?: "Works once. Expires in 15 minutes.",
-                        style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                        style = WindmillType.supportingParagraph,
                         color = if (refusal == null) palette.inkDim else MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { if (refusal != null) liveRegion = LiveRegionMode.Polite })
                 }
-                Text("You can also paste the email link.", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
+                Text("You can also paste the email link.", style = WindmillType.supportingParagraph, color = palette.inkDim)
                 TextButton(onClick = ::requestCode, enabled = pending == null && !auth.handoffPending && !completed && seconds == 0L, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(if (seconds > 0) "Resend in ${seconds}s" else "Resend", style = WindmillFont.body(14), color = palette.inkDim)
+                    Text(if (seconds > 0) "Resend in ${seconds}s" else "Resend", style = WindmillType.supporting, color = palette.inkDim)
                 }
             }
             if (sentTo == null) refusal?.let {
-                Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = MaterialTheme.colorScheme.error,
+                Text(it, style = WindmillType.supportingParagraph, color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
         }
@@ -168,11 +166,11 @@ fun SignInDoor(
                 enabled = pending == null && !auth.handoffPending && !completed && (if (sentTo == null) email else typed).isNotBlank(),
                 shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = palette.onAccent)) {
-                Text(pending ?: if (auth.handoffPending) "Signing in…" else if (sentTo == null) "Send code" else "Sign in", style = WindmillFont.body(16, FontWeight.Bold))
+                Text(pending ?: if (auth.handoffPending) "Signing in…" else if (sentTo == null) "Send code" else "Sign in", style = WindmillType.label)
             }
             if (sentTo != null) TextButton(onClick = { attachedHandoff = 0L; sentTo = null; typed = ""; refusal = null; resendAt = 0L },
                 enabled = pending == null && !auth.handoffPending && !completed, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                Text("Change email", style = WindmillFont.body(16, FontWeight.Bold), color = palette.ink)
+                Text("Change email", style = WindmillType.label, color = palette.ink)
             }
         }
     }

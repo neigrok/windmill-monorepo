@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -251,7 +252,7 @@ class DatedPlotTests {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 GymMaterial {
-                    accent = LocalGymColors.current.accent
+                    accent = MaterialTheme.colorScheme.primary
                     view = LocalView.current
                     Box(Modifier.width(300.dp).padding(16.dp)) {
                         DatedPlot(DatedSeries(points, 0, 86_400_000, ZoneOffset.UTC, 21),

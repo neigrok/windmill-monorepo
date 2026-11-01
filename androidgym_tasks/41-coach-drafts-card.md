@@ -13,7 +13,7 @@
   - `Android / Chat bubble` `337:2761`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Each pending draft is its own card (`coach/CoachAnswer.kt:84-133`):
+- Each pending draft is its own card (`coach/CoachAnswer.kt:83-132`):
   - *Review routine*, then the name
   - one line per movement, for example *3 × 8 · 60 kg total · Barbell · 120s rest*
     - load words at :98-105: *One dumbbell* / *Two dumbbells*, ` each`, ` assisted`, ` added`, ` total`

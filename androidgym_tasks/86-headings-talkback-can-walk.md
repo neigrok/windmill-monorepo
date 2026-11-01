@@ -6,7 +6,7 @@
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `semantics { heading() }` appears only in `ui/FixSheet.kt`, `ui/GymScreen.kt` and `ui/onboarding/OnboardingPager.kt`.
-- The workout page's movement heading sets none (`ui/SessionScreen.kt:463-477`).
+- The workout page's movement heading sets none (`ui/SessionScreen.kt:462-476`).
 
 **Change**
 - Mark as headings every text that a board draws as a section title. At least:

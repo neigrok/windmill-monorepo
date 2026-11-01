@@ -8,11 +8,11 @@
 - `GymStage` holds `onBack` with `referentialEqualityPolicy` (`GymNavigator.kt:399`), fed `::goBack` (`GymRoom.kt:949`). The same function still keeps `standing` and `animate` with `rememberUpdatedState` (`:396-397`), and `keep` and `ask` too (`:284,296`).
 - These counts were taken on 28c3d48a, before e99a77c8 moved lines in `GymRoom.kt`; recount before starting. 34 `::localFun` references are passed as Compose callbacks in `:gym`, and 4 in `:app`. They include:
   - several in `GymRoom.kt` (`enterCoach`, `openCoachWorkout`, `hideWorkout`);
-  - `ui/NotesScreen.kt:144` (`onSettle = ::reorder`, into `rememberUpdatedState`);
-  - `ui/RoutineBuilder.kt:320,343,371`;
+  - `ui/NotesScreen.kt:142` (`onSettle = ::reorder`, into `rememberUpdatedState`);
+  - `ui/RoutineBuilder.kt:318,343,371`;
   - seven in `ui/OnThisPhoneScreen.kt`;
   - three each in `ui/BodyweightScreen.kt` and `ui/MovementPicker.kt`;
-  - `coach/ThreadsScreen.kt:176,180`;
+  - `coach/ThreadsScreen.kt:177,180`;
   - `app/…/MainActivity.kt:340-352`.
 
 **Change**

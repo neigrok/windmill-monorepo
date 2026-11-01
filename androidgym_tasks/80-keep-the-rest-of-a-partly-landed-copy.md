@@ -8,7 +8,7 @@
 
 **Current implementation**
 - The shared domain marks an identity refusal unfixable (Kotlin `apps/android/gym/domain/…/WorkoutRecovery.kt:23,41`: `canFix = reason != identityTaken`).
-- Android's *On this phone* leaves these refusals out of Fix and gives them no main action, so only Discard remains (`apps/android/gym/src/main/kotlin/works/windmill/gym/ui/OnThisPhoneScreen.kt:118-127,247-250`).
+- Android's *On this phone* leaves these refusals out of Fix and gives them no main action, so only Discard remains (`apps/android/gym/src/main/kotlin/works/windmill/gym/ui/OnThisPhoneScreen.kt:117-126,247-250`).
 - iOS gates the same way (`apps/ios/App/Sources/Gym/Recovery/WorkoutInspectScreen.swift:36`, `GymWorkoutAdoption.swift:92`).
 
 **Change**

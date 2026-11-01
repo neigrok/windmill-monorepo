@@ -8,9 +8,9 @@
 - Components: `Android / Change row` `337:2686` (Renamed, Removed), `Android / Diff field` `337:2531`, `Android / Button` `210:181` (Filled · Tone=Error, Tonal).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Rename: a separate *Routine name* card with a move line *Push A → Push Day* after the movement rows (`ui/ReviewSheet.kt:254-257`), shown when `renames` is true (`presentation/Proposal.kt:193`).
+- Rename: a separate *Routine name* card with a move line *Push A → Push Day* after the movement rows (`ui/ReviewSheet.kt:253-256`), shown when `renames` is true (`presentation/Proposal.kt:193`).
 - Removal:
-  - The sheet draws *Remove Arms* / *The whole routine is removed from your program. Every set you logged against it stays in the log.* (`ui/ReviewSheet.kt:241-246`).
+  - The sheet draws *Remove Arms* / *The whole routine is removed from your program. Every set you logged against it stays in the log.* (`ui/ReviewSheet.kt:240-245`).
   - The card's summary reads *A proposal to remove Arms.* (`presentation/Proposal.kt:207`) and its count *a removal* (`:213`).
   - The apply button reads *Remove Arms* on the accent (`presentation/Proposal.kt:228`).
   - The receipt reads *Applied · Arms · routine removed* (`presentation/Proposal.kt:184`).

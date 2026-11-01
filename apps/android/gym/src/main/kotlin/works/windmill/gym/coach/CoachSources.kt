@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.ui.GymType
+import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -21,15 +23,12 @@ import androidx.compose.ui.platform.testTag
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.platform.telemetry.LocalTelemetry
 
 internal object CoachSources {
@@ -71,7 +70,7 @@ internal fun CoachReadSources(
     onOpenWorkout: ((String) -> Unit)?,
     onSheetTop: (Int?) -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val telemetry = LocalTelemetry.current
     var expanded by remember { mutableStateOf(false) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -85,17 +84,17 @@ internal fun CoachReadSources(
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
         }.heightIn(min = 48.dp).padding(start = 12.dp),
     ) {
-        Text(line, style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
-        Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = skin.inkDim)
+        Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+        Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
     }
     if (!expanded) return
     DisposableEffect(Unit) { onDispose { onSheetTop(null) } }
     WindmillSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
-        containerColor = skin.surface, scrimColor = skin.scrim,
+        containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
             Box(Modifier.fillMaxWidth().height(24.dp).onGloballyPositioned { onSheetTop(it.positionOnScreen().y.roundToInt()) }, contentAlignment = Alignment.Center) {
-                Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
+                Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
             }
         },
     ) {
@@ -103,8 +102,8 @@ internal fun CoachReadSources(
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("What Coach read", style = CoachType.body(28, FontWeight.ExtraBold).copy(lineHeight = 36.sp), color = skin.ink)
-            if (counted.isNotEmpty()) Text(counted, style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+            Text("What Coach read", style = GymType.coachSourcesTitle, color = colors.onSurface)
+            if (counted.isNotEmpty()) Text(counted, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             receipt?.observed.orEmpty().groupBy { it.sessionId }.values.forEach { observations ->
                 val observation = observations.lastOrNull { it.wholeWorkout } ?: observations.last()
                 Row(verticalAlignment = Alignment.CenterVertically,
@@ -115,15 +114,15 @@ internal fun CoachReadSources(
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine,
-                            style = CoachType.body(15, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.ink)
-                        Text(CoachSources.facts(observation), style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                            style = GymType.coachSourceTitle, color = colors.onSurface)
+                        Text(CoachSources.facts(observation), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
                     }
-                    Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = skin.inkDim)
+                    Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
                 }
             }
-            if (notesRead) Text("Also read your notes.", style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+            if (notesRead) Text("Also read your notes.", style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             TextButton(onClick = { expanded = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                Text("Close", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.accent)
+                Text("Close", style = GymType.coachTitle, color = colors.primary)
             }
         }
     }

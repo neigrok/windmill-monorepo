@@ -7,7 +7,7 @@
 **Context:** Coach can answer before its proposal reaches the phone. Until the miss settles, Android draws nothing in the card's place, because no board draws a waiting state (ledger 11w). The answer can mention a change that is not visible yet.
 
 **Current implementation**
-- `coach/AskScreen.kt:440-496` re-reads an unseen proposal on every replica change and calls it gone only after a 10 s wait plus a later read, or a pull asked after the wait that landed caught up. Nothing is drawn meanwhile (`:275-277`). The settled miss reads *This proposal is no longer available.*
+- `coach/AskScreen.kt:439-495` re-reads an unseen proposal on every replica change and calls it gone only after a 10 s wait plus a later read, or a pull asked after the wait that landed caught up. Nothing is drawn meanwhile (`:275-277`). The settled miss reads *This proposal is no longer available.*
 - `gym_proposal_missing` counts only answers this visit waited for.
 
 **Change**

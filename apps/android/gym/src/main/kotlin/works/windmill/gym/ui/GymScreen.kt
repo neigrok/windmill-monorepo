@@ -44,14 +44,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -82,14 +78,6 @@ fun ReadsAgainOnReturn(onReturn: () -> Unit) {
     }
 }
 
-internal object GymChrome {
-    private val font = FontFamily(Font(R.font.onboarding_nunito_bold, FontWeight.Bold))
-    val title = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 28.sp)
-    val action = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp)
-    val account = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 20.sp)
-    val tab = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp)
-}
-
 // The room owns system insets; each screen owns its native title and actions. The bar tints to the
 // card ground once the screen's content scrolls under it (00.1), and stays pinned.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,17 +96,17 @@ fun GymScreen(
     transient: SnackbarHostState? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val scrolledUnder = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
         modifier = modifier.nestedScroll(scrolledUnder.nestedScrollConnection),
-        containerColor = skin.canvas,
+        containerColor = colors.surface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
                     Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = GymChrome.title, textAlign = titleAlignment, color = skin.ink,
+                        style = GymType.topBarTitle, textAlign = titleAlignment, color = colors.onSurface,
                         modifier = Modifier.fillMaxWidth().semantics { heading() })
                 },
                 navigationIcon = {
@@ -127,14 +115,14 @@ fun GymScreen(
                         IconButton(onClick = back, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = backTo?.let { "Back to $it" } ?: "Back",
-                                tint = skin.ink, modifier = Modifier.size(24.dp))
+                                tint = colors.onSurface, modifier = Modifier.size(24.dp))
                         }
                     }
                 },
                 actions = actions,
                 expandedHeight = 64.dp,
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas, scrolledContainerColor = skin.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface, scrolledContainerColor = colors.surfaceContainer),
                 scrollBehavior = scrolledUnder,
                 modifier = Modifier.testTag("gym-top-bar"),
             )
@@ -151,28 +139,26 @@ fun GymScreen(
 // body-small for the label once it floats.
 @Composable
 fun NativeFieldType(content: @Composable () -> Unit) {
-    MaterialTheme(typography = MaterialTheme.typography.copy(
-        bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
-        bodySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .4.sp),
-    ), content = content)
+    MaterialTheme(typography = MaterialTheme.typography.withStockFields(FontFamily.SansSerif), content = content)
 }
 
 // A top bar action whose verb has no icon worth the guess. Material's own text action, in the
 // room's accent.
 @Composable
 fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     TextButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.heightIn(min = 48.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         colors = ButtonDefaults.textButtonColors(
-            contentColor = skin.accent,
-            disabledContentColor = skin.inkFaint,
+            contentColor = colors.primary,
+            disabledContentColor = gymColors.inkFaint,
         ),
     ) {
-        Text(label, style = GymChrome.action)
+        Text(label, style = GymType.topBarAction)
     }
 }
 
@@ -180,14 +166,14 @@ fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
 // in carries the label — so it has no description of its own.
 @Composable
 fun Chevron(modifier: Modifier = Modifier) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     Icon(painterResource(R.drawable.gym_chevron), contentDescription = null,
-        tint = skin.inkDim, modifier = modifier.width(10.1771.dp).height(15.5052.dp))
+        tint = colors.onSurfaceVariant, modifier = modifier.width(10.1771.dp).height(15.5052.dp))
 }
 
 @Composable
 fun YouSeat(initial: String) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val shell = LocalShellActions.current
     Box(
         Modifier.size(48.dp).clip(CircleShape)
@@ -195,8 +181,8 @@ fun YouSeat(initial: String) {
             .semantics(mergeDescendants = true) { contentDescription = "Your account" },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(36.dp).clip(CircleShape).background(skin.raised), contentAlignment = Alignment.Center) {
-            Text(initial.uppercase().ifEmpty { "•" }, style = GymChrome.account, color = skin.ink,
+        Box(Modifier.size(36.dp).clip(CircleShape).background(colors.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+            Text(initial.uppercase().ifEmpty { "•" }, style = GymType.accountInitial, color = colors.onSurface,
                 modifier = Modifier.clearAndSetSemantics {})
         }
     }

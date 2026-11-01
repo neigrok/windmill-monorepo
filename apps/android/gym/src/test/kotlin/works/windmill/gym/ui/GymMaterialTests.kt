@@ -17,7 +17,9 @@ class GymMaterialTests {
             assertEquals(listOf(palette.accent, palette.onAccent, palette.canvas, palette.ink, palette.inkDim),
                 listOf(scheme.primary, scheme.onPrimary, scheme.background, scheme.onSurface,
                     scheme.onSurfaceVariant))
-            assertEquals(skin.inkDim, palette.inkFaint)
+            val extended = GymExtendedColors(skin)
+            assertEquals(listOf(skin.inkFaint, skin.prInk, skin.prSoft, skin.alarmInk),
+                listOf(extended.inkFaint, extended.prInk, extended.prSoft, extended.alarmInk))
             assertEquals(skin.raised, scheme.secondaryContainer)
             assertEquals(skin.ink, scheme.onSecondaryContainer)
             assertEquals(skin.error, scheme.error)

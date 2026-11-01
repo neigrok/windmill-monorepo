@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillType
+import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -28,9 +30,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -59,7 +59,6 @@ import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.RecoveryRead
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.telemetry.LocalTelemetry
 
 // What the log draws: the account's workouts, weigh-ins and progress, and how far back the log is read.
@@ -132,7 +131,7 @@ fun LogScreen(
     now: () -> Long = System::currentTimeMillis,
     transient: SnackbarHostState? = null,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     val nowMs = now()
@@ -191,22 +190,22 @@ fun LogScreen(
                 }
                 if (state.progressFailure != null) item("progress-failed") {
                     Column {
-                        Text("Progress unavailable", style = WindmillFont.body(16), color = skin.ink)
-                        Text(state.progressFailure!!.line("Your progress could not be read."), style = WindmillFont.body(14), color = skin.inkDim)
+                        Text("Progress unavailable", style = WindmillType.body, color = colors.onSurface)
+                        Text(state.progressFailure!!.line("Your progress could not be read."), style = WindmillType.supporting, color = colors.onSurfaceVariant)
                         TextButton(onClick = { scope.launch { events.loadProgress(force = true) } }) { Text("Try again") }
                     }
                 } else if (state.progressLoading && state.progress == null) item("progress-reading") {
-                    Text("Reading progress…", style = WindmillFont.body(14), color = skin.inkDim)
+                    Text("Reading progress…", style = WindmillType.supporting, color = colors.onSurfaceVariant)
                 }
                 if (timeline.isEmpty() && state.older == Older.End && !logHolds) item("empty") {
                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Text("No workouts yet", style = WindmillFont.body(28, FontWeight.Bold).copy(lineHeight = 39.sp), color = skin.ink)
-                        Text("Your training will land here.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim)
+                        Text("No workouts yet", style = GymType.emptyLogTitle, color = colors.onSurface)
+                        Text("Your training will land here.", style = WindmillType.paragraph, color = colors.onSurfaceVariant)
                     }
                 }
                 days.forEach { day ->
                     item("header:day:${day.date}") {
-                        Text(day.label, style = WindmillFont.body(13, FontWeight.Bold).copy(lineHeight = 18.sp), color = skin.inkDim)
+                        Text(day.label, style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
                     }
                     items(day.entries, key = { "entry:${it.key}" }) { entry ->
                         when (entry) {
@@ -246,7 +245,7 @@ fun LogScreen(
         }
     }
     if (weighingIn) WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
-        containerColor = skin.surface, scrimColor = skin.scrim,
+        containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
         dragHandle = { WeighInHandle() }, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
         formState.SaveableStateProvider("weigh-in") {
             BackHandler(saving || closing) {}
@@ -270,11 +269,12 @@ fun LogScreen(
 
 @Composable
 private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, onOpenRecord: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     if (moment is LogEntry.Moment.Month) {
         Column(Modifier.fillMaxWidth().testTag(moment.key).padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(readout.title, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
-            Text(readout.detail, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
+            Text(readout.title, style = WindmillType.caption, color = colors.onSurfaceVariant)
+            Text(readout.detail, style = WindmillType.caption, color = colors.onSurfaceVariant)
         }
         return
     }
@@ -282,10 +282,10 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, onOpe
         .clickable(role = Role.Button, onClickLabel = "Open record", onClick = onOpenRecord)
         .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(3.dp, 38.dp).background(skin.prInk, RoundedCornerShape(1.5.dp)))
+        Box(Modifier.size(3.dp, 38.dp).background(gymColors.prInk, RoundedCornerShape(1.5.dp)))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(readout.title, style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.ink)
-            Text(readout.detail, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+            Text(readout.title, style = WindmillType.kicker, color = colors.onSurface)
+            Text(readout.detail, style = WindmillType.detail, color = colors.onSurfaceVariant)
         }
         LogChevron()
     }
@@ -293,43 +293,44 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, onOpe
 
 @Composable
 private fun WeightRow(weight: LogEntry.Weight, readout: LogReadout.Weight, onOpen: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val stacked = GymTextScale.stacked
-    Column(Modifier.fillMaxWidth().background(skin.canvas)) {
-        HorizontalDivider(color = skin.line)
+    Column(Modifier.fillMaxWidth().background(colors.surface)) {
+        HorizontalDivider(color = colors.outlineVariant)
         Row(Modifier.fillMaxWidth().testTag(weight.key).heightIn(min = 72.dp)
             .clickable(role = Role.Button, onClickLabel = "Open bodyweight", onClick = onOpen)
             .padding(horizontal = 12.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(R.drawable.gym_native_monitor_weight), null, Modifier.size(20.dp), tint = skin.inkDim)
+            Icon(painterResource(R.drawable.gym_native_monitor_weight), null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(readout.title, style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.ink)
-                readout.detail?.let { Text(it, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim) }
-                if (stacked) readout.time?.let { Text(it, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim) }
+                Text(readout.title, style = WindmillType.kicker, color = colors.onSurface)
+                readout.detail?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
+                if (stacked) readout.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
             }
-            if (!stacked) readout.time?.let { Text(it, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim) }
+            if (!stacked) readout.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
             LogChevron()
         }
-        HorizontalDivider(color = skin.line)
+        HorizontalDivider(color = colors.outlineVariant)
     }
 }
 
 @Composable
 private fun LogChevron() {
     Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-        Icon(painterResource(R.drawable.gym_chevron), null, Modifier.size(10.1771.dp, 15.5052.dp), tint = LocalGymColors.current.inkDim)
+        Icon(painterResource(R.drawable.gym_chevron), null, Modifier.size(10.1771.dp, 15.5052.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> Unit, onDiscard: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
+    val gymColors = MaterialTheme.gymColors
     var menu by remember { mutableStateOf(false) }
     val haptics = rememberGymHaptics()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val timeBelowTitle = maxWidth < 320.dp || GymTextScale.stacked
         Row(Modifier.fillMaxWidth().testTag("session:${row.summary.id}").heightIn(min = 72.dp)
-            .clip(RoundedCornerShape(16.dp)).background(skin.surface)
+            .clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainer)
             .combinedClickable(role = Role.Button, onClickLabel = "Open workout", onLongClickLabel = "Workout actions",
                 onClick = onOpen, onLongClick = { haptics.revealed(); menu = true })
             .semantics {
@@ -341,14 +342,14 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(row.title, modifier = Modifier.weight(1f, fill = false),
-                        style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
-                    if (row.record) Box(Modifier.size(8.dp).background(skin.prInk, CircleShape))
+                        style = GymType.heading, color = colors.onSurface)
+                    if (row.record) Box(Modifier.size(8.dp).background(gymColors.prInk, CircleShape))
                 }
-                Text(row.facts, modifier = Modifier.fillMaxWidth(), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
-                if (timeBelowTitle) row.time?.let { Text(it, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim) }
+                Text(row.facts, modifier = Modifier.fillMaxWidth(), style = WindmillType.detail, color = colors.onSurfaceVariant)
+                if (timeBelowTitle) row.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
             }
-            if (!timeBelowTitle) row.time?.let { Text(it, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim) }
-            DropdownMenu(menu, { menu = false }, containerColor = skin.raised) {
+            if (!timeBelowTitle) row.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
+            DropdownMenu(menu, { menu = false }, containerColor = colors.surfaceContainerHighest) {
                 DropdownMenuItem(text = { Text("Share this workout") }, onClick = { menu = false; onShare() })
                 DropdownMenuItem(text = { Text("Discard workout") }, onClick = { menu = false; onDiscard() })
             }
@@ -358,26 +359,26 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
 
 @Composable
 private fun LogFoot(older: Older, readingShown: Boolean, first: SessionSummary?, onLoad: () -> Unit, onRetry: () -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     if (older == Older.End) {
-        if (first != null) Text("First workout · ${Readout.date(first.startedAtMs)}", style = WindmillFont.body(14), color = skin.inkDim)
+        if (first != null) Text("First workout · ${Readout.date(first.startedAtMs)}", style = WindmillType.supporting, color = colors.onSurfaceVariant)
         return
     }
     if (older == Older.Reading) {
         if (readingShown) Column(Modifier.fillMaxWidth().padding(start = 16.dp, top = 4.dp, end = 16.dp)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite; progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            LinearProgressIndicator(Modifier.fillMaxWidth().clearAndSetSemantics {}, color = skin.accent, trackColor = skin.accentSoft)
-            Text("Reading your log…", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
+            LinearProgressIndicator(Modifier.fillMaxWidth().clearAndSetSemantics {}, color = colors.primary, trackColor = colors.primaryContainer)
+            Text("Reading your log…", style = WindmillType.caption, color = colors.onSurfaceVariant)
         }
         return
     }
     Button(onClick = if (older == Older.Failed) onRetry else onLoad, enabled = older != Older.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = skin.raised, contentColor = skin.ink)) {
+        colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
         Text(when (older) { Older.Failed -> "Retry"; Older.Loading -> "Loading"; else -> "Load older" })
     }
     if (older == Older.Failed) Text("That read failed.", Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        style = WindmillFont.body(14), color = skin.inkDim)
+        style = WindmillType.supporting, color = colors.onSurfaceVariant)
 }
 
 private data class LogPreviewState(

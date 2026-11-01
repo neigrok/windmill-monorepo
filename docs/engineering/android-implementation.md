@@ -397,8 +397,8 @@ failure; deduplicating those existing boundaries is a separate follow-up.
 
 ## Task 03 — room chrome
 
-Root, pushed and workout screens share M3 `TopAppBar`; `GymChrome` groups their approved typography
-with the navigation label style. The account target is present on all roots, including signed-in
+Root, pushed and workout screens share M3 `TopAppBar`; `GymType`'s chrome roles hold their approved
+typography with the navigation label style. The account target is present on all roots, including signed-in
 Coach. The visible middle destination is *The log*, while its event label stays `log`. The logger
 has no settings action; its trailing target is reserved for task 45. Coach action content and its
 existing History/More paths are unchanged.

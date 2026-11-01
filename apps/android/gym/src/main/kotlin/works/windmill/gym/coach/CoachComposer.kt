@@ -1,6 +1,8 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.ui.LocalGymColors
+import works.windmill.platform.design.WindmillType
+import works.windmill.gym.ui.GymType
+import androidx.compose.material3.MaterialTheme
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -41,7 +43,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +50,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
-import works.windmill.platform.design.WindmillFont
 import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,7 +59,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     photoRequest: Int = 0,
     onDraftSync: (((() -> Boolean)?) -> Unit)? = null,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -118,54 +118,54 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "Saved only in this chat.",
-                    style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim,
+                    style = WindmillType.caption, color = colors.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
                     CoachPhoto(store, key, photo, Modifier.offset(y = 12.dp).size(72.dp))
                     if (!asking) Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
                         FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
                             enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = skin.raised, contentColor = skin.inkDim)) {
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurfaceVariant)) {
                             Icon(painterResource(R.drawable.gym_coach_close), "Remove photo", Modifier.size(20.dp))
                         }
                     }
                 }
             }
         }
-        if (preparing) Text("Preparing photo…", style = WindmillFont.body(12), color = skin.inkDim)
+        if (preparing) Text("Preparing photo…", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
         upload?.let {
             LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Photo upload" })
         }
-        editor.trouble?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
+        editor.trouble?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)) {
             IconButton(onClick = ::pickPhoto,
                 enabled = enabled && !asking && !preparing, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_image), "Add photo", tint = if (enabled) skin.inkDim else skin.ink.copy(alpha = 0.38f), modifier = Modifier.size(24.dp))
+                Icon(painterResource(R.drawable.gym_coach_image), "Add photo", tint = if (enabled) colors.onSurfaceVariant else colors.onSurface.copy(alpha = 0.38f), modifier = Modifier.size(24.dp))
             }
             val inputEnabled = enabled && !asking && !preparing
             val interaction = remember(editor) { MutableInteractionSource() }
             val fieldColors = TextFieldDefaults.colors(
-                    focusedContainerColor = skin.raised, unfocusedContainerColor = skin.raised, disabledContainerColor = if (enabled) skin.raised else skin.ink.copy(alpha = 0.04f),
-                    focusedTextColor = skin.ink, unfocusedTextColor = skin.ink, disabledTextColor = if (enabled) skin.ink else skin.ink.copy(alpha = 0.38f),
-                    focusedPlaceholderColor = skin.inkDim, unfocusedPlaceholderColor = skin.inkDim, disabledPlaceholderColor = if (enabled) skin.inkDim else skin.ink.copy(alpha = 0.38f),
+                    focusedContainerColor = colors.surfaceContainerHighest, unfocusedContainerColor = colors.surfaceContainerHighest, disabledContainerColor = if (enabled) colors.surfaceContainerHighest else colors.onSurface.copy(alpha = 0.04f),
+                    focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface, disabledTextColor = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = 0.38f),
+                    focusedPlaceholderColor = colors.onSurfaceVariant, unfocusedPlaceholderColor = colors.onSurfaceVariant, disabledPlaceholderColor = if (enabled) colors.onSurfaceVariant else colors.onSurface.copy(alpha = 0.38f),
                     focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
-                    cursorColor = skin.accent)
+                    cursorColor = colors.primary)
             BasicTextField(state = editor.field,
-                textStyle = CoachType.body(16).copy(lineHeight = 24.sp, letterSpacing = 0.5.sp,
-                    color = if (enabled) skin.ink else skin.ink.copy(alpha = 0.38f)),
-                enabled = inputEnabled, cursorBrush = SolidColor(skin.accent), interactionSource = interaction,
+                textStyle = GymType.coachComposer.copy(
+                    color = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = 0.38f)),
+                enabled = inputEnabled, cursorBrush = SolidColor(colors.primary), interactionSource = interaction,
                 decorator = { input ->
                     TextFieldDefaults.DecorationBox(value = editor.field.text.toString(), innerTextField = input,
                         enabled = inputEnabled, singleLine = false, visualTransformation = VisualTransformation.None,
                         interactionSource = interaction, shape = RoundedCornerShape(28.dp), colors = fieldColors,
-                        placeholder = { Text(Ask.placeholder, style = CoachType.body(16).copy(lineHeight = 24.sp, letterSpacing = 0.5.sp)) })
+                        placeholder = { Text(Ask.placeholder, style = GymType.coachComposer) })
                 }, modifier = Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).semantics { contentDescription = "Question" })
             val ready = enabled && !asking && !preparing && canSend(editor.draft.copy(text = editor.field.text.toString()))
             if (asking || editor.field.text.isNotEmpty() || editor.draft.photo != null) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     FilledIconButton(enabled = ready || (asking && onStop != null), modifier = Modifier.size(40.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = skin.accent, contentColor = skin.onAccent),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                         onClick = {
                             if (asking) onStop?.invoke()
                             else if (editor.sync(hidden, retry = true)) {
@@ -246,7 +246,7 @@ private class CoachDraftEditor(private val store: CoachStore, private val key: S
 
 @Composable
 internal fun CoachPhoto(store: CoachStore, threadId: String, photo: CoachAttachment, modifier: Modifier = Modifier) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     var bitmap by remember(store.accountKey, threadId, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var failure by remember(store.accountKey, threadId, photo.id) { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
@@ -264,16 +264,16 @@ internal fun CoachPhoto(store: CoachStore, threadId: String, photo: CoachAttachm
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { failure = true }
     }
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(skin.surface)
+    Box(modifier.clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainer)
         .clickable(role = Role.Button, onClickLabel = if (failure) "Retry photo" else "View photo") {
             if (failure) attempt++ else expanded = true
         }.semantics { contentDescription = if (failure) "Photo unavailable. Retry photo" else "Attached photo" }, contentAlignment = Alignment.Center) {
         val image = bitmap
         if (image != null) Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Text(if (failure) "Retry photo" else "Photo", style = WindmillFont.body(12), color = skin.inkDim)
+        else Text(if (failure) "Retry photo" else "Photo", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
     }
     if (expanded && bitmap != null) Dialog(onDismissRequest = { expanded = false }) {
-        Column(Modifier.background(skin.surface, RoundedCornerShape(16.dp)).padding(12.dp)) {
+        Column(Modifier.background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(12.dp)) {
             Image(requireNotNull(bitmap).asImageBitmap(), "Attached photo", Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 520.dp).aspectRatio(photo.width.toFloat() / photo.height), contentScale = ContentScale.Fit)
             CoachAction("Close", { expanded = false })
         }

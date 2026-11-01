@@ -26,6 +26,10 @@ strict layering; see [coverage, gates and remaining work](SYNC_FOUNDATION.md). T
 that runtime for gym, with signed-out workout imports and account decisions.
 
 Products depend on `:platform`, never on each other. See [repository structure](../../STRUCTURE.md).
+Screens read colour from `MaterialTheme.colorScheme` and the room's own `MaterialTheme.gymColors`, and type from
+`MaterialTheme.typography`, the brand's `WindmillType` and the room's `GymType` (`gym/ui/GymMaterial.kt`,
+`gym/ui/GymType.kt`, `platform/design/Tokens.kt`); `ThemeRolesTests` keeps type sizes and hex colours out of screens.
+Dynamic colour is off: the brand palette is fixed.
 The app is portrait-only. Shared gym rules live in
 [backend architecture](../../backend/products/gym/ARCHITECTURE.md), UI rules in
 [brand foundations](../../docs/design/brand-foundations.md) and the Gym Figma file, and Coach's retry/stream/image rules in

@@ -1,5 +1,7 @@
 package works.windmill.gym
 
+import works.windmill.gym.ui.GymType
+import androidx.compose.material3.MaterialTheme
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -35,10 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.ceil
 import works.windmill.gym.presentation.Session
-import works.windmill.gym.ui.GymChrome
-import works.windmill.gym.ui.GymNativeType
 import works.windmill.gym.ui.GymSnackbarHost
-import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.WorkoutBar
 
 // One frame of the room: its screen and the chrome that frame owns. `transient` is the room's, held here
@@ -54,22 +53,22 @@ internal fun FrameChrome(
     onPick: (Tab) -> Unit,
     content: @Composable () -> Unit,
 ) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val coachRoom = frame is Frame.Root && frame.tab == Tab.Coach ||
         frame is Frame.Pushed && (frame.away is Away.Coach || frame.away is Away.Thread)
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = skin.canvas,
+        containerColor = colors.surface,
         bottomBar = {
             if (frame.railStands || line != null || frame !is Frame.Workout) {
-                Column(Modifier.fillMaxWidth().background(skin.canvas)) {
+                Column(Modifier.fillMaxWidth().background(colors.surface)) {
                     // Reserve the transient's measured height below screen-owned actions.
                     transient?.let { GymSnackbarHost(it) }
                     line?.let {
                         Text(
                             it,
-                            style = GymNativeType.note,
-                            color = skin.inkDim,
+                            style = GymType.statusLine,
+                            color = colors.onSurfaceVariant,
                             maxLines = 2,
                             // Said as it changes, so TalkBack hears the line the eye reads.
                             modifier = Modifier
@@ -123,15 +122,15 @@ internal object RailLabels {
 
 @Composable
 internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
-    val skin = LocalGymColors.current
+    val colors = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    Column(Modifier.fillMaxWidth().background(skin.surface)) {
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val barWidth = constraints.maxWidth
             val labelWidths = remember(barWidth, density) {
                 with(density) {
-                    fun width(text: String) = measurer.measure(text, GymChrome.tab, softWrap = false).size.width.toFloat()
+                    fun width(text: String) = measurer.measure(text, GymType.navigationLabel, softWrap = false).size.width.toFloat()
                     val side = 12.dp.toPx()
                     // NavigationBar's own spacing between its items.
                     val spacing = 8.dp.toPx()
@@ -143,7 +142,7 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
                 }
             }
             NavigationBar(
-                containerColor = skin.surface,
+                containerColor = colors.surfaceContainer,
                 tonalElevation = 0.dp,
                 // The 12 dp sides are the bar's own inset, inside its surface, so a long label may spill into them.
                 windowInsets = WindowInsets(left = 12.dp, right = 12.dp),
@@ -156,21 +155,21 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
                             if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
                         }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
                         label = {
-                            Text(entry.title, style = GymChrome.tab, textAlign = TextAlign.Center,
+                            Text(entry.title, style = GymType.navigationLabel, textAlign = TextAlign.Center,
                                 modifier = Modifier.requiredWidth(labelWidths[index]))
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = skin.accent,
-                            selectedTextColor = skin.ink,
-                            indicatorColor = skin.raised,
-                            unselectedIconColor = skin.inkDim,
-                            unselectedTextColor = skin.inkDim,
+                            selectedIconColor = colors.primary,
+                            selectedTextColor = colors.onSurface,
+                            indicatorColor = colors.surfaceContainerHighest,
+                            unselectedIconColor = colors.onSurfaceVariant,
+                            unselectedTextColor = colors.onSurfaceVariant,
                         ),
                     )
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().background(skin.canvas).navigationBarsPadding())
+        Box(Modifier.fillMaxWidth().background(colors.surface).navigationBarsPadding())
     }
 }
 

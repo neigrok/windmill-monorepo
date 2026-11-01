@@ -11,13 +11,13 @@
   - `Android / Button` `210:181`: Filled (Apply) and Tonal (Reject), 56 dp
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Under Coach's answer, `Minted` (`coach/AskScreen.kt:387-394`) draws `ProposalCard` (`ui/ReviewSheet.kt:498-507`), which is `CoachProposalCard` (`coach/CoachAnswer.kt:327-341`):
+- Under Coach's answer, `Minted` (`coach/AskScreen.kt:386-393`) draws `ProposalCard` (`ui/ReviewSheet.kt:498-507`), which is `CoachProposalCard` (`coach/CoachAnswer.kt:338-352`):
   - *Proposal · Push A*, the summary (*3 changes to Push A.*), the count (*3 changes*, plus * · still waiting*), and a *Review* row.
-  - Under a pending card, `Ask.promise` (`coach/Ask.kt:202-203`, drawn at `coach/AskScreen.kt:391`): *Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.*
-- *Review* opens `ReviewSheet` (`ui/ReviewSheet.kt:82`, mounted at `GymRoom.kt:842`):
+  - Under a pending card, `Ask.promise` (`coach/Ask.kt:202-203`, drawn at `coach/AskScreen.kt:390`): *Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.*
+- *Review* opens `ReviewSheet` (`ui/ReviewSheet.kt:81`, mounted at `GymRoom.kt:842`):
   - Rows *Add {m}* / *Remove {m}* / field moves *label · a → b* (`ui/ReviewSheet.kt:325-356`); kept runs *and N lines unchanged* (`presentation/Proposal.kt:304-307`).
   - *Apply* / *Apply all N* (`presentation/Proposal.kt:226-231`) stays at 40 % until the sheet is scrolled to the end (`ui/ReviewSheet.kt:446-457`), with *Scroll to the end to apply.* (`presentation/Proposal.kt:265`) and the atomic line *All three or none. Nothing is applied until you tap.* (`:233-240`).
-- **Bug:** a fresh proposal reads *This proposal is no longer available.* (`RoutinesStore.proposal`). `AskScreen` reads each proposal once (`coach/AskScreen.kt:122-132`); if the replica does not hold it yet, the id goes into `missing` and is never read again until the screen is left and re-entered.
+- **Bug:** a fresh proposal reads *This proposal is no longer available.* (`RoutinesStore.proposal`). `AskScreen` reads each proposal once (`coach/AskScreen.kt:121-131`); if the replica does not hold it yet, the id goes into `missing` and is never read again until the screen is left and re-entered.
 
 **Change**
 - Delete the review sheet from Coach. The card is decided where it stands.

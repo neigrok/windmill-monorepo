@@ -9,7 +9,7 @@
 - Components: `Android / Change row` `337:2686` (Changed, Note), `Android / Diff field` `337:2531`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- A note save and a movement update show only as tally phrases in the expanded read line: *saved a note*, *updated a movement* (`coach/Ask.kt:232`, `:235`; drawn at `coach/CoachAnswer.kt:197-199`).
+- A note save and a movement update show only as tally phrases in the expanded read line: *saved a note*, *updated a movement* (`coach/Ask.kt:232`, `:235`; drawn at `coach/CoachAnswer.kt:196-198`).
 - The answer carries tool names only (`AskStep`, `coach/Ask.kt:15`). `results` carries created routines only (`CoachResult`, `coach/Ask.kt:50`); the server fills it only for routines (`backend/products/gym/application/AskService.cpp:129`, `:488`).
 
 **Change**

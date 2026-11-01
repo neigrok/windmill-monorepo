@@ -71,11 +71,9 @@ class SignInDoorSkinTests {
         val seen = mutableMapOf<String, List<Color>>()
         @Composable
         fun probe(name: String) {
-            val gym = LocalGymColors.current
             val shell = LocalWindmillPalette.current
             val native = MaterialTheme.colorScheme
-            val colors = listOf(gym.accent, shell.accent, native.primary,
-                gym.canvas, shell.canvas, native.background)
+            val colors = listOf(shell.accent, native.primary, MaterialTheme.gymColors.prInk, shell.canvas, native.background)
             SideEffect { seen[name] = colors }
         }
         compose.setContent {
@@ -89,10 +87,10 @@ class SignInDoorSkinTests {
                 }
             }
         }
-        val instrument = listOf(Color(0xFF5FCDB4), Color(0xFF5FCDB4), Color(0xFF5FCDB4),
-            Color(0xFF0B1111), Color(0xFF0B1111), Color(0xFF0B1111))
-        val daylight = listOf(Color(0xFF137A6C), Color(0xFF137A6C), Color(0xFF137A6C),
-            Color(0xFFEBE7E3), Color(0xFFEBE7E3), Color(0xFFEBE7E3))
+        val instrument = listOf(Color(0xFF5FCDB4), Color(0xFF5FCDB4), Color(0xFFD9B04C),
+            Color(0xFF0B1111), Color(0xFF0B1111))
+        val daylight = listOf(Color(0xFF137A6C), Color(0xFF137A6C), Color(0xFF6E5217),
+            Color(0xFFEBE7E3), Color(0xFFEBE7E3))
         compose.runOnIdle {
             assertEquals(mapOf("outer" to instrument, "nested" to daylight, "sibling" to instrument), seen)
             outerDark.value = false
