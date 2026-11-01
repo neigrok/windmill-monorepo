@@ -7,7 +7,7 @@
 - 02.8 Routine editor, remove a movement by swipe: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30621) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45193)
 - 02.10 Routine deleted by swipe: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29196) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45437)
 - 02.12 Routine menu, Delete: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29480) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45706)
-- 05.4 Workout detail, delete a set by swipe: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27713) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31027)
+- 05.4b Workout detail, delete a set by swipe: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1793-27226) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1793-27317)
 - Components (Design System library, Android page): `Android / Swipe row` `337:2217`, `Android / Menu` `342:2725`.
 
 **Implementation status**
@@ -29,7 +29,7 @@
 **Out of scope:** the log row swipe and its dialog (22); Fix set's button (10); This workout's rows (11); the discard dialog (14); weigh-in and notes screens (24, 26); conversation delete (37).
 
 **Done when**
-- Deletion roles on 00.3, 02.8, 02.10, 02.12 and 05.4 match in Dark and Daylight; the rig (01) adds `00.3-band-dark/light`, `02.8-editor-swipe-dark/light`, `02.10-routine-deleted-dark/light`, `02.12-routine-menu-dark/light`, `05.4-set-swipe-dark/light`. Root chrome/FAB, editor geometry and Session copy remain with 03/17, 18 and 23. The weight Undo band uses the approved native one-line form; the general two-line specimen is not forced onto this shorter message.
+- Deletion roles on 00.3, 02.8, 02.10, 02.12 and 05.4b match in Dark and Daylight; the rig (01) adds `00.3-band-dark/light`, `02.8-editor-swipe-dark/light`, `02.10-routine-deleted-dark/light`, `02.12-routine-menu-dark/light`, `05.4-set-swipe-dark/light`. Root chrome/FAB, editor geometry and Session copy remain with 03/17, 18 and 23. The weight Undo band uses the approved native one-line form; the general two-line specimen is not forced onto this shorter message.
 - Use content-free `gym_action` events for immediate settled deletes (`screen=routines|session|notes`, `action=delete`, `outcome=ok|refused|failed`). For weights, distinguish the held request, Undo/cancellation and eventual delete outcome (24); a hidden row is not a committed delete. Pin the bounded labels in `TelemetryPolicy` and `docs/ANDROID_OBSERVABILITY.md`. Never include names, dates, values or record IDs.
 - Unexpected failures still report under `gym.dropRoutine`, `gym.deleteSet`, `gym.deleteNote` and `gym.deleteWeighIn`; a refusal is the event only.
 - Retain held-weight tests in `store/WithheldWindowTests.kt` and `store/WithheldSendTests.kt`: Undo before expiry sends nothing; expiry sends once; late Undo cannot pretend success; activity recreation keeps remaining time; actual backgrounding releases to the queue with no Undo on return; restart releases a surviving hold; a successful same-day rewrite retires its hold; a failed rewrite does not. Add resource-specific immediate-delete and refusal tests without converting these weight cases. Update swipe, row-return, transient and telemetry tests for the two contracts.

@@ -617,6 +617,25 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
   strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
   icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
+- **Board · two skeleton cards.** The desktop Skeleton card (369:4027) breathes opacity 1 → .6 over
+  1200ms ease-glow for as long as the roadmap loads; the phone Skeleton card (369:10026) holds still,
+  and the motion canon reserves endless breathing for the crowned root (`tokens/motion.css`).
+  `board/states.css` follows each drawing. Choose one.
+- **Board · Roadmap complete for a reader.** The roadmap-complete frames (desktop 385:13038, phone
+  377:6685) draw only the owner. The Board shows a reader the title alone: *Add a step whenever
+  you're ready.* invites something a reader cannot do. Draw the reader's state.
+- **Board · states at 744px.** The loading, load-error and empty frames are drawn at
+  1440 and on phones; 744–1023px uses the desktop frames, with the three skeleton columns side by side
+  rather than the tablet's rail. Draw the tablet states.
+- **Board · New step on an empty phone roadmap.** The phone empty roadmap (185:2149) pins New step, but
+  the web has no way to plant a first step on a phone or tablet yet, so there an empty roadmap stays on
+  the Graph as before and the Board's empty state shows only on the desktop editor.
+- **Board · the topbar before a roadmap loads.** Desktop 02.09 (374:5067) and 02.10 (374:5202) draw the roadmap's
+  name with its switcher chevron and the Board/Graph switch, and no Share. Before the load answers, or after it
+  fails, the build knows no name, so it shows none rather than *Untitled roadmap*, and it offers no Share. It shows
+  the switch while loading, but not after a failed load: the Graph's load error veils the topbar, so the switch would
+  lead where a pointer cannot come back from. Draw what the topbar names before the name is known, and say whether
+  the switch belongs on 02.10 once the Graph's load error leaves the topbar reachable.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.
@@ -749,9 +768,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Editor movement | `ui/RoutineBuilder.kt:482`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
   | Target set row | `ui/MovementForm.kt:203`, shared row | 02.11 `1253:29263` | shared row |
   | This workout row | `ui/AssemblySheet.kt:141`, shared row, *Remove movement* | 03.4 `1253:29834` | shared row |
-  | Workout detail set | `ui/SessionScreen.kt:430`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
+  | Workout detail set | `ui/SessionScreen.kt:430`, shared row, immediate | 05.4b `1793:27226` | swipe verified in Dark/Daylight; Session copy remains 23 |
   | The log row | `ui/LogScreen.kt:138`, shared row *Discard workout*, and the long-press menu's *Discard workout* (`:276`); both ask *Discard this workout?* (`ui/ConfirmDialog.kt:60`) | 05.2 `1252:27527` | swipe + *Discard this workout?* |
-  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:301`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
+  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:301`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.14b `1793:27005` | confirm once |
   | Bodyweight | `ui/BodyweightScreen.kt:328` and the log's weigh-in row (`ui/LogScreen.kt:146`), shared row; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
   | Coach History | `coach/ThreadsScreen.kt:143-160`, asks *Delete this conversation?*, then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
@@ -946,6 +965,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     `1793:27501`, caption `1793:27589`) and 05.13b (`1793:27594`, `1793:27683`, caption
     `1793:27772`) carry the same rows. At 200 % text a two-digit count widens its row's column past
     24 dp, so that row's load starts further in; no board draws it.
+  - *A movement with no plan (designer).* On a free workout (no plan) each movement heading keeps
+    its 48 dp touch target (`GymTap.minimum`) with no line under the name
+    (`Performed.Against.Silent` in `ui/SessionScreen.kt`), so a blank gap sits where 05.3b draws
+    *Plan 3 × 8 · 75 kg total*. Designer to draw a planless movement heading.
+  - *Movement headings are not headings (Android build, task 64's area).* TalkBack does not expose
+    a workout page's movement headings as accessibility headings, so heading navigation skips
+    them; the heading in `ui/SessionScreen.kt` sets no `semantics { heading() }`.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves

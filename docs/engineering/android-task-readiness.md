@@ -46,7 +46,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | 20 | Scoped | [05.9 Edit movement](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6349); gate E applies only to new equipment presentation. |
 | 21 | Scoped | [05.6 Record](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30001); preserve current supported-equipment presentation under gate E. |
 | 22 | Ready | [05.1 Chronological log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834). |
-| 23 | Ready | [05.3 Workout detail](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27642); approved Log and Finish contracts apply. |
+| 23 | Ready | [05.3b Workout detail](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1782-26943); approved Log and Finish contracts apply. |
 | 24 | Ready | [06.1 Weigh-in](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31991); calendar, compact keyboard, validation and Undo specimens are ready. |
 | 25 | Ready | [07.7 On this phone at the log head](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42660); linked inspect/fix/discard and account-decision frames are ready. |
 | 26 | Ready | [09.1 Notes](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39045). |

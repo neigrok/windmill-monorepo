@@ -16,6 +16,7 @@
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
 .st-board-phone-pane {
+  overflow-anchor: none; /* ColumnCards keeps the view still as cards above it settle */
   grid-area: 1 / 1;
   min-height: 0;
   visibility: hidden;

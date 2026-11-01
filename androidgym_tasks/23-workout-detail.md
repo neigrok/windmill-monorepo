@@ -5,9 +5,9 @@
 **Approved flow:** [Log / Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — human-approved 2026-10-25. Workout discard uses the approved [Finish overflow confirmation](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362); weight Undo remains separate.
 
 **Figma:**
-- 05.3 Workout detail: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27642) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30969)
-- 05.14 Workout detail, Discard asks once: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40948) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41023)
-- 05.3b Quiet set count, which revises the set rows of 05.3: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1782-26943) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1782-27019). 05.14b (`1793-27005` / `1793-27113`), 05.4b (`1793-27226` / `1793-27317`), 05.5b (`1793-27413` / `1793-27501`) and 05.13b (`1793-27594` / `1793-27683`) carry the same rows; ledger 11u.
+- 05.3b Workout detail, quiet set count: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1782-26943) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1782-27019)
+- 05.14b Workout detail, Discard asks once: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1793-27005) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1793-27113)
+- 05.4b (`1793-27226` / `1793-27317`), 05.5b (`1793-27413` / `1793-27501`) and 05.13b (`1793-27594` / `1793-27683`) carry the same set rows; ledger 11u.
 - Components (Design System library, Android page):
   - `Android / Top app bar` `342:2953`
   - `Android / Equipment icon` `337:2025`
@@ -26,18 +26,18 @@
 - Plan line with the load basis and a space: *Plan 3 × 8 · 75 kg total* (barbell), *Plan 3 × 10 · 24 kg each* (two dumbbells). 08 changes `Readout.targetWithUnit`; this screen only uses it.
 - Set notes never print a kind (the kind itself goes with 06).
 - *Discard session* → *Discard workout*, an `Android / Button` Text in the error role (02).
-  - A tap opens the dialog from 14 (05.14): *Discard this workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / **Cancel** · **Discard** (error role).
+  - A tap opens the dialog from 14 (05.14b): *Discard this workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / **Cancel** · **Discard** (error role).
   - Discard removes the workout at once, then the room goes back to The log. No hold, no Undo.
 - *Share this workout* is unchanged.
 - Fix the comparison count in the domain: every set of the movement counts, in the performed row's own form (*3 × 6–8 · 75–80*). Add a domain vector. The receipt no longer draws the block (14), so this screen is its only reader.
 
 **Out of scope:**
 - Deleting a set by swipe and the set row's ground (05).
-- The share sheet (05.5 and 05.13 match today in Dark; their Daylight is 02's).
+- The share sheet (05.5b and 05.13b; their Daylight colour roles are 02's).
 - Fix set (10).
 
 **Done when**
-- Screenshots of 05.3 (top and bottom) and 05.14 match in Dark and Daylight; the rig (01) adds `05.3-workout-detail-dark/light`, `05.3-workout-detail-bottom-dark/light` and `05.14-detail-discard-dialog-dark/light`.
+- Screenshots of 05.3b (top and bottom) and 05.14b match in Dark and Daylight; the rig (01) adds `05.3-workout-detail-dark/light`, `05.3-workout-detail-bottom-dark/light` and `05.14-detail-discard-dialog-dark/light`.
 - `gym_screen_viewed` `session` still fires.
 - Discard emits `gym_action` with `screen=session`, `action=discard`, `state=shown`, then `outcome=ok` / `cancelled` / `refused` / `failed` (the event comes from 05).
 - Failures still report as `gym.discard`.

@@ -144,17 +144,44 @@
   margin-top: 0;
 }
 
-/* ---- Show all: the row ending a folded Done. ---- */
+/* ---- A column's run: the cards in view, with a spacer standing in for each stretch not rendered. ---- */
+.st-board-cards {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+.st-board-cards > * {
+  flex-shrink: 0;
+}
+
+/* ---- Show all: the row ending a folded Done, drawn as 🧩 Board / Show all row. ---- */
 .st-board-show-all {
-  align-self: flex-start;
-  padding: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 48px;
+  padding: 0 var(--space-4);
   border: 0;
-  background: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
   font-family: var(--font-body);
-  font-weight: 700;
+  font-weight: 800;
   font-size: 14px;
-  color: var(--text-secondary);
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--text-primary);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-board-show-all svg {
+  flex-shrink: 0;
+}
+.st-board-show-all:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 /* ---- Step card: rest, hover, focus-visible, pressed, selected; Locked sits at the dimmed tier. ---- */
@@ -251,4 +278,42 @@
   font-weight: 400;
   font-size: 13px;
   line-height: 20px;
+}
+
+/* ---- Arrived: a step that just became up next, or was just created, wakes once (fade, scale 1 → 1.02 → 1) while its edge
+   and glow settle over two pulses. Focus landing on it ends the wake, so the edge never reads as the focus ring. ---- */
+.st-board-card.is-arrived {
+  --st-board-arrived-edge: var(--color-brand-soft);
+  --st-board-arrived-inset: 2px; /* over the 1px border: the drawn 3px edge */
+  animation:
+    st-board-card-wake var(--duration-slow) var(--ease-soft),
+    st-board-card-settle var(--duration-glow) var(--ease-glow);
+}
+.st-board-card--locked.is-arrived {
+  --st-board-arrived-edge: var(--color-brand);
+  --st-board-arrived-inset: 1px;
+}
+@keyframes st-board-card-wake {
+  0% { opacity: 0; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+@keyframes st-board-card-settle {
+  0%, 50% {
+    border-color: var(--st-board-arrived-edge);
+    box-shadow: inset 0 0 0 var(--st-board-arrived-inset) var(--st-board-arrived-edge), 0 0 0 3px var(--kind-terracotta-glow), 0 0 8px var(--kind-terracotta-glow);
+  }
+  25%, 75% {
+    border-color: var(--st-board-arrived-edge);
+    box-shadow: inset 0 0 0 var(--st-board-arrived-inset) var(--st-board-arrived-edge), 0 0 0 1px var(--kind-terracotta-glow), 0 0 4px var(--kind-terracotta-glow);
+  }
+}
+@keyframes st-board-card-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-board-card.is-arrived {
+    animation: st-board-card-fade var(--duration-fast) var(--ease-standard);
+  }
 }

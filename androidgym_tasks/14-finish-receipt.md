@@ -32,7 +32,7 @@
 - 03.8, ended early: *Ended early.* / *Push A · Thu, Oct 22*, tiles *9m* · *2* · *960 kg*, **Performed** · *Bench Press* / *2 × 8 · 60 kg*, and the same two actions plus top-end overflow.
 - 03.14: overflow → **Discard** opens an M3 `AlertDialog`: *Discard this workout?* / *This deletes the workout and its 2 sets. You can’t undo this.* (*This deletes the workout and its {n} sets. You can’t undo this.*) / **Cancel** · **Discard** (error role).
   - On **Discard** the workout is deleted at once and the room opens The log. No hold, no Undo (05).
-  - The workout detail's **Discard workout** (23), the log row swipe (22) and Inspect's ⋮ (25) use this same dialog and these words. Put the dialog and its sentence in one place (e.g. `ui/ConfirmDialog.kt`, the file the 05.14 caption names).
+  - The workout detail's **Discard workout** (23), the log row swipe (22) and Inspect's ⋮ (25) use this same dialog and these words. Put the dialog and its sentence in one place (e.g. `ui/ConfirmDialog.kt`, the file the 05.14b caption names).
 - 03.15, the first finished workout while signed out: 03.7 without the record card, and one line under the tiles, *Only on this phone · Keep it* (*Keep it* bold, accent).
   - **Keep it** opens the sign-in step (Shell · Android 15a, task 27).
   - Shown only on the receipt of the first finished workout on this phone while signed out; a once-only flag on this phone records that it was shown. Later receipts never show it, and ordinary training screens have no standing sign-up prompt (17/27). Preserve user-invoked account sign-in, signed-out Share with Coach and account-required Coach routes, including the bound-installation stance in 36/38.

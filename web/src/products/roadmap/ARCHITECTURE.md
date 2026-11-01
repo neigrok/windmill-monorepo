@@ -26,18 +26,51 @@ production; off production, localStorage `windmill:board:dev` set to `1` opens i
 the List's place, owners open on the Board and visitors on the Graph, and the selected step carries
 across. The desktop editor's topbar carries the Board/Graph switch on both views; elsewhere the Board's
 identity row carries it, and the Graph's rides the action lane on phones and tablets. A desktop
-visitor's Graph has no switch yet. Graph keyboard shortcuts do not act on the Board.
+visitor's Graph has no switch yet. While the Board stands in for a roadmap that has not loaded, the topbar names
+none and offers no Share, and after a failed load it offers no switch. Graph keyboard shortcuts do not act on the Board.
 
 From 1024px the Board stands Locked, Up next and Done side by side, each column scrolling under its
 sticky heading and starting just under the topbar, whose content bottom `ControlBar` measures while
 the gate is open. From 744px to 1023px one side column folds to a rail, Done first; Show swaps which
 one, and Up next never folds (`columnStage` in `BoardColumns.jsx`). Phones show one column at a time
 behind Locked · Up next · Done tabs in a bottom band (`PhoneSegments.jsx`). No band draws the action
-lane on the Board; a reader's Fork pill lifts the columns and the band clear of it. From 744px, tabbing
-forward into the cards lands on the first Up next card. Shown with a step selected, the Board opens
-that step's column (its tab, past the Done fold, or out of the rail) and scrolls its card into view.
-The layer stays mounted across Board/Graph switches, so each column keeps its scroll there. Crossing
-744px rebuilds the columns, and a column that folds to a rail starts at the top when it stands again.
+lane on the Board; a reader's Fork pill lifts the columns and the band clear of it. Shown with a step
+selected, the Board opens that step's column (its tab, past the Done fold, or out of the rail) and
+scrolls its card into view. The layer stays mounted across Board/Graph switches, so each column keeps
+its scroll there. Crossing 744px rebuilds the columns, and a column that folds to a rail starts at the
+top when it stands again.
+While the Board is shown, `coverBeneath` in `BoardView.jsx` makes everything stacked under its layer
+inert, the Graph's overlays and legend included.
+
+Each column renders only the cards in view plus ten either side (`ColumnCards.jsx`), estimating an
+unmeasured card's height from its text and the column's width, measuring each card as it renders and
+standing a spacer in for every stretch it skips. It keeps the first card in view still as cards above it
+settle, in place of the browser's scroll anchoring, which the columns turn off and WebKit lacks. The
+roving stop and the selected step always render, so focus and a reveal reach them anywhere in the column.
+Above twelve, Done folds to its twelve newest completions and a Show all row (`Board.shownCards`).
+The columns are one tab stop with roving focus (`traversal.js`). A stop is a card, the Show all row or a
+rail's Show. Tab enters on the stop last focused while it still stands, else the stop a column last
+held (Up next's before the others'), else the first Up next card, else the first stop of any column. Up and
+Down move within a column, Home and End to its ends, and Left and Right to the neighbouring column's
+stop at the nearest height, skipping an empty column; a rail offers only its Show. Enter is the stop's
+own button, so a card selects its step. A focused stop that unmounts hands focus to the new stop, and
+after Try again focus rests on the skeleton until the roadmap loads. On phones each pane is one tab stop
+of its own with the same Up, Down, Home and End, and the tabs keep their own arrow keys. A step that
+becomes up next, or a new step that is not done, wakes once while the Board stays mounted (`arrivals` in
+`Board.js`); reduced motion fades it in, and focus landing on it ends the wake. While hidden the Board
+skips the host's renders and catches up when shown, so a step that arrived meanwhile wakes then.
+
+The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
+would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap
+loads, skeleton cards hold the columns under the identity row and band, with no counts and no spinner.
+A failed load says *Couldn't load this roadmap* with Try again, which reruns the load. A roadmap with no
+steps opens on the Graph; switched to the Board on the desktop editor it shows *Your first step* with
+New step as its one primary. Elsewhere it stays on the Graph, since phones and tablets cannot plant a
+first step yet. Once every step is done, the Up next column rests on Roadmap complete: the owner gets
+the body line, Share it (the share dialog) and, from 744px, New step; a reader gets the title alone.
+The Board has no step editor yet, so New step switches to the Graph and plants the step there — the
+first step on an empty roadmap, otherwise one after the roadmap's last leaf — without changing the
+saved view.
 
 ## Package map
 

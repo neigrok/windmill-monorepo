@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
-import { Board, BOARD_SORTS, DONE_RECENT_LIMIT } from '../../../../src/products/roadmap/board/Board.js';
+import { Board, BOARD_SORTS, DONE_RECENT_LIMIT, arrivals } from '../../../../src/products/roadmap/board/Board.js';
 
 function learnToSail(extra = []) {
   const imported = Date.parse('2026-10-20T09:00:00Z');
@@ -328,6 +328,46 @@ test('Board — exactly twelve done steps do not fold', () => {
   const recent = new Board(tree, { completed: new Set(nodes.map((node) => node.id)), completedAt: {} }).recentDone();
 
   assert.deepEqual({ count: recent.cards.length, total: recent.total, folded: recent.folded }, { count: 12, total: 12, folded: false });
+});
+
+test('Board — shownCards folds only Done, and an expanded Done shows every card newest first', () => {
+  const nodes = Array.from({ length: 14 }, (_, index) => ({ id: `s${index}`, label: `Step ${index}`, prerequisites: index === 13 ? ['s0'] : [] }));
+  const tree = new SkillTree({ id: 't', title: 'T', nodes });
+  const done = nodes.slice(1, 13).map((node) => node.id).concat('s0');
+  const board = new Board(tree, { completed: new Set(done), completedAt: Object.fromEntries(done.map((id, index) => [id, index])) });
+  const shown = (name, options) => {
+    const { cards, folded, total } = board.shownCards(name, options);
+    return `${name} ${cards.map((card) => card.id).join(' ')} · ${total}${folded ? ' · folded' : ''}`;
+  };
+  assert.deepEqual([shown('done'), shown('done', { doneExpanded: true }), shown('upNext'), shown('locked')], [
+    'done s0 s12 s11 s10 s9 s8 s7 s6 s5 s4 s3 s2 · 13 · folded',
+    'done s0 s12 s11 s10 s9 s8 s7 s6 s5 s4 s3 s2 s1 · 13',
+    'upNext s13 · 1',
+    'locked  · 0',
+  ]);
+});
+
+test('arrivals — a step that became up next or a new unfinished step arrives; a reset, a completion and a new done step stay quiet', () => {
+  const tree = learnToSail();
+  const before = new Board(tree, initialProgress());
+  const windDone = new Board(tree, { completed: new Set(['course', 'parts', 'rig', 'wind']), completedAt: {} });
+  assert.deepEqual([...arrivals(before, windDone)], ['dock']);
+  assert.deepEqual([...arrivals(windDone, before)], []);
+
+  const grown = learnToSail([
+    { id: 'reef', label: 'Reefing basics', prerequisites: ['wind'] },
+    { id: 'knot', label: 'Figure eight', prerequisites: [] },
+    { id: 'logged', label: 'Logged trip', prerequisites: [] },
+  ]);
+  const after = new Board(grown, { completed: new Set(['course', 'parts', 'rig', 'logged']), completedAt: {} });
+  assert.deepEqual([...arrivals(before, after)], ['reef', 'knot']);
+});
+
+test('arrivals — a Board that shares no step with the one before is a roadmap arriving whole, so nothing wakes', () => {
+  const empty = new Board(new SkillTree({ id: 'empty', title: 'Empty', nodes: [] }), { completed: new Set(), completedAt: {} });
+  const other = new Board(new SkillTree({ id: 'other', title: 'Other', nodes: [{ id: 'x', label: 'X', prerequisites: [] }] }), { completed: new Set(), completedAt: {} });
+  assert.deepEqual([...arrivals(empty, new Board(learnToSail(), initialProgress()))], []);
+  assert.deepEqual([...arrivals(other, new Board(learnToSail(), initialProgress()))], []);
 });
 
 test('Board — Created sorts Locked and Up next, newest or oldest, ties in authored order; Done stays newest completed', () => {
