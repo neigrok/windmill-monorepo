@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.testTag
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -77,11 +78,12 @@ internal fun CoachReadSources(
     val counted = CoachSources.tally(tally)
     val notesRead = steps.any { it.tool == "list_notes" && !it.failed }
     val line = if (counted.isNotEmpty()) "Read $counted" else if (notesRead) "Read your notes" else "Read nothing from your log"
+    // The line keeps its 13 sp size; its touch target is the platform's 48 dp.
     Row(verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "What Coach read") {
+        modifier = Modifier.testTag("coach-read-sources").clickable(role = Role.Button, onClickLabel = "What Coach read") {
             expanded = true
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
-        }.padding(start = 12.dp, top = 4.dp),
+        }.heightIn(min = 48.dp).padding(start = 12.dp),
     ) {
         Text(line, style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
         Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = skin.inkDim)

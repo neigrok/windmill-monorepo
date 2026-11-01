@@ -39,7 +39,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
@@ -238,7 +240,8 @@ fun RoutineSheet(
             if (routine != null) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter)
                     .padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    failure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
+                    failure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
                     Button(onClick = { onStart(routine.id) }, enabled = !starting, shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))

@@ -264,6 +264,7 @@ sends `state`: `shown` when its question opens.
 | `notification` | `log_set` | `ok`, `refused` | |
 | `notification` | `open` | `ok`, `refused` | |
 | `record` | `edit` | `ok`, `refused`, `failed` | |
+| `routine_editor` | `discard` | `ok`, `cancelled` | yes |
 | `routine_editor` | `save` | `ok`, `refused`, `failed` | |
 | `routines` | `delete` | `ok`, `refused`, `failed` | |
 | `session` | `delete` | `ok`, `refused`, `failed` | |

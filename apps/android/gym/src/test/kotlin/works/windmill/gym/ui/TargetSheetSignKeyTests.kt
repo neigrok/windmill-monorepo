@@ -42,7 +42,7 @@ class TargetSheetSignKeyTests {
                     request.createInputConnection(info)
                     inputs?.add(info.inputType)
                     awaitCancellation()
-                }) { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}) }
+                }) { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}, "Routines") }
             }
         }
         compose.onNodeWithText(movement).performClick()

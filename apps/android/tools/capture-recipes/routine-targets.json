@@ -13,7 +13,7 @@
   },
   {
     "board": "02.12", "name": "combined-load-keyboard", "account": "fixture",
-    "steps": [{"tap": "Landmine Press"}, {"keyboard": "show"}, {"tap": "Load, kg total"}, {"wait": "Done"}],
+    "steps": [{"tap": "Landmine Press"}, {"keyboard": "show"}, {"tap": "Load, kg"}, {"wait": "Done"}],
     "after": [{"keyboard": "hide"}, {"tap": "Increase Load"}, {"tap": "Cancel"}]
   },
   {
@@ -21,5 +21,12 @@
     "steps": [{"wait": "Discard changes?"}],
     "after": [{"tap": "Discard"}, {"wait": "Edit routine"}, {"key": "KEYCODE_BACK"}, {"wait": "Start workout"},
       {"key": "KEYCODE_BACK"}, {"wait": "Routines"}]
+  },
+  {
+    "board": "02.20", "name": "routine-unsaved", "account": "fixture",
+    "steps": [{"tap": "New routine"}, {"wait": "Routine name"}, {"tap": "Routine name"}, {"text": "Push A"},
+      {"tap": "Add movement"}, {"tap": "Bench Press"}, {"wait": "Add"}, {"tap": "Add"}, {"wait": "Bench Press"},
+      {"key": "KEYCODE_BACK"}, {"wait": "Discard routine changes?"}, {"wait": "Push A won’t be saved."}],
+    "after": [{"tap": "Discard"}, {"wait": "New routine"}]
   }
 ]

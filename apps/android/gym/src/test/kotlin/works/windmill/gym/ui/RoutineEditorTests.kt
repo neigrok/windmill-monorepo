@@ -1,5 +1,12 @@
 package works.windmill.gym.ui
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import works.windmill.gym.GymRoom
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +55,7 @@ class RoutineEditorTests {
                 onSave = {},
                 onClose = {},
                 say = {},
+                backTo = "Routines",
             )
         }
         return { draft }
@@ -293,4 +301,119 @@ class RoutineEditorTests {
         } } finally { scope.cancel() }
     }
 
+    // A signed-out room on Routines, holding `saved` when given, with its routine_editor actions recorded. `back`
+    // is the system Back; `recreate` saves and restores the room's whole state.
+    private fun room(saved: RoutineDraft? = null,
+                     test: (back: () -> Unit, recreate: () -> Unit, actions: List<Map<String, String>>) -> Unit) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val actions = mutableListOf<Map<String, String>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_action" && properties["screen"] == "routine_editor") actions += properties
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        lateinit var activity: ComponentActivity
+        var showing by mutableStateOf(true)
+        val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry)
+        try {
+            runBlocking {
+                room.select(null)
+                saved?.let { assertTrue(room.store.saveRoutine(it.capturingMovements(room.store.catalog)) is GymResult.Ok) }
+            }
+            room.store.observeEngine()
+            actions.clear()
+            val restorer = StateRestorationTester(compose)
+            restorer.setContent {
+                activity = LocalActivity.current as ComponentActivity
+                if (showing) CompositionLocalProvider(LocalTelemetry provides telemetry) {
+                    GymMaterial { GymRoom(room.account(), room.store) }
+                }
+            }
+            test({ compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() } },
+                restorer::emulateSavedInstanceStateRestore, actions)
+        } finally {
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            scope.cancel()
+            room.close()
+        }
+    }
+
+    private fun editorTitle(title: String) = compose.onNode(hasText(title) and isHeading())
+
+    private fun typedName() = compose.onNodeWithContentDescription("Routine name").fetchSemanticsNode()
+        .config[SemanticsProperties.EditableText].text
+
+    @Test fun backOnADirtyNewRoutineAsksAndDiscardLeaves() = room { back, _, actions ->
+        compose.onNodeWithContentDescription("New routine").performClick()
+        compose.onNodeWithContentDescription("Routine name").performTextInput("Push Day")
+        back()
+        compose.onNodeWithText("Discard routine changes?").assertIsDisplayed()
+        compose.onNodeWithText("Push Day won’t be saved.").assertIsDisplayed()
+        editorTitle("New routine").assertExists()
+        compose.onNodeWithText("Discard").performClick()
+        editorTitle("New routine").assertDoesNotExist()
+        compose.onNodeWithText("Discard routine changes?").assertDoesNotExist()
+        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+        assertEquals(listOf(
+            mapOf("screen" to "routine_editor", "action" to "discard", "state" to "shown"),
+            mapOf("screen" to "routine_editor", "action" to "discard", "outcome" to "ok"),
+        ), actions)
+    }
+
+    @Test fun keepEditingKeepsEveryFieldAndTheBackArrowAsksTheSame() = room(
+        saved = RoutineDraft(name = "Pull", creationId = "routine_pull").adding("bench-press").adding("back-squat"),
+    ) { back, _, actions ->
+        compose.onNodeWithText("Pull").performClick()
+        compose.onNodeWithText("Edit routine").performClick()
+        compose.onNodeWithContentDescription("Routine name").performTextReplacement("Pull Day")
+        compose.runOnIdle { actionsOn("Bench Press").first { it.label == "Move down" }.action() }
+        back()
+        compose.onNodeWithText("Pull Day won’t be saved.").assertIsDisplayed()
+        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithText("Discard routine changes?").assertDoesNotExist()
+        assertEquals("Pull Day", typedName())
+        handle("Move Back Squat, 1 of 2").assertExists()
+        handle("Move Bench Press, 2 of 2").assertExists()
+        compose.onNodeWithContentDescription("Back to Pull").performClick()
+        compose.onNodeWithText("Discard routine changes?").assertIsDisplayed()
+        compose.onNodeWithText("Keep editing").performClick()
+        editorTitle("Edit routine").assertExists()
+        assertEquals(listOf("shown", "cancelled", "shown", "cancelled"), actions.map { it["state"] ?: it.getValue("outcome") })
+    }
+
+    // Back's description names where it goes: the list a new routine was opened from, the routine an edit came from.
+    @Test fun backOnACleanDraftLeavesWithoutAskingAndSaysWhereItGoes() = room(
+        saved = RoutineDraft(name = "Pull", creationId = "routine_pull").adding("bench-press"),
+    ) { back, _, actions ->
+        compose.onNodeWithContentDescription("New routine").performClick()
+        editorTitle("New routine").assertExists()
+        compose.onNodeWithContentDescription("Back to Routines").assertIsDisplayed()
+        back()
+        editorTitle("New routine").assertDoesNotExist()
+        compose.onNodeWithText("Pull").performClick()
+        compose.onNodeWithText("Edit routine").performClick()
+        editorTitle("Edit routine").assertExists()
+        compose.onNodeWithContentDescription("Back to Pull").assertIsDisplayed()
+        back()
+        editorTitle("Edit routine").assertDoesNotExist()
+        compose.onNodeWithText("Start workout").assertIsDisplayed()
+        compose.onNodeWithText("Discard routine changes?").assertDoesNotExist()
+        assertEquals(emptyList<Map<String, String>>(), actions)
+    }
+
+    @Test fun recreationWhileAskingKeepsTheQuestionAndTheDraft() = room { back, recreate, actions ->
+        compose.onNodeWithContentDescription("New routine").performClick()
+        compose.onNodeWithContentDescription("Routine name").performTextInput("Push Day")
+        back()
+        compose.onNodeWithText("Discard routine changes?").assertIsDisplayed()
+        recreate()
+        compose.onNodeWithText("Discard routine changes?").assertIsDisplayed()
+        compose.onNodeWithText("Push Day won’t be saved.").assertIsDisplayed()
+        compose.onNodeWithText("Keep editing").performClick()
+        editorTitle("New routine").assertExists()
+        assertEquals("Push Day", typedName())
+        assertEquals(listOf("shown", "cancelled"), actions.map { it["state"] ?: it.getValue("outcome") })
+    }
 }

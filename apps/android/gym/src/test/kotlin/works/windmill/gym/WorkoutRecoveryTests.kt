@@ -500,19 +500,19 @@ class WorkoutRecoveryTests {
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.onNode(hasContentDescription("Increase Reps")).performClick()
             compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             compose.waitUntil(10_000) {
                 compose.onAllNodes((hasContentDescription("Load, kg total") and hasText("92"))).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             val connection = compose.runOnIdle { currentScope.async { room.pull(server); current.connect(account) } }
             compose.waitUntil(10_000) { compose.runOnIdle { connection.isCompleted } }
             runBlocking { connection.await() }
             compose.runOnIdle { assertEquals(listOf(80.0), current.lastTime!!.sets.map { it.weightKg }) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
                 assertEquals(listOf(92.0 to 6), current.sets.map { it.weightKg to it.reps })

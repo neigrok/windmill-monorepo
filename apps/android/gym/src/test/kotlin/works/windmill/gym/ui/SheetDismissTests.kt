@@ -120,7 +120,7 @@ class SheetDismissTests {
                 committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
             }, onDelete = {})
         }
-        compose.onNodeWithContentDescription("Reps, reps").performClick().performTextReplacement("8")
+        compose.onNodeWithContentDescription("Reps").performClick().performTextReplacement("8")
         dismissFromTheScrim(dismissed)
         assertEquals(emptyList<works.windmill.gym.domain.SetFix>(), committed)
     }

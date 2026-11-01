@@ -62,11 +62,11 @@ class PlanningLargeTextTests {
             var draft by mutableStateOf(RoutineDraft(name = "Pull").adding("chin-up"))
             compose.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Chin Up").performClick()
-            val sets = compose.onNodeWithContentDescription("Sets, sets").fetchSemanticsNode().positionInRoot
-            val reps = compose.onNodeWithContentDescription("Reps, reps").fetchSemanticsNode().positionInRoot
+            val sets = compose.onNodeWithContentDescription("Sets").fetchSemanticsNode().positionInRoot
+            val reps = compose.onNodeWithContentDescription("Reps").fetchSemanticsNode().positionInRoot
             val weight = compose.onNodeWithContentDescription("Load, kg added").fetchSemanticsNode().positionInRoot
             assertTrue(reps.y > sets.y)
             assertTrue(weight.y > reps.y)

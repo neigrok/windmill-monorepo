@@ -6,6 +6,15 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import kotlin.math.ceil
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1007,11 +1016,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 )
             }
 
+            // What a way back is named after: the screen beneath, else the tab, or the logger when it stands.
+            fun wayBackTo(under: Away?, tab: Tab): String = under?.wayBack(store.catalog)
+                ?: if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
+
             @Composable
             fun PushedScreen(frame: Frame.Pushed) {
-                // Beneath the stack is the tab, or the logger when it stands.
-                val backTo = frame.under?.wayBack(store.catalog)
-                    ?: if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else frame.tab.title
+                val backTo = wayBackTo(frame.under, frame.tab)
                 when (val standing = frame.away) {
                     is Away.Movement -> RecordScreen(
                         exerciseId = standing.exerciseId,
@@ -1137,9 +1148,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                         style = GymNativeType.note,
                                         color = skin.inkDim,
                                         maxLines = 2,
+                                        // Said as it changes, so TalkBack hears the line the eye reads.
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                                            .semantics { liveRegion = LiveRegionMode.Polite },
                                     )
                                 }
                                 if (frame.railStands) {
@@ -1195,6 +1208,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                         onSave = { building?.let(::write) },
                                         onClose = { building = null },
                                         say = { note = it },
+                                        // An edit returns to its routine's sheet; a new draft to what it was opened over.
+                                        backTo = selectedRoutineId?.let { store.routine(it)?.name }
+                                            ?: wayBackTo(navigator.away.lastOrNull(), frame.tab),
                                     )
                                 }
                                 is Frame.Pushed -> PushedScreen(frame)
@@ -1216,32 +1232,74 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 }
 
+// 00.7: a navigation label stays whole. It keeps one line while it clears each neighbouring label by
+// `gap` and stays inside the bar; otherwise it wraps at its spaces. It is never shrunk or cut, and it
+// may spill past its own item into the width a neighbour leaves.
+internal object RailLabels {
+    val gap = 8.dp
+
+    // In px: `pitch` between neighbouring item centres, `edge` from the bar's side to an outer centre,
+    // and for each label its one-line width and its widest word. Answers the width each label takes.
+    fun widths(pitch: Float, edge: Float, gap: Float, line: List<Float>, word: List<Float>): List<Float> {
+        val taken = line.toMutableList()
+        fun wraps(at: Int) = word[at] < taken[at]
+        fun crowded(left: Int) = taken[left] / 2 + taken[left + 1] / 2 + gap > pitch
+        listOf(0, taken.lastIndex).filter { taken[it] / 2 > edge && wraps(it) }.forEach { taken[it] = word[it] }
+        while (true) {
+            val left = (0 until taken.lastIndex).firstOrNull { crowded(it) && (wraps(it) || wraps(it + 1)) } ?: return taken
+            val wrapping = listOf(left, left + 1).filter(::wraps).maxBy { taken[it] }
+            taken[wrapping] = word[wrapping]
+        }
+    }
+}
+
 @Composable
-private fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
+internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
     val skin = LocalGymColors.current
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
     Column(Modifier.fillMaxWidth().background(skin.surface)) {
-        NavigationBar(
-            containerColor = skin.surface,
-            tonalElevation = 0.dp,
-            windowInsets = WindowInsets(0, 0, 0, 0),
-            modifier = Modifier.height(80.dp).padding(horizontal = 12.dp),
-        ) {
-            Tab.entries.forEach { entry ->
-                NavigationBarItem(
-                    selected = entry == current,
-                    onClick = { onPick(entry) },
-                    icon = { BadgedBox(badge = {
-                        if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
-                    }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
-                    label = { Text(entry.title, maxLines = 1, style = GymChrome.tab) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = skin.accent,
-                        selectedTextColor = skin.ink,
-                        indicatorColor = skin.raised,
-                        unselectedIconColor = skin.inkDim,
-                        unselectedTextColor = skin.inkDim,
-                    ),
-                )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val barWidth = constraints.maxWidth
+            val labelWidths = remember(barWidth, density) {
+                with(density) {
+                    fun width(text: String) = measurer.measure(text, GymChrome.tab, softWrap = false).size.width.toFloat()
+                    val side = 12.dp.toPx()
+                    // NavigationBar's own spacing between its items.
+                    val spacing = 8.dp.toPx()
+                    val slot = (barWidth - 2 * side - spacing * Tab.entries.lastIndex) / Tab.entries.size
+                    RailLabels.widths(pitch = slot + spacing, edge = side + slot / 2, gap = RailLabels.gap.toPx(),
+                        line = Tab.entries.map { width(it.title) },
+                        word = Tab.entries.map { tab -> tab.title.split(' ').maxOf(::width) },
+                    ).map { ceil(it).toInt().toDp() }
+                }
+            }
+            NavigationBar(
+                containerColor = skin.surface,
+                tonalElevation = 0.dp,
+                // The 12 dp sides are the bar's own inset, inside its surface, so a long label may spill into them.
+                windowInsets = WindowInsets(left = 12.dp, right = 12.dp),
+            ) {
+                Tab.entries.forEachIndexed { index, entry ->
+                    NavigationBarItem(
+                        selected = entry == current,
+                        onClick = { onPick(entry) },
+                        icon = { BadgedBox(badge = {
+                            if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
+                        }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
+                        label = {
+                            Text(entry.title, style = GymChrome.tab, textAlign = TextAlign.Center,
+                                modifier = Modifier.requiredWidth(labelWidths[index]))
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = skin.accent,
+                            selectedTextColor = skin.ink,
+                            indicatorColor = skin.raised,
+                            unselectedIconColor = skin.inkDim,
+                            unselectedTextColor = skin.inkDim,
+                        ),
+                    )
+                }
             }
         }
         Box(Modifier.fillMaxWidth().background(skin.canvas).navigationBarsPadding())

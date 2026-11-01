@@ -21,6 +21,8 @@ import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.SetTarget
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
 import works.windmill.platform.telemetry.Telemetry
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -68,7 +70,9 @@ class RoutineSaveTests {
                 if (refused) {
                     compose.onNodeWithContentDescription("Routine name").assertIsEnabled().assertTextEquals("Saved push")
                     compose.onNodeWithText("Save").assertIsEnabled()
+                    // The room's line is a polite live region, so TalkBack says what the eye reads.
                     compose.onNodeWithText("That changed. Open it again.").assertIsDisplayed()
+                        .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
                     compose.onNodeWithContentDescription("Routine name").performTextReplacement("Retry push")
                     compose.onNodeWithContentDescription("Routine name").assertTextEquals("Retry push")
                     assertEquals(Routine("routine_push", "Push elsewhere", entries = entries, revision = 2), moved)

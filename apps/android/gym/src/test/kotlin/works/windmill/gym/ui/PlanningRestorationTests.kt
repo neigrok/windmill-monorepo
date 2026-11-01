@@ -76,7 +76,7 @@ class PlanningRestorationTests {
     }
 
     private fun uniformTargets() {
-        if (compose.onAllNodesWithContentDescription("Sets, sets").fetchSemanticsNodes().isEmpty())
+        if (compose.onAllNodesWithContentDescription("Sets").fetchSemanticsNodes().isEmpty())
             compose.onNodeWithText("Vary by set").performScrollTo().performClick()
     }
 
@@ -99,20 +99,20 @@ class PlanningRestorationTests {
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithContentDescription("Set 3 load").performTextReplacement("1e999")
             uniformTargets()
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("1")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("1")
             perSetTargets()
             compose.onNodeWithContentDescription("Set 1 reps").performTextReplacement("0")
             restorer.emulateSavedInstanceStateRestore()
             hideSearchIme()
             assertEquals("0", raw("Set 1 reps"))
             uniformTargets()
-            assertEquals("1", raw("Sets, sets"))
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("3")
+            assertEquals("1", raw("Sets"))
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("3")
             perSetTargets()
             assertEquals("1e999", raw("Set 3 load"))
             compose.onNodeWithText("Done").assertIsNotEnabled()
@@ -136,7 +136,7 @@ class PlanningRestorationTests {
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasSetTextAction() and hasText("Search movements")).performTextReplacement("Zercher")
@@ -252,18 +252,18 @@ class PlanningRestorationTests {
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {}, "Routines")
             }
             compose.onNodeWithText("Chin Up").performClick()
             uniformTargets()
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("")
             compose.onAllNodesWithContentDescription("Flip the sign — band-assisted").assertCountEquals(0)
             compose.onNodeWithContentDescription("Load, kg added").assertIsNotEnabled()
             restorer.emulateSavedInstanceStateRestore()
             hideSearchIme()
-            assertEquals("", raw("Sets, sets"))
+            assertEquals("", raw("Sets"))
             compose.onNodeWithContentDescription("Load, kg added").assertIsNotEnabled()
-            compose.onNodeWithContentDescription("Sets, sets").performTextReplacement("2")
+            compose.onNodeWithContentDescription("Sets").performTextReplacement("2")
             perSetTargets()
             assertEquals("−10", raw("Set 1 load"))
             assertEquals("−5", raw("Set 2 load"))

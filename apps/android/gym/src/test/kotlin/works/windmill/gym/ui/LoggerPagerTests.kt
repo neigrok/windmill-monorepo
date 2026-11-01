@@ -105,7 +105,7 @@ class LoggerPagerTests {
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
             compose.onNode(hasContentDescription("Increase Reps")).performClick()
             compose.onNode((hasContentDescription("Load, kg total") and hasText("90"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
 
             val pager = compose.onNodeWithTag("Movement pager")
             val y = compose.onNodeWithText("Bench Press").fetchSemanticsNode().boundsInRoot.center.y -
@@ -129,7 +129,7 @@ class LoggerPagerTests {
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("90"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
             compose.onNodeWithText("Log set").assertIsEnabled()
             compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
 
@@ -250,7 +250,7 @@ class LoggerPagerTests {
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
             compose.onNode(hasContentDescription("Increase Reps")).performClick()
             compose.onNode((hasContentDescription("Load, kg total") and hasText("22.5"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
 
             val pager = compose.onNodeWithTag("Movement pager")
             val y = compose.onNodeWithText("Bench Press").fetchSemanticsNode().boundsInRoot.center.y -
@@ -268,14 +268,14 @@ class LoggerPagerTests {
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("22.5"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("6"))).assertIsDisplayed()
 
             compose.onNodeWithText("Bench Press").performTouchInput {
                 swipeLeft(startX = width * 0.9f, endX = width * 0.1f)
             }
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("20"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("5"))).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -290,7 +290,7 @@ class LoggerPagerTests {
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
             compose.onNode(hasContentDescription("Set 1, current, target 60 kg total, 8 reps")).assertIsDisplayed()
             compose.onNode((hasContentDescription("Load, kg total") and hasText("60"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("8"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("8"))).assertIsDisplayed()
             compose.onNode(hasContentDescription("Exercise 2 of 2")).assertIsDisplayed()
 
             compose.onNodeWithText("Barbell Row").performTouchInput {
@@ -298,7 +298,7 @@ class LoggerPagerTests {
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("82.5"))).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps") and hasText("5"))).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

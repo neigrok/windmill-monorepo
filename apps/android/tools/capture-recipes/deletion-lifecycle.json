@@ -62,7 +62,13 @@
         }
       },
       {
-        "tap": "Back to the routine you were on"
+        "tap": "Back to Push A"
+      },
+      {
+        "wait": "Discard routine changes?"
+      },
+      {
+        "tap": "Discard"
       },
       {
         "wait": "Start workout"
