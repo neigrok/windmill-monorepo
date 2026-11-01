@@ -65,7 +65,9 @@ internal fun CoachBubble(
         if (copyMenu == null) ownMenu.value = open else copyMenu.selected = if (open) copyIndex else null
     }
     val label = if (fromLifter) "Copy question" else "Copy answer"
-    val copy: () -> Unit = {
+    // The platform clipboard answers without suspending, so the undispatched copy has finished when this returns.
+    val copy: () -> Boolean = {
+        var copied = false
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", latestCopy()))) }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -76,7 +78,9 @@ internal fun CoachBubble(
             }
             changeMenu(false)
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok"))
+            copied = true
         }
+        copied
     }
     val first = group == CoachGroup.First || group == CoachGroup.Middle
     val last = group == CoachGroup.Last || group == CoachGroup.Middle
@@ -90,7 +94,7 @@ internal fun CoachBubble(
         Box(Modifier.clip(shape).background(if (fromLifter) skin.accent else skin.surface)
             .background(if (menu) skin.ink.copy(alpha = 0.16f) else Color.Transparent)
             .pointerInput(label) { detectTapGestures(onLongPress = { changeMenu(true) }) }
-            .semantics(mergeDescendants = true) { customActions = listOf(CustomAccessibilityAction(label) { copy(); true }) }
+            .semantics(mergeDescendants = true) { customActions = listOf(CustomAccessibilityAction(label) { copy() }) }
             .padding(horizontal = 16.dp, vertical = if (fullWidth) 16.dp else 8.dp),
         ) { content() }
         DropdownMenu(expanded = menu, onDismissRequest = { changeMenu(false) }, containerColor = skin.surface,

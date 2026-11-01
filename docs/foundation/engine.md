@@ -1600,10 +1600,17 @@ pulls as §7.9 states. An open that fails, and a socket that ends or fails (the 
 closes it, or a `ping` goes unanswered for `LIVE_PONG_MS`), count as a reconnect: the puller runs at
 once. The client sends `ping` after `LIVE_PING_MS` with no frame or `pong` received. A close the
 client makes (leaving the foreground, going offline, a sign-in, a sign-out or a re-identify) pulls
-nothing, though the sign-in, sign-out or re-identify runs the puller itself (§7.12). Opening again
-backs off as the sender does
-(§7.4), with its own `k` and the 30 s ceiling: `k` rises with every failed open or ended socket, and
-resets once a socket has stayed open 30 s. A `401` at the upgrade, where the
+nothing and raises no `k`, though the sign-in, sign-out or re-identify runs the puller itself
+(§7.12); while the socket is still wanted (a re-identify, a completed sign-in), the next one opens at
+once. Opening again after a reconnect backs off as the sender does (§7.4), with its own `k` and the
+30 s ceiling: `k` rises with every failed open or ended socket, and resets once a socket has stayed
+open 30 s. None of the sender's kicks cuts that wait short, and neither does the pull a reconnect
+runs or a frame, so a server refusing the socket sees a handful of opens a minute, never one per
+pull. A refused upgrade's `retryAfterMs` is not read, since a browser and URLSession cannot read the
+upgrade's body; the pull the failed open runs hears the server's wait. A socket that was not wanted
+(the app away or offline, no account, a pause) opens at once when it is wanted again, keeping `k`.
+The first open after a failed open or an ended socket (`k > 0`) pulls every subscribed scope once its
+`sub` frames are sent, for what changed while no socket followed them. A `401` at the upgrade, where the
 client can read it, sets `authPaused` too; a browser, which cannot, learns it from its next pull or
 push. A frame served as another principal (§9.1) sets `authPaused`, applies nothing, and the client
 closes the socket. A re-authentication that clears `authPaused` opens the socket again at once, with
@@ -2405,8 +2412,20 @@ Frames are at most `LIVE_FRAME_BYTES`.
 A client records every failed request as a metric. A status the server answers on purpose — `400`,
 `401`, `403`, `404`, `409`, `410`, `422`, `426`, `429` — is never a crash-reporter issue: Swift's
 `ExpectedStatuses.all` serves the engine, the app's sign-in and its REST clients, and Kotlin's
-transport counts the same set as refusals. Both engines also expect a push's `413`, which §7.4
-halves or refuses `too-large` (`ExpectedStatuses.push` in each).
+transport counts the same set as refusals. Both engines also expect a push's `413`, which §7.4 halves
+or refuses `too-large` (`ExpectedStatuses.push` in each). Every route backs off from a `503`, but only
+the server's own is answered on purpose: its `unavailable` in the sync envelope (`error`, `serverTime`
+and `epoch`), which the Swift and Kotlin engines read from the body as they read a `426`
+(`HTTPFailure.isUnavailable`, `SyncResponse.unavailable`). It is never an issue: the server reports
+its own saturation and transient failures, once a window (`worker_pool.saturated`,
+`sync.push.bind_unavailable`). A bare or foreign `503` — an edge with no upstream, a maintenance page
+— is an outage the server may never see, and files its issue once per outage like any other failure.
+A `503` at the live socket's upgrade, whose body neither engine reads, is a refusal
+(`ExpectedStatuses.liveUpgrade`): the pull the failed open runs hears the server. The web engine files
+no issue for an answered status whose body it can parse, a bare `503` included; an HTML `503`, whose
+body is not JSON, fails as an unreadable answer and files its `sync-transport` issue, and every ended
+or refused live socket files a `sync-live` issue, its status unreadable to a browser, both within the
+engine's telemetry budget of 30 a minute.
 
 | Refusal code | Source |
 |---|---|

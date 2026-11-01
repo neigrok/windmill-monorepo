@@ -133,12 +133,10 @@ std::optional<std::string> AiInstallationApi::clientAddress(const drogon::HttpRe
   return aiInstallationClientAddress(request->headerOccurrences(), request->peerAddr().toIp(), proxy_);
 }
 
+// Issue and bind complete through their route's write observation, which reads the answer (writeHttpOutcome).
 void AiInstallationApi::issue(const drogon::HttpRequestPtr& request,
                               std::function<void(const drogon::HttpResponsePtr&)>&& reply) {
-  WriteObservation observation{"ai.installation.issue", "platform", "REST", "", failures_.get()};
-  WriteContext context{observation};
   const auto refuse = [&](drogon::HttpStatusCode status, const std::string& code) {
-    observation.finish(code);
     reply(privateResponse(error(status, "Anonymous AI access could not be started.", code.c_str())));
   };
   try {
@@ -171,19 +169,18 @@ void AiInstallationApi::issue(const drogon::HttpRequestPtr& request,
     }
     auto body = installationBody(*issued.principal, installations_->allowance(*issued.principal));
     body["credential"] = issued.credential;
-    observation.skip();
     auto response = jsonResponse(body);
     response->setStatusCode(drogon::k201Created);
     reply(privateResponse(response));
   } catch (...) {
-    observation.failUnknown();
+    reportCurrentUnknownWriteFailure();
     reply(privateResponse(error(drogon::k503ServiceUnavailable, "Anonymous AI access is unavailable.", "ai_accounting_unavailable")));
   }
 }
 
 void AiInstallationApi::current(const drogon::HttpRequestPtr& request,
                                 std::function<void(const drogon::HttpResponsePtr&)>&& reply) {
-  WriteObservation observation{"ai.installation.read", "platform", "REST", "", failures_.get()};
+  WriteObservation observation{"ai.installation.read", "platform", "rest", "", failures_.get()};
   WriteContext context{observation};
   try {
     const auto access = resolve(request);
@@ -204,10 +201,7 @@ void AiInstallationApi::current(const drogon::HttpRequestPtr& request,
 
 void AiInstallationApi::bind(const drogon::HttpRequestPtr& request,
                              std::function<void(const drogon::HttpResponsePtr&)>&& reply) {
-  WriteObservation observation{"ai.installation.bind", "platform", "REST", "", failures_.get()};
-  WriteContext context{observation};
   const auto refuse = [&](drogon::HttpStatusCode status, const std::string& code) {
-    observation.finish(code);
     reply(privateResponse(error(status, "Anonymous AI access could not be linked.", code.c_str())));
   };
   try {
@@ -227,10 +221,9 @@ void AiInstallationApi::bind(const drogon::HttpRequestPtr& request,
     }
     auto body = installationBody(*access.installation, entitlements_->aiAllowanceView(access.account->id, access.account->email.value));
     body["bound"] = true;
-    observation.finish(code == AiBudgetCode::Replay ? "replay" : "ok");
     reply(privateResponse(jsonResponse(body)));
   } catch (...) {
-    observation.failUnknown();
+    reportCurrentUnknownWriteFailure();
     reply(privateResponse(error(drogon::k503ServiceUnavailable, "Anonymous AI access could not be linked.", "ai_accounting_unavailable")));
   }
 }

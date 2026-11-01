@@ -118,6 +118,21 @@ void installSyncSocket(SyncSocketDeps deps) {
 
 void uninstallSyncSocket() { g_installed.reset(); }
 
+UpgradeProof proveUpgrade(AuthService& auth, const SentCredentials& sent, const Json::Value& envelope) {
+  try {
+    const Credential credential = provenCredential(auth, sent);
+    if (credential.fails()) return {std::nullopt, SyncReply::unauthenticated(envelope)};
+    return {credential.servedAs(), std::nullopt};
+  } catch (const std::exception& error) {
+    WriteObservation failure("sync.live.upgrade", "platform", "websocket");
+    failure.fail(error);
+  } catch (...) {
+    WriteObservation failure("sync.live.upgrade", "platform", "websocket");
+    failure.failUnknown();
+  }
+  return {std::nullopt, SyncReply::unavailable(envelope)};
+}
+
 void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
   if (!g_installed) return pass();
   const SyncSocketDeps& deps = g_installed->deps;
@@ -134,16 +149,9 @@ void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::Filter
       [&auth = *deps.auth](const std::string& token) { return auth.digestOf(token); });
   trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
   const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, sent] {
-    Upgrade upgrade{std::nullopt, sent};
-    std::optional<SyncReply> refusal;
-    try {
-      const Credential credential = provenCredential(*auth, sent);
-      if (credential.fails()) refusal = SyncReply::unauthenticated(envelope);
-      else upgrade.principal = credential.servedAs();
-    } catch (const std::exception& error) {
-      LOG_ERROR << "sync live upgrade could not resolve its credential: " << "unexpected sync socket exception";
-      refusal = SyncReply::unavailable(envelope);
-    }
+    const UpgradeProof proof = proveUpgrade(*auth, sent, envelope);
+    const std::optional<SyncReply> refusal = proof.refusal;
+    const Upgrade upgrade{proof.principal, sent};
     loop->queueInLoop([req, refuse, pass, refusal, upgrade] {
       if (refusal) return refuse(responseOf(*refusal));
       req->attributes()->insert(kUpgradeAttribute, upgrade);

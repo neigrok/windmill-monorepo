@@ -21,6 +21,7 @@ object GymActions : EventSchema {
             "discard" to setOf("ok", "cancelled", "refused", "failed"),
             "delete" to setOf("ok", "refused", "failed"),
             "fix" to setOf("ok", "refused", "failed"),
+            "share" to setOf("ok", "failed"),
         ),
         "note_editor" to mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed")),
         "record" to mapOf("edit" to setOf("ok", "refused", "failed")),

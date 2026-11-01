@@ -38,7 +38,7 @@
   - Shown only on the receipt of the first finished workout on this phone while signed out; a once-only flag on this phone records that it was shown. Later receipts never show it, and ordinary training screens have no standing sign-up prompt (17/27). Preserve user-invoked account sign-in, signed-out Share with Coach and account-required Coach routes, including the bound-installation stance in 36/38.
   - Signed out, **Share with Coach** is drawn as well. Follow iOS (`apps/ios/App/Sources/Gym/GymRoom.swift:205`): it opens the sign-in step, and the question is sent once the lifter is signed in. Where this Windmill has no Coach it is not drawn, as today.
 - A workout with no set uses the [approved Z.1 terminal surface](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458): *No sets logged* / *This workout has ended.* / **Done** → Routines. It has no saved-workout claim, totals, celebration, sign-in offer or Share with Coach. Design prerequisite `android-gym-empty-finish-design` is human-approved 2026-10-25; the terminal implementation is included here.
-- Delete `Finish.discard` *Discard session* after all workout callers migrate. Remove only the workout hold caller; retain `store/WithheldDelete.kt` and weight Undo as specified by 05/24.
+- Remove only the workout hold caller; retain `store/WithheldDelete.kt` and weight Undo as specified by 05/24.
 
 **Out of scope:** the log row swipe (22); workout detail and its comparison (23); *Save a routine* (13); Inspect (25).
 

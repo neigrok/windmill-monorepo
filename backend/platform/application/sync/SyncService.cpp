@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <typeinfo>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -91,9 +92,10 @@ std::optional<ScopeFacts> factsOf(const std::optional<ScopeRow>& row) {
 // prune what it acknowledged. Each step is a short transaction of its own, and none is open across an admission.
 class ReplicaPush {
 public:
-  ReplicaPush(const SyncCatalog& catalog, SyncStore& store, Admission& admission, UserId account, const Json::Value& request, Ms serverNow)
+  ReplicaPush(const SyncCatalog& catalog, SyncStore& store, Admission& admission, UserId account, const Json::Value& request, Ms serverNow,
+              FailureWindow* bindUnavailable)
       : catalog_(catalog), store_(store), admission_(admission), account_(std::move(account)), request_(request), replica_(request["replica"].asString()),
-        serverNow_(serverNow) {}
+        serverNow_(serverNow), bindUnavailable_(bindUnavailable) {}
 
   SyncReply run(PushBudget& budget, Json::Value body) {
     if (request_["account"].asString() != account_.str()) return SyncReply::refused(409, std::move(body), "account-mismatch");
@@ -158,8 +160,9 @@ private:
       inserted_ = absent;
       return Binding::bound;
     } catch (const std::exception& error) {
-      if (store_.classify(error) == FaultClass::transient) return Binding::unavailable;
-      throw;
+      if (store_.classify(error) != FaultClass::transient) throw;
+      if (bindUnavailable_) bindUnavailable_->report(std::string("exception_type=") + typeid(error).name());
+      return Binding::unavailable;
     }
   }
 
@@ -233,6 +236,7 @@ private:
   const Json::Value& request_;
   const std::string replica_;
   const Ms serverNow_;
+  FailureWindow* const bindUnavailable_;
   bool inserted_ = false;
 };
 
@@ -547,8 +551,9 @@ bool TimeBudget::spent(std::size_t admitted) {
   return admitted >= 1 && std::chrono::steady_clock::now() >= deadline_;
 }
 
-SyncService::SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock)
-    : catalog_(catalog), store_(store), admission_(admission), clock_(clock) {}
+SyncService::SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock,
+                         std::shared_ptr<FailureWindow> bindUnavailable)
+    : catalog_(catalog), store_(store), admission_(admission), clock_(clock), bindUnavailable_(std::move(bindUnavailable)) {}
 
 // §9.2: holdsRecords[p] iff acct:<caller>/<p> holds a visible row of a primary type; holdings[p] tallies the visible
 // rows of p's headline type: how many, and the last write among them (the greatest ru). Both read one snapshot.
@@ -598,7 +603,7 @@ SyncReply SyncService::push(const Credential& credential, std::string_view body,
   const std::optional<Json::Value> request = parsed(body);
   if (!request || !isPushRequest(*request)) return SyncReply::refused(400, std::move(answer), "malformed");
   if ((*request)["intents"].size() > limits.pushMaxIntents) return SyncReply::refused(413, std::move(answer), "request-too-large");
-  return ReplicaPush(catalog_, store_, admission_, *caller, *request, serverNow).run(budget, std::move(answer));
+  return ReplicaPush(catalog_, store_, admission_, *caller, *request, serverNow, bindUnavailable_.get()).run(budget, std::move(answer));
 }
 
 SyncReply SyncService::pull(const Credential& credential, std::string_view body) {

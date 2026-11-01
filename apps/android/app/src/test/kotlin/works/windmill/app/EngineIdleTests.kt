@@ -129,9 +129,10 @@ class EngineIdleTests {
                         assertEquals(if (online) 1 else 0, openings.get())
                         if (online) {
                             assertTrue(socket.get()!!.close(1011, "test disconnect"))
-                            withTimeout(2_000) {
-                                while (openings.get() < 2 || requests.none { it == "POST /v1/sync/pull" }) delay(5)
-                            }
+                            // §7.5: the dropped socket is a reconnect, which pulls at once; the reopen waits out its first step, under
+                            // 1 s of the engine's clock, and a wake then looks again.
+                            withTimeout(2_000) { while (requests.none { it == "POST /v1/sync/pull" }) delay(5) }
+                            withTimeout(2_000) { while (openings.get() < 2) { clock.elapsed += 100; runtime.connectivity(true); delay(5) } }
                         }
                     }
                 }

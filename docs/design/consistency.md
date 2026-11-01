@@ -258,7 +258,8 @@ and Android disagree.
 - **9q · Where Weigh in sits (owner rulings, 2026-10-22; build).** Both phones float *Weigh in*
   bottom-end over The log: iOS as the labelled glass capsule (target 05.1), Android as the M3
   extended FAB (Android 05.1). iOS builds it, the list's bottom inset keeping its last row clear;
-  Android pins a full-width button under the list (`LogScreen.kt:148-150`, `BodyweightScreen.kt:83-90`).
+  Android builds it as `GymExtendedFab` over The log (`ui/LogScreen.kt:105`), the list's bottom
+  padding keeping its last row clear.
 - **9r · No Gym settings anywhere (owner ruling, 2026-10-22; Android build).** Neither phone has a
   Gym settings page. On iOS, Notes and Connected log are reached from You's Settings
   (`AccountSheet.swift:419-431`) and a hidden workout from the tab bar's accessory on iOS 26 and the
@@ -738,22 +739,22 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   ask once. The approved Log/Weigh-in flow keeps a held weight deletion and Undo for the system's
   accessibility timeout, never less than nine seconds (05.17), so
   `WithheldDelete.kt` remains while that path uses it. Do not remove all holds as shared-row cleanup.
-  Android routine/editor/detail-set rows use the shared ground. Immediate actions are application-owned;
-  weights project exact durable receipts. The remaining row migrations belong to their screen tasks.
+  Every Android record row uses the shared ground (`ui/RowSwipe.kt` `DeleteSwipeRow`). Immediate
+  actions are application-owned; weights project exact durable receipts.
 
   | Place | Code today | Board | Build work |
   |---|---|---|---|
-  | Routines list | `ui/RoutinesScreen.kt`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
+  | Routines list | `ui/RoutinesScreen.kt:128`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
   | Routine ⋮ Delete | `ui/RoutinesScreen.kt`, shared error-role menu, immediate | 02.12 `1253:29480` | verified in Dark/Daylight |
-  | Editor movement | `ui/RoutineBuilder.kt`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
-  | Target set row | `ui/MovementForm.kt`, shared row | 02.11 `1253:29263` | shared row |
-  | This workout row | `ui/AssemblySheet.kt:163-195`, both directions, *Remove* on raised | 03.4 `1253:29834` | end-to-start, shared row |
-  | Workout detail set | `ui/SessionScreen.kt`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
-  | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
-  | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
+  | Editor movement | `ui/RoutineBuilder.kt:482`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
+  | Target set row | `ui/MovementForm.kt:203`, shared row | 02.11 `1253:29263` | shared row |
+  | This workout row | `ui/AssemblySheet.kt:141`, shared row, *Remove movement* | 03.4 `1253:29834` | shared row |
+  | Workout detail set | `ui/SessionScreen.kt:430`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
+  | The log row | `ui/LogScreen.kt:138`, shared row *Discard workout*, and the long-press menu's *Discard workout* (`:276`); both ask *Discard this workout?* (`ui/ConfirmDialog.kt:60`) | 05.2 `1252:27527` | swipe + *Discard this workout?* |
+  | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:289`) and the detail's *Discard workout* (`ui/SessionScreen.kt:301`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
+  | Bodyweight | `ui/BodyweightScreen.kt:328` and the log's weigh-in row (`ui/LogScreen.kt:146`), shared row; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
-  | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
+  | Coach History | `coach/ThreadsScreen.kt:143-160`, asks *Delete this conversation?*, then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
 
   The refusal notice's swipe (`ui/RefusalBanner.kt:52-89`) dismisses a notice, not a record, and
   keeps its *Dismiss*.
@@ -761,8 +762,10 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   `android/system/error` (#E46962 dark · #B3261E light) and `on-error` (#410E0B · #FFFFFF). The app
   maps M3 `error` and `onError` to those roles in `ui/GymMaterial.kt`, and the workout's *Discard
   workout*, *Delete set*, the swipe deletes, the routine menu's *Delete* and the sign-in decision's
-  *Discard* use them. The log row menu's *Discard workout* still draws in ink
-  (`ui/LogScreen.kt:276`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
+  *Discard* use them. Three destructive controls are still off the error role: the log row menu's
+  *Discard workout* (`ui/LogScreen.kt:276`) and the receipt overflow's *Discard*
+  (`ui/FinishScreen.kt:289`) draw in ink, and History's *Delete* confirm draws in `alarmInk`
+  (`coach/ThreadsScreen.kt:149`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
 - **11d · Number entry is a stepper (owner ruling, 2026-10-22).** Load and reps are M3 icon buttons
   − / + (48 dp) around a numeric text field; tapping the value opens the decimal keyboard, − / +
   nudge by the movement's step, and the plate ladder stays for bigger jumps. Pressing shows the M3
@@ -925,13 +928,17 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11u · Before the first pull.** The log builds 05.18 (task 72): when the first pull fails, its
   foot becomes **Retry** · *That read failed.*, which the caption names and no Android board draws.
   A movement's record page before the first pull lists the days this phone holds under *Recent sets*
-  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands. Owner
-  rulings 2026-11-01:
-  - *Routines before the first pull.* Routines reads *No routines yet.* (`ui/RoutinesScreen.kt`)
-    while the account it has not pulled holds routines; the owner keeps that line for now.
-  - *Set numbers on a workout.* The workout page lists sets in logged order but labels each with its
-    server set number (`ui/SessionScreen.kt`), so sets numbered out of logged order read *2, 3, 1*.
-    The numbers go. A designer is updating the board; the build waits for it.
+  (`ui/RecordScreen.kt`); designer to say whether that heading stays before the pull lands.
+  - *Routines before the first pull (owner ruling, 2026-11-01).* Routines reads *No routines yet.*
+    (`ui/RoutinesScreen.kt`) while the account it has not pulled holds routines; the owner keeps
+    that line for now.
+  - *Set numbers on a workout (owner ruling, 2026-11-01).* A workout page's set rows carry no set
+    number. The app still labels each row with its server set number (`ui/SessionScreen.kt`
+    `SetRow`), so sets numbered out of logged order read *2, 3, 1*, and Fix set opened from a row
+    names *Set N* by the same number (`ui/FixSheet.kt`), which no board revises yet. Board 05.3b
+    *Sets without numbers* (Dark `1782:26943`, Daylight `1782:27019`, caption `1782:27095`, in
+    section 05, 🚧 awaiting owner approval) draws each movement's sets as one group led by load ×
+    reps; on approval 05.4, 05.14, 05.5 and 05.13 follow.
 - **11v · Native wave B, measured against its boards (designer).** Captured on the local stack
   (Pixel 8 profile, API 37); none of these has a board to settle it:
   - *Scrolled top bar.* Android tints the 64 dp top bar to the surface colour on scroll and leaves

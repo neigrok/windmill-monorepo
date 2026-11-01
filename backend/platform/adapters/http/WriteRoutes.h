@@ -32,6 +32,8 @@ std::string routeOperation(const std::string& product, const std::string& path,
                            const std::vector<drogon::HttpMethod>& methods);
 void declareWriteRoute(WriteRoute route);
 std::vector<WriteRoute> registeredWriteRoutes();
+// A route WriteRoutes registers for a read: no observation, but its static operation still names it (httpOperation).
+void declareReadRoute(WriteRoute route);
 // Whether the request matched a retired write path: its tombstone answers it, and no rate limit counts it.
 bool retiredRoute(const drogon::HttpRequestPtr& request);
 // What a retired write path answers: 410 `client-update-required`, with the sentence an old client shows.
@@ -40,6 +42,10 @@ std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route);
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response);
+// The static operation of the route the request matched: its write route's, else its declared read route's, else empty.
+std::string httpOperation(const drogon::HttpRequestPtr& request);
+// Whether the request's write observation failed or its request reported a failure; false without one.
+bool writeFailureReported(const drogon::HttpRequestPtr& request);
 void writeHttpFailure(const drogon::HttpRequestPtr& request, const std::exception& error);
 void writeHttpFailureUnknown(const drogon::HttpRequestPtr& request);
 std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std::string& operation);
@@ -112,6 +118,7 @@ public:
       registerWriteHandler(routeOperation(product_, path, methods), path, std::move(handler), methods);
       return;
     }
+    declareReadRoute({path, routeOperation(product_, path, methods), product_, door_, methods});
     std::vector<drogon::internal::HttpConstraint> constraints;
     for (const auto method : methods) constraints.emplace_back(method);
     app_.registerHandler(path, std::move(handler), constraints);
