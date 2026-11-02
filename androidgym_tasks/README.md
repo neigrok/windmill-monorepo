@@ -248,11 +248,11 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [104](104-record-before-the-first-pull.md) — The record page's Recent sets before the first pull
 - [105](105-quiet-set-count-follow-ups.md) — The quiet set count: the owner's open questions
 - [106](106-notes-and-navigation-state.md) — Notes keep separate visits, handle swipes scroll, and failed reads can retry
+- [107](107-history-reads.md) — History paging belongs to its job, and opened records follow their replica
 - [108](108-workout-writes-and-recovery.md) — Workout writes and recovery retain the whole saved source
 - [109](109-auth-and-rest.md) — Auth failures say what happened, and REST keeps its boundaries
 - [110](110-telemetry-queue.md) — Telemetry saves off the caller and dormant accounts yield capacity
 - [111](111-release-mapping-headings.md) — Release mappings and accessible headings
-
-- [107](107-history-reads.md) — History paging belongs to its job, and opened records follow their replica
+- [115](115-faint-ink-and-sheet-width.md) — Dark faint ink clears small-text contrast; every modal sheet is bounded to 560 dp
 
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.
