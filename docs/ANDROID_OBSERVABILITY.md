@@ -98,7 +98,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.openConnections` | gym | Opening the Connected log page fails |
 | `gym.preparePhoto` | gym | Preparing a signed-in Coach photo fails |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
-| `gym.readNotes` | gym | Re-reading notes after an unconfirmed note deletion fails |
+| `gym.readNotes` | gym | Reading the notes list, or re-reading it after an unconfirmed note deletion, fails |
 | `gym.readProgram` | gym | Re-reading the program after an unconfirmed routine deletion fails |
 | `gym.readThreads` | gym | Reading Coach History fails |
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |

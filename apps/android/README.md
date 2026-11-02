@@ -164,7 +164,8 @@ each request is consumed once, including across activity recreation.
 
 `GymNavigator` keeps the tab and the pushed stack across recreation, and `Standing` decides what
 Back means. `GymStage` moves the room's frame and keeps each frame's saved state under the frame's
-key: pushes and pops travel along the shared X axis and tab changes fade through, 300 ms with
+key. Each pushed visit has its own identity, and its saved state leaves with it. Pushes and pops
+travel along the shared X axis and tab changes fade through, 300 ms with
 emphasized easing. A back gesture shrinks a pushed screen, the logger or the routine editor toward
 90 % over the frame its release returns to. A Back that lands during a release cannot stop the pop
 it committed to; it waits for the stage to settle and then acts on where the room stands. A busy
