@@ -365,3 +365,10 @@ test('copy — bulk selection formats full counts', () => {
 test('Board shortcuts title is pinned copy', () => {
   assert.equal(SHORTCUTS_TITLE, 'Keyboard shortcuts · Board');
 });
+
+test('approved workspace gaps have one pinned string each', async () => {
+  const { WORKSPACE_EMPTY, NEW_LINK, HISTORY_EMPTY } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(WORKSPACE_EMPTY, { body: 'Add something for this step.', addNote: 'Add note' });
+  assert.deepEqual(NEW_LINK, { title: 'New link' });
+  assert.equal(HISTORY_EMPTY, 'No changes yet');
+});

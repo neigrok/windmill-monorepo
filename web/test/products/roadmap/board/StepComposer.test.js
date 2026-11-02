@@ -25,11 +25,11 @@ const legend = [
   { hue: 'gold', label: 'Milestone' },
 ];
 const fixtureNodes = ${fixtureNodes.toString()};
-window.mount = ({ empty = false, total = 1, shell = false } = {}) => {
+window.mount = ({ empty = false, total = 1, shell = false, editing = null, unnamed = false } = {}) => {
   function App() {
     const [open, setOpen] = useState(false);
     const [width, setWidth] = useState(innerWidth);
-    const [nodes, setNodes] = useState(empty ? [] : fixtureNodes(total));
+    const [nodes, setNodes] = useState(empty ? [] : fixtureNodes(total).map((node) => unnamed && node.id === editing ? { ...node, label: '' } : node));
     const tree = useMemo(() => new SkillTree({ id: 'sail', title: 'Learn to sail', nodes }), [nodes]);
     useEffect(() => {
       const resize = () => setWidth(innerWidth);
@@ -41,9 +41,13 @@ window.mount = ({ empty = false, total = 1, shell = false } = {}) => {
     return React.createElement('div', null,
       React.createElement('button', { onClick: () => setOpen(true) }, 'Open composer'),
       open && React.createElement(StepComposer, {
-        tree, completed, legend,
+        tree, completed, legend, editing,
         band: width < 744 ? 'phone' : width < 1024 ? 'tablet' : 'desktop',
         onClose: () => setOpen(false),
+        onEdit: (request) => {
+          (window.editRequests ??= []).push(request);
+          return { ok: !!window.succeed };
+        },
         onCreate: (request) => {
           (window.requests ??= []).push(request);
           return { ok: !!window.succeed };
@@ -113,7 +117,7 @@ async function open(width, { height = 960, ...options } = {}) {
     await page.waitForFunction(() => window.entryReady);
     await page.evaluate((options) => window.mount(options), options);
     await page.getByRole('button', { name: 'Open composer' }).click();
-    await page.getByRole('dialog', { name: 'New step', exact: true }).waitFor();
+    await page.getByRole('dialog', { name: options.editing ? 'Edit step' : 'New step', exact: true }).waitFor();
     return { page, errors };
   } catch (error) {
     await page.close();
@@ -304,7 +308,13 @@ for (const width of [744, 1024, 1439, 1440]) {
         await page.locator(`.st-board-picker--${width < 1440 ? 'page' : 'panel'}`).waitFor();
         assert.equal(await page.locator('[aria-modal="true"]').count(), 1);
         assert.equal(await page.locator('[role="dialog"] [role="dialog"]').count(), 0);
-        if (width < 1440) assert.equal(await page.locator('[inert]').count(), 0);
+        assert.equal(await page.locator('#root').evaluate((root) => root.inert), true);
+        if (width < 1440) {
+          assert.deepEqual(await page.locator('.st-board-composer').evaluate((dialog) => ({
+            covered: dialog.closest('[inert]') !== null,
+            inertChildren: dialog.querySelectorAll('[inert]').length,
+          })), { covered: false, inertChildren: 0 });
+        }
         assert.equal(await page.getByRole('dialog', { name: 'Prerequisites', exact: true }).count(), 1);
         assert.deepEqual(await page.evaluate(() => {
           const composer = document.querySelector('.st-board-composer').getBoundingClientRect();
@@ -315,15 +325,15 @@ for (const width of [744, 1024, 1439, 1440]) {
         await page.getByRole('checkbox', { name: 'Read the wind Up next' }).click();
         await page.getByRole('button', { name: 'Apply', exact: true }).focus();
         await page.keyboard.press('Tab');
-        assert.equal(await page.evaluate(() => !!document.activeElement.closest('[role="dialog"]')), true);
+        assert.equal(await page.evaluate(() => document.querySelector('.st-board-composer').contains(document.activeElement)), true);
         if (exit === 'Escape') await page.keyboard.press('Escape');
         else await page.locator('.st-board-picker').getByRole('button', { name: exit, exact: true }).click();
         await formReturned(page);
         assert.equal(await page.locator('.st-board-draft-needs').textContent(), exit === 'Apply' ? 'PrerequisitesRead the wind' : 'PrerequisitesNone');
       }
       assert.deepEqual(await page.evaluate(() => window.events), exits.flatMap((exit) => [
-        { name: 'roadmap_board_picker', props: { step: 'open' } },
-        { name: 'roadmap_board_picker', props: exit === 'Apply' ? { step: 'apply', count: '1' } : { step: 'cancel' } },
+        { name: 'roadmap_board_picker', props: { step: 'open', mode: 'create' } },
+        { name: 'roadmap_board_picker', props: exit === 'Apply' ? { step: 'apply', mode: 'create', count: '1' } : { step: 'cancel', mode: 'create' } },
       ]));
     } finally {
       await page.close();
@@ -345,7 +355,7 @@ test('Chromium: resizing across page and panel preserves the in-progress search 
       assert.equal(await page.getByRole('checkbox', { name: 'Read the wind Up next' }).getAttribute('aria-checked'), 'true');
       assert.deepEqual(await page.locator('.st-board-picker-chip').allTextContents(), ['Read the wind']);
     }
-    assert.deepEqual(await page.evaluate(() => window.events), [{ name: 'roadmap_board_picker', props: { step: 'open' } }]);
+    assert.deepEqual(await page.evaluate(() => window.events), [{ name: 'roadmap_board_picker', props: { step: 'open', mode: 'create' } }]);
     await page.getByRole('button', { name: 'Apply', exact: true }).click();
     await formReturned(page);
   } finally {
@@ -364,7 +374,7 @@ test('Chromium: deleting the final candidate closes its picker and leaves a name
     assert.equal(await page.locator('.st-board-draft-needs').getAttribute('aria-disabled'), 'true');
     assert.equal(await page.locator('.st-board-draft-needs').textContent(), 'PrerequisitesNone');
     assert.deepEqual(await page.evaluate(() => ({ requests: window.requests ?? [], events: window.events })), {
-      requests: [], events: [{ name: 'roadmap_board_picker', props: { step: 'open' } }],
+      requests: [], events: [{ name: 'roadmap_board_picker', props: { step: 'open', mode: 'create' } }],
     });
   } finally {
     await page.close();
@@ -437,3 +447,106 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }
     }
   });
 }
+
+
+for (const width of [390, 744, 1440]) {
+  test(`Chromium ${width}: edit starts clean, saves without a write, and retries the same changed request`, async () => {
+    const { page, errors } = await open(width, { editing: 'wind', total: 8 });
+    try {
+      assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Read the wind');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await closed(page);
+      assert.deepEqual(await page.evaluate(() => ({ requests: window.editRequests ?? [], events: window.events })), {
+        requests: [], events: [{ name: 'roadmap_board_edit', props: { step: 'unchanged' } }],
+      });
+      await page.getByRole('button', { name: 'Open composer' }).click();
+      await page.getByLabel('Name', { exact: true }).fill('Watch the wind');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.getByRole('button', { name: 'Retry', exact: true }).waitFor();
+      await page.evaluate(() => { window.succeed = true; });
+      await page.getByRole('button', { name: 'Retry', exact: true }).click();
+      await closed(page);
+      assert.deepEqual(await page.evaluate(() => ({
+        same: window.editRequests[0] === window.editRequests[1],
+        requests: window.editRequests,
+        creates: window.requests ?? [],
+        events: window.events,
+      })), {
+        same: true,
+        requests: Array.from({ length: 2 }, () => ({ id: 'wind', label: 'Watch the wind', description: '', color: 'sky', prerequisites: [] })),
+        creates: [],
+        events: [
+          { name: 'roadmap_board_edit', props: { step: 'unchanged' } },
+          { name: 'roadmap_board_edit', props: { step: 'failed' } },
+          { name: 'roadmap_board_edit', props: { step: 'retry' } },
+        ],
+      });
+    } finally {
+      await page.close();
+      assert.deepEqual(errors, []);
+    }
+  });
+
+  test(`Chromium ${width}: edit discard asks once and Escape closes only the top layer`, async () => {
+    const { page, errors } = await open(width, { editing: 'wind', total: 8 });
+    try {
+      await page.getByLabel('Name', { exact: true }).fill('Watch the wind');
+      await page.locator('.st-board-draft-needs').click();
+      await page.getByRole('heading', { name: 'Prerequisites', exact: true }).waitFor();
+      assert.deepEqual(await page.locator('.st-board-picker-blocked [aria-disabled="true"]').allTextContents(), [
+        'Read the windThis step',
+        ...Array.from({ length: 7 }, (_, index) => `Chart ${index}Comes after this step`),
+      ]);
+      if (width === 744) assert.equal(await page.getByRole('button', { name: 'Back to Edit step', exact: true }).count(), 1);
+      await page.keyboard.press('Escape');
+      await formReturned(page, 'Edit step');
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor();
+      assert.equal(await page.getByRole('dialog', { name: 'Edit step', exact: true }).getAttribute('inert'), '');
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await page.getByRole('button', { name: 'Discard', exact: true }).click();
+      await closed(page);
+      assert.deepEqual(await page.evaluate(() => ({ requests: window.editRequests ?? [], events: window.events })), {
+        requests: [], events: [
+          { name: 'roadmap_board_picker', props: { step: 'open', mode: 'edit' } },
+          { name: 'roadmap_board_picker', props: { step: 'cancel', mode: 'edit' } },
+          { name: 'roadmap_board_edit', props: { step: 'discard' } },
+        ],
+      });
+    } finally {
+      await page.close();
+      assert.deepEqual(errors, []);
+    }
+  });
+}
+
+
+test('Chromium: a clean unnamed existing step closes Save without validation or a write', async () => {
+  const { page, errors } = await open(1440, { editing: 'wind', unnamed: true });
+  try {
+    assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), '');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await closed(page);
+    assert.deepEqual(await page.evaluate(() => ({ requests: window.editRequests ?? [], events: window.events })), {
+      requests: [], events: [{ name: 'roadmap_board_edit', props: { step: 'unchanged' } }],
+    });
+  } finally {
+    await page.close();
+    assert.deepEqual(errors, []);
+  }
+});
+
+test('Chromium: removing the edited step closes the composer without a write or render failure', async () => {
+  const { page, errors } = await open(744, { editing: 'wind', total: 8 });
+  try {
+    await page.getByLabel('Name', { exact: true }).fill('Draft name');
+    await page.evaluate(() => window.remove());
+    await closed(page);
+    assert.deepEqual(await page.evaluate(() => window.editRequests ?? []), []);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});

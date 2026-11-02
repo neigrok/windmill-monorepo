@@ -5,12 +5,12 @@ import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from './acts.js';
 import { boardKey } from '../shortcuts/shortcutMap.js';
 import {
-  COMPOSER, LABELS, PICKER, backTo, draftLine, formatCount, matchCount,
-  noStepsMatch, pickerFor, removeChip, showMore,
+  COMPOSER, EDIT_STEP, LABELS, PICKER, backTo, draftLine, formatCount, matchCount,
+  leftSelection, noStepsMatch, pickerFor, removeChip, showMore,
 } from './copy.js';
 import './composer.css';
 
-export function PrerequisitePicker({ choices, onChoices, draft, layout, headingId, onApply, onCancel }) {
+export function PrerequisitePicker({ choices, onChoices, draft, layout, headingId, onApply, onCancel, mode = 'create' }) {
   const phone = layout === 'phone';
   const page = layout === 'page';
   const region = useRef(null);
@@ -36,11 +36,11 @@ export function PrerequisitePicker({ choices, onChoices, draft, layout, headingI
   }, [choices, layout]);
 
   const cancel = () => {
-    track('roadmap_board_picker', { step: 'cancel' });
+    track('roadmap_board_picker', { step: 'cancel', mode });
     onCancel();
   };
   const apply = () => {
-    track('roadmap_board_picker', { step: 'apply', count: countBucket(choices.selectedIds.length) });
+    track('roadmap_board_picker', { step: 'apply', mode, count: countBucket(choices.selectedIds.length) });
     onApply(choices.selectedIds);
   };
   const toggle = (id) => onChoices(choices.toggle(id));
@@ -120,7 +120,7 @@ export function PrerequisitePicker({ choices, onChoices, draft, layout, headingI
           <button className="st-board-draft-cancel" type="button" onClick={cancel}>{PICKER.cancel}</button>
         )}
         {page && (
-          <button className="st-board-picker-back" type="button" aria-label={backTo({ screen: COMPOSER.title })} onClick={cancel}>
+          <button className="st-board-picker-back" type="button" aria-label={backTo({ screen: mode === 'edit' ? EDIT_STEP.title : COMPOSER.title })} onClick={cancel}>
             <ChevronLeft size={20} aria-hidden />
           </button>
         )}
@@ -131,6 +131,11 @@ export function PrerequisitePicker({ choices, onChoices, draft, layout, headingI
         {phone && <span className="st-board-draft-balance" />}
       </header>
       {phone && context && <p className="st-board-picker-context">{context}</p>}
+      {choices.revalidated.length > 0 && (
+        <div className="st-board-picker-revalidated" role="status">
+          {choices.revalidated.map((row) => <p key={row.id}>{leftSelection({ step: row.label })}</p>)}
+        </div>
+      )}
       {!phone && <>{searchField}{chips}</>}
       <div className="st-board-picker-results" tabIndex={-1}>
         {choices.count > 0 ? (
@@ -159,7 +164,7 @@ export function PrerequisitePicker({ choices, onChoices, draft, layout, headingI
                 type="button"
                 className="st-board-picker-more"
                 onClick={() => {
-                  track('roadmap_board_picker', { step: 'more' });
+                  track('roadmap_board_picker', { step: 'more', mode });
                   onChoices(choices.more());
                 }}
               >
@@ -168,13 +173,26 @@ export function PrerequisitePicker({ choices, onChoices, draft, layout, headingI
               </button>
             )}
           </>
-        ) : searched ? (
+        ) : searched && choices.blocked.length === 0 ? (
           <div className="st-board-picker-empty" role="status">
             <h3>{noStepsMatch({ query: choices.query })}</h3>
             {selected && <p>{PICKER.selectionKept}</p>}
             <Button variant="secondary" onClick={clear}>{PICKER.clearSearch}</Button>
           </div>
         ) : null}
+        {choices.blocked.length > 0 && (
+          <section className="st-board-picker-blocked" aria-label={PICKER.cantBe}>
+            <h3 className="st-board-picker-count">{PICKER.cantBe}</h3>
+            {choices.blocked.map((row) => (
+              <div key={row.id} role="checkbox" aria-checked="false" aria-disabled="true" className="st-board-picker-row is-blocked">
+                <span className="st-board-picker-row-text">
+                  <strong>{row.label}</strong>
+                  <span>{row.reason}{row.context && <span>{row.context}</span>}</span>
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
       </div>
       <footer className="st-board-picker-footer">
         {phone && chips}

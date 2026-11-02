@@ -18,8 +18,8 @@ export function reportError(error) { (window.reportedErrors ??= []).push(String(
 export function routeFamily(route) { return route; }
 `;
 
-export async function formReturned(page) {
+export async function formReturned(page, title = 'New step') {
   await page.locator('.st-board-picker').waitFor({ state: 'detached' });
   await page.waitForFunction(() => document.activeElement.matches('.st-board-draft-needs'));
-  assert.equal(await page.getByRole('dialog', { name: 'New step', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('dialog', { name: title, exact: true }).count(), 1);
 }

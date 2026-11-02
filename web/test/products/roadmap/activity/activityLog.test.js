@@ -55,3 +55,21 @@ test('the log orders a mixed seed and server history by instant, whatever order 
 
   assert.deepEqual(log.events.map((event) => event.id), ['seed-a', 'seed-b', 'op-1', 'seed-c']);
 });
+
+test('per-step day groups use the same day labels without changing the roadmap groups', () => {
+  const events = [
+    new ActivityEvent({ id: 'a1', nodeId: 'a', verb: 'added', at: null }),
+    new ActivityEvent({ id: 'a2', nodeId: 'a', verb: 'renamed', at: NOW - 26 * HOUR }),
+    new ActivityEvent({ id: 'b1', nodeId: 'b', verb: 'completed', at: NOW - HOUR }),
+    new ActivityEvent({ id: 'a3', nodeId: 'a', verb: 'completed', at: NOW }),
+  ];
+  const log = new ActivityLog(events);
+  const original = log.groupedByDay(NOW);
+  assert.deepEqual(log.groupedForNode('a', NOW), [
+    { label: 'Today', events: [events[3]] },
+    { label: 'Yesterday', events: [events[1]] },
+    { label: 'Earlier', events: [events[0]] },
+  ]);
+  assert.deepEqual(log.groupedForNode('missing', NOW), []);
+  assert.deepEqual(log.groupedByDay(NOW), original);
+});
