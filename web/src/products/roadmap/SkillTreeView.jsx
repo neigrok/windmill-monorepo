@@ -109,6 +109,69 @@ function consumeSessionFlag(key) {
   }
 }
 
+function reportBoardFailure(operation, error) {
+  const stack = typeof error?.stack === 'string' && error.stack.trim()
+    ? error.stack
+    : new Error(operation).stack;
+  captureError('roadmap', operation, stack, '#/app');
+}
+
+export function useRoadmapToast() {
+  const toastTimersRef = useRef([]);
+  const toastKeyRef = useRef(0);
+  const boardToastRef = useRef(null);
+  const [toast, setToast] = useState(null); // { message, action, detail, key, leaving }
+  const [toastWhyOpen, setToastWhyOpen] = useState(false);
+  const showToast = useCallback((message, options = {}) => {
+    boardToastRef.current?.onLeave?.('replaced');
+    boardToastRef.current = null;
+    toastTimersRef.current.forEach(clearTimeout);
+    toastTimersRef.current = [];
+    if (BOARD_OPEN && options.surface === 'board') {
+      const next = { ...options, message, key: (toastKeyRef.current += 1), leaving: false, started: false };
+      boardToastRef.current = next;
+      setToast(next);
+      return;
+    }
+    const action = options.action ?? null;
+    const hold = options.duration ?? (action ? 6000 : 4000);
+    const key = (toastKeyRef.current += 1);
+    setToastWhyOpen(false);
+    setToast({ message, action, detail: options.detail || null, key, leaving: false });
+    const leave = setTimeout(() => {
+      setToast((current) => (current && current.key === key ? { ...current, leaving: true } : current));
+      const drop = setTimeout(() => setToast((current) => (current && current.key === key ? null : current)), 280); // matches the CSS exit
+      toastTimersRef.current.push(drop);
+    }, hold);
+    toastTimersRef.current.push(leave);
+  }, []);
+
+  const boardToastShown = useCallback((key) => {
+    const current = boardToastRef.current;
+    if (!current || current.key !== key || current.started) return;
+    current.started = true;
+    const leave = setTimeout(() => {
+      if (boardToastRef.current !== current) return;
+      current.onLeave?.('timer');
+      boardToastRef.current = null;
+      setToast((shown) => shown?.key === key ? { ...shown, leaving: true } : shown);
+      toastTimersRef.current.push(setTimeout(() => setToast((shown) => shown?.key === key ? null : shown), 280));
+    }, current.holdMs);
+    toastTimersRef.current.push(leave);
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    boardToastRef.current?.onLeave?.('replaced');
+    boardToastRef.current = null;
+    toastTimersRef.current.forEach(clearTimeout);
+    toastTimersRef.current = [];
+    setToast(null);
+  }, []);
+
+  useEffect(() => () => toastTimersRef.current.forEach(clearTimeout), []);
+  return { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast };
+}
+
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
@@ -246,9 +309,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const selectedIdRef = useRef(null);
   const selectedIdsRef = useRef(new Set());
   const selectedEdgesRef = useRef(new Set());
-  const toastTimersRef = useRef([]);
-  const toastKeyRef = useRef(0);
-  const boardToastRef = useRef(null);
+  const { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast } = useRoadmapToast();
   const composerOpenRef = useRef(false);
 
   const {
@@ -280,8 +341,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
   const [autoFocusNameId, setAutoFocusNameId] = useState(null);
-  const [toast, setToast] = useState(null); // { message, action, detail, key, leaving }
-  const [toastWhyOpen, setToastWhyOpen] = useState(false);
 
   // Ordinary paths call setSelectedId; only the Next-up glide’s timeout reaches commitSelectedId, after re-checking its epoch.
   const nextUpSelectRef = useRef({ epoch: 0, timer: null });
@@ -408,52 +467,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (!seedRef.current?.mine || shared || demotion) return;
     returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
   }, [shared, demotion]);
-
-  const showToast = useCallback((message, options = {}) => {
-    boardToastRef.current?.onLeave?.('replaced');
-    boardToastRef.current = null;
-    toastTimersRef.current.forEach(clearTimeout);
-    toastTimersRef.current = [];
-    if (BOARD_OPEN && options.surface === 'board') {
-      const next = { ...options, message, key: (toastKeyRef.current += 1), leaving: false, started: false };
-      boardToastRef.current = next;
-      setToast(next);
-      return;
-    }
-    const action = options.action ?? null;
-    const hold = options.duration ?? (action ? 6000 : 4000);
-    const key = (toastKeyRef.current += 1);
-    setToastWhyOpen(false);
-    setToast({ message, action, detail: options.detail || null, key, leaving: false });
-    const leave = setTimeout(() => {
-      setToast((current) => (current && current.key === key ? { ...current, leaving: true } : current));
-      const drop = setTimeout(() => setToast((current) => (current && current.key === key ? null : current)), 280); // matches the CSS exit
-      toastTimersRef.current.push(drop);
-    }, hold);
-    toastTimersRef.current.push(leave);
-  }, []);
-
-  const boardToastShown = useCallback((key) => {
-    const current = boardToastRef.current;
-    if (!current || current.key !== key || current.started) return;
-    current.started = true;
-    const leave = setTimeout(() => {
-      if (boardToastRef.current !== current) return;
-      current.onLeave?.('timer');
-      boardToastRef.current = null;
-      setToast((shown) => shown?.key === key ? { ...shown, leaving: true } : shown);
-      toastTimersRef.current.push(setTimeout(() => setToast((shown) => shown?.key === key ? null : shown), 280));
-    }, current.holdMs);
-    toastTimersRef.current.push(leave);
-  }, []);
-
-  const dismissToast = useCallback(() => {
-    boardToastRef.current?.onLeave?.('replaced');
-    boardToastRef.current = null;
-    toastTimersRef.current.forEach(clearTimeout);
-    toastTimersRef.current = [];
-    setToast(null);
-  }, []);
 
   const [tendingEnabled, setTendingEnabled] = useState(false);
   const [tendOpen, setTendOpen] = useState(false);
@@ -1019,8 +1032,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (autoFocusNameId && selectedId !== autoFocusNameId) setAutoFocusNameId(null);
   }, [selectedId, autoFocusNameId]);
 
-  useEffect(() => () => toastTimersRef.current.forEach(clearTimeout), []);
-
   useEffect(() => {
     let cancelled = false;
     let autoOpenTimer = null;
@@ -1296,9 +1307,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const owner = treeMine && !shared && !demo && !demotion;
   const stepAddress = useStepAddress();
   if (view === null && (phone || BOARD_OPEN) && tree) {
-    setView(BOARD_OPEN && owner && tree.nodes.length === 0
-      ? 'board'
-      : initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id }));
+    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id, canAddFirstStep: owner }));
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
@@ -1662,15 +1671,19 @@ export function SkillTreeView({ treeId, demo = false }) {
     clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
-    track, report: (operation) => captureError('roadmap', operation, '', '#/app'),
+    track, report: reportBoardFailure,
   });
   const boardTree = useMemo(() => boardHeld && tree ? boardHeld.projected(tree) : tree, [boardHeld, tree]);
+  const boardSingleRootId = useMemo(() => {
+    const roots = boardTree?.roots() ?? [];
+    return roots.length === 1 ? roots[0].id : null;
+  }, [boardTree]);
   const boardStats = useMemo(() => BOARD_OPEN && boardTree ? ShareStats.from(boardTree, UnlockRules.derive(boardTree, { completed })) : null, [boardTree, completed]);
   const shownStats = boardActive ? { ...boardStats, ...(boardOverall ?? {}) } : shareStats;
   const shownDetailId = detailId !== null && boardTree?.nodesById.has(detailId) ? detailId : null;
   const closeBoardComposer = () => setBoardComposer(null);
-  const handleComposerCrash = () => {
-    captureError('roadmap', 'roadmap-board-composer', '', '#/app');
+  const handleComposerCrash = (error) => {
+    reportBoardFailure('roadmap-board-composer', error);
     setBoardComposer(null);
     focusBoard();
   };
@@ -1936,7 +1949,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             breakpoint={breakpoint}
             roadmapTitle={tree.title}
             editable={owner}
-            deletable={owner}
+            deletable={detailId !== boardSingleRootId}
             stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
             workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
             workspaceActions={{ onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }}
@@ -1946,7 +1959,10 @@ export function SkillTreeView({ treeId, demo = false }) {
             onClose={closeStep}
             onComplete={(id) => completeStep(id, { quiet: true })}
             onReset={resetStep}
-            onRestore={restoreStep}
+            onRestore={(id, snapshot) => {
+              setBoardQuiet((current) => current + 1);
+              restoreStep(id, snapshot);
+            }}
             onOpenInGraph={openStepInGraph}
             onViewBranch={viewBranchFromDetail}
             onDelete={deleteStepFromDetail}

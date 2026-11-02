@@ -49,14 +49,18 @@ export function PhoneSegments({
     setScrolled((current) => (current[name] === away ? current : { ...current, [name]: away }));
   };
 
-
   const upNextRest = useContext(UpNextRest);
   const shownCards = useMemo(
     () => Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })])),
     [board, doneExpanded],
   );
   const layout = useMemo(() => [{ name: shown, stops: columnStops(shownCards[shown]) }], [shownCards, shown]);
-  const roving = useRovingFocus(layout, { onComplete: onComplete && ((id, door) => { onComplete(id, door); onExpandDone(); onShow('done'); }) });
+  const existingIds = useMemo(() => new Set(board.columns.flatMap((column) => column.cards.map((card) => card.id))), [board]);
+  const roving = useRovingFocus(layout, { revision: board, existingIds, onComplete: onComplete && ((id, door) => {
+    if (!onComplete(id, door)) return false;
+    onShow('done');
+    return true;
+  }) });
 
   useEffect(() => {
     const id = completedBySwipe.current;
@@ -68,8 +72,9 @@ export function PhoneSegments({
   }, [board, shown]);
 
   const completeFromSwipe = onComplete && ((id, door) => {
+    if (!onComplete(id, door)) return false;
     completedBySwipe.current = id;
-    onComplete(id, door);
+    return true;
   });
 
   const expandDone = () => {
@@ -93,7 +98,7 @@ export function PhoneSegments({
             role="tabpanel"
             aria-labelledby={tabId(column.name)}
             className={`st-board-phone-pane ${column.name === shown ? 'is-shown' : ''} ${scrolled[column.name] ? 'is-scrolled' : ''}`}
-            tabIndex={-1}
+            tabIndex={column.count === 0 ? 0 : undefined}
             data-column={column.name}
             onScroll={(event) => handleScroll(column.name, event)}
           >

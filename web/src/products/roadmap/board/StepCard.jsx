@@ -60,12 +60,25 @@ function SwipeCard({ card, open, onSwipe, onComplete, tabIndex, children }) {
     <div className={`st-board-swipe${open ? ' is-open' : ''}${offset !== null ? ' is-dragging' : ''}`} data-step-id={card.id}
       style={{ '--swipe-offset': `${offset ?? (open ? SWIPE_REVEAL + 8 : 0)}px` }}
       onPointerDown={down} onPointerMove={move} onPointerUp={() => end(false)} onPointerCancel={() => end(true)}
-      onClickCapture={(event) => { if (dragged.current && !event.target.closest('.st-board-swipe-complete')) { event.preventDefault(); event.stopPropagation(); dragged.current = false; } }}
+      onClickCapture={(event) => {
+        if (!dragged.current || event.target.closest('.st-board-swipe-complete')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dragged.current = false;
+      }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) onSwipe(null); }}
-      onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); onSwipe(null); event.currentTarget.querySelector('.st-board-card').focus(); } }}>
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        onSwipe(null);
+        event.currentTarget.querySelector('.st-board-card').focus();
+      }}>
       {children}
       <button type="button" className="st-board-swipe-complete" tabIndex={tabIndex} aria-label={completeStepAction({ step: card.step.label })}
-        onFocus={() => onSwipe(card.id)} onClick={() => { onSwipe(null); onComplete(card.id, 'swipe'); }}>
+        onFocus={() => onSwipe(card.id)} onClick={() => {
+          onSwipe(null);
+          onComplete(card.id, 'swipe');
+        }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m5 12 4 4 10-10" /></svg>
         <span>{STEP_DETAIL.complete}</span>
       </button>

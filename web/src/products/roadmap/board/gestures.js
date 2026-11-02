@@ -31,10 +31,3 @@ export class SwipeGesture {
 
   release() { return this.claimed ? this.offset >= SWIPE_REVEAL : this.open; }
 }
-
-export class LongPress {
-  constructor({ x, y, now }) { this.x = x; this.y = y; this.started = now; this.cancelled = false; }
-  move(x, y) { this.cancelled ||= Math.hypot(x - this.x, y - this.y) > SLOP; }
-  ready(now) { return !this.cancelled && now - this.started >= 500; }
-  cancel() { this.cancelled = true; }
-}

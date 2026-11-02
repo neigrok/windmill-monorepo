@@ -166,7 +166,11 @@ window.openBoard = (nodes, initiallyCompleted, band) => {
     const [selectedId, setSelectedId] = useState(null);
     const [railed, setRailed] = useState(DEFAULT_RAIL);
     const [doneExpanded, setDoneExpanded] = useState(false);
-    window.complete = (id) => setCompleted((current) => [...current, id]);
+    window.complete = (id) => {
+      if (window.refuseCompletion || completed.includes(id)) return false;
+      setCompleted((current) => [...current, id]);
+      return true;
+    };
     window.selectElsewhere = setSelectedId;
     window.selected = selectedId;
     const board = useMemo(() => new Board(tree, { completed: new Set(completed),
@@ -660,6 +664,23 @@ test('Chromium: first creation never shows a completed empty roadmap during regr
     });
     await page.locator('.st-board-card[data-step-id="one"]').waitFor();
     assert.equal(await page.evaluate(() => window.completedEmpty), false);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+test('Chromium: refused C keeps focus recovery available for a later remote completion', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.locator('.st-board-card[data-step-id="wind"]').focus();
+    await page.evaluate(() => { window.refuseCompletion = true; });
+    await page.keyboard.press('c');
+    assert.equal(await focused(page), 'Read the wind');
+    await page.evaluate(() => { window.refuseCompletion = false; complete('wind'); });
+    await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'dock');
+    assert.deepEqual([await focused(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

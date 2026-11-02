@@ -21,7 +21,8 @@ function fixture(overrides = {}) {
     showToast: (message, options) => { c.toast = { message, ...options }; },
     setQuery: (query) => calls.push(['query', query]), onReveal: (id) => calls.push(['reveal', id]),
     onQuiet: () => calls.push(['quiet']), onHeld: (held) => { c.held = held; },
-    track: (name, props) => calls.push(['event', name, props]), report: (op) => calls.push(['report', op]),
+    track: (name, props) => calls.push(['event', name, props]),
+    errors: [], report: (op, error) => { calls.push(['report', op]); c.errors.push(error); },
     ...overrides,
   };
   return { acts: new BoardActs(c), c, calls, receipt };
@@ -74,20 +75,29 @@ test('a release retains its original session across roadmap changes', () => {
   assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }]]);
 });
 
-for (const dispatch of [() => null, () => { throw Error('private content'); }]) {
-  test('release failure restores the Board and reports only a static operation', () => {
-    const { acts, c, calls } = fixture({ session: { dispatch } });
-    acts.delete('wind');
-    acts.release('timer');
-    assert.equal(c.held, null);
-    assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held' }], ['quiet'], ['report', 'roadmap-board-delete']]);
-  });
-}
+test('a no-op release clears the projection without reporting an expected refusal', () => {
+  const { acts, c, calls } = fixture({ session: { dispatch: () => null } });
+  acts.delete('wind');
+  acts.release('timer');
+  assert.equal(c.held, null);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held' }], ['quiet']]);
+  assert.deepEqual(c.errors, []);
+});
+
+test('an unexpected release failure reports its original error for stack frames', () => {
+  const error = new Error('private content');
+  const { acts, c, calls } = fixture({ session: { dispatch: () => { throw error; } } });
+  acts.delete('wind');
+  acts.release('timer');
+  assert.equal(c.held, null);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held' }], ['quiet'], ['report', 'roadmap-board-delete']]);
+  assert.deepEqual(c.errors, [error]);
+});
 
 test('complete snapshots progress; Undo targets its own step and reveal names the newly unlocked step', () => {
   const { acts, c, calls } = fixture();
   const before = c.progress;
-  acts.complete('wind', 'key');
+  assert.equal(acts.complete('wind', 'key'), true);
   assert.equal(c.toast.message, 'Read the wind done · Leave the dock up next');
   assert.equal(c.toast.reveal, 'dock');
   acts.revealToast(c.toast);
@@ -103,7 +113,7 @@ test('complete snapshots progress; Undo targets its own step and reveal names th
 test('complete ignores locked, done, inactive and reader steps', () => {
   for (const options of [{}, { active: false }, { owner: false }, { progress: { completed: new Set(['wind']), completedAt: { wind: 1 } } }]) {
     const { acts, calls } = fixture(options);
-    acts.complete(Object.keys(options).length ? 'wind' : 'dock', 'key');
+    assert.equal(acts.complete(Object.keys(options).length ? 'wind' : 'dock', 'key'), false);
     assert.deepEqual(calls, []);
   }
 });
@@ -136,9 +146,12 @@ test('create not-ready is an expected refusal; Retry carries the same request', 
 
 for (const session of [null, { dispatch() { throw Error('private content'); } }]) {
   test('create boundary failure reports a static operation and returns false', () => {
-    const { acts, calls } = fixture({ session });
+    const { acts, c, calls } = fixture({ session });
     assert.deepEqual(acts.create(request), { ok: false });
     assert.deepEqual(calls, [['report', 'roadmap-board-create']]);
+    assert.equal(c.errors.length, 1);
+    assert.ok(c.errors[0] instanceof Error);
+    assert.ok(c.errors[0].stack.includes('useBoardActs'));
   });
 }
 

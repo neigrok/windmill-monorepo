@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 
-function sessionWith({ notify = () => {}, registry = null, save = () => Promise.resolve(), reportFailure = () => {} } = {}) {
-  const session = new SyncSession({ treeId: 'tree', registry, store: { save }, reportFailure });
+function sessionWith({ notify = () => {}, registry = null, save = () => Promise.resolve(), reportFailure = () => {}, Session = SyncSession } = {}) {
+  const session = new Session({ treeId: 'tree', registry, store: { save }, reportFailure });
   session.seed({ id: 'tree', title: 'Tree', nodes: [{ id: 'root', label: 'Root', prerequisites: [] }] });
   session.onTreeChanged(notify);
   return session;
@@ -70,27 +70,44 @@ test('a pre-apply refusal preserves the undo journal and leaves no node', () => 
   assert.deepEqual(snapshot(session), [{ id: 'root', label: 'Root', prerequisites: [] }]);
 });
 
-test('applied writes keep their receipt when notification, persistence and send boundaries fail', () => {
+test('applied writes keep their receipt and report real errors at each failed boundary', () => {
   const failures = [];
-  const session = sessionWith({ notify: () => { throw new Error('private notification'); },
-    registry: { touch: () => { throw new Error('private storage'); } }, reportFailure: (operation) => failures.push(operation) });
+  const notifyError = new Error('private notification');
+  const storageError = new Error('private storage');
+  const transportError = new Error('private transport');
+  class FailingTransportSession extends SyncSession {
+    send() { throw transportError; }
+  }
+  const session = sessionWith({
+    Session: FailingTransportSession,
+    notify: () => { throw notifyError; },
+    registry: { touch: () => { throw storageError; } },
+    reportFailure: (operation, error) => failures.push({ operation, error }),
+  });
   session.phase = 'live';
-  session.ws = { readyState: 1, send: () => { throw new Error('private transport'); } };
   const receipt = session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', prerequisites: ['root'] }, { captureFailures: true });
   assert.ok(receipt);
   assert.deepEqual(snapshot(session), [{ id: 'root', label: 'Root', prerequisites: [] }, { id: 'child', label: 'Child', prerequisites: ['root'] }]);
-  assert.deepEqual(failures, ['roadmap-sync-notify', 'roadmap-sync-persist', 'roadmap-sync-send']);
+  assert.deepEqual(failures, [
+    { operation: 'roadmap-sync-notify', error: notifyError },
+    { operation: 'roadmap-sync-persist', error: storageError },
+    { operation: 'roadmap-sync-send', error: transportError },
+  ]);
   assert.equal(session.durabilityAtRisk, true);
   assert.equal(session.revert(receipt), true);
 });
 
-test('asynchronous persistence failure reports safely after dispatch succeeded', async () => {
+test('asynchronous persistence failure retains its real error after dispatch succeeded', async () => {
   const failures = [];
-  const session = sessionWith({ save: () => Promise.reject(new Error('private storage')), reportFailure: (operation) => failures.push(operation) });
+  const storageError = new Error('private storage');
+  const session = sessionWith({
+    save: () => Promise.reject(storageError),
+    reportFailure: (operation, error) => failures.push({ operation, error }),
+  });
   const receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' }, { captureFailures: true });
   await Promise.resolve();
   assert.ok(receipt);
-  assert.deepEqual(failures, ['roadmap-sync-persist']);
+  assert.deepEqual(failures, [{ operation: 'roadmap-sync-persist', error: storageError }]);
   assert.equal(session.durabilityAtRisk, true);
 });
 

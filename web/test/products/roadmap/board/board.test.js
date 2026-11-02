@@ -462,7 +462,7 @@ test('Board — a query builds the Board: Created · newest orders Locked and Up
   ].join('\n'));
 });
 
-test('regroup tracks travel, removal, first creation and quiet Undo', () => {
+test('regroup tracks travel, removal and first creation', () => {
   const tree = learnToSail();
   const before = new Board(tree, initialProgress());
   const after = new Board(tree, advanceProgress(initialProgress(), ['wind'], 'complete', 100));
@@ -470,7 +470,6 @@ test('regroup tracks travel, removal, first creation and quiet Undo', () => {
     arrived: new Set(['dock']), leaving: new Set(['wind', 'dock']),
     moved: [{ id: 'wind', from: 'upNext', to: 'done' }, { id: 'dock', from: 'locked', to: 'upNext' }],
   });
-  assert.deepEqual(regroup(after, before, { quiet: true }), { arrived: new Set(), leaving: new Set(), moved: [] });
   const empty = new Board(new SkillTree({ id: 't', title: 'T', nodes: [] }), { completed: new Set() });
   const first = new Board(new SkillTree({ id: 't', title: 'T', nodes: [{ id: 'first', label: 'First', prerequisites: [] }] }), { completed: new Set() });
   assert.deepEqual(regroup(empty, first), { arrived: new Set(['first']), leaving: new Set(), moved: [] });
@@ -487,4 +486,27 @@ test('revealing clears only restrictions hiding the step and retains the sort', 
   assert.deepEqual(hidden.searchingFor('wind').revealing(step, tree), new BoardQuery({ sort: 'newest', search: 'wind' }));
   const description = new BoardQuery({ search: tree.nodeOrThrow('course').description });
   assert.equal(description.revealing(tree.nodeOrThrow('course'), tree), description);
+});
+
+test('Board filtering and revealing share branch, kind and text matching', () => {
+  const tree = new SkillTree({ id: 't', title: 'T', nodes: [
+    { id: 'root', label: 'Root', prerequisites: [] },
+    { id: 'wind', label: 'Read the WIND', description: 'Coastal navigation', color: 'sky', prerequisites: ['root'] },
+    { id: 'dock', label: 'Leave the dock', color: 'sky', prerequisites: ['wind'] },
+    { id: 'other', label: 'Wind elsewhere', color: 'gold', prerequisites: [] },
+  ] });
+  const progress = { completed: new Set() };
+  const visible = (query) => new Board(tree, progress, query).columns.flatMap((column) => column.cards.map((card) => card.id));
+  const query = new BoardQuery({ sort: 'newest', kinds: ['sky'], search: ' COASTAL ', branch: 'dock' });
+  assert.deepEqual(visible(query), ['wind']);
+  assert.equal(query.revealing(tree.nodeOrThrow('wind'), tree), query);
+  const revealed = query.revealing(tree.nodeOrThrow('other'), tree);
+  assert.deepEqual(revealed, new BoardQuery({ sort: 'newest' }));
+  assert.deepEqual(visible(revealed), ['wind', 'dock', 'root', 'other']);
+  const search = query.searchingFor(' wind ');
+  assert.deepEqual(visible(search), ['wind']);
+  assert.deepEqual(search.revealing(tree.nodeOrThrow('other'), tree), new BoardQuery({ sort: 'newest', search: ' wind ' }));
+  const staleBranch = new BoardQuery({ branch: 'missing' });
+  assert.deepEqual(visible(staleBranch), ['wind', 'dock', 'root', 'other']);
+  assert.equal(staleBranch.revealing(tree.nodeOrThrow('other'), tree), staleBranch);
 });

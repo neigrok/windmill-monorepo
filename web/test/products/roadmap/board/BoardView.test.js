@@ -81,7 +81,7 @@ test('BoardView â€” shown with a step selected past the Done fold, Done unfolds 
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
@@ -132,6 +132,27 @@ window.openReload = (nodes, completed) => {
     return React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
       React.createElement(BoardView, { ...load, completed: new Set(completed), completedAt: {}, selectedId: null, onSelect: () => {},
         breakpoint: 'desktop', active: true, onSwitchView: () => {}, onRetry: () => setLoad({ tree: null, loading: true, failed: false }) }));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.openActBoard = (nodes, initiallyCompleted, breakpoint, showToast) => {
+  function Room() {
+    const tree = useMemo(() => new SkillTree({ id: 'acts', title: 'Learn to sail', nodes }), []);
+    const [completed, setCompleted] = useState(() => new Set(initiallyCompleted));
+    const [completedAt, setCompletedAt] = useState(() => Object.fromEntries(initiallyCompleted.map((id, index) => [id, index + 1])));
+    const [query, setQuery] = useState(() => new BoardQuery());
+    const toast = useMemo(() => showToast ? { key: 1, message: 'Rig the boat deleted', act: 'delete', action: { label: 'Undo' } } : null, []);
+    window.shownToasts ??= [];
+    window.completeRemote = (id) => {
+      if (completed.has(id)) return false;
+      setCompleted(new Set([...completed, id]));
+      setCompletedAt({ ...completedAt, [id]: Date.now() });
+      return true;
+    };
+    return React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
+      React.createElement(BoardView, { tree, completed, completedAt, breakpoint, active: true,
+        onSelect: () => {}, onComplete: window.completeRemote, query, onQuery: setQuery,
+        toast, onToastShown: (key) => window.shownToasts.push(key), onToastUndo: () => {} }));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
@@ -451,4 +472,58 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order â€
   } finally {
     await page.close();
   }
+});
+
+test('Chromium: a visible toast retains Undo and its announcement through a later regroup', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    const time = new Date('2026-11-01T10:00:00Z');
+    await page.clock.install({ time: new Date(time.getTime() - 60_000) });
+    await page.clock.pauseAt(time);
+    await page.goto(`${origin}/board-view-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate((nodes) => openActBoard(nodes, ['course', 'parts', 'rig'], 'desktop', true), learnToSailNodes);
+    await page.locator('.st-board-card[data-step-id="wind"]').waitFor();
+    await page.clock.runFor(120);
+    await page.locator('.st-board-toast').waitFor();
+    await page.evaluate(() => {
+      window.announcements = [];
+      const live = document.querySelector('[aria-live="polite"]');
+      new MutationObserver(() => window.announcements.push(live.textContent)).observe(live, { childList: true, characterData: true, subtree: true });
+      completeRemote('wind');
+    });
+    await page.locator('.st-board-card.is-leaving').first().waitFor();
+    assert.deepEqual(await page.locator('.st-board-toast').allTextContents(), ['Rig the boat deletedUndo']);
+    await page.clock.runFor(900);
+    await page.locator('[data-column="done"] .st-board-card[data-step-id="wind"]').waitFor();
+    assert.deepEqual(await page.evaluate(() => ({ shown: window.shownToasts, announcements: window.announcements })), { shown: [1], announcements: [] });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+test('Chromium: phone C follows the completed card into Done without expanding its folded list', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    const time = new Date('2026-11-01T10:00:00Z');
+    await page.clock.install({ time: new Date(time.getTime() - 60_000) });
+    await page.clock.pauseAt(time);
+    await page.goto(`${origin}/board-view-test`);
+    await page.waitForFunction(() => window.entryReady);
+    const done = Array.from({ length: 13 }, (_, index) => ({ id: `done${index}`, label: `Done ${index}`, prerequisites: [] }));
+    const nodes = [{ id: 'wind', label: 'Read the wind', prerequisites: [] }, ...done];
+    await page.evaluate(([nodes, completed]) => openActBoard(nodes, completed, 'phone', false), [nodes, done.map(({ id }) => id)]);
+    await page.locator('.st-board-card[data-step-id="wind"]').focus();
+    await page.keyboard.press('c');
+    await page.locator('.st-board-card.is-leaving').first().waitFor({ state: 'attached' });
+    await page.clock.runFor(900);
+    await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'wind' && document.activeElement.closest('[data-column]').dataset.column === 'done');
+    assert.equal(await page.getByRole('button', { name: 'Show all 14', exact: true }).count(), 1);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
 });

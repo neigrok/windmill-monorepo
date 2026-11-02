@@ -2,6 +2,7 @@
 // A stop is { column, id }: a step id, SHOW_ALL for the row ending a folded Done, or RAIL for a tablet rail's Show.
 
 import { useEffect, useRef, useState } from 'react';
+import { boardKey } from '../shortcuts/shortcutMap.js';
 
 export const SHOW_ALL = Symbol('Show all');
 export const RAIL = Symbol('rail Show');
@@ -51,6 +52,17 @@ export function nearestStop(y, candidates) {
   return best?.id ?? null;
 }
 
+// A completion waits on its displayed Board; a newer Board must contain its destination or release focus recovery.
+export function pendingStop(layout, pending, existingIds, revision) {
+  if (pending === null) return null;
+  const exists = existingIds ? existingIds.has(pending.id) : layout.some((column) => column.stops.includes(pending.id));
+  if (!exists) return null;
+  const advanced = pending.revision !== undefined && pending.revision !== revision;
+  const destination = layout.find((column) => column.name === pending.column);
+  if (advanced && !destination?.stops.includes(pending.id)) return null;
+  return pending;
+}
+
 function stopOfElement(element) {
   const column = element.closest('[data-column]')?.dataset.column;
   if (!column) return null;
@@ -74,12 +86,14 @@ function focusInView(element) {
 
 // Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
 // a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
-export function useRovingFocus(layout, { onComplete } = {}) {
+export function useRovingFocus(layout, { onComplete, existingIds, revision } = {}) {
   const ref = useRef(null);
   const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
   const [pending, setPending] = useState(null);
   const stop = entryStop(layout, memory);
+  const following = pendingStop(layout, pending, existingIds, revision);
+  if (following !== pending) setPending(following);
 
   useEffect(() => {
     if (pending === null) return;
@@ -117,12 +131,15 @@ export function useRovingFocus(layout, { onComplete } = {}) {
   const onKeyDown = (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const from = stopOfElement(event.target);
-    if (from === null || event.defaultPrevented || event.target.closest('[inert], input, textarea, [contenteditable="true"]')) return;
-    if (event.key.toLowerCase() === 'c') {
-      if (document.querySelector('[aria-modal="true"]') || from.column !== 'upNext' || !onComplete || !event.target.matches('.st-board-card')) return;
+    if (from === null || event.defaultPrevented) return;
+    const action = boardKey(event, {
+      typing: Boolean(event.target.closest('input, textarea, select, [contenteditable="true"]')),
+      covered: Boolean(event.target.closest('[inert]') || document.querySelector('[aria-modal="true"]')),
+    });
+    if (action === 'complete') {
+      if (from.column !== 'upNext' || !onComplete || !event.target.matches('.st-board-card')) return;
       event.preventDefault();
-      onComplete(from.id, 'key');
-      setPending({ column: 'done', id: from.id });
+      if (onComplete(from.id, 'key')) setPending({ column: 'done', id: from.id, revision });
       return;
     }
     const box = event.target.getBoundingClientRect();

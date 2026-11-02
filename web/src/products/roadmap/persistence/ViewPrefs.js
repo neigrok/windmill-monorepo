@@ -49,10 +49,11 @@ export class ViewPrefs {
   }
 }
 
-// Empty or just planted opens the canvas, then a step's link opens the Board for everyone, then a saved choice wins, then
-// owners work and visitors look; the Board, while open, is the List's stand-in.
-export function initialView({ saved, owner, empty, born = false, boardOpen = false, linkedStep = null }) {
+// An editable empty Board opens its New step state. Otherwise empty or just planted opens the canvas; a step link,
+// saved choice, then ownership decide the view of an established roadmap.
+export function initialView({ saved, owner, empty, born = false, boardOpen = false, linkedStep = null, canAddFirstStep = false }) {
   const working = boardOpen ? 'board' : 'list';
+  if (boardOpen && owner && empty && canAddFirstStep) return 'board';
   if (born) return 'tree';
   if (empty) return 'tree';
   if (boardOpen && linkedStep !== null) return 'board';

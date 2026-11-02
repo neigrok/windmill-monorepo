@@ -85,10 +85,11 @@ export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = f
 }
 
 // The Board's own keys, unmodified, never while typing in a field and never while a modal layer covers the Board (a step
-// open over it, a dialog, the composer): / for Find a step, G for Board ⇄ Graph.
+// open over it, a dialog, the composer): / for Find a step, G for Board ⇄ Graph, C for Complete.
 export function boardKey({ key, metaKey = false, ctrlKey = false, altKey = false }, { typing = false, covered = false } = {}) {
   if (metaKey || ctrlKey || altKey || typing || covered) return null;
   if (key === '/') return 'find';
   if (key.toLowerCase() === 'g') return 'switch';
+  if (key.toLowerCase() === 'c') return 'complete';
   return null;
 }

@@ -147,10 +147,13 @@ function BoardView({
   }, [reveal, board]);
 
   useEffect(() => {
-    if (!toast || motion.phase !== 'settled') { setVisibleToast(null); return undefined; }
-    const timer = setTimeout(() => { setVisibleToast(toast.key); onToastShown?.(toast.key); }, 120);
+    if (!toast || visibleToast === toast.key || motion.phase !== 'settled') return undefined;
+    const timer = setTimeout(() => {
+      setVisibleToast(toast.key);
+      onToastShown?.(toast.key);
+    }, 120);
     return () => clearTimeout(timer);
-  }, [toast?.key, motion.phase]);
+  }, [toast?.key, visibleToast, motion.phase]);
 
   // After Try again, focus follows the Board through its frames: the skeleton while it loads, then the columns' tab stop,
   // or Try again or New step if the roadmap failed again or came back empty.
@@ -238,7 +241,7 @@ function BoardView({
                   counts={motion.counts}
                   arrived={motion.arrived}
                   leaving={motion.leaving}
-                dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
+                  dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
                   pinned={motion.pinned}
                   settle={motion.settle}
                   onComplete={onComplete}
@@ -259,7 +262,7 @@ function BoardView({
       )}
       {toast && <div className="st-board-spoken" role="status" aria-live="polite" aria-atomic="true">{visibleToast === toast.key ? toast.message : ''}</div>}
       {toast && visibleToast === toast.key && (
-        <div className={`st-board-toast${toast.leaving ? ' is-leaving' : ''}${toast.act === 'complete' ? ' st-board-toast--complete' : ''}`}>
+        <div className={`st-board-toast${toast.leaving ? ' is-leaving' : ''}${toast.act ? ` st-board-toast--${toast.act}` : ''}`}>
           {phone && toast.act === 'complete' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m5 12 4 4 10-10" /></svg>}
           {toast.reveal
             ? <button type="button" className="st-board-toast-message" onClick={onToastReveal}>{toast.message}</button>

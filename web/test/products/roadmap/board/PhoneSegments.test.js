@@ -47,7 +47,7 @@ function card(column, kind, id, title, { reason = null, excerpt = null, selected
 }
 
 function pane(name, title, shown, cards) {
-  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} " tabindex="-1" data-column="${name}">`
+  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} " data-column="${name}">`
     + `<h2 class="st-board-phone-heading">${title}</h2><div class="st-board-cards">${cards.join('')}</div></div>`;
 }
 
@@ -92,11 +92,11 @@ test('PhoneSegments — the host’s shown column shows, newest completion first
   assert.equal(markup({ shown: 'done', selectedId: 'parts' }), learnToSailMarkup('done', 'parts'));
 });
 
-test('PhoneSegments — scroll panes remain outside the Tab order, including empty columns', () => {
+test('PhoneSegments — an empty column’s pane takes focus, so its tab never points at nothing focusable', () => {
   const tree = new SkillTree({ id: 'one', title: 'One', nodes: [{ id: 'only', label: 'Only step', prerequisites: [] }] });
   const html = markup({ board: new Board(tree, { completed: new Set(['only']), completedAt: { only: 1 } }) });
-  assert.deepEqual([...html.matchAll(/id=":R0:panel-(\w+)"[^>]*tabindex="(-?\d+)"/g)].map(([, name, tabIndex]) => [name, tabIndex]),
-    [['locked', '-1'], ['upNext', '-1'], ['done', '-1']]);
+  assert.deepEqual([...html.matchAll(/id=":R0:panel-(\w+)"[^>]*class="[^"]*"( tabindex="0")?/g)].map(([, name, focusable]) => `${name}${focusable ? ' focusable' : ''}`),
+    ['locked focusable', 'upNext focusable', 'done']);
 });
 
 // A 5,000-step roadmap with 1,770 Locked, 30 Up next and 3,200 Done: thirty open roots, every locked step waiting on the first.

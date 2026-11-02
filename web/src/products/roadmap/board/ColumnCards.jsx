@@ -89,47 +89,94 @@ export class CardStack {
 
 // One timeline owns the displayed cards, arrival counts, travel and wake across all columns.
 export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
-  const [state, setState] = useState({ target: board, board, counts: board, arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, moved: [], phase: 'settled', quiet });
+  const [state, setState] = useState({
+    target: board, board, counts: board, quiet,
+    arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, dimmed: NOTHING_ARRIVED,
+    moved: [], phase: 'settled',
+  });
   const positions = useRef(new Map());
   const animations = useRef([]);
   const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  useLayoutEffect(() => {
-    if (board === state.target) {
-      if (quiet !== state.quiet) setState((current) => ({ ...current, quiet }));
-      return;
-    }
-    const change = board && state.target ? regroup(state.target, board) : { arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, moved: [] };
-    const downward = quiet !== state.quiet || (change.arrived.size === 0 && change.moved.some((move) => move.from === 'done'));
+
+  if (board !== state.target) {
+    const change = board && state.board
+      ? regroup(state.board, board)
+      : { arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, moved: [] };
+    const reset = change.arrived.size === 0 && change.moved.some((move) => move.from === 'done');
+    const downward = quiet !== state.quiet || reset;
     const moving = !downward && (change.arrived.size > 0 || change.leaving.size > 0);
-    positions.current = new Map([...root.current?.querySelectorAll('.st-board-card') ?? []].map((element) => [element.dataset.stepId, element.getBoundingClientRect()]));
-    setState({ target: board, board: moving ? state.board : board, counts: moving ? state.counts : board, ...change, arrived: downward ? NOTHING_ARRIVED : change.arrived, leaving: downward ? NOTHING_ARRIVED : change.leaving, dimmed: downward ? new Set([...change.arrived, ...change.moved.map(({ id }) => id)]) : NOTHING_ARRIVED, phase: moving ? 'leaving' : downward ? 'quiet' : 'settled', quiet });
-  }, [board, quiet]);
+    const dimmed = downward
+      ? new Set([...change.arrived, ...change.moved.map(({ id }) => id)])
+      : NOTHING_ARRIVED;
+    let phase = 'settled';
+    if (downward) phase = 'quiet';
+    if (moving) phase = 'leaving';
+    setState({
+      target: board,
+      board: moving ? state.board : board,
+      counts: moving ? state.counts : board,
+      arrived: downward ? NOTHING_ARRIVED : change.arrived,
+      leaving: downward ? NOTHING_ARRIVED : change.leaving,
+      moved: change.moved,
+      dimmed,
+      phase,
+      quiet,
+    });
+  } else if (quiet !== state.quiet) {
+    setState({ ...state, quiet });
+  }
+
+  const pinned = useMemo(() => new Set(state.moved.map(({ id }) => id)), [state.moved]);
 
   useEffect(() => {
     if (state.phase === 'settled') return undefined;
-    let fast = null;
+    const timers = [];
+    let fastForward = null;
     const finish = () => {
-      for (const animation of animations.current) if (animation.playState !== 'idle') animation.finish();
-      setState((current) => ({ ...current, board: current.target, counts: current.target, leaving: NOTHING_ARRIVED, phase: 'settled' }));
+      for (const animation of animations.current) {
+        if (animation.playState !== 'idle') animation.finish();
+      }
+      setState((current) => ({
+        ...current, board: current.target, counts: current.target,
+        leaving: NOTHING_ARRIVED, phase: 'settled',
+      }));
     };
-    const travel = !phone && !reduced && state.moved.some((move) => state.arrived.has(move.id));
-    const delay = state.phase === 'quiet' ? 280 : reduced ? 150 : phone ? 280 : 430;
-    const timers = [setTimeout(() => {
-      if (travel) setState((current) => ({ ...current, board: current.target, phase: 'travelling' }));
-      else if (phone && !reduced && state.arrived.size > 0) setState((current) => ({ ...current, board: current.target, counts: current.target, leaving: NOTHING_ARRIVED, phase: 'waking' }));
-      else finish();
-    }, delay)];
-    if (phone && !reduced && state.arrived.size > 0) timers.push(setTimeout(finish, delay + 480));
-    if (travel) timers.push(setTimeout(finish, delay + 320));
+
+    if (state.phase === 'quiet') {
+      timers.push(setTimeout(finish, 280));
+    } else if (reduced) {
+      timers.push(setTimeout(finish, 150));
+    } else if (phone) {
+      if (state.arrived.size === 0) {
+        timers.push(setTimeout(finish, 280));
+      } else {
+        timers.push(setTimeout(() => setState((current) => ({
+          ...current, board: current.target, counts: current.target,
+          leaving: NOTHING_ARRIVED, phase: 'waking',
+        })), 280));
+        timers.push(setTimeout(finish, 760));
+      }
+    } else {
+      const travels = state.moved.some((move) => state.arrived.has(move.id));
+      if (travels) {
+        timers.push(setTimeout(() => setState((current) => ({
+          ...current, board: current.target, phase: 'travelling',
+        })), 430));
+        timers.push(setTimeout(finish, 750));
+      } else {
+        timers.push(setTimeout(finish, 430));
+      }
+    }
+
     const forward = () => {
-      if (fast !== null) return;
+      if (fastForward !== null) return;
       for (const timer of timers) clearTimeout(timer);
-      fast = setTimeout(finish, 150);
+      fastForward = setTimeout(finish, 150);
     };
     for (const name of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(name, forward, { passive: true });
     return () => {
       for (const timer of timers) clearTimeout(timer);
-      clearTimeout(fast);
+      clearTimeout(fastForward);
       for (const name of ['pointerdown', 'wheel', 'keydown']) window.removeEventListener(name, forward);
     };
   }, [state.target]);
@@ -138,33 +185,57 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
     if (state.phase === 'leaving') {
       const cards = [...root.current?.querySelectorAll('.st-board-card') ?? []];
       positions.current = new Map(cards.map((element) => [element.dataset.stepId, element.getBoundingClientRect()]));
-      animations.current = cards.filter((element) => state.leaving.has(element.dataset.stepId) && !state.arrived.has(element.dataset.stepId)).map((element) => {
+      const leaving = cards.filter((element) => state.leaving.has(element.dataset.stepId) && !state.arrived.has(element.dataset.stepId));
+      animations.current = leaving.map((element) => {
         const box = positions.current.get(element.dataset.stepId);
-        return element.animate(reduced ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 1, height: `${box.height}px` }, { opacity: 0, height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', marginBottom: '-8px' }], { delay: phone || reduced ? 0 : 150, duration: reduced ? 150 : 280, fill: 'forwards', easing: 'cubic-bezier(.4,0,.2,1)' });
+        const frames = reduced ? [{ opacity: 1 }, { opacity: 0 }] : [
+          { opacity: 1, height: `${box.height}px` },
+          {
+            opacity: 0, height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px',
+            borderTopWidth: '0px', borderBottomWidth: '0px', marginBottom: '-8px',
+          },
+        ];
+        return element.animate(frames, {
+          delay: phone || reduced ? 0 : 150,
+          duration: reduced ? 150 : 280,
+          fill: 'forwards',
+          easing: getComputedStyle(element).getPropertyValue('--ease-standard').trim(),
+        });
       });
-      return () => { for (const animation of animations.current) animation.cancel(); animations.current = []; };
+    } else if (state.phase === 'travelling') {
+      animations.current = state.moved.filter((move) => state.arrived.has(move.id)).flatMap(({ id }) => {
+        const before = positions.current.get(id);
+        const element = root.current?.querySelector(`.st-board-card[data-step-id="${CSS.escape(id)}"]`);
+        if (!before || !element) return [];
+        const after = element.getBoundingClientRect();
+        const traveller = element.cloneNode(true);
+        traveller.removeAttribute('data-step-id');
+        traveller.setAttribute('aria-hidden', 'true');
+        traveller.tabIndex = -1;
+        Object.assign(traveller.style, {
+          position: 'fixed', zIndex: '5', pointerEvents: 'none', margin: '0',
+          left: `${after.left}px`, top: `${after.top}px`, width: `${after.width}px`, height: `${after.height}px`,
+        });
+        root.current.appendChild(traveller);
+        element.style.opacity = '0';
+        const animation = traveller.animate([
+          { transform: `translate(${before.left - after.left}px, ${before.top - after.top}px)`, opacity: 1 },
+          { transform: 'translate(0, 0)', opacity: 1 },
+        ], { duration: 320, easing: getComputedStyle(element).getPropertyValue('--ease-soft').trim() });
+        const remove = () => {
+          traveller.remove();
+          element.style.removeProperty('opacity');
+        };
+        animation.onfinish = remove;
+        animation.oncancel = remove;
+        return [animation];
+      });
     }
-    if (state.phase !== 'travelling') return;
-    animations.current = state.moved.filter((move) => state.arrived.has(move.id)).flatMap(({ id }) => {
-      const before = positions.current.get(id);
-      const element = root.current?.querySelector(`.st-board-card[data-step-id="${CSS.escape(id)}"]`);
-      if (!before || !element) return [];
-      const after = element.getBoundingClientRect();
-      const traveller = element.cloneNode(true);
-      traveller.removeAttribute('data-step-id');
-      traveller.setAttribute('aria-hidden', 'true');
-      traveller.tabIndex = -1;
-      Object.assign(traveller.style, { position: 'fixed', zIndex: '5', pointerEvents: 'none', margin: '0', left: `${after.left}px`, top: `${after.top}px`, width: `${after.width}px`, height: `${after.height}px` });
-      root.current.appendChild(traveller);
-      element.style.opacity = '0';
-      const animation = traveller.animate([{ transform: `translate(${before.left - after.left}px, ${before.top - after.top}px)`, opacity: 1 }, { transform: 'translate(0, 0)', opacity: 1 }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
-      const remove = () => { traveller.remove(); element.style.removeProperty('opacity'); };
-      animation.onfinish = remove;
-      animation.oncancel = remove;
-      return [animation];
-    });
-    return () => { for (const animation of animations.current) animation.cancel(); animations.current = []; };
-  }, [state.phase]);
+    return () => {
+      for (const animation of animations.current) animation.cancel();
+      animations.current = [];
+    };
+  }, [state.target, state.phase]);
 
   useEffect(() => {
     if (state.phase !== 'settled' || state.arrived.size === 0) return undefined;
@@ -175,7 +246,8 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
     if (!current.arrived.has(id)) return current;
     return { ...current, arrived: new Set([...current.arrived].filter((candidate) => candidate !== id)) };
   });
-  return { ...state, board: state.board ?? board, counts: state.counts ?? board, arrived: state.phase === 'settled' || state.phase === 'waking' ? state.arrived : NOTHING_ARRIVED, pinned: new Set(state.moved.map(({ id }) => id)), settle };
+  const arrived = state.phase === 'settled' || state.phase === 'waking' ? state.arrived : NOTHING_ARRIVED;
+  return { ...state, arrived, pinned, settle };
 }
 
 // The run scrolls inside its parent, the column. The roving stop, a card focus is moving to and the selected step always

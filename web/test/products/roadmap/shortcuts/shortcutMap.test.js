@@ -65,11 +65,17 @@ test('graphOnlyKey — select all, delete, the activity feed, Focus and All step
   assert.deepEqual(keys.map(([event]) => graphOnlyKey(event)), keys.map(([, graphOnly]) => graphOnly));
 });
 
-test('boardKey — / finds and G switches, unmodified and never while typing in a field; ⌘K stays Ask AI', () => {
+test('boardKey — / finds, G switches and C completes, unmodified and never while typing in a field; ⌘K stays Ask AI', () => {
   const keys = [
     [{ key: '/' }, false, 'find'],
     [{ key: 'g' }, false, 'switch'],
     [{ key: 'G' }, false, 'switch'],
+    [{ key: 'c' }, false, 'complete'],
+    [{ key: 'C' }, false, 'complete'],
+    [{ key: 'c' }, true, null],
+    [{ key: 'c', ctrlKey: true }, false, null],
+    [{ key: 'c', metaKey: true }, false, null],
+    [{ key: 'c', altKey: true }, false, null],
     [{ key: '/' }, true, null],
     [{ key: 'g' }, true, null],
     [{ key: '/', metaKey: true }, false, null],
@@ -79,7 +85,7 @@ test('boardKey — / finds and G switches, unmodified and never while typing in 
     [{ key: 'f' }, false, null],
   ];
   assert.deepEqual(keys.map(([event, typing]) => boardKey(event, { typing })), keys.map(([, , action]) => action));
-  assert.deepEqual([boardKey({ key: '/' }, { covered: true }), boardKey({ key: 'g' }, { covered: true })], [null, null]);
+  assert.deepEqual([boardKey({ key: '/' }, { covered: true }), boardKey({ key: 'g' }, { covered: true }), boardKey({ key: 'c' }, { covered: true })], [null, null, null]);
 });
 
 test('boardKey — Share open over the Board is a modal layer, so / and G stand aside while it is', async () => {

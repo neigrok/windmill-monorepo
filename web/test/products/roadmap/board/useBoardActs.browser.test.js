@@ -4,42 +4,66 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 
+const CLOCK_START = new Date('2026-11-02T12:00:00Z');
+
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { useRoadmapToast } from '/src/products/roadmap/SkillTreeView.jsx';
+import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
+import '/src/styles/global.css';
 const root = createRoot(document.getElementById('root'));
-const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [{ id: 'wind', label: 'Read the wind', prerequisites: [] }] });
+const initialTree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+  { id: 'course', label: 'Choose a course', prerequisites: [] },
+  { id: 'wind', label: 'Read the wind', prerequisites: ['course'] },
+  { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'] },
+] });
+const progress = { completed: new Set(['course']), completedAt: { course: 1 } };
 window.calls = [];
-let toast;
-let timer;
 function Room() {
   const [active, setActive] = useState(true);
   const [owner, setOwner] = useState(true);
   const [treeId, setTreeId] = useState('sail');
+  const [tree, setTree] = useState(initialTree);
+  const [query, setQuery] = useState(() => new BoardQuery());
+  const [quiet, setQuiet] = useState(0);
+  const { toast, showToast, dismissToast, boardToastShown, boardToastRef } = useRoadmapToast();
   const { held, acts } = useBoardActs({
-    tree, treeId, active, owner, query: new BoardQuery(), progress: { completed: new Set(), completedAt: {} }, now: Date.now,
-    session: { dispatch: (gesture, options) => { window.calls.push(['dispatch', treeId, gesture, options]); return {}; } },
-    showToast: (message, options) => { toast = options; clearTimeout(timer); timer = setTimeout(() => options.onLeave('timer'), options.holdMs); },
-    clearBoardToast: () => { clearTimeout(timer); toast = null; },
+    tree, treeId, active, owner, query, progress, now: Date.now,
+    session: { dispatch: (gesture, options) => {
+      window.calls.push(['dispatch', treeId, gesture, options]);
+      setTree((current) => current.without(gesture.nodeIds));
+      return {};
+    } },
+    showToast,
+    clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
     track: (name, props) => window.calls.push(['event', name, props]), report: (op) => window.calls.push(['report', op]),
-    onQuiet: () => {}, onReveal: () => {},
+    onQuiet: () => setQuiet((current) => current + 1), onReveal: () => {},
   });
-  window.deleteStep = () => acts.delete('wind');
-  window.undo = () => toast.action.run();
-  window.leave = (via) => {
+  window.deleteStep = () => flushSync(() => acts.delete('wind'));
+  window.flush = () => flushSync(() => {});
+  window.leave = (via) => flushSync(() => {
     if (via === 'view') setActive(false);
     if (via === 'owner') setOwner(false);
     if (via === 'roadmap') setTreeId('other');
     if (via === 'unmount') root.unmount();
     if (via === 'pagehide') window.dispatchEvent(new Event('pagehide'));
-  };
-  return React.createElement('output', null, held ? 'held' : 'clear');
+  });
+  return React.createElement(React.Fragment, null,
+    React.createElement('output', null, held ? 'held' : 'clear'),
+    React.createElement(BoardView, {
+      tree: held ? held.projected(tree) : tree, ...progress, query, onQuery: setQuery, quiet,
+      active, breakpoint: 'desktop', title: tree.title, onSelect: () => {}, onSwitchView: () => {},
+      toast, onToastShown: (key) => { window.shownAt = Date.now(); boardToastShown(key); },
+      onToastUndo: () => { toast.action.run(); dismissToast(); },
+    }));
 }
-root.render(React.createElement(Room));
+flushSync(() => root.render(React.createElement(Room)));
 `;
 let server, browser, origin;
 const ready = (async () => {
@@ -50,7 +74,7 @@ const ready = (async () => {
       configureServer(server) {
         server.middlewares.use('/board-acts-test', (_request, response) => {
           response.setHeader('Content-Type', 'text/html');
-          response.end('<!doctype html><div id="root"></div><script type="module" src="/board-acts-entry.js"></script>');
+          response.end('<!doctype html><script>localStorage.setItem("windmill:board:dev", "1")</script><div id="root"></div><script type="module" src="/board-acts-entry.js"></script>');
         });
       },
     }], optimizeDeps: { include: ['react', 'react-dom/client'] },
@@ -66,7 +90,8 @@ for (const trigger of ['view', 'owner', 'roadmap', 'unmount', 'pagehide']) {
     await ready;
     const page = await browser.newPage();
     try {
-      await page.clock.install();
+      await page.clock.install({ time: new Date(CLOCK_START.getTime() - 60000) });
+      await page.clock.pauseAt(CLOCK_START);
       await page.goto(`${origin}/board-acts-test`);
       await page.waitForFunction(() => !!window.deleteStep);
       await page.evaluate(() => window.deleteStep());
@@ -84,20 +109,37 @@ for (const trigger of ['view', 'owner', 'roadmap', 'unmount', 'pagehide']) {
   });
 }
 
-test('Chromium: the injected toast clock holds nine seconds and Undo prevents its send', async () => {
-  await ready;
-  const page = await browser.newPage();
-  try {
-    await page.clock.install();
-    await page.goto(`${origin}/board-acts-test`);
-    await page.waitForFunction(() => !!window.deleteStep);
-    await page.evaluate(() => window.deleteStep());
-    await page.clock.fastForward(8999);
-    assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held' }]]);
-    await page.evaluate(() => window.undo());
-    await page.clock.fastForward(1);
-    assert.deepEqual(await page.evaluate(() => window.calls), [
-      ['event', 'roadmap_board_delete', { step: 'held' }], ['event', 'roadmap_board_undo', { act: 'delete' }],
-    ]);
-  } finally { await page.close(); }
-});
+for (const undo of [false, true]) {
+  test(`Chromium: real host toast holds nine seconds from BoardView entry${undo ? ' and Undo cancels send' : ''}`, async () => {
+    await ready;
+    const page = await browser.newPage({ reducedMotion: 'reduce' });
+    try {
+      await page.clock.install({ time: new Date(CLOCK_START.getTime() - 60000) });
+      await page.clock.pauseAt(CLOCK_START);
+      await page.goto(`${origin}/board-acts-test`);
+      await page.waitForFunction(() => !!window.deleteStep);
+      await page.evaluate(() => window.deleteStep());
+      await page.waitForFunction(() => document.querySelector('output').textContent === 'held');
+      assert.equal(await page.locator('.st-board-toast').count(), 0);
+      await page.clock.runFor(150);
+      await page.evaluate(() => window.flush());
+      await page.waitForFunction(() => document.querySelector('[data-column="upNext"] .st-board-card-title')?.textContent === 'Leave the dock');
+      await page.clock.runFor(120);
+      await page.evaluate(() => window.flush());
+      await page.locator('.st-board-toast').waitFor({ state: 'visible' });
+      const shownAt = await page.evaluate(() => window.shownAt);
+      assert.equal(shownAt, CLOCK_START.getTime() + 270);
+      await page.clock.runFor(8999);
+      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held' }]]);
+      if (undo) {
+        await page.locator('.st-board-toast-undo').evaluate((button) => button.click());
+        await page.waitForFunction(() => document.querySelector('output').textContent === 'clear');
+      }
+      await page.clock.runFor(1);
+      const outcome = undo
+        ? [['event', 'roadmap_board_undo', { act: 'delete' }]]
+        : [['dispatch', 'sail', { kind: 'BulkDelete', nodeIds: ['wind'] }, { captureFailures: true }], ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }]];
+      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held' }], ...outcome]);
+    } finally { await page.close(); }
+  });
+}

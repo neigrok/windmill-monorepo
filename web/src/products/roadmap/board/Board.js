@@ -65,17 +65,32 @@ export class BoardQuery {
     return new BoardQuery({ ...this, ...change });
   }
 
-  revealing(step, tree) {
-    const kinds = this.kinds.length > 0 && !this.kinds.includes(step.color ?? DEFAULT_NODE_COLOR) ? [] : this.kinds;
+  predicate(tree) {
+    const branchExists = this.branch !== null && tree?.nodesById.has(this.branch);
+    const scope = branchExists ? new Set([
+      this.branch,
+      ...tree.ancestorsOf(this.branch).map((step) => step.id),
+      ...tree.descendantsOf(this.branch).map((step) => step.id),
+    ]) : null;
+    const hues = new Set(this.kinds);
     const needle = this.search.trim().toLowerCase();
-    const matches = !needle || (step.label ?? '').toLowerCase().includes(needle) || (step.description ?? '').toLowerCase().includes(needle);
-    const search = matches ? this.search : '';
-    const withinBranch = this.branch === null || this.branch === step.id || (tree && (!tree.nodesById.has(this.branch)
-      || tree.ancestorsOf(this.branch).some((node) => node.id === step.id)
-      || tree.descendantsOf(this.branch).some((node) => node.id === step.id)));
-    const branch = withinBranch ? this.branch : null;
-    if (kinds === this.kinds && search === this.search && branch === this.branch) return this;
-    return this.with({ kinds, search, branch });
+    return (step) => {
+      if (scope !== null && !scope.has(step.id)) return false;
+      if (hues.size > 0 && !hues.has(step.color ?? DEFAULT_NODE_COLOR)) return false;
+      if (needle === '') return true;
+      return (step.label ?? '').toLowerCase().includes(needle)
+        || (step.description ?? '').toLowerCase().includes(needle);
+    };
+  }
+
+  revealing(step, tree) {
+    const cleared = {};
+    for (const [key, empty] of [['kinds', []], ['search', ''], ['branch', null]]) {
+      const restriction = new BoardQuery({ [key]: this[key] });
+      if (!restriction.predicate(tree)(step)) cleared[key] = empty;
+    }
+    if (Object.keys(cleared).length === 0) return this;
+    return this.with(cleared);
   }
 
   sortedBy(sort) { return this.with({ sort }); }
@@ -105,8 +120,9 @@ export class BoardQuery {
 
 // Comparators return 0 on a tie and the sort is stable, so ties keep the projection's authored order.
 export class Board {
-  constructor(tree, progress, { sort = 'roadmap', kinds = [], search = '', branch = null } = {}) {
-    if (!BOARD_SORTS.includes(sort)) throw new Error(`Unknown board sort "${sort}"`);
+  constructor(tree, progress, options = new BoardQuery()) {
+    const query = options instanceof BoardQuery ? options : new BoardQuery(options);
+    const { sort, branch } = query;
 
     this.treeId = tree.id;
     this.states = UnlockRules.derive(tree, progress);
@@ -117,17 +133,7 @@ export class Board {
     this.sort = sort;
     this.branch = branch !== null && tree.nodesById.has(branch) ? tree.nodesById.get(branch) : null;
 
-    const scope = this.branch === null
-      ? null
-      : new Set([branch, ...tree.ancestorsOf(branch).map((step) => step.id), ...tree.descendantsOf(branch).map((step) => step.id)]);
-    const hues = new Set(kinds);
-    const needle = search.trim().toLowerCase();
-    const shown = tree.nodes.filter((step) =>
-      (scope === null || scope.has(step.id))
-      && (hues.size === 0 || hues.has(step.color ?? DEFAULT_NODE_COLOR))
-      && (needle === ''
-        || (step.label ?? '').toLowerCase().includes(needle)
-        || (step.description ?? '').toLowerCase().includes(needle)));
+    const shown = tree.nodes.filter(query.predicate(tree));
     const owed = owedCounts(tree, this.states);
     const cards = shown.map((step) => new BoardCard(tree, this.states, owed, step));
     const inColumn = (name) => cards.filter((card) => card.column === name);
@@ -162,11 +168,11 @@ export class Board {
   }
 }
 
-export function regroup(previous, next, { quiet = false } = {}) {
+export function regroup(previous, next) {
   const arrived = new Set();
   const leaving = new Set();
   const moved = [];
-  if (quiet || previous.treeId !== next.treeId) return { arrived, leaving, moved };
+  if (previous.treeId !== next.treeId) return { arrived, leaving, moved };
   for (const [id, state] of next.states) {
     const before = previous.states.get(id);
     if (state === 'available' && before === 'locked') arrived.add(id);

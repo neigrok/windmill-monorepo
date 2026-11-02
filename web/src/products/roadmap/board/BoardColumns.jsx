@@ -36,7 +36,6 @@ export function BoardColumns({
 }) {
   const showPressed = useRef(false);
   const stage = columnStage({ band, railed });
-
   const upNextRest = useContext(UpNextRest);
   const shown = useMemo(
     () => Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })])),
@@ -46,7 +45,11 @@ export function BoardColumns({
     name: column.name,
     stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(shown[column.name]),
   })), [shown, band, railed]);
-  const roving = useRovingFocus(layout, { onComplete: onComplete && ((id, door) => { onComplete(id, door); onExpandDone(); onStandColumn?.('done'); }) });
+  const roving = useRovingFocus(layout, { revision: board, onComplete: onComplete && ((id, door) => {
+    if (!onComplete(id, door)) return false;
+    onStandColumn?.('done');
+    return true;
+  }) });
   const everyEmpty = board.columns.every((column) => column.count === 0);
   const emptied = (column) => column.count === 0 && query.recovery !== null && (column.name === 'upNext' || !everyEmpty);
 

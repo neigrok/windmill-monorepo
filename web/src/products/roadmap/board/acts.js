@@ -1,4 +1,3 @@
-import { respliceEdges } from '../model/SkillTree.js';
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { completedToast, createdToast, deletedToast, deletedStepsToast } from './copy.js';
@@ -19,7 +18,8 @@ export class HeldDelete {
 }
 
 export function deletionCost(tree, ids) {
-  return new Set(respliceEdges(tree.nodes, ids).map((edge) => edge.to)).size;
+  const deleted = new Set(ids);
+  return tree.nodes.filter((step) => !deleted.has(step.id) && step.prerequisites.some((id) => deleted.has(id))).length;
 }
 
 export function completionOutcome(tree, before, after, id) {
@@ -28,8 +28,6 @@ export function completionOutcome(tree, before, after, id) {
   return {
     message: completedToast({ step: tree.nodeOrThrow(id).label, unlocked: unlocked.map((key) => tree.nodeOrThrow(key).label) }),
     reveal,
-    column: unlocked.length === 1 ? 'upNext' : 'done',
-    unlocked,
   };
 }
 

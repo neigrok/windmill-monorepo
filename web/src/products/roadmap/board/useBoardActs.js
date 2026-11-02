@@ -15,9 +15,9 @@ export class BoardActs {
 
   complete(id, door) {
     const c = this.collaborators;
-    if (!c.active || !c.owner || !c.tree || !['swipe', 'key'].includes(door)) return;
+    if (!c.active || !c.owner || !c.tree || !['swipe', 'key'].includes(door)) return false;
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
-    if (UnlockRules.derive(tree, c.progress).get(id) !== 'available') return;
+    if (UnlockRules.derive(tree, c.progress).get(id) !== 'available') return false;
     const before = c.progress;
     const after = c.completeStep(id, { door: 'board', at: c.now() });
     const outcome = completionOutcome(tree, before, after, id);
@@ -32,13 +32,14 @@ export class BoardActs {
       } },
     });
     c.track('roadmap_board_complete', { door });
+    return true;
   }
 
   create(request) {
     const c = this.collaborators;
     if (!c.active || !c.owner || !c.tree) return { ok: false };
     if (!c.session) {
-      c.report('roadmap-board-create');
+      c.report('roadmap-board-create', new Error('Missing Board session'));
       return { ok: false };
     }
     let receipt;
@@ -49,8 +50,8 @@ export class BoardActs {
         nodes: [...tree.nodes, { ...request, prerequisites: [...request.prerequisites] }] });
       outcome = creationOutcome(nextTree, c.progress, c.query, request.id);
       receipt = c.session.dispatch({ kind: 'CreateNode', ...request }, { captureFailures: true });
-    } catch {
-      c.report('roadmap-board-create');
+    } catch (error) {
+      c.report('roadmap-board-create', error);
       return { ok: false };
     }
     if (!receipt) return { ok: false };
@@ -105,12 +106,13 @@ export class BoardActs {
     this.held = null;
     const c = this.collaborators;
     try {
-      const receipt = pending.session?.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids }, { captureFailures: true });
-      if (!receipt) { c.onQuiet(); c.report('roadmap-board-delete'); }
-      else c.track('roadmap_board_delete', { step: 'sent', via });
-    } catch {
+      if (!pending.session) throw new Error('Missing Board session');
+      const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids }, { captureFailures: true });
+      if (receipt) c.track('roadmap_board_delete', { step: 'sent', via });
+      if (!receipt) c.onQuiet();
+    } catch (error) {
       c.onQuiet();
-      c.report('roadmap-board-delete');
+      c.report('roadmap-board-delete', error);
     }
     c.onHeld(null);
   }

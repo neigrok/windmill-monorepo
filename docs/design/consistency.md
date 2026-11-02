@@ -625,18 +625,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · New step on an empty phone roadmap.** With the development gate open, an owner’s empty
   roadmap reaches the Board on phone, tablet and desktop. Its New step opens the composer (185:2149,
   226:1055); the tablet uses the desktop empty-state structure pending the 744px drawing above.
-- **Board · revealed Recolour in multi-select.** The bulk bar (398:28859) has a hidden Kinds row,
-  but no approved flow shows its revealed height, order, shared-kind ring, dark appearance or 320px
-  layout. Draw 21.02b in light, dark and 320px; `rb-multi-select` belongs to wave 5.
+- **Board · revealed Recolour in multi-select.** The owner-approved ✅ 21.02b Recolor kinds revealed
+  is the canon for `rb-multi-select` in wave 5: light 468:12024, dark 468:12150, 320px 468:12258,
+  with spec 469:12287. It defines the revealed Kinds row, shared-kind ring and responsive bar layout.
 - **Board · completion toast replacement.** The swipe spec (379:17279) says completions coalesce.
   The pinned wave-4 ruling replaces the older toast and gives Undo only the step named in the new
   toast. Correct the spec; there is no multi-completion copy or combined Undo.
 - **Board · a held delete that cannot send.** The delete frames (03.05, 20.03) have no failed-release
-  state. A refused or failed release restores the step silently and reports `roadmap-board-delete`.
+  state. An unexpected failed release restores the step silently and reports `roadmap-board-delete`
+  with stack frames. An already-absent step or not-ready session is an expected no-op, not an Issue.
   Draw the recovery; *Couldn't sync this change* belongs to `rb-refused-sync`.
-- **Board · composer and picker at 744px.** The approved composer and anchored picker are drawn at
-  1440px only. At 744–1023px the dialog keeps that width and centre; the picker keeps its anchor beside
-  it and overlays its right edge when it cannot fit. Draw the 744px layout.
+- **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
+  the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
+  and Apply. Track B owns this wave's implementation. The canon is ✅ 744 09.02–09.04: 470:23411,
+  475:23809 and 470:23621, with darks 470:23881, 475:24021 and 470:24091.
 - **Board · picker without a draft name or with a removed prerequisite.** With no draft name the
   phone header shows only *Prerequisites*, without a For line. A prerequisite deleted remotely is
   dropped silently from the draft and selection, and placement recomputes. Draw these states; 10.11

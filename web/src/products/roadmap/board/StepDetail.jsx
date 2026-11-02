@@ -169,7 +169,13 @@ export function StepDetail({
   const menuItems = [
     stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, run: copyLink },
     { label: STEP_DETAIL.openInGraph, icon: StepIcons.graph, run: () => { act('openInGraph'); onOpenInGraph(id); } },
-    editable && deletable && { label: STEP_DETAIL.deleteStep, icon: StepIcons.trash, danger: true, run: () => { act('delete'); setDeleting(true); } },
+    editable && deletable && {
+      label: STEP_DETAIL.deleteStep, icon: StepIcons.trash, danger: true,
+      run: () => {
+        act('delete');
+        setDeleting(true);
+      },
+    },
   ].filter(Boolean);
 
   // Tab wraps inside the layer.
@@ -193,10 +199,19 @@ export function StepDetail({
     : null;
   const shownSection = editable ? section : 'overview';
   const identity = <StepIdentity step={facts.step} titleId={titleId} />;
-  const cancelDelete = () => { setDeleting(false); onDeletePrompt?.('cancel'); };
+  const cancelDelete = () => {
+    setDeleting(false);
+    onDeletePrompt?.('cancel');
+  };
   const confirm = deleting ? {
-    title: deleteConfirm({ step: titleOf(facts.step) }), cost: deleteCostLine(deletionCost(tree, [id])),
-    cancel: cancelDelete, remove: () => { onDeletePrompt?.('confirm'); setDeleting(false); onDelete(id); },
+    title: deleteConfirm({ step: titleOf(facts.step) }),
+    cost: deleteCostLine(deletionCost(tree, [id])),
+    cancel: cancelDelete,
+    remove: () => {
+      onDeletePrompt?.('confirm');
+      setDeleting(false);
+      onDelete(id);
+    },
   } : null;
   const menu = <StepMenu items={menuItems} confirm={surface === 'modal' ? confirm : null} />;
   const sheet = surface === 'page' && confirm ? <DeleteConfirmation confirm={confirm} phone /> : null;
@@ -535,6 +550,7 @@ function StepMenu({ items, confirm }) {
 function DeleteConfirmation({ confirm, phone = false }) {
   const ref = useRef(null);
   const title = useId();
+  const description = useId();
   useEffect(() => {
     const opener = document.activeElement;
     ref.current.querySelector('button').focus();
@@ -550,7 +566,9 @@ function DeleteConfirmation({ confirm, phone = false }) {
     }
     const away = (event) => {
       if (ref.current.contains(event.target)) return;
-      event.preventDefault(); event.stopPropagation(); confirm.cancel();
+      event.preventDefault();
+      event.stopPropagation();
+      confirm.cancel();
     };
     document.addEventListener('pointerdown', away, true);
     return () => {
@@ -561,17 +579,25 @@ function DeleteConfirmation({ confirm, phone = false }) {
   }, []);
   return (
     <div className={phone ? 'st-board-delete-overlay' : undefined}>
-      <div ref={ref} className={`st-board-delete${phone ? ' st-board-delete--phone' : ''}`} role="alertdialog" aria-modal="true" aria-labelledby={title}
+      <div ref={ref} className={`st-board-delete${phone ? ' st-board-delete--phone' : ''}`} role="alertdialog" aria-modal="true" aria-labelledby={title} aria-describedby={description}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); confirm.cancel(); }
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            confirm.cancel();
+            return;
+          }
           if (event.key === 'Tab') {
-            event.preventDefault(); event.stopPropagation();
+            event.preventDefault();
+            event.stopPropagation();
             const buttons = [...ref.current.querySelectorAll('button')];
-            buttons[(buttons.indexOf(document.activeElement) + 1) % buttons.length].focus();
+            const direction = event.shiftKey ? -1 : 1;
+            const next = (buttons.indexOf(document.activeElement) + direction + buttons.length) % buttons.length;
+            buttons[next].focus();
           }
         }}>
         <h3 id={title}>{confirm.title}</h3>
-        <p>{confirm.cost}</p>
+        <p id={description}>{confirm.cost}</p>
         <div className="st-board-delete-buttons">
           <button type="button" onClick={confirm.cancel}>{DELETE_CONFIRM.cancel}</button>
           <button type="button" className="st-board-delete-danger" onClick={confirm.remove}>{DELETE_CONFIRM.delete}</button>

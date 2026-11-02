@@ -39,7 +39,8 @@ function frameFrontier(writes) {
 
 export class SyncSession {
   constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
-    reportFailure = (operation) => captureError('roadmap', operation, '', '#/app') } = {}) {
+    reportFailure = (operation, error) => captureError('roadmap', operation,
+      typeof error?.stack === 'string' && error.stack ? error.stack : new Error(operation).stack, '#/app') } = {}) {
     this.url = url;
     this.reportFailure = reportFailure;
     this.treeId = treeId;
@@ -420,15 +421,23 @@ export class SyncSession {
       if (this.phase === 'live') this.send(writes);
       return;
     }
-    try { this.emitTree(); } catch { this.reportFailure('roadmap-sync-notify'); }
-    try { this.persistNow({ captureFailures }); } catch {
+    try {
+      this.emitTree();
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
+    }
+    try {
+      this.persistNow({ captureFailures });
+    } catch (error) {
       this.durabilityAtRisk = true;
-      this.reportFailure('roadmap-sync-persist');
+      this.reportFailure('roadmap-sync-persist', error);
     }
     if (this.phase !== 'live') return;
-    try { this.send(writes); } catch {
+    try {
+      this.send(writes);
+    } catch (error) {
       this.durabilityAtRisk = true;
-      this.reportFailure('roadmap-sync-send');
+      this.reportFailure('roadmap-sync-send', error);
     }
   }
 
@@ -453,9 +462,9 @@ export class SyncSession {
     this.saveTimer = null;
     const value = { frame: this.lattice.toFrame(), progress: this.progress.toFrame(), lastSeq: this.lastSeq };
     this.registry?.touch(this.treeId, this.lattice.title);
-    return this.store.save(this.treeId, value).catch(() => {
+    return this.store.save(this.treeId, value).catch((error) => {
       this.durabilityAtRisk = true;
-      if (captureFailures) this.reportFailure('roadmap-sync-persist');
+      if (captureFailures) this.reportFailure('roadmap-sync-persist', error);
     });
   }
 

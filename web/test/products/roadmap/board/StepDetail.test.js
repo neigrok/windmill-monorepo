@@ -49,6 +49,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     const [selectedId, setSelectedId] = useState(null);
     const [spaces, setSpaces] = useState(workspaces);
     const [query, setQuery] = useState(() => new BoardQuery({ kinds }));
+    const [quiet, setQuiet] = useState(0);
     const [breakpoint, setBreakpoint] = useState(() => bandOf(window.innerWidth));
     const address = useStepAddress();
     useEffect(() => {
@@ -66,10 +67,10 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
       React.createElement('div', { className: 'st-view-layer--board is-active', style: { position: 'absolute', inset: 0, zIndex: 18 } },
         React.createElement(BoardView, { tree, completed: progress.completed, completedAt: progress.completedAt, selectedId,
           onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, onAnchor: setSelectedId, breakpoint, active: true,
-          onSwitchView: noop, query, onQuery: setQuery })),
+          onSwitchView: noop, query, onQuery: setQuery, quiet })),
       open && React.createElement(StepDetail, {
         tree, completed: progress.completed, completedAt: progress.completedAt, address, breakpoint, roadmapTitle: 'Learn to sail',
-        editable, deletable: true, stepLink: linked ? 'https://windmill.test/t/sail#?step=' + address.id : null,
+        editable, deletable: tree.roots().length !== 1 || tree.roots()[0].id !== address.id, stepLink: linked ? 'https://windmill.test/t/sail#?step=' + address.id : null,
         workspace: spaces[address.id] ?? { subtasks: [], note: '', links: [] },
         workspaceActions: { onToggleSubtask: (nodeId, subtaskId) => setSpaces((current) => ({ ...current, [nodeId]: toggleSubtask(current[nodeId], subtaskId) })),
           onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: noop, onAddLink: noop, onDeleteLink: noop },
@@ -79,7 +80,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         onClose: () => { const origin = address.trail[0]; address.close(); setSelectedId(origin); },
         onComplete: (id) => { call('complete ' + id); mark(id, 'complete'); },
         onReset: (id) => { call('reset ' + id); mark(id, 'none'); },
-        onRestore: (id, snapshot) => { call('restore ' + id); mark(id, snapshot.completed.has(id) ? 'complete' : 'none'); },
+        onRestore: (id, snapshot) => { call('restore ' + id); setQuiet((current) => current + 1); mark(id, snapshot.completed.has(id) ? 'complete' : 'none'); },
         onOpenInGraph: (id) => call('graph ' + id),
         onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
         onDelete: (id) => { call('delete ' + id); address.close(); setSteps((current) => without(current, id)); },
@@ -158,6 +159,10 @@ const status = (page) => page.evaluate(() => {
   return [...row.querySelectorAll('.st-board-step-status-label, .st-board-step-undo, .st-board-step-outcome')].map((part) => part.textContent).filter(Boolean);
 });
 const column = (page, name) => page.evaluate((name) => [...document.querySelectorAll(`[data-column="${name}"] .st-board-card-title`)].map((title) => title.textContent), name);
+const waitForColumn = (page, name, titles) => page.waitForFunction(({ name, titles }) => {
+  const shown = [...document.querySelectorAll(`[data-column="${name}"] .st-board-card-title`)].map((node) => node.textContent);
+  return JSON.stringify(shown) === JSON.stringify(titles);
+}, { name, titles });
 const card = (page, label) => page.locator('.st-board-card:visible', { has: page.locator('.st-board-card-title', { hasText: new RegExp(`^${label}$`) }) });
 
 test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, Escape closes it and focus returns to the card', async () => {
@@ -212,9 +217,11 @@ test('Chromium: Complete and Reset act in place — the modal stays, the status 
   try {
     await card(page, 'Read the wind').click();
     await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await waitForColumn(page, 'upNext', ['Leave the dock', 'Tie a bowline']);
     assert.deepEqual([await status(page), await column(page, 'upNext')],
       [['Done', 'Undo', 'Leave the dock is up next'], ['Leave the dock', 'Tie a bowline']]);
     await page.getByRole('button', { name: 'Undo' }).click();
+    await waitForColumn(page, 'upNext', ['Read the wind', 'Tie a bowline']);
     assert.deepEqual([await status(page), await column(page, 'upNext')], [['Up next'], ['Read the wind', 'Tie a bowline']]);
 
     await page.getByRole('button', { name: 'Name the boat parts, done' }).click();
@@ -222,6 +229,7 @@ test('Chromium: Complete and Reset act in place — the modal stays, the status 
     await page.getByRole('button', { name: 'Reset' }).hover();
     assert.equal(await page.locator('.st-board-step-preview').textContent(), 'Reset returns 2 steps to Locked');
     await page.getByRole('button', { name: 'Reset' }).click();
+    await waitForColumn(page, 'locked', ['Read the wind', 'Tie a bowline', 'Leave the dock', 'Sail a triangle', 'Sail solo']);
     assert.deepEqual([await status(page), await column(page, 'locked')],
       [['Up next', 'Undo', '2 steps locked again'], ['Read the wind', 'Tie a bowline', 'Leave the dock', 'Sail a triangle', 'Sail solo']]);
 
@@ -335,6 +343,7 @@ test('Chromium: checking the last subtask offers Complete step; the subtasks alo
     await page.locator('.st-board-step-offer').waitFor();
     assert.deepEqual([await page.locator('.st-board-step-offer').innerText(), await calls(page)], ['All subtasks done\nComplete step', []]);
     await page.getByRole('button', { name: 'Complete step' }).click();
+    await waitForColumn(page, 'done', ['Read the wind', 'Rig the boat', 'Name the boat parts', 'Choose a sailing course']);
     assert.deepEqual([await calls(page), await column(page, 'done'), (await events(page)).at(-1)],
       [['complete wind'], ['Read the wind', 'Rig the boat', 'Name the boat parts', 'Choose a sailing course'],
         'roadmap_board_step_action {"surface":"modal","action":"completeFromSubtasks"}']);
@@ -500,9 +509,12 @@ test('Chromium: Undo after Reset gives the step back its mark, quietly; it compl
     assert.deepEqual(await column(page, 'done'), ['Rig the boat', 'Name the boat parts', 'Choose a sailing course']);
     await card(page, 'Name the boat parts').click();
     await page.getByRole('button', { name: 'Reset' }).click();
+    await waitForColumn(page, 'done', ['Rig the boat', 'Choose a sailing course']);
     await page.getByRole('button', { name: 'Undo' }).click();
+    await waitForColumn(page, 'done', ['Name the boat parts', 'Rig the boat', 'Choose a sailing course']);
     assert.deepEqual([await column(page, 'done'), await status(page), await calls(page)],
       [['Name the boat parts', 'Rig the boat', 'Choose a sailing course'], ['Done'], ['reset parts', 'restore parts']]);
+    assert.equal(await page.locator('.st-board-card.is-arrived').count(), 0);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();
@@ -649,6 +661,23 @@ test('Chromium: delete confirmation cancels without writing on phone and desktop
       assert.equal(await page.getByRole('alertdialog').count(), 0);
       assert.equal(await page.getByRole('dialog').count(), 1);
       assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'More');
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
+  }
+});
+
+test('Chromium: the sole root keeps Delete unavailable; one of several roots can be deleted', async () => {
+  await ready;
+  for (const extraRoot of [false, true]) {
+    const errors = [];
+    const nodes = extraRoot
+      ? [...learnToSailNodes, { id: 'another', label: 'Another beginning', prerequisites: [], color: 'sky' }]
+      : learnToSailNodes;
+    const page = await openRoom({ viewport: { width: 1440, height: 960 }, nodes }, errors);
+    try {
+      await card(page, 'Choose a sailing course').click();
+      await page.getByRole('button', { name: 'More' }).click();
+      assert.equal(await page.getByRole('menuitem', { name: 'Delete step' }).count(), extraRoot ? 1 : 0);
       assert.deepEqual(errors, []);
     } finally { await page.context().close(); }
   }
