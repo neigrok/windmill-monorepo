@@ -13,6 +13,10 @@ page. Blank drafts normalize before validation; a new blank draft queues no page
 erasing anonymous writing cancels its claim while preserving invitation state. Clearing an account
 page keeps an invisible sync ordering marker so older offline saves cannot revive it.
 
+Typing shows at once and commits 600 ms after the last keystroke, one save for the burst. A mood or
+energy change, the page hiding and the editor unmounting save a staged body at once; a local day
+change carries it into today and saves it.
+
 An anonymous save, or typing before an account's first read without a confirmed page, queues a
 receipt-protected contribution claim. Anonymous replacements retain cumulative retirements.
 Binding and terminal refusals retain edits under the original receipt; they cannot enqueue a new

@@ -65,6 +65,7 @@ const fixture = `
     root = createRoot(document.getElementById('editor'));
     root.render(React.createElement(Editor));
   }
+  export function unmountEditor() { root.unmount(); }
   export async function showCanvas() {
     const { Canvas } = await import('/src/products/journal/Canvas.jsx');
     root.render(React.createElement(Canvas));
@@ -548,5 +549,98 @@ test('Chromium: a save completing after midnight cannot clear newer unsaved inpu
     ]);
     await reopen(page, 'journal-midnight-late-save');
     await body(page, 'newer words after midnight');
+  } finally { await context.close(); }
+});
+
+async function settled(page, ms) {
+  await page.evaluate((ms) => new Promise((resolve) => setTimeout(resolve, ms)), ms);
+  return page.evaluate(() => ({
+    tick: Number(document.querySelector('main').dataset.saveTick),
+    commands: engine.device.activeReplica.entries('self/journal').map((entry) => {
+      const args = entry.intent.cmd.args;
+      return { body: args.body, mood: args.mood, energy: args.energy };
+    }),
+  }));
+}
+
+test('Chromium: a typed burst commits once, 600 ms after the last keystroke, with the final text', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'journal-typing-paced');
+    const textbox = page.getByRole('textbox', { name: 'Body' });
+    await textbox.fill('');
+    await textbox.pressSequentially('twelve keys.');
+    assert.equal(await textbox.inputValue(), 'twelve keys.');
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    assert.deepEqual(await settled(page, 800), { tick: 1, commands: [{ body: 'twelve keys.', mood: 0, energy: null }] });
+  } finally { await context.close(); }
+});
+
+test('Chromium: a mood change sends the staged body at once, in one commit with the mood', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'journal-mood-flushes');
+    await page.getByRole('textbox', { name: 'Body' }).fill('staged words');
+    await page.getByRole('button', { name: 'Mood', exact: true }).click();
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    assert.deepEqual(await settled(page, 800), { tick: 1, commands: [{ body: 'staged words', mood: 4, energy: null }] });
+  } finally { await context.close(); }
+});
+
+test('Chromium: hiding the page sends the staged body before the 600 ms elapse', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'journal-hide-flushes');
+    await page.getByRole('textbox', { name: 'Body' }).fill('words before the tab hides');
+    const hidden = await page.evaluate(async () => {
+      const count = () => engine.device.activeReplica.entries('self/journal').length;
+      const before = count();
+      const start = performance.now();
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      while (count() === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+      return { before, elapsed: performance.now() - start };
+    });
+    assert.equal(hidden.before, 0);
+    assert.ok(hidden.elapsed < 600, `flushed after ${hidden.elapsed} ms`);
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    assert.deepEqual(await settled(page, 800), { tick: 1, commands: [{ body: 'words before the tab hides', mood: 0, energy: null }] });
+  } finally { await context.close(); }
+});
+
+test('Chromium: midnight carries a staged body into today and sends it at once', async () => {
+  await ready;
+  const context = await browser.newContext({ timezoneId: 'UTC' });
+  try {
+    const page = await open(context, 'journal-midnight-staged', '2026-10-01T23:59:00Z');
+    await page.getByRole('textbox', { name: 'Body' }).fill('staged late words');
+    await page.clock.setFixedTime(new Date('2026-10-02T00:01:00Z'));
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    await body(page, 'staged late words');
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 800)));
+    assert.deepEqual(await page.evaluate(() => ({
+      tick: Number(document.querySelector('main').dataset.saveTick),
+      commands: engine.device.activeReplica.entries('self/journal').map((entry) => ({ day: entry.intent.cmd.args.day, body: entry.intent.cmd.args.body })),
+    })), { tick: 1, commands: [{ day: '2026-10-02', body: 'staged late words' }] });
+  } finally { await context.close(); }
+});
+
+test('Chromium: unmounting the editor sends the staged body', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'journal-unmount-flushes');
+    await page.getByRole('textbox', { name: 'Body' }).fill('words before the editor leaves');
+    await page.evaluate(async () => (await import('/journal-hook-fixture.js')).unmountEditor());
+    await page.waitForFunction(() => engine.device.activeReplica.entries('self/journal').length === 1);
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 800)));
+    assert.deepEqual(await page.evaluate(() => engine.device.activeReplica.entries('self/journal').map((entry) => {
+      const args = entry.intent.cmd.args;
+      return { body: args.body, mood: args.mood, energy: args.energy };
+    })), [{ body: 'words before the editor leaves', mood: 0, energy: null }]);
   } finally { await context.close(); }
 });
