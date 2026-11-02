@@ -20,14 +20,20 @@ export function usePages() {
   const [failure, setFailure] = useState(false);
   const [saveTick, setSaveTick] = useState(0);
   const drafts = useRef(new Map());
+  const staged = useRef(null);
   const key = `${records.replica}:${today}`;
   const engine = session.engine;
   const pages = engine && session.ready ? pagesOf(engine, records) : [];
   const held = pages.find((page) => page.day === today) ?? { day: today, body: '', mood: null, energy: null, source: 'typed' };
   const shown = editor?.replica === records.replica && !editor.saved && !editor.recovered ? editor.doc : held;
-  const persist = useCallback((writing, previous = null) => {
+  const show = useCallback((writing) => {
+    clearTimeout(staged.current?.timer);
     drafts.current.set(writing.replica, writing);
     setEditor(writing); setFailure(false);
+  }, []);
+  const persist = useCallback((writing, previous = null) => {
+    show(writing);
+    staged.current = null;
     const save = () => {
       if (engine.activeReplica() !== writing.replica) throw new Error('journal-replica-changed');
       const retained = engine.device.activeReplica.deviceRows('journal')[EditorDraft.key];
@@ -55,7 +61,17 @@ export function usePages() {
       if (drafts.current.get(writing.replica) === writing && engine.activeReplica() === writing.replica) setFailure(true);
       captureError('journal', 'journal-save', '', '/journal');
     }).finally(() => { writing.pending = false; });
-  }, [engine]);
+  }, [engine, show]);
+  // A staged writing shows at once and reaches the engine 600 ms after the last keystroke, or on the next flush.
+  const flush = useCallback(() => {
+    if (staged.current) persist(staged.current.writing, staged.current.previous);
+  }, [persist]);
+  const stage = useCallback((writing, previous) => {
+    show(writing);
+    staged.current = { writing, previous, timer: setTimeout(flush, 600) };
+  }, [show, flush]);
+  // The last writing the engine was given: a staged one was never sent, so the one it is staged behind.
+  const sentBefore = useCallback((writing) => (writing && staged.current?.writing === writing ? staged.current.previous : writing), []);
   const change = useCallback((field, value) => {
     if (!engine || !session.ready) return;
     const previous = drafts.current.get(records.replica);
@@ -69,8 +85,10 @@ export function usePages() {
     const doc = { day: today, body: current.body, mood: current.mood, energy: current.energy,
       source: current.source,
       ...(current.day !== today ? { body: JournalWriting.claimBody(destination.body, current.body) } : {}), [field]: value };
-    persist({ key, replica: records.replica, doc, saved: false, carriedFrom, priorDraft }, previous);
-  }, [engine, session.ready, key, today, held.body, held.mood, held.energy, held.source, records.replica, persist]);
+    const writing = { key, replica: records.replica, doc, saved: false, carriedFrom, priorDraft };
+    if (field === 'body') stage(writing, sentBefore(previous));
+    else persist(writing, sentBefore(previous));
+  }, [engine, session.ready, key, today, held.body, held.mood, held.energy, held.source, records.replica, stage, persist, sentBefore]);
   useEffect(() => {
     if (!engine || !session.ready) return;
     let writing = drafts.current.get(records.replica);
@@ -89,14 +107,22 @@ export function usePages() {
       const destination = pagesOf(engine).find((page) => page.day === today) ?? { body: '' };
       const doc = { ...writing.doc, day: today, body: JournalWriting.claimBody(destination.body, writing.doc.body) };
       persist({ key, replica: records.replica, doc, saved: false, carriedFrom: writing.doc.day,
-        priorDraft: retained?.day === writing.doc.day ? retained : null }, writing);
+        priorDraft: retained?.day === writing.doc.day ? retained : null }, sentBefore(writing));
       return;
     }
     if (editor !== (writing ?? null)) {
       setEditor(writing ?? null);
       setFailure(Boolean(writing?.failed));
     }
-  }, [engine, session.ready, records, today, key, editor, failure, saveTick, persist]);
+  }, [engine, session.ready, records, today, key, editor, failure, saveTick, persist, sentBefore]);
+  useEffect(() => {
+    const hide = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', hide);
+    return () => {
+      document.removeEventListener('visibilitychange', hide);
+      flush();
+    };
+  }, [flush]);
   const hasPending = engine?.device.activeReplica.entries(SCOPE).length > 0
     || Object.keys(engine?.device.activeReplica.deviceRows('journal') ?? {}).some((key) => key.startsWith('pendingClaim:'));
   const room = engine && session.ready ? journalRoom(engine, records) : null;
