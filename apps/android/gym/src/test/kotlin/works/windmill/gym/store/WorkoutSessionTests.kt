@@ -439,23 +439,24 @@ class WorkoutSessionTests {
     }
 
     // The live session's rows are the phone's until the log takes them. A set no sync has carried
-    // yet is corrected in place, still owed: the strip draws the correction at once, and the
-    // corrected body is what lands when the signal is back.
+    // yet, never sent or sent with no answer, is corrected in place, still owed: the strip draws the
+    // correction at once, and the corrected body is what lands when the signal is back.
     @Test
     fun testFixingASetNoSyncHasCarriedRewritesItOnThePhoneAndTheCorrectionIsWhatLands() = runTest {
-        val server = EngineRoomFixture.server()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+        for (sent in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server()
             room.select("alice"); room.pull(server)
             val opened = room.startExternalWorkout()
             room.sync(server)
             room.store.workout.choose("bench-press")
             room.store.workout.logSet(weightKg = 82.5, reps = 5)
             room.store.workout.logSet(weightKg = 85.0, reps = 5)
-            room.push(Reply.Unreachable); room.store.refreshEngine()
+            if (sent) room.push(Reply.Unreachable)
+            room.store.refreshEngine()
             runCurrent()
             val (tried, behind) = room.store.workout.sets.map { it.id }
             assertEquals(setOf(tried, behind), room.store.workout.stalled)
-            assertEquals(2, room.store.workout.strandedCount)
+            assertEquals("only a send that went unanswered strands them", if (sent) 2 else 0, room.store.workout.strandedCount)
 
             val fixed = room.store.workout.fixSet(opened.id, behind, SetFix(weightKg = 90.0, reps = 3))
             runCurrent()
@@ -642,7 +643,7 @@ class WorkoutSessionTests {
     }
 
     @Test
-    fun testASettingSavedWithNoSignalIsHeldHereAndLandsOnTheNextSync() = runTest {
+    fun testASettingSavedBeforeAnySyncIsHeldHereAndLandsOnTheNextSync() = runTest {
         val folder = tmp.newFolder()
         val server = EngineRoomFixture.server()
         val snapshot: Json

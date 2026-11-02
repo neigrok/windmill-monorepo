@@ -14,6 +14,7 @@ import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.ClockReading
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.RecordKey
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock
@@ -316,18 +317,68 @@ class EngineTrainingTests {
         room.sync(server)
     }
 
-    // The workout's delivery copy reads how the engine saw its last push end: no answer is offline, a failure the log
-    // answered is the log's, and a lapsed session asks for sign-in.
+    // The workout's delivery copy reads how the engine saw its last push end: no answer is offline, a 5xx is the log not
+    // answering, another refusal names no blocker, and a lapsed session asks for sign-in. An upgrade the server requires
+    // draws no band; Update required says it.
     @Test fun deliveryCopyReadsHowTheEnginesLastPushEnded() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("A"); room.workout(finish = false)
             for ((reply, blocker) in listOf(Reply.Unreachable to Blocker.Offline,
                 Reply.Answer(SyncResponse(503, Json.objectOf())) to Blocker.LogFailed,
+                Reply.Answer(SyncResponse(429, Json.objectOf())) to null,
                 Reply.Answer(SyncResponse(401, Json.objectOf())) to Blocker.SignInLapsed)) {
                 room.push(reply); room.store.refreshEngine()
-                assertEquals(blocker, room.store.workout.strandedBy)
-                assertEquals(SaveState.Blocked(blocker), room.store.workout.saveState)
+                assertEquals("$reply", blocker, room.store.workout.strandedBy)
+                assertEquals("$reply", blocker?.let { SaveState.Blocked(it) } ?: SaveState.OnThisDevice, room.store.workout.saveState)
             }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("A"); room.workout(finish = false)
+            room.push(Reply.Answer(SyncResponse(426, Json.objectOf("serverTime" to Json.of(room.now), "epoch" to Json.of("epoch"),
+                "error" to Json.of("upgrade-required")))))
+            room.store.refreshEngine()
+            assertNull(room.store.workout.strandedBy)
+            assertEquals(SaveState.OnThisDevice, room.store.workout.saveState)
+        }
+    }
+
+    // A push's late answer for the replica the phone has since left changes nothing on the one it holds now.
+    @Test fun aLateDeliveryFailureOfALeftReplicaLeavesTheCurrentOneAlone() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("A"); room.workout(finish = false)
+            val pushed = CompletableDeferred<Unit>()
+            val late = CompletableDeferred<Reply<SyncResponse>>()
+            val transport = object : works.windmill.sync.engine.SyncTransport {
+                override suspend fun hello(token: String?) = EngineRoomFixture.server().hello(Credential.Account("A"), room.now)
+                    .let { Reply.Answer(SyncResponse(it.status, it.body)) }
+                override suspend fun push(request: Json, token: String): Reply<SyncResponse> { pushed.complete(Unit); return late.await() }
+                override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
+                override suspend fun openLive(token: String) = Reply.Unreachable
+            }
+            val tokens = object : works.windmill.sync.engine.SessionTokens {
+                override fun token(account: String) = "token-$account"
+                override fun save(account: String, token: String) = Unit
+                override fun delete(account: String) = Unit
+                override fun accounts() = setOf("A", "B")
+            }
+            works.windmill.sync.engine.SyncRuntime(room.engine, transport, tokens, "test").use { runtime ->
+                val sending = async(Dispatchers.IO) { runtime.senderStep(leaving = true) }
+                withContext(Dispatchers.IO) { withTimeout(2_000) { pushed.await() } }
+                room.select("B"); room.workout(finish = false)
+                late.complete(Reply.Answer(SyncResponse(503, Json.objectOf())))
+                assertFalse(withContext(Dispatchers.IO) { withTimeout(2_000) { sending.await() } })
+            }
+            // A set logged after the late answer was taken: the status that counts it was read after that answer too.
+            room.store.workout.logSet(90.0, 3)
+            fun readyHere() = room.engine.snapshot().let { device ->
+                device.member("replicas").arr().first { it.member("meta").member("replica") == device.member("active") }["outbox"]?.arr().orEmpty()
+                    .count { it.member("state").str() == "ready" }
+            }
+            val status = withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.status.state.first { it.account == "B" && it.ready == readyHere() } } }
+            assertEquals(emptyMap<ScopeRef, Set<RecordKey>>(), status.failedPushes)
+            room.store.refreshEngine()
+            assertNull(room.store.workout.strandedBy)
+            assertEquals(SaveState.OnThisDevice, room.store.workout.saveState)
         }
     }
 

@@ -492,28 +492,28 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             if (!engine.lock.withLock {
                 if (signOutHold == seat.account || !ready()) false else { activePush = job; true }
             }) return@withLock false
-            // §7.4 What holds work back: every push's end records its scopes' failure, or clears it; a cancelled push records nothing.
+            // §7.4 What holds work back: a push that fails before its reply is taken records its scopes as answered; a cancelled push records nothing.
             try {
                 val reply = try { deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.push(request, seat.token!!) } ?: Reply.Unreachable }
                     finally { activePush = null }
                 takeReply(request, seat, reply, RequestTiming(send, engine.clock.reading()), draining)
-                    .also { engine.recordPushFailure(request, reply.pushFailure(seat.account)) }
             } catch (failure: Exception) {
                 if (failure !is CancellationException) engine.recordPushFailure(request, PushFailure.answered)
                 throw failure
             }
         } finally { if (earlier != null) wait.restoreBackoff(earlier) }
     }
-    // §7.4 a push's reply: the server's upgrade stops sending; one the account's newer token did not make applies only its offset; one for a replica no longer active only records its results; otherwise the answer applies and sets the wait before the next push.
+    // §7.4 a push's reply: one the account's newer token did not make applies only its offset; every other records how its scopes' push ended (What holds work back). The server's upgrade then stops sending; one for a replica no longer active only records its results; otherwise the answer applies and sets the wait before the next push.
     private suspend fun takeReply(request: Json, seat: Seat, reply: Reply<SyncResponse>, timing: RequestTiming, draining: Boolean): Boolean {
         val response = reply.answer?.takeUnless { it.malformedConflict(seat.account) }
-        if (response?.requiresUpgrade == true) { requireUpgrade(); return false }
-        val stillCurrent = current(seat)
         val suppliedTokenChanged = seat.account?.let { storageIO { tokens.token(it) } }?.let { it != seat.token } == true
         if (suppliedTokenChanged && response?.unauthenticated(seat.account) == true) {
             response.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.push) { engine.device.replicas.firstOrNull { it.id == seat.replica }?.let { original -> engine.offset(original, time.long(), timing) } } }
             return false
         }
+        engine.recordPushFailure(request, reply.pushFailure(seat.account))
+        if (response?.requiresUpgrade == true) { requireUpgrade(); return false }
+        val stillCurrent = current(seat)
         if (!stillCurrent) {
             if (response != null) engine.onPushResponse(request, response, timing)
             return false

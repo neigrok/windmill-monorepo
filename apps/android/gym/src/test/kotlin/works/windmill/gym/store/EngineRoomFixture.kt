@@ -172,8 +172,11 @@ internal class EngineRoomFixture(
         val account = selected!!
         var answered: SyncResponse? = null
         val transport = object : SyncTransport {
+            var pushed = false
             override suspend fun hello(token: String?) = log.hello(Credential.Account(account), now).let { Reply.Answer(SyncResponse(it.status, it.body)) }
-            override suspend fun push(request: Json, token: String) = answer(request).also { answered = (it as? Reply.Answer)?.value ?: (it as? Reply.Failed)?.response }
+            override suspend fun push(request: Json, token: String) = answer(request).also {
+                pushed = true; answered = (it as? Reply.Answer)?.value ?: (it as? Reply.Failed)?.response
+            }
             override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
             override suspend fun openLive(token: String) = Reply.Unreachable
         }
@@ -183,12 +186,14 @@ internal class EngineRoomFixture(
             override fun delete(account: String) = Unit
             override fun accounts() = setOf(account)
         }
-        SyncRuntime(engine, transport, tokens, "test").use { assertTrue("nothing went out", it.senderStep(leaving = true)) }
+        SyncRuntime(engine, transport, tokens, "test").use { it.senderStep(leaving = true) }
+        assertTrue("nothing went out", transport.pushed)
         val gym = ScopeRef(Gym.scope)
         withContext(Dispatchers.IO) { withTimeout(2_000) { engine.status.state.first { status ->
             val response = answered
             when {
                 response == null -> gym in status.unansweredPushes
+                response.requiresUpgrade -> status.upgradeRequired
                 response.status == 401 -> status.authPaused
                 response.status in setOf(200, 400, 409, 413) -> gym !in status.failedPushes
                 else -> gym in status.failedPushes && gym !in status.unansweredPushes

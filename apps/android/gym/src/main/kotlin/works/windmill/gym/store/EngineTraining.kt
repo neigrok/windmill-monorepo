@@ -74,14 +74,16 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     fun removalPending(id: String): Boolean = removalReceipts.pending(id)
     fun removalReceiptShown(proposal: Proposal, replica: String) = removalReceipts.shown(proposal, replica)
     // What keeps the selected replica's gym work from the log, as the engine observes it: a paused session; no network, or
-    // a last push that got no answer the engine could read; or a last push the log answered with a failure.
+    // a last push that got no answer the engine could read; or a last push the log answered with a 5xx. An upgrade the
+    // server requires, or another failure it answered, names no blocker here.
     val deliveryBlocker: Blocker? get() {
         val status = engine.status.state.value
         val gym = ScopeRef.product("gym")
         return when {
             status.authPaused -> Blocker.SignInLapsed
             !status.online || gym in status.unansweredPushes -> Blocker.Offline
-            gym in status.failedPushes -> Blocker.LogFailed
+            status.upgradeRequired -> null
+            gym in status.unavailablePushes -> Blocker.LogFailed
             else -> null
         }
     }

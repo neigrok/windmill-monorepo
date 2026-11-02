@@ -1547,6 +1547,8 @@ applies that rule, and holds nothing back signed out. `unansweredPushes` names t
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
 its size cap) — so a product can tell a server it never reached from one that answered with a failure.
+Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
+with a `5xx`, so a product can tell the log's outage from a refusal.
 
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;

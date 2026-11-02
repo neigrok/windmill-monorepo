@@ -1015,6 +1015,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   proposal is no longer available.* `gym_proposal_missing` counts only answers this visit waited
   for: a proposal deleted before the visit, as on a reopened thread, draws the line and sends
   nothing.
+- **11x · Sets held back by an update the server requires (designer, task 75).** While the server
+  needs a newer app, Android's workout draws no band and its save note reads *on this device*
+  (`store/EngineTraining.kt` `deliveryBlocker`); only the *Update required* dialog says why. iOS
+  says it at Finish: *Finish needs the update — keep logging, or hide the workout.* (PARITY row 51).
+  No Android board draws an update-required band or save state; a 4xx refusal other than 401 and
+  426 likewise names no blocker.
 
 ### Parity rulings (owner, 2026-10-22)
 

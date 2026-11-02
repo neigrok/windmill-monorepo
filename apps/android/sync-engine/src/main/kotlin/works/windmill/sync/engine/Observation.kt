@@ -88,19 +88,25 @@ class UndoOffers internal constructor(initial: List<UndoOffer>) {
     internal fun land(next: List<UndoOffer>) { mutableOffers.value = next }
 }
 
-// §7.4 What holds work back: how a scope's last failed push ended, answered with a failure or with no answer at all.
-internal enum class PushFailure { answered, unanswered }
-// A push taken (a 200) or changing the next one (a 400, a 413, a 409 that pauses or re-identifies) holds nothing back; every other answer holds its scopes back as answered, and no answer as unanswered.
+// §7.4 What holds work back: how a scope's last failed push ended: answered with a 5xx (`unavailable`), answered with any
+// other failure, or with no answer the engine could read.
+internal enum class PushFailure { answered, unavailable, unanswered }
+// A push taken (a 200) or changing the next one (a 400, a 413, a 409 that pauses or re-identifies) holds nothing back; every other answer holds its scopes back, a 5xx as unavailable, and no answer as unanswered.
 internal fun Reply<SyncResponse>.pushFailure(account: String?): PushFailure? {
     val response = answer ?: return PushFailure.unanswered
-    return if (response.status in setOf(200, 400, 409, 413) && !response.malformedConflict(account)) null else PushFailure.answered
+    return when {
+        response.status in setOf(200, 400, 409, 413) && !response.malformedConflict(account) -> null
+        response.status >= 500 -> PushFailure.unavailable
+        else -> PushFailure.answered
+    }
 }
 
-// What the person may need to know about sync. `failedPushes` names the records of each scope's unsent entries while its last push failed; `unansweredPushes`, the scopes among them whose last push got no answer the engine could read.
+// What the person may need to know about sync. `failedPushes` names the records of each scope's unsent entries while its last push failed; `unansweredPushes`, the scopes among them whose last push got no answer the engine could read; `unavailablePushes`, those whose last push the server answered with a 5xx.
 class SyncStatus internal constructor(initial: Snapshot = Snapshot()) {
     data class Snapshot(val account: String? = null, val authPaused: Boolean = false, val upgradeRequired: Boolean = false,
         val online: Boolean = true, val pendingSignIn: String? = null, val ready: Int = 0, val sent: Int = 0, val serverSchema: Long? = null,
-        val failedPushes: Map<ScopeRef, Set<RecordKey>> = emptyMap(), val unansweredPushes: Set<ScopeRef> = emptySet()) {
+        val failedPushes: Map<ScopeRef, Set<RecordKey>> = emptyMap(), val unansweredPushes: Set<ScopeRef> = emptySet(),
+        val unavailablePushes: Set<ScopeRef> = emptySet()) {
         // §7.4 What holds work back: signed in, an unconfirmed record is unsent while the network is gone, the session paused, an upgrade required, or its scope's last push failed.
         fun holdsBack(scope: ScopeRef, key: RecordKey) =
             account != null && (!online || authPaused || upgradeRequired || failedPushes[scope]?.contains(key) == true)
@@ -178,7 +184,8 @@ internal class ObservationHub(private val engine: Engine) : AutoCloseable {
             engine.networkUpgradeRequired, engine.networkOnline, pending?.get("account")?.str(),
             replica.outbox.count { it.state == "ready" }, replica.outbox.count { it.state == "sent" },
             if (replica.state == "bound") replica.meta["serverSchema"]?.long() else null,
-            failedPushes, failedPushes.keys.filter { failed[it] == PushFailure.unanswered }.toSet())
+            failedPushes, failedPushes.keys.filter { failed[it] == PushFailure.unanswered }.toSet(),
+            failedPushes.keys.filter { failed[it] == PushFailure.unavailable }.toSet())
     }
     fun notices(product: String): NoticesView {
         if (product !in engine.registry.products) throw CommitFailure.malformed("product")

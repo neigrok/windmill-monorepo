@@ -924,6 +924,29 @@ class SyncRuntimeTests {
         }
     }
 
+    // §7.4 What holds work back: a push the account's newer token did not make leaves no failure behind, so its 401 holds
+    // nothing back; a 5xx the server answers holds its scopes back as unavailable.
+    @Test fun aPushRefusedUnderAnOldTokenRecordsNoFailureAndA5xxIsUnavailable() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.create()
+            val stale = async { fixture.runtime.senderStep(leaving = true) }
+            val refused = fixture.push()
+            fixture.tokens.save("A", "token:A-new")
+            refused.answer.complete(Reply.Answer(SyncResponse(401)))
+            assertFalse(stale.await())
+            assertFalse(fixture.engine.device.current().meta.member("authPaused").bool())
+            assertEquals(emptyMap<String, Map<ScopeRef, PushFailure>>(), fixture.engine.pushFailures)
+            fixture.transport.helloAnswer = CompletableDeferred(helloResponse())
+            val failing = async { fixture.runtime.senderStep(leaving = true) }
+            val unavailable = fixture.push()
+            assertEquals("token:A-new", unavailable.token)
+            unavailable.answer.complete(Reply.Answer(SyncResponse(502)))
+            failing.await()
+            assertEquals(mapOf(fixture.engine.activeReplica() to mapOf(product to PushFailure.unavailable)), fixture.engine.pushFailures)
+            settles(setOf(product)) { fixture.engine.status.state.value.unavailablePushes }
+        }
+    }
+
     @Test fun pushServedAsAnotherAccountPausesWithoutApplyingItsResults() = runBlocking {
         Fixture().use { fixture ->
             fixture.create()
@@ -1433,13 +1456,15 @@ class SyncRuntimeTests {
             settles(SyncStatus.Snapshot(serverSchema = 2, account = "A", sent = 1, failedPushes = held, unansweredPushes = setOf(product))) { status.value }
             val sent = fixture.engine.device.current().entries().single().json
             val malformedConflict = SyncResponse(409, Json.objectOf("serverTime" to Json.of(5_000), "as" to Json.of("A"), "error" to Json.of("gap")))
-            for ((reply, unanswered) in listOf<Pair<Reply<SyncResponse>, Set<ScopeRef>>>(Reply.Answer(malformedConflict) to emptySet(),
-                Reply.Unreachable to setOf(product), Reply.Answer(SyncResponse(500)) to emptySet())) {
+            for ((reply, unanswered, unavailable) in listOf<Triple<Reply<SyncResponse>, Set<ScopeRef>, Set<ScopeRef>>>(
+                Triple(Reply.Answer(malformedConflict), emptySet(), emptySet()), Triple(Reply.Unreachable, setOf(product), emptySet()),
+                Triple(Reply.Answer(SyncResponse(500)), emptySet(), setOf(product)))) {
                 val step = async { fixture.runtime.senderStep(leaving = true) }
                 val push = fixture.push()
                 assertEquals(first.request, push.request)
                 push.answer.complete(reply); assertTrue(step.await())
-                settles(SyncStatus.Snapshot(serverSchema = 2, account = "A", sent = 1, failedPushes = held, unansweredPushes = unanswered)) { status.value }
+                settles(SyncStatus.Snapshot(serverSchema = 2, account = "A", sent = 1, failedPushes = held, unansweredPushes = unanswered,
+                    unavailablePushes = unavailable)) { status.value }
                 assertEquals(sent, fixture.engine.device.current().entries().single().json)
             }
             val mismatch = async { fixture.runtime.senderStep(leaving = true) }
