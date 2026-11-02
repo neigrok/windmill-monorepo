@@ -1,14 +1,37 @@
 package works.windmill.gym.ui
 
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.*
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -19,15 +42,14 @@ import works.windmill.gym.GymRoom
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.RoutineEntry
-import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.SemanticsProperties
+import works.windmill.gym.presentation.RoutineEntryWrite
+import works.windmill.gym.presentation.RoutineWrite
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.GymResult
+import works.windmill.platform.Account
 import works.windmill.platform.telemetry.Telemetry
-import kotlinx.coroutines.test.TestCoroutineScheduler
-import kotlinx.coroutines.test.StandardTestDispatcher
-import works.windmill.gym.store.*
 
-@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class RoutineSaveTests {
@@ -99,8 +121,8 @@ class RoutineSaveTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, readDispatcher = Dispatchers.Unconfined).use { room ->
             runBlocking {
                 room.select("first")
-                room.training.createRoutine(works.windmill.gym.presentation.RoutineWrite("routine_first", "First push", 0,
-                    listOf(works.windmill.gym.presentation.RoutineEntryWrite("bench-press"))))
+                room.training.createRoutine(RoutineWrite("routine_first", "First push", 0,
+                    listOf(RoutineEntryWrite("bench-press"))))
                 room.store.refreshEngine()
             }
             val account = mutableStateOf(room.account())
@@ -112,12 +134,14 @@ class RoutineSaveTests {
                 compose.onNodeWithContentDescription("Routine name").performTextReplacement("First edited")
                 val submit = compose.onNodeWithText("Save").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
                 events.clear()
-                compose.runOnIdle {
+                val switchingAccount = compose.runOnIdle { scope.async {
                     submit()
                     assertEquals(listOf("First push"), room.training.program().map { it.name })
-                    runBlocking { room.select("second") }
+                    room.select("second")
                     account.value = room.account()
-                }
+                } }
+                compose.waitUntil(10_000) { compose.runOnIdle { switchingAccount.isCompleted } }
+                runBlocking { switchingAccount.await() }
                 compose.waitForIdle()
                 assertEquals(emptyList<Routine>(), room.training.program())
                 assertEquals(emptyList<Pair<String, Map<String, String>>>(), events.filter { it.first == "gym_routine_saved" })
@@ -148,8 +172,8 @@ class RoutineSaveTests {
         try { EngineRoomFixture(tmp.newFolder(), scope, readDispatcher = Dispatchers.Unconfined).use { room ->
             runBlocking {
                 room.select("first")
-                room.training.createRoutine(works.windmill.gym.presentation.RoutineWrite("routine_identity", "Opening", 0,
-                    listOf(works.windmill.gym.presentation.RoutineEntryWrite("bench-press"))))
+                room.training.createRoutine(RoutineWrite("routine_identity", "Opening", 0,
+                    listOf(RoutineEntryWrite("bench-press"))))
                 room.store.refreshEngine()
             }
             val account = mutableStateOf(room.account())
@@ -163,9 +187,9 @@ class RoutineSaveTests {
                 val opening = room.engine.snapshot()
                 compose.runOnIdle {
                     submit()
-                    if (coalescedSwitch) account.value = works.windmill.platform.Account(account.value.origin,
+                    if (coalescedSwitch) account.value = Account(account.value.origin,
                         room.account("second").user, identityRevision = 1)
-                    account.value = works.windmill.platform.Account(account.value.origin, room.account("first").user,
+                    account.value = Account(account.value.origin, room.account("first").user,
                         identityRevision = if (coalescedSwitch) 2 else 1)
                 }
                 compose.waitForIdle()

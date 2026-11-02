@@ -1,38 +1,40 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.performImeAction
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.EngineRoomFixture
 
 // The walk between movements, on the screen a lifter looks at with a bar in their hands. It took two
@@ -183,7 +185,7 @@ class LoggerMovementWalkTests {
             }
             compose.runOnIdle {
                 assertEquals("bench-press", room.store.workout.exerciseId)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
+                assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
             }
         } } finally { scope.cancel() }
     }
@@ -205,7 +207,7 @@ class LoggerMovementWalkTests {
             compose.runOnIdle {
                 assertEquals("barbell-row", room.store.workout.exerciseId)
                 assertEquals(session, room.store.workout.session)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
+                assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
             }
         } } finally { scope.cancel() }
     }
@@ -234,7 +236,9 @@ class LoggerMovementWalkTests {
                 down(center)
                 moveTo(center + Offset(-180f, 0f))
             }
-            compose.runOnIdle { runBlocking { room.store.workout.choose("barbell-row") } }
+            val choosingMovement = compose.runOnIdle { scope.async { room.store.workout.choose("barbell-row") } }
+            compose.waitUntil(10_000) { compose.runOnIdle { choosingMovement.isCompleted } }
+            runBlocking { choosingMovement.await() }
             compose.onRoot().performTouchInput { up() }
             compose.runOnIdle {
                 assertEquals("barbell-row", room.store.workout.exerciseId)

@@ -1,24 +1,22 @@
 package works.windmill.gym.ui
 
-import works.windmill.gym.coach.ThreadsBinding
-import works.windmill.gym.coach.ThreadsScreen
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.async
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -30,10 +28,13 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
 import works.windmill.gym.coach.AskThread
+import works.windmill.gym.coach.Threads
+import works.windmill.gym.coach.ThreadsBinding
+import works.windmill.gym.coach.ThreadsScreen
+import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineDraft
-import works.windmill.gym.coach.Threads
-import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.presentation.Session
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
@@ -94,7 +95,7 @@ class StanceReadsTheAccountTests {
     }
 
     // The finish re-reads the log in the room's scope.
-    private fun oneWorkout(room: EngineRoomFixture): works.windmill.gym.presentation.Session {
+    private fun oneWorkout(room: EngineRoomFixture): Session {
         val workout = room.scope.async { room.workout().also { room.store.refreshEngine() } }
         compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idle(); workout.isCompleted }
         return runBlocking { workout.await() }
@@ -141,7 +142,9 @@ class StanceReadsTheAccountTests {
                     onBuild = { drafts += it }, onOpenRoutine = {}, onDeleteRoutine = { true }, onReview = {})
             }
             val id = store.routines.all.single().id
-            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Routine(id, "Push Day"))) } }
+            val deletingRoutine = compose.runOnIdle { scope.async { assertNull(store.deletions.delete(Deletion.Routine(id, "Push Day"))) } }
+            compose.waitUntil(10_000) { compose.runOnIdle { deletingRoutine.isCompleted } }
+            runBlocking { deletingRoutine.await() }
             compose.onNodeWithText("Push Day").assertDoesNotExist()
             compose.onNodeWithText("No routines yet.").assertIsDisplayed()
             compose.onNodeWithContentDescription("New routine").performClick()

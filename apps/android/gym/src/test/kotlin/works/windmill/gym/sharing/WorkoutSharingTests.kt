@@ -28,6 +28,7 @@ class WorkoutSharingTests {
         assertEquals("the share never carries the word coach: that names the room", "Share this workout", card.title)
         assertEquals(WorkoutSharing.offer, card.body)
         assertNull(card.link)
+        assertNull(card.share)
         assertEquals("Get a link", card.action)
         assertNull(card.revoke)
         assertNull(card.note)
@@ -43,6 +44,7 @@ class WorkoutSharingTests {
         assertEquals("Try again", card.action)
         assertEquals("no such session", card.note)
         assertNull(card.link)
+        assertNull(card.share)
     }
 
     @Test
@@ -68,6 +70,7 @@ class WorkoutSharingTests {
                      card.body)
         assertEquals("https://windmill.works/#/gym/shared/abc123", card.link)
         assertEquals("Copy link", card.action)
+        assertEquals("Share", card.share)
         assertEquals("Revoke the link", card.revoke)
         assertNull(card.note)
     }
@@ -91,6 +94,7 @@ class WorkoutSharingTests {
         assertEquals("Anyone still holding it gets nothing. You can make a new one whenever you like.",
                      card.body)
         assertNull(card.link)
+        assertNull(card.share)
         assertEquals("Get a link", card.action)
         assertNull(card.revoke)
     }
@@ -101,6 +105,7 @@ class WorkoutSharingTests {
 
         assertEquals("…", card.action)
         assertNull(card.link)
+        assertNull(card.share)
         assertNull(card.revoke)
     }
 
@@ -132,6 +137,34 @@ class WorkoutSharingTests {
                      WorkoutSharing.State.Closed(), WorkoutSharing.State.Closed().after(WorkoutSharing.Event.Copied))
         assertEquals("a revoke cannot fail on a link that is already dead",
                      WorkoutSharing.State.Revoked, WorkoutSharing.State.Revoked.after(WorkoutSharing.Event.RevokeFailed("gone")))
+    }
+
+    @Test fun sharingFailurePreservesTheLiveLinkAndCopyClaim() {
+        val live = WorkoutSharing.State.Live(share, copied = true)
+        val changed = live.after(WorkoutSharing.Event.ShareFailed("unavailable"))
+        assertEquals(live.copy(note = "unavailable"), changed)
+        assertEquals(WorkoutSharing.card(live, base).copy(note = "unavailable"), WorkoutSharing.card(changed, base))
+        for (state in listOf(WorkoutSharing.State.Closed(), WorkoutSharing.State.Closed("failed"),
+            WorkoutSharing.State.Working, WorkoutSharing.State.Revoked)) {
+            assertEquals(state, state.after(WorkoutSharing.Event.ShareFailed("unavailable")))
+            assertNull(WorkoutSharing.card(state, base).share)
+        }
+    }
+
+    @Test fun sharingSuccessfullyClearsOnlyTheShareFailureAndPreservesTheCopyClaim() {
+        for (copied in listOf(false, true)) {
+            val live = WorkoutSharing.State.Live(share, copied = copied)
+            assertEquals(live, live.after(WorkoutSharing.Event.Shared))
+            val failed = live.after(WorkoutSharing.Event.ShareFailed(WorkoutSharing.shareFailureNote))
+            assertEquals(live.copy(note = WorkoutSharing.shareFailureNote), failed)
+            assertEquals(live, failed.after(WorkoutSharing.Event.Shared))
+            val revokeFailed = live.copy(note = "the log didn’t answer — the link is still live")
+            assertEquals(revokeFailed, revokeFailed.after(WorkoutSharing.Event.Shared))
+        }
+        for (state in listOf(WorkoutSharing.State.Closed(), WorkoutSharing.State.Closed("failed"),
+            WorkoutSharing.State.Working, WorkoutSharing.State.Revoked)) {
+            assertEquals(state, state.after(WorkoutSharing.Event.Shared))
+        }
     }
 
     @Test

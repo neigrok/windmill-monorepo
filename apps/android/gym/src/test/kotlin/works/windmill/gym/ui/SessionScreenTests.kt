@@ -1,14 +1,81 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.junit4.createComposeRule
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.LocalFrameStands
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.PlanEntry
 import works.windmill.gym.presentation.PlanSnapshot
-import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.sharing.WorkoutShareActions
+import works.windmill.gym.store.EngineRoomFixture
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class SessionScreenTests {
+    @get:Rule val compose = createComposeRule()
+    @get:Rule val tmp = TemporaryFolder()
+
+    @Test
+    fun aRemotelyDeletedWorkoutLeavesOnceWhenItsFrameStandsAndThenSaysWhy() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            EngineRoomFixture(tmp.newFolder(), scope).use { other ->
+                val server = EngineRoomFixture.server()
+                val session = runBlocking {
+                    room.select("alice"); room.pull(server)
+                    room.workout().also {
+                        room.sync(server); room.store.refreshEngine()
+                        other.select("alice"); other.pull(server); other.store.refreshEngine()
+                    }
+                }
+                val summary = room.store.history.allSessions.single()
+                val calls = mutableListOf<String>()
+                var standing by mutableStateOf(false)
+                val binding = SessionBinding(room.store)
+                val sharing = WorkoutShareActions("https://windmill.works",
+                    { error("unused") }, { error("unused") })
+                compose.setContent {
+                    CompositionLocalProvider(LocalFrameStands provides standing) {
+                        GymMaterial {
+                            SessionScreen(summary, binding, binding, sharing, "The log",
+                                onBack = { calls += "back" }, say = { calls += requireNotNull(it) },
+                                onOpenMovement = {}, onDiscard = {})
+                        }
+                    }
+                }
+                val discardingElsewhere = compose.runOnIdle { scope.async {
+                    assertEquals(null, other.store.workout.discardWorkout(session.id))
+                    other.sync(server); room.pull(server); room.store.refreshEngine()
+                } }
+                compose.waitUntil(10_000) { compose.runOnIdle { discardingElsewhere.isCompleted } }
+                runBlocking { discardingElsewhere.await() }
+                compose.runOnIdle { assertEquals(emptyList<String>(), calls); standing = true }
+                compose.runOnIdle { assertEquals(listOf("back", "That workout is no longer on the log."), calls) }
+                compose.runOnIdle { standing = false }
+                compose.runOnIdle { standing = true }
+                compose.runOnIdle { assertEquals(listOf("back", "That workout is no longer on the log."), calls) }
+            }
+        } } finally { scope.cancel() }
+    }
+
     private val catalog = listOf(
         Exercise(id = "bench-press", name = "Bench press"),
         Exercise(id = "row", name = "Barbell row"),

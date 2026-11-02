@@ -6,12 +6,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import works.windmill.gym.presentation.Exercise
-import works.windmill.gym.presentation.MovementRecord
+import works.windmill.gym.presentation.MovementRead
 import works.windmill.gym.presentation.Program
 import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.Session
@@ -50,6 +54,7 @@ class HistoryReads(
     val allSessions: List<SessionSummary>
         get() = (logged + shelved).sortedByDescending { it.startedAtMs }
     private var foot: Older by mutableStateOf(Older.More)
+    private var paging: Job? by mutableStateOf(null)
     // How the sync runtime's pulls stand, as the screens read them, and how they stood when Retry last asked for one.
     var pulled: Pulls by mutableStateOf(pulls.value)
         private set
@@ -66,7 +71,8 @@ class HistoryReads(
         else -> Older.End
     }
     val older: Older get() =
-        if (foot == Older.Reading && pulled.replica == controls.engineReplica && pulled.stalled(retried)) Older.Failed else foot
+        if (paging != null) Older.Loading
+        else if (foot == Older.Reading && pulled.replica == controls.engineReplica && pulled.stalled(retried)) Older.Failed else foot
     // The first pull's wait as the person sees it: the screen shows its bar once the wait passes 400 ms, and how the wait
     // ended is told once, `read` when the pull lands and `failed` when the foot turns to Retry.
     var readingShown by mutableStateOf(false)
@@ -83,9 +89,13 @@ class HistoryReads(
     }
 
     // The foot follows the sync runtime's pulls, and tells once how the first pull's wait ended.
-    internal fun observePulls() {
-        scope.launch { pulls.collect { pulled = it } }
-        scope.launch { snapshotFlow { older }.collect { footSettled(it) } }
+    private var pullObserver: Job? = null
+    internal fun observePulls(): Job {
+        pullObserver?.takeIf { it.isActive }?.let { return it }
+        return scope.launch {
+            launch { pulls.collect { pulled = it } }
+            launch { snapshotFlow { older }.collect { footSettled(it) } }
+        }.also { pullObserver = it }
     }
 
     private val progressRead = Mutex()
@@ -102,7 +112,11 @@ class HistoryReads(
     internal var logReadReady by mutableStateOf(false)
         private set
 
-    private var closedDetails by mutableStateOf<Map<String, SessionDetail>>(emptyMap())
+    private sealed interface Retained {
+        data class Held(val detail: SessionDetail) : Retained
+        data object Gone : Retained
+    }
+    private var closedDetails by mutableStateOf<Map<String, Retained>>(emptyMap())
 
     // Signed out, every drawn row is on this device and nowhere else; signed in, only the ones the
     // account has not confirmed. A deleted row is not drawn.
@@ -127,7 +141,10 @@ class HistoryReads(
         } }.filterNot { it.id in drawn }
     }
 
-    fun retainedSession(detail: SessionDetail): SessionDetail = closedDetails[detail.session.id] ?: detail
+    fun retainedSession(detail: SessionDetail): SessionDetail =
+        (closedDetails[detail.session.id] as? Retained.Held)?.detail ?: detail
+
+    fun isGone(sessionId: String): Boolean = closedDetails[sessionId] == Retained.Gone
 
     suspend fun finishedSession(sessionId: String): GymResult<SessionDetail?> {
         val owner = seat.owner
@@ -136,31 +153,53 @@ class HistoryReads(
             return GymResult.Failed(WriteFailure.Refused(accountChanged))
         val detail = try { seat.readTraining { shelfDetail(sessionId) ?: training.restoredSession(sessionId) } }
         catch (_: TrainingReadChanged) { return GymResult.Failed(WriteFailure.Refused(accountChanged)) }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) {
+        catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            seat.reportFailure("gym.loadLog", cancelled)
+            return GymResult.Failed(WriteFailure.NoAnswer)
+        } catch (failure: Exception) {
             seat.reportFailure("gym.loadLog", failure)
             return GymResult.Failed(WriteFailure.NoAnswer)
         }
         if (!seat.accountReady || owner != seat.owner || replica != controls.engineReplica || replica != training.engine.activeReplica() ||
             (owner == null) != training.anonymous) return GymResult.Failed(WriteFailure.Refused(accountChanged))
-        if (detail == null) closedDetails = closedDetails - sessionId
-        else if (!detail.session.isOpen) retainClosed(detail)
+        if (detail == null) {
+            if (closedDetails[sessionId] is Retained.Held) closedDetails = closedDetails + (sessionId to Retained.Gone)
+        } else if (!detail.session.isOpen) retainClosed(detail)
         return GymResult.Ok(detail)
     }
 
     internal fun retainClosed(detail: SessionDetail) {
-        closedDetails = closedDetails + (detail.session.id to detail)
+        closedDetails = closedDetails + (detail.session.id to Retained.Held(detail))
     }
 
-    // A detail read again replaces the copy this room retained of it.
-    internal fun refreshRetained(details: List<SessionDetail>) {
+    // A detail read again replaces the copy this room retained of it; one the replica no longer holds turns gone, while a device-held import or an unanswered session stays held.
+    internal suspend fun refreshRetained(details: List<SessionDetail>) {
+        val owner = seat.owner
         for (detail in details) if (!detail.session.isOpen && detail.session.id in closedDetails) retainClosed(detail)
+        val present = details.mapTo(mutableSetOf()) { it.session.id }
+        val absent = closedDetails.filter { (id, retained) -> id !in present && retained is Retained.Held }.keys
+        if (absent.isEmpty()) return
+        val read = seat.tried("gym.loadLog") {
+            seat.readTraining {
+                absent.mapNotNull { id ->
+                    try { id to (shelfDetail(id) ?: training.restoredSession(id)) }
+                    catch (_: TrainingUnanswered) { null }
+                }
+            }
+        } ?: return
+        if (owner != seat.owner) return
+        for ((id, detail) in read) {
+            if (closedDetails[id] !is Retained.Held) continue
+            if (detail == null) closedDetails = closedDetails + (id to Retained.Gone)
+            else retainClosed(detail)
+        }
     }
 
     internal fun changeRetained(sessionId: String, oldId: String, set: TrainingSet?) {
-        closedDetails = closedDetails.mapValues { (_, detail) ->
-            if (detail.session.id != sessionId) detail
-            else detail.copy(sets = detail.sets.mapNotNull { if (it.id == oldId) set else it })
+        closedDetails = closedDetails.mapValues { (id, retained) ->
+            if (id != sessionId || retained !is Retained.Held) retained
+            else Retained.Held(retained.detail.copy(sets = retained.detail.sets.mapNotNull { if (it.id == oldId) set else it }))
         }
     }
 
@@ -171,6 +210,8 @@ class HistoryReads(
     }
 
     internal fun forgetSeat() {
+        paging?.cancel()
+        paging = null
         logReadReady = false
         logged = emptyList()
         shelved = emptyList()
@@ -207,8 +248,12 @@ class HistoryReads(
                 GymResult.Failed(WriteFailure.NoAnswer)
             } catch (_: TrainingReadChanged) {
                 GymResult.Failed(WriteFailure.NoAnswer)
-            } catch (interrupted: CancellationException) {
-                throw interrupted
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                seat.reportFailure("gym.loadProgress", cancelled)
+                val why = WriteFailure(cancelled)
+                if (owner == seat.owner) progressFailure = why
+                GymResult.Failed(why)
             } catch (failure: Exception) {
                 seat.reportFailure("gym.loadProgress", failure)
                 val why = WriteFailure(failure)
@@ -239,15 +284,22 @@ class HistoryReads(
         shelfDetail(sessionId)?.let { return GymResult.Ok(it) }
         if (seed != null && seed.session.id == sessionId && !seed.session.isOpen && closedDetails[sessionId] == null) retainClosed(seed)
         val before = closedDetails[sessionId]
-        val detail = try { seat.readTraining { training.session(sessionId) } }
+        val detail = try { seat.readTraining { training.restoredSession(sessionId) } }
         catch (_: TrainingReadChanged) { return GymResult.Failed(WriteFailure.NoAnswer) }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) {
+        catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            seat.reportFailure("gym.loadLog", cancelled)
+            return GymResult.Failed(WriteFailure.NoAnswer)
+        } catch (failure: Exception) {
             seat.reportFailure("gym.loadLog", failure)
             return GymResult.Failed(WriteFailure.NoAnswer)
-        } ?: return GymResult.Failed(WriteFailure.Refused("that session is no longer on the log"))
+        }
+        if (detail == null) {
+            if (closedDetails[sessionId] is Retained.Held) closedDetails = closedDetails + (sessionId to Retained.Gone)
+            return GymResult.Failed(WriteFailure.Refused("that session is no longer on the log"))
+        }
         val current = closedDetails[sessionId]
-        if (current != before && current != null) return GymResult.Ok(current)
+        if (current != before && current is Retained.Held) return GymResult.Ok(current.detail)
         if (!detail.session.isOpen) retainClosed(detail)
         return GymResult.Ok(detail)
     }
@@ -285,15 +337,32 @@ class HistoryReads(
 
     // Also re-reads a first page the replica could not answer: with no rows the cursor is absent, which is
     // the top of the log. The cursor is BOTH halves of the sort key, because two sessions can share an instant.
-    suspend fun loadOlder(): Unit = logRead.withLock {
-        if (foot == Older.Loading || foot == Older.End) return
-        val owner = seat.owner
-        foot = Older.Loading
-        val oldest = logged.lastOrNull()
-        val page = seat.tried("gym.loadOlder") { seat.readTraining { training.sessions(limit = logPage, before = oldest?.startedAtMs, beforeId = oldest?.id) } }
-        if (owner != seat.owner) return
-        if (page != null) logged = logged + page.filter { fresh -> logged.none { it.id == fresh.id } }
-        foot = footAfter(page)
+    suspend fun loadOlder() {
+        paging?.let { it.join(); return }
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            logRead.withLock {
+                if (foot == Older.End) return@withLock
+                val owner = seat.owner
+                val oldest = logged.lastOrNull()
+                val page = try {
+                    seat.readTraining { training.sessions(limit = logPage, before = oldest?.startedAtMs, beforeId = oldest?.id) }
+                } catch (cancelled: CancellationException) {
+                    if (!currentCoroutineContext().isActive) throw cancelled
+                    seat.reportFailure("gym.loadOlder", cancelled)
+                    null
+                } catch (failure: Exception) {
+                    seat.reportFailure("gym.loadOlder", failure)
+                    null
+                }
+                if (owner != seat.owner) return@withLock
+                if (page != null) logged = logged + page.filter { fresh -> logged.none { it.id == fresh.id } }
+                foot = footAfter(page)
+            }
+        }
+        paging = job
+        job.invokeOnCompletion { if (paging === job) paging = null }
+        job.start()
+        job.join()
     }
 
     suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
@@ -302,8 +371,11 @@ class HistoryReads(
             GymResult.Ok(seat.readTraining { training.routineHistory(routineId) })
         } catch (_: TrainingReadChanged) {
             GymResult.Failed(WriteFailure.Refused(accountChanged))
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) {
+        } catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            seat.reportFailure("gym.routineHistory", cancelled)
+            GymResult.Failed(WriteFailure.NoAnswer)
+        } catch (failure: Exception) {
             seat.reportFailure("gym.routineHistory", failure)
             GymResult.Failed(WriteFailure.NoAnswer)
         }
@@ -312,10 +384,34 @@ class HistoryReads(
     // Nothing is held: the store keeps no copy to invalidate. The replica's answer stands ALONE and
     // a refused import kept on this phone is not merged into it, so a strict refusal cannot change
     // aggregate history.
-    suspend fun record(exerciseId: String): GymResult<MovementRecord> {
-        val read = training.record(exerciseId)
-            ?: return GymResult.Failed(WriteFailure.Refused("that movement is no longer on the log"))
-        return GymResult.Ok(read)
+    suspend fun record(exerciseId: String): RecordRead {
+        val owner = seat.owner
+        val replica = seat.replica
+        return try {
+            if (!seat.accountReady) return RecordRead.Superseded
+            if (replica != training.engine.activeReplica() || (owner == null) != training.anonymous)
+                return RecordRead.Failed(WriteFailure.Refused(accountChanged))
+            val read = try {
+                seat.readTraining {
+                    training.record(exerciseId)?.let { record ->
+                        val progress = training.progress()
+                        MovementRead(record, progress.movement(exerciseId), progress.asOf)
+                    }
+                }
+            } catch (_: TrainingReadChanged) {
+                if (owner != seat.owner || replica != seat.replica || replica != training.engine.activeReplica() ||
+                    (owner == null) != training.anonymous) return RecordRead.Failed(WriteFailure.Refused(accountChanged))
+                return RecordRead.Superseded
+            } ?: return RecordRead.Failed(WriteFailure.Refused("that movement is no longer on the log"))
+            RecordRead.Ready(read)
+        } catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            seat.reportFailure("gym.record", cancelled)
+            RecordRead.Failed(WriteFailure.NoAnswer)
+        } catch (failure: Exception) {
+            seat.reportFailure("gym.record", failure)
+            RecordRead.Failed(WriteFailure.NoAnswer)
+        }
     }
 
     suspend fun edit(exerciseId: String, name: String, equipment: String? = null, loadCount: Int? = null,
@@ -328,8 +424,10 @@ class HistoryReads(
             val edited = training.editExercise(exerciseId, name, equipment, loadCount, base, expectedReplica, owner == null)
             if (owner == seat.owner) invalidateProgress()
             GymResult.Ok(edited)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
+        } catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            seat.reportFailure("gym.editExercise", cancelled)
+            GymResult.Failed(WriteFailure(cancelled))
         } catch (failure: Exception) {
             seat.reportFailure("gym.editExercise", failure)
             GymResult.Failed(WriteFailure(failure))
@@ -385,8 +483,12 @@ class HistoryReads(
 
         val open = try { seat.readTraining { training.openWorkout() } }
         catch (_: TrainingReadChanged) { return }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) {
+        catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            seat.reportFailure("gym.loadLog", cancelled)
+            foot = Older.Failed
+            return
+        } catch (failure: Exception) {
             seat.reportFailure("gym.loadLog", failure)
             foot = Older.Failed
             return
@@ -404,3 +506,9 @@ class HistoryReads(
 
 // There is no state for "empty": a log with no rows has no foot.
 enum class Older { More, Loading, End, Reading, Failed }
+
+sealed interface RecordRead {
+    data class Ready(val value: MovementRead) : RecordRead
+    data class Failed(val why: WriteFailure) : RecordRead
+    data object Superseded : RecordRead
+}

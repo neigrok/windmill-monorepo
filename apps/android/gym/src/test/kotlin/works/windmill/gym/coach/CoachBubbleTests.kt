@@ -1,9 +1,11 @@
 package works.windmill.gym.coach
 
+import android.app.Application
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
@@ -17,11 +19,14 @@ import androidx.compose.ui.text.TextLayoutResult
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.ui.GymMaterial
@@ -130,6 +135,123 @@ class CoachBubbleTests {
                 "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed"),
                 "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok"),
             ), events)
+        }
+    }
+
+    @Test fun oneDistinctLinkHasBothCopyActionsAndEachWritesItsOwnForm() {
+        lateinit var clipboard: Clipboard
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { fail(operation) }
+        }
+        val url = "https://example.org/top-sets"
+        val displayed = "Try a top set. More on top sets."
+        compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
+            clipboard = LocalClipboard.current
+            CoachAnswer("Try a top set. [More on top sets]($url).", null, emptyList(), 0)
+        } } }
+        val actions = compose.onNodeWithText(displayed).fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        assertEquals(listOf("Copy answer", "Copy link"), actions.map { it.label })
+        compose.onNodeWithText(displayed).performTouchInput { longClick() }
+        compose.onNodeWithText("Copy answer").assertIsDisplayed()
+        compose.onNodeWithText("Copy link").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(url, clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        compose.onNodeWithText(displayed).performTouchInput { longClick() }
+        compose.onNodeWithText("Copy answer").performClick()
+        compose.runOnIdle {
+            assertEquals("Try a top set. More on top sets ($url).", clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString())
+            assertEquals(listOf(
+                "gym_action" to mapOf("screen" to "coach", "action" to "copy_link", "outcome" to "ok"),
+                "gym_action" to mapOf("screen" to "coach", "action" to "copy", "outcome" to "ok"),
+            ), events)
+        }
+    }
+
+    @Test fun aRetainedCopyLinkActionReadsTheAnswersCurrentDestination() {
+        lateinit var clipboard: Clipboard
+        val answer = mutableStateOf("[Read the plan](https://example.org/first)")
+        compose.setContent { GymMaterial {
+            clipboard = LocalClipboard.current
+            CoachAnswer(answer.value, null, emptyList(), 0)
+        } }
+        val copyLink = compose.onNodeWithText("Read the plan").fetchSemanticsNode()
+            .config[SemanticsActions.CustomActions].single { it.label == "Copy link" }
+        compose.runOnIdle { answer.value = "[Read the plan](https://example.org/current)" }
+        compose.runOnIdle {
+            assertTrue(copyLink.action())
+            assertEquals("https://example.org/current", clipboard.nativeClipboard.primaryClip?.getItemAt(0)?.text?.toString())
+        }
+        compose.runOnIdle { answer.value += " and [another](https://example.org/another)" }
+        val actions = compose.onNodeWithText("Read the plan and another").fetchSemanticsNode()
+            .config[SemanticsActions.CustomActions]
+        assertEquals(listOf("Copy answer"), actions.map { it.label })
+    }
+
+    @Test fun answersWithNoLinkOrSeveralLinksOnlyOfferCopyAnswer() {
+        compose.setContent { GymMaterial { Column {
+            CoachAnswer("No links here.", null, emptyList(), 0)
+            CoachAnswer("[First](https://example.org/a) and [second](https://example.org/b).", null, emptyList(), 0)
+        } } }
+        for (label in listOf("No links here.", "First and second.")) {
+            val actions = compose.onNodeWithText(label).fetchSemanticsNode().config[SemanticsActions.CustomActions]
+            assertEquals(listOf("Copy answer"), actions.map { it.label })
+            compose.onNodeWithText(label).performTouchInput { longClick() }
+            compose.onNodeWithText("Copy link").assertDoesNotExist()
+            compose.onNodeWithText("Copy answer").assertIsDisplayed().performClick()
+        }
+    }
+
+    @Test fun longPressOnTheLinkOpensTheCopyMenuWithoutOpeningTheBrowser() {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { fail(operation) }
+        }
+        val displayed = "Read this plan."
+        compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
+            CoachAnswer("Read [this plan](https://example.org/plan).", null, emptyList(), 0)
+        } } }
+        val layout = mutableListOf<TextLayoutResult>()
+        val text = compose.onNodeWithText(displayed, useUnmergedTree = true)
+        text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
+        val linkPosition = layout.single().getBoundingBox(displayed.indexOf("this") + 1).center
+        val application: Application = RuntimeEnvironment.getApplication()
+        text.performTouchInput { longClick(linkPosition) }
+        compose.onNodeWithText("Copy answer").assertIsDisplayed()
+        compose.onNodeWithText("Copy link").assertIsDisplayed()
+        compose.runOnIdle {
+            assertNull(shadowOf(application).nextStartedActivity)
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), events)
+        }
+    }
+
+    @Test fun aRefusedLinkCopyKeepsTheMenuAndReportsOnlyTheBoundedFailure() {
+        var refusal: Exception = SecurityException("private URL")
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation to properties }
+        }
+        compose.setContent {
+            val clipboard = object : Clipboard by LocalClipboard.current {
+                override suspend fun setClipEntry(clipEntry: ClipEntry?) { throw refusal }
+            }
+            GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry, LocalClipboard provides clipboard) {
+                CoachAnswer("[Read the plan](https://example.org/private)", null, emptyList(), 0)
+            } }
+        }
+        compose.onNodeWithText("Read the plan").performTouchInput { longClick() }
+        listOf(SecurityException("private URL"), CancellationException("private URL")).forEachIndexed { index, error ->
+            compose.runOnIdle { refusal = error }
+            compose.onNodeWithText("Copy link").assertIsDisplayed().performClick().assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(List(index + 1) { "gym.copyMessage" to emptyMap<String, String>() }, failures)
+                assertEquals(List(index + 1) {
+                    "gym_action" to mapOf("screen" to "coach", "action" to "copy_link", "outcome" to "failed")
+                }, events)
+            }
         }
     }
 

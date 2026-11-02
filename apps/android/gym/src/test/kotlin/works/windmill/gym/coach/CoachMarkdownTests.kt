@@ -1,6 +1,5 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,9 +152,9 @@ class CoachMarkdownTests {
     }
 
     @Test
-    fun escapesResolveAndALinkKeepsOnlyItsText() {
+    fun escapesResolveAndALinkKeepsItsDestination() {
         assertEquals(
-            listOf(paragraph("*not* _lit_ `tick` \\ Bench [not a link] [nor](with space)")),
+            listOf(paragraph(CoachSpan("*not* _lit_ `tick` \\ "), CoachSpan("Bench", link = CoachLink.parse("https://x.y/z")), CoachSpan(" [not a link] [nor](with space)"))),
             CoachMarkdown.parse("\\*not\\* \\_lit\\_ \\`tick\\` \\\\ [Bench](https://x.y/z) [not a link] [nor](with space)"),
         )
         assertEquals(listOf(paragraph("# not a heading")), CoachMarkdown.parse("\\# not a heading"))
@@ -210,7 +209,7 @@ class CoachMarkdownTests {
         assertEquals(listOf(paragraph("See [plan]")), CoachMarkdown.parse("See [plan]"))
         assertEquals(listOf(paragraph("See plan")), CoachMarkdown.parse("See [plan]("))
         assertEquals(listOf(paragraph("See plan")), CoachMarkdown.parse("See [plan](https://x.y/pl"))
-        assertEquals(listOf(paragraph("See plan now")), CoachMarkdown.parse("See [plan](https://x.y/plan) now"))
+        assertEquals(listOf(paragraph(CoachSpan("See "), CoachSpan("plan", link = CoachLink.parse("https://x.y/plan")), CoachSpan(" now"))), CoachMarkdown.parse("See [plan](https://x.y/plan) now"))
         assertEquals("brackets before prose in parentheses are not a link",
             listOf(paragraph("[note](see the")), CoachMarkdown.parse("[note](see the"))
     }
@@ -309,6 +308,8 @@ class CoachMarkdownTests {
         for (length in 0..answer.length) {
             val blocks = CoachMarkdown.parse(answer.substring(0, length))
             val spans = blocks.flatMap(::spansOf)
+            val expectedLinks = if (length >= answer.indexOf(") 🏋") + 1) listOf(CoachLink.parse("https://example.com/plan")) else emptyList()
+            assertEquals("link at prefix $length", expectedLinks, spans.mapNotNull { it.link })
             assertEquals("a raw marker at prefix $length", emptyList<CoachSpan>(),
                 spans.filter { "**" in it.text || "__" in it.text })
             assertEquals("a stray backtick at prefix $length", emptyList<String>(),
@@ -327,7 +328,7 @@ class CoachMarkdownTests {
                 numbered(2, "Thursday: bench 3×8"),
                 Code("week 1: 90 → 92.5 → 95"),
                 Rule,
-                paragraph("More on this: Café — 東京 🏋🏽‍♀️"),
+                paragraph(CoachSpan("More on this: "), CoachSpan("Café — 東京", link = CoachLink.parse("https://example.com/plan")), CoachSpan(" 🏋🏽‍♀️")),
             ),
             CoachMarkdown.parse(answer),
         )
@@ -342,6 +343,10 @@ class CoachMarkdownTests {
             CoachMarkdown.plain(answer),
         )
         assertEquals(
+            "Plan\n\nSquat: keep 5x5.\n- add 1 set\nnext week\n1) rest\n\nx = 1\n---\nlink (http://a) *star*\n",
+            CoachMarkdown.copied(answer),
+        )
+        assertEquals(
             listOf(
                 Heading(1, listOf(CoachSpan("Plan"))),
                 paragraph(CoachSpan("Squat", bold = true), CoachSpan(": keep "), CoachSpan("5x5", italic = true), CoachSpan(".")),
@@ -349,9 +354,53 @@ class CoachMarkdownTests {
                 numbered(1, "rest"),
                 Code("x = 1"),
                 Rule,
-                paragraph("link *star*"),
+                paragraph(CoachSpan("link", link = CoachLink.parse("http://a")), CoachSpan(" *star*")),
             ),
             CoachMarkdown.parse(answer),
         )
+    }
+
+    @Test
+    fun onlyAbsoluteHttpLinksHaveDestinations() {
+        for (url in listOf("https://x.y/z", "HTTP://x.y/z", "https://x.y/Foo_(bar)")) {
+            assertEquals(url, CoachLink.parse(url)?.url)
+            assertEquals(listOf(paragraph(CoachSpan("Bench", link = CoachLink.parse(url)))), CoachMarkdown.parse("[Bench]($url)"))
+        }
+        for (url in listOf("mailto:a@b.com", "javascript:alert(1)", "/relative", "x.y", "https:///path", "https://", "https://x.y/with space", "https://x.y/%wrong")) {
+            assertEquals(null, CoachLink.parse(url))
+            assertEquals(emptyList<CoachLink>(), CoachMarkdown.links("[Bench]($url)"))
+        }
+        for (url in listOf("mailto:a@b.com", "javascript:alert(1)", "/relative", "x.y")) {
+            assertEquals(listOf(paragraph("Bench")), CoachMarkdown.parse("[Bench]($url)"))
+        }
+    }
+
+    @Test
+    fun adjacentDestinationsStaySeparateAndKeepSurroundingEmphasis() {
+        assertEquals(
+            listOf(paragraph(
+                CoachSpan("one", bold = true, italic = true, link = CoachLink.parse("https://a.org")),
+                CoachSpan("two", bold = true, italic = true, link = CoachLink.parse("https://b.org")),
+            )),
+            CoachMarkdown.parse("***[one](https://a.org)[two](https://b.org)***"),
+        )
+    }
+
+    @Test
+    fun clipboardLinksKeepTableColumnsAndAppearOnceInReadingOrder() {
+        val answer = "# [first](https://a.org)\n\n- [second](https://b.org)\n\nName | More\n--- | ---\n[first again](https://a.org) | [https://b.org](https://b.org)"
+        assertEquals("first\n\n- second\n\nName\tMore\nfirst again\thttps://b.org", CoachMarkdown.plain(answer))
+        assertEquals("first (https://a.org)\n\n- second (https://b.org)\n\nName\tMore\nfirst again (https://a.org)\thttps://b.org", CoachMarkdown.copied(answer))
+        assertEquals(listOf(CoachLink.parse("https://a.org"), CoachLink.parse("https://b.org")), CoachMarkdown.links(answer))
+    }
+
+    @Test
+    fun codeKeepsLinkSyntaxLiteralInBothTextForms() {
+        val answer = "`[inline](https://a.org)`\n\n```\n[fenced](https://b.org)\n```"
+        val expected = "[inline](https://a.org)\n\n[fenced](https://b.org)"
+        assertEquals(listOf(paragraph(CoachSpan("[inline](https://a.org)", code = true)), Code("[fenced](https://b.org)")), CoachMarkdown.parse(answer))
+        assertEquals(expected, CoachMarkdown.plain(answer))
+        assertEquals(expected, CoachMarkdown.copied(answer))
+        assertEquals(emptyList<CoachLink>(), CoachMarkdown.links(answer))
     }
 }

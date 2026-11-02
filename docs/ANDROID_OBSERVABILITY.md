@@ -81,7 +81,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.coachOnboarding` | gym, app | Signed-out Coach transport, request storage, recovery, photo preparation or routine import fails |
 | `gym.coachRoutineConfirm` | gym | Confirming a Coach routine fails |
 | `gym.connect` | gym | Connecting the training store to the account fails |
-| `gym.copyMessage` | gym | Copying a Coach message to the clipboard fails |
+| `gym.copyMessage` | gym | Copying a Coach message or its link to the clipboard fails |
 | `gym.create` | gym | Creating a movement fails |
 | `gym.deleteNote` | gym | Deleting a note fails |
 | `gym.deleteSet` | gym | Deleting a set fails |
@@ -107,6 +107,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.notification.post` | gym | Posting the workout notification fails |
 | `gym.notification.receive` | gym | Handling a notification action fails |
 | `gym.openConnections` | gym | Opening the Connected log page fails |
+| `gym.openLink` | gym | Opening a Coach answer's link fails unexpectedly; a missing browser sends only `open_link` / `unavailable`, never an Issue |
 | `gym.prepareAdoption` | gym | Preparing an anonymous workout fails and retains that item locally for retry; an outer preparation failure retains the anonymous replica without blocking sign-in |
 | `gym.preparePhoto` | gym | Preparing a signed-in Coach photo fails |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
@@ -114,6 +115,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.readProgram` | gym | Re-reading the program after an unconfirmed routine deletion fails |
 | `gym.readThreads` | gym | Reading Coach History fails |
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |
+| `gym.record` | gym | Reading a movement's record fails |
 | `gym.refreshConnectedLog` | gym | Refreshing the Connected log fails |
 | `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails |
 | `gym.reorderMovements` | gym | Reordering the live workout's movements fails |
@@ -135,7 +137,8 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.savePhoto` | gym | Saving a Coach photo fails |
 | `gym.saveRoutine` | gym | Saving a routine fails |
 | `gym.saveRoutineDraft` | gym | Saving the routine editor's draft for recreation fails |
-| `gym.share` | gym | Sharing a workout fails |
+| `gym.share` | gym | Creating or copying a workout link fails |
+| `gym.shareLink` | gym | Opening the share sheet fails unexpectedly |
 | `gym.showWorkout` | gym | Showing the workout notification again fails |
 | `gym.start` | gym | Starting a workout fails |
 | `gym.storage.decode` | gym | A stored gym document or the workout controls cannot be decoded |
@@ -257,10 +260,12 @@ foot turns to Retry.
 | `coach` | `choose` | `ok` | |
 | `coach` | `continue_draft` | `ok` | |
 | `coach` | `copy` | `ok`, `failed` | |
+| `coach` | `copy_link` | `ok`, `failed` | |
 | `coach` | `draft_restored` | `ok` | |
 | `coach` | `fresh_entry` | `ok` | |
 | `coach` | `history_open` | `ok` | |
 | `coach` | `jump_latest` | `ok` | |
+| `coach` | `open_link` | `ok`, `unavailable`, `failed` | |
 | `coach` | `read_sources` | `ok` | |
 | `coach` | `reply_open` | `ok` | |
 | `finish` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
@@ -291,7 +296,8 @@ foot turns to Retry.
 | `session` | `delete` | `ok`, `refused`, `failed` | |
 | `session` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
 | `session` | `fix` | `ok`, `refused`, `failed` | |
-| `session` | `share` | `ok`, `failed` | |
+| `session` | `copy_link` | `ok`, `failed` | |
+| `session` | `share_link` | `ok`, `unavailable`, `failed` | |
 | `threads` | `delete` | `ok`, `refused`, `failed`, `cancelled` | yes |
 | `tile` | `open` | `ok`, `failed` | |
 | `tile` | `routines` | `ok`, `failed` | |
@@ -306,6 +312,8 @@ foot turns to Retry.
 | `workout` | `reorder` | `ok`, `failed` | |
 | `workout` | `show_notification` | `ok`, `refused` | |
 | `workout_bar` | `open` | `ok`, `refused` | |
+
+For `session/share_link`, `ok` means the system chooser opened; it does not report a selected app or delivery. `unavailable` means no activity handles the chooser and produces no Sentry Issue. Unexpected launch errors report `gym.shareLink` and `failed`. Properties contain only the screen, action and outcome labels.
 
 ## Adding a failure or an event
 
