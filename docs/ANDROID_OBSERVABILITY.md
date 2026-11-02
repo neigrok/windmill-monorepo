@@ -37,7 +37,8 @@ names something the code still sends.
 Issue, both under the static operation. It sends neither for an expected answer:
 
 - a cancellation;
-- lost network (`WindmillApiException.Offline`);
+- lost network (`WindmillApiException.Offline`), or a `Transport` failure that
+  `TelemetryPolicy.networkLoss` reads as lost network;
 - an HTTP refusal with status 400, 401, 403, 404, 409, 410, 422, 426 or 429;
 - on an AI door (`ai_installation`, `gym.coachOnboarding`), a 503 whose code
   `AiAvailability` declares: `anonymous_ai_unavailable` or an allowance code.
@@ -45,7 +46,8 @@ Issue, both under the static operation. It sends neither for an expected answer:
 The gym and Coach stores also drop domain refusals (`TrainingRefused`, `TrainingUnanswered`,
 `TrainingReadChanged`) and every `WindmillApiException`, which their HTTP door has already judged.
 A failed HTTP request always sends `api_request_failed`; an unexpected one also reports under its
-operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentry only.
+operation. A `Timeout` still reports. Raw storage exceptions remain reportable even when their
+type also occurs during network loss. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentry only.
 
 | Operation | Module | Reported when |
 |---|---|---|
@@ -59,7 +61,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `application_coroutine` | app | A coroutine in the application scope throws |
 | `auth_local_identity` | platform | The saved account cannot be resolved at restore |
 | `auth_logout` | platform | The server sign-out call fails other than with an HTTP answer |
-| `auth_request` | platform | A session-minting auth request fails unexpectedly |
+| `auth_request` | platform | A session-minting auth request fails unexpectedly, including a 2xx response without a nonempty session cookie (`malformed`, phase `decode`) |
 | `auth_restore` | platform | Verifying the saved session fails unexpectedly |
 | `auth_sign_in` | platform, app | Completing a sign-in by code or link fails unexpectedly |
 | `auth_sign_out` | platform | Ending the account on the phone fails |
@@ -152,7 +154,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `onboarding_storage` | app | The onboarding flag cannot be read or saved |
 | `session_decode` | platform | The saved session cannot be decoded |
 | `session_key` | platform | The Keystore key for the session cannot be created or read |
-| `session_migrate` | platform | Moving a session saved by an older build fails |
+| `session_migrate` | platform | Sealing or persisting a session saved by an older build fails; reported once per process, with the plaintext retained but unused |
 | `session_open` | platform | Opening a sealed secret fails |
 | `session_seal` | platform | Sealing a secret fails |
 | `session_sign_out_decode` | platform | The saved sign-out choice cannot be decoded |

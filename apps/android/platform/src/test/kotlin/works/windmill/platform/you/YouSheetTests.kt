@@ -26,7 +26,6 @@ import works.windmill.platform.auth.AuthSignOutSession
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.MemorySessions
-import works.windmill.platform.auth.MagicLink
 import works.windmill.platform.design.WindmillMaterial
 
 @RunWith(RobolectricTestRunner::class)
@@ -239,12 +238,12 @@ class YouSheetTests {
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Code").performTextReplacement(" 123456 ")
         compose.onNodeWithText("Sign in").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(MagicLink.expiredCode).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("That didn’t go through").fetchSemanticsNodes().isNotEmpty() }
         compose.runOnIdle { auth = AuthStore(server.url("/"), MemorySessions()) }
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithContentDescription("Code").assertTextContains(" 123456 ")
         compose.onNodeWithText("Code sent to a@example.com.").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(MagicLink.expiredCode).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("That didn’t go through").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign in").assertIsEnabled()
         assertEquals(2, server.requestCount)
     }

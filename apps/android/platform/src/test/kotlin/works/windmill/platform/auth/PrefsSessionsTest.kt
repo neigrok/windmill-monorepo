@@ -1,5 +1,6 @@
 package works.windmill.platform.auth
 
+import java.io.IOException
 import javax.crypto.KeyGenerator
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
@@ -70,12 +71,133 @@ class PrefsSessionsTest {
         val values = FakeValues()
         val keyless = PrefsSessions(values, SecretVault { null })
 
-        keyless.write(secret)
-        keyless.remember(sam)
+        assertThrows(IOException::class.java) { keyless.write(secret) }
+        assertThrows(IOException::class.java) { keyless.remember(sam) }
 
         assertEquals("nothing was kept at all", emptyMap<String, String>(), values.held)
         assertNull(keyless.read())
         assertNull(keyless.user())
+    }
+
+    @Test fun failedLegacySealingKeepsPlaintextUnusedAndReportsOnceUntilRelaunch() {
+        val original = mapOf("wm_session" to secret,
+            "wm_user" to """{"id":"u_1","email":"sam@example.com","name":"Sam"}""")
+        val values = FakeValues(*original.toList().toTypedArray())
+        val reports = mutableListOf<String>()
+        var loads = 0
+        val sessions = PrefsSessions(values, SecretVault { loads += 1; null }, object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                reports += operation
+                assertEquals(IOException::class.java, error.javaClass)
+                assertEquals("The saved session could not be migrated.", error.message)
+                assertNull(error.cause)
+                assertEquals(emptyMap<String, String>(), properties)
+            }
+        })
+
+        assertEquals(listOf(null, null, null), List(3) { sessions.read() })
+        assertNull(sessions.user())
+        assertEquals(LocalSession.Unresolved(sam), sessions.localSession)
+        assertEquals(original, values.held)
+        assertEquals(listOf("session_migrate"), reports)
+        assertEquals(1, loads)
+
+        val relaunched = PrefsSessions(values, SecretVault { key })
+        assertEquals(secret, relaunched.read())
+        assertEquals(sam, relaunched.user())
+        assertEquals(setOf("wm_session.sealed", "wm_user.sealed"), values.held.keys)
+    }
+
+    @Test fun aFreshSealedSecretIsReadableAfterLegacyMigrationWasRefused() {
+        val values = FakeValues("wm_session" to "legacy-secret")
+        var available = false
+        val sessions = PrefsSessions(values, SecretVault { if (available) key else null })
+        assertNull(sessions.read())
+        available = true
+        assertNull(sessions.read())
+
+        sessions.write(secret)
+
+        assertEquals(secret, sessions.read())
+        assertEquals(setOf("wm_session.sealed"), values.held.keys)
+    }
+
+    @Test fun aFreshSealedIdentityIsReadableAfterLegacyMigrationWasRefused() {
+        for (publishProposal in listOf(false, true)) {
+            val values = FakeValues("wm_session" to "legacy-secret",
+                "wm_user" to """{"id":"old","email":"old@example.com"}""")
+            var available = false
+            var loads = 0
+            val sessions = PrefsSessions(values, SecretVault { loads += 1; if (available) key else null })
+            assertNull(sessions.read())
+            available = true
+            assertNull(sessions.read())
+            assertNull(sessions.user())
+            assertEquals(1, loads)
+
+            if (publishProposal) {
+                val proposed = ProposedSignIn(secret, sam)
+                sessions.stage(proposed)
+                assertNull(sessions.read())
+                assertNull(sessions.user())
+                sessions.publishProposed(proposed)
+            } else {
+                sessions.commit(secret, sam)
+            }
+
+            assertEquals(secret, sessions.read())
+            assertEquals(sam, sessions.user())
+            assertEquals(LocalSession.Owned(sam), sessions.localSession)
+            assertNull(sessions.proposed)
+            assertEquals(setOf("wm_identity.sealed"), values.held.keys)
+            assertEquals(2, loads)
+        }
+    }
+
+    @Test fun clearingARefusedMigrationNeedsNoKeyAndAllowsLaterReads() {
+        val values = FakeValues("wm_session" to secret)
+        var available = false
+        val sessions = PrefsSessions(values, SecretVault { if (available) key else null })
+        assertNull(sessions.read())
+
+        sessions.clear()
+
+        assertEquals(emptyMap<String, String>(), values.held)
+        assertEquals(LocalSession.Absent, sessions.localSession)
+        available = true
+        sessions.write(secret)
+        assertEquals(secret, sessions.read())
+    }
+
+    @Test fun aFailedMigrationWriteCanStillBeCleared() {
+        val values = FakeValues("wm_session" to secret)
+        var fails = true
+        val boundary = object : KeptValues {
+            override fun read(key: String) = values.read(key)
+            override fun write(next: Map<String, String?>) {
+                if (fails) throw IOException("private storage details")
+                values.write(next)
+            }
+        }
+        val reports = mutableListOf<String>()
+        val sessions = PrefsSessions(boundary, vault, object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                reports += operation
+                assertEquals("The saved session could not be migrated.", error.message)
+                assertNull(error.cause)
+            }
+        })
+        assertNull(sessions.read())
+        assertNull(sessions.read())
+        assertEquals(mapOf("wm_session" to secret), values.held)
+        assertEquals(listOf("session_migrate"), reports)
+        fails = false
+        sessions.clear()
+        assertEquals(emptyMap<String, String>(), values.held)
+        sessions.write(secret)
+        assertEquals(secret, sessions.read())
     }
 
     @Test
@@ -117,7 +239,7 @@ class PrefsSessionsTest {
             override fun read(key: String): String? = values.read(key)
             override fun write(next: Map<String, String?>) {
                 writes += 1
-                if (fail) throw java.io.IOException("storage unavailable")
+                if (fail) throw IOException("storage unavailable")
                 values.write(next)
             }
         }
@@ -127,13 +249,13 @@ class PrefsSessionsTest {
         assertEquals(setOf("wm_identity.sealed"), values.held.keys)
         val before = values.held.toMap()
         fail = true
-        assertThrows(java.io.IOException::class.java) { sessions.commit("other-secret", User("B", "b@example.com")) }
+        assertThrows(IOException::class.java) { sessions.commit("other-secret", User("B", "b@example.com")) }
         assertEquals(before, values.held)
         val reopened = PrefsSessions(values, SecretVault { key })
         assertEquals(LocalSession.Owned(sam), reopened.localSession)
         assertEquals(secret, reopened.read())
         assertEquals(sam, reopened.user())
-        assertThrows(java.io.IOException::class.java) { PrefsSessions(FakeValues(), SecretVault { null }).commit(secret, sam) }
+        assertThrows(IOException::class.java) { PrefsSessions(FakeValues(), SecretVault { null }).commit(secret, sam) }
     }
 
     @Test fun unfinishedSignOutCannotRestoreTheSavedAccountAfterRestart() {
@@ -197,7 +319,7 @@ class PrefsSessionsTest {
         val prefs = object : KeptValues {
             override fun read(key: String) = values.read(key)
             override fun write(next: Map<String, String?>) {
-                if (fail) throw java.io.IOException("storage unavailable")
+                if (fail) throw IOException("storage unavailable")
                 values.write(next)
             }
         }
@@ -206,7 +328,7 @@ class PrefsSessionsTest {
         val proposed = ProposedSignIn("secret-B", User("B", "b@example.com"))
         sessions.stage(proposed)
         fail = true
-        assertThrows(java.io.IOException::class.java) { sessions.publishProposed(proposed) }
+        assertThrows(IOException::class.java) { sessions.publishProposed(proposed) }
         val restarted = PrefsSessions(values, SecretVault { key })
         assertEquals(LocalSession.Owned(sam), restarted.localSession)
         assertEquals(proposed, restarted.proposed)
@@ -325,11 +447,11 @@ class PrefsSessionsTest {
             override fun read(key: String) = values.read(key)
             override fun write(next: Map<String, String?>) {
                 refused = next["wm_identity.sealed"]
-                throw java.io.IOException("disk full")
+                throw IOException("disk full")
             }
         }
 
-        assertThrows(java.io.IOException::class.java) { PrefsSessions(failing, vault).commit(secret, sam) }
+        assertThrows(IOException::class.java) { PrefsSessions(failing, vault).commit(secret, sam) }
         keystore.answers = false
 
         assertEquals(emptyMap<String, String>(), values.held)

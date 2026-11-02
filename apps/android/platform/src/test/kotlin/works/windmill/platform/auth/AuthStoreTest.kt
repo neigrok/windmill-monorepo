@@ -56,7 +56,7 @@ class AuthStoreTest {
         assertEquals(WindmillApiException.Refused(410,
             Refusal("That code didn't work", "Check the digits, or send a fresh one.", "expired")), failure)
         assertEquals("That code didn't work. Check the digits, or send a fresh one.",
-            MagicLink.refusal(requireNotNull(failure), ofCode = true))
+            MagicLink.refusal(failure as WindmillApiException))
         assertEquals(AuthStatus.SignedOut, auth.status)
         assertEquals(LocalSession.Absent, sessions.localSession)
         assertNull(sessions.proposed)
@@ -70,6 +70,48 @@ class AuthStoreTest {
                 "operation" to "auth_request", "network_phase" to "response_body", "status" to "410"),
         ), events.map { (name, properties) -> name to (properties - "duration_ms") })
         assertTrue(events.last().second.getValue("duration_ms").toLong() >= 0)
+    }
+
+    @Test fun aSuccessfulCodeResponseWithoutASessionReportsMalformedAndStagesNothing() = runTest {
+        val sessions = MemorySessions()
+        val failures = mutableListOf<Triple<String, Throwable, Map<String, String>>>()
+        val auth = AuthStore(server.url("/"), sessions, telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                failures += Triple(operation, error, properties)
+            }
+        })
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}"""))
+
+        assertEquals(WindmillApiException.Malformed,
+            runCatching { auth.completeCode("a@example.com", "123456") }.exceptionOrNull())
+
+        assertEquals(listOf(Triple("auth_request", WindmillApiException.Malformed, mapOf(
+            "method" to "POST", "route" to "/v1/auth", "failure_kind" to "malformed",
+            "operation" to "auth_request", "network_phase" to "decode",
+        ))), failures.map { (operation, error, properties) -> Triple(operation, error, properties - "duration_ms") })
+        assertTrue(failures.single().third.getValue("duration_ms").toLong() >= 0)
+        assertNull(sessions.proposed)
+        assertEquals(LocalSession.Absent, sessions.localSession)
+    }
+
+    @Test fun legacyPlaintextWithABrokenVaultCannotAuthenticateRestore() = runTest {
+        val values = mutableMapOf("wm_session" to "legacy-secret",
+            "wm_user" to """{"id":"A","email":"a@example.com"}""")
+        val sessions = PrefsSessions(object : KeptValues {
+            override fun read(key: String) = values[key]
+            override fun write(next: Map<String, String?>) {
+                for ((key, value) in next) if (value == null) values.remove(key) else values[key] = value
+            }
+        }, SecretVault { null })
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}"""))
+        val auth = store(sessions)
+
+        auth.restore()
+
+        assertEquals(0, server.requestCount)
+        assertEquals(AuthStatus.Unresolved(User("A", "a@example.com")), auth.status)
+        assertNull(sessions.read())
     }
 
     @Test fun signInSealsIdentityBeforeWaitingForTheEngineDecisionAndPublishesAfterwards() = runTest {
@@ -389,19 +431,17 @@ class AuthStoreTest {
     }
 
     @Test
-    fun completeCodeWithoutACookieRefuses() = runTest {
+    fun completeCodeWithoutACookieIsMalformed() = runTest {
         server.enqueue(MockResponse().setBody("""{"user":{"id":"u1","email":"a@b.c"}}"""))
         val sessions = MemorySessions()
         val auth = store(sessions)
         val approved = mutableListOf<User>()
-        try {
-            auth.completeCode("a@b.c", "483201") { approved += it }
-            fail("expected unreadable")
-        } catch (unreadable: WindmillApiException.Refused) {
-            assertEquals(400, unreadable.status)
-        }
+        assertEquals(WindmillApiException.Malformed,
+            runCatching { auth.completeCode("a@b.c", "483201") { approved += it } }.exceptionOrNull())
         assertNull(sessions.read())
         assertNull(sessions.user())
+        assertNull(sessions.proposed)
+        assertEquals(LocalSession.Absent, sessions.localSession)
         assertEquals(emptyList<User>(), approved)
         assertEquals(AuthStatus.Unknown, auth.status)
     }
@@ -435,19 +475,17 @@ class AuthStoreTest {
     }
 
     @Test
-    fun completeLinkWithoutACookieRefuses() = runTest {
+    fun completeLinkWithoutACookieIsMalformed() = runTest {
         server.enqueue(MockResponse().setBody("""{"user":{"id":"u1","email":"a@b.c"}}"""))
         val sessions = MemorySessions()
         val auth = store(sessions)
         val approved = mutableListOf<User>()
-        try {
-            auth.completeLink("tok123") { approved += it }
-            fail("expected unreadable")
-        } catch (unreadable: WindmillApiException.Refused) {
-            assertEquals(400, unreadable.status)
-        }
+        assertEquals(WindmillApiException.Malformed,
+            runCatching { auth.completeLink("tok123") { approved += it } }.exceptionOrNull())
         assertNull(sessions.read())
         assertNull(sessions.user())
+        assertNull(sessions.proposed)
+        assertEquals(LocalSession.Absent, sessions.localSession)
         assertEquals(emptyList<User>(), approved)
         assertEquals(AuthStatus.Unknown, auth.status)
     }

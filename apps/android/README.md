@@ -53,7 +53,7 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - Sync foundation checks read the shared registries and corpora directly; the schema generator and
   independent JCS oracle checks also require Python 3 and Node.js.
 - `-Pwindmill.apiBase=http://10.0.2.2:8088` targets the host's local backend from an emulator.
-  Empty means the production host.
+  Empty means the production host; any other value must be an http(s) URL, or the app stops at launch.
 
 The placeholder Sentry DSN above is for local build validation. Release assembly requires
 `ANDROID_SENTRY_DSN`, or `-Pwindmill.sentryDsn`, for the dedicated Android project. Debug telemetry
@@ -73,7 +73,9 @@ it opened or sealed in memory, never a failure. A sealed value that a write remo
 fails to store leaves that memory; the vault lists the last 32 such values and never keeps them
 again, not even for a read already in flight. Restoring an unchanged account, or saving the engine
 credential already stored, seals and writes nothing. Backup is disabled by both manifest and
-extraction rules; a Keystore failure has no plaintext fallback.
+extraction rules; a Keystore failure has no plaintext fallback. An older build's plaintext session
+is used only after it is sealed and persisted. If migration fails, it stays unused on the phone
+for a later launch to recover; reads do not retry the failed migration during that process.
 Offline restore retains a previously bound account as unverified. Only a confirmed 401 expires
 identity. Sign-out stores the exact account, Keep/Discard choice and engine completion phase in a
 sealed intent. Startup resolves that intent before ordinary auth restore, credential bootstrap or
