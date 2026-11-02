@@ -185,14 +185,14 @@ function BoardView({
 
   const onExpandDone = () => setDoneExpanded(true);
   const complete = board !== null && board.overall.total > 0 && board.overall.done === board.overall.total;
+  const settleFocus = (id) => {
+    if (revealFocus.current?.dataset.stepId !== id) motion.settle(id);
+  };
 
   return (
     <div
       ref={boardRef}
-      onFocus={(event) => {
-        lastFocus.current = event.target;
-        if (revealFocus.current !== event.target) motion.settle(event.target.dataset.stepId);
-      }}
+      onFocus={(event) => { lastFocus.current = event.target; }}
       onPointerDown={(event) => motion.settle(event.target.closest('.st-board-card')?.dataset.stepId)}
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
       style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + var(--space-3))` : undefined, paddingBottom: bottomInset }}
@@ -231,6 +231,7 @@ function BoardView({
                 leaving={motion.leaving}
                 dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
                 pinned={motion.pinned}
+                settle={settleFocus}
                 onComplete={onComplete}
                 onNewStep={onNewStep && (() => onNewStep('band'))}
                 shown={shown}
@@ -256,6 +257,7 @@ function BoardView({
                   leaving={motion.leaving}
                   dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
                   pinned={motion.pinned}
+                  settle={settleFocus}
                   onComplete={onComplete}
                   onStandColumn={(column) => { if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column)); }}
                   band={breakpoint}
