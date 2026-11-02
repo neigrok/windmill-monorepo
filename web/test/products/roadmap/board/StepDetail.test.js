@@ -517,6 +517,9 @@ test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops th
     await card(page, 'Read the wind').click();
     await page.getByRole('button', { name: 'More' }).click();
     await page.getByRole('menuitem', { name: 'Delete step' }).click();
+    assert.equal(await page.getByRole('alertdialog').textContent(), 'Delete Read the wind?Removes this step · 1 branch resplicesCancelDelete');
+    assert.equal(await page.getByRole('dialog').count(), 1);
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'detached' });
     await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
     assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex), await hash(page)],
@@ -629,5 +632,24 @@ test('Chromium: with the Board’s gate closed a step in the URL is left alone �
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();
+  }
+});
+
+
+test('Chromium: delete confirmation cancels without writing on phone and desktop', async () => {
+  await ready;
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 960 }]) {
+    const errors = [];
+    const page = await openRoom({ viewport }, errors);
+    try {
+      await card(page, 'Read the wind').click();
+      await page.getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name: 'Delete step' }).click();
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click();
+      assert.equal(await page.getByRole('alertdialog').count(), 0);
+      assert.equal(await page.getByRole('dialog').count(), 1);
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'More');
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
   }
 });

@@ -1,12 +1,13 @@
 // The Board view layer: the identity row where no chrome carries one, the device notice, then the frame — the strip and
 // the columns for the band, or the skeleton, the load error or the empty roadmap in their place. The host owns the query.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './board.css';
 import { Board, BoardQuery } from './Board.js';
 import { kindOptions } from '../model/Legend.js';
 import { FilterStrip, FindStep } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
+import { useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
@@ -56,6 +57,14 @@ function BoardView({
   onRetry,
   onShare,
   onNewStep,
+  onComplete,
+  toast = null,
+  onToastReveal,
+  onToastUndo,
+  onToastShown,
+  onDisplayedOverall,
+  reveal = null,
+  quiet = 0,
   topInset = 0,
   bottomInset = 0,
   query: asked = EVERY_STEP,
@@ -65,8 +74,8 @@ function BoardView({
   const frame = boardFrame({ tree, loading, failed });
   const worn = useMemo(() => (frame === 'columns' ? kindOptions(tree, legend) : []), [frame, tree, legend]);
   const query = useMemo(() => asked.among(worn.map((kind) => kind.hue)), [asked, worn]);
-  const board = useMemo(
-    () => (frame === 'columns' ? new Board(tree, { completed, completedAt }, query) : null),
+  const nextBoard = useMemo(
+    () => ((frame === 'columns' || frame === 'empty') ? new Board(tree, { completed, completedAt }, query) : null),
     [frame, tree, completed, completedAt, query],
   );
   const [doneExpanded, setDoneExpanded] = useState(false);
@@ -78,8 +87,14 @@ function BoardView({
   const boardRef = useRef(null);
   const retried = useRef(false);
   const lastFocus = useRef(null);
+  const consumedReveal = useRef(null);
   const phone = breakpoint === 'phone';
+  const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
+  const board = motion.board;
+  const [visibleToast, setVisibleToast] = useState(null);
   const revealing = active && board !== null;
+
+  useLayoutEffect(() => { if (motion.counts) onDisplayedOverall?.(motion.counts.overall); }, [motion.counts, onDisplayedOverall]);
 
   // A step's column opens — the phone's tab, past the Done fold, out of the tablet's rail. A follow, never a pick, so it
   // emits nothing.
@@ -109,15 +124,33 @@ function BoardView({
   }, [revealing]);
 
   // The branch scope's title returns to its step: selects it and brings its card into view, without opening it.
-  const anchor = (id) => {
+  const anchor = (id, key = null) => {
     onAnchor(id);
     standColumnOf(id);
-    setAnchored({ id });
+    setAnchored({ id, key });
   };
   useEffect(() => {
     if (anchored === null) return;
-    boardRef.current?.querySelector(`.st-board-card[data-step-id="${CSS.escape(anchored.id)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-  }, [anchored]);
+    const card = boardRef.current?.querySelector(`.st-board-card[data-step-id="${CSS.escape(anchored.id)}"]`);
+    if (!card) return;
+    card.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    setAnchored(null);
+    if (anchored.key !== null && consumedReveal.current !== anchored.key) {
+      consumedReveal.current = anchored.key;
+      requestAnimationFrame(() => card.focus({ preventScroll: true }));
+    }
+  }, [anchored, board]);
+
+  useEffect(() => {
+    if (!reveal || consumedReveal.current === reveal.key || !board?.columnOf(reveal.id)) return;
+    anchor(reveal.id, reveal.key);
+  }, [reveal, board]);
+
+  useEffect(() => {
+    if (!toast || motion.phase !== 'settled') { setVisibleToast(null); return undefined; }
+    const timer = setTimeout(() => { setVisibleToast(toast.key); onToastShown?.(toast.key); }, 120);
+    return () => clearTimeout(timer);
+  }, [toast?.key, motion.phase]);
 
   // After Try again, focus follows the Board through its frames: the skeleton while it loads, then the columns' tab stop,
   // or Try again or New step if the roadmap failed again or came back empty.
@@ -143,7 +176,7 @@ function BoardView({
   };
 
   const onExpandDone = () => setDoneExpanded(true);
-  const complete = board !== null && board.overall.done === board.overall.total;
+  const complete = board !== null && board.overall.total > 0 && board.overall.done === board.overall.total;
 
   return (
     <div
@@ -155,28 +188,36 @@ function BoardView({
       {identity && (
         <header className="st-board-identity">
           <h1 className="st-board-identity-title" title={title}>{title}</h1>
-          {board && (
+          {frame === 'columns' && board && (
             <span className="st-board-identity-progress">
-              <span aria-hidden>{progressFigure({ ...board.overall, compact: phone })}</span>
-              <span className="st-board-spoken">{progressLabel(board.overall)}</span>
+              <span aria-hidden>{progressFigure({ ...motion.counts.overall, compact: phone })}</span>
+              <span className="st-board-spoken">{progressLabel(motion.counts.overall)}</span>
             </span>
           )}
           <ViewSwitch view="board" onSwitch={onSwitchView} phone={phone} />
-          {board && !phone && <FindStep query={query} onQuery={onQuery} />}
+          {frame === 'columns' && board && !phone && <FindStep query={query} onQuery={onQuery} />}
         </header>
       )}
       {notice}
       {frame === 'loading' && <BoardSkeleton phone={phone} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}
-      {frame === 'empty' && <EmptyRoadmap onNewStep={onNewStep} />}
+      {frame === 'empty' && <EmptyRoadmap onNewStep={onNewStep && (() => onNewStep('empty'))} />}
       {frame === 'columns' && (
         <UpNextRest.Provider
-          value={complete ? <RoadmapComplete phone={phone} total={board.overall.total} onShare={onShare} onNewStep={onNewStep} /> : null}
+          value={complete ? <RoadmapComplete phone={phone} total={board.overall.total} onShare={onShare} onNewStep={onNewStep && (() => onNewStep('complete'))} /> : null}
         >
           {phone
             ? (
               <PhoneSegments
                 board={board}
+                counts={motion.counts}
+                arrived={motion.arrived}
+                leaving={motion.leaving}
+                dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
+                pinned={motion.pinned}
+                settle={motion.settle}
+                onComplete={onComplete}
+                onNewStep={onNewStep && (() => onNewStep('band'))}
                 shown={shown}
                 onShow={setShown}
                 selectedId={selectedId}
@@ -194,6 +235,14 @@ function BoardView({
                 <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={anchor} />
                 <BoardColumns
                   board={board}
+                  counts={motion.counts}
+                  arrived={motion.arrived}
+                  leaving={motion.leaving}
+                dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
+                  pinned={motion.pinned}
+                  settle={motion.settle}
+                  onComplete={onComplete}
+                  onStandColumn={(column) => { if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column)); }}
                   band={breakpoint}
                   railed={railed}
                   onShowRail={() => setRailed(swapRail)}
@@ -207,6 +256,16 @@ function BoardView({
               </>
             )}
         </UpNextRest.Provider>
+      )}
+      {toast && <div className="st-board-spoken" role="status" aria-live="polite" aria-atomic="true">{visibleToast === toast.key ? toast.message : ''}</div>}
+      {toast && visibleToast === toast.key && (
+        <div className={`st-board-toast${toast.leaving ? ' is-leaving' : ''}${toast.act === 'complete' ? ' st-board-toast--complete' : ''}`}>
+          {phone && toast.act === 'complete' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m5 12 4 4 10-10" /></svg>}
+          {toast.reveal
+            ? <button type="button" className="st-board-toast-message" onClick={onToastReveal}>{toast.message}</button>
+            : <span className="st-board-toast-message">{toast.message}</span>}
+          {toast.action && <button type="button" className="st-board-toast-undo" onClick={onToastUndo}>{toast.action.label}</button>}
+        </div>
       )}
     </div>
   );

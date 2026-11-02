@@ -65,6 +65,19 @@ export class BoardQuery {
     return new BoardQuery({ ...this, ...change });
   }
 
+  revealing(step, tree) {
+    const kinds = this.kinds.length > 0 && !this.kinds.includes(step.color ?? DEFAULT_NODE_COLOR) ? [] : this.kinds;
+    const needle = this.search.trim().toLowerCase();
+    const matches = !needle || (step.label ?? '').toLowerCase().includes(needle) || (step.description ?? '').toLowerCase().includes(needle);
+    const search = matches ? this.search : '';
+    const withinBranch = this.branch === null || this.branch === step.id || (tree && (!tree.nodesById.has(this.branch)
+      || tree.ancestorsOf(this.branch).some((node) => node.id === step.id)
+      || tree.descendantsOf(this.branch).some((node) => node.id === step.id)));
+    const branch = withinBranch ? this.branch : null;
+    if (kinds === this.kinds && search === this.search && branch === this.branch) return this;
+    return this.with({ kinds, search, branch });
+  }
+
   sortedBy(sort) { return this.with({ sort }); }
   searchingFor(search) { return this.with({ search }); }
   inBranch(branch) { return this.with({ branch }); }
@@ -95,6 +108,7 @@ export class Board {
   constructor(tree, progress, { sort = 'roadmap', kinds = [], search = '', branch = null } = {}) {
     if (!BOARD_SORTS.includes(sort)) throw new Error(`Unknown board sort "${sort}"`);
 
+    this.treeId = tree.id;
     this.states = UnlockRules.derive(tree, progress);
     this.overall = {
       done: tree.nodes.filter((step) => this.states.get(step.id) === 'complete').length,
@@ -148,18 +162,22 @@ export class Board {
   }
 }
 
-// The steps that arrived between two Boards of one roadmap: a step that became up next, or a new step that is not done.
-// A reset back to Up next is a downward change and stays quiet; a roadmap with no step in common arrives whole, so nothing wakes.
-export function arrivals(previous, next) {
+export function regroup(previous, next, { quiet = false } = {}) {
   const arrived = new Set();
-  let shared = false;
+  const leaving = new Set();
+  const moved = [];
+  if (quiet || previous.treeId !== next.treeId) return { arrived, leaving, moved };
   for (const [id, state] of next.states) {
     const before = previous.states.get(id);
-    shared ||= before !== undefined;
     if (state === 'available' && before === 'locked') arrived.add(id);
     if (state !== 'complete' && before === undefined) arrived.add(id);
+    if (before !== undefined && state !== before) {
+      leaving.add(id);
+      moved.push({ id, from: previous.columnOf(id), to: next.columnOf(id) });
+    }
   }
-  return shared ? arrived : new Set();
+  for (const id of previous.states.keys()) if (!next.states.has(id)) leaving.add(id);
+  return { arrived, leaving, moved };
 }
 
 function unknownLast(valueA, valueB, compare) {

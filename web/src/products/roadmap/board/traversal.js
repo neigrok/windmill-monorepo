@@ -74,7 +74,7 @@ function focusInView(element) {
 
 // Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
 // a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
-export function useRovingFocus(layout) {
+export function useRovingFocus(layout, { onComplete } = {}) {
   const ref = useRef(null);
   const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
@@ -84,13 +84,14 @@ export function useRovingFocus(layout) {
   useEffect(() => {
     if (pending === null) return;
     const element = elementOfStop(ref.current, pending);
+    if (!element) return;
     setPending(null);
-    if (element) focusInView(element);
-  }, [pending]);
+    focusInView(element);
+  }, [pending, layout]);
 
   useEffect(() => {
     const lost = focused.current;
-    if (lost === null || lost.isConnected) return;
+    if (pending !== null || lost === null || lost.isConnected) return;
     focused.current = null;
     const fallen = document.activeElement === null || document.activeElement === document.body;
     const element = fallen && stop !== null ? elementOfStop(ref.current, stop) : null;
@@ -116,7 +117,14 @@ export function useRovingFocus(layout) {
   const onKeyDown = (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const from = stopOfElement(event.target);
-    if (from === null) return;
+    if (from === null || event.defaultPrevented || event.target.closest('[inert], input, textarea, [contenteditable="true"]')) return;
+    if (event.key.toLowerCase() === 'c') {
+      if (document.querySelector('[aria-modal="true"]') || from.column !== 'upNext' || !onComplete || !event.target.matches('.st-board-card')) return;
+      event.preventDefault();
+      onComplete(from.id, 'key');
+      setPending({ column: 'done', id: from.id });
+      return;
+    }
     const box = event.target.getBoundingClientRect();
     const y = (box.top + box.bottom) / 2;
     const nearest = (column) => nearestStop(y, [...ref.current.querySelectorAll(`[data-column="${column.name}"] :is(.st-board-card, .st-board-show-all)`)]
@@ -132,5 +140,5 @@ export function useRovingFocus(layout) {
   const stopIn = (column) => (stop?.column === column ? stop.id : undefined);
   const pendingIn = (column) => (pending?.column === column ? pending.id : undefined);
 
-  return { ref, stopIn, pendingIn, onFocus, onBlur, onKeyDown };
+  return { ref, stopIn, pendingIn, onFocus, onBlur, onKeyDown, follow: setPending };
 }

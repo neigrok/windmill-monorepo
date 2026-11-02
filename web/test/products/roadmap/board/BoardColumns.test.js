@@ -148,7 +148,7 @@ test('BoardColumns — the columns are one tab stop: the first Up next card, wit
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
@@ -156,6 +156,8 @@ import '/src/products/roadmap/board/board.css';
 import { BoardColumns, DEFAULT_RAIL, swapRail } from '/src/products/roadmap/board/BoardColumns.jsx';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { Board } from '/src/products/roadmap/board/Board.js';
+import { useRegroup } from '/src/products/roadmap/board/ColumnCards.jsx';
+import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 
 window.openBoard = (nodes, initiallyCompleted, band) => {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
@@ -169,13 +171,33 @@ window.openBoard = (nodes, initiallyCompleted, band) => {
     window.selected = selectedId;
     const board = useMemo(() => new Board(tree, { completed: new Set(completed),
       completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) }), [completed]);
+    const rootRef = useRef(null);
+    const motion = useRegroup(board, { root: rootRef });
     const edge = (label, side) => React.createElement('button', { type: 'button', style: { position: 'fixed', [side]: 0, left: 0, zIndex: 2 } }, label);
     return React.createElement(React.Fragment, null,
       edge('Before the Board', 'top'),
-      React.createElement('div', { className: 'st-board st-board--columns', style: { height: '100vh' } },
-        React.createElement(BoardColumns, { board, band, railed, onShowRail: () => setRailed(swapRail), selectedId, onSelect: setSelectedId,
+      React.createElement('div', { ref: rootRef, className: 'st-board st-board--columns', style: { height: '100vh' } },
+        React.createElement(BoardColumns, { board: motion.board, counts: motion.counts, arrived: motion.arrived, leaving: motion.leaving, pinned: motion.pinned, settle: motion.settle, onComplete: window.complete, band, railed, onShowRail: () => setRailed(swapRail), selectedId, onSelect: setSelectedId,
           doneExpanded, onExpandDone: () => setDoneExpanded(true) })),
       edge('After the Board', 'bottom'));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.openLoadingBoard = (nodes) => {
+  const tree = new SkillTree({ id: 'loading', title: 'Loading', nodes });
+  function Room() {
+    const [loading, setLoading] = useState(true);
+    window.finishLoading = () => setLoading(false);
+    return React.createElement(BoardView, { tree: loading ? null : tree, loading, completed: new Set(), completedAt: {}, breakpoint: 'desktop', active: true, onSelect: () => {}, onQuery: () => {} });
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.openFirstCreate = () => {
+  function Room() {
+    const [nodes, setNodes] = useState([]);
+    const tree = useMemo(() => new SkillTree({ id: 'first', title: 'First', nodes }), [nodes]);
+    window.createFirstStep = () => setNodes([{ id: 'one', label: 'First step', prerequisites: [] }]);
+    return React.createElement(BoardView, { tree, completed: new Set(), completedAt: {}, breakpoint: 'desktop', active: true, onSelect: () => {}, onQuery: () => {}, onNewStep: () => {} });
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
@@ -445,7 +467,7 @@ test('Chromium: a focused card whose step moves to another column hands focus to
     await page.locator('.st-board-card[tabindex="0"]').focus();
     assert.equal(await focused(page), 'Read the wind');
     await page.evaluate(() => complete('wind'));
-    await page.waitForFunction(() => document.activeElement !== document.body);
+    await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'dock');
     assert.deepEqual([await focused(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
     assert.deepEqual(errors, []);
   } finally {
@@ -581,4 +603,63 @@ test('Chromium: scrolling a 1,770-card column end to end keeps the window small 
   } finally {
     await page.close();
   }
+});
+
+
+test('Chromium: C completes only a focused Up next card and follows the same step into Done', async () => {
+  await ready;
+  const errors = [];
+  const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
+  try {
+    await page.locator('.st-board-card[data-step-id="dock"]').focus();
+    await page.keyboard.press('c');
+    assert.equal(await page.locator('[data-column="locked"] .st-board-card[data-step-id="dock"]').count(), 1);
+    await page.locator('.st-board-card[data-step-id="wind"]').focus();
+    await page.keyboard.press('c');
+    await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'wind' && document.activeElement.closest('[data-column]').dataset.column === 'done');
+    assert.deepEqual([await focused(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Read the wind', 0]);
+    await page.keyboard.press('c');
+    assert.equal(await page.locator('[data-column="done"] .st-board-card[data-step-id="wind"]').count(), 1);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+test('Chromium: a loading Board can mount its columns without a stale null displayed board', async () => {
+  await ready;
+  const errors = [];
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(`${origin}/board-columns-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openLoadingBoard([{ id: 'one', label: 'First step', prerequisites: [] }]));
+    await page.waitForFunction(() => window.finishLoading);
+    await page.evaluate(() => finishLoading());
+    await page.locator('.st-board-card[data-step-id="one"]').waitFor();
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+test('Chromium: first creation never shows a completed empty roadmap during regroup', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(`${origin}/board-columns-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openFirstCreate());
+    await page.waitForFunction(() => window.createFirstStep);
+    await page.evaluate(() => {
+      window.completedEmpty = false;
+      const observer = new MutationObserver(() => { window.completedEmpty ||= document.body.textContent.includes('All 0 steps done'); });
+      observer.observe(document.getElementById('root'), { subtree: true, childList: true });
+      createFirstStep();
+    });
+    await page.locator('.st-board-card[data-step-id="one"]').waitFor();
+    assert.equal(await page.evaluate(() => window.completedEmpty), false);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
 });

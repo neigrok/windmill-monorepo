@@ -90,3 +90,11 @@ test('ColumnCards — a long column first paints the top of its run, the roving 
     'spacer 1326', '150 stop', 'spacer 1674', '120', 'spacer 6894', '0',
   ]);
 });
+
+
+test('ColumnCards — travelling cards stay rendered outside the viewport before and after regroup', () => {
+  const board = knotsDone(200);
+  const html = runMarkup(board, { shown: board.shownCards('done', { doneExpanded: true }), pinned: new Set(['knot0', 'knot100']) });
+  const ids = [...html.matchAll(/data-step-id="([^"]+)"/g)].map(([, id]) => id);
+  assert.deepEqual(ids, [...Array.from({ length: 26 }, (_, index) => `knot${199 - index}`), 'knot100', 'knot0']);
+});

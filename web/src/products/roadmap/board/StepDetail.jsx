@@ -12,13 +12,15 @@ import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { NodeWorkspace, SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { coverBeneath } from './BoardView.jsx';
+import { deletionCost } from './acts.js';
+import { deleteCostLine } from '../ui/mobile/editorSheet.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
 import { StepIcons } from './StepIcons.jsx';
 import './modal.css';
 import './page.css';
 import {
   COLUMN_TITLES, LABELS, LINK_COPIED, STATE_WORDS, STEP_DETAIL,
-  backTo, completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
+  DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
 } from './copy.js';
 
 const UNDO_HOLD_MS = 6000;
@@ -55,6 +57,7 @@ export function StepDetail({
   onOpenInGraph,
   onViewBranch,
   onDelete,
+  onDeletePrompt,
   onNotify,
 }) {
   const { id, trail, door } = address;
@@ -68,6 +71,7 @@ export function StepDetail({
   const [stepShown, setStepShown] = useState(id);
   const [section, setSection] = useState('overview');
   const [outcome, setOutcome] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   originRef.current = trail[0];
   leaveRef.current = surface === 'page' ? onBack : onClose;
 
@@ -75,6 +79,7 @@ export function StepDetail({
     setStepShown(id);
     setSection('overview');
     setOutcome(null);
+    setDeleting(false);
   }
 
   // One layer for the whole visit, whichever frame it holds. It covers everything beneath it and takes Escape wherever
@@ -164,7 +169,7 @@ export function StepDetail({
   const menuItems = [
     stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, run: copyLink },
     { label: STEP_DETAIL.openInGraph, icon: StepIcons.graph, run: () => { act('openInGraph'); onOpenInGraph(id); } },
-    editable && deletable && { label: STEP_DETAIL.deleteStep, icon: StepIcons.trash, danger: true, run: () => { act('delete'); onDelete(id); } },
+    editable && deletable && { label: STEP_DETAIL.deleteStep, icon: StepIcons.trash, danger: true, run: () => { act('delete'); setDeleting(true); } },
   ].filter(Boolean);
 
   // Tab wraps inside the layer.
@@ -188,7 +193,13 @@ export function StepDetail({
     : null;
   const shownSection = editable ? section : 'overview';
   const identity = <StepIdentity step={facts.step} titleId={titleId} />;
-  const menu = <StepMenu items={menuItems} />;
+  const cancelDelete = () => { setDeleting(false); onDeletePrompt?.('cancel'); };
+  const confirm = deleting ? {
+    title: deleteConfirm({ step: titleOf(facts.step) }), cost: deleteCostLine(deletionCost(tree, [id])),
+    cancel: cancelDelete, remove: () => { onDeletePrompt?.('confirm'); setDeleting(false); onDelete(id); },
+  } : null;
+  const menu = <StepMenu items={menuItems} confirm={surface === 'modal' ? confirm : null} />;
+  const sheet = surface === 'page' && confirm ? <DeleteConfirmation confirm={confirm} phone /> : null;
   const sections = editable ? <StepSections idPrefix={sectionsId} section={section} onSection={setSection} /> : null;
   const actions = editable && facts.column !== 'locked'
     ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset} />
@@ -243,6 +254,7 @@ export function StepDetail({
             {offer}
             {content}
           </div>
+          {sheet}
           {(sections || actions) && (
             <div className="st-board-step-page-pinned">
               {sections}
@@ -450,7 +462,7 @@ function SubtaskOffer({ onComplete }) {
 }
 
 // The ⋯ popover: it closes on a choice, on Escape (focus back on ⋯) and on a pointer landing outside it.
-function StepMenu({ items }) {
+function StepMenu({ items, confirm }) {
   const [open, setOpen] = useState(false);
   const box = useRef(null);
   const opener = useRef(null);
@@ -495,6 +507,7 @@ function StepMenu({ items }) {
       >
         <StepIcons.more />
       </button>
+      {confirm && <DeleteConfirmation confirm={confirm} />}
       {open && (
         <div className="st-board-step-menu-list" role="menu" onKeyDown={onKeyDown}>
           {items.map((item) => (
@@ -515,6 +528,55 @@ function StepMenu({ items }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function DeleteConfirmation({ confirm, phone = false }) {
+  const ref = useRef(null);
+  const title = useId();
+  useEffect(() => {
+    const opener = document.activeElement;
+    ref.current.querySelector('button').focus();
+    const hidden = [];
+    let branch = ref.current;
+    while (branch.parentElement && !branch.classList.contains('st-board-step-layer')) {
+      for (const sibling of branch.parentElement.children) {
+        if (sibling === branch || sibling.inert) continue;
+        sibling.inert = true;
+        hidden.push(sibling);
+      }
+      branch = branch.parentElement;
+    }
+    const away = (event) => {
+      if (ref.current.contains(event.target)) return;
+      event.preventDefault(); event.stopPropagation(); confirm.cancel();
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      for (const element of hidden) element.inert = false;
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
+  return (
+    <div className={phone ? 'st-board-delete-overlay' : undefined}>
+      <div ref={ref} className={`st-board-delete${phone ? ' st-board-delete--phone' : ''}`} role="alertdialog" aria-modal="true" aria-labelledby={title}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); confirm.cancel(); }
+          if (event.key === 'Tab') {
+            event.preventDefault(); event.stopPropagation();
+            const buttons = [...ref.current.querySelectorAll('button')];
+            buttons[(buttons.indexOf(document.activeElement) + 1) % buttons.length].focus();
+          }
+        }}>
+        <h3 id={title}>{confirm.title}</h3>
+        <p>{confirm.cost}</p>
+        <div className="st-board-delete-buttons">
+          <button type="button" onClick={confirm.cancel}>{DELETE_CONFIRM.cancel}</button>
+          <button type="button" className="st-board-delete-danger" onClick={confirm.remove}>{DELETE_CONFIRM.delete}</button>
+        </div>
+      </div>
     </div>
   );
 }

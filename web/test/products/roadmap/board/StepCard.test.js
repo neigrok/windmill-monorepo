@@ -104,3 +104,15 @@ test('StepCard — a step that just arrived wakes by class, and a card off the r
   assert.equal(cardMarkup('dock', { arrived: true, tabIndex: -1 }).split('>')[0],
     '<button type="button" class="st-board-card st-board-card--locked is-arrived" style="--st-board-rail:var(--kind-terracotta)" data-step-id="dock" tabindex="-1"');
 });
+
+
+test('StepCard — phone completion follows the card in DOM order with a named real button; other columns never expose it', () => {
+  const html = cardMarkup('wind', { swipe: true, open: true, onSwipe: () => {}, onComplete: () => {} });
+  const expectedCard = cardMarkup('wind');
+  assert.equal(html, '<div class="st-board-swipe is-open" data-step-id="wind" style="--swipe-offset:104px">' + expectedCard
+    + '<button type="button" class="st-board-swipe-complete" tabindex="0" aria-label="Complete Read the wind">'
+    + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4 10-10"></path></svg>'
+    + '<span>Complete</span></button></div>');
+  assert.equal(cardMarkup('rig', { swipe: true }), cardMarkup('rig'));
+  assert.equal(cardMarkup('dock', { swipe: true }), cardMarkup('dock'));
+});

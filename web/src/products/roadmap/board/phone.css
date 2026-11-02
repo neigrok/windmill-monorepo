@@ -21,6 +21,7 @@
   min-height: 0;
   visibility: hidden;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;

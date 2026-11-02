@@ -317,3 +317,26 @@
     animation: st-board-card-fade var(--duration-fast) var(--ease-standard);
   }
 }
+
+.st-board-card.is-leaving { overflow: hidden; pointer-events: none; }
+.st-board-swipe { position: relative; min-width: 0; touch-action: pan-y; }
+.st-board-swipe > .st-board-card { position: relative; z-index: 1; width: 100%; translate: var(--swipe-offset) 0; transition: translate 280ms var(--ease-standard); }
+.st-board-swipe.is-dragging > .st-board-card { transition: none; }
+.st-board-swipe-complete { position: absolute; inset: 0 auto 0 0; display: flex; width: 96px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; border-radius: 18px; background: var(--color-brand); color: var(--text-on-accent); font: 800 12px/18px var(--font-body); cursor: pointer; }
+.st-board-toast { position: absolute; z-index: 4; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); min-height: 52px; box-sizing: border-box; padding: 4px 4px 4px 16px; border: 1px solid var(--border-subtle); border-left: 3px solid var(--color-success); border-radius: 16px; background: var(--surface-card); color: var(--text-primary); box-shadow: var(--shadow-md); animation: st-board-toast-enter 150ms ease both; }
+.st-board-toast.is-leaving { opacity: 0; transition: opacity 280ms ease; }
+.st-board-toast-message { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: 600 14px/20px var(--font-body); }
+button.st-board-toast-message { cursor: pointer; }
+.st-board-toast-undo { flex-shrink: 0; min-width: 64px; min-height: 44px; border: 0; background: transparent; color: var(--color-brand); font: 800 14px/20px var(--font-body); cursor: pointer; }
+.st-board--phone .st-board-toast { bottom: calc(120px + env(safe-area-inset-bottom)); width: calc(100% - 32px); border-left-width: 1px; border-radius: 12px; }
+.st-board--phone .st-board-toast-message { font-weight: 700; }
+@keyframes st-board-toast-enter { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .st-board-toast { animation-name: st-board-toast-fade; } }
+@keyframes st-board-toast-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .st-board-swipe > .st-board-card { transition: none; } }
+.st-board-card.is-restored { animation: st-board-restore 280ms ease both; }
+@keyframes st-board-restore { from { opacity: .45; } to { opacity: 1; } }
+
+.st-board-swipe-complete { opacity: 0; pointer-events: none; }
+.st-board-swipe.is-open > .st-board-swipe-complete, .st-board-swipe.is-dragging > .st-board-swipe-complete { opacity: 1; pointer-events: auto; }
+:is(.st-board-swipe-complete, .st-board-toast-message, .st-board-toast-undo):focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }

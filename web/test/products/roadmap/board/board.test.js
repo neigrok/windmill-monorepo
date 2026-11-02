@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
-import { Board, BoardQuery, BOARD_SORTS, DONE_RECENT_LIMIT, arrivals } from '../../../../src/products/roadmap/board/Board.js';
+import { Board, BoardQuery, BOARD_SORTS, DONE_RECENT_LIMIT, regroup } from '../../../../src/products/roadmap/board/Board.js';
 
 function learnToSail(extra = []) {
   const imported = Date.parse('2026-10-20T09:00:00Z');
@@ -347,12 +347,12 @@ test('Board — shownCards folds only Done, and an expanded Done shows every car
   ]);
 });
 
-test('arrivals — a step that became up next or a new unfinished step arrives; a reset, a completion and a new done step stay quiet', () => {
+test('regroup — a step that became up next or a new unfinished step arrives; a reset, a completion and a new done step stay quiet', () => {
   const tree = learnToSail();
   const before = new Board(tree, initialProgress());
   const windDone = new Board(tree, { completed: new Set(['course', 'parts', 'rig', 'wind']), completedAt: {} });
-  assert.deepEqual([...arrivals(before, windDone)], ['dock']);
-  assert.deepEqual([...arrivals(windDone, before)], []);
+  assert.deepEqual([...regroup(before, windDone).arrived], ['dock']);
+  assert.deepEqual([...regroup(windDone, before).arrived], []);
 
   const grown = learnToSail([
     { id: 'reef', label: 'Reefing basics', prerequisites: ['wind'] },
@@ -360,14 +360,14 @@ test('arrivals — a step that became up next or a new unfinished step arrives; 
     { id: 'logged', label: 'Logged trip', prerequisites: [] },
   ]);
   const after = new Board(grown, { completed: new Set(['course', 'parts', 'rig', 'logged']), completedAt: {} });
-  assert.deepEqual([...arrivals(before, after)], ['reef', 'knot']);
+  assert.deepEqual([...regroup(before, after).arrived], ['reef', 'knot']);
 });
 
-test('arrivals — a Board that shares no step with the one before is a roadmap arriving whole, so nothing wakes', () => {
+test('regroup — a Board that shares no step with the one before is a roadmap arriving whole, so nothing wakes', () => {
   const empty = new Board(new SkillTree({ id: 'empty', title: 'Empty', nodes: [] }), { completed: new Set(), completedAt: {} });
   const other = new Board(new SkillTree({ id: 'other', title: 'Other', nodes: [{ id: 'x', label: 'X', prerequisites: [] }] }), { completed: new Set(), completedAt: {} });
-  assert.deepEqual([...arrivals(empty, new Board(learnToSail(), initialProgress()))], []);
-  assert.deepEqual([...arrivals(other, new Board(learnToSail(), initialProgress()))], []);
+  assert.deepEqual([...regroup(empty, new Board(learnToSail(), initialProgress())).arrived], []);
+  assert.deepEqual([...regroup(other, new Board(learnToSail(), initialProgress())).arrived], []);
 });
 
 test('Board — Created sorts Locked and Up next, newest or oldest, ties in authored order; Done stays newest completed', () => {
@@ -460,4 +460,31 @@ test('Board — a query builds the Board: Created · newest orders Locked and Up
     '  Name the boat parts',
     'progress 3/8',
   ].join('\n'));
+});
+
+test('regroup tracks travel, removal, first creation and quiet Undo', () => {
+  const tree = learnToSail();
+  const before = new Board(tree, initialProgress());
+  const after = new Board(tree, advanceProgress(initialProgress(), ['wind'], 'complete', 100));
+  assert.deepEqual(regroup(before, after), {
+    arrived: new Set(['dock']), leaving: new Set(['wind', 'dock']),
+    moved: [{ id: 'wind', from: 'upNext', to: 'done' }, { id: 'dock', from: 'locked', to: 'upNext' }],
+  });
+  assert.deepEqual(regroup(after, before, { quiet: true }), { arrived: new Set(), leaving: new Set(), moved: [] });
+  const empty = new Board(new SkillTree({ id: 't', title: 'T', nodes: [] }), { completed: new Set() });
+  const first = new Board(new SkillTree({ id: 't', title: 'T', nodes: [{ id: 'first', label: 'First', prerequisites: [] }] }), { completed: new Set() });
+  assert.deepEqual(regroup(empty, first), { arrived: new Set(['first']), leaving: new Set(), moved: [] });
+  assert.deepEqual(regroup(first, empty), { arrived: new Set(), leaving: new Set(['first']), moved: [] });
+});
+
+test('revealing clears only restrictions hiding the step and retains the sort', () => {
+  const tree = learnToSail();
+  const step = tree.nodeOrThrow('wind');
+  const matching = new BoardQuery({ sort: 'oldest', kinds: [step.color], search: ' WIND ', branch: 'dock' });
+  assert.equal(matching.revealing(step, tree), matching);
+  const hidden = new BoardQuery({ sort: 'newest', kinds: ['plum'], search: 'astronomy', branch: 'bowline' });
+  assert.deepEqual(hidden.revealing(step, tree), new BoardQuery({ sort: 'newest' }));
+  assert.deepEqual(hidden.searchingFor('wind').revealing(step, tree), new BoardQuery({ sort: 'newest', search: 'wind' }));
+  const description = new BoardQuery({ search: tree.nodeOrThrow('course').description });
+  assert.equal(description.revealing(tree.nodeOrThrow('course'), tree), description);
 });

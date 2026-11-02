@@ -47,7 +47,7 @@ function card(column, kind, id, title, { reason = null, excerpt = null, selected
 }
 
 function pane(name, title, shown, cards) {
-  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} " data-column="${name}">`
+  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} " tabindex="-1" data-column="${name}">`
     + `<h2 class="st-board-phone-heading">${title}</h2><div class="st-board-cards">${cards.join('')}</div></div>`;
 }
 
@@ -92,11 +92,11 @@ test('PhoneSegments — the host’s shown column shows, newest completion first
   assert.equal(markup({ shown: 'done', selectedId: 'parts' }), learnToSailMarkup('done', 'parts'));
 });
 
-test('PhoneSegments — an empty column’s pane takes focus, so its tab never points at nothing focusable', () => {
+test('PhoneSegments — scroll panes remain outside the Tab order, including empty columns', () => {
   const tree = new SkillTree({ id: 'one', title: 'One', nodes: [{ id: 'only', label: 'Only step', prerequisites: [] }] });
   const html = markup({ board: new Board(tree, { completed: new Set(['only']), completedAt: { only: 1 } }) });
-  assert.deepEqual([...html.matchAll(/id=":R0:panel-(\w+)"[^>]*class="[^"]*"( tabindex="0")?/g)].map(([, name, focusable]) => `${name}${focusable ? ' focusable' : ''}`),
-    ['locked focusable', 'upNext focusable', 'done']);
+  assert.deepEqual([...html.matchAll(/id=":R0:panel-(\w+)"[^>]*tabindex="(-?\d+)"/g)].map(([, name, tabIndex]) => [name, tabIndex]),
+    [['locked', '-1'], ['upNext', '-1'], ['done', '-1']]);
 });
 
 // A 5,000-step roadmap with 1,770 Locked, 30 Up next and 3,200 Done: thirty open roots, every locked step waiting on the first.
@@ -138,13 +138,16 @@ window.openBoard = (nodes, completed) => {
   window.expansions = 0;
   function Room() {
     const [selectedId, setSelectedId] = useState(null);
+    const [actions, setActions] = useState(false);
+    window.setActions = setActions;
+    window.completions ??= [];
     const [shown, setShown] = useState('upNext');
     const [doneExpanded, setDoneExpanded] = useState(false);
     const [boardActive, setBoardActive] = useState(true);
     window.setBoardActive = setBoardActive;
     return React.createElement('div', { className: 'st-view-layer--board' + (boardActive ? ' is-active' : '') },
       React.createElement('div', { className: 'st-board st-board--phone', style: { height: '100vh' } },
-        React.createElement(PhoneSegments, { board, shown, onShow: setShown, selectedId, onSelect: setSelectedId, doneExpanded,
+        React.createElement(PhoneSegments, { board, onComplete: actions ? (id, door) => window.completions.push([id, door]) : undefined, shown, onShow: setShown, selectedId, onSelect: setSelectedId, doneExpanded,
           onExpandDone: () => { window.expansions += 1; setDoneExpanded(true); } })));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
@@ -383,3 +386,28 @@ function tabLayout(page) {
     return { rows: [...rows.values()], whole, heading: getComputedStyle(document.querySelector('.st-board-phone-pane.is-shown .st-board-phone-heading')).display };
   });
 }
+
+
+test('Chromium: Tab reveals Complete, Escape closes it, and only pressing its button completes', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(`${origin}/phone-segments-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openBoard([{ id: 'one', label: 'First step', prerequisites: [] }], []));
+    await page.waitForFunction(() => window.setActions);
+    await page.evaluate(() => setActions(true));
+    await page.locator('.st-board-card').focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.getByRole('button', { name: 'Complete First step' }).evaluate((element) => element === document.activeElement), true);
+    assert.equal(await page.locator('.st-board-swipe.is-open').count(), 1);
+    await page.keyboard.press('Escape');
+    assert.deepEqual([await page.locator('.st-board-swipe.is-open').count(), await page.evaluate(() => window.completions)], [0, []]);
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await page.evaluate(() => window.completions), [['one', 'swipe']]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
