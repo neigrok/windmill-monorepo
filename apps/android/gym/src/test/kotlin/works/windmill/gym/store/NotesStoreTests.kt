@@ -30,8 +30,7 @@ class NotesStoreTests {
     @Test
     fun failedNotebookReadsKeepTheWholeSnapshotAndRecover() = runTest {
         for (failure in listOf(IOException("read unavailable"), CancellationException("read unavailable"))) {
-            val expectedFailures = if (failure is CancellationException) emptyList()
-                else listOf("gym.readNotes" to emptyMap<String, String>())
+            val expectedFailures = listOf("gym.readNotes" to emptyMap<String, String>())
             var armed = false
             val failures = mutableListOf<Pair<String, Map<String, String>>>()
             val telemetry = object : Telemetry {
@@ -135,7 +134,7 @@ class NotesStoreTests {
             assertEquals(WriteFailure.NoAnswer, room.store.notes.deleteNote("note_a"))
             assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.notes.reorderNotes("note_a", listOf("note_b", "note_a")))
             assertEquals(listOf(first, second), room.store.notes.all)
-            assertEquals(emptyList<String>(), failures)
+            assertEquals(listOf("gym.saveNote", "gym.deleteNote", "gym.reorderNotes"), failures)
 
             armed = false
             assertEquals(before, room.engine.snapshot())
