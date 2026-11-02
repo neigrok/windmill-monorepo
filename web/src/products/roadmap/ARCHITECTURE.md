@@ -111,7 +111,9 @@ touched. While open the layer makes everything beneath it inert and wraps Tab in
 closes the topmost editor or confirmation before the detail. Edit step opens the shared composer over the detail.
 Workspace and History use `StepWorkspace.jsx`: named checkboxes, the shared note renderer, personal links and static
 activity rows grouped through `ActivityLog`. The note editor keeps a local draft and saves once through workspace actions;
-changed Cancel asks to discard. Formatting uses pure `formatNote`; phone keyboard sizing follows the composer viewport.
+changed Cancel asks to discard. Closing the detail through system Back or a remote deletion drops its local note draft
+without saving. Formatting uses pure `formatNote`; phone keyboard sizing follows the composer viewport. The editor keeps
+source ranges from the shared renderer; each browser edit changes only its mapped source span, preserving untouched note bytes.
 A phone subtask check offers an in-page Undo for six seconds; desktop checks stay quiet. Editor completion returns focus
 to its opener; other disappearing controls recover to the status row or dialog. Closing returns focus to the card
 the visit began on, or to the columns' tab stop once that card has gone (deleted, or outside the branch View branch
@@ -181,7 +183,8 @@ page in the 600px dialog from 744px and a full-screen page on phones. `StepCompo
 selection and query so resizing between these layouts preserves them. With zero candidates the
 Prerequisites row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots
 start in the first legend kind. Layout and focus handling live in `StepComposer.jsx`,
-`PrerequisitePicker.jsx`, `composerFocus.js` and `composer.css`; the shared `KindChoice` lives in
+`PrerequisitePicker.jsx`, `composerFocus.js`, `DiscardDraft.jsx` and `composer.css`; `composerFocus.js` owns shared layer
+focus and viewport hooks, while `StepDetail` owns fallback focus within the detail. The shared `KindChoice` lives in
 `BoardControls.jsx` with its styles in `controls.css`.
 
 ## Package map

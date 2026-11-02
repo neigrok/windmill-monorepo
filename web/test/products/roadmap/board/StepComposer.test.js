@@ -308,7 +308,13 @@ for (const width of [744, 1024, 1439, 1440]) {
         await page.locator(`.st-board-picker--${width < 1440 ? 'page' : 'panel'}`).waitFor();
         assert.equal(await page.locator('[aria-modal="true"]').count(), 1);
         assert.equal(await page.locator('[role="dialog"] [role="dialog"]').count(), 0);
-        if (width < 1440) assert.equal(await page.locator('[inert]').count(), 0);
+        assert.equal(await page.locator('#root').evaluate((root) => root.inert), true);
+        if (width < 1440) {
+          assert.deepEqual(await page.locator('.st-board-composer').evaluate((dialog) => ({
+            covered: dialog.closest('[inert]') !== null,
+            inertChildren: dialog.querySelectorAll('[inert]').length,
+          })), { covered: false, inertChildren: 0 });
+        }
         assert.equal(await page.getByRole('dialog', { name: 'Prerequisites', exact: true }).count(), 1);
         assert.deepEqual(await page.evaluate(() => {
           const composer = document.querySelector('.st-board-composer').getBoundingClientRect();
@@ -319,7 +325,7 @@ for (const width of [744, 1024, 1439, 1440]) {
         await page.getByRole('checkbox', { name: 'Read the wind Up next' }).click();
         await page.getByRole('button', { name: 'Apply', exact: true }).focus();
         await page.keyboard.press('Tab');
-        assert.equal(await page.evaluate(() => !!document.activeElement.closest('[role="dialog"]')), true);
+        assert.equal(await page.evaluate(() => document.querySelector('.st-board-composer').contains(document.activeElement)), true);
         if (exit === 'Escape') await page.keyboard.press('Escape');
         else await page.locator('.st-board-picker').getByRole('button', { name: exit, exact: true }).click();
         await formReturned(page);
@@ -496,7 +502,7 @@ for (const width of [390, 744, 1440]) {
       await formReturned(page, 'Edit step');
       await page.keyboard.press('Escape');
       await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor();
-      assert.equal(await page.getByRole('dialog', { name: 'Edit step', exact: true }).count(), 0);
+      assert.equal(await page.getByRole('dialog', { name: 'Edit step', exact: true }).getAttribute('inert'), '');
       await page.keyboard.press('Escape');
       await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor({ state: 'detached' });
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -529,5 +535,18 @@ test('Chromium: a clean unnamed existing step closes Save without validation or 
   } finally {
     await page.close();
     assert.deepEqual(errors, []);
+  }
+});
+
+test('Chromium: removing the edited step closes the composer without a write or render failure', async () => {
+  const { page, errors } = await open(744, { editing: 'wind', total: 8 });
+  try {
+    await page.getByLabel('Name', { exact: true }).fill('Draft name');
+    await page.evaluate(() => window.remove());
+    await closed(page);
+    assert.deepEqual(await page.evaluate(() => window.editRequests ?? []), []);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
   }
 });

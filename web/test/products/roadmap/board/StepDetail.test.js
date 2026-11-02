@@ -78,7 +78,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         editable, deletable: tree.roots().length !== 1 || tree.roots()[0].id !== address.id, stepLink: linked ? 'https://windmill.test/t/sail#?step=' + address.id : null,
         workspace: spaces[address.id] ?? { subtasks: [], note: '', links: [] },
         workspaceActions: { onToggleSubtask: (nodeId, subtaskId) => setSpaces((current) => ({ ...current, [nodeId]: toggleSubtask(current[nodeId], subtaskId) })),
-          onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: noop, onAddLink: noop, onDeleteLink: noop },
+          onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: (nodeId) => call('note ' + nodeId), onAddLink: noop, onDeleteLink: noop },
         history: [],
         onEdit: editingEnabled ? (id) => setEditing(id) : undefined,
         onOpenStep: (id) => address.open(id, 'step'),
@@ -494,7 +494,7 @@ test('Chromium: focus never falls to the page — Complete, Undo, Reset and the 
   }
 });
 
-test('Chromium: Undo expiring and a workspace edit ending hand focus to the status row or the dialog, and Escape still closes', async () => {
+test('Chromium: Undo expiry recovers to status, subtask Cancel returns to its opener, and Escape still closes', async () => {
   await ready;
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, clock: true }, errors);
@@ -506,11 +506,11 @@ test('Chromium: Undo expiring and a workspace edit ending hand focus to the stat
     assert.equal(await activeIs(page), 'status: Done');
 
     await page.getByRole('tab', { name: 'Workspace' }).click();
-    await page.getByRole('button', { name: '+ Add subtask', exact: true }).click();
+    await page.getByRole('button', { name: 'Add subtask', exact: true }).click();
     await page.getByRole('textbox', { name: 'Add subtask', exact: true }).waitFor();
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => document.activeElement.matches('.st-board-workspace-add-task'));
-    assert.equal(await activeIs(page), '+ Add subtask');
+    assert.equal(await activeIs(page), 'Add subtask');
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'detached' });
     assert.deepEqual(errors, []);
@@ -665,7 +665,6 @@ test('Chromium: with the Board’s gate closed a step in the URL is left alone �
   }
 });
 
-
 test('Chromium: delete confirmation cancels without writing on phone and desktop', async () => {
   await ready;
   for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 960 }]) {
@@ -751,6 +750,23 @@ for (const width of [390, 744, 1440]) {
           await page.waitForFunction((label) => document.querySelector('.st-board-step-sections [aria-selected="true"]')?.textContent === label, tab);
           const secondary = width < 744 && tab === 'Workspace' ? 'Add note' : 'Edit step';
           assert.deepEqual(await actions.getByRole('button').allTextContents(), primary ? [secondary, primary] : [secondary]);
+          if (width < 744) {
+            assert.deepEqual(await page.locator('.st-board-step-identity').evaluate((identity) => ({
+              titleSize: getComputedStyle(identity.querySelector('h2')).fontSize,
+              rails: identity.querySelectorAll('.st-board-step-identity-rail').length,
+            })), { titleSize: tab === 'Overview' ? '32px' : '20px', rails: tab === 'Overview' ? 1 : 0 });
+            if (primary) {
+              assert.deepEqual(await actions.locator('.st-board-step-buttons').evaluate((row) => {
+                const [secondary, primary] = row.querySelectorAll('button');
+                return {
+                  fontSize: getComputedStyle(secondary).fontSize,
+                  secondaryWidth: secondary.getBoundingClientRect().width,
+                  primaryWidth: primary.getBoundingClientRect().width,
+                  gap: getComputedStyle(row).gap,
+                };
+              }), { fontSize: '14px', secondaryWidth: 76, primaryWidth: 274, gap: '8px' });
+            }
+          }
           if (primary === null) {
             const button = actions.getByRole('button', { name: secondary, exact: true });
             assert.equal(await button.evaluate((element) => element.classList.contains('st-board-step-action--secondary')), true);
@@ -855,3 +871,26 @@ for (const width of [390, 744, 1440]) {
     }
   });
 }
+
+
+test('Chromium: system Back closes the phone detail without saving its local note draft', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 390, height: 844 }, editingEnabled: true,
+    workspaces: { wind: { subtasks: [], note: 'Keep this note', links: [] } } }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit note', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Note', exact: true }).fill('Unsaved draft');
+    await page.goBack();
+    await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
+    assert.deepEqual(await calls(page), []);
+    await card(page, 'Read the wind').click();
+    await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+    assert.equal(await page.locator('.st-board-workspace-note').textContent(), 'Keep this note');
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});

@@ -9,61 +9,31 @@ import { PrerequisiteChoices, StepDraft } from './StepDraft.js';
 import { PrerequisitePicker } from './PrerequisitePicker.jsx';
 import { KindChoice } from './BoardControls.jsx';
 import { coverBeneath } from './BoardView.jsx';
-import { useComposerFocus } from './composerFocus.js';
+import { useComposerFocus, useComposerViewport } from './composerFocus.js';
+import { DiscardDraft } from './DiscardDraft.jsx';
 import { StepIcons } from './StepIcons.jsx';
-import { COLUMN_TITLES, COMPOSER, DISCARD_DRAFT, EDIT_STEP, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
+import { COLUMN_TITLES, COMPOSER, EDIT_STEP, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
 import './composer.css';
 
 const PALETTE = { nodes: NODE_COLOR_NAMES.map((color) => ({ color })) };
 
-export function useComposerViewport(phone) {
-  const [viewport, setViewport] = useState(() => ({
-    width: typeof window === 'undefined' ? 0 : window.innerWidth,
-    visible: typeof window === 'undefined' || !window.visualViewport ? null : {
-      top: window.visualViewport.offsetTop,
-      left: window.visualViewport.offsetLeft,
-      width: window.visualViewport.width,
-      height: window.visualViewport.height,
-    },
-  }));
-  useEffect(() => {
-    const visible = window.visualViewport;
-    const resize = () => setViewport({
-      width: window.innerWidth,
-      visible: visible ? {
-        top: visible.offsetTop,
-        left: visible.offsetLeft,
-        width: visible.width,
-        height: visible.height,
-      } : null,
-    });
-    resize();
-    window.addEventListener('resize', resize);
-    visible?.addEventListener('resize', resize);
-    visible?.addEventListener('scroll', resize);
-    return () => {
-      window.removeEventListener('resize', resize);
-      visible?.removeEventListener('resize', resize);
-      visible?.removeEventListener('scroll', resize);
-    };
-  }, []);
-  return {
-    panelFits: viewport.width >= 1440,
-    style: phone && viewport.visible ? { position: 'fixed', ...viewport.visible } : undefined,
-  };
-}
-
 export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose }) {
   const phone = band === 'phone';
+  const missingStep = Boolean(editing && !tree.nodesById.has(editing));
   const mode = editing ? 'edit' : 'create';
   const eventName = editing ? 'roadmap_board_edit' : 'roadmap_board_create';
   const viewport = useComposerViewport(phone);
-  const [stored, setDraft] = useState(() => editing ? StepDraft.forStep(tree.nodesById.get(editing)) : new StepDraft());
+  const [stored, setDraft] = useState(() => {
+    const step = tree.nodesById.get(editing);
+    return step ? StepDraft.forStep(step) : new StepDraft();
+  });
   const [picker, setPicker] = useState(null);
   const [discard, setDiscard] = useState(false);
   const [failed, setFailed] = useState(false);
   const [nameError, setNameError] = useState(null);
   const request = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   const dialog = useRef(null);
   const layer = useRef(null);
   const revalidationReported = useRef(null);
@@ -82,7 +52,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   const pickerLayout = phone ? 'phone' : viewport.panelFits ? 'panel' : 'page';
   const pickerPage = pickerOpen && pickerLayout !== 'panel';
   const placement = draft.placement(tree, completed);
-  const PlacementIcon = { locked: StepIcons.rowLocked, upNext: StepIcons.rowUpNext, done: StepIcons.rowDone }[placement.column];
+  const PlacementIcon = { locked: StepIcons.rowLocked, upNext: StepIcons.rowUpNext, done: StepIcons.rowDone }[placement.column] ?? StepIcons.rowUpNext;
   const kinds = kindOptions(PALETTE, legend);
   const prerequisiteLabels = draft.prerequisites.map((id) => {
     const label = tree.nodesById.get(id).label;
@@ -100,6 +70,10 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   }
 
   useLayoutEffect(() => coverBeneath(layer.current), []);
+
+  useEffect(() => {
+    if (missingStep) closeRef.current();
+  }, [missingStep]);
 
   const revalidation = choices?.revalidated.map((row) => row.id).join(',') || null;
   useEffect(() => {
@@ -133,6 +107,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
     setFailed(false);
   };
   const save = () => {
+    if (missingStep) return;
     if (editing && !draft.dirty) {
       track(eventName, { step: 'unchanged' });
       onClose();
@@ -258,10 +233,12 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
             <span>{prerequisiteNames(prerequisiteLabels) || COMPOSER.none}</span>
             <ChevronDown size={16} aria-hidden />
           </button>
-          <div className="st-board-draft-placement" role="status">
-            <strong><PlacementIcon />{COLUMN_TITLES[placement.column]}</strong>
-            {placement.body && <span>{placement.body}</span>}
-          </div>
+          {placement.column && (
+            <div className="st-board-draft-placement" role="status">
+              <strong><PlacementIcon />{COLUMN_TITLES[placement.column]}</strong>
+              {placement.body && <span>{placement.body}</span>}
+            </div>
+          )}
         </div>
         <footer className="st-board-composer-actions">
           {failed && phone && <p role="alert">{SAVE_FAILURE.body}</p>}
@@ -323,40 +300,5 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
       )}
     </div>,
     document.body,
-  );
-}
-
-export function DiscardDraft({ phone, onKeep, onDiscard }) {
-  const dialog = useRef(null);
-  const titleId = useId();
-  const focus = useComposerFocus(dialog);
-  return (
-    <div className="st-board-discard-layer">
-      <div className="st-board-composer-scrim" aria-hidden onClick={onKeep} />
-      <section
-        ref={dialog}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="st-board-discard"
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            onKeep();
-            return;
-          }
-          focus(event);
-        }}
-      >
-        <h2 id={titleId}>{DISCARD_DRAFT.title}</h2>
-        <p>{DISCARD_DRAFT.body}</p>
-        <div>
-          <Button variant="secondary" size={phone ? 'lg' : 'md'} onClick={onKeep}>{DISCARD_DRAFT.keepEditing}</Button>
-          <Button variant="danger" size={phone ? 'lg' : 'md'} onClick={onDiscard}>{DISCARD_DRAFT.discard}</Button>
-        </div>
-      </section>
-    </div>
   );
 }

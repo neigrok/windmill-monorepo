@@ -78,6 +78,29 @@ async function open(width, space = initial, history = []) {
   return page;
 }
 
+async function selectText(writing, start, end) {
+  await writing.evaluate((element, offsets) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    const locate = (offset, preferPrevious) => {
+      for (const node of nodes) {
+        if (offset < node.length || (offset === node.length && preferPrevious)) return { node, offset };
+        offset -= node.length;
+      }
+      return { node: element, offset: element.childNodes.length };
+    };
+    const from = locate(offsets.start, offsets.start === offsets.end);
+    const to = locate(offsets.end, true);
+    const range = document.createRange();
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  }, { start, end });
+}
+
 for (const width of [390, 1024]) {
   test(`workspace ${width}: note draft Save once and focus returns to Edit`, async () => {
     const page = await open(width);
@@ -109,7 +132,9 @@ for (const width of [390, 1024]) {
       });
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       await page.clock.runFor(20);
-      assert.deepEqual(await page.evaluate(() => window.writes), [{ action: 'onSetNote', id: 'wind', value: note }]);
+      assert.deepEqual(await page.evaluate(() => window.writes ?? []), []);
+      assert.equal(await page.evaluate(() => window.space.note), note);
+      assert.deepEqual(await page.evaluate(() => window.events.filter((event) => event.name === 'roadmap_board_workspace')), []);
     } finally { await page.close(); }
   });
 
@@ -134,7 +159,7 @@ for (const width of [390, 1024]) {
   test(`workspace ${width}: personal link Text survives Apply and focus returns`, async () => {
     const page = await open(width);
     try {
-      await page.getByRole('button', { name: '+ Add link', exact: true }).click();
+      await page.getByRole('button', { name: 'Add link', exact: true }).click();
       await page.getByLabel('Text', { exact: true }).fill('My guide');
       await page.getByLabel('URL', { exact: true }).fill('javascript:alert(1)');
       assert.equal(await page.getByRole('button', { name: 'Apply' }).isDisabled(), true);
@@ -151,9 +176,13 @@ for (const width of [390, 1024]) {
 test('phone checklist toast stays in the page, Undo toggles back, expiry is six seconds', async () => {
   const page = await open(390);
   try {
+    await page.locator('.st-board-step-checked-announcement').evaluate((element) => { window.announcement = element; });
+    assert.equal(await page.locator('.st-board-step-checked-announcement').textContent(), '');
     await page.getByRole('checkbox', { name: 'Try a small turn' }).check();
     await page.locator('.st-board-step-checked').waitFor();
-    assert.equal(await page.locator('.st-board-step-checked [role=status]').textContent(), 'Try a small turn checked');
+    assert.equal(await page.locator('.st-board-step-checked-announcement').textContent(), 'Try a small turn checked');
+    assert.equal(await page.locator('.st-board-step-checked-announcement').evaluate((element) => element === window.announcement), true);
+    assert.equal(await page.locator('.st-board-step-checked > svg').count(), 1);
     await page.locator('.st-board-step-checked').getByRole('button', { name: 'Undo' }).click();
     assert.equal(await page.getByRole('checkbox').isChecked(), false);
     await page.getByRole('checkbox').check();
@@ -170,6 +199,11 @@ test('desktop never shows checked toast; deleted task cannot be undone', async (
   try {
     await page.getByRole('checkbox').check();
     assert.equal(await page.locator('.st-board-step-checked').count(), 0);
+    await page.mouse.move(0, 0);
+    await page.evaluate(() => document.activeElement.blur());
+    assert.equal(await page.getByRole('button', { name: 'Remove subtask' }).evaluate((element) => getComputedStyle(element).opacity), '0');
+    await page.locator('.st-board-workspace-task').hover();
+    assert.equal(await page.getByRole('button', { name: 'Remove subtask' }).evaluate((element) => getComputedStyle(element).opacity), '1');
     await page.getByRole('button', { name: 'Remove subtask' }).click();
     assert.equal(await page.getByRole('checkbox').count(), 0);
   } finally { await page.close(); }
@@ -182,7 +216,7 @@ test('empty and partial workspaces only offer missing types; History groups use 
   ]);
   try {
     assert.equal(await page.getByText('Add something for this step.').count(), 1);
-    assert.deepEqual(await page.locator('.st-board-workspace-missing button').allTextContents(), ['+ Add subtask', '+ Add note', '+ Add link']);
+    assert.deepEqual(await page.locator('.st-board-workspace-missing button').allTextContents(), ['Add subtask', 'Add note', 'Add link']);
     await page.getByRole('tab', { name: 'History', exact: true }).click();
     assert.deepEqual(await page.locator('.st-board-workspace-day').allTextContents(), ['Today', 'Yesterday']);
     assert.deepEqual(await page.locator('.st-board-workspace-event time').allTextContents(), ['1h', '1d']);
@@ -203,24 +237,16 @@ test('note formatting and link sheet edit only the draft, with Escape confined t
   try {
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const writing = page.getByRole('textbox', { name: 'Note', exact: true });
-    const select = async (start, end) => writing.evaluate((element, offsets) => {
-      const node = element.querySelector('p')?.firstChild ?? element.firstChild;
-      const range = document.createRange();
-      range.setStart(node, offsets.start);
-      range.setEnd(node, offsets.end);
-      window.getSelection().removeAllRanges();
-      window.getSelection().addRange(range);
-      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    }, { start, end });
+    const select = (start, end) => selectText(writing, start, end);
     await select(0, 5);
     await page.getByRole('button', { name: 'Bold', exact: true }).click();
     assert.equal(await writing.locator('strong').textContent(), 'Watch');
     assert.deepEqual(await page.evaluate(() => window.writes ?? []), []);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-      await page.clock.runFor(20);
+    await page.clock.runFor(20);
     assert.equal(await page.evaluate(() => window.space.note), '**Watch** wind');
+    await page.evaluate(() => window.replaceSpace({ ...window.space, note: 'Watch wind' }));
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
-    await writing.fill('Watch wind');
     await select(6, 10);
     await page.getByRole('button', { name: 'Link', exact: true }).click();
     assert.equal(await page.getByLabel('Text', { exact: true }).inputValue(), 'wind');
@@ -230,13 +256,13 @@ test('note formatting and link sheet edit only the draft, with Escape confined t
     await page.getByRole('button', { name: 'Link', exact: true }).click();
     await page.getByLabel('URL', { exact: true }).fill('https://example.org');
     await page.getByRole('button', { name: 'Apply' }).click();
-      await page.clock.runFor(20);
+    await page.clock.runFor(20);
     assert.equal(await writing.locator('a').getAttribute('href'), 'https://example.org');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-      await page.clock.runFor(20);
+    await page.clock.runFor(20);
     assert.equal(await page.evaluate(() => window.space.note), 'Watch [wind](https://example.org)');
+    await page.evaluate(() => window.replaceSpace({ ...window.space, note: 'one\ntwo' }));
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
-    await writing.fill('one\ntwo');
     await writing.evaluate((element) => {
       const range = document.createRange();
       range.selectNodeContents(element);
@@ -247,7 +273,7 @@ test('note formatting and link sheet edit only the draft, with Escape confined t
     await page.getByRole('button', { name: 'List', exact: true }).click();
     assert.deepEqual(await writing.locator('li').allTextContents(), ['one', 'two']);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-      await page.clock.runFor(20);
+    await page.clock.runFor(20);
     assert.equal(await page.evaluate(() => window.space.note), '- one\n- two');
   } finally { await page.close(); }
 });
@@ -262,5 +288,143 @@ test('phone Add note saves to the pinned Edit note opener and empty History is e
     await page.waitForFunction(() => document.activeElement?.textContent === 'Edit note' && Boolean(document.activeElement.closest('.st-board-step-page-pinned')));
     await page.getByRole('tab', { name: 'History', exact: true }).click();
     assert.equal(await page.locator('.st-board-workspace-empty-history').textContent(), 'No changes yet');
+  } finally { await page.close(); }
+});
+
+for (const width of [390, 1024]) {
+  test(`workspace ${width}: keyboard input preserves literal markers and every blank line from empty`, async () => {
+    const page = await open(width, { subtasks: [], note: '', links: [] });
+    try {
+      await page.locator('.st-board-workspace-missing').getByRole('button', { name: 'Add note', exact: true }).click();
+      await page.keyboard.type('first');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('second');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('*literal* 2*3');
+      await page.keyboard.press('Shift+Enter');
+      await page.keyboard.type('last');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      assert.deepEqual(await page.evaluate(() => window.writes), [{
+        action: 'onSetNote', id: 'wind', value: 'first\nsecond\n\n*literal* 2*3\nlast',
+      }]);
+    } finally { await page.close(); }
+  });
+
+  test(`workspace ${width}: caret starts at source end and undo redo preserve untouched bytes`, async () => {
+    const source = '\n[x](javascript:bad)\n\n  - item\n\n\n';
+    const page = await open(width, { ...initial, note: source });
+    try {
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
+      await page.keyboard.type('ab');
+      await page.keyboard.press('ControlOrMeta+z');
+      await page.keyboard.press('ControlOrMeta+Shift+z');
+      await page.keyboard.press('Backspace');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      assert.equal(await page.evaluate(() => window.space.note), `${source}a`);
+    } finally { await page.close(); }
+  });
+}
+
+test('unmodified Save cannot overwrite a newer external note', async () => {
+  const page = await open(390);
+  try {
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.evaluate(() => window.replaceSpace({ ...window.space, note: 'A newer remote note' }));
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.space.note), 'A newer remote note');
+    assert.deepEqual(await page.evaluate(() => window.writes ?? []), []);
+    assert.deepEqual(await page.evaluate(() => window.events.filter((event) => event.name === 'roadmap_board_workspace')), []);
+  } finally { await page.close(); }
+});
+
+test('keyboard edits preserve unsafe URLs, list indentation and blank runs outside the selection', async () => {
+  const source = '\n\nbefore [label](javascript:label) after\n\n\n  - item\n';
+  const page = await open(1024, { ...initial, note: source });
+  try {
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const writing = page.getByRole('textbox', { name: 'Note', exact: true });
+    await selectText(writing, 0, 6);
+    await page.keyboard.type('first');
+    await selectText(writing, 6, 11);
+    await page.keyboard.type('name');
+    await selectText(writing, 11, 16);
+    await page.keyboard.type('last');
+    await selectText(writing, 15, 19);
+    await page.keyboard.type('task');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.space.note), '\n\nfirst [name](javascript:label) last\n\n\n  - task\n');
+  } finally { await page.close(); }
+});
+
+for (const note of ['[same](javascript:same)', '[same](javascript:same) same']) {
+  test(`keyboard Select All replaces all source syntax: ${note}`, async () => {
+    const page = await open(1024, { ...initial, note });
+    try {
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
+      await page.keyboard.press('ControlOrMeta+a');
+      await page.keyboard.type('same');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      assert.equal(await page.evaluate(() => window.space.note), 'same');
+    } finally { await page.close(); }
+  });
+}
+
+for (const url of ['javascript:bad', 'https://example.org']) {
+  for (const boundary of ['start', 'end']) {
+    test(`Enter at ${boundary} of ${url} preserves the existing link source`, async () => {
+      const source = `[label](${url})`;
+      const page = await open(390, { ...initial, note: source });
+      try {
+        await page.getByRole('button', { name: 'Edit', exact: true }).click();
+        const offset = boundary === 'start' ? 0 : 5;
+        await selectText(page.getByRole('textbox', { name: 'Note', exact: true }), offset, offset);
+        await page.keyboard.press('Enter');
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+        const expected = boundary === 'start' ? `\n${source}` : `${source}\n`;
+        assert.equal(await page.evaluate(() => window.space.note), expected);
+      } finally { await page.close(); }
+    });
+  }
+}
+
+test('paragraph input continues an indented list and exits its empty item', async () => {
+  const page = await open(1024, { ...initial, note: '  - first' });
+  try {
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('second');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('tail');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.space.note), '  - first\n  - second\n\ntail');
+  } finally { await page.close(); }
+});
+
+test('Enter in a nested formatted link splits its source without exposing or duplicating its URL', async () => {
+  const page = await open(1024, { ...initial, note: '**[label](javascript:bad)**' });
+  try {
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await selectText(page.getByRole('textbox', { name: 'Note', exact: true }), 2, 2);
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.space.note), '**[la](javascript:bad)**\n**[bel](javascript:bad)**');
+  } finally { await page.close(); }
+});
+
+test('phone History heading uses the display token', async () => {
+  const page = await open(390);
+  try {
+    await page.getByRole('tab', { name: 'History', exact: true }).click();
+    const heading = page.locator('.st-board-workspace-history-title');
+    assert.equal(await heading.evaluate((element) => {
+      const sample = document.createElement('span');
+      sample.style.fontFamily = 'var(--font-display)';
+      element.append(sample);
+      const matches = getComputedStyle(element).fontFamily === getComputedStyle(sample).fontFamily;
+      sample.remove();
+      return matches;
+    }), true);
   } finally { await page.close(); }
 });

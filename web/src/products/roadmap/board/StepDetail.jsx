@@ -1,6 +1,6 @@
 // Board step detail: a pushed page below 744px and a modal otherwise.
 
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
@@ -11,6 +11,7 @@ import { deletionCost } from './acts.js';
 import { deleteCostLine } from '../ui/mobile/editorSheet.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
 import { StepIcons } from './StepIcons.jsx';
+import { DetailFocusContext } from './composerFocus.js';
 import './modal.css';
 import './page.css';
 import {
@@ -63,6 +64,7 @@ export function StepDetail({
   const deletedRef = useRef(null);
   const leaveRef = useRef(null);
   const workspaceRef = useRef(null);
+  const pinnedNoteRef = useRef(null);
   const editingRef = useRef(false);
   const titleId = useId();
   const sectionsId = useId();
@@ -89,22 +91,36 @@ export function StepDetail({
     setChecked(null);
   }
 
-  // One layer for the whole visit, whichever frame it holds. It covers everything beneath it and takes Escape wherever
-  // focus is; when the element holding focus gives way (an action replaced, Undo expiring, a frame swapped across 744px,
-  // a workspace edit ending), focus lands on the status row, or on the dialog where there is none. Closing hands focus to
-  // the card the visit began on, or to the columns' tab stop once that card has gone.
+  const restoreDetailFocus = useCallback((openerRef) => {
+    const restore = () => {
+      const layer = layerRef.current;
+      if (!layer || layer.closest('[inert]')) return;
+      const opener = openerRef?.current;
+      if (opener?.isConnected && !opener.closest('[inert]') && opener.getClientRects().length > 0) {
+        opener.focus({ preventScroll: true });
+        return;
+      }
+      if (editingRef.current) return;
+      if (document.activeElement !== document.body && document.activeElement?.isConnected) return;
+      const target = layer.querySelector('.st-board-step-status') ?? layer.querySelector('[role="dialog"]');
+      target?.focus({ preventScroll: true });
+    };
+    if (openerRef) requestAnimationFrame(restore);
+    else restore();
+  }, []);
+  const detailFocus = useMemo(() => ({ restore: restoreDetailFocus }), [restoreDetailFocus]);
+
+  // The detail owns fallback focus; nested editors return to their opener reference first.
   useEffect(() => {
     const layer = layerRef.current;
     const uncover = coverBeneath(layer);
     const recover = () => {
-      if (layer.closest('[inert]') || document.querySelector('.st-board-composer-layer') || editingRef.current) return;
-      if (document.activeElement !== null && document.activeElement !== document.body) return;
-      (layer.querySelector('.st-board-step-status') ?? layer.querySelector('[role="dialog"]'))?.focus({ preventScroll: true });
+      restoreDetailFocus(null);
     };
     const watcher = new MutationObserver(recover);
     watcher.observe(layer, { childList: true, subtree: true });
     const escape = (event) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || layer.closest('[inert]') || document.querySelector('.st-board-composer-layer')) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || layer.closest('[inert]')) return;
       if (editingRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -154,10 +170,10 @@ export function StepDetail({
         waiting.observe(board, { childList: true, subtree: true, attributes: true, attributeFilter: ['tabindex'] });
       });
     };
-  }, []);
+  }, [restoreDetailFocus]);
 
   useEffect(() => {
-    if (layerRef.current.closest('[inert]') || document.querySelector('.st-board-composer-layer') || editingRef.current) return;
+    if (layerRef.current.closest('[inert]') || editingRef.current) return;
     layerRef.current.querySelector('[role="dialog"]').focus();
   }, [id, surface]);
 
@@ -244,7 +260,7 @@ export function StepDetail({
     ? <SubtaskOffer onComplete={() => complete('completeFromSubtasks')} />
     : null;
   const shownSection = editable ? section : 'overview';
-  const identity = <StepIdentity step={facts.step} titleId={titleId} />;
+  const identity = <StepIdentity step={facts.step} titleId={titleId} compact={surface === 'page' && shownSection !== 'overview'} />;
   const cancelDelete = () => {
     setDeleting(false);
     onDeletePrompt?.('cancel');
@@ -271,11 +287,12 @@ export function StepDetail({
   const editLabel = noteAction ? (workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote) : STEP_DETAIL.editStep;
   const actions = editable && !noteEditing && (facts.column !== 'locked' || noteAction || edit)
     ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset}
-        editLabel={editLabel} onEdit={noteAction ? () => workspaceRef.current?.openNote() : edit} />
+        editLabel={editLabel} editRef={pinnedNoteRef} onEdit={noteAction ? () => workspaceRef.current?.openNote(pinnedNoteRef) : edit} />
     : null;
   const liveChecked = checked && surface === 'page' && workspace?.subtasks?.some((item) => item.id === checked.id && item.done);
   const checkedNotice = liveChecked && !noteEditing ? <div className="st-board-step-checked">
-    <span role="status" aria-live="polite">{checkedToast({ item: checked.label })}</span>
+    <StepIcons.statusDone />
+    <span aria-hidden="true">{checkedToast({ item: checked.label })}</span>
     <button type="button" onClick={() => {
       workspaceActions.onToggleSubtask(id, checked.id);
       setChecked(null);
@@ -290,27 +307,29 @@ export function StepDetail({
     onClose();
   };
   const content = (
-    <div id={`${sectionsId}-${shownSection}`} role={editable && !noteEditing ? 'tabpanel' : undefined} aria-labelledby={editable && !noteEditing ? `${sectionsId}-tab-${shownSection}` : undefined} className={`st-board-step-panel${noteEditing ? ' st-board-step-panel--editing' : ''}`}>
-      {shownSection === 'overview' && (
-        <Overview
-          facts={facts}
-          outcome={outcome}
-          marksNeeds={surface === 'page'}
-          onUndo={undo}
-          onOpenStep={onOpenStep}
-          onViewBranch={editable && facts.column !== 'locked' ? () => { act('viewBranch'); onViewBranch(id); } : null}
-        />
-      )}
-      {shownSection === 'workspace' && (
-        <StepWorkspace key={id} ref={workspaceRef} nodeId={id} title={titleOf(facts.step)} workspace={workspace}
-          actions={workspaceActions} phone={surface === 'page'} onEditing={setNoteEditing}
-          onEditNote={() => act('editNote')} onChecked={(item) => {
-            if (surface !== 'page') return;
-            setChecked(item.done ? null : { id: item.id, label: item.label });
-          }} />
-      )}
-      {shownSection === 'history' && <StepHistory history={history} nodeId={id} phone={surface === 'page'} />}
-    </div>
+    <DetailFocusContext.Provider value={detailFocus}>
+      <div id={`${sectionsId}-${shownSection}`} role={editable && !noteEditing ? 'tabpanel' : undefined} aria-labelledby={editable && !noteEditing ? `${sectionsId}-tab-${shownSection}` : undefined} className={`st-board-step-panel${noteEditing ? ' st-board-step-panel--editing' : ''}`}>
+        {shownSection === 'overview' && (
+          <Overview
+            facts={facts}
+            outcome={outcome}
+            marksNeeds={surface === 'page'}
+            onUndo={undo}
+            onOpenStep={onOpenStep}
+            onViewBranch={editable && facts.column !== 'locked' ? () => { act('viewBranch'); onViewBranch(id); } : null}
+          />
+        )}
+        {shownSection === 'workspace' && (
+          <StepWorkspace key={id} ref={workspaceRef} nodeId={id} title={titleOf(facts.step)} workspace={workspace}
+            actions={workspaceActions} phone={surface === 'page'} onEditing={setNoteEditing}
+            onEditNote={() => act('editNote')} onChecked={(item) => {
+              if (surface !== 'page') return;
+              setChecked(item.done ? null : { id: item.id, label: item.label });
+            }} />
+        )}
+        {shownSection === 'history' && <StepHistory history={history} nodeId={id} phone={surface === 'page'} />}
+      </div>
+    </DetailFocusContext.Provider>
   );
 
   // Below 744px the step is a page pushed over the Board, which stays mounted beneath it with its pane and scroll; the
@@ -335,6 +354,9 @@ export function StepDetail({
             {content}
           </div>
           {sheet}
+          <span className="st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">
+            {liveChecked && !noteEditing ? checkedToast({ item: checked.label }) : ''}
+          </span>
           {checkedNotice}
           {(sections || actions) && (
             <div className="st-board-step-page-pinned">
@@ -371,11 +393,11 @@ export function StepDetail({
   );
 }
 
-function StepIdentity({ step, titleId }) {
+function StepIdentity({ step, titleId, compact = false }) {
   const kind = KIND_CSS[step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   return (
-    <div className="st-board-step-identity" style={{ '--st-board-step-rail': kind.base }}>
-      <span className="st-board-step-identity-rail" aria-hidden />
+    <div className={`st-board-step-identity${compact ? ' st-board-step-identity--compact' : ''}`} style={{ '--st-board-step-rail': kind.base }}>
+      {!compact && <span className="st-board-step-identity-rail" aria-hidden />}
       <h2 id={titleId} className="st-board-step-identity-title">{titleOf(step)}</h2>
     </div>
   );
@@ -506,20 +528,46 @@ function StepSections({ idPrefix, section, onSection }) {
 }
 
 // Up next offers Complete; Done offers Reset, secondary, previewing what it returns to Locked.
-function StepActions({ facts, phone, onComplete, onReset, editLabel, onEdit }) {
+function StepActions({ facts, phone, onComplete, onReset, editLabel, editRef, onEdit }) {
   const [previewing, setPreviewing] = useState(false);
   const preview = previewing && facts.column === 'done' ? resetPreview({ relocked: facts.relocks }) : null;
+  const editClass = phone && facts.column !== 'locked' ? ' st-board-step-action--text' : '';
   if (!onEdit && facts.column === 'locked') return null;
-  return <>
-    {preview && <p className="st-board-step-preview">{preview}</p>}
-    <div className="st-board-step-buttons">
-      {onEdit && <button type="button" className={`st-board-step-action st-board-step-action--secondary${phone && facts.column !== 'locked' ? ' st-board-step-action--text' : ''}`} onClick={onEdit}>{editLabel}</button>}
-      {facts.column === 'upNext' && <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={onComplete}>{STEP_DETAIL.complete}</button>}
-      {facts.column === 'done' && <button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={onReset}
-        onPointerEnter={phone ? undefined : () => setPreviewing(true)} onPointerLeave={() => setPreviewing(false)}
-        onFocus={() => setPreviewing(true)} onBlur={() => setPreviewing(false)}>{STEP_DETAIL.reset}</button>}
-    </div>
-  </>;
+  return (
+    <>
+      {preview && <p className="st-board-step-preview">{preview}</p>}
+      <div className="st-board-step-buttons">
+        {onEdit && (
+          <button
+            ref={editRef}
+            type="button"
+            className={`st-board-step-action st-board-step-action--secondary${editClass}`}
+            onClick={onEdit}
+          >
+            {editLabel}
+          </button>
+        )}
+        {facts.column === 'upNext' && (
+          <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={onComplete}>
+            {STEP_DETAIL.complete}
+          </button>
+        )}
+        {facts.column === 'done' && (
+          <button
+            type="button"
+            className="st-board-step-action st-board-step-action--secondary"
+            onClick={onReset}
+            onPointerEnter={phone ? undefined : () => setPreviewing(true)}
+            onPointerLeave={() => setPreviewing(false)}
+            onFocus={() => setPreviewing(true)}
+            onBlur={() => setPreviewing(false)}
+          >
+            {STEP_DETAIL.reset}
+          </button>
+        )}
+      </div>
+    </>
+  );
 }
 
 function SubtaskOffer({ onComplete }) {

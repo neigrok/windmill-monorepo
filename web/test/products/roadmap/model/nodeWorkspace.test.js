@@ -234,16 +234,16 @@ test('arcFraction is done over total once there are sub-tasks', () => {
 import { formatNote } from '../../../../src/products/roadmap/model/NodeWorkspace.js';
 
 test('note formatting wraps and unwraps selection without changing surrounding text', () => {
-  assert.deepEqual(formatNote('one two', { start: 4, end: 7 }, 'bold'), { text: 'one **two**', selection: { start: 6, end: 9 } });
-  assert.deepEqual(formatNote('one **two**', { start: 6, end: 9 }, 'bold'), { text: 'one two', selection: { start: 4, end: 7 } });
-  assert.deepEqual(formatNote('**two**', { start: 0, end: 7 }, 'bold'), { text: 'two', selection: { start: 0, end: 3 } });
-  assert.deepEqual(formatNote('word', { start: 0, end: 4 }, 'italic'), { text: '*word*', selection: { start: 1, end: 5 } });
-  assert.deepEqual(formatNote('**word**', { start: 2, end: 6 }, 'italic'), { text: '*word*', selection: { start: 1, end: 5 } });
+  assert.deepEqual(formatNote('one two', { start: 4, end: 7 }, { kind: 'bold' }), { text: 'one **two**', selection: { start: 6, end: 9 } });
+  assert.deepEqual(formatNote('one **two**', { start: 6, end: 9 }, { kind: 'bold' }), { text: 'one two', selection: { start: 4, end: 7 } });
+  assert.deepEqual(formatNote('**two**', { start: 0, end: 7 }, { kind: 'bold' }), { text: 'two', selection: { start: 0, end: 3 } });
+  assert.deepEqual(formatNote('word', { start: 0, end: 4 }, { kind: 'italic' }), { text: '*word*', selection: { start: 1, end: 5 } });
+  assert.deepEqual(formatNote('**word**', { start: 2, end: 6 }, { kind: 'italic' }), { text: '*word*', selection: { start: 1, end: 5 } });
 });
 
 test('note formatting at an empty selection preserves a caret inside its marks', () => {
-  assert.deepEqual(formatNote('ab', { start: 1, end: 1 }, 'bold'), { text: 'a****b', selection: { start: 3, end: 3 } });
-  assert.deepEqual(formatNote('', { start: 0, end: 0 }, 'italic'), { text: '**', selection: { start: 1, end: 1 } });
+  assert.deepEqual(formatNote('ab', { start: 1, end: 1 }, { kind: 'bold' }), { text: 'a****b', selection: { start: 3, end: 3 } });
+  assert.deepEqual(formatNote('', { start: 0, end: 0 }, { kind: 'italic' }), { text: '**', selection: { start: 1, end: 1 } });
 });
 
 test('note links replace selection or insert text and URL at the caret', () => {
@@ -256,10 +256,10 @@ test('note links replace selection or insert text and URL at the caret', () => {
 });
 
 test('note lists toggle selected whole lines and respect an exclusive end at the next line', () => {
-  assert.deepEqual(formatNote('one\ntwo', { start: 0, end: 7 }, 'list'), { text: '- one\n- two', selection: { start: 0, end: 11 } });
-  assert.deepEqual(formatNote('- one\n- two', { start: 0, end: 11 }, 'list'), { text: 'one\ntwo', selection: { start: 0, end: 7 } });
-  assert.deepEqual(formatNote('one\ntwo', { start: 0, end: 4 }, 'list'), { text: '- one\ntwo', selection: { start: 0, end: 5 } });
-  assert.deepEqual(formatNote('- one\ntwo', { start: 0, end: 9 }, 'list'), { text: '- one\n- two', selection: { start: 0, end: 11 } });
+  assert.deepEqual(formatNote('one\ntwo', { start: 0, end: 7 }, { kind: 'list' }), { text: '- one\n- two', selection: { start: 0, end: 11 } });
+  assert.deepEqual(formatNote('- one\n- two', { start: 0, end: 11 }, { kind: 'list' }), { text: 'one\ntwo', selection: { start: 0, end: 7 } });
+  assert.deepEqual(formatNote('one\ntwo', { start: 0, end: 4 }, { kind: 'list' }), { text: '- one\ntwo', selection: { start: 0, end: 5 } });
+  assert.deepEqual(formatNote('- one\ntwo', { start: 0, end: 9 }, { kind: 'list' }), { text: '- one\n- two', selection: { start: 0, end: 11 } });
 });
 
 test('named personal links preserve legacy URL normalization and append with their optional title', () => {

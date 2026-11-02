@@ -302,3 +302,28 @@ test('PrerequisiteChoices — revalidation removes a new descendant and preserve
   const removed = new SkillTree({ id: 'sail', title: '', nodes: original.nodes.filter((step) => step.id !== 'bowline') });
   assert.deepEqual(choices.reconcile(removed, completed).revalidated, []);
 });
+
+
+test('StepDraft — remote prerequisite deletion reconciles both draft and baseline without making an untouched edit dirty', () => {
+  const before = sailing();
+  const draft = StepDraft.forStep(before.nodesById.get('wind'));
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: before.nodes
+    .filter((node) => node.id !== 'parts')
+    .map((node) => ({ ...node, prerequisites: node.prerequisites.filter((id) => id !== 'parts') })) });
+  const reconciled = draft.reconcile(tree);
+  assert.deepEqual(reconciled.prerequisites, []);
+  assert.deepEqual(reconciled.baseline, { name: 'Read the wind', description: '', color: 'sky', prerequisites: [] });
+  assert.equal(Object.isFrozen(reconciled.baseline), true);
+  assert.equal(Object.isFrozen(reconciled.baseline.prerequisites), true);
+  assert.equal(reconciled.dirty, false);
+  assert.equal(draft.with({ name: 'Watch the wind' }).reconcile(tree).dirty, true);
+  assert.equal(reconciled.reconcile(tree), reconciled);
+  assert.deepEqual(draft.prerequisites, ['parts']);
+});
+
+test('StepDraft — a removed edit has no placement to render', () => {
+  const before = sailing();
+  const draft = StepDraft.forStep(before.nodesById.get('wind'));
+  const empty = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [] });
+  assert.deepEqual(draft.placement(empty, new Set()), { column: null, body: null });
+});

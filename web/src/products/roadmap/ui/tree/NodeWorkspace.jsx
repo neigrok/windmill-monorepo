@@ -27,10 +27,15 @@ export function LinkRow({ url, title, domain, onDelete }) {
   );
 }
 
-function renderInline(text, key) {
+function renderInline(text, key, sourceStart = null) {
   const nodes = [];
   let rest = text;
+  let offset = sourceStart;
   let seq = 0;
+  const plain = (value, start, tokenKey) => {
+    if (start === null) return value;
+    return <span key={tokenKey} data-note-text={start}>{value}</span>;
+  };
   while (rest.length > 0) {
     const link = rest.match(/\[([^\]]+)\]\(([^)\s]+)\)/);
     const bold = rest.match(/\*\*([^*]+)\*\*/);
@@ -40,44 +45,81 @@ function renderInline(text, key) {
       bold && { kind: 'bold', at: bold.index, match: bold },
       italic && { kind: 'italic', at: italic.index, match: italic },
     ].filter(Boolean);
-    if (candidates.length === 0) { nodes.push(rest); break; }
-
+    if (candidates.length === 0) {
+      nodes.push(plain(rest, offset, `${key}-tail`));
+      break;
+    }
     const next = candidates.reduce((best, one) => (one.at < best.at ? one : best));
-    if (next.at > 0) nodes.push(rest.slice(0, next.at));
+    if (next.at > 0) nodes.push(plain(rest.slice(0, next.at), offset, `${key}-text${seq}`));
     const [whole, inner, url] = next.match;
     const k = `${key}-${seq++}`;
+    const start = offset === null ? null : offset + next.at;
+    const end = start === null ? null : start + whole.length;
+    const markerLength = next.kind === 'bold' ? 2 : 1;
+    const source = start === null ? {} : {
+      'data-note-start': start, 'data-note-end': end,
+      'data-note-content-start': start + markerLength,
+      'data-note-content-end': start + markerLength + inner.length,
+    };
     if (next.kind === 'link') {
-      nodes.push(
-        SAFE_URL.test(url)
-          ? <a key={k} href={url} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>{inner}</a>
-          : inner,
-      );
+      const content = plain(inner, start === null ? null : start + 1, `${k}-label`);
+      if (SAFE_URL.test(url)) {
+        nodes.push(<a key={k} {...source} href={url} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>{content}</a>);
+      } else if (start !== null) {
+        nodes.push(<span key={k} {...source}>{content}</span>);
+      } else {
+        nodes.push(inner);
+      }
     } else if (next.kind === 'bold') {
-      nodes.push(<strong key={k}>{renderInline(inner, k)}</strong>);
+      nodes.push(<strong key={k} {...source}>{renderInline(inner, k, start === null ? null : start + 2)}</strong>);
     } else {
-      nodes.push(<em key={k}>{renderInline(inner, k)}</em>);
+      nodes.push(<em key={k} {...source}>{renderInline(inner, k, start === null ? null : start + 1)}</em>);
     }
-    rest = rest.slice(next.at + whole.length);
+    const consumed = next.at + whole.length;
+    rest = rest.slice(consumed);
+    if (offset !== null) offset += consumed;
   }
   return nodes;
 }
 
-export function renderMarkdown(md) {
+export function renderMarkdown(md, { sourceMap = false } = {}) {
   const blocks = [];
   let list = null;
   let para = null;
-  const flushPara = () => { if (para) { blocks.push(<p key={`p${blocks.length}`}>{para}</p>); para = null; } };
-  const flushList = () => { if (list) { blocks.push(<ul key={`u${blocks.length}`}>{list}</ul>); list = null; } };
-
+  let offset = 0;
+  const flushPara = () => {
+    if (!para) return;
+    blocks.push(<p key={`p${blocks.length}`}>{para}</p>);
+    para = null;
+  };
+  const flushList = () => {
+    if (!list) return;
+    blocks.push(<ul key={`u${blocks.length}`}>{list}</ul>);
+    list = null;
+  };
   md.split('\n').forEach((line, index) => {
+    const start = offset;
+    offset += line.length + 1;
+    const source = sourceMap ? { 'data-note-start': start, 'data-note-end': start + line.length } : {};
     const bullet = line.match(/^\s*-\s+(.*)$/);
     if (bullet) {
       flushPara();
       if (!list) list = [];
-      list.push(<li key={index}>{renderInline(bullet[1], `l${index}`)}</li>);
+      const contentStart = start + line.length - bullet[1].length;
+      const marker = sourceMap ? { 'data-note-marker': start + line.indexOf('-') } : {};
+      list.push(<li key={index} {...source} {...marker}>{renderInline(bullet[1], `l${index}`, sourceMap ? contentStart : null)}</li>);
       return;
     }
-    if (line.trim() === '') { flushPara(); flushList(); return; }
+    if (sourceMap) {
+      flushList();
+      blocks.push(<p key={`p${index}`} {...source}>{line ? renderInline(line, `t${index}`, start) : <br data-note-placeholder="" />}</p>);
+      return;
+    }
+    if (line.trim() === '') {
+      flushPara();
+      flushList();
+      return;
+    }
     flushList();
     if (!para) para = [];
     if (para.length > 0) para.push(<br key={`b${index}`} />);

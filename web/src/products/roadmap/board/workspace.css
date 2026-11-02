@@ -398,3 +398,20 @@
   color: var(--text-primary);
   font-weight: 700;
 }
+
+.st-board-workspace-task > .st-board-workspace-remove {
+  opacity: 0;
+  pointer-events: none;
+}
+.st-board-workspace-task:hover > .st-board-workspace-remove,
+.st-board-workspace-task:focus-within > .st-board-workspace-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+.st-board-step-page .st-board-workspace-history > .st-board-workspace-history-title {
+  font: 700 18px/24px var(--font-display);
+}
+.st-board-workspace-text,
+.st-board-workspace-missing .st-board-step-action {
+  gap: 6px;
+}
