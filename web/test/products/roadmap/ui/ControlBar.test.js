@@ -153,8 +153,15 @@ test('Chromium: the tablet creation verb keeps its name in the compact icon vari
     assert.deepEqual(await button.evaluate((element) => ({
       width: element.getBoundingClientRect().width,
       height: element.getBoundingClientRect().height,
-      labelDisplay: getComputedStyle(element.querySelector('span')).display,
-    })), { width: 44, height: 44, labelDisplay: 'none' });
+      compact: element.classList.contains('st-board-new-step--compact'),
+      text: element.textContent,
+    })), { width: 44, height: 44, compact: true, text: '' });
+    await page.setViewportSize({ width: 1024, height: 1000 });
+    await button.locator('span').waitFor();
+    assert.deepEqual(await button.evaluate((element) => ({
+      compact: element.classList.contains('st-board-new-step--compact'),
+      text: element.textContent,
+    })), { compact: false, text: 'New step' });
   } finally {
     await page.close();
   }

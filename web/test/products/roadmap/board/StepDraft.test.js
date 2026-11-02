@@ -87,15 +87,22 @@ test('StepDraft — a remotely deleted prerequisite leaves the draft, preview an
   assert.deepEqual(draft.prerequisites, ['gone', 'parts']);
 });
 
-test('StepDraft — named legend kinds keep legend order, then unnamed hues follow palette order', () => {
-  assert.deepEqual(StepDraft.kinds([
-    { hue: 'gold', label: 'Milestone' }, { hue: 'terracotta', label: 'Build' },
-    { hue: 'sky', label: '' }, { hue: 'olive', label: 'Learn' },
-    { hue: 'gold', label: 'Duplicate' }, { hue: 'unknown', label: 'Unknown' },
-  ]), [
-    { hue: 'gold', label: 'Milestone' }, { hue: 'terracotta', label: 'Build' }, { hue: 'olive', label: 'Learn' },
-    { hue: 'brick', label: 'Brick' }, { hue: 'sky', label: 'Sky' }, { hue: 'plum', label: 'Plum' },
-  ]);
+test('StepDraft — placement names blank prerequisites without changing nonblank authored titles', () => {
+  const tree = new SkillTree({ id: 'blank', title: '', nodes: [
+    { id: 'empty', label: '', prerequisites: [] },
+    { id: 'missing', prerequisites: [] },
+    { id: 'spaces', label: '  ', prerequisites: [] },
+    { id: 'padded', label: '  Read the wind  ', prerequisites: [] },
+  ] });
+  const draft = new StepDraft({ id: 'new' });
+  for (const id of ['empty', 'missing', 'spaces']) {
+    assert.deepEqual(draft.with({ prerequisites: [id] }).placement(tree, new Set()), {
+      column: 'locked', body: 'Unnamed step isn’t done',
+    });
+  }
+  assert.deepEqual(draft.with({ prerequisites: ['padded'] }).placement(tree, new Set()), {
+    column: 'locked', body: '  Read the wind   isn’t done',
+  });
 });
 
 test('PrerequisiteChoices — results group Done, Up next, Locked with state words and authored order in each group', () => {
@@ -106,11 +113,6 @@ test('PrerequisiteChoices — results group Done, Up next, Locked with state wor
     { id: 'bowline', label: 'Tie a bowline', color: 'olive', state: 'Up next', column: 'upNext', context: null, selected: false },
     { id: 'dock', label: 'Leave the dock', color: 'terracotta', state: 'Locked', column: 'locked', context: null, selected: false },
   ]);
-  assert.deepEqual(choices.groups, [
-    { column: 'done', rows: choices.rows.slice(0, 1) },
-    { column: 'upNext', rows: choices.rows.slice(1, 3) },
-    { column: 'locked', rows: choices.rows.slice(3) },
-  ]);
   assert.deepEqual({ count: choices.count, total: choices.total, fits: choices.fits, hasMore: choices.hasMore, nextCount: choices.nextCount }, {
     count: 4, total: 4, fits: true, hasMore: false, nextCount: 0,
   });
@@ -118,14 +120,32 @@ test('PrerequisiteChoices — results group Done, Up next, Locked with state wor
 
 test('PrerequisiteChoices — only colliding titles carry starting-step or first-prerequisite context', () => {
   const choices = new PrerequisiteChoices(sailing([
-    { id: 'chart-root', label: 'Read a chart', prerequisites: [] },
+    { id: 'chart-root', label: '  Read a chart  ', prerequisites: [] },
     { id: 'chart-after', label: 'Read a chart', prerequisites: ['wind', 'parts'] },
   ]), new Set(['parts']));
   assert.deepEqual(choices.search('  READ A CHART ').rows, [
-    { id: 'chart-root', label: 'Read a chart', color: 'terracotta', state: 'Up next', column: 'upNext', context: 'a starting step', selected: false },
+    { id: 'chart-root', label: '  Read a chart  ', color: 'terracotta', state: 'Up next', column: 'upNext', context: 'a starting step', selected: false },
     { id: 'chart-after', label: 'Read a chart', color: 'terracotta', state: 'Locked', column: 'locked', context: 'after Read the wind', selected: false },
   ]);
   assert.deepEqual(choices.search('wind').rows.map((row) => row.context), [null]);
+});
+
+test('PrerequisiteChoices — blank titles share the step detail fallback in rows, search and collision context', () => {
+  const tree = new SkillTree({ id: 'blank', title: '', nodes: [
+    { id: 'empty', label: '', prerequisites: [] },
+    { id: 'missing', prerequisites: [] },
+    { id: 'spaces', label: '  ', prerequisites: ['empty'] },
+    { id: 'named', label: 'Unnamed step', prerequisites: ['missing'] },
+  ] });
+  const choices = new PrerequisiteChoices(tree, new Set(), { selected: ['spaces'] }).search('unnamed');
+  assert.deepEqual(choices.rows, [
+    { id: 'empty', label: 'Unnamed step', color: 'terracotta', state: 'Up next', column: 'upNext', context: 'a starting step', selected: false },
+    { id: 'missing', label: 'Unnamed step', color: 'terracotta', state: 'Up next', column: 'upNext', context: 'a starting step', selected: false },
+    { id: 'spaces', label: 'Unnamed step', color: 'terracotta', state: 'Locked', column: 'locked', context: 'after Unnamed step', selected: true },
+    { id: 'named', label: 'Unnamed step', color: 'terracotta', state: 'Locked', column: 'locked', context: 'after Unnamed step', selected: false },
+  ]);
+  assert.deepEqual(choices.selected, [choices.rows[2]]);
+  assert.equal(choices.count, 4);
 });
 
 test('PrerequisiteChoices — selection survives queries, clearing, no matches and chip removal without writing the draft', () => {

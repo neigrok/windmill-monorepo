@@ -1,6 +1,6 @@
 import { UnlockRules } from '../model/UnlockRules.js';
-import { DEFAULT_NODE_COLOR, NODE_COLOR_NAMES } from '../theme.js';
-import { COLUMN_TITLES, COMPOSER, PICKER, afterStep, placementPreview } from './copy.js';
+import { DEFAULT_NODE_COLOR } from '../theme.js';
+import { COLUMN_TITLES, COMPOSER, PICKER, STEP_DETAIL, afterStep, placementPreview } from './copy.js';
 
 const DEFAULT_DRAFT_COLOR = 'sky';
 const PAGE_SIZE = 20;
@@ -40,26 +40,14 @@ export class StepDraft {
     const states = UnlockRules.derive({ nodes: [...tree.nodes, draft] }, { completed });
     const prerequisites = draft.prerequisites.map((id) => tree.nodesById.get(id));
     const unmet = prerequisites.filter((step) => states.get(step.id) !== 'complete');
-    const preview = placementPreview({ prerequisites, unmet: unmet.map((step) => step.label) });
+    const unmetLabels = unmet.map((step) => step.label?.trim() ? step.label : STEP_DETAIL.unnamed);
+    const preview = placementPreview({ prerequisites, unmet: unmetLabels });
     return { ...preview, column: COLUMN_OF_STATE[states.get(draft.id)] };
   }
 
   toCreateRequest(tree) {
     const draft = tree ? this.reconcile(tree) : this;
     return new CreateStepRequest({ ...draft, label: draft.name });
-  }
-
-  static kinds(legend = []) {
-    const named = new Map();
-    for (const kind of legend) {
-      if (NODE_COLOR_NAMES.includes(kind.hue) && kind.label?.trim() && !named.has(kind.hue)) {
-        named.set(kind.hue, { hue: kind.hue, label: kind.label });
-      }
-    }
-    return [
-      ...named.values(),
-      ...NODE_COLOR_NAMES.filter((hue) => !named.has(hue)).map((hue) => ({ hue, label: `${hue[0].toUpperCase()}${hue.slice(1)}` })),
-    ];
   }
 }
 
@@ -86,23 +74,25 @@ export class PrerequisiteChoices {
 
     const chosen = new Set(this.selectedIds);
     const states = UnlockRules.derive(tree, { completed });
+    const labels = new Map(tree.nodes.map((step) => [step.id, step.label?.trim() ? step.label : STEP_DETAIL.unnamed]));
     const titleCounts = new Map();
     for (const step of tree.nodes) {
-      const title = step.label.trim().toLowerCase();
+      const title = labels.get(step.id).trim().toLowerCase();
       titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
     }
 
     const candidates = tree.nodes.map((step) => {
       const column = COLUMN_OF_STATE[states.get(step.id)];
       const parent = tree.nodesById.get(step.prerequisites[0]);
-      const collision = titleCounts.get(step.label.trim().toLowerCase()) > 1;
+      const label = labels.get(step.id);
+      const collision = titleCounts.get(label.trim().toLowerCase()) > 1;
       return Object.freeze({
         id: step.id,
-        label: step.label,
+        label,
         color: step.color ?? DEFAULT_NODE_COLOR,
         state: COLUMN_TITLES[column],
         column,
-        context: collision ? (parent ? afterStep({ step: parent.label }) : PICKER.startingStep) : null,
+        context: collision ? (parent ? afterStep({ step: labels.get(parent.id) }) : PICKER.startingStep) : null,
         selected: chosen.has(step.id),
       });
     });
@@ -114,9 +104,6 @@ export class PrerequisiteChoices {
     this.total = candidates.length;
     this.count = matches.length;
     this.rows = Object.freeze(ordered.slice(0, limit));
-    this.groups = Object.freeze(PICKER_COLUMNS.map((column) => Object.freeze({
-      column, rows: Object.freeze(this.rows.filter((row) => row.column === column)),
-    })).filter((group) => group.rows.length > 0));
     this.selected = Object.freeze(this.selectedIds.map((id) => byId.get(id)));
     Object.freeze(this);
   }
