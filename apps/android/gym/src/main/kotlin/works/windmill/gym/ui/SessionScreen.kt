@@ -1,52 +1,50 @@
 package works.windmill.gym.ui
 
-import works.windmill.platform.design.WindmillType
-import androidx.compose.material3.MaterialTheme
-import works.windmill.platform.design.WindmillSheet
-import works.windmill.gym.sharing.WorkoutShareCard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
-import works.windmill.platform.net.WindmillJson
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -55,7 +53,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
-import works.windmill.gym.sharing.WorkoutShareActions
+import works.windmill.gym.LocalFrameStands
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.PlanEntry
@@ -63,29 +61,32 @@ import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.Scheme
-import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.SetEffort
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.sharing.WorkoutShareActions
+import works.windmill.gym.sharing.WorkoutShareCard
 import works.windmill.gym.store.Deletion
+import works.windmill.gym.store.DeletionsStore
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.DeletionsStore
 import works.windmill.gym.store.HeldDeletes
 import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutSession
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.design.WindmillSheet
+import works.windmill.platform.design.WindmillType
+import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 // What the workout page draws.
 @Stable
@@ -93,6 +94,7 @@ interface SessionState {
     val catalog: List<Exercise>
     val allSessions: List<SessionSummary>
     val deletedSets: Set<String>
+    fun isGone(sessionId: String): Boolean
     fun retainedSession(detail: SessionDetail): SessionDetail
 }
 
@@ -117,6 +119,7 @@ class SessionBinding(
     override val catalog: List<Exercise> get() = routines.catalog
     override val allSessions: List<SessionSummary> get() = history.allSessions
     override val deletedSets: Set<String> get() = held.deletedSets
+    override fun isGone(sessionId: String): Boolean = history.isGone(sessionId)
     override fun retainedSession(detail: SessionDetail): SessionDetail = history.retainedSession(detail)
     override suspend fun sessionDetail(sessionId: String, seed: SessionDetail?): GymResult<SessionDetail> =
         history.sessionDetail(sessionId, seed)
@@ -278,6 +281,16 @@ fun SessionScreen(
 
     val currentDetail = detail?.let(state::retainedSession)
     val readId = currentDetail?.session?.id ?: summary.id
+    val gone = state.isGone(readId)
+    val frameStands = LocalFrameStands.current
+    var leftGone by remember(readId) { mutableStateOf(false) }
+    LaunchedEffect(readId, gone, frameStands) {
+        if (gone && frameStands && !leftGone) {
+            leftGone = true
+            onBack()
+            say("That workout is no longer on the log.")
+        }
+    }
     val visibleSets = currentDetail?.sets?.filterNot { it.id in state.deletedSets }
     val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), state.catalog) }
         ?: state.allSessions.firstOrNull { it.id == summary.id } ?: summary
@@ -550,6 +563,7 @@ private data class PreviewSessionState(
     override val allSessions: List<SessionSummary> = emptyList(),
     override val deletedSets: Set<String> = emptySet(),
 ) : SessionState {
+    override fun isGone(sessionId: String): Boolean = false
     override fun retainedSession(detail: SessionDetail): SessionDetail = detail
 }
 

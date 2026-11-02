@@ -3,20 +3,39 @@ package works.windmill.gym.store
 import java.io.File
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.presentation.*
 import works.windmill.gym.domain.sync.Prefill
+import works.windmill.gym.presentation.GymPreferences
+import works.windmill.gym.presentation.LastSet
+import works.windmill.gym.presentation.PlanSnapshot
+import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionDetail
+import works.windmill.gym.presentation.SessionStart
+import works.windmill.gym.presentation.SetFix
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.SetWrite
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.RecordID
-import works.windmill.sync.core.*
-import works.windmill.sync.engine.*
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
+import works.windmill.sync.engine.dormantReplicas
+import works.windmill.sync.engine.nextPush
+import works.windmill.sync.engine.signIn
+import works.windmill.sync.engine.signOut
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
@@ -302,7 +321,7 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account()); val session = room.workout(); room.add(engine)
             engine.releaseHeld(true); engine.nextPush()
-            val record = (room.store.history.record("bench-press") as GymResult.Ok).value
+            val record = (room.store.history.record("bench-press") as RecordRead.Ready).value.record
             assertEquals(session.id, record.recentDays.single().sessionId)
             assertEquals(listOf(82.5), record.recentDays.single().sets.map { it.weightKg })
         }

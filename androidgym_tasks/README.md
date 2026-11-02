@@ -253,4 +253,6 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [110](110-telemetry-queue.md) — Telemetry saves off the caller and dormant accounts yield capacity
 - [111](111-release-mapping-headings.md) — Release mappings and accessible headings
 
+- [107](107-history-reads.md) — History paging belongs to its job, and opened records follow their replica
+
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.

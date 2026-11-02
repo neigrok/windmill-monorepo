@@ -21,9 +21,11 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -35,16 +37,16 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.net.GymRest
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.LogLevel
 import works.windmill.gym.presentation.McpKey
 import works.windmill.gym.presentation.OAuthGrant
-import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.GymRest
-import kotlinx.coroutines.CompletableDeferred
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
+import works.windmill.platform.net.WindmillApiException
 
 // Both credential reads decide the root state; the separate disclosure keeps the permitted levels.
 @RunWith(RobolectricTestRunner::class)
@@ -188,7 +190,7 @@ class ConnectedLogScreenTests {
 
     @Test fun knownOfflineUsesItsConnectionSentenceAndKeepsTheRootDoors() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeGymRest().apply { refuseGrants = works.windmill.platform.net.WindmillApiException.Offline }
+        val server = FakeGymRest().apply { refuseGrants = WindmillApiException.Offline }
         screen(room(scope, server, true).store, true)
         compose.onNodeWithText(ConnectedLog.offline).assertIsDisplayed()
         compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
@@ -281,13 +283,15 @@ class ConnectedLogScreenTests {
         val store = phone.store
         try {
             screen(store, true)
-            compose.runOnIdle {
+            val reconnecting = compose.runOnIdle { scope.async {
                 assertEquals(1, grantReads)
                 val original = phone.account()
-                runBlocking { store.connect(Account(original.origin, original.user, identityRevision = original.identityRevision)) }
+                store.connect(Account(original.origin, original.user, identityRevision = original.identityRevision))
                 assertFalse(store.seat.isLoading)
                 release.complete(Unit)
-            }
+            } }
+            compose.waitUntil(10_000) { compose.runOnIdle { reconnecting.isCompleted } }
+            runBlocking { reconnecting.await() }
             compose.waitUntil(5_000) { grantReads == 2 && store.sharing.connectedLog.answered }
             compose.runOnIdle {
                 assertEquals(listOf(2, 2), listOf(grantReads, keyReads))

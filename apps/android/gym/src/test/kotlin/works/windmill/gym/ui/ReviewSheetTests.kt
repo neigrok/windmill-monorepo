@@ -1,22 +1,24 @@
 package works.windmill.gym.ui
 
+import android.os.Looper
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
@@ -24,7 +26,6 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -34,16 +35,19 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.unit.dp
-import android.os.Looper
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.async
 import org.junit.After
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -52,24 +56,23 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import works.windmill.domain.kit.Id
+import works.windmill.gym.domain.sync.Exercise as SyncExercise
+import works.windmill.gym.domain.sync.ProposalRules
+import works.windmill.gym.domain.sync.RoutineEntry as SyncEntry
+import works.windmill.gym.domain.sync.SeedExercises
+import works.windmill.gym.domain.sync.SetTarget as SyncTarget
+import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.presentation.ChangeKind
 import works.windmill.gym.presentation.Proposal
-import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalChange
+import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.presentation.ProposalTargets
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
-import works.windmill.gym.domain.sync.ProposalRules
-import works.windmill.gym.domain.sync.SeedExercises
-import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
@@ -79,9 +82,6 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.modelserver.ServerCall
-import works.windmill.gym.domain.sync.Exercise as SyncExercise
-import works.windmill.gym.domain.sync.RoutineEntry as SyncEntry
-import works.windmill.gym.domain.sync.SetTarget as SyncTarget
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -344,17 +344,21 @@ class ReviewSheetTests {
         val decided = mutableListOf<Proposal>()
         sheet(store, decided)
         compose.onNodeWithText("Apply").assertIsEnabled()
-        val live = compose.runOnIdle { runBlocking { (store.workout.start(routine.id) as GymResult.Ok).value } }
+        val startingWorkout = compose.runOnIdle { scope.async { (store.workout.start(routine.id) as GymResult.Ok).value } }
+        compose.waitUntil(10_000) { compose.runOnIdle { startingWorkout.isCompleted } }
+        val live = runBlocking { startingWorkout.await() }
         compose.onNodeWithText("Finish this session").assertIsDisplayed()
         compose.onNodeWithText("Apply").assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
-        compose.runOnIdle {
+        val finishingWorkout = compose.runOnIdle { scope.async {
             assertEquals(live, store.workout.session)
-            assertEquals(pending, runBlocking { room.training.proposal("proposal1") })
+            assertEquals(pending, room.training.proposal("proposal1"))
             assertEquals(emptyList<Proposal>(), decided)
             assertEquals(emptyList<String>(), decisions(room))
-            runBlocking { assertTrue(store.workout.finish() is FinishOutcome.Closed) }
-        }
+            assertTrue(store.workout.finish() is FinishOutcome.Closed)
+        } }
+        compose.waitUntil(10_000) { compose.runOnIdle { finishingWorkout.isCompleted } }
+        runBlocking { finishingWorkout.await() }
         compose.onNodeWithText("Finish this session").assertDoesNotExist()
         compose.onNodeWithText("Apply").assertIsEnabled()
         compose.onNodeWithText("Turn this down").assertIsEnabled()
@@ -734,27 +738,29 @@ class ReviewSheetTests {
         val logged = store.history.logged
         compose.onNode(hasText("Remove Push Day") and hasClickAction()).assertIsEnabled().performClick()
         receipt(room, server, decided)
-        compose.runOnIdle {
+        val readingRetained = compose.runOnIdle { scope.async {
             assertEquals(listOf(pending.copy(state = ProposalState.Applied)), decided)
             assertEquals(emptyList<Routine>(), store.routines.all)
             assertEquals(emptyList<Routine>(), room.training.program())
             assertEquals(history, room.training.details())
             assertEquals(logged, store.history.logged)
-            runBlocking { assertEquals(GymResult.Ok(confirmed), store.history.sessionDetail(closed.session.id)) }
-            runBlocking { assertEquals(ProposalRead.Found(decided.single()), store.routines.proposal(pending.id)) }
-        }
+            assertEquals(GymResult.Ok(confirmed), store.history.sessionDetail(closed.session.id))
+            assertEquals(ProposalRead.Found(decided.single()), store.routines.proposal(pending.id))
+        } }
+        compose.waitUntil(10_000) { compose.runOnIdle { readingRetained.isCompleted } }
+        runBlocking { readingRetained.await() }
         compose.onNode(hasText("Remove Push Day") and hasClickAction()).assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
         compose.onNodeWithText(requireNotNull(decided.single().receipt)).assertIsDisplayed()
         val cold = EngineRoomFixture(room.directory, scope, room.engine.snapshot(), rest = FakeGymRest()).also { rooms += it }
-        compose.runOnIdle {
-            runBlocking {
-                cold.selected = "u1"
-                cold.store.connect(cold.account())
-                assertEquals(ProposalRead.Gone, cold.store.routines.proposal(pending.id))
-            }
+        val connectingCold = compose.runOnIdle { scope.async {
+            cold.selected = "u1"
+            cold.store.connect(cold.account())
+            assertEquals(ProposalRead.Gone, cold.store.routines.proposal(pending.id))
             displayed.value = cold.store
-        }
+        } }
+        compose.waitUntil(10_000) { compose.runOnIdle { connectingCold.isCompleted } }
+        runBlocking { connectingCold.await() }
         compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Coach wrote:").assertDoesNotExist()
@@ -879,7 +885,9 @@ class ReviewSheetTests {
         compose.onNodeWithText(supersededSentence).assertIsDisplayed()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertDoesNotExist()
 
-        compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Routine(edited.id, edited.name))) } }
+        val deletingRoutine = compose.runOnIdle { scope.async { assertNull(store.deletions.delete(Deletion.Routine(edited.id, edited.name))) } }
+        compose.waitUntil(10_000) { compose.runOnIdle { deletingRoutine.isCompleted } }
+        runBlocking { deletingRoutine.await() }
 
         compose.runOnIdle {
             assertEquals("the row is off the routines home", emptyList<String>(),

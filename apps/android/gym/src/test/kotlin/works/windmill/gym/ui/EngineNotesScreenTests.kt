@@ -2,11 +2,19 @@ package works.windmill.gym.ui
 
 import android.os.Looper
 import androidx.compose.runtime.remember
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import kotlinx.coroutines.*
-import org.junit.Assert.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -39,7 +47,7 @@ class EngineNotesScreenTests {
                 shadowOf(Looper.getMainLooper()).idle()
                 condition()
             }
-        } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
+        } catch (timeout: ComposeTimeoutException) {
             throw AssertionError("notesRead=${room.store.notes.notesRead}; notes=${room.store.notes.all.map { it.id }}; " +
                 "noteRefusals=${room.store.notes.noteRefusals.size}; " +
                 "noticeIds=${room.engine.notices("gym").notices.value.map { it.id }}", timeout)
@@ -88,11 +96,13 @@ class EngineNotesScreenTests {
             runBlocking { room.select("A"); room.pull(server) }
             room.store.observeEngine()
             show(room)
-            compose.runOnIdle { runBlocking {
+            val savingNote = compose.runOnIdle { scope.async {
                 assertTrue(room.store.notes.saveNote("note0001", NoteWrite("Coach tone", "Be direct.")) is GymResult.Ok)
                 server.refuse(code = "cap", detail = Json.objectOf("type" to Json.of("note"), "cap" to Json.of(10)))
                 room.sync(server)
             } }
+            compose.waitUntil(10_000) { compose.runOnIdle { savingNote.isCompleted } }
+            runBlocking { savingNote.await() }
             waitForNotebook(room) { room.store.notes.noteRefusals.isNotEmpty() && room.store.notes.all.isEmpty() }
             compose.onNodeWithText("The log has reached its limit. Remove an entry first.").assertIsDisplayed()
             compose.runOnIdle {
