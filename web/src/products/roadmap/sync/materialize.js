@@ -123,6 +123,11 @@ export function materialize(gesture, lattice, clock) {
       const byId = new Map(data.nodes.map((n) => [n.id, n]));
       for (const id of g.nodeIds) if (byId.has(id)) nodes.push(node(id, at, { deleted: true }));
       for (const edge of respliceEdges(data.nodes, doomed)) edges.push(addEdge(edge.from, edge.to, at));
+      if (g.retireIncidentEdges) {
+        for (const edge of lattice.presentEdges()) {
+          if (doomed.has(edge.from) || doomed.has(edge.to)) edges.push(removeEdge(edge.from, edge.to, at));
+        }
+      }
       for (const e of g.edges ?? []) {
         if (doomed.has(e.from) || doomed.has(e.to)) continue; // dies with the tombstone anyway
         edges.push(removeEdge(e.from, e.to, at));

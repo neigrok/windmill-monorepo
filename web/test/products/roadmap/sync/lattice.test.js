@@ -78,3 +78,23 @@ test('two replicas that trade frames in opposite orders read the same createdMs,
   assert.deepEqual(created(b), expected);
   assert.deepEqual(created(fresh), expected);
 });
+
+test('presentEdges includes masked endpoints and self-edges while liveEdges keeps its projection and order', () => {
+  const lattice = new TreeLattice('sail');
+  lattice.join({ nodes: [
+    { id: 'root', createdAt: '100:0:seed' },
+    { id: 'wind', createdAt: '100:0:seed', deletedAt: '200:0:seed' },
+    { id: 'dock', createdAt: '100:0:seed' },
+  ], edges: [
+    { from: 'root', to: 'wind', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'dock', addedAt: '100:0:seed' },
+    { from: 'root', to: 'dock', addedAt: '100:0:seed' },
+    { from: 'dock', to: 'dock', addedAt: '100:0:seed' },
+    { from: 'absent', to: 'root', addedAt: '100:0:seed', removedAt: '200:0:seed' },
+  ] });
+  assert.deepEqual(lattice.presentEdges(), [
+    { from: 'root', to: 'wind' }, { from: 'wind', to: 'dock' },
+    { from: 'root', to: 'dock' }, { from: 'dock', to: 'dock' },
+  ]);
+  assert.deepEqual(lattice.liveEdges(), [{ from: 'root', to: 'dock' }]);
+});

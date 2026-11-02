@@ -111,7 +111,8 @@ Board completion emits `roadmap_board_complete` with `door` (`swipe` or `key`), 
 (`confirm`, `cancel`, `held` or `sent`); `sent` occurs only when release returns a dispatch receipt and also carries `via`
 (`timer`, `replaced` or `left`). The step-menu `delete` action continues to mean that its menu item was pressed.
 Opening the composer emits `roadmap_board_create` with `step: open` and `door` (`verbs`, `band`, `empty` or
-`complete`). A successful create emits `step: saved`, `column` (`locked` or `upNext`) and boolean `filterCleared`.
+`complete`); the tablet identity row's New step button uses `door: verbs`. A successful create emits
+`step: saved`, `column` (`locked` or `upNext`) and boolean `filterCleared`.
 The composer also emits `roadmap_board_create` with `step` (`failed`, `retry`, `discard` or `cancel`). The picker
 emits `roadmap_board_picker` with `step` (`open`, `apply`, `cancel` or `more`); only `apply` carries `count`, bucketed
 as `0`, `1`, `2-5`, `6-20` or `21+`. With zero candidates the Prerequisites row opens no picker and

@@ -84,7 +84,7 @@
   line-height: 16px;
   color: var(--text-secondary);
 }
-/* The identity row's field stands at its far end, past the switch. */
+/* The identity row pushes its field and following controls past the switch. */
 .st-board-identity .st-board-find {
   margin-left: auto;
 }

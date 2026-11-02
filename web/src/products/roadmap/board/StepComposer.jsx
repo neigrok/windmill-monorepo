@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, Check, ChevronDown } from 'lucide-react';
 import { Button } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
@@ -296,7 +297,7 @@ export function StepComposer({ tree, completed, legend, band, onCreate, onClose 
     </div>
   );
 
-  return (
+  return createPortal(
     <div
       style={viewport.style}
       className={`st-board-composer-layer ${phone ? 'is-phone' : 'is-wide'}`}
@@ -324,7 +325,8 @@ export function StepComposer({ tree, completed, legend, band, onCreate, onClose 
           }}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

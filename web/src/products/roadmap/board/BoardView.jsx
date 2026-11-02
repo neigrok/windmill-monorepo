@@ -5,7 +5,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import './board.css';
 import { Board, BoardQuery } from './Board.js';
 import { kindOptions } from '../model/Legend.js';
-import { FilterStrip, FindStep } from './BoardControls.jsx';
+import { FilterStrip, FindStep, NewStep } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
@@ -88,6 +88,7 @@ function BoardView({
   const retried = useRef(false);
   const lastFocus = useRef(null);
   const consumedReveal = useRef(null);
+  const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
@@ -137,7 +138,11 @@ function BoardView({
     setAnchored(null);
     if (anchored.key !== null && consumedReveal.current !== anchored.key) {
       consumedReveal.current = anchored.key;
-      requestAnimationFrame(() => card.focus({ preventScroll: true }));
+      requestAnimationFrame(() => {
+        revealFocus.current = card;
+        card.focus({ preventScroll: true });
+        revealFocus.current = null;
+      });
     }
   }, [anchored, board]);
 
@@ -184,7 +189,11 @@ function BoardView({
   return (
     <div
       ref={boardRef}
-      onFocus={(event) => { lastFocus.current = event.target; }}
+      onFocus={(event) => {
+        lastFocus.current = event.target;
+        if (revealFocus.current !== event.target) motion.settle(event.target.dataset.stepId);
+      }}
+      onPointerDown={(event) => motion.settle(event.target.closest('.st-board-card')?.dataset.stepId)}
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
       style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + var(--space-3))` : undefined, paddingBottom: bottomInset }}
     >
@@ -199,6 +208,9 @@ function BoardView({
           )}
           <ViewSwitch view="board" onSwitch={onSwitchView} phone={phone} />
           {frame === 'columns' && board && !phone && <FindStep query={query} onQuery={onQuery} />}
+          {frame === 'columns' && breakpoint === 'tablet' && onNewStep && (
+            <NewStep compact onClick={() => onNewStep('verbs')} />
+          )}
         </header>
       )}
       {notice}
@@ -219,7 +231,6 @@ function BoardView({
                 leaving={motion.leaving}
                 dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
                 pinned={motion.pinned}
-                settle={motion.settle}
                 onComplete={onComplete}
                 onNewStep={onNewStep && (() => onNewStep('band'))}
                 shown={shown}
@@ -245,7 +256,6 @@ function BoardView({
                   leaving={motion.leaving}
                   dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
                   pinned={motion.pinned}
-                  settle={motion.settle}
                   onComplete={onComplete}
                   onStandColumn={(column) => { if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column)); }}
                   band={breakpoint}

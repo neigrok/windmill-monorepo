@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 import { BoardActs } from '../../../../src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
@@ -41,7 +42,7 @@ for (const via of ['timer', 'replaced', 'left']) {
     assert.equal(c.held, null);
     assert.deepEqual(calls, [
       ['event', 'roadmap_board_delete', { step: 'held' }],
-      ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
+      ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }],
       ['event', 'roadmap_board_delete', { step: 'sent', via }],
     ]);
   });
@@ -64,7 +65,7 @@ test('a new held delete releases its predecessor and owns its own Undo', () => {
   first.action.run();
   first.onLeave('replaced');
   assert.deepEqual(c.held.ids, ['dock']);
-  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }]]);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }]]);
 });
 
 test('a release retains its original session across roadmap changes', () => {
@@ -72,7 +73,7 @@ test('a release retains its original session across roadmap changes', () => {
   acts.delete('wind');
   acts.update({ ...c, session: { dispatch() { throw Error('Wrong session'); } } });
   acts.release('left');
-  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }]]);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }]]);
 });
 
 test('a no-op release clears the projection without reporting an expected refusal', () => {
@@ -209,3 +210,39 @@ test('expired create receipt causes no quiet marker or Undo event', () => {
   c.toast.action.run();
   assert.deepEqual(calls, []);
 });
+
+for (const via of ['timer', 'left']) {
+  test(`a held deletion released through ${via} exposes no masked work in its real session notification or persisted state`, async () => {
+    const observed = [];
+    const saved = [];
+    const session = new SyncSession({ treeId: 'sail', registry: null,
+      store: { save: async (_treeId, state) => saved.push(state.frame) } });
+    const data = { id: 'sail', title: 'Sail', nodes: [
+      { id: 'course', label: 'Choose a course', prerequisites: [] },
+      { id: 'wind', label: 'Read the wind', prerequisites: ['course'] },
+      { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'] },
+    ] };
+    session.seed(data);
+    session.onTreeChanged(() => observed.push(session.maskedWork()));
+    const { acts, c, calls } = fixture({ tree: new SkillTree(data), session });
+    acts.delete('wind');
+    assert.deepEqual(session.maskedWork(), []);
+    assert.equal(saved.length, 0);
+    c.toast.onLeave(via);
+    await Promise.resolve();
+    assert.deepEqual(observed, [[]]);
+    assert.deepEqual(session.maskedWork(), []);
+    assert.deepEqual(session.lattice.presentEdges(), [{ from: 'course', to: 'dock' }]);
+    const persisted = new SyncSession({ treeId: 'sail', registry: null });
+    assert.equal(saved.length, 1);
+    persisted.lattice.join(saved[0]);
+    assert.deepEqual(persisted.maskedWork(), []);
+    assert.deepEqual(persisted.lattice.toTreeData().nodes.map(({ id, prerequisites }) => ({ id, prerequisites })), [
+      { id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] },
+    ]);
+    assert.deepEqual(calls, [
+      ['event', 'roadmap_board_delete', { step: 'held' }],
+      ['event', 'roadmap_board_delete', { step: 'sent', via }],
+    ]);
+  });
+}

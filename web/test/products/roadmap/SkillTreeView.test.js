@@ -16,13 +16,17 @@ const visit = (node) => {
     assert.equal(handlers.has(node.id.name), false);
     handlers.set(node.id.name, code.slice(node.init.start, node.init.end));
   }
+  if (node.type === 'VariableDeclarator' && node.id.name === 'newStepFromBoard') {
+    const callback = node.init.arguments[0];
+    handlers.set(node.id.name, code.slice(callback.start, callback.end));
+  }
   for (const child of Object.values(node)) {
     if (Array.isArray(child)) child.forEach(visit);
     else if (child && typeof child === 'object') visit(child);
   }
 };
 visit(parse(code, { ecmaVersion: 'latest', sourceType: 'module' }));
-assert.deepEqual([...handlers.keys()].sort(), ['onEditorKey', 'onPaste']);
+assert.deepEqual([...handlers.keys()].sort(), ['newStepFromBoard', 'onEditorKey', 'onPaste']);
 
 function host({ gate = true, coveringPage = false, modal = false, pasteComposer = false, typing = false } = {}) {
   const calls = [];
@@ -97,4 +101,22 @@ test('the closed Board gate preserves the host shortcut behavior under other lay
   const pasteComposer = host({ gate: false, pasteComposer: true });
   pasteComposer.paste();
   assert.deepEqual(pasteComposer.calls, []);
+});
+
+test('the Board creation verb opens its composer only for the active owner behind the open gate', () => {
+  for (const [gate, active, owner] of [[false, true, true], [true, false, true], [true, true, false], [true, true, true]]) {
+    const calls = [];
+    const open = runInNewContext(`(${handlers.get('newStepFromBoard')})`, {
+      BOARD_OPEN: gate,
+      boardActive: active,
+      owner,
+      setBoardComposer: ({ door }) => calls.push(['composer', door]),
+      track: (name, { step, door }) => calls.push(['event', name, step, door]),
+    });
+    open('verbs');
+    assert.deepEqual(calls, gate && active && owner ? [
+      ['composer', 'verbs'],
+      ['event', 'roadmap_board_create', 'open', 'verbs'],
+    ] : []);
+  }
 });

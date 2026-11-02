@@ -91,7 +91,8 @@ cards for 320ms and updates counts on arrival. Phone completion closes the gap o
 the arriving card over 480ms. Toast entry follows the last beat by 120ms. Any pointer, wheel or key
 fast-forwards within 150ms; reduced motion uses opacity without travel or scale. Columns keep their
 scroll, and moving and pending cards remain rendered through virtualization. Undo, including inline
-Undo of Reset, dims in place without a wake. Focus landing on an arriving card ends its wake.
+Undo of Reset, dims in place for 280ms without a wake. User focus or pointer interaction ends a card's
+wake; programmatic reveal focus preserves it. Equivalent Board rerenders preserve the running quiet phase.
 
 `gestures.js` owns the phone card's reveal-only swipe, independent of the List gesture. Only Up next
 cards offer it. The card preserves vertical scrolling, leaves the OS edge alone, claims a horizontal
@@ -126,7 +127,10 @@ Delete first confirms in an anchored desktop popover or phone sheet. Its cost li
 children through `acts.deletionCost`, matching the Graph and List; it does not count newly spliced edges.
 Confirm closes the detail and creates a `HeldDelete`, with no structural write yet. For its nine-second
 Undo window, every Board surface reads the held projection: cards, counts, identity, topbar, detail
-and composer. `SkillTree.without` and eventual `BulkDelete` share `respliceEdges`.
+and composer. `SkillTree.without` and eventual `BulkDelete` share `respliceEdges`. Board release also
+retires the deleted steps' incident edges in that same stamped gesture, so those edges cannot raise
+the legacy masked-work Restore offer after the hold or after a switch to Graph. Graph and List
+delete gestures retain their existing output.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one
 held delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner
@@ -154,12 +158,15 @@ open, an owner's empty roadmap shows *Your first step* and New step on every ban
 is done, Up next rests on Roadmap complete: the owner gets its body line, Share it and New step; a
 reader gets the title alone.
 
-New step in the verbs row, phone band, empty state or complete state opens `StepComposer` through
+New step in the verbs row, tablet identity row, phone band, empty state or complete state opens `StepComposer` through
 the gated host mount. `StepDraft` owns validation and placement; the picker changes only draft
 prerequisites until creation. The host dispatches one `CreateNode` with the request's stable id and
 all prerequisite edges stamped together. Failure keeps the draft for Retry. Success reveals and
 wakes the step in its derived column, clears only hiding query dimensions and offers targeted Undo.
-The composer sits inside an error boundary reporting `roadmap-board-composer`. At 1440px and wider,
+The composer sits inside an error boundary reporting `roadmap-board-composer` and portals its layer
+to `document.body`, covering the viewport independently of the shell's containing blocks. The tablet
+identity row offers the compact outlined New step button to owners and uses the `verbs` door;
+its existing Find control stays in place. At 1440px and wider,
 the picker is anchored beside the form; below that it replaces the form inside the composer, as a
 page in the 600px dialog from 744px and a full-screen page on phones. `StepComposer` owns picker
 selection and query so resizing between these layouts preserves them. With zero candidates the

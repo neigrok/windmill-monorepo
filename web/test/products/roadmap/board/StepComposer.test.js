@@ -15,6 +15,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
+import '/src/shell/chrome/chrome.css';
 import { StepComposer } from '/src/products/roadmap/board/StepComposer.jsx';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 const completed = new Set();
@@ -24,7 +25,7 @@ const legend = [
   { hue: 'gold', label: 'Milestone' },
 ];
 const fixtureNodes = ${fixtureNodes.toString()};
-window.mount = ({ empty = false, total = 1 } = {}) => {
+window.mount = ({ empty = false, total = 1, shell = false } = {}) => {
   function App() {
     const [open, setOpen] = useState(false);
     const [width, setWidth] = useState(innerWidth);
@@ -49,7 +50,12 @@ window.mount = ({ empty = false, total = 1 } = {}) => {
         },
       }));
   }
-  createRoot(document.getElementById('root')).render(React.createElement(App));
+  const app = React.createElement(App);
+  createRoot(document.getElementById('root')).render(shell
+    ? React.createElement('div', { className: 'wm-shell' },
+      React.createElement('header', { className: 'wm-head' }, 'App navigation'),
+      React.createElement('main', { className: 'wm-room' }, app))
+    : app);
 };
 window.entryReady = true;
 `;
@@ -94,11 +100,11 @@ after(async () => {
   await server?.close();
 });
 
-async function open(width, options = {}) {
+async function open(width, { height = 960, ...options } = {}) {
   await serving;
   launching ??= chromium.launch({ headless: true });
   browser = await launching;
-  const page = await browser.newPage({ viewport: { width, height: 960 } });
+  const page = await browser.newPage({ viewport: { width, height } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.setDefaultTimeout(5000);
@@ -393,3 +399,41 @@ test('Chromium 1440×600: the anchored picker and its actions stay inside the sh
     assert.deepEqual(errors, []);
   }
 });
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }, { width: 1440, height: 900 }]) {
+  test(`Chromium ${viewport.width}×${viewport.height}: composer covers the contained shell before and after name validation`, async () => {
+    const { page, errors } = await open(viewport.width, { shell: true, height: viewport.height });
+    try {
+      assert.deepEqual(await page.locator('.wm-room').evaluate((room) => ({
+        top: room.getBoundingClientRect().top,
+        contain: getComputedStyle(room).contain,
+      })), { top: 52, contain: 'layout paint' });
+      const geometry = () => page.evaluate(() => {
+        const layer = document.querySelector('.st-board-composer-layer');
+        const heading = layer.querySelector('.st-board-draft-heading');
+        const action = layer.querySelector('[type="submit"]');
+        const rect = layer.getBoundingClientRect();
+        const inside = (element) => {
+          const box = element.getBoundingClientRect();
+          return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth
+            && element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+        };
+        return {
+          parent: layer.parentElement.tagName,
+          rect: [rect.left, rect.top, rect.width, rect.height],
+          headingVisible: inside(heading),
+          actionVisible: inside(action),
+        };
+      });
+      const expected = { parent: 'BODY', rect: [0, 0, viewport.width, viewport.height], headingVisible: true, actionVisible: true };
+      assert.deepEqual(await geometry(), expected);
+      await page.getByRole('button', { name: 'Create step', exact: true }).click();
+      await page.getByText('Enter a name for this step.', { exact: true }).waitFor();
+      assert.deepEqual(await geometry(), expected);
+      assert.equal(await page.getByLabel('Name', { exact: true }).evaluate((input) => input === document.activeElement), true);
+    } finally {
+      await page.close();
+      assert.deepEqual(errors, []);
+    }
+  });
+}

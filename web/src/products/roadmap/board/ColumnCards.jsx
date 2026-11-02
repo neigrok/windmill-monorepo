@@ -90,7 +90,7 @@ export class CardStack {
 // One timeline owns the displayed cards, arrival counts, travel and wake across all columns.
 export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
   const [state, setState] = useState({
-    target: board, board, counts: board, quiet,
+    target: board, timeline: board, board, counts: board, quiet,
     arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, dimmed: NOTHING_ARRIVED,
     moved: [], phase: 'settled',
   });
@@ -103,7 +103,9 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
       ? regroup(state.board, board)
       : { arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, moved: [] };
     const reset = change.arrived.size === 0 && change.moved.some((move) => move.from === 'done');
-    const downward = quiet !== state.quiet || reset;
+    const continuingQuiet = state.phase === 'quiet' && quiet === state.quiet && board?.treeId === state.target?.treeId
+      && change.arrived.size === 0 && change.leaving.size === 0;
+    const downward = quiet !== state.quiet || reset || continuingQuiet;
     const moving = !downward && (change.arrived.size > 0 || change.leaving.size > 0);
     const dimmed = downward
       ? new Set([...change.arrived, ...change.moved.map(({ id }) => id)])
@@ -113,12 +115,13 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
     if (moving) phase = 'leaving';
     setState({
       target: board,
+      timeline: continuingQuiet ? state.timeline : board,
       board: moving ? state.board : board,
       counts: moving ? state.counts : board,
       arrived: downward ? NOTHING_ARRIVED : change.arrived,
       leaving: downward ? NOTHING_ARRIVED : change.leaving,
-      moved: change.moved,
-      dimmed,
+      moved: continuingQuiet ? state.moved : change.moved,
+      dimmed: continuingQuiet ? state.dimmed : dimmed,
       phase,
       quiet,
     });
@@ -179,7 +182,7 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
       clearTimeout(fastForward);
       for (const name of ['pointerdown', 'wheel', 'keydown']) window.removeEventListener(name, forward);
     };
-  }, [state.target]);
+  }, [state.timeline]);
 
   useLayoutEffect(() => {
     if (state.phase === 'leaving') {

@@ -648,8 +648,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   row is disabled or hidden.
 - **Board · default kind across surfaces.** The composer defaults to Sky, as the blank composer
   frames show. The Graph plants new roots in the first legend kind (Terracotta if none exists),
-  and children inherit their parent’s kind. Pin whether Sky is the intended Board default or a
-  drawn example of the first legend kind.
+  and children inherit their parent’s kind. Sky is the Board default; when no legend kind names
+  that hue, the choice correctly uses its hue name.
 - **Board · large-picker context at 744px.** On phones, `pickerFor` adds *· N steps* above eight
   candidates. That suffix is undrawn at 744px; the composer page currently uses lowercase
   *for <draft>* without a total. Pin the large-roadmap context for that page.

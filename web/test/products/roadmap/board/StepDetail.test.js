@@ -694,7 +694,7 @@ for (const moveFocus of [false, true]) {
       await page.getByRole('button', { name: 'More' }).click();
       await page.getByRole('menuitem', { name: 'Delete step' }).click();
       const time = new Date('2026-11-02T12:00:00Z');
-      await page.clock.install({ time });
+      await page.clock.install({ time: new Date(time.getTime() - 60000) });
       await page.clock.pauseAt(time);
       await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).evaluate((button) => button.click());
       await page.getByRole('dialog').waitFor({ state: 'detached' });

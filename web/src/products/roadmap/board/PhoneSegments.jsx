@@ -16,7 +16,7 @@ const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
 // The shown column is the host's: a pick here emits roadmap_board_column, the host following a selected step does not.
 export function PhoneSegments({
-  board, focusBoard = board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle = () => {}, counts = board,
+  board, focusBoard = board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), counts = board,
 }) {
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
   const tabs = useRef({});
@@ -85,15 +85,10 @@ export function PhoneSegments({
     onExpandDone();
   };
 
-  const focus = (event) => {
-    roving.onFocus(event);
-    settle(event.target.dataset.stepId);
-  };
-
   return (
     <div className="st-board-phone">
       <ActiveFilters board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={onAnchor} />
-      <div className="st-board-phone-panes" ref={roving.ref} onFocus={focus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
+      <div className="st-board-phone-panes" ref={roving.ref} onFocus={roving.onFocus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
         {board.columns.map((column) => (
           <div
             key={column.name}

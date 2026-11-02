@@ -400,3 +400,58 @@ test('DeleteNode and BulkDelete preserve their complete legacy wire writes and o
     ], kinds: [],
   });
 });
+
+test('Board BulkDelete retires every present incident edge in the tombstone and resplice stamp', () => {
+  const lattice = new TreeLattice('sail');
+  lattice.join({ nodes: ['p', 'wind', 'dock', 'dead', 'spare'].map((id) => ({
+    id, label: id, labelAt: '100:0:seed', createdAt: '100:0:seed',
+    ...(id === 'dead' ? { deletedAt: '150:0:seed' } : {}),
+  })), edges: [
+    { from: 'p', to: 'wind', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'dock', addedAt: '100:0:seed' },
+    { from: 'dead', to: 'wind', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'dead', addedAt: '100:0:seed' },
+    { from: 'p', to: 'spare', addedAt: '100:0:seed' },
+    { from: 'dead', to: 'spare', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'spare', addedAt: '100:0:seed', removedAt: '150:0:seed' },
+  ] });
+  const writes = materialize({ kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, lattice,
+    { tick: () => ({ ms: 200, counter: 0, actor: 'board' }) });
+  assert.deepEqual(writes, {
+    nodes: [{ id: 'wind', deletedAt: '200:0:board' }],
+    edges: [
+      { from: 'p', to: 'dock', addedAt: '200:0:board' },
+      { from: 'p', to: 'wind', removedAt: '200:0:board' },
+      { from: 'wind', to: 'dock', removedAt: '200:0:board' },
+      { from: 'dead', to: 'wind', removedAt: '200:0:board' },
+      { from: 'wind', to: 'dead', removedAt: '200:0:board' },
+    ],
+    kinds: [],
+  });
+  lattice.join(writes);
+  const fresh = new TreeLattice('sail');
+  fresh.join(lattice.toFrame());
+  for (const replica of [lattice, fresh]) {
+    assert.deepEqual(replica.presentEdges(), [
+      { from: 'p', to: 'spare' }, { from: 'dead', to: 'spare' }, { from: 'p', to: 'dock' },
+    ]);
+    assert.deepEqual(project(replica), [
+      { id: 'dock', prerequisites: ['p'] }, { id: 'p', prerequisites: [] }, { id: 'spare', prerequisites: ['p'] },
+    ]);
+    assert.deepEqual(replica.maskedWork(), [{ id: 'dead', label: 'dead', children: ['spare'] }]);
+  }
+});
+
+test('Board BulkDelete masks no ordinary child, but later incident work remains recoverable', () => {
+  const lattice = new TreeLattice('sail');
+  lattice.join({ nodes: ['p', 'wind', 'dock'].map((id) => ({ id, createdAt: '100:0:seed' })), edges: [
+    { from: 'p', to: 'wind', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'dock', addedAt: '100:0:seed' },
+  ] });
+  const writes = materialize({ kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, lattice,
+    { tick: () => ({ ms: 200, counter: 0, actor: 'board' }) });
+  lattice.join(writes);
+  assert.deepEqual(lattice.maskedWork(), []);
+  lattice.join({ edges: [{ from: 'wind', to: 'dock', addedAt: '300:0:peer' }] });
+  assert.deepEqual(lattice.maskedWork(), [{ id: 'wind', label: '', children: ['dock'] }]);
+});

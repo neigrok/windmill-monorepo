@@ -107,7 +107,7 @@ export class BoardActs {
     const c = this.collaborators;
     try {
       if (!pending.session) throw new Error('Missing Board session');
-      const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids }, { captureFailures: true });
+      const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids, retireIncidentEdges: true }, { captureFailures: true });
       if (receipt) c.track('roadmap_board_delete', { step: 'sent', via });
       if (!receipt) c.onQuiet();
     } catch (error) {

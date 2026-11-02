@@ -32,7 +32,7 @@ export function railToReveal(railed, column) {
 // The columns are one tab stop: the arrow keys rove across every card, the Show all row and a rail's Show. A column the
 // query emptied names its way out; when every column is empty, only Up next does.
 export function BoardColumns({
-  board, focusBoard = board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), onQuery, onComplete, onStandColumn, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle = () => {}, counts = board,
+  board, focusBoard = board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), onQuery, onComplete, onStandColumn, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), counts = board,
 }) {
   const showPressed = useRef(false);
   const stage = columnStage({ band, railed });
@@ -78,13 +78,8 @@ export function BoardColumns({
     onExpandDone();
   };
 
-  const focus = (event) => {
-    roving.onFocus(event);
-    settle(event.target.dataset.stepId);
-  };
-
   return (
-    <div className="st-board-columns" ref={roving.ref} onFocus={focus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
+    <div className="st-board-columns" ref={roving.ref} onFocus={roving.onFocus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
       {board.columns.map((column) => (stage[column.name] === 'rail'
         ? (
           <ColumnRail

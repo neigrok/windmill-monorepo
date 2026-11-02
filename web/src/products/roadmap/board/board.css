@@ -280,8 +280,7 @@
   line-height: 20px;
 }
 
-/* ---- Arrived: a step that just became up next, or was just created, wakes once (fade, scale 1 → 1.02 → 1) while its edge
-   and glow settle over two pulses. Focus landing on it ends the wake, so the edge never reads as the focus ring. ---- */
+/* Arrived cards wake once; reader focus or pointer settles the wake, while automatic reveal focus preserves it. */
 .st-board-card.is-arrived {
   --st-board-arrived-edge: var(--color-brand-soft);
   --st-board-arrived-inset: 2px; /* over the 1px border: the drawn 3px edge */
