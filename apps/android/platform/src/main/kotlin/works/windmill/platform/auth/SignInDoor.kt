@@ -70,7 +70,7 @@ fun SignInDoor(
         } catch (interrupted: CancellationException) { throw interrupted }
         catch (refused: WindmillApiException) {
             if (active && currentIdentity === identity && auth.handoffRevision == revision)
-                refusal = MagicLink.refusal(refused, ofCode = typed.trim().let { it.length == 6 && it.all(Char::isDigit) })
+                refusal = MagicLink.refusal(refused)
         } catch (failed: AuthHandoffFailure) {
             if (active && currentIdentity === identity && auth.handoffRevision == revision)
                 refusal = "Sign-in could not be completed. Try again."
@@ -124,7 +124,7 @@ fun SignInDoor(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refused: WindmillApiException) {
-                if (active && currentIdentity === identity) refusal = MagicLink.refusal(refused, ofCode = code != null)
+                if (active && currentIdentity === identity) refusal = MagicLink.refusal(refused)
             } catch (failed: Exception) {
                 if (failed !is AuthHandoffFailure) auth.telemetry.failure("auth_sign_in", failed)
                 if (active && currentIdentity === identity) refusal = "Sign-in could not be completed. Try again."

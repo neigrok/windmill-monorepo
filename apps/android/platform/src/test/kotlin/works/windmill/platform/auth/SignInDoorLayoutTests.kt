@@ -13,8 +13,14 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import kotlinx.coroutines.runBlocking
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import okhttp3.Dispatcher
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import java.util.concurrent.AbstractExecutorService
+import java.util.concurrent.TimeUnit
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -28,17 +34,34 @@ import works.windmill.platform.design.*
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SignInDoorLayoutTests {
     @get:Rule val compose = createComposeRule()
-    private val server = MockWebServer()
-    @Before fun start() { server.start() }
-    @After fun stop() { server.shutdown() }
     @Test fun darkDoorKeepsItsActionAboveTheKeyboardAtDoubleText() = door(true)
     @Test fun lightDoorKeepsItsActionAboveTheKeyboardAtDoubleText() = door(false)
 
     private fun door(dark: Boolean) {
-        val auth = AuthStore(server.url("/"), MemorySessions())
+        val executor = object : AbstractExecutorService() {
+            private var stopped = false
+            override fun execute(command: Runnable) { check(!stopped); command.run() }
+            override fun shutdown() { stopped = true }
+            override fun shutdownNow(): MutableList<Runnable> { shutdown(); return mutableListOf() }
+            override fun isShutdown() = stopped
+            override fun isTerminated() = stopped
+            override fun awaitTermination(timeout: Long, unit: TimeUnit) = stopped
+        }
+        val requests = mutableListOf<Pair<String, String>>()
+        val client = OkHttpClient.Builder().dispatcher(Dispatcher(executor)).addInterceptor { chain ->
+            val request = chain.request()
+            requests += request.method to request.url.encodedPath
+            val (code, body) = when (request.url.encodedPath) {
+                "/v1/auth/magic-link" -> 200 to "{}"
+                "/v1/auth/verify-code" -> 410 to
+                    """{"error":"That code didn't work","detail":"Check the digits, or send a fresh one."}"""
+                else -> error("Unexpected layout fixture request")
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(code)
+                .message("fixture").body(body.toResponseBody()).build()
+        }.build()
+        val auth = AuthStore("https://windmill.test/".toHttpUrl(), MemorySessions(), client)
         runBlocking { auth.restore() }
-        server.enqueue(MockResponse().setBody("{}"))
-        server.enqueue(MockResponse().setResponseCode(410).setBody("""{"error":"That code didn't work","detail":"Check the digits, or send a fresh one."}"""))
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(2f, 2f), LocalWindmillDark provides dark) {
                 WindmillMaterial { Box(Modifier.height(340.dp)) { SignInDoor(auth) } }
@@ -68,5 +91,7 @@ class SignInDoorLayoutTests {
         compose.onNodeWithText("Change email").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Email").performScrollTo().assertTextContains("a-very-long-address@example.com")
         compose.onNodeWithText("Send code").assertIsDisplayed()
+        assertEquals(listOf("POST" to "/v1/auth/magic-link", "POST" to "/v1/auth/verify-code"), requests)
+        executor.shutdown()
     }
 }
