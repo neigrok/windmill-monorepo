@@ -52,6 +52,23 @@ export class SkillTree {
   get edges() { return this.allEdges; }
   get trunk() { return this.trunkTree; }
 
+  without(ids) {
+    const doomed = new Set(ids);
+    const added = respliceEdges(this.nodes, doomed);
+    const byChild = new Map();
+    for (const edge of added) {
+      if (!byChild.has(edge.to)) byChild.set(edge.to, []);
+      byChild.get(edge.to).push(edge.from);
+    }
+    return new SkillTree({
+      id: this.id, title: this.title, author: this.author,
+      nodes: this.nodes.filter((step) => !doomed.has(step.id)).map((step) => ({
+        ...step,
+        prerequisites: [...step.prerequisites.filter((id) => !doomed.has(id)), ...(byChild.get(step.id) ?? [])],
+      })),
+    });
+  }
+
   roots() {
     return this.allNodes.filter((node) => node.prerequisites.length === 0);
   }
@@ -178,4 +195,29 @@ export class SkillTree {
     }
     return rankById;
   }
+}
+
+export function respliceEdges(nodes, doomedIds) {
+  const doomed = new Set(doomedIds);
+  const byId = new Map(nodes.map((step) => [step.id, step]));
+  const edges = [];
+  for (const child of nodes) {
+    if (doomed.has(child.id)) continue;
+    if (!child.prerequisites.some((id) => doomed.has(id))) continue;
+    if (child.prerequisites.some((id) => !doomed.has(id))) continue;
+    const survivors = new Set();
+    const seen = new Set();
+    const stack = [...child.prerequisites];
+    while (stack.length > 0) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      for (const parent of byId.get(id)?.prerequisites ?? []) {
+        if (doomed.has(parent)) stack.push(parent);
+        else survivors.add(parent);
+      }
+    }
+    for (const parent of survivors) if (parent !== child.id) edges.push({ from: parent, to: child.id });
+  }
+  return edges;
 }

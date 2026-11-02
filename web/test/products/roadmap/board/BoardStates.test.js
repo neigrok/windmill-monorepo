@@ -94,7 +94,7 @@ test('BoardStates — an empty roadmap pins New step as its one primary, with no
     '<header class="st-board-identity"><h1 class="st-board-identity-title" title="Learn to sail">Learn to sail</h1><switch/></header>',
     '<div class="st-board-state st-board-state--empty"><div class="st-board-state-message st-board-state-message--empty">',
     '<h2 class="st-board-state-title">Your first step</h2><p class="st-board-state-body">Give your roadmap a place to start.</p></div>',
-    '<button type="button" class="st-board-new-step"><svg/>New step</button></div>',
+    '<button type="button" class="st-board-new-step st-board-new-step--primary" aria-label="New step"><svg/><span>New step</span></button></div>',
   ].join(''));
 });
 
@@ -104,7 +104,7 @@ test('BoardStates — with every step done, Up next rests on Roadmap complete: S
   assert.equal(upNext({ onShare: () => {}, onNewStep: () => {} }), [
     '<div class="st-board-complete"><h3 class="st-board-complete-title">All 2 steps done</h3>',
     '<p class="st-board-state-body">Add a step whenever you’re ready.</p>',
-    '<div class="st-board-complete-actions"><button>Share it</button><button type="button" class="st-board-new-step"><svg/>New step</button></div></div>',
+    '<div class="st-board-complete-actions"><button>Share it</button><button type="button" class="st-board-new-step st-board-new-step--primary" aria-label="New step"><svg/><span>New step</span></button></div></div>',
   ].join(''));
   assert.equal(upNext({}), '<div class="st-board-complete"><h3 class="st-board-complete-title">All 2 steps done</h3></div>');
   assert.equal(frame({ tree: sail(twoSteps), completed: new Set(['course']), onShare: () => {} }).includes('st-board-complete'), false);

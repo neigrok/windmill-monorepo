@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SHOW_ALL, RAIL, columnStops, entryStop, moveStop, nearestStop } from '../../../../src/products/roadmap/board/traversal.js';
+import { SHOW_ALL, RAIL, columnStops, entryStop, moveStop, nearestStop, pendingStop } from '../../../../src/products/roadmap/board/traversal.js';
 
 const name = (stop) => (stop === null ? 'nowhere' : `${stop.column} ${typeof stop.id === 'symbol' ? stop.id.description : stop.id}`);
 
@@ -70,4 +70,67 @@ test('nearestStop — the stop whose middle sits closest to the height, the earl
   const candidates = [{ id: 'a', top: 0, bottom: 100 }, { id: 'b', top: 108, bottom: 160 }, { id: 'c', top: 168, bottom: 268 }];
   assert.deepEqual([nearestStop(10, candidates), nearestStop(130, candidates), nearestStop(500, candidates), nearestStop(92, candidates), nearestStop(10, [])],
     ['a', 'b', 'c', 'a', null]);
+});
+
+
+test('pendingStop — a completion waits for its column move, but a filtered or removed target releases focus recovery', () => {
+  const pending = { column: 'done', id: 'wind' };
+  assert.deepEqual(pendingStop([{ name: 'upNext', stops: ['wind'] }, { name: 'done', stops: ['rig'] }], pending), pending);
+  assert.deepEqual(pendingStop([{ name: 'upNext', stops: [] }, { name: 'done', stops: ['wind', 'rig'] }], pending), pending);
+  assert.equal(pendingStop([{ name: 'upNext', stops: ['bowline'] }, { name: 'done', stops: ['rig'] }], pending), null);
+  assert.equal(pendingStop([], null), null);
+});
+
+test('pendingStop — a phone follows into a hidden destination while the source card remains in another filtered column', () => {
+  const layout = [{ name: 'done', stops: ['rig'] }];
+  const pending = { column: 'done', id: 'wind' };
+  assert.deepEqual(pendingStop(layout, pending, new Set(['wind', 'rig'])), pending);
+  assert.equal(pendingStop(layout, pending, new Set(['rig'])), null);
+});
+
+
+test('pendingStop — an accepted completion survives its phone tab switch, then a superseding Reset releases it', () => {
+  const before = {};
+  const reset = {};
+  const pending = { column: 'done', id: 'wind', revision: before };
+  const doneShown = [{ name: 'done', stops: ['rig'] }];
+  const existingIds = new Set(['wind', 'rig']);
+  assert.deepEqual(pendingStop(doneShown, pending, existingIds, before), pending);
+  assert.equal(pendingStop(doneShown, pending, existingIds, reset), null);
+});
+
+test('pendingStop — a newer displayed Board preserves an accepted completion once its destination arrives', () => {
+  const before = {};
+  const arrived = {};
+  const pending = { column: 'done', id: 'wind', revision: before };
+  const layout = [{ name: 'upNext', stops: ['dock'] }, { name: 'done', stops: ['wind', 'rig'] }];
+  assert.deepEqual(pendingStop(layout, pending, new Set(['dock', 'wind', 'rig']), arrived), pending);
+  assert.equal(pendingStop(layout, { ...pending, id: 'gone' }, new Set(['dock', 'wind', 'rig']), arrived), null);
+});
+
+test('entryStop — deletion picks the current Board entry on its surviving displayed card during regroup', () => {
+  const displayed = [
+    { name: 'locked', stops: ['dock', 'triangle', 'solo'] },
+    { name: 'upNext', stops: ['wind', 'bowline'] },
+    { name: 'done', stops: ['rig', 'parts', 'course'] },
+  ];
+  const current = [
+    { name: 'locked', stops: ['triangle', 'solo'] },
+    { name: 'upNext', stops: ['dock', 'bowline'] },
+    { name: 'done', stops: ['rig', 'parts', 'course'] },
+  ];
+  assert.deepEqual(entryStop(displayed, { last: 'upNext', byColumn: { upNext: 'wind' } }, current),
+    { column: 'locked', id: 'dock' });
+  assert.deepEqual(entryStop(displayed, { last: 'upNext', byColumn: { upNext: 'bowline' } }, current),
+    { column: 'upNext', id: 'bowline' });
+  assert.deepEqual(entryStop(current, { last: 'locked', byColumn: { locked: 'dock' } }, current),
+    { column: 'upNext', id: 'dock' });
+});
+
+test('entryStop — a phone pane uses a surviving displayed stop until the new entry reaches that pane', () => {
+  const displayed = [{ name: 'upNext', stops: ['wind', 'bowline'] }];
+  const current = [{ name: 'upNext', stops: ['dock', 'bowline'] }];
+  const memory = { last: 'upNext', byColumn: { upNext: 'wind' } };
+  assert.deepEqual(entryStop(displayed, memory, current), { column: 'upNext', id: 'bowline' });
+  assert.equal(entryStop(displayed, memory, [{ name: 'upNext', stops: [] }]), null);
 });

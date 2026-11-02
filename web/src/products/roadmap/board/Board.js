@@ -65,6 +65,34 @@ export class BoardQuery {
     return new BoardQuery({ ...this, ...change });
   }
 
+  predicate(tree) {
+    const branchExists = this.branch !== null && tree?.nodesById.has(this.branch);
+    const scope = branchExists ? new Set([
+      this.branch,
+      ...tree.ancestorsOf(this.branch).map((step) => step.id),
+      ...tree.descendantsOf(this.branch).map((step) => step.id),
+    ]) : null;
+    const hues = new Set(this.kinds);
+    const needle = this.search.trim().toLowerCase();
+    return (step) => {
+      if (scope !== null && !scope.has(step.id)) return false;
+      if (hues.size > 0 && !hues.has(step.color ?? DEFAULT_NODE_COLOR)) return false;
+      if (needle === '') return true;
+      return (step.label ?? '').toLowerCase().includes(needle)
+        || (step.description ?? '').toLowerCase().includes(needle);
+    };
+  }
+
+  revealing(step, tree) {
+    const cleared = {};
+    for (const [key, empty] of [['kinds', []], ['search', ''], ['branch', null]]) {
+      const restriction = new BoardQuery({ [key]: this[key] });
+      if (!restriction.predicate(tree)(step)) cleared[key] = empty;
+    }
+    if (Object.keys(cleared).length === 0) return this;
+    return this.with(cleared);
+  }
+
   sortedBy(sort) { return this.with({ sort }); }
   searchingFor(search) { return this.with({ search }); }
   inBranch(branch) { return this.with({ branch }); }
@@ -92,9 +120,11 @@ export class BoardQuery {
 
 // Comparators return 0 on a tie and the sort is stable, so ties keep the projection's authored order.
 export class Board {
-  constructor(tree, progress, { sort = 'roadmap', kinds = [], search = '', branch = null } = {}) {
-    if (!BOARD_SORTS.includes(sort)) throw new Error(`Unknown board sort "${sort}"`);
+  constructor(tree, progress, options = new BoardQuery()) {
+    const query = options instanceof BoardQuery ? options : new BoardQuery(options);
+    const { sort, branch } = query;
 
+    this.treeId = tree.id;
     this.states = UnlockRules.derive(tree, progress);
     this.overall = {
       done: tree.nodes.filter((step) => this.states.get(step.id) === 'complete').length,
@@ -103,17 +133,7 @@ export class Board {
     this.sort = sort;
     this.branch = branch !== null && tree.nodesById.has(branch) ? tree.nodesById.get(branch) : null;
 
-    const scope = this.branch === null
-      ? null
-      : new Set([branch, ...tree.ancestorsOf(branch).map((step) => step.id), ...tree.descendantsOf(branch).map((step) => step.id)]);
-    const hues = new Set(kinds);
-    const needle = search.trim().toLowerCase();
-    const shown = tree.nodes.filter((step) =>
-      (scope === null || scope.has(step.id))
-      && (hues.size === 0 || hues.has(step.color ?? DEFAULT_NODE_COLOR))
-      && (needle === ''
-        || (step.label ?? '').toLowerCase().includes(needle)
-        || (step.description ?? '').toLowerCase().includes(needle)));
+    const shown = tree.nodes.filter(query.predicate(tree));
     const owed = owedCounts(tree, this.states);
     const cards = shown.map((step) => new BoardCard(tree, this.states, owed, step));
     const inColumn = (name) => cards.filter((card) => card.column === name);
@@ -148,18 +168,22 @@ export class Board {
   }
 }
 
-// The steps that arrived between two Boards of one roadmap: a step that became up next, or a new step that is not done.
-// A reset back to Up next is a downward change and stays quiet; a roadmap with no step in common arrives whole, so nothing wakes.
-export function arrivals(previous, next) {
+export function regroup(previous, next) {
   const arrived = new Set();
-  let shared = false;
+  const leaving = new Set();
+  const moved = [];
+  if (previous.treeId !== next.treeId) return { arrived, leaving, moved };
   for (const [id, state] of next.states) {
     const before = previous.states.get(id);
-    shared ||= before !== undefined;
     if (state === 'available' && before === 'locked') arrived.add(id);
     if (state !== 'complete' && before === undefined) arrived.add(id);
+    if (before !== undefined && state !== before) {
+      leaving.add(id);
+      moved.push({ id, from: previous.columnOf(id), to: next.columnOf(id) });
+    }
   }
-  return shared ? arrived : new Set();
+  for (const id of previous.states.keys()) if (!next.states.has(id)) leaving.add(id);
+  return { arrived, leaving, moved };
 }
 
 function unknownLast(valueA, valueB, compare) {

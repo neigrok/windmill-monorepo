@@ -5,7 +5,7 @@ import React, { useContext, useId, useEffect, useMemo, useRef, useState } from '
 import './columns.css';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
-import { Chevron, ColumnCards, useArrivals } from './ColumnCards.jsx';
+import { Chevron, ColumnCards } from './ColumnCards.jsx';
 import { UpNextRest } from './BoardStates.jsx';
 import { ColumnEmpty } from './BoardControls.jsx';
 import { BoardQuery } from './Board.js';
@@ -32,11 +32,10 @@ export function railToReveal(railed, column) {
 // The columns are one tab stop: the arrow keys rove across every card, the Show all row and a rail's Show. A column the
 // query emptied names its way out; when every column is empty, only Up next does.
 export function BoardColumns({
-  board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), onQuery,
+  board, focusBoard = board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), onQuery, onComplete, onStandColumn, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle, counts = board,
 }) {
   const showPressed = useRef(false);
   const stage = columnStage({ band, railed });
-  const [arrived, settle] = useArrivals(board);
   const upNextRest = useContext(UpNextRest);
   const shown = useMemo(
     () => Object.fromEntries(board.columns.map((column) => [column.name, board.shownCards(column.name, { doneExpanded })])),
@@ -46,7 +45,18 @@ export function BoardColumns({
     name: column.name,
     stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(shown[column.name]),
   })), [shown, band, railed]);
-  const roving = useRovingFocus(layout);
+  const recoveryLayout = useMemo(() => {
+    if (focusBoard === board) return layout;
+    return focusBoard.columns.map((column) => ({
+      name: column.name,
+      stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(focusBoard.shownCards(column.name, { doneExpanded })),
+    }));
+  }, [focusBoard, board, layout, doneExpanded, band, railed]);
+  const roving = useRovingFocus(layout, { revision: board, recoveryLayout, existingIds: focusBoard.states, onComplete: onComplete && ((id, door) => {
+    if (!onComplete(id, door)) return false;
+    onStandColumn?.('done');
+    return true;
+  }) });
   const everyEmpty = board.columns.every((column) => column.count === 0);
   const emptied = (column) => column.count === 0 && query.recovery !== null && (column.name === 'upNext' || !everyEmpty);
 
@@ -68,30 +78,33 @@ export function BoardColumns({
     onExpandDone();
   };
 
-  const focus = (event) => {
-    roving.onFocus(event);
-    settle(event.target.dataset.stepId);
-  };
-
   return (
-    <div className="st-board-columns" ref={roving.ref} onFocus={focus} onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
+    <div className="st-board-columns" ref={roving.ref}
+      onFocus={(event) => {
+        roving.onFocus(event);
+        settle?.(event.target.dataset.stepId);
+      }}
+      onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
       {board.columns.map((column) => (stage[column.name] === 'rail'
         ? (
           <ColumnRail
             key={`${column.name}-rail`}
-            column={column}
+            column={counts[column.name]}
             tabIndex={roving.stopIn(column.name) === RAIL ? 0 : -1}
             onShow={() => show(column.name)}
           />
         )
         : (
-          <FullColumn key={column.name} column={column}>
+          <FullColumn key={column.name} column={counts[column.name]}>
             {column.name === 'upNext' && upNextRest !== null ? upNextRest : emptied(column) ? <ColumnEmpty query={query} onQuery={onQuery} /> : (
               <ColumnCards
                 shown={shown[column.name]}
                 stopId={roving.stopIn(column.name)}
                 pendingId={roving.pendingIn(column.name)}
                 arrived={arrived}
+                leaving={leaving}
+                dimmed={dimmed}
+                pinned={pinned}
                 selectedId={selectedId}
                 onSelect={onSelect}
                 onExpandDone={expandDone}

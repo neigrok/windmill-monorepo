@@ -2,6 +2,7 @@
 // A stop is { column, id }: a step id, SHOW_ALL for the row ending a folded Done, or RAIL for a tablet rail's Show.
 
 import { useEffect, useRef, useState } from 'react';
+import { boardKey } from '../shortcuts/shortcutMap.js';
 
 export const SHOW_ALL = Symbol('Show all');
 export const RAIL = Symbol('rail Show');
@@ -14,7 +15,19 @@ export function columnStops({ cards, folded }) {
 
 // Tab enters on the last focused stop while it stands, else a column's own remembered stop, else the first Up next card.
 // `layout` lists the columns in reading order as { name, stops }; `memory` is { last, byColumn } from the focus.
-export function entryStop(layout, memory) {
+export function entryStop(layout, memory, recoveryLayout = layout) {
+  // Regroup retains old cards; a removed stop yields to the current entry wherever its card is still displayed.
+  if (recoveryLayout !== layout) {
+    const stop = entryStop(layout, memory);
+    const currentIds = new Set(recoveryLayout.flatMap((column) => column.stops));
+    if (stop === null || currentIds.has(stop.id)) return stop;
+    const recovery = entryStop(recoveryLayout, memory);
+    const displayed = layout.find((column) => column.stops.includes(recovery?.id));
+    if (displayed) return { column: displayed.name, id: recovery.id };
+    return entryStop(layout.map((column) => ({
+      ...column, stops: column.stops.filter((id) => currentIds.has(id)),
+    })), memory);
+  }
   const upNextFirst = [...layout].sort((a, b) => (b.name === 'upNext') - (a.name === 'upNext'));
   const remembering = [layout.find((column) => column.name === memory.last), ...upNextFirst]
     .find((column) => column?.stops.includes(memory.byColumn[column.name]));
@@ -51,6 +64,17 @@ export function nearestStop(y, candidates) {
   return best?.id ?? null;
 }
 
+// A completion waits on its displayed Board; a newer Board must contain its destination or release focus recovery.
+export function pendingStop(layout, pending, existingIds, revision) {
+  if (pending === null) return null;
+  const exists = existingIds ? existingIds.has(pending.id) : layout.some((column) => column.stops.includes(pending.id));
+  if (!exists) return null;
+  const advanced = pending.revision !== undefined && pending.revision !== revision;
+  const destination = layout.find((column) => column.name === pending.column);
+  if (advanced && !destination?.stops.includes(pending.id)) return null;
+  return pending;
+}
+
 function stopOfElement(element) {
   const column = element.closest('[data-column]')?.dataset.column;
   if (!column) return null;
@@ -74,23 +98,26 @@ function focusInView(element) {
 
 // Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
 // a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
-export function useRovingFocus(layout) {
+export function useRovingFocus(layout, { onComplete, existingIds, revision, recoveryLayout = layout } = {}) {
   const ref = useRef(null);
   const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
   const [pending, setPending] = useState(null);
-  const stop = entryStop(layout, memory);
+  const stop = entryStop(layout, memory, recoveryLayout);
+  const following = pendingStop(layout, pending, existingIds, revision);
+  if (following !== pending) setPending(following);
 
   useEffect(() => {
     if (pending === null) return;
     const element = elementOfStop(ref.current, pending);
+    if (!element) return;
     setPending(null);
-    if (element) focusInView(element);
-  }, [pending]);
+    focusInView(element);
+  }, [pending, layout]);
 
   useEffect(() => {
     const lost = focused.current;
-    if (lost === null || lost.isConnected) return;
+    if (pending !== null || lost === null || lost.isConnected) return;
     focused.current = null;
     const fallen = document.activeElement === null || document.activeElement === document.body;
     const element = fallen && stop !== null ? elementOfStop(ref.current, stop) : null;
@@ -116,7 +143,17 @@ export function useRovingFocus(layout) {
   const onKeyDown = (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const from = stopOfElement(event.target);
-    if (from === null) return;
+    if (from === null || event.defaultPrevented) return;
+    const action = boardKey(event, {
+      typing: Boolean(event.target.closest('input, textarea, select, [contenteditable="true"]')),
+      covered: Boolean(event.target.closest('[inert]') || document.querySelector('[aria-modal="true"]')),
+    });
+    if (action === 'complete') {
+      if (from.column !== 'upNext' || !onComplete || !event.target.matches('.st-board-card')) return;
+      event.preventDefault();
+      if (onComplete(from.id, 'key')) setPending({ column: 'done', id: from.id, revision });
+      return;
+    }
     const box = event.target.getBoundingClientRect();
     const y = (box.top + box.bottom) / 2;
     const nearest = (column) => nearestStop(y, [...ref.current.querySelectorAll(`[data-column="${column.name}"] :is(.st-board-card, .st-board-show-all)`)]
@@ -132,5 +169,5 @@ export function useRovingFocus(layout) {
   const stopIn = (column) => (stop?.column === column ? stop.id : undefined);
   const pendingIn = (column) => (pending?.column === column ? pending.id : undefined);
 
-  return { ref, stopIn, pendingIn, onFocus, onBlur, onKeyDown };
+  return { ref, stopIn, pendingIn, onFocus, onBlur, onKeyDown, follow: setPending };
 }

@@ -199,3 +199,20 @@ test('birth stamp — a throwing storage never throws and reads as not born', ()
   assert.doesNotThrow(() => clearBorn('t1', storage));
   assert.equal(peekBorn('t1', storage), false);
 });
+
+
+test('initialView — an owner with an empty Board and New step opens the Board across saved and birth states', () => {
+  for (const saved of [null, 'tree', 'list', 'board']) {
+    for (const born of [false, true]) {
+      assert.equal(initialView({ saved, owner: true, empty: true, born, boardOpen: true, canAddFirstStep: true }), 'board');
+    }
+  }
+});
+
+test('initialView — the empty Board rule leaves visitors and the closed gate on the canvas', () => {
+  assert.deepEqual([
+    initialView({ saved: 'board', owner: false, empty: true, boardOpen: true, canAddFirstStep: true }),
+    initialView({ saved: 'board', owner: true, empty: true, boardOpen: false, canAddFirstStep: true }),
+    initialView({ saved: 'board', owner: true, empty: true, boardOpen: true, canAddFirstStep: false }),
+  ], ['tree', 'tree', 'tree']);
+});

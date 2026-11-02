@@ -362,3 +362,96 @@ test('Created: renaming, describing, recolouring, reordering, rewiring and delet
     knots: Date.UTC(2026, 9, 21, 9),
   });
 });
+
+test('CreateNode prerequisites are deduplicated and stamped with the node in one write', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'a' });
+  play({ kind: 'CreateNode', id: 'b' });
+  const at = { ms: 2000000000000, counter: 0, actor: 'fixed' };
+  const stamp = '2000000000000:0:fixed';
+  const writes = materialize({ kind: 'CreateNode', id: 'new', label: 'New', description: 'Description', color: 'sky', prerequisites: ['a', 'b', 'a'] }, lattice, { tick: () => at });
+  assert.deepEqual(writes, {
+    nodes: [{ id: 'new', createdAt: stamp, label: 'New', labelAt: stamp, icon: '', iconAt: stamp,
+      color: 'sky', colorAt: stamp, order: 'a0', orderAt: stamp, position: null, positionAt: stamp,
+      description: 'Description', descriptionAt: stamp }],
+    edges: [{ from: 'a', to: 'new', addedAt: stamp }, { from: 'b', to: 'new', addedAt: stamp }], kinds: [],
+  });
+  lattice.join(writes);
+  assert.deepEqual(materialize({ kind: 'CreateNode', id: 'new', prerequisites: ['a', 'b'] }, lattice, { tick: () => at }), { nodes: [], edges: [], kinds: [] });
+});
+
+test('DeleteNode and BulkDelete preserve their complete legacy wire writes and ordering', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'ImportSubgraph', nodes: ['p', 'q', 'a', 'b', 'c', 'd'].map((id) => ({ id })), edges: [
+    { from: 'p', to: 'a' }, { from: 'q', to: 'a' }, { from: 'a', to: 'b' },
+    { from: 'a', to: 'c' }, { from: 'b', to: 'c' }, { from: 'b', to: 'd' }, { from: 'p', to: 'd' },
+  ] });
+  const clock = { tick: () => ({ ms: 2000000000000, counter: 0, actor: 'fixed' }) };
+  const stamp = '2000000000000:0:fixed';
+  assert.deepEqual(materialize({ kind: 'DeleteNode', id: 'a' }, lattice, clock), {
+    nodes: [{ id: 'a', deletedAt: stamp }], edges: [
+      { from: 'p', to: 'b', addedAt: stamp }, { from: 'q', to: 'b', addedAt: stamp },
+    ], kinds: [],
+  });
+  assert.deepEqual(materialize({ kind: 'BulkDelete', nodeIds: ['a', 'b'], edges: [{ from: 'p', to: 'd' }] }, lattice, clock), {
+    nodes: [{ id: 'a', deletedAt: stamp }, { id: 'b', deletedAt: stamp }], edges: [
+      { from: 'p', to: 'c', addedAt: stamp }, { from: 'q', to: 'c', addedAt: stamp },
+      { from: 'p', to: 'd', removedAt: stamp },
+    ], kinds: [],
+  });
+});
+
+test('Board BulkDelete retires every present incident edge in the tombstone and resplice stamp', () => {
+  const lattice = new TreeLattice('sail');
+  lattice.join({ nodes: ['p', 'wind', 'dock', 'dead', 'spare'].map((id) => ({
+    id, label: id, labelAt: '100:0:seed', createdAt: '100:0:seed',
+    ...(id === 'dead' ? { deletedAt: '150:0:seed' } : {}),
+  })), edges: [
+    { from: 'p', to: 'wind', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'dock', addedAt: '100:0:seed' },
+    { from: 'dead', to: 'wind', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'dead', addedAt: '100:0:seed' },
+    { from: 'p', to: 'spare', addedAt: '100:0:seed' },
+    { from: 'dead', to: 'spare', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'spare', addedAt: '100:0:seed', removedAt: '150:0:seed' },
+  ] });
+  const writes = materialize({ kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, lattice,
+    { tick: () => ({ ms: 200, counter: 0, actor: 'board' }) });
+  assert.deepEqual(writes, {
+    nodes: [{ id: 'wind', deletedAt: '200:0:board' }],
+    edges: [
+      { from: 'p', to: 'dock', addedAt: '200:0:board' },
+      { from: 'p', to: 'wind', removedAt: '200:0:board' },
+      { from: 'wind', to: 'dock', removedAt: '200:0:board' },
+      { from: 'dead', to: 'wind', removedAt: '200:0:board' },
+      { from: 'wind', to: 'dead', removedAt: '200:0:board' },
+    ],
+    kinds: [],
+  });
+  lattice.join(writes);
+  const fresh = new TreeLattice('sail');
+  fresh.join(lattice.toFrame());
+  for (const replica of [lattice, fresh]) {
+    assert.deepEqual(replica.presentEdges(), [
+      { from: 'p', to: 'spare' }, { from: 'dead', to: 'spare' }, { from: 'p', to: 'dock' },
+    ]);
+    assert.deepEqual(project(replica), [
+      { id: 'dock', prerequisites: ['p'] }, { id: 'p', prerequisites: [] }, { id: 'spare', prerequisites: ['p'] },
+    ]);
+    assert.deepEqual(replica.maskedWork(), [{ id: 'dead', label: 'dead', children: ['spare'] }]);
+  }
+});
+
+test('Board BulkDelete masks no ordinary child, but later incident work remains recoverable', () => {
+  const lattice = new TreeLattice('sail');
+  lattice.join({ nodes: ['p', 'wind', 'dock'].map((id) => ({ id, createdAt: '100:0:seed' })), edges: [
+    { from: 'p', to: 'wind', addedAt: '100:0:seed' },
+    { from: 'wind', to: 'dock', addedAt: '100:0:seed' },
+  ] });
+  const writes = materialize({ kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, lattice,
+    { tick: () => ({ ms: 200, counter: 0, actor: 'board' }) });
+  lattice.join(writes);
+  assert.deepEqual(lattice.maskedWork(), []);
+  lattice.join({ edges: [{ from: 'wind', to: 'dock', addedAt: '300:0:peer' }] });
+  assert.deepEqual(lattice.maskedWork(), [{ id: 'wind', label: '', children: ['dock'] }]);
+});

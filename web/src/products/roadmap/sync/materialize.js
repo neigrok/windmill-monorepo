@@ -1,6 +1,7 @@
 // Each editing gesture becomes a list of stamped writes — a partial subgraph — computed against
 // the current lattice, all sharing one HLC stamp so the gesture is atomic on the wire.
 
+import { respliceEdges } from '../model/SkillTree.js';
 import { hlcText } from './lattice.js';
 import { keyBetween, nKeysBetween } from './fractionalIndex.js';
 
@@ -48,13 +49,15 @@ export function materialize(gesture, lattice, clock) {
   switch (g.kind) {
     case 'CreateNode': {
       // Slot the new node after its last-ordered sibling, so a create appends rather than renumbers.
-      const parentId = g.parentId ?? null;
+      if (g.prerequisites && lattice.nodes.has(g.id)) break;
+      const prerequisites = g.prerequisites ? [...new Set(g.prerequisites)] : (g.parentId ? [g.parentId] : []);
+      const parentId = prerequisites[0] ?? null;
       const siblings = data.nodes.filter((n) => (parentId ? n.prerequisites.includes(parentId) : n.prerequisites.length === 0));
       let lastOrder = null;
       for (const sibling of siblings) if (sibling.order && (lastOrder === null || sibling.order > lastOrder)) lastOrder = sibling.order;
       const order = keyBetween(lastOrder, null);
       nodes.push(node(g.id, at, { created: true, label: g.label ?? '', icon: g.icon ?? '', color: g.color ?? 'terracotta', order, position: g.x != null && g.y != null ? { x: g.x, y: g.y } : null, ...(g.description ? { description: g.description } : {}), ...(g.links?.length ? { links: g.links } : {}) }));
-      if (g.parentId) edges.push(addEdge(g.parentId, g.id, at));
+      for (const parent of prerequisites) edges.push(addEdge(parent, g.id, at));
       break;
     }
     // The whole pasted subgraph lands as one gesture: one stamp, one persist, one undo entry.
@@ -111,15 +114,7 @@ export function materialize(gesture, lattice, clock) {
       const target = data.nodes.find((n) => n.id === g.id);
       if (!target) break;
       nodes.push(node(g.id, at, { deleted: true }));
-      const grandparents = target.prerequisites;
-      for (const child of data.nodes) {
-        if (!child.prerequisites.includes(g.id)) continue;
-        const others = child.prerequisites.filter((p) => p !== g.id);
-        if (others.length > 0) continue;  // the child keeps a live parent
-        for (const grand of new Set(grandparents)) {
-          if (grand !== child.id) edges.push(addEdge(grand, child.id, at));  // splice the child up
-        }
-      }
+      for (const edge of respliceEdges(data.nodes, [g.id])) edges.push(addEdge(edge.from, edge.to, at));
       break;
     }
     // A surviving child that loses all its parents is spliced up to its nearest live ancestors.
@@ -127,23 +122,11 @@ export function materialize(gesture, lattice, clock) {
       const doomed = new Set(g.nodeIds);
       const byId = new Map(data.nodes.map((n) => [n.id, n]));
       for (const id of g.nodeIds) if (byId.has(id)) nodes.push(node(id, at, { deleted: true }));
-      for (const child of data.nodes) {
-        if (doomed.has(child.id)) continue;
-        if (!child.prerequisites.some((p) => doomed.has(p))) continue; // no doomed parent
-        if (child.prerequisites.some((p) => !doomed.has(p))) continue; // keeps a live parent
-        const survivors = new Set();
-        const seen = new Set();
-        const stack = child.prerequisites.filter((p) => doomed.has(p));
-        while (stack.length > 0) {
-          const p = stack.pop();
-          if (seen.has(p)) continue;
-          seen.add(p);
-          for (const grand of byId.get(p)?.prerequisites ?? []) {
-            if (doomed.has(grand)) stack.push(grand); // keep climbing through doomed ancestors
-            else survivors.add(grand);                // the nearest live ground on this path
-          }
+      for (const edge of respliceEdges(data.nodes, doomed)) edges.push(addEdge(edge.from, edge.to, at));
+      if (g.retireIncidentEdges) {
+        for (const edge of lattice.presentEdges()) {
+          if (doomed.has(edge.from) || doomed.has(edge.to)) edges.push(removeEdge(edge.from, edge.to, at));
         }
-        for (const grand of survivors) if (grand !== child.id) edges.push(addEdge(grand, child.id, at));
       }
       for (const e of g.edges ?? []) {
         if (doomed.has(e.from) || doomed.has(e.to)) continue; // dies with the tombstone anyway

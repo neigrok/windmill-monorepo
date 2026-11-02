@@ -263,15 +263,20 @@ export class TreeLattice {
     return !!record && lifePresent(record);
   }
 
-  // Present edges between present, distinct endpoints.
-  liveEdges() {
-    const live = [];
+  // Present edge records, including those masked by an absent endpoint.
+  presentEdges() {
+    const present = [];
     for (const [key, record] of this.edges) {
       if (!lifePresent(record)) continue;
       const [from, to] = key.split(EDGE_SEP);
-      if (from !== to && this.hasNode(from) && this.hasNode(to)) live.push({ from, to });
+      present.push({ from, to });
     }
-    return live;
+    return present;
+  }
+
+  // Present edges between present, distinct endpoints.
+  liveEdges() {
+    return this.presentEdges().filter(({ from, to }) => from !== to && this.hasNode(from) && this.hasNode(to));
   }
 
   presentColors() {

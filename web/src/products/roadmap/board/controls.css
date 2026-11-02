@@ -84,7 +84,7 @@
   line-height: 16px;
   color: var(--text-secondary);
 }
-/* The identity row's field stands at its far end, past the switch. */
+/* The identity row pushes its field and following controls past the switch. */
 .st-board-identity .st-board-find {
   margin-left: auto;
 }
@@ -668,4 +668,63 @@
 .st-board-sheet--filter .st-board-swatches {
   flex-wrap: wrap;
   overflow: visible;
+}
+
+.st-board-new-step {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  gap: var(--space-2);
+  height: 52px;
+  padding: 0 var(--space-6);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 24px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-board-new-step.st-board-new-step--secondary {
+  height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.st-board-new-step.st-board-new-step--compact {
+  width: 44px;
+  padding: 0;
+}
+.st-board-phone-tools .st-board-new-step--compact {
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+}
+@media (hover: hover) {
+  .st-board-new-step:hover {
+    background: var(--color-brand-hover);
+  }
+  .st-board-new-step.st-board-new-step--secondary:hover {
+    background: var(--surface-sunken);
+  }
+}
+.st-board-new-step:active {
+  background: var(--color-brand-active);
+}
+.st-board-new-step.st-board-new-step--secondary:active {
+  background: var(--surface-sunken);
+}
+.st-board-new-step:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }

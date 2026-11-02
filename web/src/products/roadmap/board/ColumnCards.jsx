@@ -2,7 +2,7 @@
 // every stretch skipped. A folded Done ends with the Show all row. Steps that arrive while the Board is mounted wake once.
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { arrivals, DONE_RECENT_LIMIT } from './Board.js';
+import { regroup, DONE_RECENT_LIMIT } from './Board.js';
 import { StepCard } from './StepCard.jsx';
 import { SHOW_ALL } from './traversal.js';
 import { reasonLine, showAllDone } from './copy.js';
@@ -87,36 +87,176 @@ export class CardStack {
   }
 }
 
-// The steps that arrived while the Board stayed mounted, and `settle(id)` to end one's wake early, as focus does. The first
-// Board seen wakes nothing; a Board that brings no new arrival leaves the wake and its timer as they were.
-export function useArrivals(board) {
-  const [seen, setSeen] = useState({ board, arrived: NOTHING_ARRIVED, until: 0 });
-  if (seen.board !== board) {
-    const fresh = arrivals(seen.board, board);
-    setSeen(fresh.size === 0
-      ? { ...seen, board }
-      : { board, arrived: new Set([...seen.arrived, ...fresh]), until: Date.now() + WAKE_MS });
+// One timeline owns the displayed cards, arrival counts, travel and wake across all columns.
+export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
+  const [state, setState] = useState({
+    target: board, timeline: board, board, counts: board, quiet,
+    arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, dimmed: NOTHING_ARRIVED,
+    moved: [], phase: 'settled',
+  });
+  const positions = useRef(new Map());
+  const animations = useRef([]);
+  const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (board !== state.target) {
+    const change = board && state.board
+      ? regroup(state.board, board)
+      : { arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, moved: [] };
+    const reset = change.arrived.size === 0 && change.moved.some((move) => move.from === 'done');
+    const continuingQuiet = state.phase === 'quiet' && quiet === state.quiet && board?.treeId === state.target?.treeId
+      && change.arrived.size === 0 && change.leaving.size === 0;
+    const downward = quiet !== state.quiet || reset || continuingQuiet;
+    const moving = !downward && (change.arrived.size > 0 || change.leaving.size > 0);
+    const dimmed = downward
+      ? new Set([...change.arrived, ...change.moved.map(({ id }) => id)])
+      : NOTHING_ARRIVED;
+    let phase = 'settled';
+    if (downward) phase = 'quiet';
+    if (moving) phase = 'leaving';
+    setState({
+      target: board,
+      timeline: continuingQuiet ? state.timeline : board,
+      board: moving ? state.board : board,
+      counts: moving ? state.counts : board,
+      arrived: downward ? NOTHING_ARRIVED : change.arrived,
+      leaving: downward ? NOTHING_ARRIVED : change.leaving,
+      moved: continuingQuiet ? state.moved : change.moved,
+      dimmed: continuingQuiet ? state.dimmed : dimmed,
+      phase,
+      quiet,
+    });
+  } else if (quiet !== state.quiet) {
+    setState({ ...state, quiet });
   }
 
+  const pinned = useMemo(() => new Set(state.moved.map(({ id }) => id)), [state.moved]);
+
   useEffect(() => {
-    if (seen.arrived.size === 0) return undefined;
-    const settleAll = setTimeout(() => setSeen((current) => ({ ...current, arrived: NOTHING_ARRIVED })), seen.until - Date.now());
-    return () => clearTimeout(settleAll);
-  }, [seen.until]);
+    if (state.phase === 'settled') return undefined;
+    const timers = [];
+    let fastForward = null;
+    const finish = () => {
+      for (const animation of animations.current) {
+        if (animation.playState !== 'idle') animation.finish();
+      }
+      setState((current) => ({
+        ...current, board: current.target, counts: current.target,
+        leaving: NOTHING_ARRIVED, phase: 'settled',
+      }));
+    };
 
-  const settle = (id) => setSeen((current) => {
+    if (state.phase === 'quiet') {
+      timers.push(setTimeout(finish, 280));
+    } else if (reduced) {
+      timers.push(setTimeout(finish, 150));
+    } else if (phone) {
+      if (state.arrived.size === 0) {
+        timers.push(setTimeout(finish, 280));
+      } else {
+        timers.push(setTimeout(() => setState((current) => ({
+          ...current, board: current.target, counts: current.target,
+          leaving: NOTHING_ARRIVED, phase: 'waking',
+        })), 280));
+        timers.push(setTimeout(finish, 760));
+      }
+    } else {
+      const travels = state.moved.some((move) => state.arrived.has(move.id));
+      if (travels) {
+        timers.push(setTimeout(() => setState((current) => ({
+          ...current, board: current.target, phase: 'travelling',
+        })), 430));
+        timers.push(setTimeout(finish, 750));
+      } else {
+        timers.push(setTimeout(finish, 430));
+      }
+    }
+
+    const forward = () => {
+      if (fastForward !== null) return;
+      for (const timer of timers) clearTimeout(timer);
+      fastForward = setTimeout(finish, 150);
+    };
+    for (const name of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(name, forward, { passive: true });
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+      clearTimeout(fastForward);
+      for (const name of ['pointerdown', 'wheel', 'keydown']) window.removeEventListener(name, forward);
+    };
+  }, [state.timeline]);
+
+  useLayoutEffect(() => {
+    if (state.phase === 'leaving') {
+      const cards = [...root.current?.querySelectorAll('.st-board-card') ?? []];
+      positions.current = new Map(cards.map((element) => [element.dataset.stepId, element.getBoundingClientRect()]));
+      const leaving = cards.filter((element) => state.leaving.has(element.dataset.stepId) && !state.arrived.has(element.dataset.stepId));
+      animations.current = leaving.map((element) => {
+        const box = positions.current.get(element.dataset.stepId);
+        const frames = reduced ? [{ opacity: 1 }, { opacity: 0 }] : [
+          { opacity: 1, height: `${box.height}px` },
+          {
+            opacity: 0, height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px',
+            borderTopWidth: '0px', borderBottomWidth: '0px', marginBottom: '-8px',
+          },
+        ];
+        return element.animate(frames, {
+          delay: phone || reduced ? 0 : 150,
+          duration: reduced ? 150 : 280,
+          fill: 'forwards',
+          easing: getComputedStyle(element).getPropertyValue('--ease-standard').trim(),
+        });
+      });
+    } else if (state.phase === 'travelling') {
+      animations.current = state.moved.filter((move) => state.arrived.has(move.id)).flatMap(({ id }) => {
+        const before = positions.current.get(id);
+        const element = root.current?.querySelector(`.st-board-card[data-step-id="${CSS.escape(id)}"]`);
+        if (!before || !element) return [];
+        const after = element.getBoundingClientRect();
+        const traveller = element.cloneNode(true);
+        traveller.removeAttribute('data-step-id');
+        traveller.setAttribute('aria-hidden', 'true');
+        traveller.tabIndex = -1;
+        Object.assign(traveller.style, {
+          position: 'fixed', zIndex: '5', pointerEvents: 'none', margin: '0',
+          left: `${after.left}px`, top: `${after.top}px`, width: `${after.width}px`, height: `${after.height}px`,
+        });
+        root.current.appendChild(traveller);
+        element.style.opacity = '0';
+        const animation = traveller.animate([
+          { transform: `translate(${before.left - after.left}px, ${before.top - after.top}px)`, opacity: 1 },
+          { transform: 'translate(0, 0)', opacity: 1 },
+        ], { duration: 320, easing: getComputedStyle(element).getPropertyValue('--ease-soft').trim() });
+        const remove = () => {
+          traveller.remove();
+          element.style.removeProperty('opacity');
+        };
+        animation.onfinish = remove;
+        animation.oncancel = remove;
+        return [animation];
+      });
+    }
+    return () => {
+      for (const animation of animations.current) animation.cancel();
+      animations.current = [];
+    };
+  }, [state.target, state.phase]);
+
+  useEffect(() => {
+    if (state.phase !== 'settled' || state.arrived.size === 0) return undefined;
+    const timer = setTimeout(() => setState((current) => ({ ...current, arrived: NOTHING_ARRIVED })), WAKE_MS);
+    return () => clearTimeout(timer);
+  }, [state.phase, state.target]);
+  const settle = (id) => setState((current) => {
     if (!current.arrived.has(id)) return current;
-    const arrived = new Set(current.arrived);
-    arrived.delete(id);
-    return { ...current, arrived };
+    return { ...current, arrived: new Set([...current.arrived].filter((candidate) => candidate !== id)) };
   });
-
-  return [seen.arrived, settle];
+  const arrived = state.phase === 'settled' || state.phase === 'waking' ? state.arrived : NOTHING_ARRIVED;
+  return { ...state, arrived, pinned, settle };
 }
 
 // The run scrolls inside its parent, the column. The roving stop, a card focus is moving to and the selected step always
 // render, so focus and a reveal from the Graph reach them wherever the column has scrolled.
-export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVED, selectedId, onSelect, onExpandDone }) {
+export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVED, selectedId, onSelect, onExpandDone, swipe = false, onComplete, leaving = NOTHING_ARRIVED, pinned = NOTHING_ARRIVED, dimmed = NOTHING_ARRIVED }) {
+  const [swiped, setSwiped] = useState(null);
   const listRef = useRef(null);
   const heights = useRef(new Map());
   const latest = useRef(null);
@@ -134,9 +274,9 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
     [cards, measured, run],
   );
   const items = useMemo(() => {
-    const pins = new Set([stopId, pendingId, selectedId].filter((id) => typeof id === 'string'));
+    const pins = new Set([stopId, pendingId, selectedId, ...pinned].filter((id) => typeof id === 'string'));
     return stack.window(range, OVERSCAN, cards.flatMap((card, index) => (pins.has(card.id) ? [index] : [])));
-  }, [stack, range, stopId, pendingId, selectedId]);
+  }, [stack, range, stopId, pendingId, selectedId, pinned]);
   latest.current = stack;
 
   const follow = () => {
@@ -202,6 +342,7 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
     });
     observer.current.observe(scroller);
     const scrolled = () => {
+      setSwiped(null);
       markAnchor();
       follow();
     };
@@ -216,13 +357,14 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
   // Before the window paints: hold the view still, then watch only the cards it newly rendered and let go of the dropped.
   useLayoutEffect(() => {
     keepAnchor();
-    const rendered = new Set(listRef.current.querySelectorAll(':scope > .st-board-card'));
+    const rendered = new Set(listRef.current.querySelectorAll(':scope > .st-board-card, :scope > .st-board-swipe'));
     for (const element of observed.current) if (!rendered.has(element)) observer.current.unobserve(element);
     for (const element of rendered) if (!observed.current.has(element)) observer.current.observe(element);
     observed.current = rendered;
   }, [items]);
 
   useEffect(follow, [stack]);
+  useEffect(() => setSwiped(null), [swipe]);
 
   // A focused Show all unfolds into the card that took its place.
   useEffect(() => {
@@ -248,6 +390,12 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
               arrived={arrived.has(cards[item].id)}
               tabIndex={cards[item].id === stopId ? 0 : -1}
               onSelect={onSelect}
+              swipe={swipe}
+              open={swiped === cards[item].id}
+              onSwipe={setSwiped}
+              onComplete={onComplete}
+              leaving={leaving.has(cards[item].id)}
+              dimmed={dimmed.has(cards[item].id)}
             />
           )
           : <div key={`spacer-${item.from}`} className="st-board-cards-spacer" style={{ height: item.spacer }} aria-hidden />))}

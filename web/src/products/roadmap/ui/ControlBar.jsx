@@ -1,9 +1,12 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
+import { NewStep } from '../board/BoardControls.jsx';
 import { keyHint } from '../shortcuts/shortcutMap.js';
+import { useViewMode } from './useViewMode.js';
 
-export function ControlBar({ title, titleSlot, viewSwitch = null, find = null, board = false, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity, onBottom }) {
+export function ControlBar({ title, titleSlot, viewSwitch = null, find = null, board = false, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, onNewStep, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity, onBottom }) {
   const barRef = useRef(null);
+  const { breakpoint } = useViewMode();
   const activityHint = keyHint('Activity feed');
   const focusHint = keyHint('Focus on a step');
   const showAllHint = keyHint('All steps');
@@ -57,6 +60,7 @@ export function ControlBar({ title, titleSlot, viewSwitch = null, find = null, b
             <IconButton icon={<Icon name="share" />} label="Share roadmap" size="sm" onClick={onShare} />
           </Tooltip>
         )}
+        {board && onNewStep && <NewStep compact={breakpoint === 'tablet'} onClick={onNewStep} />}
         {!board && (
           <div className="st-zoom-group">
             <Tooltip label="Zoom out" side="bottom">

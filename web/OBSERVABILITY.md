@@ -103,8 +103,31 @@ moving back to a step already open within the same visit emits nothing. An actio
 and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
 (which also emits `roadmap_view_switch`), `viewBranch`, `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
 write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
-static Sentry operation `roadmap-board-step` with its stack frames and closes it. The switch, the tabs, the rail, Show all, the controls, the states and
-the step's page and modal exist only while the Board's development gate
+static Sentry operation `roadmap-board-step` with its stack frames and closes it.
+
+Board completion emits `roadmap_board_complete` with `door` (`swipe` or `key`), and toast Undo emits
+`roadmap_board_undo` with `act` (`complete`, `create` or `delete`). Tapping completion or creation toast text emits
+`roadmap_board_toast_reveal` with `act` (`complete` or `create`). Delete emits `roadmap_board_delete` with `step`
+(`confirm`, `cancel`, `held` or `sent`); `sent` occurs only when release returns a dispatch receipt and also carries `via`
+(`timer`, `replaced` or `left`). The step-menu `delete` action continues to mean that its menu item was pressed.
+Opening the composer emits `roadmap_board_create` with `step: open` and `door` (`verbs`, `band`, `empty` or
+`complete`); the tablet identity row's New step button uses `door: verbs`. A successful create emits
+`step: saved`, `column` (`locked` or `upNext`) and boolean `filterCleared`.
+The composer also emits `roadmap_board_create` with `step` (`failed`, `retry`, `discard` or `cancel`). The picker
+emits `roadmap_board_picker` with `step` (`open`, `apply`, `cancel` or `more`); only `apply` carries `count`, bucketed
+as `0`, `1`, `2-5`, `6-20` or `21+`. With zero candidates the Prerequisites row opens no picker and
+emits no event. These events carry no step ids, names, descriptions, queries or kinds.
+A create exception or missing session on an editable owner surface reports `roadmap-board-create`; a not-ready
+session is an expected failed-create event, not an Issue. An unexpected held delete release exception
+restores the projected step silently and reports `roadmap-board-delete`. A null receipt (already absent or not ready)
+is an expected no-op and reports no Issue. A composer render crash reports
+`roadmap-board-composer`. Reports use static operation names and stack frames only. Board structural writes also
+contain post-apply notification, storage and transport exceptions under `roadmap-sync-notify`,
+`roadmap-sync-persist` and `roadmap-sync-send`, respectively. Those writes retain their receipt because their lattice
+change has already applied; persistence or transport failure marks durability at risk.
+
+The switch, the tabs, the rail, Show all, the controls, the states, the step’s page and modal, and the
+composer and picker exist only while the Board’s development gate
 (`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
 storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board` with its stack frames (file, line, column and function name only),
 drops the Board until that roadmap is opened again and shows the Graph. Loading a roadmap reports to Sentry whatever the

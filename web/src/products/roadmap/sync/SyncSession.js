@@ -8,6 +8,7 @@
 //    malformed frame forces a resubscribe.
 //  - sends fire only in the `live` phase, so the server acquires each actor's stamps as a prefix.
 
+import { captureError } from '../../../telemetry/sentry.js';
 import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
@@ -37,15 +38,18 @@ function frameFrontier(writes) {
 }
 
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry() } = {}) {
+  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
+    reportFailure = (operation, error) => captureError('roadmap', operation,
+      typeof error?.stack === 'string' && error.stack ? error.stack : new Error(operation).stack, '#/app') } = {}) {
     this.url = url;
+    this.reportFailure = reportFailure;
     this.treeId = treeId;
     this.actor = replicaActor();
     this.clock = new HlcClock(this.actor);
     this.lattice = new TreeLattice(treeId, title);  // the doc title is the stampless baseline; any stamped rename dominates
     // This account's own marks: same clock and same blob as the structure, never the same frame.
     this.progress = new ProgressLattice();
-    this.store = new SyncStore();
+    this.store = store;
     this.registry = registry;                       // the device-tree index persistNow keeps fresh; null for read-only views
     this.ackedServerVector = new VersionVector();  // in-memory; what the server is known to hold
     this.ackedProgressVector = new VersionVector(); // …and the same, for the private lane
@@ -62,6 +66,7 @@ export class SyncSession {
     this.saveTimer = null;
     this.undoStack = [];
     this.redoStack = [];
+    this.receipts = new WeakMap();
     this.treeHandler = null;
     this.presenceHandler = null;
     this.peerHandler = null;
@@ -350,13 +355,40 @@ export class SyncSession {
     for (const chunk of chunkDelta(pending)) this.send(chunk, 'flush');
   }
 
-  dispatch(gesture) {
-    if (!this.ready) return;
+  dispatch(gesture, { captureFailures = false } = {}) {
+    if (!this.ready) return null;
     const writes = materialize(gesture, this.lattice, this.clock);
-    if (!writes.nodes.length && !writes.edges.length && !writes.kinds.length) return;
-    this.undoStack.push(this.captureInverse(writes));
+    if (!writes.nodes.length && !writes.edges.length && !writes.kinds.length) return null;
+    const inverse = this.captureInverse(writes);
+    const receipt = Object.freeze({});
+    const redo = this.redoStack;
+    this.undoStack.push(inverse);
     this.redoStack = [];
-    this.apply(writes);
+    try {
+      this.apply(writes, { captureFailures });
+    } catch (error) {
+      if (captureFailures) {
+        this.undoStack.splice(this.undoStack.indexOf(inverse), 1);
+        this.redoStack = redo;
+      }
+      throw error;
+    }
+    this.receipts.set(receipt, { inverse, captureFailures });
+    return receipt;
+  }
+
+  revert(receipt) {
+    if (!this.ready) return false;
+    const captured = this.receipts.get(receipt);
+    if (!captured) return false;
+    const { inverse, captureFailures } = captured;
+    const index = this.undoStack.indexOf(inverse);
+    if (index === -1) return false;
+    this.receipts.delete(receipt);
+    this.undoStack.splice(index, 1);
+    this.redoStack = [];
+    this.apply(this.restamp(inverse, this.clock.tick(Date.now())), { captureFailures });
+    return true;
   }
 
   // One stamped write to the title register, LWW against concurrent renames and out of the undo
@@ -381,11 +413,32 @@ export class SyncSession {
     this.apply(writes);
   }
 
-  apply(writes) {
+  apply(writes, { captureFailures = false } = {}) {
     this.lattice.join(writes);
-    this.emitTree();
-    this.persistNow();                     // queue the local snapshot; pending edits remain in the lattice
-    if (this.phase === 'live') this.send(writes);
+    if (!captureFailures) {
+      this.emitTree();
+      this.persistNow();
+      if (this.phase === 'live') this.send(writes);
+      return;
+    }
+    try {
+      this.emitTree();
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
+    }
+    try {
+      this.persistNow({ captureFailures });
+    } catch (error) {
+      this.durabilityAtRisk = true;
+      this.reportFailure('roadmap-sync-persist', error);
+    }
+    if (this.phase !== 'live') return;
+    try {
+      this.send(writes);
+    } catch (error) {
+      this.durabilityAtRisk = true;
+      this.reportFailure('roadmap-sync-send', error);
+    }
   }
 
   send(writes, intent = 'live') {
@@ -403,13 +456,16 @@ export class SyncSession {
 
   // Persists both lanes + lastSeq atomically; the snapshot is taken synchronously, before any
   // await. A closed session never writes. Returns the save's settle.
-  persistNow() {
+  persistNow({ captureFailures = false } = {}) {
     if (this.closed) return Promise.resolve();
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
     const value = { frame: this.lattice.toFrame(), progress: this.progress.toFrame(), lastSeq: this.lastSeq };
     this.registry?.touch(this.treeId, this.lattice.title);
-    return this.store.save(this.treeId, value).catch(() => { this.durabilityAtRisk = true; });
+    return this.store.save(this.treeId, value).catch((error) => {
+      this.durabilityAtRisk = true;
+      if (captureFailures) this.reportFailure('roadmap-sync-persist', error);
+    });
   }
 
   // Coalesced save for the receive path: received content is already server-durable.

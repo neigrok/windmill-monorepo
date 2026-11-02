@@ -280,8 +280,7 @@
   line-height: 20px;
 }
 
-/* ---- Arrived: a step that just became up next, or was just created, wakes once (fade, scale 1 → 1.02 → 1) while its edge
-   and glow settle over two pulses. Focus landing on it ends the wake, so the edge never reads as the focus ring. ---- */
+/* Arrived cards wake once; reader focus or pointer settles the wake, while automatic reveal focus preserves it. */
 .st-board-card.is-arrived {
   --st-board-arrived-edge: var(--color-brand-soft);
   --st-board-arrived-inset: 2px; /* over the 1px border: the drawn 3px edge */
@@ -315,5 +314,157 @@
 @media (prefers-reduced-motion: reduce) {
   .st-board-card.is-arrived {
     animation: st-board-card-fade var(--duration-fast) var(--ease-standard);
+  }
+}
+
+.st-board-card.is-leaving {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.st-board-swipe {
+  position: relative;
+  min-width: 0;
+  touch-action: pan-y;
+}
+.st-board-swipe > .st-board-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  translate: var(--swipe-offset) 0;
+  transition: translate var(--duration-base) var(--ease-standard);
+}
+.st-board-swipe.is-open > .st-board-card {
+  transition-timing-function: var(--ease-soft);
+}
+.st-board-swipe.is-dragging > .st-board-card {
+  transition: none;
+}
+.st-board-swipe-complete {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: flex;
+  width: var(--space-24);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-extrabold);
+  font-size: var(--text-xs);
+  line-height: normal;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+.st-board-swipe.is-open > .st-board-swipe-complete,
+.st-board-swipe.is-dragging > .st-board-swipe-complete {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.st-board-toast {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: var(--space-6);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: calc(100% - var(--space-8));
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--color-success);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  animation: st-board-toast-enter var(--duration-base) var(--ease-soft) both;
+}
+.st-board-toast--delete {
+  border-left-color: var(--text-secondary);
+}
+.st-board-toast.is-leaving {
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+.st-board-toast-message {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+button.st-board-toast-message {
+  cursor: pointer;
+}
+.st-board-toast-undo {
+  flex-shrink: 0;
+  width: 72px;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-brand);
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-extrabold);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  cursor: pointer;
+}
+.st-board--phone .st-board-toast {
+  bottom: calc(var(--space-24) + var(--space-6) + env(safe-area-inset-bottom));
+  width: calc(100% - var(--space-8));
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+  border-left-width: 1px;
+  border-left-color: var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.st-board--phone .st-board-toast-message {
+  font-weight: var(--font-weight-bold);
+}
+.st-board--phone .st-board-toast-undo {
+  width: var(--space-16);
+}
+.st-board-card.is-restored {
+  animation: st-board-restore var(--duration-base) var(--ease-standard) both;
+}
+:is(.st-board-swipe-complete, .st-board-toast-message, .st-board-toast-undo):focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+@keyframes st-board-toast-enter {
+  from { opacity: 0; translate: 0 var(--space-2); }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes st-board-toast-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes st-board-restore {
+  from { opacity: .45; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-board-swipe > .st-board-card {
+    transition: none;
+  }
+  .st-board-toast {
+    animation: st-board-toast-fade var(--duration-fast) var(--ease-standard) both;
   }
 }

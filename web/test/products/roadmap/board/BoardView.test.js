@@ -9,6 +9,7 @@ register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: BoardView } = await import('../../../../src/products/roadmap/board/BoardView.jsx');
+const { NewStep } = await import('../../../../src/products/roadmap/board/BoardControls.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
 
 function render(props, { knots = 0 } = {}) {
@@ -79,15 +80,34 @@ test('BoardView — shown with a step selected past the Done fold, Done unfolds 
   assert.deepEqual([revealed.showAll, revealed.selected], [[], ['Choose a sailing course']]);
 });
 
+test('BoardView — only the tablet owner identity adds the existing compact creation verb', () => {
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
+    { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
+  ] });
+  const markup = (props) => renderToStaticMarkup(React.createElement(BoardView, {
+    tree, completed: new Set(), completedAt: {}, identity: true, title: tree.title,
+    breakpoint: 'tablet', active: true, onSelect: () => {}, ...props,
+  }));
+  const action = renderToStaticMarkup(React.createElement(NewStep, { compact: true, onClick: () => {} }));
+  const reader = markup({});
+  assert.equal(markup({ onNewStep: () => {} }), reader.replace('</header>', `${action}</header>`));
+  assert.equal(markup({ breakpoint: 'desktop', onNewStep: () => {} }), markup({ breakpoint: 'desktop' }));
+  assert.equal(markup({ identity: false, onNewStep: () => {} }), markup({ identity: false }));
+});
+
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView, { coverBeneath } from '/src/products/roadmap/board/BoardView.jsx';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
+import { StepComposer } from '/src/products/roadmap/board/StepComposer.jsx';
+import { boardOpen } from '/src/products/roadmap/board/gate.js';
+import { useViewMode } from '/src/products/roadmap/ui/useViewMode.js';
 
 const legend = [
   { id: 'build', hue: 'terracotta', label: 'Build' },
@@ -132,6 +152,65 @@ window.openReload = (nodes, completed) => {
     return React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
       React.createElement(BoardView, { ...load, completed: new Set(completed), completedAt: {}, selectedId: null, onSelect: () => {},
         breakpoint: 'desktop', active: true, onSwitchView: () => {}, onRetry: () => setLoad({ tree: null, loading: true, failed: false }) }));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.openActBoard = (nodes, initiallyCompleted, breakpoint, showToast) => {
+  function Room() {
+    const [tree, setTree] = useState(() => new SkillTree({ id: 'acts', title: 'Learn to sail', nodes }));
+    const [completed, setCompleted] = useState(() => new Set(initiallyCompleted));
+    const [completedAt, setCompletedAt] = useState(() => Object.fromEntries(initiallyCompleted.map((id, index) => [id, index + 1])));
+    const [query, setQuery] = useState(() => new BoardQuery());
+    const [reveal, setReveal] = useState(null);
+    const [quiet, setQuiet] = useState(0);
+    useEffect(() => { window.progressVersion = (window.progressVersion ?? 0) + 1; }, [completed, completedAt]);
+    const toast = useMemo(() => showToast ? { key: 1, message: 'Rig the boat deleted', act: 'delete', action: { label: 'Undo' } } : null, []);
+    window.shownToasts ??= [];
+    window.completeRemote = (id) => {
+      if (completed.has(id)) return false;
+      setCompleted(new Set([...completed, id]));
+      setCompletedAt({ ...completedAt, [id]: Date.now() });
+      return true;
+    };
+    window.createAndReveal = () => flushSync(() => {
+      setTree(new SkillTree({ id: tree.id, title: tree.title, nodes: [...tree.nodes,
+        { id: 'reef', label: 'Reefing basics', color: 'sky', prerequisites: [] }] }));
+      setReveal({ id: 'reef', key: 1 });
+    });
+    window.undoCompletion = (id) => flushSync(() => {
+      setQuiet((current) => current + 1);
+      setCompleted(new Set([...completed].filter((step) => step !== id)));
+      setCompletedAt(Object.fromEntries(Object.entries(completedAt).filter(([step]) => step !== id)));
+    });
+    window.refreshProgress = () => flushSync(() => {
+      setCompleted(new Set(completed));
+      setCompletedAt({ ...completedAt });
+    });
+    return React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
+      React.createElement(BoardView, { tree, completed, completedAt, breakpoint, active: true,
+        onSelect: () => {}, onComplete: window.completeRemote, query, onQuery: setQuery, reveal, quiet,
+        toast, onToastShown: (key) => window.shownToasts.push(key), onToastUndo: () => {} }));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.openIdentityComposer = ({ nodes, owner = true, active = true, gate = true }) => {
+  if (gate) localStorage.setItem('windmill:board:dev', '1');
+  else localStorage.removeItem('windmill:board:dev');
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
+  const completed = new Set(['course', 'parts', 'rig']);
+  function Room() {
+    const { breakpoint } = useViewMode();
+    const [query, setQuery] = useState(() => new BoardQuery());
+    const [composer, setComposer] = useState(false);
+    useEffect(() => { window.identityRendered = true; }, []);
+    if (!boardOpen()) return null;
+    return React.createElement('div', { className: 'st-view-layer--board' + (active ? ' is-active' : ''), style: { height: '100vh' } },
+      React.createElement(BoardView, { tree, completed, completedAt: {}, selectedId: null,
+        breakpoint, active, identity: true, title: tree.title, query, onQuery: setQuery,
+        onSelect: () => {}, onSwitchView: () => {}, legend,
+        onNewStep: owner ? (door) => { window.creationDoor = door; setComposer(true); } : undefined }),
+      composer && React.createElement(StepComposer, { tree, completed, legend, band: breakpoint,
+        onCreate: () => ({ ok: true }), onClose: () => setComposer(false) }));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
@@ -452,3 +531,188 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order �
     await page.close();
   }
 });
+
+test('Chromium: a visible toast retains Undo and its announcement through a later regroup', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    const time = new Date('2026-11-01T10:00:00Z');
+    await page.clock.install({ time: new Date(time.getTime() - 60_000) });
+    await page.clock.pauseAt(time);
+    await page.goto(`${origin}/board-view-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate((nodes) => openActBoard(nodes, ['course', 'parts', 'rig'], 'desktop', true), learnToSailNodes);
+    await page.locator('.st-board-card[data-step-id="wind"]').waitFor();
+    await page.clock.runFor(120);
+    await page.locator('.st-board-toast').waitFor();
+    await page.evaluate(() => {
+      window.announcements = [];
+      const live = document.querySelector('[aria-live="polite"]');
+      new MutationObserver(() => window.announcements.push(live.textContent)).observe(live, { childList: true, characterData: true, subtree: true });
+      completeRemote('wind');
+    });
+    await page.locator('.st-board-card.is-leaving').first().waitFor();
+    assert.deepEqual(await page.locator('.st-board-toast').allTextContents(), ['Rig the boat deletedUndo']);
+    await page.clock.runFor(900);
+    await page.locator('[data-column="done"] .st-board-card[data-step-id="wind"]').waitFor();
+    assert.deepEqual(await page.evaluate(() => ({ shown: window.shownToasts, announcements: window.announcements })), { shown: [1], announcements: [] });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+test('Chromium: phone C follows the completed card into Done without expanding its folded list', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    const time = new Date('2026-11-01T10:00:00Z');
+    await page.clock.install({ time: new Date(time.getTime() - 60_000) });
+    await page.clock.pauseAt(time);
+    await page.goto(`${origin}/board-view-test`);
+    await page.waitForFunction(() => window.entryReady);
+    const done = Array.from({ length: 13 }, (_, index) => ({ id: `done${index}`, label: `Done ${index}`, prerequisites: [] }));
+    const nodes = [{ id: 'wind', label: 'Read the wind', prerequisites: [] }, ...done];
+    await page.evaluate(([nodes, completed]) => openActBoard(nodes, completed, 'phone', false), [nodes, done.map(({ id }) => id)]);
+    await page.locator('.st-board-card[data-step-id="wind"]').focus();
+    await page.keyboard.press('c');
+    await page.locator('.st-board-card.is-leaving').first().waitFor({ state: 'attached' });
+    await page.clock.runFor(900);
+    await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'wind' && document.activeElement.closest('[data-column]').dataset.column === 'done');
+    assert.equal(await page.getByRole('button', { name: 'Show all 14', exact: true }).count(), 1);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [744, 900, 1023]) {
+  test(`Chromium: tablet identity New step opens the composer through verbs at ${width}px`, async () => {
+    await ready;
+    const errors = [];
+    const page = await browser.newPage({ viewport: { width, height: 960 } });
+    page.on('pageerror', (error) => errors.push(error.message));
+    try {
+      await page.goto(`${origin}/board-view-test`);
+      await page.waitForFunction(() => window.entryReady);
+      await page.evaluate((nodes) => openIdentityComposer({ nodes }), learnToSailNodes);
+      const identity = page.locator('.st-board-identity');
+      const action = identity.getByRole('button', { name: 'New step', exact: true });
+      await action.waitFor();
+      assert.equal(await action.getAttribute('class'), 'st-board-new-step st-board-new-step--secondary st-board-new-step--compact');
+      assert.deepEqual(await action.evaluate((button) => {
+        const box = button.getBoundingClientRect();
+        const find = button.previousElementSibling.getBoundingClientRect();
+        const header = button.parentElement.getBoundingClientRect();
+        return { width: box.width, height: box.height, afterFind: box.left >= find.right, withinHeader: box.right <= header.right };
+      }), { width: 44, height: 44, afterFind: true, withinHeader: true });
+      await identity.getByRole('searchbox', { name: 'Find a step' }).fill('wind');
+      assert.equal(await identity.getByRole('searchbox', { name: 'Find a step' }).inputValue(), 'wind');
+      await action.click();
+      const composer = page.getByRole('dialog', { name: 'New step', exact: true });
+      await composer.waitFor();
+      await composer.getByRole('textbox', { name: 'Name', exact: true }).fill('Reefing basics');
+      assert.equal(await composer.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Reefing basics');
+      assert.equal(await page.evaluate(() => window.creationDoor), 'verbs');
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test('Chromium: the tablet identity creation verb stays out of other widths, readers, Graph and the closed gate', async () => {
+  await ready;
+  const errors = [];
+  for (const state of [
+    { width: 743 }, { width: 1024 }, { width: 900, owner: false },
+    { width: 900, active: false }, { width: 900, gate: false },
+  ]) {
+    const page = await browser.newPage({ viewport: { width: state.width, height: 960 } });
+    page.on('pageerror', (error) => errors.push(error.message));
+    try {
+      await page.goto(`${origin}/board-view-test`);
+      await page.waitForFunction(() => window.entryReady);
+      await page.evaluate(({ nodes, state }) => openIdentityComposer({ nodes, ...state }), { nodes: learnToSailNodes, state });
+      await page.waitForFunction(() => window.identityRendered);
+      assert.equal(await page.locator('.st-board-identity .st-board-new-step:visible').count(), 0);
+      assert.equal(await page.getByRole('dialog', { name: 'New step', exact: true }).count(), 0);
+    } finally {
+      await page.close();
+    }
+  }
+  assert.deepEqual(errors, []);
+});
+
+for (const breakpoint of ['desktop', 'phone']) {
+  for (const interaction of ['focus', 'pointer']) {
+    test(`Chromium ${breakpoint}: create reveal keeps its wake until the reader's ${interaction}`, async () => {
+      await ready;
+      const page = await browser.newPage({ viewport: { width: breakpoint === 'phone' ? 390 : 1440, height: 900 } });
+      const errors = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      try {
+        const time = new Date('2026-11-02T12:00:00Z');
+        await page.clock.install({ time: new Date(time.getTime() - 60_000) });
+        await page.clock.pauseAt(time);
+        await page.goto(`${origin}/board-view-test`);
+        await page.waitForFunction(() => window.entryReady);
+        await page.evaluate(({ nodes, breakpoint }) => openActBoard(nodes, ['course', 'parts', 'rig'], breakpoint, false), { nodes: learnToSailNodes, breakpoint });
+        await page.locator('.st-board-card[data-step-id="wind"]').waitFor();
+        await page.evaluate(() => createAndReveal());
+        await page.clock.runFor(900);
+        const created = page.locator('.st-board-card[data-step-id="reef"]');
+        await created.waitFor();
+        assert.deepEqual(await created.evaluate((card) => [card === document.activeElement, card.classList.contains('is-arrived')]), [true, true]);
+        await page.clock.runFor(300);
+        assert.equal(await created.evaluate((card) => card.classList.contains('is-arrived')), true);
+        if (interaction === 'focus') {
+          await page.locator('.st-board-card[data-step-id="wind"]').focus();
+          await created.focus();
+        } else {
+          await created.dispatchEvent('pointerdown', { pointerType: 'mouse', button: 0 });
+        }
+        await page.waitForFunction(() => !document.querySelector('.st-board-card[data-step-id="reef"]').classList.contains('is-arrived'));
+        assert.deepEqual(await created.evaluate((card) => [card === document.activeElement, card.classList.contains('is-arrived')]), [true, false]);
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+
+  test(`Chromium ${breakpoint}: Undo stays dimmed for 280 ms across equivalent progress snapshots`, async () => {
+    await ready;
+    const page = await browser.newPage({ viewport: { width: breakpoint === 'phone' ? 390 : 1440, height: 900 } });
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    try {
+      const time = new Date('2026-11-02T12:00:00Z');
+      await page.clock.install({ time: new Date(time.getTime() - 60_000) });
+      await page.clock.pauseAt(time);
+      await page.goto(`${origin}/board-view-test`);
+      await page.waitForFunction(() => window.entryReady);
+      await page.evaluate(({ nodes, breakpoint }) => openActBoard(nodes, ['course', 'parts', 'rig', 'wind'], breakpoint, false), { nodes: learnToSailNodes, breakpoint });
+      await page.locator('.st-board-card[data-step-id="dock"]').waitFor({ state: 'attached' });
+      await page.evaluate(() => undoCompletion('wind'));
+      const restored = () => page.locator('.st-board-card.is-restored').evaluateAll((cards) => cards.map((card) => card.dataset.stepId).sort());
+      await page.locator('.st-board-card[data-step-id="wind"].is-restored').waitFor();
+      assert.deepEqual(await restored(), ['dock', 'wind']);
+      for (const elapsed of [30, 70, 100]) {
+        await page.clock.runFor(elapsed);
+        const version = await page.evaluate(() => {
+          const previous = window.progressVersion;
+          refreshProgress();
+          return previous;
+        });
+        await page.waitForFunction((previous) => window.progressVersion > previous, version);
+        assert.deepEqual(await restored(), ['dock', 'wind']);
+      }
+      await page.clock.runFor(79);
+      assert.deepEqual(await restored(), ['dock', 'wind']);
+      await page.clock.runFor(1);
+      await page.waitForFunction(() => document.querySelectorAll('.st-board-card.is-restored').length === 0);
+      assert.deepEqual(await restored(), []);
+      assert.equal(await page.locator('.st-board-card.is-arrived').count(), 0);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

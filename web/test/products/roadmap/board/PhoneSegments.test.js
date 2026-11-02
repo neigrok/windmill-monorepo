@@ -138,13 +138,16 @@ window.openBoard = (nodes, completed) => {
   window.expansions = 0;
   function Room() {
     const [selectedId, setSelectedId] = useState(null);
+    const [actions, setActions] = useState(false);
+    window.setActions = setActions;
+    window.completions ??= [];
     const [shown, setShown] = useState('upNext');
     const [doneExpanded, setDoneExpanded] = useState(false);
     const [boardActive, setBoardActive] = useState(true);
     window.setBoardActive = setBoardActive;
     return React.createElement('div', { className: 'st-view-layer--board' + (boardActive ? ' is-active' : '') },
       React.createElement('div', { className: 'st-board st-board--phone', style: { height: '100vh' } },
-        React.createElement(PhoneSegments, { board, shown, onShow: setShown, selectedId, onSelect: setSelectedId, doneExpanded,
+        React.createElement(PhoneSegments, { board, onComplete: actions ? (id, door) => window.completions.push([id, door]) : undefined, shown, onShow: setShown, selectedId, onSelect: setSelectedId, doneExpanded,
           onExpandDone: () => { window.expansions += 1; setDoneExpanded(true); } })));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
@@ -383,3 +386,28 @@ function tabLayout(page) {
     return { rows: [...rows.values()], whole, heading: getComputedStyle(document.querySelector('.st-board-phone-pane.is-shown .st-board-phone-heading')).display };
   });
 }
+
+
+test('Chromium: Tab reveals Complete, Escape closes it, and only pressing its button completes', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(`${origin}/phone-segments-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openBoard([{ id: 'one', label: 'First step', prerequisites: [] }], []));
+    await page.waitForFunction(() => window.setActions);
+    await page.evaluate(() => setActions(true));
+    await page.locator('.st-board-card').focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.getByRole('button', { name: 'Complete First step' }).evaluate((element) => element === document.activeElement), true);
+    assert.equal(await page.locator('.st-board-swipe.is-open').count(), 1);
+    await page.keyboard.press('Escape');
+    assert.deepEqual([await page.locator('.st-board-swipe.is-open').count(), await page.evaluate(() => window.completions)], [0, []]);
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await page.evaluate(() => window.completions), [['one', 'swipe']]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

@@ -15,6 +15,23 @@ import {
 const SORT_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const SHEET_FOCUSABLE = 'button, input, [tabindex="0"]';
 
+export function NewStep({ variant = 'secondary', compact = false, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`st-board-new-step st-board-new-step--${variant}${compact ? ' st-board-new-step--compact' : ''}`}
+      aria-label={LABELS.newStep}
+      onClick={onClick}
+    >
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.66667" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M4.16667 10H15.8333" />
+        <path d="M10 4.16667V15.8333" />
+      </svg>
+      {!compact && <span>{LABELS.newStep}</span>}
+    </button>
+  );
+}
+
 // Each change a reader makes emits once, with bounded labels only, then reaches the host's query.
 function sortBy(query, onQuery, sort) {
   if (sort === query.sort) return;
@@ -360,8 +377,8 @@ export function PhoneSort({ query, onQuery }) {
   );
 }
 
-// The phone band's second row: Find a step, then Filter, which a roadmap wearing one kind does without.
-export function PhoneTools({ worn, query, onQuery }) {
+// The phone band's second row: Find a step, Filter and the owner's New step.
+export function PhoneTools({ worn, query, onQuery, onNewStep }) {
   const opener = useRef(null);
   const [host, setHost] = useState(null);
   const first = worn.find((kind) => query.kinds.includes(kind.hue));
@@ -390,6 +407,7 @@ export function PhoneTools({ worn, query, onQuery }) {
           {first && <span className="st-board-tool-dot" style={{ '--st-board-tool-dot': KIND_CSS[first.hue].base }} aria-hidden />}
         </button>
       )}
+      {onNewStep && <NewStep compact onClick={onNewStep} />}
       {host && (
         <Sheet host={host} variant="filter" title={LABELS.filterByKind} onClose={close}>
           <KindSwatches worn={worn} query={query} onQuery={onQuery} />

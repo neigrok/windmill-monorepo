@@ -63,9 +63,9 @@ prerequisites and ledger drift below are build work.
 | *Node* replaced the shipped *step* | *Step* in every control and string | Both pages |
 | Desktop never drew the core loop | Complete, Undo, Reset preview and outcome in the modal; keyboard C with toast; save failure, discard, loading, load error, sync states, regroup motion | Desktop 02.01–02.16 |
 | Desktop existed only signed in | Visitor on Graph, shared reader Board and step, Fork signed out and in, saved on this device, lapsed session | Desktop 04.01–04.07 |
-| Nothing between 390 and 1440 | 1024 three columns; 900 and 744 two columns plus a rail; 744 modal and picker; chrome named per band | Desktop 05.01–05.07 |
+| Nothing between 390 and 1440 | 1024 three columns; 900 and 744 two columns plus a rail; 744 modal and composer/picker pages; chrome named per band | Desktop 05.01–05.06; 744 09.02–09.04 |
 | Density past eight cards undefined | Counts on headings and segments, per-column scroll, Done collapse, virtualization requirement, 5,000-step fixture | Desktop 06.01–06.02 and dev note 379:9604; phone 18.01–18.05 |
-| The desktop picker was a phone sheet | Anchored panel: search on top, chips, results, Cancel and Apply at the bottom, draft visible | Desktop 09.04–09.07, 09.10; 744 05.07 |
+| The desktop picker was a phone sheet | Desktop anchored panel keeps the draft visible; at 744–1023 the picker is a page inside the 600px composer dialog with back navigation, search, chips, results, Cancel and Apply | Desktop 09.04–09.07, 09.10; 744 09.02–09.04 |
 | No distance or reason on the card | *Needs X · N to go* and *Unlocks X*; Roadmap order | Phone 01.01–01.02; desktop 01.01 |
 | Creation hidden in a one-item More | Visible New step: plus in the phone band, button in the desktop row | Phone 01.01; desktop 01.01, 09.02 |
 | Colour swatches had no names | Kind labels on chips, the filter and the editor | Desktop 07.01, 09.05; phone 05.01, 09.03; Kind choice 306:4848 |
