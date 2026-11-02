@@ -172,7 +172,8 @@ page in the 600px dialog from 744px and a full-screen page on phones. `StepCompo
 selection and query so resizing between these layouts preserves them. With zero candidates the
 Prerequisites row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots
 start in the first legend kind. Layout and focus handling live in `StepComposer.jsx`,
-`PrerequisitePicker.jsx`, `composerFocus.js` and `composer.css`.
+`PrerequisitePicker.jsx`, `composerFocus.js` and `composer.css`; the shared `KindChoice` lives in
+`BoardControls.jsx` with its styles in `controls.css`.
 
 ## Package map
 

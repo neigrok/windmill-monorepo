@@ -1,12 +1,13 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Check, ChevronDown } from 'lucide-react';
+import { AlertCircle, ChevronDown } from 'lucide-react';
 import { Button } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
-import { KIND_CSS, NODE_COLOR_NAMES } from '../theme.js';
+import { NODE_COLOR_NAMES } from '../theme.js';
 import { kindOptions } from '../model/Legend.js';
 import { PrerequisiteChoices, StepDraft } from './StepDraft.js';
 import { PrerequisitePicker } from './PrerequisitePicker.jsx';
+import { KindChoice } from './BoardControls.jsx';
 import { useComposerFocus } from './composerFocus.js';
 import { StepIcons } from './StepIcons.jsx';
 import { COLUMN_TITLES, COMPOSER, DISCARD_DRAFT, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
@@ -51,7 +52,7 @@ function useComposerViewport(phone) {
   };
 }
 
-export function StepComposer({ tree, completed, legend, band, onCreate, onClose }) {
+export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose }) {
   const phone = band === 'phone';
   const viewport = useComposerViewport(phone);
   const [stored, setDraft] = useState(() => new StepDraft());
@@ -216,35 +217,7 @@ export function StepComposer({ tree, completed, legend, band, onCreate, onClose 
           </label>
           <div className="st-board-draft-kind">
             <span>{COMPOSER.kind}</span>
-            <div role="radiogroup" aria-label={COMPOSER.kind}>
-              {kinds.map((kind) => (
-                <button
-                  key={kind.hue}
-                  type="button"
-                  role="radio"
-                  aria-checked={draft.color === kind.hue}
-                  tabIndex={draft.color === kind.hue ? 0 : -1}
-                  className="st-board-draft-kind-choice"
-                  style={{ '--draft-kind': KIND_CSS[kind.hue].base, '--draft-kind-ring': KIND_CSS[kind.hue].ring }}
-                  onClick={() => change({ color: kind.hue })}
-                  onKeyDown={(event) => {
-                    const direction = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-                    if (!direction) return;
-                    event.preventDefault();
-                    const index = kinds.findIndex((choice) => choice.hue === kind.hue);
-                    const nextIndex = (index + direction + kinds.length) % kinds.length;
-                    change({ color: kinds[nextIndex].hue });
-                    event.currentTarget.parentElement.querySelectorAll('[role="radio"]')[nextIndex].focus();
-                  }}
-                >
-                  <span>
-                    <i aria-hidden />
-                    {kind.label}
-                    {draft.color === kind.hue && <Check size={14} strokeWidth={2} aria-hidden />}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <KindChoice kinds={kinds} value={draft.color} onChoose={(color) => change({ color })} label={COMPOSER.kind} />
           </div>
           <button
             ref={needs}

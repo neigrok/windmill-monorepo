@@ -58,6 +58,7 @@ export function StepDetail({
   onViewBranch,
   onDelete,
   onDeletePrompt,
+  onEdit,
   onNotify,
 }) {
   const { id, trail, door } = address;

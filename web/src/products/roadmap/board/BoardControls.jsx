@@ -4,6 +4,7 @@
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Check } from 'lucide-react';
 import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
@@ -14,6 +15,39 @@ import {
 
 const SORT_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const SHEET_FOCUSABLE = 'button, input, [tabindex="0"]';
+
+export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
+  return (
+    <div role="radiogroup" aria-label={label}>
+      {kinds.map((kind, index) => (
+        <button
+          key={kind.hue}
+          type="button"
+          role="radio"
+          aria-checked={value === kind.hue}
+          tabIndex={value === kind.hue || (value === null && index === 0) ? 0 : -1}
+          className="st-board-draft-kind-choice"
+          style={{ '--draft-kind': KIND_CSS[kind.hue].base, '--draft-kind-ring': KIND_CSS[kind.hue].ring }}
+          onClick={() => onChoose(kind.hue)}
+          onKeyDown={(event) => {
+            const direction = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+            if (!direction) return;
+            event.preventDefault();
+            const nextIndex = (index + direction + kinds.length) % kinds.length;
+            if (follow) onChoose(kinds[nextIndex].hue);
+            event.currentTarget.parentElement.querySelectorAll('[role="radio"]')[nextIndex].focus();
+          }}
+        >
+          <span>
+            <i aria-hidden />
+            {kind.label}
+            {value === kind.hue && <Check size={14} strokeWidth={2} aria-hidden />}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function NewStep({ variant = 'secondary', compact = false, onClick }) {
   return (

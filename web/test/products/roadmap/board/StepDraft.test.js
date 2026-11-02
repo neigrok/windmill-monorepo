@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { StepDraft, CreateStepRequest, PrerequisiteChoices } from '../../../../src/products/roadmap/board/StepDraft.js';
+import { StepDraft, CreateStepRequest, EditStepRequest, PrerequisiteChoices } from '../../../../src/products/roadmap/board/StepDraft.js';
 
 function sailing(nodes = []) {
   return new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
@@ -13,6 +13,27 @@ function sailing(nodes = []) {
     ...nodes,
   ] });
 }
+
+test('EditStepRequest — trims the label and owns frozen prerequisite data in chosen order', () => {
+  const prerequisites = ['wind', 'parts'];
+  const request = new EditStepRequest({
+    id: 'dock', label: '  Leave the dock  ', description: '  Cast off  ', color: 'gold', prerequisites,
+  });
+  prerequisites.push('bowline');
+  assert.deepEqual({ ...request }, {
+    id: 'dock', label: 'Leave the dock', description: '  Cast off  ', color: 'gold', prerequisites: ['wind', 'parts'],
+  });
+  assert.equal(Object.isFrozen(request), true);
+  assert.equal(Object.isFrozen(request.prerequisites), true);
+});
+
+test('EditStepRequest — rejects an empty or whitespace-only label', () => {
+  for (const label of ['', ' \n\t ']) {
+    assert.throws(() => new EditStepRequest({ id: 'dock', label, description: '', color: 'gold', prerequisites: [] }), {
+      name: 'TypeError', message: 'A step requires a non-empty label',
+    });
+  }
+});
 
 test('StepDraft — a blank draft is clean and requires a trimmed name', () => {
   const draft = new StepDraft({ id: 'new' });

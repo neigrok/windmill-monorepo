@@ -57,6 +57,7 @@ export const COMPOSER = {
   none: 'None',
   create: 'Create step',
 };
+export const EDIT_STEP = { title: 'Edit step', save: 'Save' };
 export const PICKER = {
   title: 'Prerequisites',
   allSteps: 'All steps',
@@ -66,7 +67,34 @@ export const PICKER = {
   selectionKept: 'Your selection is kept.',
   clearSearch: 'Clear search',
   startingStep: 'a starting step',
+  thisStep: 'This step',
+  comesAfter: 'Comes after this step',
+  nowComesAfter: 'Now comes after this step',
 };
+export const WORKSPACE = {
+  subtasks: 'Subtasks',
+  addSubtask: 'Add subtask',
+  note: 'Note',
+  edit: 'Edit',
+  personalLinks: 'Personal links',
+  addLink: 'Add link',
+  removeLink: 'Remove link',
+  removeSubtask: 'Remove subtask',
+};
+export const NOTE_EDITOR = {
+  title: 'Edit note',
+  cancel: 'Cancel',
+  save: 'Save',
+  bold: 'Bold',
+  italic: 'Italic',
+  link: 'Link',
+  list: 'List',
+  text: 'Text',
+  url: 'URL',
+  urlPlaceholder: 'Paste or type URL',
+  apply: 'Apply',
+};
+export const BULK = { done: 'Done', recolor: 'Recolor' };
 
 // Full numbers with thousands separators; `compact` abbreviates from 1,000 for the phone's segments and progress figure.
 export function formatCount(count, { compact = false } = {}) {
@@ -78,6 +106,10 @@ export function formatCount(count, { compact = false } = {}) {
 
 export function stepCount(count) {
   return `${formatCount(count)} ${count === 1 ? 'step' : 'steps'}`;
+}
+
+export function selectedCount({ count }) {
+  return `${formatCount(count)} selected`;
 }
 
 export function needsLine({ need, extra, toGo }) {
@@ -204,6 +236,10 @@ export function afterStep({ step }) {
   return `after ${step}`;
 }
 
+export function leftSelection({ step }) {
+  return `${step} now comes after this step, so it left your selection.`;
+}
+
 export function noStepsMatch({ query }) {
   return `No steps match “${query.trim()}”`;
 }
@@ -262,6 +298,8 @@ export const STEP_DETAIL = {
   copyLink: 'Copy link',
   openInGraph: 'Open in Graph',
   deleteStep: 'Delete step',
+  editStep: 'Edit step',
+  editNote: 'Edit note',
   viewBranch: 'View branch',
   subtasks: 'Subtasks',
   addSubtask: 'Add subtask',
@@ -271,6 +309,10 @@ export const STEP_DETAIL = {
 
 export function prerequisitesTally({ done, total }) {
   return `${formatCount(done)} / ${formatCount(total)}`;
+}
+
+export function subtaskTally({ done, total }) {
+  return `${done} of ${total}`;
 }
 
 export function backTo({ screen }) {

@@ -46,7 +46,14 @@ import {
   sortButtonLabel,
   DELETE_CONFIRM,
   COMPOSER,
+  EDIT_STEP,
   PICKER,
+  WORKSPACE,
+  NOTE_EDITOR,
+  BULK,
+  selectedCount,
+  leftSelection,
+  subtaskTally,
   deleteConfirm,
   completeStepAction,
   placementPreview,
@@ -202,6 +209,8 @@ test('copy — the step page and modal', async () => {
     copyLink: 'Copy link',
     openInGraph: 'Open in Graph',
     deleteStep: 'Delete step',
+    editStep: 'Edit step',
+    editNote: 'Edit note',
     viewBranch: 'View branch',
     subtasks: 'Subtasks',
     addSubtask: 'Add subtask',
@@ -272,6 +281,9 @@ test('copy — the prerequisite picker labels and header', () => {
     selectionKept: 'Your selection is kept.',
     clearSearch: 'Clear search',
     startingStep: 'a starting step',
+    thisStep: 'This step',
+    comesAfter: 'Comes after this step',
+    nowComesAfter: 'Now comes after this step',
   });
   assert.equal(pickerFor({ step: 'Reefing basics' }), 'For Reefing basics');
   assert.equal(pickerFor({ step: 'Reefing basics', total: 8 }), 'For Reefing basics · 8 steps');
@@ -307,4 +319,44 @@ test('copy — the tablet draft context uses lowercase for without a roadmap cou
   assert.equal(draftLine({ step: 'Reefing basics' }), 'for Reefing basics');
   assert.equal(draftLine({ step: 'Passage plan' }), 'for Passage plan');
   assert.equal(draftLine({ step: '' }), 'for ');
+});
+
+test('copy — edit and workspace labels match the wave 5 contract', () => {
+  assert.deepEqual(EDIT_STEP, { title: 'Edit step', save: 'Save' });
+  assert.deepEqual(WORKSPACE, {
+    subtasks: 'Subtasks',
+    addSubtask: 'Add subtask',
+    note: 'Note',
+    edit: 'Edit',
+    personalLinks: 'Personal links',
+    addLink: 'Add link',
+    removeLink: 'Remove link',
+    removeSubtask: 'Remove subtask',
+  });
+  assert.deepEqual(NOTE_EDITOR, {
+    title: 'Edit note',
+    cancel: 'Cancel',
+    save: 'Save',
+    bold: 'Bold',
+    italic: 'Italic',
+    link: 'Link',
+    list: 'List',
+    text: 'Text',
+    url: 'URL',
+    urlPlaceholder: 'Paste or type URL',
+    apply: 'Apply',
+  });
+  assert.equal(leftSelection({ step: 'Read the wind' }), 'Read the wind now comes after this step, so it left your selection.');
+  assert.deepEqual([
+    subtaskTally({ done: 0, total: 0 }),
+    subtaskTally({ done: 1, total: 2 }),
+    subtaskTally({ done: 1200, total: 3200 }),
+  ], ['0 of 0', '1 of 2', '1200 of 3200']);
+});
+
+test('copy — bulk selection formats full counts', () => {
+  assert.deepEqual(BULK, { done: 'Done', recolor: 'Recolor' });
+  assert.deepEqual([0, 1, 3, 1200].map((count) => selectedCount({ count })), [
+    '0 selected', '1 selected', '3 selected', '1,200 selected',
+  ]);
 });

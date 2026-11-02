@@ -37,7 +37,7 @@ import BoardView, { coverBeneath } from '/src/products/roadmap/board/BoardView.j
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { boardKey } from '/src/products/roadmap/shortcuts/shortcutMap.js';
-import { PhoneTools } from '/src/products/roadmap/board/BoardControls.jsx';
+import { KindChoice, PhoneTools } from '/src/products/roadmap/board/BoardControls.jsx';
 
 const legend = [
   { id: 'build', hue: 'terracotta', label: 'Build' },
@@ -88,6 +88,17 @@ window.openTools = (canCreate) => {
       onNewStep: canCreate ? () => { window.created = (window.created ?? 0) + 1; } : undefined });
   }
   createRoot(document.getElementById('root')).render(React.createElement(Tools));
+};
+window.openKindChoice = () => {
+  function Kinds() {
+    const [value, setValue] = useState(null);
+    return React.createElement(React.Fragment, null,
+      React.createElement('button', { type: 'button' }, 'Before kinds'),
+      React.createElement('div', { className: 'st-board-draft-kind' },
+        React.createElement(KindChoice, { kinds: legend, value, label: 'Kind', follow: false,
+          onChoose: (hue) => { (window.chosen ??= []).push(hue); setValue(hue); } })));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Kinds));
 };
 window.entryReady = true;
 `;
@@ -428,6 +439,51 @@ test('Chromium: the phone creation door is a named 44px ghost button and dispatc
     })), { width: 44, height: 44, border: '0px', background: 'rgba(0, 0, 0, 0)', text: '' });
     await button.click();
     assert.equal(await page.evaluate(() => window.created), 1);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: KindChoice with no shared value tabs into the first kind and chooses only on activation', async () => {
+  await ready;
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${origin}/board-controls-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openKindChoice());
+    const radios = page.getByRole('radio');
+    const state = () => radios.evaluateAll((elements) => elements.map((element) => ({
+      label: element.textContent,
+      checked: element.getAttribute('aria-checked'),
+      focused: element === document.activeElement,
+    })));
+    await page.getByRole('button', { name: 'Before kinds' }).focus();
+    await page.keyboard.press('Tab');
+    assert.deepEqual(await state(), [
+      { label: 'Build', checked: 'false', focused: true },
+      { label: 'Learn', checked: 'false', focused: false },
+      { label: 'Milestone', checked: 'false', focused: false },
+    ]);
+    await page.keyboard.press('ArrowLeft');
+    assert.deepEqual(await state(), [
+      { label: 'Build', checked: 'false', focused: false },
+      { label: 'Learn', checked: 'false', focused: false },
+      { label: 'Milestone', checked: 'false', focused: true },
+    ]);
+    assert.deepEqual(await page.evaluate(() => window.chosen ?? []), []);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('[aria-checked="true"]')?.textContent === 'Milestone');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Space');
+    await page.waitForFunction(() => document.querySelector('[aria-checked="true"]')?.textContent === 'Build');
+    await page.getByRole('radio', { name: 'Learn', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('[aria-checked="true"]')?.textContent === 'Learn');
+    assert.deepEqual(await state(), [
+      { label: 'Build', checked: 'false', focused: false },
+      { label: 'Learn', checked: 'true', focused: true },
+      { label: 'Milestone', checked: 'false', focused: false },
+    ]);
+    assert.deepEqual(await page.evaluate(() => window.chosen), ['gold', 'terracotta', 'olive']);
   } finally {
     await page.close();
   }
