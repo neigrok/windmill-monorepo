@@ -1,6 +1,63 @@
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
-import { completedToast, createdToast, deletedToast, deletedStepsToast } from './copy.js';
+import { DEFAULT_NODE_COLOR } from '../theme.js';
+import { completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from './copy.js';
+
+export class StepSelection {
+  constructor(ids = []) {
+    this.ids = Object.freeze([...new Set(ids)]);
+    Object.freeze(this);
+  }
+
+  get count() { return this.ids.length; }
+
+  toggle(id, board, column) {
+    const ids = this.ids.includes(id) ? this.ids.filter((candidate) => candidate !== id) : [...this.ids, id];
+    return new StepSelection(ids).prune(board, column);
+  }
+
+  prune(board, column) {
+    const selected = new Set(this.ids);
+    const ids = (board?.[column]?.cards ?? []).filter((card) => selected.has(card.id)).map((card) => card.id);
+    if (ids.length === this.ids.length && ids.every((id, index) => id === this.ids[index])) return this;
+    return new StepSelection(ids);
+  }
+
+  sharedKind(tree) {
+    if (this.count === 0) return null;
+    const steps = this.ids.map((id) => tree.nodesById.get(id));
+    if (steps.some((step) => !step)) return null;
+    const color = steps[0].color ?? DEFAULT_NODE_COLOR;
+    return steps.every((step) => (step.color ?? DEFAULT_NODE_COLOR) === color) ? color : null;
+  }
+}
+
+export function deletable(tree, ids) {
+  if (!tree || ids.length === 0 || ids.some((id) => !tree.nodesById.has(id))) return false;
+  const roots = tree.roots();
+  return roots.length !== 1 || !ids.includes(roots[0].id);
+}
+
+export function editGesture(tree, request) {
+  const step = tree.nodesById.get(request.id);
+  if (!step) return null;
+  const gesture = { kind: 'EditNode', id: request.id };
+  if (request.label !== step.label) gesture.label = request.label;
+  if (request.description !== (step.description ?? '')) gesture.description = request.description;
+  if (request.color !== (step.color ?? DEFAULT_NODE_COLOR)) gesture.color = request.color;
+  const requested = new Set(request.prerequisites);
+  const existing = new Set(step.prerequisites);
+  gesture.addPrerequisites = [...requested].filter((id) => !existing.has(id));
+  gesture.removePrerequisites = [...existing].filter((id) => !requested.has(id));
+  const fieldsChanged = ['label', 'description', 'color'].some((field) => field in gesture);
+  const edgesChanged = gesture.addPrerequisites.length > 0 || gesture.removePrerequisites.length > 0;
+  if (!fieldsChanged && !edgesChanged) return null;
+  return gesture;
+}
+
+export function recolorOutcome(ids) {
+  return { message: recoloredToast({ count: ids.length }) };
+}
 
 export class HeldDelete {
   constructor(ids, subject) {

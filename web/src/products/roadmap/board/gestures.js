@@ -1,6 +1,34 @@
 export const SWIPE_REVEAL = 96;
+export const HOLD_MS = 500;
 const SLOP = 10;
 const EDGE = 24;
+
+export class HoldGesture {
+  constructor({ x, y, at = 0 }) {
+    this.x = x;
+    this.y = y;
+    this.at = at;
+    this.fired = false;
+    this.cancelled = false;
+  }
+
+  move(x, y) {
+    if (Math.hypot(x - this.x, y - this.y) >= SLOP) this.cancel();
+  }
+
+  advance(at) {
+    if (this.cancelled || this.fired || at - this.at < HOLD_MS) return false;
+    this.fired = true;
+    return true;
+  }
+
+  cancel() { this.cancelled = true; }
+
+  release() {
+    this.cancel();
+    return this.fired;
+  }
+}
 
 export class SwipeGesture {
   constructor({ x, y, width, open = false }) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { HeldDelete, completionOutcome, creationOutcome } from './acts.js';
+import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, recolorOutcome } from './acts.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { LABELS } from './copy.js';
@@ -12,6 +12,82 @@ export class BoardActs {
   }
 
   update(collaborators) { this.collaborators = collaborators; }
+
+  deletable(tree, ids) { return deletable(tree, ids); }
+
+  recolor(ids, hue) {
+    const c = this.collaborators;
+    if (!c.active || !c.owner || !c.tree) return { ok: false };
+    const tree = this.held ? this.held.projected(c.tree) : c.tree;
+    const selection = new StepSelection(ids.filter((id) => tree.nodesById.has(id)));
+    if (selection.count === 0 || selection.sharedKind(tree) === hue) return { ok: true };
+    if (!c.session) {
+      c.report('roadmap-board-recolor', new Error('Missing Board session'));
+      return { ok: false };
+    }
+    let receipt;
+    try {
+      receipt = c.session.dispatch({ kind: 'BulkRecolor', nodeIds: selection.ids, color: hue }, { captureFailures: true });
+    } catch (error) {
+      c.report('roadmap-board-recolor', error);
+      return { ok: false };
+    }
+    if (!receipt) return { ok: false };
+    const outcome = recolorOutcome(selection.ids);
+    c.showToast(outcome.message, {
+      surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
+      action: { label: LABELS.undo, run: () => {
+        const current = this.collaborators;
+        try {
+          current.onQuiet();
+          if (!c.session.revert(receipt)) return;
+          current.track('roadmap_board_undo', { act: 'recolor' });
+        } catch (error) {
+          current.report('roadmap-board-recolor', error);
+        }
+      } },
+    });
+    c.track('roadmap_board_bulk', { step: 'recolor', count: countBucket(selection.count) });
+    return { ok: true };
+  }
+
+  edit(request) {
+    const c = this.collaborators;
+    if (!c.active || !c.owner || !c.tree) return { ok: false };
+    const tree = this.held ? this.held.projected(c.tree) : c.tree;
+    if (!tree.nodesById.has(request.id)) return { ok: false };
+    const gesture = editGesture(tree, request);
+    if (!gesture) return { ok: true };
+    if (!c.session) {
+      c.report('roadmap-board-edit', new Error('Missing Board session'));
+      return { ok: false };
+    }
+    let receipt;
+    try {
+      c.onQuiet();
+      receipt = c.session.dispatch(gesture, { captureFailures: true });
+    } catch (error) {
+      c.report('roadmap-board-edit', error);
+      return { ok: false };
+    }
+    if (!receipt) return { ok: false };
+    if ('label' in gesture) {
+      try {
+        c.emit?.({ verb: 'renamed', nodeId: request.id, label: request.label, kind: request.color });
+      } catch (error) {
+        c.report('roadmap-board-edit', error);
+      }
+    }
+    try {
+      c.track('roadmap_board_edit', {
+        step: 'saved', name: 'label' in gesture, description: 'description' in gesture,
+        kind: 'color' in gesture, prerequisites: gesture.addPrerequisites.length > 0 || gesture.removePrerequisites.length > 0,
+      });
+    } catch (error) {
+      c.report('roadmap-board-edit', error);
+    }
+    return { ok: true };
+  }
 
   complete(id, door) {
     const c = this.collaborators;
@@ -74,11 +150,14 @@ export class BoardActs {
     if (step === 'confirm' || step === 'cancel') this.collaborators.track('roadmap_board_delete', { step });
   }
 
-  delete(id) {
+  delete(ids, door = 'menu') {
     const c = this.collaborators;
-    if (!c.active || !c.owner || !c.tree?.nodesById.has(id)) return;
+    const selected = [...new Set(ids)];
+    if (!c.active || !c.owner || !c.tree || !['menu', 'key', 'bulk'].includes(door)) return false;
+    const tree = this.held ? this.held.projected(c.tree) : c.tree;
+    if (!deletable(tree, selected)) return false;
     this.release('replaced');
-    const held = new HeldDelete([id], c.tree.nodesById.get(id).label);
+    const held = new HeldDelete(selected, tree.nodesById.get(selected[0]).label);
     this.held = held;
     this.pending = { held, session: c.session };
     c.onHeld(held);
@@ -92,11 +171,13 @@ export class BoardActs {
         const current = this.collaborators;
         current.onQuiet();
         current.onHeld(null);
-        current.onReveal(id);
+        current.onReveal(selected[0]);
         current.track('roadmap_board_undo', { act: 'delete' });
       } },
     });
-    c.track('roadmap_board_delete', { step: 'held' });
+    c.track('roadmap_board_delete', { step: 'held', door });
+    if (door === 'bulk') c.track('roadmap_board_bulk', { step: 'delete', count: countBucket(selected.length) });
+    return true;
   }
 
   release(via = 'left') {

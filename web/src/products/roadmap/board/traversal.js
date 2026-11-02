@@ -98,7 +98,7 @@ function focusInView(element) {
 
 // Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
 // a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
-export function useRovingFocus(layout, { onComplete, existingIds, revision, recoveryLayout = layout } = {}) {
+export function useRovingFocus(layout, { onComplete, onDelete, existingIds, revision, recoveryLayout = layout } = {}) {
   const ref = useRef(null);
   const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
@@ -148,6 +148,12 @@ export function useRovingFocus(layout, { onComplete, existingIds, revision, reco
       typing: Boolean(event.target.closest('input, textarea, select, [contenteditable="true"]')),
       covered: Boolean(event.target.closest('[inert]') || document.querySelector('[aria-modal="true"]')),
     });
+    if (action === 'delete') {
+      if (!onDelete || !event.target.matches('.st-board-card')) return;
+      event.preventDefault();
+      onDelete([from.id], 'key');
+      return;
+    }
     if (action === 'complete') {
       if (from.column !== 'upNext' || !onComplete || !event.target.matches('.st-board-card')) return;
       event.preventDefault();

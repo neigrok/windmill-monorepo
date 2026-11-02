@@ -455,3 +455,41 @@ test('Board BulkDelete masks no ordinary child, but later incident work remains 
   lattice.join({ edges: [{ from: 'wind', to: 'dock', addedAt: '300:0:peer' }] });
   assert.deepEqual(lattice.maskedWork(), [{ id: 'wind', label: '', children: ['dock'] }]);
 });
+
+test('EditNode writes changed registers and prerequisite edges in one stamp', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'wind', label: 'Wind' });
+  play({ kind: 'CreateNode', id: 'rig', label: 'Rig' });
+  play({ kind: 'CreateNode', id: 'dock', label: 'Dock', parentId: 'wind' });
+  const stamp = '2000000000000:0:fixed';
+  let ticks = 0;
+  const writes = materialize({ kind: 'EditNode', id: 'dock', label: 'Leave', description: 'Practice', color: 'sky',
+    addPrerequisites: ['rig'], removePrerequisites: ['wind'] }, lattice,
+  { tick: () => { ticks += 1; return { ms: 2000000000000, counter: 0, actor: 'fixed' }; } });
+  assert.equal(ticks, 1);
+  assert.deepEqual(writes, {
+    nodes: [{ id: 'dock', label: 'Leave', labelAt: stamp, color: 'sky', colorAt: stamp, description: 'Practice', descriptionAt: stamp }],
+    edges: [{ from: 'rig', to: 'dock', addedAt: stamp }, { from: 'wind', to: 'dock', removedAt: stamp }], kinds: [],
+  });
+  lattice.join(writes);
+  assert.deepEqual(project(lattice), [
+    { id: 'dock', prerequisites: ['rig'] }, { id: 'rig', prerequisites: [] }, { id: 'wind', prerequisites: [] },
+  ]);
+});
+
+test('EditNode supports clearing fields, edge-only edits and a missing target without phantom nodes', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'wind', label: 'Wind' });
+  play({ kind: 'CreateNode', id: 'dock', label: 'Dock', description: 'Practice', parentId: 'wind' });
+  const clock = { tick: () => ({ ms: 2000000000000, counter: 0, actor: 'fixed' }) };
+  const stamp = '2000000000000:0:fixed';
+  assert.deepEqual(materialize({ kind: 'EditNode', id: 'dock', description: '', addPrerequisites: [], removePrerequisites: [] }, lattice, clock), {
+    nodes: [{ id: 'dock', description: '', descriptionAt: stamp }], edges: [], kinds: [],
+  });
+  assert.deepEqual(materialize({ kind: 'EditNode', id: 'dock', removePrerequisites: ['wind'] }, lattice, clock), {
+    nodes: [], edges: [{ from: 'wind', to: 'dock', removedAt: stamp }], kinds: [],
+  });
+  assert.deepEqual(materialize({ kind: 'EditNode', id: 'missing', label: 'Missing', addPrerequisites: ['wind'] }, lattice, clock), {
+    nodes: [], edges: [], kinds: [],
+  });
+});

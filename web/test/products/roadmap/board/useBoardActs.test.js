@@ -10,6 +10,7 @@ function fixture(overrides = {}) {
   const calls = [];
   const receipt = {};
   const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+    { id: 'spare', label: 'Practice knots', prerequisites: [], color: 'blue' },
     { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'blue' },
     { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'], color: 'blue' },
   ] });
@@ -32,16 +33,16 @@ function fixture(overrides = {}) {
 for (const via of ['timer', 'replaced', 'left']) {
   test(`held deletion releases once through ${via}`, () => {
     const { acts, c, calls } = fixture();
-    acts.delete('wind');
+    acts.delete(['wind'], 'menu');
     assert.equal(c.held.ids[0], 'wind');
     assert.equal(c.toast.holdMs, 9000);
-    assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held' }]]);
+    assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
     c.toast.onLeave(via);
     c.toast.onLeave(via);
     acts.release(via);
     assert.equal(c.held, null);
     assert.deepEqual(calls, [
-      ['event', 'roadmap_board_delete', { step: 'held' }],
+      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
       ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }],
       ['event', 'roadmap_board_delete', { step: 'sent', via }],
     ]);
@@ -50,18 +51,18 @@ for (const via of ['timer', 'replaced', 'left']) {
 
 test('delete Undo restores the projection and sends nothing even when its toast leaves', () => {
   const { acts, c, calls } = fixture();
-  acts.delete('wind');
+  acts.delete(['wind'], 'menu');
   c.toast.action.run();
   c.toast.onLeave('timer');
   assert.equal(c.held, null);
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held' }], ['quiet'], ['reveal', 'wind'], ['event', 'roadmap_board_undo', { act: 'delete' }]]);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ['quiet'], ['reveal', 'wind'], ['event', 'roadmap_board_undo', { act: 'delete' }]]);
 });
 
 test('a new held delete releases its predecessor and owns its own Undo', () => {
   const { acts, c, calls } = fixture();
-  acts.delete('wind');
+  acts.delete(['wind'], 'menu');
   const first = c.toast;
-  acts.delete('dock');
+  acts.delete(['dock'], 'menu');
   first.action.run();
   first.onLeave('replaced');
   assert.deepEqual(c.held.ids, ['dock']);
@@ -70,7 +71,7 @@ test('a new held delete releases its predecessor and owns its own Undo', () => {
 
 test('a release retains its original session across roadmap changes', () => {
   const { acts, c, calls } = fixture();
-  acts.delete('wind');
+  acts.delete(['wind'], 'menu');
   acts.update({ ...c, session: { dispatch() { throw Error('Wrong session'); } } });
   acts.release('left');
   assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }]]);
@@ -78,20 +79,20 @@ test('a release retains its original session across roadmap changes', () => {
 
 test('a no-op release clears the projection without reporting an expected refusal', () => {
   const { acts, c, calls } = fixture({ session: { dispatch: () => null } });
-  acts.delete('wind');
+  acts.delete(['wind'], 'menu');
   acts.release('timer');
   assert.equal(c.held, null);
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held' }], ['quiet']]);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ['quiet']]);
   assert.deepEqual(c.errors, []);
 });
 
 test('an unexpected release failure reports its original error for stack frames', () => {
   const error = new Error('private content');
   const { acts, c, calls } = fixture({ session: { dispatch: () => { throw error; } } });
-  acts.delete('wind');
+  acts.delete(['wind'], 'menu');
   acts.release('timer');
   assert.equal(c.held, null);
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held' }], ['quiet'], ['report', 'roadmap-board-delete']]);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ['quiet'], ['report', 'roadmap-board-delete']]);
   assert.deepEqual(c.errors, [error]);
 });
 
@@ -188,7 +189,7 @@ test('Board create and held release opt into truthful dispatch receipts', () => 
   const options = [];
   const { acts } = fixture({ session: { dispatch: (_gesture, value) => { options.push(value); return {}; } } });
   acts.create(request);
-  acts.delete('wind');
+  acts.delete(['wind'], 'menu');
   acts.release('timer');
   assert.deepEqual(options, [{ captureFailures: true }, { captureFailures: true }]);
 });
@@ -225,7 +226,7 @@ for (const via of ['timer', 'left']) {
     session.seed(data);
     session.onTreeChanged(() => observed.push(session.maskedWork()));
     const { acts, c, calls } = fixture({ tree: new SkillTree(data), session });
-    acts.delete('wind');
+    acts.delete(['wind'], 'menu');
     assert.deepEqual(session.maskedWork(), []);
     assert.equal(saved.length, 0);
     c.toast.onLeave(via);
@@ -241,8 +242,205 @@ for (const via of ['timer', 'left']) {
       { id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] },
     ]);
     assert.deepEqual(calls, [
-      ['event', 'roadmap_board_delete', { step: 'held' }],
+      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
       ['event', 'roadmap_board_delete', { step: 'sent', via }],
     ]);
   });
 }
+
+test('recolor dispatches once with truthful capture, preserves the query and Undo targets its receipt quietly', () => {
+  const options = [];
+  const { acts, c, calls, receipt } = fixture();
+  const dispatch = c.session.dispatch;
+  c.session.dispatch = (gesture, capture) => { options.push(capture); return dispatch(gesture); };
+  assert.deepEqual(acts.recolor(['wind', 'dock'], 'gold'), { ok: true });
+  assert.equal(c.toast.message, '2 steps recolored');
+  assert.equal(c.toast.holdMs, 6000);
+  assert.deepEqual(options, [{ captureFailures: true }]);
+  c.toast.action.run();
+  assert.deepEqual(calls, [
+    ['dispatch', { kind: 'BulkRecolor', nodeIds: ['wind', 'dock'], color: 'gold' }],
+    ['event', 'roadmap_board_bulk', { step: 'recolor', count: '2-5' }],
+    ['quiet'], ['revert', receipt], ['event', 'roadmap_board_undo', { act: 'recolor' }],
+  ]);
+});
+
+test('recolor choosing the shared kind and empty selections are no-ops without toast or events', () => {
+  const { acts, c, calls } = fixture();
+  assert.deepEqual(acts.recolor(['wind', 'dock'], 'blue'), { ok: true });
+  assert.deepEqual(acts.recolor([], 'gold'), { ok: true });
+  assert.deepEqual(calls, []);
+  assert.equal(c.toast, undefined);
+});
+
+test('bulk and key deletion use one held entity and reject the sole root', () => {
+  const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+    { id: 'root', label: 'Root', prerequisites: [] },
+    { id: 'wind', label: 'Wind', prerequisites: ['root'] },
+    { id: 'dock', label: 'Dock', prerequisites: ['wind'] },
+  ] });
+  const { acts, c, calls } = fixture({ tree });
+  assert.equal(acts.delete(['root'], 'key'), false);
+  assert.equal(acts.deletable(tree, ['root']), false);
+  assert.equal(acts.delete(['wind', 'dock'], 'bulk'), true);
+  assert.deepEqual(c.held.ids, ['wind', 'dock']);
+  assert.equal(c.toast.message, '2 steps deleted');
+  c.toast.onLeave('timer');
+  acts.release('left');
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'bulk' }],
+    ['event', 'roadmap_board_bulk', { step: 'delete', count: '2-5' }],
+    ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind', 'dock'], retireIncidentEdges: true }],
+    ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
+  ]);
+  calls.length = 0;
+  assert.equal(acts.delete(['dock'], 'key'), true);
+  c.toast.action.run();
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'key' }],
+    ['quiet'], ['reveal', 'dock'], ['event', 'roadmap_board_undo', { act: 'delete' }],
+  ]);
+});
+
+const editRequest = { id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', prerequisites: [] };
+
+test('edit diffs, marks quiet before one captured write, emits rename and bounded changes without toast', () => {
+  const { acts, c, calls } = fixture();
+  const options = [];
+  const dispatch = c.session.dispatch;
+  c.session.dispatch = (gesture, capture) => { options.push(capture); return dispatch(gesture); };
+  c.emit = (event) => calls.push(['activity', event]);
+  assert.deepEqual(acts.edit(editRequest), { ok: true });
+  assert.deepEqual(options, [{ captureFailures: true }]);
+  assert.equal(c.toast, undefined);
+  assert.deepEqual(calls, [
+    ['quiet'],
+    ['dispatch', { kind: 'EditNode', id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', addPrerequisites: [], removePrerequisites: ['wind'] }],
+    ['activity', { verb: 'renamed', nodeId: 'dock', label: 'Leave the harbor', kind: 'gold' }],
+    ['event', 'roadmap_board_edit', { step: 'saved', name: true, description: true, kind: true, prerequisites: true }],
+  ]);
+});
+
+test('edit has no write or event for an unchanged request and refuses an absent or held step', () => {
+  const { acts, calls } = fixture();
+  assert.deepEqual(acts.edit({ id: 'dock', label: 'Leave the dock', description: '', color: 'blue', prerequisites: ['wind'] }), { ok: true });
+  assert.deepEqual(acts.edit({ ...editRequest, id: 'missing' }), { ok: false });
+  assert.deepEqual(calls, []);
+  acts.delete(['dock'], 'key');
+  calls.length = 0;
+  assert.deepEqual(acts.edit(editRequest), { ok: false });
+  assert.deepEqual(calls, []);
+});
+
+for (const action of ['edit', 'recolor']) {
+  test(`${action} reports unexpected boundaries with stacks and treats null receipt as expected`, () => {
+    for (const session of [null, { dispatch: () => { throw new Error('private content'); } }, { dispatch: () => null }]) {
+      const { acts, c, calls } = fixture({ session });
+      const result = action === 'edit' ? acts.edit(editRequest) : acts.recolor(['dock'], 'gold');
+      assert.deepEqual(result, { ok: false });
+      assert.equal(c.toast, undefined);
+      assert.deepEqual(calls.filter(([kind]) => kind === 'event'), []);
+      if (session?.dispatch && c.errors.length === 0) {
+        assert.deepEqual(calls, action === 'edit' ? [['quiet']] : []);
+      } else {
+        assert.equal(c.errors.length, 1);
+        assert.ok(c.errors[0].stack);
+        assert.deepEqual(calls.filter(([kind]) => kind === 'report'), [['report', `roadmap-board-${action}`]]);
+      }
+    }
+  });
+}
+
+test('edit is one session receipt and global revert restores its fields and edges together', () => {
+  const session = new SyncSession({ treeId: 'sail', registry: null });
+  session.seed({ id: 'sail', title: 'Sail', nodes: [
+    { id: 'wind', label: 'Wind', color: 'blue', prerequisites: [] },
+    { id: 'dock', label: 'Dock', color: 'blue', prerequisites: ['wind'] },
+  ] });
+  const before = session.lattice.toTreeData();
+  const receipts = [];
+  const dispatch = session.dispatch.bind(session);
+  session.dispatch = (gesture, options) => { const receipt = dispatch(gesture, options); receipts.push(receipt); return receipt; };
+  const { acts } = fixture({ session, tree: new SkillTree(before) });
+  assert.deepEqual(acts.edit(editRequest), { ok: true });
+  assert.equal(receipts.length, 1);
+  assert.equal(session.revert(receipts[0]), true);
+  assert.deepEqual(session.lattice.toTreeData(), before);
+});
+
+test('an applied edit remains successful when activity emission fails and reports the unexpected failure', () => {
+  const error = new Error('private content');
+  const { acts, c, calls } = fixture({ emit: () => { throw error; } });
+  assert.deepEqual(acts.edit(editRequest), { ok: true });
+  assert.deepEqual(c.errors, [error]);
+  assert.deepEqual(calls, [
+    ['quiet'],
+    ['dispatch', { kind: 'EditNode', id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', addPrerequisites: [], removePrerequisites: ['wind'] }],
+    ['report', 'roadmap-board-edit'],
+    ['event', 'roadmap_board_edit', { step: 'saved', name: true, description: true, kind: true, prerequisites: true }],
+  ]);
+});
+
+test('an applied edit remains successful when product event emission fails', () => {
+  const error = new Error('private content');
+  const { acts, c, calls } = fixture({ track: () => { throw error; } });
+  assert.deepEqual(acts.edit(editRequest), { ok: true });
+  assert.deepEqual(c.errors, [error]);
+  assert.deepEqual(calls, [
+    ['quiet'],
+    ['dispatch', { kind: 'EditNode', id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', addPrerequisites: [], removePrerequisites: ['wind'] }],
+    ['report', 'roadmap-board-edit'],
+  ]);
+});
+
+test('an unchanged edit succeeds without a session and reports nothing', () => {
+  const { acts, c, calls } = fixture({ session: null });
+  assert.deepEqual(acts.edit({ id: 'dock', label: 'Leave the dock', description: '', color: 'blue', prerequisites: ['wind'] }), { ok: true });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(c.errors, []);
+  assert.equal(c.toast, undefined);
+});
+
+test('an expired recolor receipt emits no Undo event and never changes the query', () => {
+  const { acts, c, calls } = fixture({ session: { dispatch: () => ({}), revert: () => false } });
+  assert.deepEqual(acts.recolor(['dock'], 'gold'), { ok: true });
+  calls.length = 0;
+  c.toast.action.run();
+  assert.deepEqual(calls, [['quiet']]);
+  assert.deepEqual(c.errors, []);
+});
+
+test('bulk Undo cancels the entire hold without sending any selected step', () => {
+  const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+    { id: 'root', label: 'Root', prerequisites: [] },
+    { id: 'wind', label: 'Wind', prerequisites: ['root'] },
+    { id: 'dock', label: 'Dock', prerequisites: ['wind'] },
+  ] });
+  const { acts, c, calls } = fixture({ tree });
+  assert.equal(acts.delete(['wind', 'dock'], 'bulk'), true);
+  c.toast.action.run();
+  c.toast.onLeave('timer');
+  acts.release('left');
+  assert.equal(c.held, null);
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'bulk' }],
+    ['event', 'roadmap_board_bulk', { step: 'delete', count: '2-5' }],
+    ['quiet'], ['reveal', 'wind'], ['event', 'roadmap_board_undo', { act: 'delete' }],
+  ]);
+});
+
+test('edit compares against the held projection and does not write a parent removal already projected', () => {
+  const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+    { id: 'root', label: 'Root', prerequisites: [] },
+    { id: 'wind', label: 'Wind', prerequisites: ['root'] },
+    { id: 'dock', label: 'Dock', color: 'blue', prerequisites: ['wind'] },
+  ] });
+  const { acts, c, calls } = fixture({ tree });
+  assert.equal(acts.delete(['wind'], 'key'), true);
+  const toast = c.toast;
+  calls.length = 0;
+  assert.deepEqual(acts.edit({ id: 'dock', label: 'Dock', description: '', color: 'blue', prerequisites: ['root'] }), { ok: true });
+  assert.deepEqual(calls, []);
+  assert.equal(c.toast, toast);
+  assert.deepEqual(c.held.ids, ['wind']);
+});

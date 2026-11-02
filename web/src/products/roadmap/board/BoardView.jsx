@@ -4,6 +4,10 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './board.css';
 import { Board, BoardQuery } from './Board.js';
+import { track } from '../../../telemetry/beacon.js';
+import { StepSelection, deletable } from './acts.js';
+import { stepOf } from './stepAddress.js';
+import { NODE_COLOR_NAMES } from '../theme.js';
 import { kindOptions } from '../model/Legend.js';
 import { FilterStrip, FindStep, NewStep } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
@@ -16,6 +20,7 @@ import { progressFigure, progressLabel } from './copy.js';
 // Where focus lands once a retried load settles: the columns' tab stop, or the state's own button.
 const FOCUS_AFTER_LOAD = '[data-column] [tabindex="0"], [data-column][tabindex="0"], .st-board-state button';
 const EVERY_STEP = new BoardQuery();
+const PALETTE = { nodes: NODE_COLOR_NAMES.map((color) => ({ color })) };
 
 // Everything painted beneath the opaque Board leaves the tab order and the accessibility tree while it is shown: the
 // layer's siblings stacked under it, the Graph's own overlays among them, and any that mount while it stays.
@@ -58,6 +63,9 @@ function BoardView({
   onShare,
   onNewStep,
   onComplete,
+  onRecolor,
+  onDelete,
+  editable = false,
   toast = null,
   onToastReveal,
   onToastUndo,
@@ -93,6 +101,155 @@ function BoardView({
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
   const [visibleToast, setVisibleToast] = useState(null);
+  const [selection, setSelection] = useState(null);
+  const selectionVisit = useRef(null);
+  const selectionTokens = useRef(new Set());
+  const selectionCallbacks = useRef(null);
+  const restoreSelectionFocus = useRef(null);
+  const focusSelectionStart = useRef(false);
+  const canSelect = editable && active && phone && nextBoard !== null;
+  const visit = selectionVisit.current;
+  const inPane = canSelect && visit?.treeId === tree?.treeId && visit.column === shown;
+  const pruned = inPane && selection ? selection.prune(nextBoard, shown) : null;
+  const allowed = pruned?.ids.filter((id) => deletable(tree, [id])) ?? [];
+  const selecting = allowed.length > 0 ? new StepSelection(allowed) : null;
+  const selectionKinds = useMemo(() => kindOptions(PALETTE, legend), [legend]);
+  const selectionPins = useMemo(() => {
+    const held = visit ?? restoreSelectionFocus.current;
+    if ((!selection && !restoreSelectionFocus.current) || !held) return motion.pinned;
+    return new Set([...motion.pinned, held.id]);
+  }, [motion.pinned, selection, visit]);
+
+  const finishSelection = (via, pop = true) => {
+    const held = selectionVisit.current;
+    if (!held || held.ending) return;
+    held.ending = true;
+    setSelection(null);
+    track('roadmap_board_select', { step: 'end', via });
+    if (via !== 'left') restoreSelectionFocus.current = held;
+    const entry = window.history.state?.boardSelection;
+    if (pop && entry?.token === held.token && window.location.href === held.href) {
+      held.pending = true;
+      window.history.go(entry.kinds ? -2 : -1);
+      return;
+    }
+    selectionVisit.current = null;
+  };
+
+  const startSelection = (id) => {
+    if (!canSelect || selectionVisit.current || stepOf(window.location.hash) !== null || !deletable(tree, [id])) return;
+    const token = crypto.randomUUID();
+    selectionTokens.current.add(token);
+    selectionVisit.current = { token, id, column: shown, treeId: tree.treeId, href: window.location.href, pending: false, ending: false };
+    window.history.pushState({ ...window.history.state, boardSelection: { token, kinds: false } }, '', window.location.href);
+    focusSelectionStart.current = true;
+    setSelection(new StepSelection([id]).prune(nextBoard, shown));
+    track('roadmap_board_select', { step: 'start' });
+  };
+
+  const kindsLayer = (open) => {
+    const held = selectionVisit.current;
+    if (!held || held.pending || held.ending) return false;
+    if (open) {
+      window.history.pushState({ ...window.history.state, boardSelection: { token: held.token, kinds: true } }, '', window.location.href);
+      return true;
+    }
+    held.pending = true;
+    window.history.back();
+    return true;
+  };
+
+  const pickCard = (id) => {
+    if (selectionVisit.current?.pending) return;
+    if (!selecting) {
+      onSelect(id);
+      return;
+    }
+    if (!deletable(tree, [id])) return;
+    const next = selecting.toggle(id, nextBoard, shown);
+    if (next.count === 0) finishSelection('emptied');
+    else setSelection(next);
+  };
+
+  const recolorSelection = (hue) => {
+    if (!selecting || selectionVisit.current?.pending) return;
+    if (selecting.sharedKind(tree) !== hue && onRecolor?.(selecting.ids, hue)?.ok) navigator.vibrate?.(8);
+    finishSelection('acted');
+  };
+
+  const deleteSelection = () => {
+    if (!selecting || selectionVisit.current?.pending) return;
+    onDelete?.(selecting.ids, 'bulk');
+    finishSelection('acted');
+  };
+
+  selectionCallbacks.current = { finishSelection };
+
+  useEffect(() => {
+    const back = () => {
+      const held = selectionVisit.current;
+      if (!held) {
+        if (!selectionTokens.current.has(window.history.state?.boardSelection?.token)) return;
+        const { boardSelection, ...state } = window.history.state;
+        window.history.replaceState(state, '', window.location.href);
+        return;
+      }
+      held.pending = false;
+      if (held.ending) {
+        selectionVisit.current = null;
+        return;
+      }
+      if (window.history.state?.boardSelection?.token !== held.token) selectionCallbacks.current.finishSelection('back', false);
+    };
+    const escape = (event) => {
+      const held = selectionVisit.current;
+      if (!held || held.ending || event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (held.pending) return;
+      if (window.history.state?.boardSelection?.kinds) {
+        held.pending = true;
+        window.history.back();
+        return;
+      }
+      selectionCallbacks.current.finishSelection('back');
+    };
+    window.addEventListener('popstate', back);
+    window.addEventListener('keydown', escape);
+    return () => {
+      window.removeEventListener('popstate', back);
+      window.removeEventListener('keydown', escape);
+      selectionCallbacks.current.finishSelection('left');
+    };
+  }, []);
+
+  if (selection && selecting && (selection.ids.length !== selecting.ids.length || selection.ids.some((id, index) => id !== selecting.ids[index]))) setSelection(selecting);
+
+  useEffect(() => {
+    if (!selection) return;
+    if (!selecting) {
+      finishSelection(inPane ? 'emptied' : 'left');
+      return;
+    }
+  }, [selection, nextBoard, canSelect, shown]);
+
+  useLayoutEffect(() => {
+    if (selecting && focusSelectionStart.current) {
+      focusSelectionStart.current = false;
+      boardRef.current?.querySelector(`.st-board-card[data-step-id="${CSS.escape(visit.id)}"]`)?.focus({ preventScroll: true });
+    }
+    const held = restoreSelectionFocus.current;
+    if (!held || selecting || !active) return;
+    const layer = boardRef.current;
+    const starter = nextBoard?.columnOf(held.id) === held.column
+      ? layer?.querySelector(`.st-board-phone-pane.is-shown .st-board-card[data-step-id="${CSS.escape(held.id)}"]`)
+      : null;
+    const target = starter ?? layer?.querySelector('.st-board-phone-segment[aria-selected="true"]');
+    if (!target) return;
+    restoreSelectionFocus.current = null;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
   const revealing = active && board !== null;
 
   useLayoutEffect(() => { if (motion.counts) onDisplayedOverall?.(motion.counts.overall); }, [motion.counts, onDisplayedOverall]);
@@ -230,14 +387,24 @@ function BoardView({
                 arrived={motion.arrived}
                 leaving={motion.leaving}
                 dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
-                pinned={motion.pinned}
+                pinned={selectionPins}
                 settle={settleFocus}
-                onComplete={onComplete}
+                onComplete={selecting ? undefined : onComplete}
+                onDelete={editable && !selecting ? ((ids, door) => deletable(tree, ids) && onDelete?.(ids, door)) : undefined}
+                selection={selecting}
+                kinds={selectionKinds}
+                sharedKind={selecting?.sharedKind(tree) ?? null}
+                onHold={canSelect && !selecting ? startSelection : undefined}
+                selectable={(id) => deletable(tree, [id])}
+                onKinds={kindsLayer}
+                onRecolor={recolorSelection}
+                onDeleteSelection={deleteSelection}
+                onDoneSelection={() => finishSelection('done')}
                 onNewStep={onNewStep && (() => onNewStep('band'))}
                 shown={shown}
                 onShow={setShown}
                 selectedId={selectedId}
-                onSelect={onSelect}
+                onSelect={pickCard}
                 onAnchor={anchor}
                 doneExpanded={doneExpanded}
                 onExpandDone={onExpandDone}
@@ -259,6 +426,7 @@ function BoardView({
                   pinned={motion.pinned}
                   settle={settleFocus}
                   onComplete={onComplete}
+                  onDelete={editable ? ((ids, door) => deletable(tree, ids) && onDelete?.(ids, door)) : undefined}
                   onStandColumn={(column) => { if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column)); }}
                   band={breakpoint}
                   railed={railed}

@@ -1348,6 +1348,10 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const layerActive = listActive || boardActive;
   const canvasView = shownView !== 'list' && shownView !== 'board';
+  const shortcutView = BOARD_OPEN && boardActive ? 'board' : 'graph';
+  useEffect(() => {
+    if (BOARD_OPEN && shortcutsOpen) track('roadmap_shortcuts_open', { view: shortcutView });
+  }, [shortcutsOpen, shortcutView]);
 
   const switchView = useCallback((next) => {
     if (BOARD_OPEN && next !== 'board') {
@@ -1433,7 +1437,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   });
   const deleteStepFromDetail = (id) => {
     stepAddress.close();
-    boardActs.delete(id);
+    boardActs.delete([id], 'menu');
   };
   const handleStepCrash = (error) => {
     captureError('roadmap', 'roadmap-board-step', error?.stack ?? '', '#/app');
@@ -1673,16 +1677,24 @@ export function SkillTreeView({ treeId, demo = false }) {
     clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
-    track, report: reportBoardFailure,
+    track, emit, report: reportBoardFailure,
   });
   const boardTree = useMemo(() => boardHeld && tree ? boardHeld.projected(tree) : tree, [boardHeld, tree]);
-  const boardSingleRootId = useMemo(() => {
-    const roots = boardTree?.roots() ?? [];
-    return roots.length === 1 ? roots[0].id : null;
-  }, [boardTree]);
   const boardStats = useMemo(() => BOARD_OPEN && boardTree ? ShareStats.from(boardTree, UnlockRules.derive(boardTree, { completed })) : null, [boardTree, completed]);
   const shownStats = boardActive ? { ...boardStats, ...(boardOverall ?? {}) } : shareStats;
   const shownDetailId = detailId !== null && boardTree?.nodesById.has(detailId) ? detailId : null;
+  const composerAllowed = BOARD_OPEN && boardActive && owner
+    && (!boardComposer?.editing || boardComposer.editing === shownDetailId);
+  const shownComposer = composerAllowed ? boardComposer : null;
+  if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
+  const editStepFromDetail = (id) => {
+    if (!BOARD_OPEN || !boardActive || !owner || id !== shownDetailId) return;
+    setBoardComposer({ door: 'detail', editing: id });
+  };
+  const saveBoardEdit = (request) => {
+    if (!composerAllowed || !shownComposer?.editing || request.id !== shownDetailId) return { ok: false };
+    return boardActs.edit(request);
+  };
   const closeBoardComposer = () => setBoardComposer(null);
   const handleComposerCrash = (error) => {
     reportBoardFailure('roadmap-board-composer', error);
@@ -1926,6 +1938,9 @@ export function SkillTreeView({ treeId, demo = false }) {
               onShare={owner ? () => setShareOpen(true) : undefined}
               onNewStep={owner ? newStepFromBoard : undefined}
               onComplete={owner ? (id, door) => boardActs.complete(id, door) : undefined}
+              editable={BOARD_OPEN && boardActive && owner}
+              onRecolor={owner ? (ids, hue) => boardActs.recolor(ids, hue) : undefined}
+              onDelete={owner ? (ids, door) => boardActs.delete(ids, door) : undefined}
               quiet={boardQuiet}
               onDisplayedOverall={setBoardOverall}
               reveal={boardReveal}
@@ -1951,7 +1966,8 @@ export function SkillTreeView({ treeId, demo = false }) {
             breakpoint={breakpoint}
             roadmapTitle={tree.title}
             editable={owner}
-            deletable={detailId !== boardSingleRootId}
+            deletable={boardActs.deletable(boardTree, [detailId])}
+            onEdit={BOARD_OPEN && owner ? editStepFromDetail : undefined}
             stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
             workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
             workspaceActions={{ onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }}
@@ -1974,9 +1990,10 @@ export function SkillTreeView({ treeId, demo = false }) {
         </ErrorBoundary>
       )}
 
-      {BOARD_OPEN && boardActive && owner && boardComposer !== null && (
+      {shownComposer !== null && (
         <ErrorBoundary fallback={null} onCrash={handleComposerCrash}>
-          <StepComposer tree={boardTree} completed={completed} legend={legend} band={breakpoint}
+          <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
+            editing={shownComposer.editing ?? null} onEdit={saveBoardEdit}
             onCreate={(request) => boardActs.create(request)} onClose={closeBoardComposer} />
         </ErrorBoundary>
       )}
@@ -2395,7 +2412,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} view={shortcutView} />
 
       <ShareDialog
         key={treeId}

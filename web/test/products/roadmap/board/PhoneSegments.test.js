@@ -47,7 +47,7 @@ function card(column, kind, id, title, { reason = null, excerpt = null, selected
 }
 
 function pane(name, title, shown, cards) {
-  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} " data-column="${name}">`
+  return `<div id=":R0:panel-${name}" role="tabpanel" aria-labelledby=":R0:tab-${name}" class="st-board-phone-pane ${shown ? 'is-shown' : ''} " tabindex="-1" data-column="${name}">`
     + `<h2 class="st-board-phone-heading">${title}</h2><div class="st-board-cards">${cards.join('')}</div></div>`;
 }
 

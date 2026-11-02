@@ -103,6 +103,17 @@ export function materialize(gesture, lattice, clock) {
     case 'RenameNode': nodes.push(node(g.id, at, { label: g.label })); break;
     case 'DescribeNode': nodes.push(node(g.id, at, { description: g.description })); break;
     case 'SetNodeColor': nodes.push(node(g.id, at, { color: g.color })); break;
+    case 'EditNode': {
+      if (!data.nodes.some((entry) => entry.id === g.id)) break;
+      const fields = {};
+      for (const field of ['label', 'description', 'color']) {
+        if (field in g) fields[field] = g[field];
+      }
+      if (Object.keys(fields).length > 0) nodes.push(node(g.id, at, fields));
+      for (const id of g.addPrerequisites ?? []) edges.push(addEdge(id, g.id, at));
+      for (const id of g.removePrerequisites ?? []) edges.push(removeEdge(id, g.id, at));
+      break;
+    }
     case 'SetNodeOrder': nodes.push(node(g.id, at, { order: g.order })); break;  // one register write; siblings re-sort, none renumber
     case 'AddEdge': edges.push(addEdge(g.from, g.to, at)); break;
     case 'RemoveEdge': edges.push(removeEdge(g.from, g.to, at)); break;

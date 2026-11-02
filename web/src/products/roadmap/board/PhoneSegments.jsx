@@ -7,7 +7,7 @@ import './phone.css';
 import { track } from '../../../telemetry/beacon.js';
 import { ColumnCards } from './ColumnCards.jsx';
 import { UpNextRest } from './BoardStates.jsx';
-import { ActiveFilters, PaneEmpty, PhoneSort, PhoneTools } from './BoardControls.jsx';
+import { ActiveFilters, BulkBar, PaneEmpty, PhoneSort, PhoneTools } from './BoardControls.jsx';
 import { BoardQuery } from './Board.js';
 import { columnStops, useRovingFocus } from './traversal.js';
 import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount } from './copy.js';
@@ -16,7 +16,10 @@ const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
 // The shown column is the host's: a pick here emits roadmap_board_column, the host following a selected step does not.
 export function PhoneSegments({
-  board, focusBoard = board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle, counts = board,
+  board, focusBoard = board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone,
+  query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, onDelete,
+  selection = null, selectable, kinds = [], sharedKind = null, onHold, onKinds, onRecolor, onDeleteSelection, onDoneSelection,
+  arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle, counts = board,
 }) {
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
   const tabs = useRef({});
@@ -59,7 +62,7 @@ export function PhoneSegments({
     if (focusBoard === board) return layout;
     return [{ name: shown, stops: columnStops(focusBoard.shownCards(shown, { doneExpanded })) }];
   }, [focusBoard, board, layout, shown, doneExpanded]);
-  const roving = useRovingFocus(layout, { revision: board, existingIds: focusBoard.states, recoveryLayout, onComplete: onComplete && ((id, door) => {
+  const roving = useRovingFocus(layout, { revision: board, existingIds: focusBoard.states, recoveryLayout, onDelete, onComplete: onComplete && ((id, door) => {
     if (!onComplete(id, door)) return false;
     onShow('done');
     return true;
@@ -99,9 +102,10 @@ export function PhoneSegments({
             key={column.name}
             id={panelId(column.name)}
             role="tabpanel"
-            aria-labelledby={tabId(column.name)}
+            aria-labelledby={selection ? undefined : tabId(column.name)}
+            aria-label={selection ? COLUMN_TITLES[column.name] : undefined}
             className={`st-board-phone-pane ${column.name === shown ? 'is-shown' : ''} ${scrolled[column.name] ? 'is-scrolled' : ''}`}
-            tabIndex={column.count === 0 ? 0 : undefined}
+            tabIndex={column.count === 0 ? 0 : -1}
             data-column={column.name}
             onScroll={(event) => handleScroll(column.name, event)}
           >
@@ -109,7 +113,10 @@ export function PhoneSegments({
             {column.name === 'upNext' && upNextRest !== null ? upNextRest : column.count === 0 && query.recovery !== null ? <PaneEmpty query={query} onQuery={onQuery} /> : (
               <ColumnCards
                 shown={shownCards[column.name]}
-                swipe={Boolean(onComplete) && column.name === shown}
+                swipe={!selection && Boolean(onComplete) && column.name === shown}
+                selection={selection}
+                selectable={selectable}
+                onHold={column.name === shown ? onHold : undefined}
                 onComplete={completeFromSwipe}
                 stopId={roving.stopIn(column.name)}
                 pendingId={roving.pendingIn(column.name)}
@@ -125,34 +132,39 @@ export function PhoneSegments({
           </div>
         ))}
       </div>
-      <div className="st-board-phone-band">
-        <div className="st-board-phone-row">
-          <div className="st-board-phone-segments" role="tablist" aria-label={LABELS.columns} onKeyDown={handleKeyDown}>
-            {board.columns.map((column) => (
-              <button
-                key={column.name}
-                ref={(node) => { tabs.current[column.name] = node; }}
-                id={tabId(column.name)}
-                type="button"
-                role="tab"
-                className="st-board-phone-segment"
-                aria-label={columnHeadingLabel({ column: column.name, count: counts[column.name].count })}
-                aria-selected={column.name === shown}
-                aria-controls={panelId(column.name)}
-                tabIndex={column.name === shown ? 0 : -1}
-                onClick={() => choose(column.name)}
-              >
-                <span className="st-board-phone-segment-surface">
-                  <span className="st-board-phone-segment-label">{COLUMN_TITLES[column.name]}</span>
-                  <span className="st-board-phone-segment-count">{formatCount(counts[column.name].count, { compact: true })}</span>
-                </span>
-              </button>
-            ))}
+      {selection ? (
+        <BulkBar count={selection.count} kinds={kinds} sharedKind={sharedKind} onKinds={onKinds}
+          onRecolor={onRecolor} onDelete={onDeleteSelection} onDone={onDoneSelection} />
+      ) : (
+        <div className="st-board-phone-band">
+          <div className="st-board-phone-row">
+            <div className="st-board-phone-segments" role="tablist" aria-label={LABELS.columns} onKeyDown={handleKeyDown}>
+              {board.columns.map((column) => (
+                <button
+                  key={column.name}
+                  ref={(node) => { tabs.current[column.name] = node; }}
+                  id={tabId(column.name)}
+                  type="button"
+                  role="tab"
+                  className="st-board-phone-segment"
+                  aria-label={columnHeadingLabel({ column: column.name, count: counts[column.name].count })}
+                  aria-selected={column.name === shown}
+                  aria-controls={panelId(column.name)}
+                  tabIndex={column.name === shown ? 0 : -1}
+                  onClick={() => choose(column.name)}
+                >
+                  <span className="st-board-phone-segment-surface">
+                    <span className="st-board-phone-segment-label">{COLUMN_TITLES[column.name]}</span>
+                    <span className="st-board-phone-segment-count">{formatCount(counts[column.name].count, { compact: true })}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <PhoneSort query={query} onQuery={onQuery} />
           </div>
-          <PhoneSort query={query} onQuery={onQuery} />
+          <PhoneTools worn={worn} query={query} onQuery={onQuery} onNewStep={onNewStep} />
         </div>
-        <PhoneTools worn={worn} query={query} onQuery={onQuery} onNewStep={onNewStep} />
-      </div>
+      )}
     </div>
   );
 }
