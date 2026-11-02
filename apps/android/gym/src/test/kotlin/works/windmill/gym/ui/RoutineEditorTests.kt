@@ -76,6 +76,7 @@ class RoutineEditorTests {
             runBlocking { room.select(null) }
             val before = room.engine.snapshot()
             editor(room, RoutineDraft(name = "New"))
+            compose.onNode(hasText("Movements") and isHeading()).assertExists()
             compose.onNodeWithText("History").assertDoesNotExist()
             compose.onNodeWithTag("routine-history").assertDoesNotExist()
             assertEquals(before, room.engine.snapshot())
@@ -99,7 +100,7 @@ class RoutineEditorTests {
             val before = room.engine.snapshot()
             val draft = editor(room, opening)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("routine-history-row").fetchSemanticsNodes().size == 1 }
-            compose.onNodeWithText("History").performScrollTo().assertIsDisplayed()
+            compose.onNode(hasText("History") and isHeading()).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("2 sets · 2 movements").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("routine-history-row").assertHasNoClickAction()
             val date = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.getDefault())

@@ -23,6 +23,10 @@ names something the code still sends.
   message, request, extras, user and exception values. Each Issue is tagged with its static
   `operation`, `failure_kind`, the allowed properties and the build metadata, and is fingerprinted
   by its operation.
+- **Release symbols:** release APKs are R8-minified; throwable names are kept so `failure_kind`
+  stays unchanged. Each APK carries a ProGuard UUID whose retained mapping is uploaded to Sentry
+  at release by the release agent, with its digest checked against finalized provenance. If no
+  local token is available, the upload is recorded as pending in the release notes.
 - **Event queue:** events wait in the app's private preferences (`works.windmill.telemetry`), on a
   shelf per account, at most 500. They leave in batches of 50 with the account's credential, or
   none when signed out, and retry every 30 s. A signed-out account's shelf waits for that account
