@@ -30,11 +30,14 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,6 +74,7 @@ fun WindmillSheet(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
+        sheetMaxWidth = 560.dp, // 02.27 bounds every modal sheet to the same form width.
         modifier = modifier
             .statusBarsPadding()
             .graphicsLayer {
@@ -112,8 +116,10 @@ fun WindmillSheet(
                 try {
                     gesture.collect { if (animate) preview.snapTo(NavigationMotion.backProgress(it.progress)) }
                 } catch (cancelled: CancellationException) {
+                    // An aborted gesture eases its preview back and makes no close.
                     scope.launch { preview.animateTo(0f, tween(NavigationMotion.durationMs / 2, easing = NavigationMotion.emphasized)) }
-                    throw cancelled
+                    if (!currentCoroutineContext().isActive) throw cancelled
+                    return@PredictiveBackHandler
                 }
                 if (onBack == null) {
                     // The close is one: a second back while it slides down cannot cancel it or close twice.

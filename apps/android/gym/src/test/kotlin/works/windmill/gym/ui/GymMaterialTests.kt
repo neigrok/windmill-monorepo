@@ -36,7 +36,7 @@ class GymMaterialTests {
                 "canvas" to 0xFF0B1111, "surface" to 0xFF161C1D, "raised" to 0xFF202627,
                 "line" to 0xFF202627, "lineStrong" to 0xFF2A3133,
                 "accent" to 0xFF5FCDB4, "accentSoft" to 0x335FCDB4, "onAccent" to 0xFF1B1408,
-                "ink" to 0xFFF1F0EB, "inkDim" to 0xFFB6B5AF, "inkFaint" to 0xFF727771,
+                "ink" to 0xFFF1F0EB, "inkDim" to 0xFFB6B5AF, "inkFaint" to 0xFF898E88,
                 "setDone" to 0xFF9AA859, "prInk" to 0xFFD9B04C, "prSoft" to 0x26D9B04C,
                 "error" to 0xFFE46962, "onError" to 0xFF410E0B,
             ),
@@ -59,6 +59,24 @@ class GymMaterialTests {
                     "error" to error, "onError" to onError)
             }
             assertEquals(roles.mapValues { Color(it.value) }, actual)
+        }
+    }
+
+    @Test
+    fun faintInkPassesSmallTextContrastOnEveryGroundAndStaysTheQuietestInk() {
+        val expected = listOf(
+            Triple(true, GymSkin.Instrument, listOf(5.70, 5.16, 4.60)),
+            Triple(false, GymSkin.Daylight, listOf(5.35, 6.10, 4.74)),
+        )
+        expected.forEach { (dark, skin, ratios) ->
+            val scheme = gymColorScheme(skin, dark)
+            val faint = GymExtendedColors(skin).inkFaint
+            val grounds = listOf(scheme.surface, scheme.surfaceContainer, scheme.surfaceContainerHighest)
+            grounds.zip(ratios).forEach { (ground, ratio) ->
+                assertEquals("faint ink on $ground in dark=$dark", ratio, contrast(faint, ground), 0.005)
+            }
+            assertTrue("faint ink stays quieter in dark=$dark",
+                contrast(faint, scheme.surfaceContainer) < contrast(scheme.onSurfaceVariant, scheme.surfaceContainer))
         }
     }
 

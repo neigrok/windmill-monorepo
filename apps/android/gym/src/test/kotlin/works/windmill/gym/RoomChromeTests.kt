@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
@@ -16,9 +15,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.pow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -29,27 +25,13 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.gym.ui.GymSkin
+import works.windmill.gym.ui.contrast
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RoomChromeTests {
     @get:Rule val compose = createComposeRule()
-
-    private fun channel(part: Float): Double {
-        val value = part.toDouble()
-        if (value <= 0.03928) return value / 12.92
-        return ((value + 0.055) / 1.055).pow(2.4)
-    }
-
-    private fun luminance(colour: Color): Double =
-        0.2126 * channel(colour.red) + 0.7152 * channel(colour.green) + 0.0722 * channel(colour.blue)
-
-    private fun contrast(a: Color, b: Color): Double {
-        val one = luminance(a)
-        val other = luminance(b)
-        return (max(one, other) + 0.05) / (min(one, other) + 0.05)
-    }
 
     @Test
     fun navigationLabelsAndGlyphsStayLegibleInBothModes() {
