@@ -4,15 +4,18 @@ import io.sentry.Sentry
 import java.io.ByteArrayInputStream
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -29,6 +32,56 @@ import works.windmill.platform.net.WindmillJson
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class AndroidTelemetryTest {
+    @Test
+    fun credentialFailuresDoNotEscapeConstructionOrIdentity() = runTest {
+        val context = RuntimeEnvironment.getApplication()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        for (error in listOf(IllegalStateException("unavailable"), CancellationException("cancelled"))) {
+            var reads = 0
+            val telemetry = AndroidTelemetry(context, "https://example.test/".toHttpUrl(), "android-test", "verification",
+                "test", "123", null, { reads++; throw error }, backgroundScope, EventSchemas(emptyMap()), dispatcher)
+            assertEquals(1, reads)
+
+            telemetry.identity("account")
+
+            assertEquals(2, reads)
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun eventsNeverWritePreferencesOnTheCallingThread() = runTest {
+        val events = MockWebServer()
+        events.enqueue(MockResponse().setResponseCode(503).setBody("{}"))
+        events.start()
+        try {
+            val context = RuntimeEnvironment.getApplication()
+            val prefs = context.getSharedPreferences("works.windmill.telemetry", 0)
+            prefs.edit().clear().commit()
+            val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
+                "test", "123", null, { null }, backgroundScope, EventSchemas(emptyMap()),
+                storageDispatcher = StandardTestDispatcher(testScheduler))
+
+            telemetry.event("app_foregrounded")
+
+            assertNull(prefs.getString("queue", null))
+            runCurrent()
+            val stored = WindmillJson.parseToJsonElement(requireNotNull(prefs.getString("queue", null)))
+                as kotlinx.serialization.json.JsonObject
+            val shelves = stored.getValue("shelves") as kotlinx.serialization.json.JsonArray
+            assertEquals(1, shelves.size)
+            val shelf = shelves.single() as kotlinx.serialization.json.JsonObject
+            assertNull(shelf["userId"])
+            val queued = WindmillJson.decodeFromJsonElement(
+                kotlinx.serialization.builtins.ListSerializer(EventIn.serializer()), shelf.getValue("events"))
+            assertEquals(listOf("app_foregrounded"), queued.map { it.name })
+            assertEquals(mapOf("platform" to "android", "release" to "android-test", "environment" to "verification",
+                "app_version" to "test", "build" to "123"), queued.single().props.mapValues { it.value.content })
+        } finally {
+            events.shutdown()
+        }
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
     fun realSdkAndFirstPartyTransportDeliverRedactedRepeatedFailures() = runTest {
@@ -51,7 +104,8 @@ class AndroidTelemetryTest {
             AndroidTelemetry.startSentry(context, "http://public@localhost:${errors.port}/1",
                 "android-test", "verification", "123")
             val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
-                "test", "123", null, { null }, backgroundScope, EventSchemas(emptyMap()))
+                "test", "123", null, { null }, backgroundScope, EventSchemas(emptyMap()),
+                storageDispatcher = StandardTestDispatcher(testScheduler))
             telemetry.failure("gym.proposal_receipt_shown", IllegalStateException("private message secret@example.com"),
                 mapOf("question" to "private question", "duration_ms" to "123", "network_phase" to "response_body"))
             telemetry.failure("http_request", WindmillApiException.Malformed,
@@ -128,7 +182,8 @@ class AndroidTelemetryTest {
             context.getSharedPreferences("works.windmill.telemetry", 0).edit().clear().commit()
             var credential: String? = "first-secret"
             val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
-                "test", "123", "first", { credential }, backgroundScope, EventSchemas(emptyMap()))
+                "test", "123", "first", { credential }, backgroundScope, EventSchemas(emptyMap()),
+                storageDispatcher = StandardTestDispatcher(testScheduler))
             val requests = mutableListOf<RecordedRequest>()
             for ((user, secret) in listOf("first" to "first-secret", null to null, "second" to "second-secret")) {
                 credential = secret
@@ -233,7 +288,8 @@ class AndroidTelemetryTest {
             AndroidTelemetry.startSentry(context, "http://public@localhost:${errors.port}/1",
                 "android-test", "verification", "123")
             val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
-                "test", "123", null, { null }, backgroundScope, EventSchemas(emptyMap()))
+                "test", "123", null, { null }, backgroundScope, EventSchemas(emptyMap()),
+                storageDispatcher = StandardTestDispatcher(testScheduler))
             for (operation in listOf("sync_push", "sync_pull")) {
                 telemetry.failure(operation, IllegalStateException("private detail"), mapOf("outcome" to "failure"))
             }
@@ -291,7 +347,8 @@ class AndroidTelemetryTest {
             AndroidTelemetry.startSentry(context, "http://public@localhost:${errors.port}/1",
                 "android-test", "verification", "123")
             val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
-                "test", "123", null, { null }, backgroundScope, EventSchemas(emptyMap()))
+                "test", "123", null, { null }, backgroundScope, EventSchemas(emptyMap()),
+                storageDispatcher = StandardTestDispatcher(testScheduler))
             telemetry.failure("sync_pull", IllegalStateException("private detail"),
                 mapOf("operation" to "pull", "outcome" to "failure", "failure_kind" to "http", "status" to "502"))
             telemetry.failure("sync_storage", IllegalStateException("private detail"), mapOf("operation" to "storage", "outcome" to "failure"))

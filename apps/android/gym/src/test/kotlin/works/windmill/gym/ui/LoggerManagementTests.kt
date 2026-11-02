@@ -10,6 +10,10 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import java.io.IOException
+import works.windmill.platform.storage.AtomicDocument
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +40,57 @@ import works.windmill.platform.telemetry.Telemetry
 class LoggerManagementTests {
     @get:Rule val compose = createComposeRule()
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun failedRemovalClosesAssemblyAndReportsTheSavedWorkoutRefusal() {
+        failedMovementWrite(pick = false)
+    }
+
+    @Test
+    fun failedPickerChoiceSaysTheRefusalAndReportsPickerAddRefused() {
+        failedMovementWrite(pick = true)
+    }
+
+    private fun failedMovementWrite(pick: Boolean) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        var broken = false
+        val failures = mutableListOf<String>()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val said = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val room = EngineRoomFixture(temporary.newFolder(), scope, telemetry = telemetry, controlsWrite = { file, value ->
+            if (broken) throw IOException("PRIVATE_STORAGE_DETAIL")
+            AtomicDocument.write(file, value)
+        })
+        try {
+            runBlocking {
+                room.select("owner")
+                room.pull(EngineRoomFixture.server())
+                room.startExternalWorkout()
+                room.store.workout.choose("bench-press")
+            }
+            compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) {
+                LoggerBinding(room.store).let { LoggerScreen(it, it, { line -> if (line != null) said += line }, {}) }
+            } }
+            compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
+            if (pick) compose.onNodeWithText("Add movement").performClick()
+            compose.runOnIdle { events.clear(); failures.clear(); broken = true }
+            if (pick) compose.onNodeWithText("Cable Fly").performScrollTo().performClick()
+            else compose.onAllNodes(hasText("Bench Press") and hasClickAction()).onLast().performTouchInput { swipeLeft() }
+            compose.waitUntil(10_000) { said.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodes(hasText("This workout")).fetchSemanticsNodes().isEmpty() }
+            compose.runOnIdle {
+                assertEquals(listOf("The workout could not be saved safely. Restart the app to recover it."), said)
+                assertEquals(listOf(if (pick) "gym.choose" else "gym.dropMovement"), failures)
+                assertEquals(listOf("gym_action" to mapOf("screen" to "workout",
+                    "action" to if (pick) "picker_add" else "remove", "outcome" to if (pick) "refused" else "failed")), events)
+            }
+        } finally { scope.cancel(); room.close() }
+    }
 
     @Test
     fun reusedAssemblyWindowRoutesNativeBackThroughPickerCancelThenClosesAssembly() {

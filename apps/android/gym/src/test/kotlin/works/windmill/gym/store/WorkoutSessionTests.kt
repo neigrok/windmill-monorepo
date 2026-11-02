@@ -1,12 +1,19 @@
 package works.windmill.gym.store
 
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -15,25 +22,332 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.gym.domain.sync.Prefill
+import works.windmill.gym.presentation.AutoClose
 import works.windmill.gym.presentation.Blocker
 import works.windmill.gym.presentation.GymPreferences
+import works.windmill.gym.presentation.LogSetAcceptance
+import works.windmill.gym.presentation.LogSetCommand
 import works.windmill.gym.presentation.PlanSnapshot
-import works.windmill.gym.domain.sync.Prefill
 import works.windmill.gym.presentation.RoutineDraft
+import works.windmill.gym.presentation.RoutineEntryWrite
+import works.windmill.gym.presentation.RoutineWrite
 import works.windmill.gym.presentation.Session
+import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WorkoutChange
+import works.windmill.platform.storage.AtomicDocument
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.ClockReading
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.*
+import works.windmill.sync.engine.RequestTiming
+import works.windmill.sync.engine.SyncResponse
+import works.windmill.sync.modelserver.Credential
 import works.windmill.sync.modelserver.ModelServer
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class WorkoutSessionTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    // A second phone signed into the same account reads what the log holds, or writes as somebody
-    // elsewhere would.
+    @Test
+    fun aFailedStartProjectionRefusesTheControlsAfterTheEngineStarted() = runTest {
+        var broken = false
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, controlsWrite = { file, value ->
+            if (broken) throw IOException("PRIVATE_STORAGE_DETAIL")
+            AtomicDocument.write(file, value)
+        }).use { room ->
+            room.select(null)
+            room.training.createRoutine(RoutineWrite("routine1", "Push", 0, listOf(RoutineEntryWrite("bench-press"))))
+            broken = true
+            val reason = "The workout could not be saved safely. Restart the app to recover it."
+            assertEquals(GymResult.Failed(WriteFailure.Refused(reason)), room.store.workout.start("routine1"))
+            assertTrue(requireNotNull(room.training.openWorkout()).session.isOpen)
+            assertEquals(reason, room.store.workout.workoutFailure)
+            assertEquals(listOf("gym.start"), failures)
+        }
+    }
+
+    @Test
+    fun aFailedFinishProjectionSaysRecoveryWhileTheEngineWorkoutIsClosed() = runTest {
+        var failClosed = false
+        var workoutId: String? = null
+        lateinit var room: EngineRoomFixture
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        room = EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, controlsWrite = { file, value ->
+            if (failClosed && workoutId?.let { room.training.session(it)?.session?.isOpen == false } == true)
+                throw IOException("PRIVATE_STORAGE_DETAIL")
+            AtomicDocument.write(file, value)
+        })
+        room.use {
+            room.select(null)
+            workoutId = room.startExternalWorkout().id
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(60.0, 8)
+            failClosed = true
+            val reason = "The workout could not be saved safely. Restart the app to recover it."
+            assertEquals(FinishOutcome.Failed(WriteFailure.Refused(reason)), room.store.workout.finish())
+            assertFalse(requireNotNull(room.training.session(requireNotNull(workoutId))).session.isOpen)
+            assertEquals(reason, room.store.workout.workoutFailure)
+            assertEquals(listOf("gym.finish"), failures)
+        }
+    }
+
+    @Test
+    fun discardingTheWorkoutEndsItsAcceptedSetRecoveryBeforeStartingAnother() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            room.training.createRoutine(RoutineWrite("routine1", "Push", 0, listOf(RoutineEntryWrite("bench-press"))))
+            val live = (room.store.workout.start("routine1") as GymResult.Ok).value
+            room.store.workout.choose("bench-press")
+            val offer = requireNotNull(room.store.workout.notification.value?.offer)
+            room.engine.failNextCommit()
+            assertTrue(room.store.workout.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            room.now += AutoClose.AFTER_MS + 60_000
+            assertNull(room.store.workout.discardWorkout(live.id))
+            assertNull(room.store.workout.workoutFailure)
+            val started = room.store.workout.start("routine1")
+            assertTrue(started.toString(), started is GymResult.Ok)
+            val next = (started as GymResult.Ok).value
+            assertEquals(next, room.store.workout.session)
+            assertEquals(next, WorkoutControls(room.controlsFile).session)
+            assertEquals(next, room.training.openWorkout()?.session)
+            assertNull(room.training.session(live.id))
+        }
+    }
+
+    @Test
+    fun aPermanentRefusalRevokesPendingAcceptedSetRecovery() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            room.startExternalWorkout()
+            room.store.workout.choose("bench-press")
+            val offer = requireNotNull(room.store.workout.notification.value?.offer)
+            room.engine.failNextCommit()
+            assertTrue(room.store.workout.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val reason = room.store.workout.refuseWorkout()
+            val before = room.engine.snapshot()
+            val controlsBefore = room.controlsFile.readBytes()
+            assertEquals(FinishOutcome.Failed(WriteFailure.Refused(reason)), room.store.workout.finish())
+            assertEquals(before, room.engine.snapshot())
+            assertArrayEquals(controlsBefore, room.controlsFile.readBytes())
+        }
+    }
+
+    @Test
+    fun aLatchedWorkoutRefusesDeletionBeforeChangingTheEngine() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = room.startExternalWorkout()
+            room.store.workout.choose("bench-press")
+            room.store.workout.logSet(60.0, 8)
+            val set = room.store.workout.sets.single()
+            val reason = room.store.workout.refuseWorkout()
+            val before = room.engine.snapshot()
+            assertEquals(WriteFailure.Refused(reason), room.store.workout.deleteSet(live.id, set.id))
+            assertEquals(before, room.engine.snapshot())
+            assertEquals(WorkoutChange.Unavailable(reason), room.store.workout.choose("barbell-row"))
+            assertEquals(before, room.engine.snapshot())
+        }
+    }
+
+    @Test
+    fun anEngineControlsFailureLatchesTheWorkoutEvenWhenTheControlsFileStillWrites() = runTest {
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            room.startExternalWorkout()
+            room.store.workout.choose("bench-press")
+            room.engine.failNextCommit()
+            val reason = "The workout could not be saved safely. Restart the app to recover it."
+            assertEquals(WorkoutChange.Unavailable(reason), room.store.workout.choose("barbell-row"))
+            val before = room.controlsFile.readBytes()
+            assertEquals(WorkoutChange.Unavailable(reason), room.store.workout.choose("cable-fly"))
+            assertArrayEquals(before, room.controlsFile.readBytes())
+            assertEquals(listOf("gym.workout_controls"), failures)
+            assertNull(room.store.workout.notification.value?.offer)
+        }
+    }
+
+    @Test
+    fun anActiveStartReportsAnIndependentCancellationExceptionAsAFailure() = runTest {
+        var broken = false
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, writeAuthority = {
+            if (broken) throw CancellationException("PRIVATE_STORAGE_DETAIL")
+            true
+        }).use { room ->
+            room.select(null)
+            room.training.createRoutine(RoutineWrite("routine1", "Push", 0, listOf(RoutineEntryWrite("bench-press"))))
+            broken = true
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The workout could not be saved safely. Restart and retry.")),
+                room.store.workout.start("routine1"))
+            assertEquals(listOf("gym.start"), failures)
+        }
+    }
+
+    @Test
+    fun cancellingAFollowReadDoesNotRefuseTheWorkoutOrReportAnIssue() = runTest {
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry,
+            readDispatcher = StandardTestDispatcher(testScheduler)).use { room ->
+            room.select(null)
+            val live = room.startExternalWorkout()
+            val before = room.controlsFile.readBytes()
+            val follow = launch(start = CoroutineStart.UNDISPATCHED) { room.store.workout.follow(live) }
+            follow.cancel()
+            follow.join()
+            assertEquals(emptyList<String>(), failures)
+            assertNull(room.store.workout.workoutFailure)
+            assertArrayEquals(before, room.controlsFile.readBytes())
+        }
+    }
+
+    @Test
+    fun discardingAShelfWorkoutClearsItsLogRowAndRetainedClosedDetail() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val saved = SavedWorkout(Session("shelf01", room.now + 1000, room.now + 3000),
+                listOf(TrainingSet("shelfset01", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = room.now + 2000)))
+            room.training.imports.prepare(saved)
+            room.store.history.loadLog()
+            val detail = SessionDetail(saved.session, saved.sets)
+            assertEquals(GymResult.Ok(detail), room.store.history.finishedSession(saved.session.id))
+            assertEquals(listOf(saved.session.id), room.store.history.logged.map { it.id })
+            val fallback = detail.copy(sets = emptyList())
+            assertEquals(detail, room.store.history.retainedSession(fallback))
+            assertNull(room.store.workout.discardWorkout(saved.session.id))
+            assertEquals(emptyList<String>(), room.store.history.logged.map { it.id })
+            assertEquals(fallback, room.store.history.retainedSession(fallback))
+        }
+    }
+
+    @Test
+    fun failedMovementWritesKeepTheControlsAndRefuseLaterChangesWithoutAnotherReport() = runTest {
+        for (fault in listOf(IOException("PRIVATE_STORAGE_DETAIL"), CancellationException("PRIVATE_STORAGE_DETAIL")))
+        for (operation in listOf("gym.reorderMovements", "gym.dropMovement", "gym.choose")) {
+            var broken = false
+            val failures = mutableListOf<String>()
+            val telemetry = object : Telemetry {
+                override fun event(name: String, properties: Map<String, String>) = Unit
+                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+            }
+            EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, controlsWrite = { file, value ->
+                if (broken) throw fault
+                AtomicDocument.write(file, value)
+            }).use { room ->
+                room.select(null)
+                room.startExternalWorkout()
+                val workout = room.store.workout
+                workout.choose("bench-press")
+                workout.choose("barbell-row")
+                val order = workout.order
+                val movement = workout.exerciseId
+                val bytes = room.controlsFile.readBytes()
+                val reason = "The workout could not be saved safely. Restart the app to recover it."
+                broken = true
+                val first = when (operation) {
+                    "gym.reorderMovements" -> workout.reorder(0, 1)
+                    "gym.dropMovement" -> workout.drop("barbell-row")
+                    else -> workout.choose("cable-fly")
+                }
+                assertEquals(WorkoutChange.Unavailable(reason), first)
+                assertEquals(WorkoutChange.Unavailable(reason), workout.reorder(0, 1))
+                assertEquals(WorkoutChange.Unavailable(reason), workout.drop("barbell-row"))
+                assertEquals(WorkoutChange.Unavailable(reason), workout.choose("cable-fly"))
+                assertEquals(order, workout.order)
+                assertEquals(movement, workout.exerciseId)
+                assertArrayEquals(bytes, room.controlsFile.readBytes())
+                assertEquals(reason, workout.workoutFailure)
+                assertNull(workout.notification.value?.offer)
+                assertEquals(listOf(operation), failures)
+            }
+        }
+    }
+
+    @Test
+    fun followAndDeleteContainControlsFailuresAfterTheEngineReadOrWrite() = runTest {
+        for (delete in listOf(false, true)) {
+            var broken = false
+            val failures = mutableListOf<String>()
+            val telemetry = object : Telemetry {
+                override fun event(name: String, properties: Map<String, String>) = Unit
+                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+            }
+            EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, controlsWrite = { file, value ->
+                if (broken) throw IOException("PRIVATE_STORAGE_DETAIL")
+                AtomicDocument.write(file, value)
+            }).use { room ->
+                room.select(null)
+                room.startExternalWorkout()
+                val workout = room.store.workout
+                workout.choose("bench-press")
+                workout.logSet(60.0, 8)
+                val live = requireNotNull(workout.session)
+                val set = workout.sets.single()
+                val bytes = room.controlsFile.readBytes()
+                broken = true
+                if (delete) assertEquals(WriteFailure.Refused("The workout could not be saved safely. Restart the app to recover it."), workout.deleteSet(live.id, set.id))
+                else workout.follow(null)
+                assertArrayEquals(bytes, room.controlsFile.readBytes())
+                assertEquals("The workout could not be saved safely. Restart the app to recover it.", workout.workoutFailure)
+                assertEquals(listOf(if (delete) "gym.deleteSet" else "gym.loadLog"), failures)
+                assertNull(workout.notification.value?.offer)
+            }
+        }
+    }
+
+    @Test
+    fun choosingReportsUnavailableWhenPreparingTheNewRackFailsAfterTheChoiceWasSaved() = runTest {
+        var remaining: Int? = null
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, controlsWrite = { file, value ->
+            remaining?.let {
+                remaining = it - 1
+                if (it == 1) throw IOException("PRIVATE_STORAGE_DETAIL")
+            }
+            AtomicDocument.write(file, value)
+        }).use { room ->
+            room.select(null)
+            room.startExternalWorkout()
+            room.store.workout.choose("bench-press")
+            remaining = 2
+            assertEquals(WorkoutChange.Unavailable("The workout could not be saved safely. Restart the app to recover it."),
+                room.store.workout.choose("barbell-row"))
+            assertEquals(listOf("gym.refreshWorkout"), failures)
+            assertNull(room.store.workout.notification.value?.offer)
+        }
+    }
+
+    // A second phone signed into the same account reads what the log holds, or writes as somebody elsewhere would.
     private suspend fun <T> TestScope.anotherPhone(server: ModelServer, now: Long, account: String = "alice",
                                                    act: suspend (EngineRoomFixture) -> T): T =
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { phone ->
@@ -314,8 +628,8 @@ class WorkoutSessionTests {
     fun testAStartWhoseReplyWasLostRetriesTheExactEngineIntentAndKeepsItsId() = runTest {
         val folder = tmp.newFolder()
         val server = EngineRoomFixture.server()
-        var snapshot: works.windmill.sync.core.Json
-        var original: works.windmill.sync.core.Json
+        var snapshot: Json
+        var original: Json
         var opened: Session
         var set: TrainingSet
         EngineRoomFixture(folder, backgroundScope).use { room ->
@@ -327,7 +641,7 @@ class WorkoutSessionTests {
             set = room.store.workout.sets.single()
             room.engine.releaseHeld(true)
             original = room.engine.nextPush()!!
-            assertEquals(200, server.push(original, works.windmill.sync.modelserver.Credential.Account("alice"), room.now).status)
+            assertEquals(200, server.push(original, Credential.Account("alice"), room.now).status)
             snapshot = room.engine.snapshot() // The response is lost after the server has committed it.
         }
         EngineRoomFixture(folder, backgroundScope, snapshot).use { restored ->
@@ -335,10 +649,10 @@ class WorkoutSessionTests {
             restored.engine.start()
             val retry = restored.engine.nextPush()!!
             assertEquals(original, retry)
-            val response = server.push(retry, works.windmill.sync.modelserver.Credential.Account("alice"), restored.now)
-            val reading = works.windmill.sync.core.ClockReading(restored.now, restored.now, "test")
-            restored.engine.onPushResponse(retry, works.windmill.sync.engine.SyncResponse(response.status, response.body),
-                works.windmill.sync.engine.RequestTiming(reading, reading))
+            val response = server.push(retry, Credential.Account("alice"), restored.now)
+            val reading = ClockReading(restored.now, restored.now, "test")
+            restored.engine.onPushResponse(retry, SyncResponse(response.status, response.body),
+                RequestTiming(reading, reading))
             restored.pull(server); restored.store.connect(restored.account())
             assertEquals(opened.id, restored.store.workout.session!!.id)
             assertEquals(listOf(set.id), restored.store.workout.sets.map { it.id })
@@ -438,9 +752,7 @@ class WorkoutSessionTests {
         }
     }
 
-    // The live session's rows are the phone's until the log takes them. A set no sync has carried
-    // yet, never sent or sent with no answer, is corrected in place, still owed: the strip draws the
-    // correction at once, and the corrected body is what lands when the signal is back.
+    // The live session's rows are the phone's until the log takes them. A set no sync has carried yet, never sent or sent with no answer, is corrected in place, still owed: the strip draws the correction at once, and the corrected body is what lands when the signal is back.
     @Test
     fun testFixingASetNoSyncHasCarriedRewritesItOnThePhoneAndTheCorrectionIsWhatLands() = runTest {
         for (sent in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
@@ -698,10 +1010,10 @@ class WorkoutSessionTests {
             assertEquals("and the walk survives the relaunch",
                 listOf("romanian-deadlift", "back-squat", "bench-press"), relaunched.store.workout.order)
 
-            assertFalse("a movement holding a set does not leave on a swipe", relaunched.store.workout.drop("back-squat"))
+            assertEquals(WorkoutChange.Stale, relaunched.store.workout.drop("back-squat"))
             assertEquals(listOf("romanian-deadlift", "back-squat", "bench-press"), relaunched.store.workout.order)
 
-            assertTrue(relaunched.store.workout.drop("romanian-deadlift"))
+            assertEquals(WorkoutChange.Saved, relaunched.store.workout.drop("romanian-deadlift"))
             assertEquals(listOf("back-squat", "bench-press"), relaunched.store.workout.order)
             assertNull("the movement in hand left the session, so the picker comes back up",
                 relaunched.store.workout.exerciseId)
@@ -878,8 +1190,7 @@ class WorkoutSessionTests {
         }
     }
 
-    // A correction the log will never take owes nothing more: the log's numbers replace it, and the
-    // refusal is said.
+    // A correction the log will never take owes nothing more: the log's numbers replace it, and the refusal is said.
     @Test
     fun testAFixTheLogRefusesGivesTheRowBackItsLoggedNumbersAndSaysSo() = runTest {
         val server = EngineRoomFixture.server()

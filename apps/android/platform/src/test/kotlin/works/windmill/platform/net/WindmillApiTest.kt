@@ -1,5 +1,13 @@
 package works.windmill.platform.net
 
+import kotlinx.serialization.SerializationException
+import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.ResponseBody
+import okhttp3.OkHttpClient
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -7,11 +15,13 @@ import kotlinx.serialization.Serializable
 import okio.buffer
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -19,7 +29,6 @@ import java.util.concurrent.TimeUnit
 import works.windmill.platform.telemetry.Telemetry
 import okhttp3.Call
 import okhttp3.EventListener
-import okhttp3.OkHttpClient
 import okhttp3.Response
 import java.util.concurrent.ConcurrentHashMap
 
@@ -84,22 +93,22 @@ class WindmillApiTest {
     private fun api(credential: () -> String? = { null }) = WindmillApi(server.url("/"), credential)
 
     @Test
-    fun rawConsumptionClosesTheResponseAndCancellationStopsAnIncompleteBody() = kotlinx.coroutines.runBlocking {
-        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val closed = kotlinx.coroutines.CompletableDeferred<Unit>()
+    fun rawConsumptionClosesTheResponseAndCancellationStopsAnIncompleteBody() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val closed = CompletableDeferred<Unit>()
         val reports = mutableListOf<String>()
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) { reports += name }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { reports += operation }
         }
         server.enqueue(MockResponse().setBody("first\nlast\n").throttleBody(6, 2, TimeUnit.SECONDS))
-        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
             val response = chain.proceed(chain.request())
             val original = requireNotNull(response.body)
             val source = object : okio.ForwardingSource(original.source()) {
                 override fun close() { try { super.close() } finally { closed.complete(Unit) } }
             }.buffer()
-            response.newBuilder().body(object : okhttp3.ResponseBody() {
+            response.newBuilder().body(object : ResponseBody() {
                 override fun contentType() = original.contentType()
                 override fun contentLength() = original.contentLength()
                 override fun source() = source
@@ -115,7 +124,7 @@ class WindmillApiTest {
         entered.await()
         request.cancel()
         request.join()
-        kotlinx.coroutines.withTimeout(2_000) { closed.await() }
+        withTimeout(2_000) { closed.await() }
         assertTrue(request.isCancelled)
         assertEquals(emptyList<String>(), reports)
         assertEquals("Bearer private", server.takeRequest().getHeader("Authorization"))
@@ -172,12 +181,33 @@ class WindmillApiTest {
     }
 
     @Test
+    fun aDroppedResponseRemainsTransportAndEmitsAnEventWithoutAnIssue() = runTest {
+        val failures = mutableListOf<Throwable>()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += error }
+        }
+        server.enqueue(MockResponse().setBody("""{"value":"interrupted"}""")
+            .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
+        val api = WindmillApi(server.url("/"), { null }, telemetry = telemetry)
+        val failure = runCatching { api.get<Wire>("/v1/example") }.exceptionOrNull()
+        assertTrue(failure is WindmillApiException.Transport)
+        assertEquals("That connection was interrupted. Try again.", (failure as WindmillApiException.Transport).line)
+        assertEquals(emptyList<Throwable>(), failures)
+        assertEquals(listOf("api_request_failed" to mapOf("method" to "GET", "route" to "/v1/example",
+            "failure_kind" to "transport", "operation" to "http_request", "network_phase" to "response_body")),
+            events.map { it.first to it.second.minus("duration_ms") })
+        assertTrue(events.single().second.getValue("duration_ms").toLong() >= 0)
+    }
+
+    @Test
     fun concurrentRequestsKeepTheirPhasesAndPreserveTheCallersListener() = runTest {
         val properties = ConcurrentHashMap<String, Map<String, String>>()
         val calls = ConcurrentHashMap.newKeySet<Call>()
         val responses = ConcurrentHashMap.newKeySet<Call>()
-        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
-            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
                 if (request.path == "/v1/headers") MockResponse().setBody("{}").setHeadersDelay(300, TimeUnit.MILLISECONDS)
                 else MockResponse().setBody("{}").setBodyDelay(300, TimeUnit.MILLISECONDS)
         }
@@ -221,7 +251,7 @@ class WindmillApiTest {
             ) { response ->
                 response.body!!.string()
                 Thread.sleep(80)
-                throw kotlinx.serialization.SerializationException("private response could not decode")
+                throw SerializationException("private response could not decode")
             }
         }.exceptionOrNull()
         assertEquals(WindmillApiException.Malformed, error)
@@ -298,6 +328,11 @@ class WindmillApiTest {
     }
 
     @Test
+    fun aBlankRefusalMessageUsesTheExistingFallback() {
+        assertEquals("That didn’t go through", WindmillApiException.Refused(410, Refusal("  ", "\n")).line)
+    }
+
+    @Test
     fun aDeadHostIsOffline() = runTest {
         val dead = MockWebServer()
         dead.start()
@@ -351,9 +386,29 @@ class WindmillApiTest {
     }
 
     @Test
-    fun capturingNothingIsNull() = runTest {
-        server.enqueue(MockResponse().setBody("""{"value":"in"}"""))
-        assertNull(api().sendCapturingSession<Wire>("POST", "/v1/auth/verify", Wire("tok")).session)
+    fun capturingAMissingOrEmptySessionIsMalformedAndReported() = runTest {
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                assertEquals(WindmillApiException.Malformed, error)
+                failures += operation to properties
+            }
+        }
+        val api = WindmillApi(server.url("/"), { null }, telemetry = telemetry)
+        for (cookie in listOf(null, "wm_session=; Path=/")) {
+            val response = MockResponse().setBody("""{"value":"in"}""")
+            if (cookie != null) response.addHeader("Set-Cookie", cookie)
+            server.enqueue(response)
+            assertEquals(WindmillApiException.Malformed,
+                runCatching { api.sendCapturingSession<Wire>("POST", "/v1/auth/verify", Wire("tok")) }.exceptionOrNull())
+        }
+        val expected = mapOf("method" to "POST", "route" to "/v1/auth", "failure_kind" to "malformed",
+            "operation" to "auth_request", "network_phase" to "decode")
+        assertEquals(List(2) { "auth_request" to expected }, failures.map { it.first to it.second.minus("duration_ms") })
+        assertEquals(List(2) { "api_request_failed" to expected }, events.map { it.first to it.second.minus("duration_ms") })
+        assertTrue(failures.all { it.second.getValue("duration_ms").toLong() >= 0 })
     }
 
     @Test
@@ -368,6 +423,9 @@ class WindmillApiTest {
         assertEquals("https://windmill.works/", WindmillApi.resolvedBaseUrl("").toString())
         assertEquals("https://windmill.works/", WindmillApi.resolvedBaseUrl("   ").toString())
         assertEquals("http://10.0.2.2:8088/", WindmillApi.resolvedBaseUrl("http://10.0.2.2:8088").toString())
-        assertEquals("https://windmill.works/", WindmillApi.resolvedBaseUrl("not a url").toString())
+        for (configured in listOf("not a url", "ftp://x")) {
+            val failure = assertThrows(IllegalArgumentException::class.java) { WindmillApi.resolvedBaseUrl(configured) }
+            assertEquals("windmill.apiBase is not an http(s) URL", failure.message)
+        }
     }
 }

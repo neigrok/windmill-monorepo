@@ -48,12 +48,15 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
 - Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- Release builds use R8 and resource shrinking; debug stays unminified. `:app:verifyReleaseMapping`
+  gates release assembly on the R8 mapping, listed throwable names and bundled library rules.
+  Each release APK carries a deterministic ProGuard UUID in `assets/sentry-debug-meta.properties`.
 - The app's lint reads `:platform`, `:gym` and `:sync-engine` with it, so an unused resource in any
   of them fails the build.
 - Sync foundation checks read the shared registries and corpora directly; the schema generator and
   independent JCS oracle checks also require Python 3 and Node.js.
 - `-Pwindmill.apiBase=http://10.0.2.2:8088` targets the host's local backend from an emulator.
-  Empty means the production host.
+  Empty means the production host; any other value must be an http(s) URL, or the app stops at launch.
 
 The placeholder Sentry DSN above is for local build validation. Release assembly requires
 `ANDROID_SENTRY_DSN`, or `-Pwindmill.sentryDsn`, for the dedicated Android project. Debug telemetry
@@ -63,7 +66,8 @@ privacy and collector tests are described in [Android observability](../../docs/
 ## Account and device storage
 
 Sign-in uses an emailed six-digit code (`door:"app"`, `POST /v1/auth/verify-code`). The same field
-accepts a pasted magic link or token. There are no app links.
+accepts a pasted magic link or `token=` parameter. Other entries are codes; malformed codes are
+refused locally. There are no app links.
 
 `SessionStore` seals the credential and verified user together through `SecretVault` (AES-GCM,
 Android Keystore). Account and engine credentials share one vault. Installation access uses the
@@ -73,7 +77,9 @@ it opened or sealed in memory, never a failure. A sealed value that a write remo
 fails to store leaves that memory; the vault lists the last 32 such values and never keeps them
 again, not even for a read already in flight. Restoring an unchanged account, or saving the engine
 credential already stored, seals and writes nothing. Backup is disabled by both manifest and
-extraction rules; a Keystore failure has no plaintext fallback.
+extraction rules; a Keystore failure has no plaintext fallback. An older build's plaintext session
+is used only after it is sealed and persisted. If migration fails, it stays unused on the phone
+for a later launch to recover; reads do not retry the failed migration during that process.
 Offline restore retains a previously bound account as unverified. Only a confirmed 401 expires
 identity. Sign-out stores the exact account, Keep/Discard choice and engine completion phase in a
 sealed intent. Startup resolves that intent before ordinary auth restore, credential bootstrap or
@@ -116,6 +122,10 @@ joining another open workout; its sets follow under their own identities once th
 confirms that start, and the server assigns their set numbers. A planned start waits for the
 account pull and refuses a changed frozen routine plan. Conflicting workouts remain inspectable on
 the phone, with an explicit **Keep** action that imports them finished at their last set.
+An unexpected failure preparing one item is reported once and keeps its source locally for retry;
+other items adopt normally. Reconciliation retries that item after the account pull. A failure outside
+an individual item retains the anonymous replica while sign-in selects the account; sign-out returns
+to that replica so a later adoption pass can retry its work.
 Dismissing a notice does not remove workout content. Refused imports retain their source on the
 phone. Gym settings shows the reason and offers explicit correction and retry; dates, sets and
 frozen routine lineage are never silently changed.
@@ -164,7 +174,8 @@ each request is consumed once, including across activity recreation.
 
 `GymNavigator` keeps the tab and the pushed stack across recreation, and `Standing` decides what
 Back means. `GymStage` moves the room's frame and keeps each frame's saved state under the frame's
-key: pushes and pops travel along the shared X axis and tab changes fade through, 300 ms with
+key. Each pushed visit has its own identity, and its saved state leaves with it. Pushes and pops
+travel along the shared X axis and tab changes fade through, 300 ms with
 emphasized easing. A back gesture shrinks a pushed screen, the logger or the routine editor toward
 90 % over the frame its release returns to. A Back that lands during a release cannot stop the pop
 it committed to; it waits for the stage to settle and then acts on where the room stands. A busy
@@ -292,15 +303,57 @@ app observations belong in the task report, rather than a lasting evidence file.
 
 [Android CI](../../.github/workflows/android.yml) builds/tests relevant main pushes and pull
 requests. An `android-v*` tag or versioned dispatch also produces unpublished signing inputs:
-a non-debuggable APK, SHA-256 and source/run provenance. The temporary signature is not the
+a non-debuggable, minified APK, SHA-256, R8 mapping and schema 3 source/run provenance. The temporary signature is not the
 release identity. CI has read-only repository permissions and no private signing key.
 `versionCode` is the workflow run number and must exceed every previously published version code.
 
 Release signing is local. The retained encrypted PKCS12 key and password are held separately;
 `release-signing.json` pins the public certificate. `tools/release.py finalize` checks independently
 verified commit/ref/version/workflow/run identities, receives the password through stdin, verifies
-the input, signs and checks the certificate and unchanged application contents. Its APK, digest
+the input, signs and checks the certificate and unchanged application contents. Pass
+`--mapping signing-input/windmill-<version>-mapping.txt` alongside `--candidate`, `--provenance`
+and the independently verified `--expected-*` arguments. The mapping filename and digest must
+match provenance before the helper reads the password. The final output retains the mapping and
+its digest, and `apk.proguardUuid` binds the Sentry identifier to the inspected APK. Its APK, digest
 and provenance remain unpublished until native acceptance and a same-key update check pass.
+
+After finalization and before acceptance, the release agent uploads only the finalized mapping
+whose SHA-256 matches `mapping.sha256` in the finalized provenance. With the Android project
+selected through local `SENTRY_ORG` and `SENTRY_PROJECT` and a locally available Sentry token, run:
+
+```sh
+sentry-cli upload-proguard --uuid <apk.proguardUuid> <final-output>/windmill-<version>-mapping.txt
+```
+
+Check the installed CLI command first with `sentry-cli upload-proguard --help`. Sentry CLI
+[supports the UUID override](https://github.com/getsentry/sentry-cli/blob/master/src/commands/proguard/upload.rs);
+newer versions mark it deprecated. Confirm that the Android project’s Debug Files page lists the
+exact UUID. If no local token is available, record the upload and Debug Files check as pending in
+that release’s notes. The mapping goes only to Sentry; never attach it to a GitHub release. CI has
+no Sentry upload token, and builds and the release helper perform no mapping upload. Do not force
+a production Issue: the release Robolectric envelope test and Debug Files listing provide proof.
+
+Minified acceptance runs after review on a freshly wiped `Release_API34` Google APIs emulator,
+using the retained-key candidate with a version code above 277:
+
+1. Check non-debuggable badging with `aapt2`, the asset UUID against provenance, and record APK
+   sizes before and after minification in the release notes.
+2. Install published 0.14.0/code 277. Signed out, create a finished two-set workout, an open
+   workout with a logged set, a bodyweight routine with negative per-set loads, a note and a
+   weigh-in. Update with `adb install -r`; preserve all data and finish the open workout. Check
+   the AOSP keyboard’s minus key for uniform and per-set loads.
+3. Check that `adb logcat -b crash` stays empty and logcat contains no `SerializationException`,
+   `ClassNotFoundException`, `NoSuchMethodError`, `NoSuchFieldException`,
+   `Resources$NotFoundException`, `Crash reporting unavailable` or `Error delivery unavailable`.
+4. Exercise process death with HOME followed by `adb shell am kill works.windmill.app`. Restore
+   a routine draft with Vary by set open, logger Assembly/Picker/Fix sheets, a pushed navigation
+   frame, session detail and Finish sheet.
+5. In airplane mode, log a set, force-stop, restart offline and finish offline.
+6. Request sign-in and reach the check-email state using the owner-designated address. If the
+   owner signs in, verify session restoration after force-stop, sync pull, a streaming Coach
+   answer and sign-out. Record any signed-in checks not run.
+7. Independently verify that a clean install opens empty Routines. On an emulator with TalkBack,
+   also verify heading navigation reaches Movements, History and Performed.
 
 The published [0.14.0/code277 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0)
 uses tag `android-v0.14.0` at `3b136a3dc6d0bb9092e4b5e48581435a8b2d2354`,

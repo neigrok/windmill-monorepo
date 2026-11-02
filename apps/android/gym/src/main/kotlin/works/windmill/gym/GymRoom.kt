@@ -25,7 +25,6 @@ import works.windmill.gym.presentation.SessionDetail
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
@@ -38,6 +37,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.coach.Ask
@@ -184,7 +184,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // Whether this room has met the lifter. NOT saved: `account.user` is null until /v1/me answers,
     // so the first frame of every launch looks like nobody signed in.
     var seatRead by remember { mutableStateOf(account.user != null) }
-    val sessionStates = key(seat) { rememberSaveableStateHolder() }
+    val sessionStates = rememberFrameStates(seat, navigator.ownedStateKeys(building != null)).holder
     val askAbsent = selectedChat?.absent == true
     // The room's one haptic vocabulary, used for the acts the room itself owns: a finish, and a save
     // the room performs on a screen's behalf.
@@ -312,8 +312,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         store.connect(account)
         try {
             store.coach.resumeChats()
-        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure) }
+        } catch (failure: Exception) {
+            if (!currentCoroutineContext().isActive) throw failure
+            telemetry.failure("gym.restoreConversation", failure)
+        }
 
     }
 
@@ -328,8 +330,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         val empty = store.initialGymEmpty
         if (empty != null && store.coach.selectedChatId == null && (navigator.tab == Tab.Coach || navigator.away.lastOrNull() is Away.Coach)) {
             try { store.coach.freshChat(setup = empty) }
-            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { note = "Your conversation couldn’t be saved. Try again." }
+            catch (failure: Exception) {
+                if (!currentCoroutineContext().isActive) throw failure
+                note = "Your conversation couldn’t be saved. Try again."
+            }
         }
         if (initialTabChosen) return@LaunchedEffect
         if (navigator.away.isNotEmpty() || building != null || selectedRoutineId != null) {
@@ -344,8 +348,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         try {
             if (store.coach.selectedChatId == null) store.coach.freshChat(setup = true)
             navigator.choose(Tab.Coach)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (_: Exception) { note = "Your conversation couldn’t be saved. Try again." }
+        } catch (failure: Exception) {
+            if (!currentCoroutineContext().isActive) throw failure
+            note = "Your conversation couldn’t be saved. Try again."
+        }
     }
 
     // The transient is the room's and follows the lifter through every pop, tab change and sheet; a
@@ -452,7 +458,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             when (val ended = store.workout.finish()) {
                 is FinishOutcome.Closed -> {
                     if (owner != currentAccount.user?.id) return@launch
-                    sessionStates.removeState("${Frame.Workout(navigator.tab).key}:${ended.detail.session.id}")
+                    sessionStates.removeState(Frame.Workout(navigator.tab).stateKey(ended.detail.session.id)!!)
                     if (ended.detail.sets.isNotEmpty()) haptics.finished()
                     navigator.reset(listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.routines.catalog), ended.detail)))
                     reviewFlow.pruneReceipts(navigator.away.lastOrNull())
@@ -607,8 +613,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         is GymResult.Ok -> {
                             try {
                                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", WorkoutSharing.link(minted.value, origin))))
-                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                            catch (failure: Exception) {
+                            } catch (failure: Exception) {
+                                if (!currentCoroutineContext().isActive) throw failure
                                 telemetry.failure("gym.share", failure)
                                 telemetry.event("gym_action", mapOf("screen" to "log", "action" to "share", "outcome" to "failed"))
                                 note = "The link could not be copied. Try Share this workout again."
@@ -906,10 +912,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     },
                 ) {
                     val screenTransient = transient.takeIf { standing && frame.hostsTransient }
-                    // Each frame keeps its saved state under its own key, so two frames on the stage at once
-                    // never share one, even when both show the same session. The logger's state is its
-                    // session's and leaves the stage with it.
-                    val stateKey = if (frame is Frame.Workout) liveSession?.let { "${frame.key}:${it.id}" } else frame.key
+                    // Pushed state belongs to its visit; workout state belongs to its session.
+                    val stateKey = frame.stateKey(liveSession?.id)
                     if (stateKey != null) sessionStates.SaveableStateProvider(stateKey) {
                         when (frame) {
                             is Frame.Workout -> remember(store) { LoggerBinding(store) }.let { logger -> LoggerScreen(

@@ -35,7 +35,11 @@ class ReleaseTests(unittest.TestCase):
         self.apk_directory = self.root / 'apks'
         self.apk_directory.mkdir()
         self.manifest = {'package': 'works.windmill.app', 'code': 57, 'version': '0.8.0', 'debuggable': False}
+        self.proguard_uuid = '12345678-1234-1234-1234-123456789abc'
+        self.mapping = self.root / 'mapping.txt'
+        self.mapping.write_bytes(b'# compiler: R8\nworks.windmill.Example -> a:\n')
         self.payload = {
+            'assets/sentry-debug-meta.properties': f'io.sentry.ProguardUuids={self.proguard_uuid}\n'.encode(),
             'AndroidManifest.xml': json.dumps(self.manifest).encode(),
             'classes.dex': b'public synthetic application bytes',
             'META-INF/services/keep': b'preserve this service',
@@ -135,13 +139,13 @@ class ReleaseTests(unittest.TestCase):
 
     def staged(self):
         output = self.root / 'signing-input'
-        release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+        release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
         candidate = output / 'windmill-0.8.0-signing-input.apk'
         return candidate, candidate.with_suffix('.apk.provenance.json')
 
     def final(self, candidate, provenance, output, password=b'public-fixture-password\n'):
         release.finalize(self.project, release.request(self.env, self.commit), candidate, provenance,
-                         self.key, output, self.tools, io.BytesIO(password))
+                         self.key, output, self.tools, io.BytesIO(password), candidate.parent / 'windmill-0.8.0-mapping.txt')
 
     def test_semver_handles_canonical_versions_and_refuses_output_injection(self):
         for value in ('0.8.0', '1.2.3-rc.1', '1.2.3+build.01', '1.2.3-rc+abc'):
@@ -192,10 +196,12 @@ class ReleaseTests(unittest.TestCase):
         digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
         records = [[name, len(value), hashlib.sha256(value).hexdigest()] for name, value in sorted(self.payload.items())]
         payload_hash = hashlib.sha256(json.dumps(records, separators=(',', ':')).encode()).hexdigest()
-        expected = {'schemaVersion': 2, 'artifactKind': 'signing-input',
+        expected = {'schemaVersion': 3, 'artifactKind': 'signing-input',
                     'apk': {'sha256': digest, 'certificateSha256': self.transient, 'package': 'works.windmill.app',
                             'debuggable': False, 'versionCode': 57, 'versionName': '0.8.0',
-                            'payloadSha256': payload_hash, 'fileName': candidate.name},
+                            'payloadSha256': payload_hash, 'fileName': candidate.name, 'proguardUuid': self.proguard_uuid},
+                    'mapping': {'fileName': 'windmill-0.8.0-mapping.txt',
+                                'sha256': hashlib.sha256(self.mapping.read_bytes()).hexdigest()},
                     'source': {'repository': 'neigrok/windmill-monorepo', 'commit': self.commit,
                                'ref': 'refs/heads/main', 'tag': None},
                     'workflow': {'file': '.github/workflows/android.yml',
@@ -203,11 +209,56 @@ class ReleaseTests(unittest.TestCase):
                                  'commit': self.commit, 'runId': '123456', 'runNumber': 57, 'attempt': 1,
                                  'event': 'workflow_dispatch',
                                  'url': 'https://github.com/neigrok/windmill-monorepo/actions/runs/123456'}}
-        self.assertEqual(provenance.read_text(), json.dumps(expected, indent=2) + '\n')
+        self.assertEqual(json.loads(provenance.read_text()), expected)
         self.assertEqual(candidate.with_suffix('.apk.sha256').read_text(), digest + '  ' + candidate.name + '\n')
         self.assertEqual(candidate.read_bytes(), (self.apk_directory / 'app-release.apk').read_bytes())
         self.assertEqual(sorted(p.name for p in candidate.parent.iterdir()),
-                         [candidate.name, candidate.name + '.provenance.json', candidate.name + '.sha256'])
+                         ['windmill-0.8.0-mapping.txt', candidate.name, candidate.name + '.provenance.json', candidate.name + '.sha256'])
+
+    def test_stage_refuses_missing_malformed_or_duplicate_proguard_uuid_and_removes_output(self):
+        asset = 'assets/sentry-debug-meta.properties'
+        for index, content in enumerate((None, b'io.sentry.ProguardUuids=invalid\n',
+                f'io.sentry.ProguardUuids={self.proguard_uuid.upper()}\n'.encode(),
+                f'io.sentry.ProguardUuids={self.proguard_uuid},{self.proguard_uuid}\n'.encode(),
+                self.payload[asset] * 2,
+                b'\xc2\xa0' + self.payload[asset], b'\v' + self.payload[asset],
+                self.payload[asset].rstrip(b'\n') + b' \n',
+                b'#comment\rio.sentry.ProguardUuids=wrong\n' + self.payload[asset])):
+            payload = dict(self.payload)
+            if content is None:
+                del payload[asset]
+            else:
+                payload[asset] = content
+            self.make_apk(self.apk_directory / 'app-release.apk', payload)
+            output = self.root / f'uuid-{index}'
+            with self.subTest(content=content), self.assertRaises(ValueError):
+                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
+            self.assertFalse(output.exists())
+
+    def test_stage_refuses_missing_symlinked_or_non_r8_mapping_and_removes_output(self):
+        invalid = self.root / 'invalid-mapping.txt'
+        invalid.write_bytes(b'# compiler: other\n')
+        link = self.root / 'linked-mapping.txt'
+        link.symlink_to(self.mapping)
+        for index, mapping in enumerate((self.root / 'missing', link, invalid, self.root)):
+            output = self.root / f'mapping-{index}'
+            with self.subTest(mapping=mapping.name), self.assertRaises(ValueError):
+                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, mapping)
+            self.assertFalse(output.exists())
+
+    def test_finalize_refuses_changed_mapping_before_reading_password(self):
+        candidate, provenance = self.staged()
+        mapping = candidate.parent / 'windmill-0.8.0-mapping.txt'
+        original = mapping.read_bytes()
+        mapping.write_bytes(original + b'works.windmill.Other -> b:\n')
+        password = io.BytesIO(b'public-fixture-password\n')
+        output = self.root / 'changed-mapping'
+        with self.assertRaises(ValueError):
+            release.finalize(self.project, release.request(self.env, self.commit), candidate,
+                             provenance, self.key, output, self.tools, password, mapping)
+        self.assertEqual(password.tell(), 0)
+        self.assertFalse(output.exists())
+        self.assertFalse((self.tools / 'public-call.json').exists())
 
     def test_candidate_signature_package_version_and_debug_refusals_remove_output(self):
         for index, change in enumerate(({'debuggable': True}, {'package': 'other.app'}, {'code': 56},
@@ -216,14 +267,14 @@ class ReleaseTests(unittest.TestCase):
             self.make_apk(self.apk_directory / 'app-release.apk', payload)
             output = self.root / f'failed-{index}'
             with self.subTest(change=change), self.assertRaises(ValueError):
-                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
             self.assertFalse(output.exists())
         self.make_apk(self.apk_directory / 'app-release.apk')
         for index, config in enumerate(({'verify_exit': 1}, {'multiple': True}, {'v2': False})):
             self.sdk_fixture(**config)
             output = self.root / f'signature-{index}'
             with self.subTest(config=config), self.assertRaises(ValueError):
-                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
             self.assertFalse(output.exists())
 
     def test_missing_ambiguous_symlink_and_duplicate_entry_candidates_are_refused(self):
@@ -231,16 +282,16 @@ class ReleaseTests(unittest.TestCase):
         apk.unlink()
         output = self.root / 'out'
         with self.assertRaises(ValueError):
-            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
         self.make_apk(apk)
         self.make_apk(self.apk_directory / 'second.apk')
         with self.assertRaises(ValueError):
-            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
         (self.apk_directory / 'second.apk').unlink()
         apk.unlink()
         apk.symlink_to(self.project / 'release-signing.json')
         with self.assertRaises(ValueError):
-            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
         apk.unlink()
         self.make_apk(apk)
         with warnings.catch_warnings():
@@ -248,7 +299,7 @@ class ReleaseTests(unittest.TestCase):
             with zipfile.ZipFile(apk, 'a') as archive:
                 archive.writestr('classes.dex', b'duplicate')
         with self.assertRaises(ValueError):
-            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+            release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
         self.assertFalse(output.exists())
 
     def test_payload_exclusion_requires_paired_narrow_v1_metadata_and_keeps_every_other_entry(self):
@@ -279,7 +330,7 @@ class ReleaseTests(unittest.TestCase):
             self.sdk_fixture(legacy=legacy)
             output = self.root / legacy
             with self.subTest(legacy=legacy), self.assertRaises(ValueError):
-                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools)
+                release.stage(self.env, self.project, self.commit, self.apk_directory, output, self.tools, self.mapping)
             self.assertFalse(output.exists())
 
     def test_finalize_signs_only_stdin_then_checks_exact_payload_and_links_original_provenance_bytes(self):
@@ -297,6 +348,7 @@ class ReleaseTests(unittest.TestCase):
                    'provenanceSha256': hashlib.sha256(provenance_bytes).hexdigest(),
                    'certificateSha256': self.transient, 'payloadSha256': original['apk']['payloadSha256']})
         self.assertEqual(result, expected)
+        self.assertEqual((output / 'windmill-0.8.0-mapping.txt').read_bytes(), self.mapping.read_bytes())
         self.assertEqual(target.with_suffix('.apk.sha256').read_text(), expected['apk']['sha256'] + '  ' + target.name + '\n')
         call = json.loads((self.tools / 'public-call.json').read_text())
         self.assertEqual(call, {'args': ['sign', '--ks', str(self.key), '--ks-type', 'PKCS12',
@@ -306,7 +358,7 @@ class ReleaseTests(unittest.TestCase):
             str(output / '.signing-input.apk')], 'stdinMatched': True})
         self.assertEqual(candidate.read_bytes(), original_bytes)
         self.assertEqual(provenance.read_bytes(), provenance_bytes)
-        self.assertEqual(sorted(p.name for p in output.iterdir()), [target.name, target.name + '.provenance.json', target.name + '.sha256'])
+        self.assertEqual(sorted(p.name for p in output.iterdir()), ['windmill-0.8.0-mapping.txt', target.name, target.name + '.provenance.json', target.name + '.sha256'])
 
     def test_finalize_refuses_changed_run_source_and_manifest_before_reading_password(self):
         candidate, provenance = self.staged()
@@ -319,7 +371,8 @@ class ReleaseTests(unittest.TestCase):
                      ('workflow', 'event', 'push'), ('workflow', 'url', 'https://other'),
                      ('apk', 'sha256', '00' * 32), ('apk', 'certificateSha256', self.identity),
                      ('apk', 'payloadSha256', '00' * 32), ('apk', 'package', 'other.app'),
-                     ('apk', 'fileName', 'other.apk')]
+                     ('apk', 'fileName', 'other.apk'), ('apk', 'proguardUuid', '00000000-0000-0000-0000-000000000000'),
+                     ('mapping', 'fileName', 'other.txt'), ('mapping', 'sha256', '00' * 32)]
         for index, (section, name, value) in enumerate(mutations):
             document = json.loads(json.dumps(original))
             document[section][name] = value
@@ -328,7 +381,7 @@ class ReleaseTests(unittest.TestCase):
             output = self.root / f'refusal-{index}'
             with self.subTest(section=section, field=name), self.assertRaises(ValueError):
                 release.finalize(self.project, release.request(self.env, self.commit), candidate,
-                                 provenance, self.key, output, self.tools, password)
+                                 provenance, self.key, output, self.tools, password, candidate.parent / 'windmill-0.8.0-mapping.txt')
             self.assertEqual(password.tell(), 0)
             self.assertFalse(output.exists())
         self.assertFalse((self.tools / 'public-call.json').exists())
@@ -352,8 +405,8 @@ class ReleaseTests(unittest.TestCase):
         candidate, provenance = self.staged()
         original = provenance.read_text()
         for index, text in enumerate(('null', '{}', original[:-2] + ',"extra":true}',
-                                      original.replace('"schemaVersion": 2', '"schemaVersion": true'),
-                                      original.replace('"schemaVersion": 2', '"schemaVersion": 2, "schemaVersion": 2'))):
+                                      original.replace('"schemaVersion": 3', '"schemaVersion": true'),
+                                      original.replace('"schemaVersion": 3', '"schemaVersion": 3, "schemaVersion": 3'))):
             provenance.write_text(text)
             output = self.root / f'shape-{index}'
             with self.subTest(index=index), self.assertRaises(ValueError):
@@ -409,6 +462,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn('if:', upload)
         self.assertIn('path: apps/android/signing-input/', upload)
         self.assertIn('python3 tools/release.py stage', source)
+        self.assertIn('--mapping app/build/outputs/mapping/release/mapping.txt', source)
 
     def test_candidate_refuses_missing_android_dsn_even_with_backend_dsn(self):
         workflow = Path(__file__).resolve().parents[4] / '.github/workflows/android.yml'

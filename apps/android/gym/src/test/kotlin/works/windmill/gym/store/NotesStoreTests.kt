@@ -1,5 +1,11 @@
 package works.windmill.gym.store
 
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -10,11 +16,130 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.NoteWrite
-import works.windmill.sync.engine.*
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
+import works.windmill.sync.engine.nextPush
+import works.windmill.sync.schema.SyncSchema
+import works.windmill.platform.telemetry.Telemetry
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class NotesStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
+
+    @Test
+    fun failedNotebookReadsKeepTheWholeSnapshotAndRecover() = runTest {
+        for (failure in listOf(IOException("read unavailable"), CancellationException("read unavailable"))) {
+            val expectedFailures = listOf("gym.readNotes" to emptyMap<String, String>())
+            var armed = false
+            val failures = mutableListOf<Pair<String, Map<String, String>>>()
+            val telemetry = object : Telemetry {
+                override fun event(name: String, properties: Map<String, String>) = Unit
+                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                    failures.add(operation to properties)
+                }
+            }
+            EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, createEngine = { snapshot, clock ->
+                Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock {
+                    override fun now(): Long {
+                        if (armed) throw failure
+                        return clock.now()
+                    }
+                })
+            }).use { room ->
+                room.select("alice")
+                room.pull(EngineRoomFixture.server())
+                assertEquals(GymResult.Ok(Note("note_a", 0, "A", "First", 0)),
+                    room.store.notes.saveNote("note_a", NoteWrite("A", "First")))
+                assertEquals(GymResult.Ok(Note("note_b", 1, "B", "Second", 0)),
+                    room.store.notes.saveNote("note_b", NoteWrite("B", "Second")))
+                val expected = listOf(Note("note_a", 0, "A", "First", 0), Note("note_b", 1, "B", "Second", 0))
+                assertEquals(GymResult.Ok(expected), room.store.notes.readNotes())
+                val ready = room.store.notes.notesRead
+                val refusals = room.store.notes.noteRefusals
+                failures.clear()
+                armed = true
+
+                assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.notes.readNotes())
+                assertEquals(expectedFailures, failures)
+                assertEquals(expected, room.store.notes.all)
+                assertEquals(ready, room.store.notes.notesRead)
+                assertEquals(refusals, room.store.notes.noteRefusals)
+
+                armed = false
+                assertEquals(GymResult.Ok(expected), room.store.notes.readNotes())
+                assertEquals(expectedFailures, failures)
+            }
+        }
+    }
+
+    @Test
+    fun cancellingANotebookReadKeepsItsSnapshotWithoutReporting() = runTest {
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                failures.add(operation)
+            }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry,
+            readDispatcher = StandardTestDispatcher(testScheduler)).use { room ->
+            room.select("alice")
+            room.pull(EngineRoomFixture.server())
+            assertEquals(GymResult.Ok(Note("note_a", 0, "A", "First", 0)),
+                room.store.notes.saveNote("note_a", NoteWrite("A", "First")))
+            val expected = listOf(Note("note_a", 0, "A", "First", 0))
+            assertEquals(GymResult.Ok(expected), room.store.notes.readNotes())
+            val ready = room.store.notes.notesRead
+            val refusals = room.store.notes.noteRefusals
+            val pending = async(start = CoroutineStart.UNDISPATCHED) { room.store.notes.readNotes() }
+            pending.cancel()
+            pending.join()
+            assertTrue(pending.isCancelled)
+            assertEquals(expected, room.store.notes.all)
+            assertEquals(ready, room.store.notes.notesRead)
+            assertEquals(refusals, room.store.notes.noteRefusals)
+            assertEquals(emptyList<String>(), failures)
+        }
+    }
+
+    @Test
+    fun cancellationExceptionsFromAnActiveNotebookWriteReturnFailures() = runTest {
+        var armed = false
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                failures.add(operation)
+            }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, createEngine = { snapshot, clock ->
+            Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock {
+                override fun now(): Long {
+                    if (armed) throw CancellationException("write unavailable")
+                    return clock.now()
+                }
+            })
+        }).use { room ->
+            room.select("alice")
+            room.pull(EngineRoomFixture.server())
+            val first = Note("note_a", 0, "A", "First", 0)
+            val second = Note("note_b", 1, "B", "Second", 0)
+            assertEquals(GymResult.Ok(first), room.store.notes.saveNote("note_a", NoteWrite("A", "First")))
+            assertEquals(GymResult.Ok(second), room.store.notes.saveNote("note_b", NoteWrite("B", "Second")))
+            val before = room.engine.snapshot()
+            armed = true
+
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.notes.saveNote("note_a", NoteWrite("Changed", "")))
+            assertEquals(WriteFailure.NoAnswer, room.store.notes.deleteNote("note_a"))
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.notes.reorderNotes("note_a", listOf("note_b", "note_a")))
+            assertEquals(listOf(first, second), room.store.notes.all)
+            assertEquals(listOf("gym.saveNote", "gym.deleteNote", "gym.reorderNotes"), failures)
+
+            armed = false
+            assertEquals(before, room.engine.snapshot())
+        }
+    }
 
     @Test
     fun testANoteIsSavedEditedReorderedAndDeletedInTheLogsOwnOrder() = runTest {

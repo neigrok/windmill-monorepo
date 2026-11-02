@@ -23,10 +23,18 @@ names something the code still sends.
   message, request, extras, user and exception values. Each Issue is tagged with its static
   `operation`, `failure_kind`, the allowed properties and the build metadata, and is fingerprinted
   by its operation.
-- **Event queue:** events wait in the app's private preferences (`works.windmill.telemetry`), on a
-  shelf per account, at most 500. They leave in batches of 50 with the account's credential, or
-  none when signed out, and retry every 30 s. A signed-out account's shelf waits for that account
-  to sign in again. An event that tells of the account ending (`signedOutEvent`) waits on the
+- **Release symbols:** release APKs are R8-minified; throwable names are kept so `failure_kind`
+  stays unchanged. Each APK carries a ProGuard UUID whose retained mapping is uploaded to Sentry
+  at release by the release agent, with its digest checked against finalized provenance. If no
+  local token is available, the upload is recorded as pending in the release notes.
+- **Event queue:** one background worker owns restoration, ordered queue changes and saves to the
+  app's private preferences (`works.windmill.telemetry`), once after each burst of changes. Events
+  become durable after the worker saves them. Shelves hold at most 500 events in total; dormant
+  accounts' events give way, oldest first, to the current account and signed-out shelves. Otherwise
+  a dormant shelf waits for its account to sign in again. Events leave in batches of 50 with the
+  account's credential, or none when signed out, and retry every 30 s. Acknowledgements remove
+  exactly the sent event ids, including events moved by retirement. An event that tells of the
+  account ending (`signedOutEvent`) waits on the
   signed-out shelf instead, so the ending cannot strand it. An account that cannot return
   (`retireAccount`) sends the events it names, `account_delete`, without a credential and drops
   the rest.
@@ -37,7 +45,8 @@ names something the code still sends.
 Issue, both under the static operation. It sends neither for an expected answer:
 
 - a cancellation;
-- lost network (`WindmillApiException.Offline`);
+- lost network (`WindmillApiException.Offline`), or a `Transport` failure that
+  `TelemetryPolicy.networkLoss` reads as lost network;
 - an HTTP refusal with status 400, 401, 403, 404, 409, 410, 422, 426 or 429;
 - on an AI door (`ai_installation`, `gym.coachOnboarding`), a 503 whose code
   `AiAvailability` declares: `anonymous_ai_unavailable` or an allowance code.
@@ -45,7 +54,8 @@ Issue, both under the static operation. It sends neither for an expected answer:
 The gym and Coach stores also drop domain refusals (`TrainingRefused`, `TrainingUnanswered`,
 `TrainingReadChanged`) and every `WindmillApiException`, which their HTTP door has already judged.
 A failed HTTP request always sends `api_request_failed`; an unexpected one also reports under its
-operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentry only.
+operation. A `Timeout` still reports. Raw storage exceptions remain reportable even when their
+type also occurs during network loss. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentry only.
 
 | Operation | Module | Reported when |
 |---|---|---|
@@ -59,7 +69,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `application_coroutine` | app | A coroutine in the application scope throws |
 | `auth_local_identity` | platform | The saved account cannot be resolved at restore |
 | `auth_logout` | platform | The server sign-out call fails other than with an HTTP answer |
-| `auth_request` | platform | A session-minting auth request fails unexpectedly |
+| `auth_request` | platform | A session-minting auth request fails unexpectedly, including a 2xx response without a nonempty session cookie (`malformed`, phase `decode`) |
 | `auth_restore` | platform | Verifying the saved session fails unexpectedly |
 | `auth_sign_in` | platform, app | Completing a sign-in by code or link fails unexpectedly |
 | `auth_sign_out` | platform | Ending the account on the phone fails |
@@ -67,7 +77,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.adoptCoachDraft` | gym | Moving the signed-out Coach draft into the account fails |
 | `gym.applyProposal` | gym | Applying a Coach routine proposal fails |
 | `gym.ask` | gym | Stopping or settling a Coach question fails |
-| `gym.choose` | gym | Reading the last time or the current workout choice fails |
+| `gym.choose` | gym | Reading the last time or saving the movement choice fails |
 | `gym.coachOnboarding` | gym, app | Signed-out Coach transport, request storage, recovery, photo preparation or routine import fails |
 | `gym.coachRoutineConfirm` | gym | Confirming a Coach routine fails |
 | `gym.connect` | gym | Connecting the training store to the account fails |
@@ -79,6 +89,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.deleteWeighIn` | gym | Holding or undoing a deleted weigh-in fails; the engine releases it |
 | `gym.discard` | gym | Discarding a workout fails |
 | `gym.dismissProposal` | gym | Dismissing a Coach routine proposal fails |
+| `gym.dropMovement` | gym | Removing a movement from the live workout fails |
 | `gym.dropRoutine` | gym | Deleting a routine fails |
 | `gym.editExercise` | gym | Editing a movement fails |
 | `gym.editRack` | gym | Editing the rack's number fails |
@@ -88,7 +99,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.fixSet` | gym | Correcting a set, or re-reading it after the correction, fails |
 | `gym.import_reconcile` | gym | Reconciling signed-out imports fails |
 | `gym.loadLastSets` | gym | Reading the last sets fails |
-| `gym.loadLog` | gym | Reading the log, a workout detail, imports or recovery fails, or a frozen plan is unreadable |
+| `gym.loadLog` | gym | Reading the log, a workout detail, imports or recovery fails, a frozen plan is unreadable, or saving this phone's workout copy after a log read fails |
 | `gym.loadOlder` | gym | Reading an older page of the log fails |
 | `gym.loadProgress` | gym | Reading progress fails |
 | `gym.logger_visibility` | gym | Saving whether the logger is hidden fails |
@@ -96,14 +107,16 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.notification.post` | gym | Posting the workout notification fails |
 | `gym.notification.receive` | gym | Handling a notification action fails |
 | `gym.openConnections` | gym | Opening the Connected log page fails |
+| `gym.prepareAdoption` | gym | Preparing an anonymous workout fails and retains that item locally for retry; an outer preparation failure retains the anonymous replica without blocking sign-in |
 | `gym.preparePhoto` | gym | Preparing a signed-in Coach photo fails |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
-| `gym.readNotes` | gym | Re-reading notes after an unconfirmed note deletion fails |
+| `gym.readNotes` | gym | Reading the notes list, or re-reading it after an unconfirmed note deletion, fails |
 | `gym.readProgram` | gym | Re-reading the program after an unconfirmed routine deletion fails |
 | `gym.readThreads` | gym | Reading Coach History fails |
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |
 | `gym.refreshConnectedLog` | gym | Refreshing the Connected log fails |
 | `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails |
+| `gym.reorderMovements` | gym | Reordering the live workout's movements fails |
 | `gym.reorderNotes` | gym | Reordering notes fails |
 | `gym.rereadRow` | gym | Re-reading a workout row after a set deletion fails |
 | `gym.restoreConversation` | gym | Restoring the Coach archive, chats or pending questions fails |
@@ -152,7 +165,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `onboarding_storage` | app | The onboarding flag cannot be read or saved |
 | `session_decode` | platform | The saved session cannot be decoded |
 | `session_key` | platform | The Keystore key for the session cannot be created or read |
-| `session_migrate` | platform | Moving a session saved by an older build fails |
+| `session_migrate` | platform | Sealing or persisting a session saved by an older build fails; reported once per process, with the plaintext retained but unused |
 | `session_open` | platform | Opening a sealed secret fails |
 | `session_seal` | platform | Sealing a secret fails |
 | `session_sign_out_decode` | platform | The saved sign-out choice cannot be decoded |
@@ -163,7 +176,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `telemetry_enqueue` | platform | An event cannot be queued |
 | `telemetry_event_name` | platform | An event name is malformed or uses a reserved prefix without registration |
 | `telemetry_identity` | platform | Switching or retiring the queue's account fails |
-| `telemetry_overflow` | platform | The queue reaches 500 events; once until a batch lands |
+| `telemetry_overflow` | platform | An event is refused because the current account and signed-out shelves alone hold 500 events; once until a batch lands |
 | `telemetry_persist` | platform | The queue cannot be saved; once until it saves again |
 | `telemetry_rejected` | platform | The intake accepts fewer events than were sent |
 | `telemetry_restore` | platform | The saved queue cannot be read at start |
@@ -194,7 +207,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `auth_code_requested` | platform | none |
 | `auth_code_sent` | platform | none |
 | `auth_restore` | platform | `outcome`: `verified`, `unverified`, `expired`, `signed_out`, `unresolved` |
-| `auth_sign_in_started` | platform | `method`: `code`, `link` |
+| `auth_sign_in_started` | platform | `method`: `code`, `link`; code submissions include malformed entries refused locally, which send no `api_request_failed` or failure report |
 | `auth_signed_in` | platform | none |
 | `auth_signed_out` | platform | none |
 | `client_error` | platform | `operation`, `failure_kind` and the failure's allowed properties |
@@ -289,8 +302,8 @@ foot turns to Retry.
 | `workout` | `picker_add` | `ok`, `refused` | |
 | `workout` | `picker_cancel` | `ok` | |
 | `workout` | `picker_open` | `ok` | |
-| `workout` | `remove` | `ok`, `refused` | |
-| `workout` | `reorder` | `ok` | |
+| `workout` | `remove` | `ok`, `refused`, `failed` | |
+| `workout` | `reorder` | `ok`, `failed` | |
 | `workout` | `show_notification` | `ok`, `refused` | |
 | `workout_bar` | `open` | `ok`, `refused` | |
 
