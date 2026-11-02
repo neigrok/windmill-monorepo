@@ -207,7 +207,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `auth_code_requested` | platform | none |
 | `auth_code_sent` | platform | none |
 | `auth_restore` | platform | `outcome`: `verified`, `unverified`, `expired`, `signed_out`, `unresolved` |
-| `auth_sign_in_started` | platform | `method`: `code`, `link` |
+| `auth_sign_in_started` | platform | `method`: `code`, `link`; code submissions include malformed entries refused locally, which send no `api_request_failed` or failure report |
 | `auth_signed_in` | platform | none |
 | `auth_signed_out` | platform | none |
 | `client_error` | platform | `operation`, `failure_kind` and the failure's allowed properties |

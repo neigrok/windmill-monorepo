@@ -66,7 +66,8 @@ privacy and collector tests are described in [Android observability](../../docs/
 ## Account and device storage
 
 Sign-in uses an emailed six-digit code (`door:"app"`, `POST /v1/auth/verify-code`). The same field
-accepts a pasted magic link or token. There are no app links.
+accepts a pasted magic link or `token=` parameter. Other entries are codes; malformed codes are
+refused locally. There are no app links.
 
 `SessionStore` seals the credential and verified user together through `SecretVault` (AES-GCM,
 Android Keystore). Account and engine credentials share one vault. Installation access uses the

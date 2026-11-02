@@ -106,14 +106,21 @@ fun SignInDoor(
         busyCallback(true)
         refusal = null
         val entry = typed.trim()
-        val code = entry.takeIf { it.length == 6 && it.all(Char::isDigit) }
         scope.launch {
             try {
                 val beforeCommit: (User) -> Unit = {
                     if (!active || currentIdentity !== identity) throw CancellationException("The sign-in form changed.")
                 }
                 if (!auth.resumePendingSignIn(address)) {
-                    if (code != null) auth.completeCode(address, code, beforeCommit) else auth.completeLink(entry, beforeCommit)
+                    if (MagicLink.looksLikeLink(entry)) {
+                        auth.completeLink(entry, beforeCommit)
+                    } else {
+                        if (entry.length != 6 || !entry.all(Char::isDigit)) {
+                            auth.telemetry.event("auth_sign_in_started", mapOf("method" to "code"))
+                            throw MagicLink.unreadable
+                        }
+                        auth.completeCode(address, entry, beforeCommit)
+                    }
                 }
                 if (auth.handoffRevision == 0L && active && currentIdentity === identity && !completed) {
                     completed = true

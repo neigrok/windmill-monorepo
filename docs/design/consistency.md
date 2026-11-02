@@ -125,12 +125,6 @@ Apple sign-in is off in every build, so no surface draws it yet.
   `AccountSheet.swift` `authDoors` still draws *Signed up with email before? Use email, so it stays
   one account.* Remove it in the change that ships 23a, never before: until then it is the only
   guard.
-- **8e · A short code is treated as a link.** Board 23e (section 4b) answers a wrong, expired
-  or used code with *That code didn't work* · *Check the digits, or send a fresh one.* Android
-  `SignInDoor` sends only six-digit entries to `/v1/auth/verify-code`; other bare entries pass
-  through `MagicLink.token` to `/v1/auth/verify`, whose invalid-token answer is *That link has
-  expired* · *Links work once and last 15 minutes.* The owner must rule how short or non-numeric
-  code entries differ from pasted link tokens; no change to that flow is approved.
 - **8f · How you sign in, everywhere.** Boards 24a–24d (section 4b): every surface lists the
   account's doors, which `GET /v1/me` returns as `signInMethods` and iOS You lists under **How you
   sign in**. Web `ProfileSection.jsx` reads *Magic link to {email}* and *Continue with Google —
