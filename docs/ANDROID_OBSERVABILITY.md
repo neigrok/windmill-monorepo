@@ -67,7 +67,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.adoptCoachDraft` | gym | Moving the signed-out Coach draft into the account fails |
 | `gym.applyProposal` | gym | Applying a Coach routine proposal fails |
 | `gym.ask` | gym | Stopping or settling a Coach question fails |
-| `gym.choose` | gym | Reading the last time or the current workout choice fails |
+| `gym.choose` | gym | Reading the last time or saving the movement choice fails |
 | `gym.coachOnboarding` | gym, app | Signed-out Coach transport, request storage, recovery, photo preparation or routine import fails |
 | `gym.coachRoutineConfirm` | gym | Confirming a Coach routine fails |
 | `gym.connect` | gym | Connecting the training store to the account fails |
@@ -79,6 +79,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.deleteWeighIn` | gym | Holding or undoing a deleted weigh-in fails; the engine releases it |
 | `gym.discard` | gym | Discarding a workout fails |
 | `gym.dismissProposal` | gym | Dismissing a Coach routine proposal fails |
+| `gym.dropMovement` | gym | Removing a movement from the live workout fails |
 | `gym.dropRoutine` | gym | Deleting a routine fails |
 | `gym.editExercise` | gym | Editing a movement fails |
 | `gym.editRack` | gym | Editing the rack's number fails |
@@ -88,7 +89,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.fixSet` | gym | Correcting a set, or re-reading it after the correction, fails |
 | `gym.import_reconcile` | gym | Reconciling signed-out imports fails |
 | `gym.loadLastSets` | gym | Reading the last sets fails |
-| `gym.loadLog` | gym | Reading the log, a workout detail, imports or recovery fails, or a frozen plan is unreadable |
+| `gym.loadLog` | gym | Reading the log, a workout detail, imports or recovery fails, a frozen plan is unreadable, or saving this phone's workout copy after a log read fails |
 | `gym.loadOlder` | gym | Reading an older page of the log fails |
 | `gym.loadProgress` | gym | Reading progress fails |
 | `gym.logger_visibility` | gym | Saving whether the logger is hidden fails |
@@ -96,6 +97,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.notification.post` | gym | Posting the workout notification fails |
 | `gym.notification.receive` | gym | Handling a notification action fails |
 | `gym.openConnections` | gym | Opening the Connected log page fails |
+| `gym.prepareAdoption` | gym | Preparing an anonymous workout fails and retains that item locally for retry; an outer preparation failure retains the anonymous replica without blocking sign-in |
 | `gym.preparePhoto` | gym | Preparing a signed-in Coach photo fails |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
 | `gym.readNotes` | gym | Re-reading notes after an unconfirmed note deletion fails |
@@ -104,6 +106,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |
 | `gym.refreshConnectedLog` | gym | Refreshing the Connected log fails |
 | `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails |
+| `gym.reorderMovements` | gym | Reordering the live workout's movements fails |
 | `gym.reorderNotes` | gym | Reordering notes fails |
 | `gym.rereadRow` | gym | Re-reading a workout row after a set deletion fails |
 | `gym.restoreConversation` | gym | Restoring the Coach archive, chats or pending questions fails |
@@ -289,8 +292,8 @@ foot turns to Retry.
 | `workout` | `picker_add` | `ok`, `refused` | |
 | `workout` | `picker_cancel` | `ok` | |
 | `workout` | `picker_open` | `ok` | |
-| `workout` | `remove` | `ok`, `refused` | |
-| `workout` | `reorder` | `ok` | |
+| `workout` | `remove` | `ok`, `refused`, `failed` | |
+| `workout` | `reorder` | `ok`, `failed` | |
 | `workout` | `show_notification` | `ok`, `refused` | |
 | `workout_bar` | `open` | `ok`, `refused` | |
 

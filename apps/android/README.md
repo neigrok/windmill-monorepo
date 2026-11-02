@@ -116,6 +116,10 @@ joining another open workout; its sets follow under their own identities once th
 confirms that start, and the server assigns their set numbers. A planned start waits for the
 account pull and refuses a changed frozen routine plan. Conflicting workouts remain inspectable on
 the phone, with an explicit **Keep** action that imports them finished at their last set.
+An unexpected failure preparing one item is reported once and keeps its source locally for retry;
+other items adopt normally. Reconciliation retries that item after the account pull. A failure outside
+an individual item retains the anonymous replica while sign-in selects the account; sign-out returns
+to that replica so a later adoption pass can retry its work.
 Dismissing a notice does not remove workout content. Refused imports retain their source on the
 phone. Gym settings shows the reason and offers explicit correction and retry; dates, sets and
 frozen routine lineage are never silently changed.

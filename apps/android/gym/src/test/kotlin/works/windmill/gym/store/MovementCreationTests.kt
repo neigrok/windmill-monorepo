@@ -2,6 +2,7 @@ package works.windmill.gym.store
 
 import java.io.IOException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -10,13 +11,14 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.gym.domain.sync.ExerciseRules
 import works.windmill.gym.presentation.*
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.schema.SyncSchema
 
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class MovementCreationTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -26,7 +28,7 @@ class MovementCreationTests {
             for ((equipment, count) in listOf("barbell" to 1, "dumbbell" to 2, "other" to 1, "dumbbell" to 1)) {
                 val id = "ex_${equipment}_$count"
                 val expected = Exercise(id, "Movement $id", Exercise.unclassified, equipment,
-                    works.windmill.gym.domain.sync.ExerciseRules.defaultStepKg(equipment), custom = true, loadCount = count)
+                    ExerciseRules.defaultStepKg(equipment), custom = true, loadCount = count)
                 val write = ExerciseWrite(id, expected.name, Exercise.unclassified, equipment, loadCount = count)
                 assertEquals(expected, room.training.createExercise(write))
                 assertEquals(expected, room.training.createExercise(write))
@@ -127,7 +129,7 @@ class MovementCreationTests {
             events.clear(); failures.clear(); failInsertion = true
             val failed = room.store.workout.createForWorkout(write, live.id) as MovementCreateOutcome.Failed
             val created = requireNotNull(failed.created)
-            assertEquals(WriteFailure.NoAnswer, failed.why)
+            assertEquals(WriteFailure.Refused("The workout could not be saved safely. Restart the app to recover it."), failed.why)
             assertEquals(listOf(created), room.training.catalogue().filter { it.id == write.id })
             assertArrayEquals(controls, room.controlsFile.readBytes())
             val owed = room.outbox()

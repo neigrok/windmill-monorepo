@@ -4,8 +4,7 @@ import works.windmill.platform.telemetry.EventSchema
 import works.windmill.platform.telemetry.EventSchemas
 import works.windmill.platform.telemetry.LabelSchema
 
-// gym_action: each screen's actions with the outcomes each may report. An action that asks first also reports
-// state=shown, without an outcome, when its question opens; the log's first_pull does so when its reading bar shows.
+// gym_action: each screen's actions with the outcomes each may report. An action that asks first also reports state=shown, without an outcome, when its question opens; the log's first_pull does so when its reading bar shows.
 object GymActions : EventSchema {
     val screens: Map<String, Map<String, Set<String>>> = mapOf(
         "routines" to mapOf("delete" to setOf("ok", "refused", "failed")),
@@ -46,7 +45,7 @@ object GymActions : EventSchema {
         "workout" to mapOf(
             "hide" to setOf("ok", "refused"), "show_notification" to setOf("ok", "refused"),
             "movement_switch" to setOf("ok"), "open_workout" to setOf("ok"),
-            "remove" to setOf("ok", "refused"), "reorder" to setOf("ok"),
+            "remove" to setOf("ok", "refused", "failed"), "reorder" to setOf("ok", "failed"),
             "picker_open" to setOf("ok"), "picker_cancel" to setOf("ok"), "picker_add" to setOf("ok", "refused"),
             "fix" to setOf("ok", "refused", "failed"),
         ),

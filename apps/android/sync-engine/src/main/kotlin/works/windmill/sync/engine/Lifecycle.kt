@@ -132,9 +132,9 @@ internal fun Engine.anonCount(replica: ReplicaState, product: String): Json {
     return Json.Obj(counts.map { it.key to Json.of(it.value) })
 }
 fun Engine.anonCount(replica: String, product: String): Json = lock.withLock { ensureOpen(); anonCount(device.replicas.single { it.id == replica }, product) }
-fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions: Map<String, String> = emptyMap(), counted: Map<String, List<String>> = emptyMap(), serverSchema: Long? = null): Json = write(EngineOperation.lifecycle) {
+fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions: Map<String, String> = emptyMap(), counted: Map<String, List<String>> = emptyMap(), serverSchema: Long? = null, retainAnonymous: Boolean = false): Json = write(EngineOperation.lifecycle) {
     val previous = device.active
-    val anon = device.replicas.firstOrNull { it.state == "anon" }
+    val anon = device.replicas.firstOrNull { it.state == "anon" }?.takeUnless { retainAnonymous }
     anon?.entries()?.filter { it.state == "held" }?.forEach { anon.move(it, "release", ended) }
     val due = registry.products.keys.sorted().filter { holdsRecords[it] == true && anon != null && lineageWork(anon, it).isNotEmpty() }.map { product ->
         Json.objectOf("kind" to Json.of("signed-out"), "product" to Json.of(product), "count" to anonCount(anon!!, product),

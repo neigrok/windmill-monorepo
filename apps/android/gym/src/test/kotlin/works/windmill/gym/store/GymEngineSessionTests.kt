@@ -10,8 +10,8 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.*
-import org.junit.Test
 import org.junit.Rule
+import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -28,14 +28,16 @@ import works.windmill.platform.telemetry.EventBatchIn
 import works.windmill.platform.telemetry.EventSchemas
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.Change
+import works.windmill.sync.api.DeviceWrite
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.NewID
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
-import works.windmill.sync.schema.SyncSchema
-import works.windmill.sync.schema.Gym
-import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.modelserver.Credential
+import works.windmill.sync.modelserver.ModelServer
+import works.windmill.sync.modelserver.Reply as ModelReply
+import works.windmill.sync.schema.Gym
+import works.windmill.sync.schema.SyncSchema
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -54,9 +56,9 @@ class GymEngineSessionTests {
         override fun delete(account: String) { values.remove(account) }
         override fun accounts() = values.keys.toSet()
     }
-    private fun transport(holdsRecords: Boolean) = object : SyncTransport {
+    private fun transport(holdsRecords: Boolean, now: () -> Long = System::currentTimeMillis) = object : SyncTransport {
         override suspend fun hello(token: String?) = Reply.Answer(SyncResponse(200, Json.objectOf(
-            "serverTime" to Json.of(System.currentTimeMillis()), "epoch" to Json.of("epoch"), "schema" to Json.of(SyncSchema.registry.version), "minSchema" to Json.of(SyncSchema.registry.minVersion),
+            "serverTime" to Json.of(now()), "epoch" to Json.of("epoch"), "schema" to Json.of(SyncSchema.registry.version), "minSchema" to Json.of(SyncSchema.registry.minVersion),
             "as" to Json.of("A"), "holdsRecords" to Json.objectOf("gym" to Json.of(holdsRecords), "journal" to Json.of(false)))))
         override suspend fun push(request: Json, token: String) = Reply.Unreachable
         override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
@@ -72,7 +74,7 @@ class GymEngineSessionTests {
     private fun active(engine: Engine): Json { val s = engine.snapshot(); return s.member("replicas").arr().single { it.member("meta").member("replica") == s.member("active") } }
 
     private fun transport(server: ModelServer, now: () -> Long) = object : SyncTransport {
-        private fun reply(value: works.windmill.sync.modelserver.Reply) = Reply.Answer(SyncResponse(value.status, value.body))
+        private fun reply(value: ModelReply) = Reply.Answer(SyncResponse(value.status, value.body))
         override suspend fun hello(token: String?) = reply(server.hello(Credential.Account("A"), now()))
         override suspend fun push(request: Json, token: String) = reply(server.push(request, Credential.Account("A"), now()))
         override suspend fun pull(request: Json, token: String?) = reply(server.pull(request, Credential.Account("A"), now()))
@@ -128,7 +130,7 @@ class GymEngineSessionTests {
             val revision = engine.readRevision()
             val observed = async(start = CoroutineStart.UNDISPATCHED) { engine.revisions().first { it > revision } }
             val key = WorkoutImports.journalPrefix + "count-test"
-            engine.commit(gym) { Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(key,
+            engine.commit(gym) { Gesture(emptyList(), local = listOf(DeviceWrite(key,
                 Json.objectOf("count" to Json.objectOf("set" to Json.of(2)))))) to Unit }
             assertTrue(withTimeout(2_000) { observed.await() } > revision)
             assertEquals(1, session.deletionUnsent("A"))
@@ -136,13 +138,13 @@ class GymEngineSessionTests {
             val beforeRead = engine.snapshot()
             assertEquals(1, session.deletionUnsent("A"))
             assertEquals(beforeRead, engine.snapshot())
-            engine.commit(gym) { Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(key, null))) to Unit }
+            engine.commit(gym) { Gesture(emptyList(), local = listOf(DeviceWrite(key, null))) to Unit }
             assertEquals(0, session.deletionUnsent("A"))
         }
     }
 
     @Test fun preparedKeepDiscardAndCancelUseTheExactHeldAccount() = runBlocking {
-        for (choice in works.windmill.platform.auth.AuthSignOutChoice.entries) {
+        for (choice in AuthSignOutChoice.entries) {
             val engine = Engine.memory(SyncSchema.registry)
             localMovement(engine)
             engine.signIn("A", mapOf("gym" to false))
@@ -160,7 +162,7 @@ class GymEngineSessionTests {
                 question.finish(choice)
                 session.cleanupSignOut("A")
                 assertEquals("anon", active(engine).member("meta").member("state").str())
-                assertEquals(if (choice == works.windmill.platform.auth.AuthSignOutChoice.Keep) listOf("A") else emptyList<String>(),
+                assertEquals(if (choice == AuthSignOutChoice.Keep) listOf("A") else emptyList<String>(),
                     engine.dormantReplicas().map { it.account })
                 assertNull(tokens.token("A"))
                 session.recoverSignOut("A", choice)
@@ -264,10 +266,116 @@ class GymEngineSessionTests {
         GymEngineSession(engine, SyncRuntime(engine, transport(false), tokens, "test", activityAllowed = { false }),
             clearAccountCredential = tokens::delete).use { session ->
             val before = engine.snapshot()
-            assertNotNull(runCatching { session.recoverSignOut("A", works.windmill.platform.auth.AuthSignOutChoice.Discard) }.exceptionOrNull())
+            assertNotNull(runCatching { session.recoverSignOut("A", AuthSignOutChoice.Discard) }.exceptionOrNull())
             assertEquals(before, engine.snapshot())
             assertEquals("token-B", tokens.token("B"))
             assertEquals("token-A", tokens.token("A"))
+        }
+    }
+
+    @Test fun oneFailedAdoptionKeepsOnlyItsSourceWhileAnotherWorkoutAdoptsAndReconcileRetries() = runBlocking {
+        val original: Json
+        val finished: SessionDetail
+        val open: SessionDetail
+        val now: Long
+        EngineRoomFixture(tmp.newFolder(), this).use { source ->
+            source.select(null)
+            val first = source.workout()
+            finished = requireNotNull(source.training.session(first.id))
+            val second = source.workout(finish = false)
+            open = requireNotNull(source.training.session(second.id))
+            now = source.now
+            original = source.engine.snapshot()
+        }
+        val definition = SyncSchema.registry.json
+        val commands = definition.member("commands").arr().map { command ->
+            if (command["name"] != Json.of("gym.importSession")) command
+            else Json.Obj((command.obj() + ("predicts" to Json.array())).toList())
+        }
+        val registry = Registry(Json.Obj((definition.obj() + ("commands" to Json.Arr(commands))).toList()))
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val clock = object : EngineClock { override fun now() = now }
+        val local = Engine.memory(registry, original, clock = clock, intentResultWrites = EngineTraining.intentResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
+        val retained: Json
+        val sourceBytes: String
+        GymEngineSession(local, SyncRuntime(local, transport(false, clock::now), Tokens(), "test", activityAllowed = { false }), telemetry).use { session ->
+            session.signedIn(User("A", "a@example.com"), "token-A", false)
+            assertEquals(Json.of("A"), active(local).member("meta")["account"])
+            assertNull(session.decision)
+            val intents = active(local)["outbox"]?.arr().orEmpty().map { it.member("intent") }
+            assertEquals(listOf(Gym.Commands.start), intents.map { it.member("cmd").member("name").str() })
+            assertEquals(listOf(open.session.id), intents.map { it.member("cmd").member("args").member("id").str() })
+            assertEquals(listOf("gym.prepareAdoption"), failures)
+            val imports = WorkoutImports(local)
+            assertEquals(emptyList<ImportRefusal>(), imports.refusals())
+            assertEquals(SavedWorkout(finished.session, finished.sets), imports.retainedWorkouts().single { it.session.id == finished.session.id })
+            sourceBytes = local.read(gym) { reader -> reader.devices(WorkoutImports.journalPrefix).values
+                .flatMap { it.member("items").obj().values }.single { it["id"] == Json.of(finished.session.id) }.member("source").jcs }
+            retained = local.snapshot()
+        }
+        Engine.memory(SyncSchema.registry, retained, clock = clock, intentResultWrites = EngineTraining.intentResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { restored ->
+            val request = requireNotNull(restored.pullRequest(listOf(gym)))
+            val response = EngineRoomFixture.server().pull(request, Credential.Account("A"), now)
+            assertEquals(200, response.status)
+            val reading = ClockReading(now, now, "test")
+            restored.onPullResponse(request, SyncResponse(response.status, response.body), RequestTiming(reading, reading))
+            EngineTraining(restored).reconcileImports()
+            val intents = active(restored)["outbox"]?.arr().orEmpty().map { it.member("intent") }
+            assertEquals(listOf(Gym.Commands.importSession, Gym.Commands.start).sorted(), intents.map { it.member("cmd").member("name").str() }.sorted())
+            assertEquals(sourceBytes, restored.read(gym) { reader -> reader.devices(WorkoutImports.journalPrefix).values
+                .flatMap { it.member("items").obj().values }.single { it["id"] == Json.of(finished.session.id) }.member("source").jcs })
+            assertEquals(emptyList<ImportRefusal>(), WorkoutImports(restored).refusals())
+        }
+    }
+
+    @Test fun malformedDeletedSetMetadataRetainsAnonymousTrainingWhileSignInCompletes() = runBlocking {
+        val original: Json
+        val workout: SessionDetail
+        EngineRoomFixture(tmp.newFolder(), this).use { source ->
+            source.select(null)
+            val session = source.workout()
+            workout = requireNotNull(source.training.session(session.id))
+            source.engine.commit(gym, Gesture(emptyList(), local = listOf(DeviceWrite("rack:deletedSetmalformed",
+                Json.objectOf("sessionId" to Json.of(session.id))))))
+            original = source.engine.snapshot()
+        }
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val clock = object : EngineClock { override fun now() = requireNotNull(workout.session.finishedAtMs) + 1000 }
+        val local = Engine.memory(SyncSchema.registry, original, clock = clock, intentResultWrites = EngineTraining.intentResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
+        val anonymous = active(local)
+        val anonymousId = anonymous.member("meta").member("replica")
+        val retained: Json
+        GymEngineSession(local, SyncRuntime(local, transport(false, clock::now), Tokens(), "test", activityAllowed = { false }), telemetry).use { session ->
+            session.signedIn(User("A", "a@example.com"), "token-A", false)
+            assertEquals(Json.of("A"), active(local).member("meta")["account"])
+            assertNull(session.decision)
+            assertNull(active(local)["outbox"])
+            assertEquals(listOf("gym.prepareAdoption"), failures)
+            val saved = local.snapshot().member("replicas").arr().single { it.member("meta").member("replica") == anonymousId }
+            assertEquals(Json.of("anon"), saved.member("meta")["state"])
+            assertEquals(Json.Obj((anonymous.obj() - "meta").toList()).jcs, Json.Obj((saved.obj() - "meta").toList()).jcs)
+            local.signOut("keep")
+            assertEquals(anonymousId.str(), local.activeReplica())
+            assertEquals(workout, EngineTraining(local).session(workout.session.id))
+            assertEquals(emptyList<ImportRefusal>(), WorkoutImports(local).refusals())
+            retained = local.snapshot()
+        }
+        Engine.memory(SyncSchema.registry, retained, clock = clock, intentResultWrites = EngineTraining.intentResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { restored ->
+            restored.commit(gym, Gesture(emptyList(), local = listOf(DeviceWrite("rack:deletedSetmalformed", null))))
+            assertTrue(EngineTraining(restored).prepareAdoption())
+            assertEquals(listOf(SavedWorkout(workout.session, workout.sets)), WorkoutImports(restored).retainedWorkouts())
         }
     }
 
