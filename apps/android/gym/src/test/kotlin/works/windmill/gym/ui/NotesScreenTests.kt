@@ -4,20 +4,19 @@ import android.os.Looper
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getBoundsInRoot
-import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
@@ -25,11 +24,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,7 +44,10 @@ import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.Withheld
+import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 
@@ -162,7 +165,9 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
-            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Note("note_003"))) } }
+            val deletingNote = compose.runOnIdle { scope.async { assertNull(store.deletions.delete(Deletion.Note("note_003"))) } }
+            compose.waitUntil(10_000) { compose.runOnIdle { deletingNote.isCompleted } }
+            runBlocking { deletingNote.await() }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
             compose.onNodeWithText(Notes.full).assertDoesNotExist()
@@ -189,7 +194,9 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
-            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Note("note_003"))) } }
+            val deletingNote = compose.runOnIdle { scope.async { assertNull(store.deletions.delete(Deletion.Note("note_003"))) } }
+            compose.waitUntil(10_000) { compose.runOnIdle { deletingNote.isCompleted } }
+            runBlocking { deletingNote.await() }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
             compose.onNodeWithText(Notes.add).assertIsDisplayed()
@@ -220,7 +227,7 @@ class NotesScreenTests {
                 assertEquals(emptyList<String>(), store.held.withheld.map { it.subjectId })
                 assertEquals(emptyList<String>(), room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
-                assertNull(works.windmill.gym.store.Withheld.line(store.held.withheld))
+                assertNull(Withheld.line(store.held.withheld))
             }
         } } finally { scope.cancel() }
     }
@@ -339,8 +346,9 @@ class NotesScreenTests {
                 room.store.notes.noteRefusals.isNotEmpty() && room.store.notes.all.map { it.id } == listOf("note_000", "note_001", "note_002")
             }
 
+            val serverNotes = onTheLog(room, server)
             compose.runOnIdle {
-                assertEquals(listOf("note_000", "note_001", "note_002"), onTheLog(room, server))
+                assertEquals(listOf("note_000", "note_001", "note_002"), serverNotes)
                 assertEquals(listOf("note_000", "note_001", "note_002"), runBlocking { room.training.notes() }.map { it.id })
                 assertEquals("the refusal reaches the room", listOf("That changed. Open it again."),
                     room.store.notes.noteRefusals.map { it.reason })
@@ -440,7 +448,9 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 0").assertIsDisplayed()
 
-            compose.runOnIdle { runBlocking { assertNull(store.deletions.delete(Deletion.Note("note_001"))) } }
+            val deletingNote = compose.runOnIdle { scope.async { assertNull(store.deletions.delete(Deletion.Note("note_001"))) } }
+            compose.waitUntil(10_000) { compose.runOnIdle { deletingNote.isCompleted } }
+            runBlocking { deletingNote.await() }
             compose.onNodeWithText("note 1").assertDoesNotExist()
 
             dragBelowTheNextRow("note 0")
@@ -564,10 +574,10 @@ class NotesScreenTests {
             runBlocking {
                 assertTrue(room.store.notes.saveNote("note_001", NoteWrite("Private title", "Private body")) is GymResult.Ok)
                 val refused = room.store.notes.saveNote("note_001", NoteWrite("x".repeat(61), "Private refused body"))
-                assertTrue(refused is GymResult.Failed && refused.why is works.windmill.gym.store.WriteFailure.Refused)
+                assertTrue(refused is GymResult.Failed && refused.why is WriteFailure.Refused)
                 room.engine.failNextCommit()
                 val failed = room.store.notes.saveNote("note_001", NoteWrite("Private replacement", "Private failed body"))
-                assertTrue(failed is GymResult.Failed && failed.why !is works.windmill.gym.store.WriteFailure.Refused)
+                assertTrue(failed is GymResult.Failed && failed.why !is WriteFailure.Refused)
                 assertEquals(listOf("gym.saveNote"), telemetry.failures)
                 assertEquals(listOf(
                     "gym_action" to mapOf("screen" to "note_editor", "action" to "save", "outcome" to "ok"),

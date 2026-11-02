@@ -134,10 +134,11 @@ change of account, an engine refresh, a restore and an account transition. Scree
 state interface and an events interface, bound to the stores by a `…Binding` class beside each
 screen; previews draw each screen's main states in Dark and Daylight. The stores run training reads
 and writes through `EngineTraining` and `:gym:domain`; a write commits to the selected replica at
-once and the engine delivers it. Bulk history, session and progress reads use an injected background dispatcher;
+once and the engine delivers it. Bulk history, session, record and progress reads use an injected background dispatcher;
 Compose state and writes remain on the main dispatcher. Parsed history is shared per replica and
 engine revision, including device-journal changes, and expires at the next session auto-close
-boundary. A superseded read cannot publish into a different seat. Pending status shown by the
+boundary. A superseded read cannot publish into a different seat. Movement records and progress share one guarded read.
+An opened workout deleted elsewhere leaves its page and says “That workout is no longer on the log.” Pending status shown by the
 workout uses a published read plus unconfirmed local set values, without storage reads during
 recomposition. A refusal by the log's rules is said on screen and is not reported as a failure.
 `WorkoutControls` (`windmill-gym-sets.json`) holds the open workout's device controls used by the

@@ -248,4 +248,6 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [104](104-record-before-the-first-pull.md) — The record page's Recent sets before the first pull
 - [105](105-quiet-set-count-follow-ups.md) — The quiet set count: the owner's open questions
 
+- [107](107-history-reads.md) — History paging belongs to its job, and opened records follow their replica
+
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.

@@ -102,6 +102,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `gym.readProgram` | gym | Re-reading the program after an unconfirmed routine deletion fails |
 | `gym.readThreads` | gym | Reading Coach History fails |
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |
+| `gym.record` | gym | Reading a movement's record fails |
 | `gym.refreshConnectedLog` | gym | Refreshing the Connected log fails |
 | `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails |
 | `gym.reorderNotes` | gym | Reordering notes fails |

@@ -27,6 +27,8 @@ data class MovementRecord(
     }
 }
 
+data class MovementRead(val record: MovementRecord, val progress: MovementProgress, val asOf: Long)
+
 object Record {
     data class Tile(val label: String, val value: String, val caption: String, val loud: Boolean)
     data class Best(val effort: String, val estimate: String, val day: String)
@@ -43,7 +45,9 @@ object Record {
         val strength: Boolean,
     )
 
-    fun page(record: MovementRecord, now: Long, progress: MovementProgress): Page {
+    fun page(read: MovementRead, now: Long): Page {
+        val record = read.record
+        val progress = read.progress
         val best = progress.best
         val heaviest = progress.heaviest?.fact?.heaviest
         val untrained = progress.isComplete && progress.sessions.isEmpty() && record.recentDays.isEmpty()

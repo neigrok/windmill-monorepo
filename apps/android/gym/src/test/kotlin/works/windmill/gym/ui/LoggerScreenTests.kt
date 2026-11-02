@@ -5,41 +5,43 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.performImeAction
-import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -51,17 +53,19 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.GymPreferences
 import works.windmill.gym.presentation.Ladder
+import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
-import works.windmill.sync.modelserver.ModelServer
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
-import works.windmill.sync.engine.nextPush
-import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.storage.AtomicDocument
-import java.io.IOException
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.engine.Reply
+import works.windmill.sync.engine.nextPush
+import works.windmill.sync.modelserver.ModelServer
 
 // The quiet ledger logger: the words the old screen drew are now said by the controls that own them,
 // and each pin here reads a control by its name. Signed in and synced with the account's log, so a
@@ -171,10 +175,10 @@ class LoggerScreenTests {
             compose.onNodeWithContentDescription("Load, kg total").assertIsNotEnabled()
             // A real disabled button: accessibility reads it as disabled, and a tap logs nothing.
             compose.onNodeWithText("Log set").assertIsNotEnabled()
-                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button))
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
                 .performClick()
             compose.runOnIdle {
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), first.store.workout.sets)
+                assertEquals(emptyList<TrainingSet>(), first.store.workout.sets)
                 assertEquals(listOf("gym.editRack"), failures)
                 assertEquals(before, first.controlsFile.readText())
                 current.value = other.store
@@ -222,7 +226,7 @@ class LoggerScreenTests {
             load.performClick().performTextReplacement("12,5")
             compose.runOnIdle {
                 assertEquals(20.0, room.store.workout.rack!!.weightKg, 0.0)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
+                assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
             }
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
@@ -254,7 +258,7 @@ class LoggerScreenTests {
             reps.performClick().performTextReplacement("5")
             compose.onNodeWithContentDescription("Decrease Reps").assertIsEnabled().performClick()
             reps.assertTextEquals("4")
-            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets) }
+            compose.runOnIdle { assertEquals(emptyList<TrainingSet>(), room.store.workout.sets) }
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
                 val saved = room.store.workout.sets.single()
@@ -274,7 +278,7 @@ class LoggerScreenTests {
             load.assertTextEquals("1e999")
             compose.runOnIdle {
                 assertEquals(20.0, room.store.workout.rack!!.weightKg, 0.0)
-                assertEquals(emptyList<works.windmill.gym.presentation.TrainingSet>(), room.store.workout.sets)
+                assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
             }
             compose.onNodeWithContentDescription("Reps").performClick()
             load.assertTextEquals("1e999")
@@ -378,7 +382,12 @@ class LoggerScreenTests {
             compose.waitForIdle()
             val sets = room.store.workout.sets.toList()
             val restored = room.freshStore()
-            compose.runOnIdle { runBlocking { restored.connect(room.account()) }; shown.value = restored }
+            val connectingRestored = compose.runOnIdle { scope.async {
+                restored.connect(room.account())
+                shown.value = restored
+            } }
+            compose.waitUntil(10_000) { compose.runOnIdle { connectingRestored.isCompleted } }
+            runBlocking { connectingRestored.await() }
             compose.waitForIdle()
 
             compose.onNodeWithText("Free workout").assertIsDisplayed()
@@ -388,7 +397,7 @@ class LoggerScreenTests {
                 assertEquals("bench-press", restored.workout.exerciseId)
                 assertEquals(sets, restored.workout.sets)
                 assertEquals(listOf("bench-press"), restored.workout.order)
-                assertEquals(emptyList<works.windmill.gym.presentation.Routine>(), room.training.program())
+                assertEquals(emptyList<Routine>(), room.training.program())
                 assertEquals(listOf("gym_set_logged" to emptyMap<String, String>()), events)
                 assertEquals(emptyList<String>(), failures)
             }
@@ -628,7 +637,7 @@ class LoggerScreenTests {
             compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 5 reps, on this device")).assertIsDisplayed()
             compose.onAllNodes(hasText("saved on this device only", substring = true)).assertCountEquals(0)
             val failed = compose.runOnIdle {
-                scope.async { room.push(works.windmill.sync.engine.Reply.Unreachable); room.store.refreshEngine() }
+                scope.async { room.push(Reply.Unreachable); room.store.refreshEngine() }
             }
             compose.waitUntil(10_000) { compose.runOnIdle { failed.isCompleted } }
             runBlocking { failed.await() }
