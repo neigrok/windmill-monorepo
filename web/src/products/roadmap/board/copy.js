@@ -276,3 +276,7 @@ export function prerequisitesTally({ done, total }) {
 export function backTo({ screen }) {
   return `${STEP_DETAIL.back} to ${screen}`;
 }
+
+export function draftLine({ step }) {
+  return `for ${step}`;
+}

@@ -56,6 +56,7 @@ import {
   afterStep,
   noStepsMatch,
   showMore,
+  draftLine,
 } from '../../../../src/products/roadmap/board/copy.js';
 
 test('copy — one word per state, one title per column, one label per sort', () => {
@@ -300,4 +301,10 @@ test('copy — picker collision context, search and paging action', () => {
   assert.equal(showMore({ count: 20 }), 'Show 20 more');
   assert.equal(showMore({ count: 4 }), 'Show 4 more');
   assert.equal(showMore({ count: 1000 }), 'Show 1,000 more');
+});
+
+test('copy — the tablet draft context uses lowercase for without a roadmap count', () => {
+  assert.equal(draftLine({ step: 'Reefing basics' }), 'for Reefing basics');
+  assert.equal(draftLine({ step: 'Passage plan' }), 'for Passage plan');
+  assert.equal(draftLine({ step: '' }), 'for ');
 });

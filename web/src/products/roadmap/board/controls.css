@@ -728,13 +728,3 @@
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
-
-@media (min-width: 744px) and (max-width: 1023px) {
-  .st-controls > .st-board-new-step {
-    width: 44px;
-    padding: 0;
-  }
-  .st-controls > .st-board-new-step > span {
-    display: none;
-  }
-}
