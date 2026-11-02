@@ -44,6 +44,18 @@ import {
   emptyColumn,
   removeChip,
   sortButtonLabel,
+  DELETE_CONFIRM,
+  COMPOSER,
+  PICKER,
+  deleteConfirm,
+  completeStepAction,
+  placementPreview,
+  prerequisiteNames,
+  pickerFor,
+  matchCount,
+  afterStep,
+  noStepsMatch,
+  showMore,
 } from '../../../../src/products/roadmap/board/copy.js';
 
 test('copy — one word per state, one title per column, one label per sort', () => {
@@ -197,4 +209,95 @@ test('copy — the step page and modal', async () => {
   });
   assert.deepEqual([prerequisitesTally({ done: 1, total: 2 }), prerequisitesTally({ done: 1200, total: 3200 }), backTo({ screen: 'Learn to sail' })],
     ['1 / 2', '1,200 / 3,200', 'Back to Learn to sail']);
+});
+
+test('copy — delete confirmation and completion name the step', () => {
+  assert.deepEqual(DELETE_CONFIRM, { cancel: 'Cancel', delete: 'Delete' });
+  assert.equal(deleteConfirm({ step: 'Read the wind' }), 'Delete Read the wind?');
+  assert.equal(completeStepAction({ step: 'Read the wind' }), 'Complete Read the wind');
+});
+
+test('copy — the composer labels and validation', () => {
+  assert.deepEqual(COMPOSER, {
+    title: 'New step',
+    cancel: 'Cancel',
+    name: 'Name',
+    namePlaceholder: 'Name this step',
+    nameRequired: 'Enter a name for this step.',
+    description: 'Description · optional',
+    descriptionPlaceholder: 'What does this step cover?',
+    kind: 'Kind',
+    prerequisites: 'Prerequisites',
+    none: 'None',
+    create: 'Create step',
+  });
+});
+
+test('copy — placement names unmet prerequisites in chosen order', () => {
+  const prerequisites = ['Read the wind', 'Tie a bowline', 'Rig the boat', 'Leave the dock'];
+  assert.deepEqual(placementPreview({ prerequisites: [], unmet: [] }), {
+    column: 'upNext', body: 'No prerequisites: lands in Up next.',
+  });
+  assert.deepEqual(placementPreview({ prerequisites, unmet: [] }), {
+    column: 'upNext', body: 'Prerequisites done: lands in Up next.',
+  });
+  assert.deepEqual(placementPreview({ prerequisites, unmet: prerequisites.slice(0, 1) }), {
+    column: 'locked', body: 'Read the wind isn’t done',
+  });
+  assert.deepEqual(placementPreview({ prerequisites, unmet: prerequisites.slice(0, 2) }), {
+    column: 'locked', body: 'Read the wind and Tie a bowline aren’t done',
+  });
+  assert.deepEqual(placementPreview({ prerequisites, unmet: prerequisites.slice(0, 3) }), {
+    column: 'locked', body: 'Read the wind and 2 more aren’t done',
+  });
+  assert.deepEqual(placementPreview({ prerequisites, unmet: prerequisites.slice(1) }), {
+    column: 'locked', body: 'Tie a bowline and 2 more aren’t done',
+  });
+  assert.deepEqual(placementPreview({ prerequisites, unmet: prerequisites }), {
+    column: 'locked', body: 'Read the wind and 3 more aren’t done',
+  });
+  assert.deepEqual([[], ['Read the wind'], prerequisites].map(prerequisiteNames), [
+    '', 'Read the wind', 'Read the wind, Tie a bowline, Rig the boat, Leave the dock',
+  ]);
+});
+
+test('copy — the prerequisite picker labels and header', () => {
+  assert.deepEqual(PICKER, {
+    title: 'Prerequisites',
+    allSteps: 'All steps',
+    cantBe: 'Can’t be prerequisites',
+    apply: 'Apply',
+    cancel: 'Cancel',
+    selectionKept: 'Your selection is kept.',
+    clearSearch: 'Clear search',
+    startingStep: 'a starting step',
+  });
+  assert.equal(pickerFor({ step: 'Reefing basics' }), 'For Reefing basics');
+  assert.equal(pickerFor({ step: 'Reefing basics', total: 8 }), 'For Reefing basics · 8 steps');
+  assert.equal(pickerFor({ step: 'Reefing basics', total: 5000 }), 'For Reefing basics · 5,000 steps');
+  assert.equal(pickerFor({ step: ' Reefing basics ', total: 1 }), 'For Reefing basics · 1 step');
+  assert.equal(pickerFor({ step: 'Reefing basics', total: 0 }), 'For Reefing basics · 0 steps');
+  assert.equal(pickerFor({ step: '' }), null);
+  assert.equal(pickerFor({ step: ' ', total: 8 }), null);
+});
+
+test('copy — picker match counts include paging and desktop roadmap totals', () => {
+  assert.equal(matchCount({ shown: 0, count: 0, total: 8, band: 'phone' }), '0 matches');
+  assert.equal(matchCount({ shown: 1, count: 1, total: 8, band: 'phone' }), '1 match');
+  assert.equal(matchCount({ shown: 4, count: 4, total: 8, band: 'phone' }), '4 matches');
+  assert.equal(matchCount({ shown: 20, count: 64, total: 5000, band: 'phone' }), '20 of 64 matches');
+  assert.equal(matchCount({ shown: 4, count: 4, total: 5000, band: 'desktop' }), '4 matches in 5,000 steps');
+  assert.equal(matchCount({ shown: 20, count: 64, total: 5000, band: 'desktop' }), '20 of 64 matches in 5,000 steps');
+  assert.equal(matchCount({ shown: 1, count: 1, total: 1, band: 'desktop' }), '1 match in 1 step');
+  assert.equal(matchCount({ shown: 4, count: 4, band: 'desktop' }), '4 matches');
+  assert.equal(matchCount({ shown: 4, count: 4, total: 5000, band: 'tablet' }), '4 matches');
+  assert.equal(matchCount({ shown: 1000, count: 2000, total: 5000, band: 'phone' }), '1,000 of 2,000 matches');
+});
+
+test('copy — picker collision context, search and paging action', () => {
+  assert.equal(afterStep({ step: 'Read the wind' }), 'after Read the wind');
+  assert.equal(noStepsMatch({ query: ' reef ' }), 'No steps match “reef”');
+  assert.equal(showMore({ count: 20 }), 'Show 20 more');
+  assert.equal(showMore({ count: 4 }), 'Show 4 more');
+  assert.equal(showMore({ count: 1000 }), 'Show 1,000 more');
 });

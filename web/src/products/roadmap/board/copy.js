@@ -43,6 +43,30 @@ export const SYNC_STATUS = { saving: 'Saving…', saved: 'Saved', offline: 'Offl
 export const REFUSED_SYNC = { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' };
 export const ANONYMOUS_OWNER = 'Saved on this device — sign in to keep it';
 export const LAPSED_SESSION = 'Signed out — saved on this device';
+export const DELETE_CONFIRM = { cancel: 'Cancel', delete: 'Delete' };
+export const COMPOSER = {
+  title: 'New step',
+  cancel: 'Cancel',
+  name: 'Name',
+  namePlaceholder: 'Name this step',
+  nameRequired: 'Enter a name for this step.',
+  description: 'Description · optional',
+  descriptionPlaceholder: 'What does this step cover?',
+  kind: 'Kind',
+  prerequisites: 'Prerequisites',
+  none: 'None',
+  create: 'Create step',
+};
+export const PICKER = {
+  title: 'Prerequisites',
+  allSteps: 'All steps',
+  cantBe: 'Can’t be prerequisites',
+  apply: 'Apply',
+  cancel: 'Cancel',
+  selectionKept: 'Your selection is kept.',
+  clearSearch: 'Clear search',
+  startingStep: 'a starting step',
+};
 
 // Full numbers with thousands separators; `compact` abbreviates from 1,000 for the phone's segments and progress figure.
 export function formatCount(count, { compact = false } = {}) {
@@ -140,6 +164,52 @@ export function deletedStepsToast({ count }) {
 
 export function deleteStepsAction({ count }) {
   return `Delete ${stepCount(count)}`;
+}
+
+export function deleteConfirm({ step }) {
+  return `Delete ${step}?`;
+}
+
+export function completeStepAction({ step }) {
+  return `Complete ${step}`;
+}
+
+export function placementPreview({ prerequisites, unmet }) {
+  if (prerequisites.length === 0) return { column: 'upNext', body: 'No prerequisites: lands in Up next.' };
+  if (unmet.length === 0) return { column: 'upNext', body: 'Prerequisites done: lands in Up next.' };
+  if (unmet.length === 1) return { column: 'locked', body: notDone({ step: unmet[0] }) };
+  if (unmet.length === 2) return { column: 'locked', body: `${unmet[0]} and ${unmet[1]} aren’t done` };
+  return { column: 'locked', body: `${unmet[0]} and ${formatCount(unmet.length - 1)} more aren’t done` };
+}
+
+export function prerequisiteNames(labels) {
+  return labels.join(', ');
+}
+
+export function pickerFor({ step, total }) {
+  const name = step.trim();
+  if (!name) return null;
+  if (total == null) return `For ${name}`;
+  return `For ${name} · ${stepCount(total)}`;
+}
+
+export function matchCount({ shown, count, total, band }) {
+  const matches = `${formatCount(count)} ${count === 1 ? 'match' : 'matches'}`;
+  const paged = shown < count ? `${formatCount(shown)} of ${matches}` : matches;
+  if (band === 'desktop' && total != null) return `${paged} in ${stepCount(total)}`;
+  return paged;
+}
+
+export function afterStep({ step }) {
+  return `after ${step}`;
+}
+
+export function noStepsMatch({ query }) {
+  return `No steps match “${query.trim()}”`;
+}
+
+export function showMore({ count }) {
+  return `Show ${formatCount(count)} more`;
 }
 
 export function checkedToast({ item }) {
