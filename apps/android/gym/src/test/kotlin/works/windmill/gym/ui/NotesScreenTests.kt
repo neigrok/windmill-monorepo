@@ -1,6 +1,13 @@
 package works.windmill.gym.ui
 
 import android.os.Looper
+import java.io.IOException
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
+import works.windmill.sync.schema.SyncSchema
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
@@ -44,6 +51,8 @@ import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.Withheld
+import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
@@ -220,7 +229,7 @@ class NotesScreenTests {
                 assertEquals(emptyList<String>(), store.held.withheld.map { it.subjectId })
                 assertEquals(emptyList<String>(), room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
-                assertNull(works.windmill.gym.store.Withheld.line(store.held.withheld))
+                assertNull(Withheld.line(store.held.withheld))
             }
         } } finally { scope.cancel() }
     }
@@ -458,6 +467,74 @@ class NotesScreenTests {
         } } finally { scope.cancel() }
     }
     @Test
+    fun aFastVerticalSwipeOnTheHandleScrollsWithoutReordering() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telemetry = Recorder()
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            signedIn(room, *numbered(10))
+            compose.setContent { GymMaterial { Box(Modifier.height(500.dp)) {
+                remember(room.store) { NotesBinding(room.store) }.let { notes ->
+                    NotesScreen(notes, notes, true, "Coach", {}, { _, _ -> }, {}, {})
+                }
+            } } }
+            val row = compose.onNodeWithText("note 0").assertIsDisplayed()
+            val top = row.fetchSemanticsNode().boundsInRoot.top
+            val before = room.training.notes()
+            compose.runOnIdle { telemetry.events.clear() }
+            compose.onNodeWithContentDescription("Reorder note 0").performTouchInput {
+                down(center)
+                repeat(5) { moveBy(Offset(0f, -12f), delayMillis = 20) }
+                advanceEventTime(200)
+                up()
+            }
+            assertTrue(row.fetchSemanticsNode().boundsInRoot.top < top)
+            compose.runOnIdle {
+                assertEquals(before, room.training.notes())
+                assertEquals(before, room.store.notes.all)
+                assertEquals(emptyList<Json>(), room.outbox())
+                assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
+                assertEquals(emptyList<String>(), telemetry.failures)
+            }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun aFailedNotebookReadShowsRetryAndRecoveryDrawsTheNotes() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telemetry = Recorder()
+        var failing = false
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry,
+            createEngine = { snapshot, clock ->
+                Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock {
+                    override fun now(): Long {
+                        if (failing) throw IOException("read unavailable")
+                        return clock.now()
+                    }
+                })
+            }).use { room ->
+            signedIn(room, "note_000" to NoteWrite("note 0", "line 0"))
+            failing = true
+            compose.setContent { GymMaterial {
+                remember(room.store) { NotesBinding(room.store) }.let { notes ->
+                    NotesScreen(notes, notes, true, "Coach", {}, { _, _ -> }, {}, {})
+                }
+            } }
+            compose.onNodeWithText("Notes unavailable").assertIsDisplayed()
+            compose.onNodeWithText("the log didn’t answer — Your notes could not be read.").assertIsDisplayed()
+            compose.onNodeWithText("note 0").assertDoesNotExist()
+            compose.runOnIdle {
+                assertEquals(listOf("gym.readNotes"), telemetry.failures)
+                failing = false
+            }
+            compose.onNodeWithText("Try again").performClick()
+            compose.onNodeWithText("note 0").assertIsDisplayed()
+            compose.onNodeWithText("line 0").assertIsDisplayed()
+            compose.onNodeWithText("Notes unavailable").assertDoesNotExist()
+            compose.runOnIdle { assertEquals(listOf("gym.readNotes"), telemetry.failures) }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
     fun aHandleSwipeAndCancelledReorderDoNotDeleteOrSaveAnOrder() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val telemetry = Recorder()
@@ -564,10 +641,10 @@ class NotesScreenTests {
             runBlocking {
                 assertTrue(room.store.notes.saveNote("note_001", NoteWrite("Private title", "Private body")) is GymResult.Ok)
                 val refused = room.store.notes.saveNote("note_001", NoteWrite("x".repeat(61), "Private refused body"))
-                assertTrue(refused is GymResult.Failed && refused.why is works.windmill.gym.store.WriteFailure.Refused)
+                assertTrue(refused is GymResult.Failed && refused.why is WriteFailure.Refused)
                 room.engine.failNextCommit()
                 val failed = room.store.notes.saveNote("note_001", NoteWrite("Private replacement", "Private failed body"))
-                assertTrue(failed is GymResult.Failed && failed.why !is works.windmill.gym.store.WriteFailure.Refused)
+                assertTrue(failed is GymResult.Failed && failed.why !is WriteFailure.Refused)
                 assertEquals(listOf("gym.saveNote"), telemetry.failures)
                 assertEquals(listOf(
                     "gym_action" to mapOf("screen" to "note_editor", "action" to "save", "outcome" to "ok"),
