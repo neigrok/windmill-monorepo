@@ -48,6 +48,9 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
 - Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- Release builds use R8 and resource shrinking; debug stays unminified. `:app:verifyReleaseMapping`
+  gates release assembly on the R8 mapping, listed throwable names and bundled library rules.
+  Each release APK carries a deterministic ProGuard UUID in `assets/sentry-debug-meta.properties`.
 - The app's lint reads `:platform`, `:gym` and `:sync-engine` with it, so an unused resource in any
   of them fails the build.
 - Sync foundation checks read the shared registries and corpora directly; the schema generator and
@@ -299,15 +302,57 @@ app observations belong in the task report, rather than a lasting evidence file.
 
 [Android CI](../../.github/workflows/android.yml) builds/tests relevant main pushes and pull
 requests. An `android-v*` tag or versioned dispatch also produces unpublished signing inputs:
-a non-debuggable APK, SHA-256 and source/run provenance. The temporary signature is not the
+a non-debuggable, minified APK, SHA-256, R8 mapping and schema 3 source/run provenance. The temporary signature is not the
 release identity. CI has read-only repository permissions and no private signing key.
 `versionCode` is the workflow run number and must exceed every previously published version code.
 
 Release signing is local. The retained encrypted PKCS12 key and password are held separately;
 `release-signing.json` pins the public certificate. `tools/release.py finalize` checks independently
 verified commit/ref/version/workflow/run identities, receives the password through stdin, verifies
-the input, signs and checks the certificate and unchanged application contents. Its APK, digest
+the input, signs and checks the certificate and unchanged application contents. Pass
+`--mapping signing-input/windmill-<version>-mapping.txt` alongside `--candidate`, `--provenance`
+and the independently verified `--expected-*` arguments. The mapping filename and digest must
+match provenance before the helper reads the password. The final output retains the mapping and
+its digest, and `apk.proguardUuid` binds the Sentry identifier to the inspected APK. Its APK, digest
 and provenance remain unpublished until native acceptance and a same-key update check pass.
+
+After finalization and before acceptance, the release agent uploads only the finalized mapping
+whose SHA-256 matches `mapping.sha256` in the finalized provenance. With the Android project
+selected through local `SENTRY_ORG` and `SENTRY_PROJECT` and a locally available Sentry token, run:
+
+```sh
+sentry-cli upload-proguard --uuid <apk.proguardUuid> <final-output>/windmill-<version>-mapping.txt
+```
+
+Check the installed CLI command first with `sentry-cli upload-proguard --help`. Sentry CLI
+[supports the UUID override](https://github.com/getsentry/sentry-cli/blob/master/src/commands/proguard/upload.rs);
+newer versions mark it deprecated. Confirm that the Android project’s Debug Files page lists the
+exact UUID. If no local token is available, record the upload and Debug Files check as pending in
+that release’s notes. The mapping goes only to Sentry; never attach it to a GitHub release. CI has
+no Sentry upload token, and builds and the release helper perform no mapping upload. Do not force
+a production Issue: the release Robolectric envelope test and Debug Files listing provide proof.
+
+Minified acceptance runs after review on a freshly wiped `Release_API34` Google APIs emulator,
+using the retained-key candidate with a version code above 277:
+
+1. Check non-debuggable badging with `aapt2`, the asset UUID against provenance, and record APK
+   sizes before and after minification in the release notes.
+2. Install published 0.14.0/code 277. Signed out, create a finished two-set workout, an open
+   workout with a logged set, a bodyweight routine with negative per-set loads, a note and a
+   weigh-in. Update with `adb install -r`; preserve all data and finish the open workout. Check
+   the AOSP keyboard’s minus key for uniform and per-set loads.
+3. Check that `adb logcat -b crash` stays empty and logcat contains no `SerializationException`,
+   `ClassNotFoundException`, `NoSuchMethodError`, `NoSuchFieldException`,
+   `Resources$NotFoundException`, `Crash reporting unavailable` or `Error delivery unavailable`.
+4. Exercise process death with HOME followed by `adb shell am kill works.windmill.app`. Restore
+   a routine draft with Vary by set open, logger Assembly/Picker/Fix sheets, a pushed navigation
+   frame, session detail and Finish sheet.
+5. In airplane mode, log a set, force-stop, restart offline and finish offline.
+6. Request sign-in and reach the check-email state using the owner-designated address. If the
+   owner signs in, verify session restoration after force-stop, sync pull, a streaming Coach
+   answer and sign-out. Record any signed-in checks not run.
+7. Independently verify that a clean install opens empty Routines. On an emulator with TalkBack,
+   also verify heading navigation reaches Movements, History and Performed.
 
 The published [0.14.0/code277 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0)
 uses tag `android-v0.14.0` at `3b136a3dc6d0bb9092e4b5e48581435a8b2d2354`,

@@ -150,6 +150,14 @@ def inspect_apk(apk, build_tools):
         raise ValueError('APK must have one verified signer and a v2 signature.')
     with zipfile.ZipFile(apk) as archive:
         has_v1 = bool(v1_metadata(archive))
+        if archive.namelist().count('assets/sentry-debug-meta.properties') != 1:
+            raise ValueError('APK must contain exactly one Sentry debug metadata asset.')
+        metadata = archive.read('assets/sentry-debug-meta.properties').decode('utf-8')
+        match = re.fullmatch(
+            r'io\.sentry\.ProguardUuids=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\r?\n)?', metadata)
+        if not match:
+            raise ValueError('APK must contain exactly one canonical lowercase ProGuard UUID.')
+        proguard_uuid = match[1]
     if has_v1:
         legacy = command([build_tools / 'apksigner', 'verify', '--min-sdk-version', '23',
                           '--max-sdk-version', '23', '--verbose', '--print-certs', apk])
@@ -165,7 +173,7 @@ def inspect_apk(apk, build_tools):
     return {'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
             'certificateSha256': certs[0].lower(), 'package': package,
             'debuggable': 'application-debuggable' in badging.splitlines(),
-            'versionCode': int(code), 'versionName': version,
+            'versionCode': int(code), 'versionName': version, 'proguardUuid': proguard_uuid,
             'payloadSha256': payload_digest(apk, has_v1)}
 
 
@@ -176,7 +184,7 @@ def verified_facts(facts, release):
         raise ValueError('APK versionCode must equal this run number and exceed 56.')
     if facts['versionName'] != release['version']:
         raise ValueError('APK versionName does not match the requested SemVer.')
-    return {'schemaVersion': 2, 'artifactKind': 'signing-input', 'apk': facts,
+    return {'schemaVersion': 3, 'artifactKind': 'signing-input', 'apk': facts,
             'source': release['source'], 'workflow': release['workflow']}
 
 
@@ -185,7 +193,18 @@ def sidecars(target, provenance):
     target.with_suffix('.apk.provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
 
 
-def stage(env, project, commit, apk_directory, output, build_tools):
+def copy_mapping(mapping, output, version):
+    if not mapping.is_file() or mapping.is_symlink():
+        raise ValueError('Expected a regular R8 mapping file.')
+    content = mapping.read_bytes()
+    if b'# compiler: R8' not in content.splitlines():
+        raise ValueError('Mapping must carry the R8 compiler header.')
+    target = output / f'windmill-{version}-mapping.txt'
+    target.write_bytes(content)
+    return {'fileName': target.name, 'sha256': hashlib.sha256(content).hexdigest()}
+
+
+def stage(env, project, commit, apk_directory, output, build_tools, mapping):
     prepare(env, project, commit)
     release = request(env, commit)
     apks = list(apk_directory.glob('*.apk'))
@@ -197,19 +216,21 @@ def stage(env, project, commit, apk_directory, output, build_tools):
         shutil.copyfile(apks[0], target)
         facts = inspect_apk(target, build_tools)
         facts['fileName'] = target.name
-        sidecars(target, verified_facts(facts, release))
+        provenance = verified_facts(facts, release)
+        provenance['mapping'] = copy_mapping(mapping, output, release['version'])
+        sidecars(target, provenance)
     except BaseException:
         shutil.rmtree(output)
         raise
 
 
-def finalize(project, release, candidate, provenance_file, keystore, output, build_tools, password_input):
+def finalize(project, release, candidate, provenance_file, keystore, output, build_tools, password_input, mapping):
     expected_certificate = certificate(project / 'release-signing.json')
     if candidate.is_symlink() or provenance_file.is_symlink() or not candidate.is_file():
         raise ValueError('Expected regular downloaded signing inputs.')
     provenance_bytes = provenance_file.read_bytes()
     provenance = json.loads(provenance_bytes, object_pairs_hook=unique_object)
-    if not isinstance(provenance, dict) or set(provenance) != {'schemaVersion', 'artifactKind', 'apk', 'source', 'workflow'}:
+    if not isinstance(provenance, dict) or set(provenance) != {'schemaVersion', 'artifactKind', 'apk', 'source', 'workflow', 'mapping'}:
         raise ValueError('Unsupported input provenance shape.')
     output.mkdir()
     target = output / f'windmill-{release["version"]}.apk'
@@ -220,6 +241,9 @@ def finalize(project, release, candidate, provenance_file, keystore, output, bui
         original = inspect_apk(snapshot, build_tools)
         original['fileName'] = f'windmill-{release["version"]}-signing-input.apk'
         expected = verified_facts(original, release)
+        expected['mapping'] = copy_mapping(mapping, output, release['version'])
+        if mapping.name != expected['mapping']['fileName']:
+            raise ValueError('Mapping filename does not match the release.')
         if candidate.name != original['fileName'] or json.dumps(provenance, sort_keys=True) != json.dumps(expected, sort_keys=True):
             raise ValueError('Signing input and provenance do not match the independently verified run.')
         password = bytearray(password_input.read(4097))
@@ -242,6 +266,7 @@ def finalize(project, release, candidate, provenance_file, keystore, output, bui
         if final['payloadSha256'] != original['payloadSha256']:
             raise ValueError('Signing changed application payload entries.')
         result['artifactKind'] = 'signed-release'
+        result['mapping'] = expected['mapping']
         result['input'] = {'apkSha256': original['sha256'],
                            'provenanceSha256': hashlib.sha256(provenance_bytes).hexdigest(),
                            'certificateSha256': original['certificateSha256'],
@@ -261,11 +286,12 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('prepare')
     check = commands.add_parser('stage')
+    check.add_argument('--mapping', type=Path, required=True)
     check.add_argument('--apk-dir', type=Path, required=True)
     check.add_argument('--out', type=Path, required=True)
     check.add_argument('--build-tools', type=Path, required=True)
     local = commands.add_parser('finalize')
-    for name in ('candidate', 'provenance', 'keystore', 'out', 'build-tools'):
+    for name in ('candidate', 'provenance', 'keystore', 'out', 'build-tools', 'mapping'):
         local.add_argument('--' + name, type=Path, required=True)
     for name in ('commit', 'workflow-commit', 'ref', 'version', 'run-id', 'run-number', 'run-attempt'):
         local.add_argument('--expected-' + name, required=True)
@@ -285,7 +311,7 @@ def main():
             if release['version'] != semver(args.expected_version):
                 raise ValueError('Observed version and tag differ.')
             finalize(project, release, args.candidate, args.provenance, args.keystore,
-                     args.out, args.build_tools, sys.stdin.buffer)
+                     args.out, args.build_tools, sys.stdin.buffer, args.mapping)
             print('Local signature, unchanged application payload, digest and linked provenance verified; not published.')
         else:
             commit = command(['git', '-C', project, 'rev-parse', 'HEAD']).strip()
@@ -295,7 +321,7 @@ def main():
                     output.write(f'version={version}\n')
                 print('Unpublished signing-input version and workflow identity validated.')
             else:
-                stage(os.environ, project, commit, args.apk_dir, args.out, args.build_tools)
+                stage(os.environ, project, commit, args.apk_dir, args.out, args.build_tools, args.mapping)
                 print('Unpublished signing input verified; its transient signer is not the release identity.')
     except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile, subprocess.SubprocessError, KeyboardInterrupt):
         print('Signing input or local finalization refused; private tool output is withheld.', file=sys.stderr)
