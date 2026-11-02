@@ -9,10 +9,18 @@ register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { ControlBar } = await import('../../../../src/products/roadmap/ui/ControlBar.jsx');
+const { NewStep } = await import('../../../../src/products/roadmap/board/BoardControls.jsx');
 
 test('ControlBar — Share is offered only with a roadmap to share: no handler, no button', () => {
   const shares = (props) => renderToStaticMarkup(React.createElement(ControlBar, { board: true, ...props })).match(/aria-label="Share roadmap"/g)?.length ?? 0;
   assert.deepEqual([shares({ onShare: () => {} }), shares({})], [1, 0]);
+});
+
+test('ControlBar — New step requires both the Board and its creation callback', () => {
+  const render = (props) => renderToStaticMarkup(React.createElement(ControlBar, props));
+  const action = renderToStaticMarkup(React.createElement(NewStep, { onClick: () => {} }));
+  assert.equal(render({ onNewStep: () => {} }), render({}));
+  assert.equal(render({ board: true, onNewStep: () => {} }), render({ board: true }).replace('<div class="st-controls">', `<div class="st-controls">${action}`));
 });
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -30,7 +38,7 @@ const Watched = window.ResizeObserver;
 window.observers = 0;
 window.ResizeObserver = class extends Watched { constructor(callback) { super(callback); window.observers += 1; } };
 
-window.openBar = (measured) => {
+window.openBar = (measured, canCreate = false) => {
   window.bottoms = [];
   function Room() {
     const [withSwitch, setWithSwitch] = useState(true);
@@ -41,6 +49,7 @@ window.openBar = (measured) => {
         board: true,
         viewSwitch: withSwitch ? React.createElement(ViewSwitch, { view: 'board', onSwitch: () => {} }) : null,
         onShare: () => {},
+        onNewStep: canCreate ? () => { window.created = (window.created ?? 0) + 1; } : undefined,
         onBottom: measured ? (bottom) => window.bottoms.push(bottom) : undefined,
       }));
   }
@@ -108,6 +117,44 @@ test('Chromium: without onBottom ControlBar measures nothing', async () => {
   try {
     assert.deepEqual([await page.evaluate(() => window.observers), await page.evaluate(() => window.bottoms)], [0, []]);
     assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: the Board creation verb is after Share and calls the provided door once', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`${origin}/control-bar-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openBar(false, true));
+    const button = page.getByRole('button', { name: 'New step', exact: true });
+    await button.click();
+    assert.deepEqual(await page.evaluate(() => ({
+      created: window.created,
+      actions: [...document.querySelector('.st-controls').querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
+      height: document.querySelector('.st-board-new-step').getBoundingClientRect().height,
+    })), { created: 1, actions: ['Share roadmap', 'New step'], height: 44 });
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: the tablet creation verb keeps its name in the compact icon variant', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 800, height: 1000 } });
+  try {
+    await page.goto(`${origin}/control-bar-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openBar(false, true));
+    const button = page.getByRole('button', { name: 'New step', exact: true });
+    await button.waitFor();
+    assert.deepEqual(await button.evaluate((element) => ({
+      width: element.getBoundingClientRect().width,
+      height: element.getBoundingClientRect().height,
+      labelDisplay: getComputedStyle(element.querySelector('span')).display,
+    })), { width: 44, height: 44, labelDisplay: 'none' });
   } finally {
     await page.close();
   }

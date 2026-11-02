@@ -3,6 +3,29 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { register } from 'node:module';
+
+register('../../../jsxLoader.mjs', import.meta.url);
+const React = (await import('react')).default;
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { NewStep, PhoneTools } = await import('../../../../src/products/roadmap/board/BoardControls.jsx');
+const { BoardQuery } = await import('../../../../src/products/roadmap/board/Board.js');
+
+test('NewStep — primary, secondary and compact share one named creation button', () => {
+  const button = (props) => renderToStaticMarkup(React.createElement(NewStep, props)).replace(/<svg[^>]*>.*?<\/svg>/g, '<svg/>');
+  assert.deepEqual([button({ variant: 'primary' }), button({ variant: 'secondary' }), button({ compact: true })], [
+    '<button type="button" class="st-board-new-step st-board-new-step--primary" aria-label="New step"><svg/><span>New step</span></button>',
+    '<button type="button" class="st-board-new-step st-board-new-step--secondary" aria-label="New step"><svg/><span>New step</span></button>',
+    '<button type="button" class="st-board-new-step st-board-new-step--secondary st-board-new-step--compact" aria-label="New step"><svg/></button>',
+  ]);
+});
+
+test('PhoneTools — its New step door exists only with a callback', () => {
+  const props = { worn: [], query: new BoardQuery(), onQuery: () => {} };
+  const plain = renderToStaticMarkup(React.createElement(PhoneTools, props));
+  const create = renderToStaticMarkup(React.createElement(NewStep, { compact: true }));
+  assert.equal(renderToStaticMarkup(React.createElement(PhoneTools, { ...props, onNewStep: () => {} })), `${plain.slice(0, -6)}${create}</div>`);
+});
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -14,6 +37,7 @@ import BoardView, { coverBeneath } from '/src/products/roadmap/board/BoardView.j
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { boardKey } from '/src/products/roadmap/shortcuts/shortcutMap.js';
+import { PhoneTools } from '/src/products/roadmap/board/BoardControls.jsx';
 
 const legend = [
   { id: 'build', hue: 'terracotta', label: 'Build' },
@@ -56,6 +80,14 @@ window.openBoard = (nodes, completed, breakpoint) => {
       edge('After the Board', 'bottom'));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.openTools = (canCreate) => {
+  function Tools() {
+    const [query, setQuery] = useState(() => new BoardQuery());
+    return React.createElement(PhoneTools, { worn: [], query, onQuery: setQuery,
+      onNewStep: canCreate ? () => { window.created = (window.created ?? 0) + 1; } : undefined });
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Tools));
 };
 window.entryReady = true;
 `;
@@ -373,6 +405,29 @@ test('Chromium: All also drops a kind no swatch offers, so it cannot come back o
     await page.getByRole('button', { name: 'All' }).click();
     assert.deepEqual([await page.evaluate(() => window.askedKinds), await events(page)], [[], []]);
     assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: the phone creation door is a named 44px ghost button and dispatches once', async () => {
+  await ready;
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.goto(`${origin}/board-controls-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(() => openTools(true));
+    const button = page.getByRole('button', { name: 'New step', exact: true });
+    await button.waitFor();
+    assert.deepEqual(await button.evaluate((element) => ({
+      width: element.getBoundingClientRect().width,
+      height: element.getBoundingClientRect().height,
+      border: getComputedStyle(element).borderWidth,
+      background: getComputedStyle(element).backgroundColor,
+      text: element.textContent,
+    })), { width: 44, height: 44, border: '0px', background: 'rgba(0, 0, 0, 0)', text: '' });
+    await button.click();
+    assert.equal(await page.evaluate(() => window.created), 1);
   } finally {
     await page.close();
   }

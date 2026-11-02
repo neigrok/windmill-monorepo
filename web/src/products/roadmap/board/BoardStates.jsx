@@ -6,7 +6,8 @@ import React, { createContext } from 'react';
 import './states.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
-import { COLUMN_TITLES, EMPTY_ROADMAP, LABELS, LOAD_ERROR, roadmapComplete } from './copy.js';
+import { NewStep } from './BoardControls.jsx';
+import { COLUMN_TITLES, EMPTY_ROADMAP, LOAD_ERROR, roadmapComplete } from './copy.js';
 
 const COLUMNS = ['locked', 'upNext', 'done'];
 const SKELETON_CARDS = { locked: 3, upNext: 2, done: 3 };
@@ -122,8 +123,7 @@ export function LoadError({ phone, onRetry }) {
   );
 }
 
-// A roadmap with no steps: no filter, no band, and New step as the one primary. Only the desktop editor can plant a
-// first step, so only it draws this frame.
+// A roadmap with no steps offers its owner New step as the one primary.
 export function EmptyRoadmap({ onNewStep }) {
   return (
     <div className="st-board-state st-board-state--empty">
@@ -131,7 +131,7 @@ export function EmptyRoadmap({ onNewStep }) {
         <h2 className="st-board-state-title">{EMPTY_ROADMAP.title}</h2>
         <p className="st-board-state-body">{EMPTY_ROADMAP.body}</p>
       </div>
-      {onNewStep && <NewStepButton onClick={acting('empty', 'newStep', onNewStep)} />}
+      {onNewStep && <NewStep variant="primary" onClick={acting('empty', 'newStep', onNewStep)} />}
     </div>
   );
 }
@@ -149,22 +149,10 @@ export function RoadmapComplete({ phone, total, onShare, onNewStep }) {
       {(share || newStep) && (
         <div className="st-board-complete-actions">
           {share && <Button variant="secondary" onClick={share}>{copy.share}</Button>}
-          {newStep && <NewStepButton onClick={newStep} />}
+          {newStep && <NewStep variant="primary" onClick={newStep} />}
         </div>
       )}
     </div>
-  );
-}
-
-function NewStepButton({ onClick }) {
-  return (
-    <button type="button" className="st-board-new-step" onClick={onClick}>
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.66667" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M4.16667 10H15.8333" />
-        <path d="M10 4.16667V15.8333" />
-      </svg>
-      {LABELS.newStep}
-    </button>
   );
 }
 
