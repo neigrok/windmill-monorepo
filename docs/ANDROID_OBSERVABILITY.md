@@ -81,7 +81,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.coachOnboarding` | gym, app | Signed-out Coach transport, request storage, recovery, photo preparation or routine import fails |
 | `gym.coachRoutineConfirm` | gym | Confirming a Coach routine fails |
 | `gym.connect` | gym | Connecting the training store to the account fails |
-| `gym.copyMessage` | gym | Copying a Coach message to the clipboard fails |
+| `gym.copyMessage` | gym | Copying a Coach message or its link to the clipboard fails |
 | `gym.create` | gym | Creating a movement fails |
 | `gym.deleteNote` | gym | Deleting a note fails |
 | `gym.deleteSet` | gym | Deleting a set fails |
@@ -107,6 +107,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.notification.post` | gym | Posting the workout notification fails |
 | `gym.notification.receive` | gym | Handling a notification action fails |
 | `gym.openConnections` | gym | Opening the Connected log page fails |
+| `gym.openLink` | gym | Opening a Coach answer's link fails unexpectedly; a missing browser sends only `open_link` / `unavailable`, never an Issue |
 | `gym.prepareAdoption` | gym | Preparing an anonymous workout fails and retains that item locally for retry; an outer preparation failure retains the anonymous replica without blocking sign-in |
 | `gym.preparePhoto` | gym | Preparing a signed-in Coach photo fails |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
@@ -258,10 +259,12 @@ foot turns to Retry.
 | `coach` | `choose` | `ok` | |
 | `coach` | `continue_draft` | `ok` | |
 | `coach` | `copy` | `ok`, `failed` | |
+| `coach` | `copy_link` | `ok`, `failed` | |
 | `coach` | `draft_restored` | `ok` | |
 | `coach` | `fresh_entry` | `ok` | |
 | `coach` | `history_open` | `ok` | |
 | `coach` | `jump_latest` | `ok` | |
+| `coach` | `open_link` | `ok`, `unavailable`, `failed` | |
 | `coach` | `read_sources` | `ok` | |
 | `coach` | `reply_open` | `ok` | |
 | `finish` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |

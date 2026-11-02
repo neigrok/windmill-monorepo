@@ -38,7 +38,11 @@ object GymActions : EventSchema {
             "calendar_open" to setOf("ok"), "calendar_confirm" to setOf("ok"), "calendar_cancel" to setOf("ok"),
         ),
         "coach" to listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "choose", "continue_draft", "jump_latest")
-            .associateWith { setOf("ok") } + mapOf("copy" to setOf("ok", "failed"), "access" to setOf("available", "bound", "unavailable")),
+            .associateWith { setOf("ok") } + mapOf(
+                "copy" to setOf("ok", "failed"), "copy_link" to setOf("ok", "failed"),
+                "open_link" to setOf("ok", "unavailable", "failed"),
+                "access" to setOf("available", "bound", "unavailable"),
+            ),
         "threads" to mapOf("delete" to setOf("ok", "refused", "failed", "cancelled")),
         "notification" to mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused")),
         "workout_bar" to mapOf("open" to setOf("ok", "refused")),
