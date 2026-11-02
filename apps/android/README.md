@@ -210,8 +210,10 @@ endpoint. Signed-in archives remain retained and become visible only to that sam
 account and anonymous archives are never silently copied or merged. Read-only receipts use What Coach
 read; replies containing proposals, writes, routine drafts/results or unknown tools retain their
 existing receipt/control presentation and wording. Ordinary messages use native chat bubbles and
-Nunito typography; a long press opens the message's Copy action. Markdown tables keep structured
-cells and plain-text copy. The reveal stays mounted from the empty pending message through its
+Nunito typography; a long press opens the message's Copy action. Finished http(s) links open in a
+Custom Tab, and Copy answer keeps their URLs. Long press also offers Copy link when the full answer
+has exactly one distinct link. Markdown tables keep structured cells and tab-joined copy.
+The reveal stays mounted from the empty pending message through its
 terminal answer; Stop exposes all received text. Material3 decorates the existing state input, so
 selection and draft ownership remain in one place. An available anonymous installation can ask in its original local chat. Bound or unavailable
 installations retain History and drafts without an anonymous composer; submitted work can recover

@@ -1,6 +1,32 @@
 package works.windmill.gym.coach
 
-data class CoachSpan(val text: String, val bold: Boolean = false, val italic: Boolean = false, val code: Boolean = false)
+import java.net.URI
+import java.net.URISyntaxException
+
+@ConsistentCopyVisibility
+data class CoachLink private constructor(val url: String) {
+    companion object {
+        fun parse(url: String): CoachLink? {
+            if (url.any { it.isWhitespace() }) return null
+            val uri = try {
+                URI(url)
+            } catch (_: URISyntaxException) {
+                return null
+            }
+            if (!uri.scheme.equals("http", ignoreCase = true) && !uri.scheme.equals("https", ignoreCase = true)) return null
+            if (uri.host.isNullOrEmpty()) return null
+            return CoachLink(url)
+        }
+    }
+}
+
+data class CoachSpan(
+    val text: String,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val code: Boolean = false,
+    val link: CoachLink? = null,
+)
 
 data class CoachTableRow(val cells: List<List<CoachSpan>>)
 
@@ -13,12 +39,28 @@ sealed interface CoachBlock {
     data object Rule : CoachBlock
 }
 
-// The subset of Markdown a coach answer carries, parsed from the text the model streams so far.
-// Pending markers at the very end of a live answer render as if closed, never as raw asterisks.
+// Coach Markdown is a subset parsed while streaming; pending end markers render as closed, never as raw asterisks.
 object CoachMarkdown {
     fun parse(text: String): List<CoachBlock> = Source.read(text).mapNotNull { it.block }
 
-    fun plain(text: String): String = Source.read(text).flatMap { it.plainLines }.joinToString("\n")
+    fun plain(text: String): String = Source.read(text).flatMap { it.lines { span -> span.text } }.joinToString("\n")
+
+    fun copied(text: String): String = Source.read(text).flatMap { source ->
+        source.lines { span ->
+            val url = span.link?.url
+            if (url == null || span.text == url) span.text else "${span.text} ($url)"
+        }
+    }.joinToString("\n")
+
+    fun links(text: String): List<CoachLink> = parse(text).flatMap { block ->
+        when (block) {
+            is CoachBlock.Paragraph -> block.spans
+            is CoachBlock.Heading -> block.spans
+            is CoachBlock.ListItem -> block.spans
+            is CoachBlock.Table -> (listOf(block.header) + block.rows).flatMap { it.cells.flatten() }
+            is CoachBlock.Code, CoachBlock.Rule -> emptyList()
+        }
+    }.mapNotNull { it.link }.distinct()
 }
 
 // What one line of the answer says on its own; the last line may still be waiting for its next token.
@@ -99,33 +141,33 @@ private object TableLine {
 // A stretch of consecutive lines that one block claims, with its rendered and its copied form.
 private sealed interface Source {
     val block: CoachBlock?
-    val plainLines: List<String>
+    fun lines(render: (CoachSpan) -> String): List<String>
 
     data class AsWritten(val line: String, override val block: CoachBlock?) : Source {
-        override val plainLines: List<String> get() = listOf(line)
+        override fun lines(render: (CoachSpan) -> String): List<String> = listOf(line)
     }
 
     data class Heading(val level: Int, val text: String) : Source {
         override val block: CoachBlock? get() = Inline(text).spans.takeIf { it.isNotEmpty() }?.let { CoachBlock.Heading(level, it) }
-        override val plainLines: List<String> get() = listOf(Inline(text).plain)
+        override fun lines(render: (CoachSpan) -> String): List<String> = listOf(Inline(text).text(render))
     }
 
     data class Paragraph(val lines: List<String>) : Source {
         private val text: String get() = lines.joinToString("\n")
         override val block: CoachBlock? get() = Inline(text).spans.takeIf { it.isNotEmpty() }?.let { CoachBlock.Paragraph(it) }
-        override val plainLines: List<String> get() = listOf(Inline(text).plain)
+        override fun lines(render: (CoachSpan) -> String): List<String> = listOf(Inline(text).text(render))
     }
 
     data class Item(val prefix: String, val ordinal: Int?, val depth: Int, val lines: List<String>) : Source {
         private val text: String get() = lines.joinToString("\n")
         override val block: CoachBlock? get() = Inline(text).spans.takeIf { it.isNotEmpty() }?.let { CoachBlock.ListItem(ordinal, depth, it) }
-        override val plainLines: List<String> get() = listOf(prefix + Inline(text).plain)
+        override fun lines(render: (CoachSpan) -> String): List<String> = listOf(prefix + Inline(text).text(render))
     }
 
     data class Table(val header: List<String>, val rows: List<List<String>>) : Source {
         override val block: CoachBlock get() = CoachBlock.Table(CoachTableRow(header.map { Inline(it).spans }),
             rows.map { CoachTableRow(it.map { cell -> Inline(cell).spans }) })
-        override val plainLines: List<String> get() = (listOf(header) + rows).map { row -> row.joinToString("\t") { Inline(it).plain } }
+        override fun lines(render: (CoachSpan) -> String): List<String> = (listOf(header) + rows).map { row -> row.joinToString("\t") { Inline(it).text(render) } }
     }
 
     data class Code(val lines: List<String>, val closed: Boolean) : Source {
@@ -135,7 +177,7 @@ private sealed interface Source {
                 return lines.dropLast(1)
             }
         override val block: CoachBlock get() = CoachBlock.Code(shown.joinToString("\n"))
-        override val plainLines: List<String> get() = lines
+        override fun lines(render: (CoachSpan) -> String): List<String> = lines
     }
 
     companion object {
@@ -199,8 +241,7 @@ private sealed interface Source {
     }
 }
 
-// The inline pass over one block's text: emphasis, code spans, escapes and links become styled spans.
-// A marker still open at the end of the block styles everything after it; a marker with nothing after it is swallowed.
+// Inline emphasis, code, escapes and links become styled spans; open markers style the tail and empty markers are swallowed.
 private class Inline(private val source: String) {
     private val out = mutableListOf<CoachSpan>()
     private val run = StringBuilder()
@@ -208,7 +249,8 @@ private class Inline(private val source: String) {
     private var italic: Char? = null
 
     val spans: List<CoachSpan>
-    val plain: String get() = spans.joinToString("") { it.text }
+
+    fun text(render: (CoachSpan) -> String): String = spans.joinToString("", transform = render)
 
     init {
         var at = 0
@@ -252,15 +294,31 @@ private class Inline(private val source: String) {
             run.append('[')
             return at + 1
         }
-        val end = source.indexOf(')', close + 2)
+        var end = close + 2
+        var depth = 1
+        while (end < source.length) {
+            when (source[end]) {
+                '(' -> depth++
+                ')' -> depth--
+            }
+            if (depth == 0) break
+            end++
+        }
+        val finished = depth == 0
         val text = source.substring(at + 1, close)
-        val url = source.substring(close + 2, if (end < 0) source.length else end)
+        val url = source.substring(close + 2, end)
         if ('\n' in text || url.any { it.isWhitespace() }) {
             run.append('[')
             return at + 1
         }
-        run.append(text)
-        return if (end < 0) source.length else end + 1
+        val link = if (finished) CoachLink.parse(url) else null
+        if (link == null) {
+            run.append(text)
+        } else {
+            flush()
+            emit(CoachSpan(text, bold != null, italic != null, link = link))
+        }
+        return if (finished) end + 1 else source.length
     }
 
     private fun emphasis(at: Int, c: Char): Int {
@@ -300,7 +358,7 @@ private class Inline(private val source: String) {
     private fun emit(span: CoachSpan) {
         if (span.text.isEmpty()) return
         val last = out.lastOrNull()
-        if (last != null && last.bold == span.bold && last.italic == span.italic && last.code == span.code) {
+        if (last != null && last.copy(text = span.text) == span) {
             out[out.lastIndex] = last.copy(text = last.text + span.text)
             return
         }
