@@ -3,6 +3,7 @@
 export const STATE_WORDS = { locked: 'locked', upNext: 'up next', done: 'done' };
 export const COLUMN_TITLES = { locked: 'Locked', upNext: 'Up next', done: 'Done' };
 export const SORT_LABELS = { roadmap: 'Roadmap order', newest: 'Created · newest', oldest: 'Created · oldest' };
+export const SHORTCUTS_TITLE = 'Keyboard shortcuts · Board';
 export const SORT_MENU = {
   title: 'Sort',
   created: 'Created',

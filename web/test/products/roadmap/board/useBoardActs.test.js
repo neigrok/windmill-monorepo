@@ -24,6 +24,7 @@ function fixture(overrides = {}) {
     setQuery: (query) => calls.push(['query', query]), onReveal: (id) => calls.push(['reveal', id]),
     onQuiet: () => calls.push(['quiet']), onHeld: (held) => { c.held = held; },
     track: (name, props) => calls.push(['event', name, props]),
+    emit: () => {},
     errors: [], report: (op, error) => { calls.push(['report', op]); c.errors.push(error); },
     ...overrides,
   };
@@ -253,7 +254,7 @@ test('recolor dispatches once with truthful capture, preserves the query and Und
   const { acts, c, calls, receipt } = fixture();
   const dispatch = c.session.dispatch;
   c.session.dispatch = (gesture, capture) => { options.push(capture); return dispatch(gesture); };
-  assert.deepEqual(acts.recolor(['wind', 'dock'], 'gold'), { ok: true });
+  assert.deepEqual(acts.recolor(['wind', 'dock'], 'gold'), { ok: true, changed: true });
   assert.equal(c.toast.message, '2 steps recolored');
   assert.equal(c.toast.holdMs, 6000);
   assert.deepEqual(options, [{ captureFailures: true }]);
@@ -267,8 +268,8 @@ test('recolor dispatches once with truthful capture, preserves the query and Und
 
 test('recolor choosing the shared kind and empty selections are no-ops without toast or events', () => {
   const { acts, c, calls } = fixture();
-  assert.deepEqual(acts.recolor(['wind', 'dock'], 'blue'), { ok: true });
-  assert.deepEqual(acts.recolor([], 'gold'), { ok: true });
+  assert.deepEqual(acts.recolor(['wind', 'dock'], 'blue'), { ok: true, changed: false });
+  assert.deepEqual(acts.recolor([], 'gold'), { ok: true, changed: false });
   assert.deepEqual(calls, []);
   assert.equal(c.toast, undefined);
 });
@@ -281,7 +282,6 @@ test('bulk and key deletion use one held entity and reject the sole root', () =>
   ] });
   const { acts, c, calls } = fixture({ tree });
   assert.equal(acts.delete(['root'], 'key'), false);
-  assert.equal(acts.deletable(tree, ['root']), false);
   assert.equal(acts.delete(['wind', 'dock'], 'bulk'), true);
   assert.deepEqual(c.held.ids, ['wind', 'dock']);
   assert.equal(c.toast.message, '2 steps deleted');
@@ -403,7 +403,7 @@ test('an unchanged edit succeeds without a session and reports nothing', () => {
 
 test('an expired recolor receipt emits no Undo event and never changes the query', () => {
   const { acts, c, calls } = fixture({ session: { dispatch: () => ({}), revert: () => false } });
-  assert.deepEqual(acts.recolor(['dock'], 'gold'), { ok: true });
+  assert.deepEqual(acts.recolor(['dock'], 'gold'), { ok: true, changed: true });
   calls.length = 0;
   c.toast.action.run();
   assert.deepEqual(calls, [['quiet']]);
@@ -443,4 +443,19 @@ test('edit compares against the held projection and does not write a parent remo
   assert.deepEqual(calls, []);
   assert.equal(c.toast, toast);
   assert.deepEqual(c.held.ids, ['wind']);
+});
+
+test('invalid edit prerequisites refuse before quiet, dispatch, activity or an expected-case Issue', () => {
+  const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+    { id: 'wind', label: 'Wind', prerequisites: [] },
+    { id: 'dock', label: 'Dock', prerequisites: ['wind'] },
+    { id: 'solo', label: 'Solo', prerequisites: ['dock'] },
+  ] });
+  const { acts, c, calls } = fixture({ tree, emit: () => assert.fail('refused edits have no activity') });
+  for (const id of ['missing', 'wind', 'dock', 'solo']) {
+    assert.deepEqual(acts.edit({ id: 'wind', label: 'Wind', description: '', color: 'sky', prerequisites: [id] }), { ok: false });
+  }
+  assert.deepEqual(calls, []);
+  assert.deepEqual(c.errors, []);
+  assert.equal(c.toast, undefined);
 });

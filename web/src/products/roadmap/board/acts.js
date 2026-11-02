@@ -11,14 +11,15 @@ export class StepSelection {
 
   get count() { return this.ids.length; }
 
-  toggle(id, board, column) {
+  toggle(id, board, column, options) {
     const ids = this.ids.includes(id) ? this.ids.filter((candidate) => candidate !== id) : [...this.ids, id];
-    return new StepSelection(ids).prune(board, column);
+    return new StepSelection(ids).prune(board, column, options);
   }
 
-  prune(board, column) {
+  prune(board, column, options) {
     const selected = new Set(this.ids);
-    const ids = (board?.[column]?.cards ?? []).filter((card) => selected.has(card.id)).map((card) => card.id);
+    const cards = options ? board?.shownCards(column, options).cards : board?.[column]?.cards;
+    const ids = (cards ?? []).filter((card) => selected.has(card.id)).map((card) => card.id);
     if (ids.length === this.ids.length && ids.every((id, index) => id === this.ids[index])) return this;
     return new StepSelection(ids);
   }
@@ -41,6 +42,8 @@ export function deletable(tree, ids) {
 export function editGesture(tree, request) {
   const step = tree.nodesById.get(request.id);
   if (!step) return null;
+  const descendants = new Set(tree.descendantsOf(request.id).map((candidate) => candidate.id));
+  if (request.prerequisites.some((id) => id === request.id || !tree.nodesById.has(id) || descendants.has(id))) return false;
   const gesture = { kind: 'EditNode', id: request.id };
   if (request.label !== step.label) gesture.label = request.label;
   if (request.description !== (step.description ?? '')) gesture.description = request.description;

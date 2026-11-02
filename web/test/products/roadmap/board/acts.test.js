@@ -131,3 +131,24 @@ test('editGesture diffs each field and prerequisite membership without treating 
   const withTwo = treeOf([wind, { id: 'rig', label: 'Rig', prerequisites: [] }, { ...dock, prerequisites: ['wind', 'rig'] }]);
   assert.equal(editGesture(withTwo, { ...request, prerequisites: ['rig', 'wind'] }), null);
 });
+
+test('editGesture refuses missing, self and transitive descendant prerequisites without mutating the tree', () => {
+  const tree = treeOf([wind, dock, { id: 'solo', label: 'Solo', prerequisites: ['dock'] }]);
+  const before = structuredClone(tree.nodes);
+  for (const id of ['missing', 'wind', 'dock', 'solo']) {
+    assert.equal(editGesture(tree, { id: 'wind', label: 'Wind', description: '', color: 'sky', prerequisites: [id] }), false);
+  }
+  assert.deepEqual(tree.nodes, before);
+});
+
+test('StepSelection prunes folded Done using the same shown-card limit as the pane', () => {
+  const nodes = Array.from({ length: 14 }, (_, index) => ({ id: `done-${index}`, label: `Done ${index}`, prerequisites: [] }));
+  const board = new Board(treeOf(nodes), {
+    completed: new Set(nodes.map(({ id }) => id)),
+    completedAt: Object.fromEntries(nodes.map(({ id }, index) => [id, index + 1])),
+  });
+  const selected = new StepSelection(['done-0', 'done-1', 'done-2', 'done-13']);
+  assert.deepEqual(selected.prune(board, 'done', { doneExpanded: false }).ids, ['done-13', 'done-2']);
+  assert.deepEqual(selected.prune(board, 'done', { doneExpanded: true }).ids, ['done-13', 'done-2', 'done-1', 'done-0']);
+  assert.deepEqual(new StepSelection(['done-13']).toggle('done-0', board, 'done', { doneExpanded: false }).ids, ['done-13']);
+});

@@ -27,7 +27,8 @@ import { BoardQuery } from './board/Board.js';
 import { FindStep } from './board/BoardControls.jsx';
 import { StepDetail } from './board/StepDetail.jsx';
 import { StepComposer } from './board/StepComposer.jsx';
-import { useBoardActs } from './board/useBoardActs.js';
+import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
+import { deletable } from './board/acts.js';
 import { useStepAddress, hashWithStep, stepIsStale } from './board/stepAddress.js';
 import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
@@ -1349,9 +1350,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const layerActive = listActive || boardActive;
   const canvasView = shownView !== 'list' && shownView !== 'board';
   const shortcutView = BOARD_OPEN && boardActive ? 'board' : 'graph';
-  useEffect(() => {
-    if (BOARD_OPEN && shortcutsOpen) track('roadmap_shortcuts_open', { view: shortcutView });
-  }, [shortcutsOpen, shortcutView]);
 
   const switchView = useCallback((next) => {
     if (BOARD_OPEN && next !== 'board') {
@@ -1683,18 +1681,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const boardStats = useMemo(() => BOARD_OPEN && boardTree ? ShareStats.from(boardTree, UnlockRules.derive(boardTree, { completed })) : null, [boardTree, completed]);
   const shownStats = boardActive ? { ...boardStats, ...(boardOverall ?? {}) } : shareStats;
   const shownDetailId = detailId !== null && boardTree?.nodesById.has(detailId) ? detailId : null;
-  const composerAllowed = BOARD_OPEN && boardActive && owner
-    && (!boardComposer?.editing || boardComposer.editing === shownDetailId);
-  const shownComposer = composerAllowed ? boardComposer : null;
+  const composerDoor = new BoardComposer({ gate: BOARD_OPEN, active: boardActive, owner, detailId: shownDetailId,
+    composer: boardComposer, acts: boardActs, onOpen: setBoardComposer });
+  const shownComposer = composerDoor.shown;
   if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
-  const editStepFromDetail = (id) => {
-    if (!BOARD_OPEN || !boardActive || !owner || id !== shownDetailId) return;
-    setBoardComposer({ door: 'detail', editing: id });
-  };
-  const saveBoardEdit = (request) => {
-    if (!composerAllowed || !shownComposer?.editing || request.id !== shownDetailId) return { ok: false };
-    return boardActs.edit(request);
-  };
   const closeBoardComposer = () => setBoardComposer(null);
   const handleComposerCrash = (error) => {
     reportBoardFailure('roadmap-board-composer', error);
@@ -1966,8 +1956,8 @@ export function SkillTreeView({ treeId, demo = false }) {
             breakpoint={breakpoint}
             roadmapTitle={tree.title}
             editable={owner}
-            deletable={boardActs.deletable(boardTree, [detailId])}
-            onEdit={BOARD_OPEN && owner ? editStepFromDetail : undefined}
+            deletable={deletable(boardTree, [detailId])}
+            onEdit={BOARD_OPEN && owner ? (id) => composerDoor.openEdit(id) : undefined}
             stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
             workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
             workspaceActions={{ onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }}
@@ -1993,7 +1983,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       {shownComposer !== null && (
         <ErrorBoundary fallback={null} onCrash={handleComposerCrash}>
           <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
-            editing={shownComposer.editing ?? null} onEdit={saveBoardEdit}
+            editing={shownComposer.editing ?? null} onEdit={(request) => composerDoor.saveEdit(request)}
             onCreate={(request) => boardActs.create(request)} onClose={closeBoardComposer} />
         </ErrorBoundary>
       )}
@@ -2412,7 +2402,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} view={shortcutView} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} view={shortcutView} trackingEnabled={BOARD_OPEN} />
 
       <ShareDialog
         key={treeId}

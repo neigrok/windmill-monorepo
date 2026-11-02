@@ -104,20 +104,25 @@ or leaving focus closes it. Crossing the threshold offers one 8ms haptic where s
 
 On an active owner phone Board, a 500ms touch hold within 10px starts pane-scoped selection.
 `HoldGesture` and `SwipeGesture` cancel each other on claim; scroll and pointer cancellation stop
-the hold, and its release never opens a step. `BoardView` owns the immutable `StepSelection`,
-separate from the Graph/List multi-select. It prunes against the current pane and filters on every
-Board change. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion
+the hold, and its release never opens a step. Holding survives unrelated renders; card callbacks
+keep their identities. `BoardView` mounts `useStepSelection`, which owns selection, history and focus
+transitions separately from the Graph/List multi-select. Its current immutable `StepSelection` reads
+the filtered pane and permanently drops choices that leave it. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion
 and the step menu.
 
 Selection replaces the phone band with `BulkBar`: count and Done, optional six named kind radios,
 then equal-width Recolor and Delete. `KindChoice follow={false}` moves focus with arrows and
-applies only on activation. Re-picking the shared kind closes the kinds without writing or toasting;
-Recolor again also keeps the selection. Back and Escape close the kinds before ending selection.
+applies only on activation. Re-picking the shared kind closes only the kinds row and keeps the
+selection, without writing, toasting or emitting an acted selection end. Recolor again also keeps
+the selection. Back and Escape close the kinds before ending selection.
 Selection owns same-URL history entries, separate from step visits. Ending selection restores its
-starting card when still shown, otherwise the pane's tab. Selection also ends on an act, an empty
+starting card only when it belongs to the filtered, displayed pane and is not leaving; otherwise
+focus returns to the pane's tab. If the pane is replaced, focus lands on its state action or loading
+stop. Losing ownership restores focus while the same Board remains active. Selection also ends on an act, an empty
 prune, leaving the Board, losing ownership or changing roadmaps. There is no keyboard entry into
 multi-select. Recolor dispatches one `BulkRecolor`; its six-second toast Undo reverts that exact
-receipt with a quiet regroup. Bulk Delete creates one held projection and releases one
+receipt with a quiet regroup. A refused recolor keeps the selection and kinds available; delayed
+apply reads the current selection. Bulk Delete creates one held projection and releases one
 `BulkDelete` after nine seconds; it asks no confirmation. Neither act clears the query.
 
 A card opens its step (`StepDetail.jsx`): from 744px a modal over the scrimmed roadmap, 760px wide and 24px in from the
@@ -170,7 +175,9 @@ the Graph ceremony and milestone offer.
 The owner's up next and done steps offer View branch, which closes the step and scopes the Board to its branch. A
 visitor gets the overview and the menu without Delete. The host opens Edit step only from an owner's
 open detail and keeps the composer mounted only while that detail still names an existing step.
-`BoardActs.edit` diffs the request against the held projection, quiets regroup before dispatching
+`BoardComposer` in `useBoardActs.js` shares the host’s open, display and save guards.
+`BoardActs.edit` refuses missing, self or descendant prerequisites, diffs valid requests against the
+held projection, and quiets regroup before dispatching
 one `EditNode`, and emits rename activity when the name changes. A clean diff writes nothing.
 The edit result carries no toast or targeted Undo.
 

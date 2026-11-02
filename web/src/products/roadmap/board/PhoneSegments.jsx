@@ -2,7 +2,7 @@
 // Filter. The branch in scope and the chips for what narrows sit over the panes; each pane keeps its scroll and its own
 // place for the arrow keys, which move between its cards, and a pane the query emptied names its way out.
 
-import React, { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './phone.css';
 import { track } from '../../../telemetry/beacon.js';
 import { ColumnCards } from './ColumnCards.jsx';
@@ -24,6 +24,13 @@ export function PhoneSegments({
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
   const tabs = useRef({});
   const completedBySwipe = useRef(null);
+  const completeStep = useRef(onComplete);
+  completeStep.current = onComplete;
+  const completeFromSwipe = useCallback((id, door) => {
+    if (!completeStep.current?.(id, door)) return false;
+    completedBySwipe.current = id;
+    return true;
+  }, []);
   const idPrefix = useId();
   const tabId = (name) => `${idPrefix}tab-${name}`;
   const panelId = (name) => `${idPrefix}panel-${name}`;
@@ -77,12 +84,6 @@ export function PhoneSegments({
     else tabs.current[shown]?.focus();
   }, [board, shown]);
 
-  const completeFromSwipe = onComplete && ((id, door) => {
-    if (!onComplete(id, door)) return false;
-    completedBySwipe.current = id;
-    return true;
-  });
-
   const expandDone = () => {
     track('roadmap_board_done_expand', { band: 'phone' });
     onExpandDone();
@@ -117,7 +118,7 @@ export function PhoneSegments({
                 selection={selection}
                 selectable={selectable}
                 onHold={column.name === shown ? onHold : undefined}
-                onComplete={completeFromSwipe}
+                onComplete={onComplete ? completeFromSwipe : undefined}
                 stopId={roving.stopIn(column.name)}
                 pendingId={roving.pendingIn(column.name)}
                 arrived={arrived}

@@ -120,7 +120,9 @@ emits no event. These events carry no step ids, names, descriptions, queries or 
 Phone selection emits `roadmap_board_select` with `step: start`, or `step: end` and `via`
 (`done`, `back`, `acted`, `emptied` or `left`). Revealing its kinds emits `roadmap_board_bulk` with
 `step: kinds`; an applied bulk act carries `step` (`recolor` or `delete`) and `count` in the same
-buckets as the picker. Re-picking the shared kind writes nothing and emits no bulk act or toast.
+buckets as the picker. Re-picking the shared kind closes only the kinds row, retains selection,
+writes nothing and emits no bulk act, toast or selection-end event. A refused recolor also keeps
+selection open and emits no acted selection end; null receipts remain expected, not Issues.
 Edit emits `roadmap_board_edit` with `step` (`failed`, `retry`, `discard`, `cancel` or `unchanged`);
 a saved edit emits `step: saved` and booleans `name`, `description`, `kind` and `prerequisites` for
 changed fields. Workspace emits `roadmap_board_workspace` with only `action` (`subtaskAdd`,

@@ -5,6 +5,7 @@ import {
   STATE_WORDS,
   COLUMN_TITLES,
   SORT_LABELS,
+  SHORTCUTS_TITLE,
   SORT_MENU,
   LABELS,
   LINK_COPIED,
@@ -359,4 +360,8 @@ test('copy — bulk selection formats full counts', () => {
   assert.deepEqual([0, 1, 3, 1200].map((count) => selectedCount({ count })), [
     '0 selected', '1 selected', '3 selected', '1,200 selected',
   ]);
+});
+
+test('Board shortcuts title is pinned copy', () => {
+  assert.equal(SHORTCUTS_TITLE, 'Keyboard shortcuts · Board');
 });

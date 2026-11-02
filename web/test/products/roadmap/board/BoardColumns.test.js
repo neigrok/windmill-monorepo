@@ -226,6 +226,7 @@ window.openDeleteBoard = (owner = true) => {
       track: (name, properties) => window.deleteCalls.push(['event', name, properties]),
       report: (operation) => window.deleteCalls.push(['report', operation]),
       onQuiet: () => setQuiet((value) => value + 1), onReveal: () => {},
+      emit: () => {},
     });
     useEffect(() => {
       if (!toast) return undefined;
@@ -261,37 +262,33 @@ window.openDeleteBoard = (owner = true) => {
 window.entryReady = true;
 `;
 
-let server, browser, origin, ready;
-function browserReady() {
-  if (ready) return ready;
-  ready = (async () => {
-    server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-board-columns-test`,
-      plugins: [{ name: 'board-columns-test', enforce: 'pre',
-        resolveId(id) {
-          if (id === '/board-columns-entry.js') return '\0board-columns-entry';
-          if (id.endsWith('/telemetry/beacon.js')) return '\0board-columns-beacon';
-        },
-        load(id) {
-          if (id === '\0board-columns-entry') return entry;
-          if (id === '\0board-columns-beacon') {
-            return 'export function track(name, props) { (window.events ??= []).push(`${name} ${JSON.stringify(props)}`); }\n'
-              + 'export function reportError() {}\nexport function routeFamily(route) { return route; }';
-          }
-        },
-        configureServer(server) {
-          server.middlewares.use('/board-columns-test', (_request, response) => {
-            response.setHeader('Content-Type', 'text/html');
-            response.end('<!doctype html><meta name="viewport" content="width=device-width"><title>Board columns test</title><div id="root"></div><script type="module" src="/board-columns-entry.js"></script>');
-          });
-        },
-      }], optimizeDeps: { include: ['react', 'react-dom/client'] },
-      server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
-    await server.listen(0);
-    origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-    browser = await chromium.launch({ headless: true });
-  })();
-  return ready;
-}
+let server, browser, origin;
+const ready = (async () => {
+  server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-board-columns-test`,
+    plugins: [{ name: 'board-columns-test', enforce: 'pre',
+      resolveId(id) {
+        if (id === '/board-columns-entry.js') return '\0board-columns-entry';
+        if (id.endsWith('/telemetry/beacon.js')) return '\0board-columns-beacon';
+      },
+      load(id) {
+        if (id === '\0board-columns-entry') return entry;
+        if (id === '\0board-columns-beacon') {
+          return 'export function track(name, props) { (window.events ??= []).push(`${name} ${JSON.stringify(props)}`); }\n'
+            + 'export function reportError() {}\nexport function routeFamily(route) { return route; }';
+        }
+      },
+      configureServer(server) {
+        server.middlewares.use('/board-columns-test', (_request, response) => {
+          response.setHeader('Content-Type', 'text/html');
+          response.end('<!doctype html><meta name="viewport" content="width=device-width"><title>Board columns test</title><div id="root"></div><script type="module" src="/board-columns-entry.js"></script>');
+        });
+      },
+    }], optimizeDeps: { include: ['react', 'react-dom/client'] },
+    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
+  await server.listen(0);
+  origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+  browser = await chromium.launch({ headless: true });
+})();
 after(async () => {
   try { await ready; } finally { await browser?.close(); await server?.close(); }
 });
@@ -335,7 +332,7 @@ const focused = (page) => page.evaluate(() => {
 const events = (page) => page.evaluate(() => window.events ?? []);
 
 test('Chromium: the columns are one tab stop that Tab enters from either side on the first Up next card, then on the card last focused', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -359,7 +356,7 @@ test('Chromium: the columns are one tab stop that Tab enters from either side on
 });
 
 test('Chromium: with every column scrolling, Tab and Shift+Tab each cross the Board in exactly one stop', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const nodes = coastalNodes();
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
@@ -385,7 +382,7 @@ test('Chromium: with every column scrolling, Tab and Shift+Tab each cross the Bo
 });
 
 test('Chromium: on the desktop the arrow keys rove every card, Locked included, across columns at the nearest height; Enter selects', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -418,7 +415,7 @@ test('Chromium: on the desktop the arrow keys rove every card, Locked included, 
 });
 
 test('Chromium: on a tablet the arrow keys cross into the rail’s Show and back out, and Show hands focus to the new rail', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 900, height: 960 }, band: 'tablet' }, errors);
   try {
@@ -453,7 +450,7 @@ test('Chromium: on a tablet the arrow keys cross into the rail’s Show and back
 });
 
 test('Chromium: at 744 the rail stacks its heading, so Locked stands whole over its compact count on the card surface', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const nodes = coastalNodes();
   const page = await openBoardPage({ viewport: { width: 744, height: 960 }, band: 'tablet', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
@@ -486,7 +483,7 @@ test('Chromium: at 744 the rail stacks its heading, so Locked stands whole over 
 });
 
 test('Chromium: a step that just became up next wakes and settles; the Board’s first paint wakes nothing', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -504,7 +501,7 @@ test('Chromium: a step that just became up next wakes and settles; the Board’s
 });
 
 test('Chromium: focus landing on an arriving step ends its wake for good, so leaving it never replays the wake', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -521,7 +518,7 @@ test('Chromium: focus landing on an arriving step ends its wake for good, so lea
 });
 
 test('Chromium: a focused card whose step moves to another column hands focus to the new tab stop instead of the page', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -537,7 +534,7 @@ test('Chromium: a focused card whose step moves to another column hands focus to
 });
 
 test('Chromium: as cards above the view settle to their measured heights, what is in view stays where it was', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   // Every third excerpt is set in the widest glyphs, so its estimate falls a line short until the card is measured.
   const words = 'Work out departure arrival and the fallback harbour for each gate before you commit to the route plan a coastal passage'.split(' ');
@@ -571,7 +568,7 @@ test('Chromium: as cards above the view settle to their measured heights, what i
 });
 
 test('Chromium: a later change that brings no arrival leaves the wake on its first clock', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -589,7 +586,7 @@ test('Chromium: a later change that brings no arrival leaves the wake on its fir
 });
 
 test('Chromium: with reduced motion an arriving step only fades in', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', reducedMotion: 'reduce' }, errors);
   try {
@@ -603,7 +600,7 @@ test('Chromium: with reduced motion an arriving step only fades in', async () =>
 });
 
 test('Chromium: 5,000 steps render a window per column; End and Home rove past unrendered cards, and a selected card always renders', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const nodes = coastalNodes();
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
@@ -636,7 +633,7 @@ test('Chromium: 5,000 steps render a window per column; End and Home rove past u
 });
 
 test('Chromium: scrolling a 1,770-card column end to end keeps the window small and the heading sticky', async (t) => {
-  await browserReady();
+  await ready;
   const errors = [];
   const nodes = coastalNodes();
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop', nodes, completed: nodes.slice(0, 3200).map((node) => node.id) }, errors);
@@ -668,7 +665,7 @@ test('Chromium: scrolling a 1,770-card column end to end keeps the window small 
 
 
 test('Chromium: C completes only a focused Up next card and follows the same step into Done', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -687,7 +684,7 @@ test('Chromium: C completes only a focused Up next card and follows the same ste
 
 
 test('Chromium: a loading Board can mount its columns without a stale null displayed board', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on('pageerror', (error) => errors.push(error.message));
@@ -704,7 +701,7 @@ test('Chromium: a loading Board can mount its columns without a stale null displ
 
 
 test('Chromium: first creation never shows a completed empty roadmap during regroup', async () => {
-  await browserReady();
+  await ready;
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -727,7 +724,7 @@ test('Chromium: first creation never shows a completed empty roadmap during regr
 
 
 test('Chromium: refused C keeps focus recovery available for a later remote completion', async () => {
-  await browserReady();
+  await ready;
   const errors = [];
   const page = await openBoardPage({ viewport: { width: 1440, height: 900 }, band: 'desktop' }, errors);
   try {
@@ -758,7 +755,7 @@ async function openDeletePage(owner, errors) {
 
 for (const key of ['Backspace', 'Delete']) {
   test(`Chromium: focused owner ${key} holds one delete, projects every column and recovers focus before Undo`, async () => {
-    await browserReady();
+    await ready;
     const errors = [];
     const page = await openDeletePage(true, errors);
     try {
@@ -785,7 +782,7 @@ for (const key of ['Backspace', 'Delete']) {
       await page.clock.runFor(8849);
       assert.deepEqual(await page.evaluate(() => window.deleteCalls), [['event', 'roadmap_board_delete', { step: 'held', door: 'key' }]]);
       await page.getByRole('button', { name: 'Undo', exact: true }).evaluate((button) => button.click());
-      await page.locator('output[data-held="no"]').waitFor();
+      await page.locator('output[data-held="no"]').waitFor({ state: 'attached' });
       await page.clock.runFor(10000);
       await page.locator('.st-board-card[data-step-id="wind"]').waitFor();
       assert.deepEqual(await page.evaluate(() => window.inspectDeleteBoard()), {
@@ -806,7 +803,7 @@ for (const key of ['Backspace', 'Delete']) {
 
 for (const refusal of ['sole root', 'reader', 'typing', 'covered']) {
   test(`Chromium: ${refusal} refuses Board keyboard deletion without a hold, write or event`, async () => {
-    await browserReady();
+    await ready;
     const errors = [];
     const page = await openDeletePage(refusal !== 'reader', errors);
     try {

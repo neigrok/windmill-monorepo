@@ -842,6 +842,10 @@
   column-gap: var(--space-6);
 }
 .st-sc-grid--board {
+  --st-sc-keycap-min-width: 21px;
+  --st-sc-keycap-height: 22px;
+  --st-sc-keycap-padding: 6px;
+  --st-sc-keycap-font-size: 11px;
   column-count: 1;
   padding-top: var(--space-4);
 }
@@ -853,14 +857,14 @@
 }
 .st-sc-grid--board .st-sc-heading {
   margin-bottom: 0;
-  line-height: 20px;
-  font-weight: 700;
+  line-height: var(--leading-sm);
+  font-weight: var(--font-weight-bold);
   letter-spacing: normal;
   text-transform: none;
   color: var(--text-secondary);
 }
 .st-sc-grid--board .st-sc-row {
-  min-height: 40px;
+  min-height: var(--space-10);
   padding: 0;
 }
 .st-sc-grid--board .st-sc-label {
@@ -870,11 +874,11 @@
   gap: var(--space-2);
 }
 .st-sc-grid--board .st-keycap {
-  min-width: 21px;
-  height: 22px;
-  padding: 0 6px;
-  font-size: 11px;
-  font-weight: 400;
+  min-width: var(--st-sc-keycap-min-width);
+  height: var(--st-sc-keycap-height);
+  padding: 0 var(--st-sc-keycap-padding);
+  font-size: var(--st-sc-keycap-font-size);
+  font-weight: var(--font-weight-regular);
   color: var(--text-secondary);
   background: var(--surface-sunken);
   border: 1px solid var(--border-default);

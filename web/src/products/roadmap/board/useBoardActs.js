@@ -4,6 +4,32 @@ import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { LABELS } from './copy.js';
 
+export class BoardComposer {
+  constructor({ gate, active, owner, detailId, composer, acts, onOpen }) {
+    this.available = gate && active && owner;
+    this.detailId = detailId;
+    this.composer = composer;
+    this.acts = acts;
+    this.onOpen = onOpen;
+  }
+
+  get shown() {
+    if (!this.available) return null;
+    if (this.composer?.editing && this.composer.editing !== this.detailId) return null;
+    return this.composer;
+  }
+
+  openEdit(id) {
+    if (!this.available || id === null || id !== this.detailId) return;
+    this.onOpen({ door: 'detail', editing: id });
+  }
+
+  saveEdit(request) {
+    if (!this.shown?.editing || request.id !== this.detailId) return { ok: false };
+    return this.acts.edit(request);
+  }
+}
+
 export class BoardActs {
   constructor(collaborators) {
     this.update(collaborators);
@@ -13,14 +39,12 @@ export class BoardActs {
 
   update(collaborators) { this.collaborators = collaborators; }
 
-  deletable(tree, ids) { return deletable(tree, ids); }
-
   recolor(ids, hue) {
     const c = this.collaborators;
     if (!c.active || !c.owner || !c.tree) return { ok: false };
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     const selection = new StepSelection(ids.filter((id) => tree.nodesById.has(id)));
-    if (selection.count === 0 || selection.sharedKind(tree) === hue) return { ok: true };
+    if (selection.count === 0 || selection.sharedKind(tree) === hue) return { ok: true, changed: false };
     if (!c.session) {
       c.report('roadmap-board-recolor', new Error('Missing Board session'));
       return { ok: false };
@@ -48,7 +72,7 @@ export class BoardActs {
       } },
     });
     c.track('roadmap_board_bulk', { step: 'recolor', count: countBucket(selection.count) });
-    return { ok: true };
+    return { ok: true, changed: true };
   }
 
   edit(request) {
@@ -57,6 +81,7 @@ export class BoardActs {
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     if (!tree.nodesById.has(request.id)) return { ok: false };
     const gesture = editGesture(tree, request);
+    if (gesture === false) return { ok: false };
     if (!gesture) return { ok: true };
     if (!c.session) {
       c.report('roadmap-board-edit', new Error('Missing Board session'));
@@ -73,7 +98,7 @@ export class BoardActs {
     if (!receipt) return { ok: false };
     if ('label' in gesture) {
       try {
-        c.emit?.({ verb: 'renamed', nodeId: request.id, label: request.label, kind: request.color });
+        c.emit({ verb: 'renamed', nodeId: request.id, label: request.label, kind: request.color });
       } catch (error) {
         c.report('roadmap-board-edit', error);
       }

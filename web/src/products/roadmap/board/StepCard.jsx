@@ -1,6 +1,6 @@
 // One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card opens its step.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { HoldGesture, HOLD_MS, SwipeGesture, SWIPE_REVEAL } from './gestures.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { completeStepAction, STEP_DETAIL, reasonLine } from './copy.js';
@@ -38,14 +38,17 @@ function InteractiveCard({ card, onSelect, onHold, selecting, swipe, open, onSwi
   const timer = useRef(null);
   const scroller = useRef(null);
   const swallowed = useRef(false);
-  const cancelHold = () => {
+  const callbacks = useRef({ onHold, onSwipe });
+  callbacks.current = { onHold, onSwipe };
+  const cancelHold = useCallback(() => {
     clearTimeout(timer.current);
     timer.current = null;
     hold.current?.cancel();
     scroller.current?.removeEventListener('scroll', cancelHold);
     scroller.current = null;
-  };
-  useEffect(() => cancelHold, [onHold]);
+  }, []);
+  const holdEnabled = Boolean(onHold);
+  useEffect(() => cancelHold, [holdEnabled, cancelHold]);
   const startHold = (event) => {
     cancelHold();
     hold.current = null;
@@ -53,13 +56,14 @@ function InteractiveCard({ card, onSelect, onHold, selecting, swipe, open, onSwi
     if (!onHold || event.pointerType !== 'touch' || event.isPrimary === false) return;
     const gesture = new HoldGesture({ x: event.clientX, y: event.clientY, at: performance.now() });
     hold.current = gesture;
+    const deadline = gesture.at + HOLD_MS;
     scroller.current = event.currentTarget.closest('[data-column]');
     scroller.current?.addEventListener('scroll', cancelHold, { passive: true });
     timer.current = setTimeout(() => {
-      if (!gesture.advance(performance.now())) return;
+      if (!gesture.advance(deadline)) return;
       swallowed.current = true;
-      onSwipe?.(null);
-      onHold(card.id);
+      callbacks.current.onSwipe?.(null);
+      callbacks.current.onHold?.(card.id);
     }, HOLD_MS);
   };
   const button = React.cloneElement(children, {

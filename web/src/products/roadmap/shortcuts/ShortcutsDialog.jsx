@@ -1,7 +1,9 @@
 // The keyboard-shortcuts reference, rendered from shortcutMap.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog } from '../../../design-system';
+import { track } from '../../../telemetry/beacon.js';
+import { SHORTCUTS_TITLE } from '../board/copy.js';
 import { visibleGroups, keyLabel, detectPlatform } from './shortcutMap.js';
 
 function Keycap({ children }) {
@@ -12,14 +14,17 @@ function GesturePill({ children }) {
   return <span className="st-gesture">{children}</span>;
 }
 
-export function ShortcutsDialog({ open, onClose, readOnly = false, view = 'graph' }) {
+export function ShortcutsDialog({ open, onClose, readOnly = false, view = 'graph', trackingEnabled = false }) {
   const [platform, setPlatform] = useState(detectPlatform);
   const board = view === 'board';
   const shownPlatform = board ? detectPlatform() : platform;
+  useEffect(() => {
+    if (trackingEnabled && open) track('roadmap_shortcuts_open', { view });
+  }, [trackingEnabled, open, view]);
 
   return (
-    <Dialog open={open} onClose={onClose} title={board ? 'Keyboard shortcuts · Board' : 'Keyboard shortcuts'} width={600}
-      padding={board ? '28px' : undefined}>
+    <Dialog open={open} onClose={onClose} title={board ? SHORTCUTS_TITLE : 'Keyboard shortcuts'} width={600}
+      padding={board ? 'calc(var(--space-6) + var(--space-1))' : undefined}>
       {!board && <div className="st-sc-toolbar">
         <div className="st-sc-toggle" role="group" aria-label="Platform">
           <button type="button" aria-pressed={platform === 'mac'} onClick={() => setPlatform('mac')}>Mac</button>

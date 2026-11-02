@@ -81,6 +81,7 @@ function Room() {
     } },
     showToast,
     clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
+    emit: () => {},
     track: (name, props) => window.calls.push(['event', name, props]), report: (op) => window.calls.push(['report', op]),
     onQuiet: () => setQuiet((current) => current + 1), onReveal: () => {},
   });

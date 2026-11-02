@@ -54,22 +54,27 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
   const bar = useRef(null);
   const recolor = useRef(null);
   const applying = useRef(null);
+  const latestRecolor = useRef(onRecolor);
+  latestRecolor.current = onRecolor;
 
   useEffect(() => () => clearTimeout(applying.current), []);
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) return;
     (bar.current.querySelector('[aria-checked="true"]') ?? bar.current.querySelector('[role="radio"]'))?.focus();
+  }, [open]);
+
+  useEffect(() => {
     const back = () => {
-      if (window.history.state?.boardSelection?.kinds) return;
+      const expanded = Boolean(window.history.state?.boardSelection?.kinds);
       clearTimeout(applying.current);
       applying.current = null;
-      setOpen(false);
-      recolor.current?.focus();
+      setOpen(expanded);
+      if (!expanded) recolor.current?.focus();
     };
     window.addEventListener('popstate', back);
     return () => window.removeEventListener('popstate', back);
-  }, [open]);
+  }, []);
 
   const toggle = () => {
     if (!onKinds(!open)) return;
@@ -81,17 +86,16 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
 
   const choose = (hue) => {
     if (applying.current !== null) return;
-    if (hue === sharedKind) {
-      onRecolor(hue);
-      return;
-    }
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const chip = bar.current.querySelectorAll('[role="radio"]')[kinds.findIndex((kind) => kind.hue === hue)];
     const duration = reduced ? 150 : 120;
     chip.animate(reduced
       ? [{ opacity: 1 }, { opacity: 0.6 }, { opacity: 1 }]
       : [{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration });
-    applying.current = setTimeout(() => onRecolor(hue), duration);
+    applying.current = setTimeout(() => {
+      applying.current = null;
+      latestRecolor.current(hue);
+    }, duration);
   };
 
   return (
