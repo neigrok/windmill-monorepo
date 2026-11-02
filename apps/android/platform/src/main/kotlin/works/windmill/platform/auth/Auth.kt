@@ -609,10 +609,12 @@ object MagicLink {
         return failure.line
     }
 
+    fun looksLikeLink(entry: String): Boolean = entry.contains("://") || entry.contains("token=")
+
     fun token(pasted: String): String? {
         val trimmed = pasted.trim()
         if (trimmed.isEmpty()) return null
-        if (!trimmed.contains("://") && !trimmed.contains("token=")) return trimmed
+        if (!looksLikeLink(trimmed)) return trimmed
 
         val start = trimmed.indexOf("token=")
         if (start < 0) return null

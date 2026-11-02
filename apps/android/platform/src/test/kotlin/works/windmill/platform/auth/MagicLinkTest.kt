@@ -9,6 +9,18 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
 class MagicLinkTest {
+    @Test fun onlyLinkSyntaxSelectsTheLinkDoor() {
+        for ((entry, expected) in listOf(
+            "https://windmill.works/#/auth?token=abc" to true,
+            "https://windmill.works/#/auth" to true,
+            "token=abc" to true,
+            "123456" to false,
+            "12345" to false,
+            "abc123" to false,
+            "1234567" to false,
+        )) assertEquals(entry, expected, MagicLink.looksLikeLink(entry))
+    }
+
     @Test
     fun theEmailedLinkYieldsItsToken() {
         assertEquals("abc123", MagicLink.token("https://windmill.works/#/auth?token=abc123"))
