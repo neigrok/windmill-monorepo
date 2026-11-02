@@ -1,6 +1,6 @@
 # Android gym tasks
 
-These 106 tasks describe the Android implementation backlog; the quality wave's design work is in [the design brief](design-brief-quality-wave.md). Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
+These tasks describe the Android implementation backlog; the quality wave's design work is in [the design brief](design-brief-quality-wave.md). Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
 
 The six revised Gym flows were approved on **2026-10-25**. Each task records its current implementation and design status. Approval covers the linked revisions, including the headerless Workout and retained weigh-in Undo; it does not approve every other Gym or Shell board in this backlog.
 
@@ -248,5 +248,6 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [104](104-record-before-the-first-pull.md) — The record page's Recent sets before the first pull
 - [105](105-quiet-set-count-follow-ups.md) — The quiet set count: the owner's open questions
 - [106](106-notes-and-navigation-state.md) — Notes keep separate visits, handle swipes scroll, and failed reads can retry
+- [108](108-workout-writes-and-recovery.md) — Workout writes and recovery retain the whole saved source
 
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.

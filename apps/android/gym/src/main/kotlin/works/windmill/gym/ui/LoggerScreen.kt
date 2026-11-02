@@ -177,14 +177,14 @@ interface LoggerState {
 
 // What the workout asks of the stores.
 interface LoggerEvents {
-    suspend fun choose(movement: String)
+    suspend fun choose(movement: String): WorkoutChange
     suspend fun loadLastSets()
     fun editWorkout(open: Boolean): WorkoutChange
     fun editRack(weightKg: Double, reps: Int): WorkoutChange
     fun acceptSet(command: LogSetCommand): LogSetAcceptance
     fun showWorkout(key: WorkoutKey, hidden: Boolean): WorkoutChange
-    fun reorder(from: Int, to: Int)
-    fun drop(exerciseId: String): Boolean
+    fun reorder(from: Int, to: Int): WorkoutChange
+    fun drop(exerciseId: String): WorkoutChange
     suspend fun createForWorkout(write: ExerciseWrite, workoutId: String, expectedAccountKey: String,
         expectedReplica: String?): MovementCreateOutcome
     suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome
@@ -235,7 +235,7 @@ class LoggerBinding(
     override fun acceptSet(command: LogSetCommand): LogSetAcceptance = workout.acceptSet(command)
     override fun showWorkout(key: WorkoutKey, hidden: Boolean): WorkoutChange = workout.showWorkout(key, hidden)
     override fun reorder(from: Int, to: Int) = workout.reorder(from, to)
-    override fun drop(exerciseId: String): Boolean = workout.drop(exerciseId)
+    override fun drop(exerciseId: String): WorkoutChange = workout.drop(exerciseId)
     override suspend fun createForWorkout(write: ExerciseWrite, workoutId: String, expectedAccountKey: String,
         expectedReplica: String?): MovementCreateOutcome = workout.createForWorkout(write, workoutId, expectedAccountKey, expectedReplica)
     override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome =
@@ -315,14 +315,18 @@ fun LoggerScreen(
         if (sheet != null) return@LaunchedEffect
         val destination = goingTo ?: return@LaunchedEffect
         val previous = state.exerciseId
-        try { events.choose(destination.movement) }
+        var result: WorkoutChange? = null
+        try {
+            result = events.choose(destination.movement)
+            if (result is WorkoutChange.Unavailable) say(result.reason)
+        }
         finally {
             if (state.accountKey == rackOwner && state.session?.id == rackSession && goingTo == destination) {
-                if (previous != destination.movement && state.exerciseId == destination.movement) {
+                if (result == WorkoutChange.Saved && previous != destination.movement && state.exerciseId == destination.movement) {
                     telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"))
                 }
                 if (destination.fromPicker) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_add",
-                    "outcome" to if (state.exerciseId == destination.movement) "ok" else "refused"))
+                    "outcome" to if (result == WorkoutChange.Saved && state.exerciseId == destination.movement) "ok" else "refused"))
                 goingTo = null
             }
         }
@@ -481,8 +485,7 @@ fun LoggerScreen(
                     StrandedBand(state.strandedCount, state.strandedBy)
                     Refusals(state.refusals, state.catalog, onDismiss = { events.clearRefusals() })
                 }
-                // The running session is already drawn twice above — the title and Finish exist only
-                // while one runs — so a free session's picker carries no subtitle.
+                // The running session is already drawn twice above — the title and Finish exist only while one runs — so a free session's picker carries no subtitle.
                 MovementPicker(
                     catalog = state.catalog,
                     taken = state.order,
@@ -491,7 +494,10 @@ fun LoggerScreen(
                     sessions = state.allSessions,
                     title = "What are you lifting?",
                     subtitle = if (state.session?.plan == null) null else "nothing in this plan is left to walk",
-                    onPick = { picked -> scope.launch { events.choose(picked) } },
+                    onPick = { picked -> scope.launch {
+                        val result = events.choose(picked)
+                        if (result is WorkoutChange.Unavailable) say(result.reason)
+                    } },
                     onCreate = { write ->
                         val result = events.createForWorkout(write, rackSession.orEmpty(), rackOwner, state.replica)
                         if (state.accountKey == rackOwner && state.session?.id == rackSession) result
@@ -592,14 +598,12 @@ fun LoggerScreen(
       }
     }
 
-    // Fix set stands on a row the ledger draws and is titled by that row's count. A fix for a set that has since left
-    // the ledger, held or deleted, has nothing to stand on.
+    // Fix set stands on a row the ledger draws and is titled by that row's count. A fix for a set that has since left the ledger, held or deleted, has nothing to stand on.
     val drawnToday = state.todaySets.filter { it.id !in state.deletedSets }
     val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> drawnToday.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
-        // The picker steps back to the workout sheet. Fix set's own handlers answer Back first: a busy save
-        // swallows it and open entry cancels it; a drag waits on the same two through the sheet state.
+        // The picker steps back to the workout sheet. Fix set's own handlers answer Back first: a busy save swallows it and open entry cancels it; a drag waits on the same two through the sheet state.
         WindmillSheet(
             onDismissRequest = { if (open == LoggerSheet.Picker) cancelPicker() else close() },
             onBack = if (open == LoggerSheet.Picker) ::cancelPicker else null,
@@ -615,14 +619,20 @@ fun LoggerScreen(
                     routine = state.session?.plan?.routine,
                     onJump = { move(it) },
                     onReorder = { from, to ->
-                        val before = state.order
-                        events.reorder(from, to)
-                        if (before != state.order) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "reorder", "outcome" to "ok"))
+                        val result = events.reorder(from, to)
+                        if (result != WorkoutChange.Stale) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "reorder",
+                            "outcome" to if (result == WorkoutChange.Saved) "ok" else "failed"))
+                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.reason) }
                     },
                     onDrop = {
-                        val accepted = events.drop(it)
-                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "remove", "outcome" to if (accepted) "ok" else "refused"))
-                        accepted
+                        val result = events.drop(it)
+                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "remove", "outcome" to when (result) {
+                            WorkoutChange.Saved -> "ok"
+                            WorkoutChange.Stale -> "refused"
+                            is WorkoutChange.Unavailable -> "failed"
+                        }))
+                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.reason) }
+                        result == WorkoutChange.Saved
                     },
                     onHide = ::hide,
                     notificationOff = notification?.hidden == true,
@@ -765,8 +775,7 @@ private fun MovementHead(
     }
 }
 
-// The one caption that survives: a disclosure at the moment of consequence — your data is not on
-// the server — and it exists only while something is wrong.
+// The one caption that survives: a disclosure at the moment of consequence — your data is not on the server — and it exists only while something is wrong.
 @Composable
 private fun StrandedBand(count: Int, by: Blocker?) {
     val colors = MaterialTheme.colorScheme
@@ -861,9 +870,7 @@ private fun Ledger(
     }
 }
 
-// The rack's two numbers, owned by the screen so that leaving it never drops one. A field commits against what
-// the other one stands for; Log set reads both; Hide, Finish, Back and a move commit a valid typed value the way
-// Done does, and an invalid one keeps its refusal and the old value.
+// The rack's two numbers, owned by the screen so that leaving it never drops one. A field commits against what the other one stands for; Log set reads both; Hide, Finish, Back and a move commit a valid typed value the way Done does, and an invalid one keeps its refusal and the old value.
 private class RackEntry(
     val load: NumberDraft,
     val count: NumberDraft,
@@ -911,8 +918,7 @@ private class RackEntry(
     }
 }
 
-// The page above the rack and the rack's controls scroll as one; Log set stays in a band pinned below them. While
-// everything fits, the page stands still and the rack sits on the band.
+// The page above the rack and the rack's controls scroll as one; Log set stays in a band pinned below them. While everything fits, the page stands still and the rack sits on the band.
 @Composable
 private fun Rack(
     entry: RackEntry,
@@ -971,8 +977,7 @@ private fun Rack(
     }
 }
 
-// The store refuses a set once Finish is in flight, so the button says so before the tap. The two numerals stand
-// directly above it, so it echoes neither. Lifted, the band lies over the scrolled page with its own edge.
+// The store refuses a set once Finish is in flight, so the button says so before the tap. The two numerals stand directly above it, so it echoes neither. Lifted, the band lies over the scrolled page with its own edge.
 @Composable
 private fun LogBand(lifted: Boolean, finishing: Boolean, enabled: Boolean, onLog: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -1031,14 +1036,14 @@ private data class LoggerPreviewState(
 }
 
 private object LoggerPreviewEvents : LoggerEvents {
-    override suspend fun choose(movement: String) = Unit
+    override suspend fun choose(movement: String) = WorkoutChange.Stale
     override suspend fun loadLastSets() = Unit
     override fun editWorkout(open: Boolean): WorkoutChange = WorkoutChange.Saved
     override fun editRack(weightKg: Double, reps: Int): WorkoutChange = WorkoutChange.Saved
     override fun acceptSet(command: LogSetCommand): LogSetAcceptance = LogSetAcceptance.Stale
     override fun showWorkout(key: WorkoutKey, hidden: Boolean): WorkoutChange = WorkoutChange.Saved
-    override fun reorder(from: Int, to: Int) = Unit
-    override fun drop(exerciseId: String): Boolean = false
+    override fun reorder(from: Int, to: Int) = WorkoutChange.Stale
+    override fun drop(exerciseId: String): WorkoutChange = WorkoutChange.Stale
     override suspend fun createForWorkout(write: ExerciseWrite, workoutId: String, expectedAccountKey: String,
         expectedReplica: String?): MovementCreateOutcome = MovementCreateOutcome.Failed(WriteFailure.NoAnswer)
     override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome =
