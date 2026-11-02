@@ -274,8 +274,8 @@ class ObservationTests {
         assertEquals(listOf("no answer" to PushFailure.unanswered, "taken" to null, "taken as another account" to null, "malformed" to null,
             "too large" to null, "conflict" to null, "account mismatch" to null, "conflict without an epoch" to PushFailure.answered,
             "conflict with an unknown code" to PushFailure.answered, "unauthenticated" to PushFailure.answered, "forbidden" to PushFailure.answered,
-            "a proxy's 426" to PushFailure.answered, "upgrade required" to PushFailure.answered, "unavailable" to PushFailure.answered,
-            "server fault" to PushFailure.answered), ends.map { (end, reply) -> end to reply.pushFailure("A") })
+            "a proxy's 426" to PushFailure.answered, "upgrade required" to PushFailure.answered, "unavailable" to PushFailure.unavailable,
+            "server fault" to PushFailure.unavailable), ends.map { (end, reply) -> end to reply.pushFailure("A") })
     }
     @Test fun signedInWorkIsHeldBackOfflinePausedForAnUpgradeOrByItsScopesFailedPush() {
         val one = RecordKey("card", RecordID("card0001")); val two = RecordKey("card", RecordID("card0002"))

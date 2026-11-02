@@ -65,7 +65,7 @@ class WorkoutSessionTests {
             opened = room.startExternalWorkout()
             room.store.workout.choose("bench-press")
             room.store.workout.logSet(weightKg = 82.5, reps = 5)
-            assertTrue(room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable))
+            room.push(Reply.Unreachable)
             room.store.refreshEngine()
 
             assertEquals(SaveState.Blocked(Blocker.Offline), room.store.workout.saveState)
@@ -124,7 +124,6 @@ class WorkoutSessionTests {
             room.select("alice"); room.pull(server)
             val opened = room.startExternalWorkout()
             room.store.workout.choose("bench-press")
-            room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
             room.store.workout.logSet(weightKg = 100.0, reps = 5)
             room.store.workout.logSet(weightKg = 100.0, reps = 5)
             val logged = room.store.workout.sets.map { it.id }
@@ -156,8 +155,7 @@ class WorkoutSessionTests {
             room.startExternalWorkout(); room.store.workout.choose("bench-press")
             room.store.workout.logSet(weightKg = 90.0, reps = 5)
 
-            assertTrue(room.training.reportDelivery(room.engine.activeReplica(),
-                Reply.Failed(SyncResponse(500, Json.objectOf()))))
+            room.push(Reply.Answer(SyncResponse(500, Json.objectOf())))
             room.store.refreshEngine()
 
             assertEquals(listOf("gym.start", "set ${room.store.workout.sets.single().id}"), owed(room))
@@ -291,9 +289,9 @@ class WorkoutSessionTests {
     fun testSignedInWithNoSignalAStartComposesOnTheDeviceAndTheEngineSyncsIt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
-            room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
             val routine = (room.store.routines.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")
                 .targeting("bench-press", List(3) { SetTarget(5, 100.0) }).capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
+            room.push(Reply.Unreachable)
             room.store.refreshEngine()
             val opened = (room.store.workout.start(routine.id) as GymResult.Ok).value
             assertEquals("the plan froze off the routine this store holds", PlanSnapshot(routine), opened.plan)
@@ -441,23 +439,24 @@ class WorkoutSessionTests {
     }
 
     // The live session's rows are the phone's until the log takes them. A set no sync has carried
-    // yet is corrected in place, still owed: the strip draws the correction at once, and the
-    // corrected body is what lands when the signal is back.
+    // yet, never sent or sent with no answer, is corrected in place, still owed: the strip draws the
+    // correction at once, and the corrected body is what lands when the signal is back.
     @Test
     fun testFixingASetNoSyncHasCarriedRewritesItOnThePhoneAndTheCorrectionIsWhatLands() = runTest {
-        val server = EngineRoomFixture.server()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+        for (sent in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server()
             room.select("alice"); room.pull(server)
             val opened = room.startExternalWorkout()
             room.sync(server)
             room.store.workout.choose("bench-press")
-            room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
             room.store.workout.logSet(weightKg = 82.5, reps = 5)
             room.store.workout.logSet(weightKg = 85.0, reps = 5)
+            if (sent) room.push(Reply.Unreachable)
+            room.store.refreshEngine()
             runCurrent()
             val (tried, behind) = room.store.workout.sets.map { it.id }
             assertEquals(setOf(tried, behind), room.store.workout.stalled)
-            assertEquals(2, room.store.workout.strandedCount)
+            assertEquals("only a send that went unanswered strands them", if (sent) 2 else 0, room.store.workout.strandedCount)
 
             val fixed = room.store.workout.fixSet(opened.id, behind, SetFix(weightKg = 90.0, reps = 3))
             runCurrent()
@@ -468,7 +467,6 @@ class WorkoutSessionTests {
             assertEquals("still owed — the log has never seen the id", setOf(tried, behind), room.store.workout.stalled)
 
             room.sync(server)
-            room.training.reportDelivery(room.engine.activeReplica(), Reply.Answer(SyncResponse(200, Json.objectOf())))
             room.store.refreshEngine()
             assertEquals("the corrected body is the one that landed", listOf(82.5 to 5, 90.0 to 3),
                 anotherPhone(server, room.now) { phone -> phone.training.session(opened.id)!!.sets.map { it.weightKg to it.reps } })
@@ -518,9 +516,9 @@ class WorkoutSessionTests {
             val opened = room.startExternalWorkout()
             room.sync(server)
             room.store.workout.choose("bench-press")
-            room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
             room.store.workout.logSet(weightKg = 82.5, reps = 5)
             room.store.workout.logSet(weightKg = 85.0, reps = 5)
+            room.push(Reply.Unreachable); room.store.refreshEngine()
             runCurrent()
             val (tried, behind) = room.store.workout.sets
 
@@ -566,10 +564,9 @@ class WorkoutSessionTests {
             val second = room.store.workout.sets.single()
             assertNull("a delete is filed, never refused on the spot", room.store.workout.deleteSet(opened.id, second.id))
             runCurrent()
-            room.training.reportDelivery(room.engine.activeReplica(), Reply.Failed(SyncResponse(503, Json.objectOf())))
             room.store.refreshEngine()
             assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
-            assertEquals("a delete the log could not take stays owed", listOf("set ${second.id}"), owed(room))
+            assertEquals("a delete not yet sent stays owed", listOf("set ${second.id}"), owed(room))
             assertEquals(listOf(second.id),
                 anotherPhone(server, room.now) { phone -> phone.training.session(opened.id)!!.sets.map { it.id } })
 
@@ -646,14 +643,13 @@ class WorkoutSessionTests {
     }
 
     @Test
-    fun testASettingSavedWithNoSignalIsHeldHereAndLandsOnTheNextSync() = runTest {
+    fun testASettingSavedBeforeAnySyncIsHeldHereAndLandsOnTheNextSync() = runTest {
         val folder = tmp.newFolder()
         val server = EngineRoomFixture.server()
         val snapshot: Json
         val clock: Long
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
 
             room.seedFeedback(GymPreferences(confirmSound = true))
 
@@ -822,8 +818,7 @@ class WorkoutSessionTests {
             room.startExternalWorkout(); room.store.workout.choose("bench-press")
             room.store.workout.logSet(weightKg = 82.5, reps = 5)
 
-            assertTrue(room.training.reportDelivery(room.engine.activeReplica(),
-                Reply.Failed(SyncResponse(401, Json.objectOf()))))
+            room.push(Reply.Answer(SyncResponse(401, Json.objectOf())))
             room.store.refreshEngine()
 
             assertEquals(SaveState.Blocked(Blocker.SignInLapsed), room.store.workout.saveState)

@@ -55,6 +55,7 @@ import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.sync.modelserver.ModelServer
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.sync.engine.nextPush
@@ -86,10 +87,10 @@ class LoggerScreenTests {
         say: (String?) -> Unit = {},
         onFinish: () -> Unit = {},
         onHide: () -> Unit = {},
+        server: ModelServer = EngineRoomFixture.server(),
     ): EngineRoomFixture {
         // No delete window here, so a deleted set settles the moment it is deleted.
         val room = EngineRoomFixture(tmp.newFolder(), scope, undoWindowMs = 0)
-        val server = EngineRoomFixture.server()
         // On the wall clock, which the screen's own clocks read; last time is from yesterday.
         val today = System.currentTimeMillis()
         room.now = if (history) today - 86_400_000 else today
@@ -622,20 +623,18 @@ class LoggerScreenTests {
     @Test
     fun anInFlightSetShowsTheDeviceMarkerAndOnlyAFailedDeliveryShowsTheBand() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try { logger(scope, logged = true, unanswered = true).use { room ->
+        val server = EngineRoomFixture.server()
+        try { logger(scope, logged = true, unanswered = true, server = server).use { room ->
             compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 5 reps, on this device")).assertIsDisplayed()
             compose.onAllNodes(hasText("saved on this device only", substring = true)).assertCountEquals(0)
             val failed = compose.runOnIdle {
-                room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Unreachable)
-                scope.async { room.store.refreshEngine() }
+                scope.async { room.push(works.windmill.sync.engine.Reply.Unreachable); room.store.refreshEngine() }
             }
             compose.waitUntil(10_000) { compose.runOnIdle { failed.isCompleted } }
             runBlocking { failed.await() }
             compose.onNodeWithText("1 set is saved on this device only. They’ll sync when you’re online.").assertIsDisplayed()
             val answered = compose.runOnIdle {
-                room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Answer(
-                    works.windmill.sync.engine.SyncResponse(200, works.windmill.sync.core.Json.objectOf())))
-                scope.async { room.store.refreshEngine() }
+                scope.async { room.push(server); room.store.refreshEngine() }
             }
             compose.waitUntil(10_000) { compose.runOnIdle { answered.isCompleted } }
             runBlocking { answered.await() }

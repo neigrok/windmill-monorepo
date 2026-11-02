@@ -304,8 +304,8 @@ public final class SyncEngine: Replica {
 
 // MARK: - The core
 
-// How a scope's last failed push ended: answered with a failure, or with no answer at all — no network, a refused
-// connection, a deadline — so its entries never reached the server.
+// How a scope's last failed push ended: answered with a failure, or with no answer the engine could read — no network, a
+// refused connection, a deadline, a reply that is not a push response.
 enum PushFailure: Sendable { case answered, unanswered }
 
 // What every part of the engine shares: the store, the session tokens, this instance's actor (D-2), the clocks, ids and

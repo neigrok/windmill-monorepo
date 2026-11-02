@@ -50,8 +50,9 @@ export class ProductCorpus {
   reader(vector, scope) {
     const { records, firstPullComplete = true, ids = [] } = vector.input;
     const left = [...ids];
+    const stored = viewRecords(records.stored ?? records.drawn);
     const views = Views.ofRecords(this.book.registry, {
-      drawn: viewRecords(records.drawn), stored: viewRecords(records.stored ?? records.drawn), firstPullComplete,
+      drawn: viewRecords(records.drawn), stored, confirmed: stored, firstPullComplete,
       mintId: (type) => {
         const id = left.shift();
         if (id === undefined) throw new Fault(`no vector id left for ${type}`);

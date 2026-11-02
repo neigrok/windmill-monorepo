@@ -1031,6 +1031,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     note editor's in the system default face (`ui/GymScreen.kt`, `ui/NotesScreen.kt`).
   - *Dynamic colour (decided).* Android paints the fixed brand palette in both modes; Material You
     dynamic colour stays off.
+- **11y · Sets held back by an update the server requires (designer, task 75).** While the server
+  needs a newer app, Android's workout draws no band and its save note reads *on this device*
+  (`store/EngineTraining.kt` `deliveryBlocker`); only the *Update required* dialog says why. iOS
+  says it at Finish: *Finish needs the update — keep logging, or hide the workout.* (PARITY row 51).
+  No Android board draws an update-required band or save state; a 4xx refusal other than 401 and
+  426 likewise names no blocker.
 
 ### Parity rulings (owner, 2026-10-22)
 

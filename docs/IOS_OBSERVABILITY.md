@@ -68,7 +68,7 @@ Known USD allowance refusal codes at status 503 are also expected refusals; acco
 reportable. The typed allowance state retains partial creation receipts and the editable draft without
 an automatic retry. Amounts, reset timestamps and request IDs never enter telemetry.
 Offline/DNS/connect failures are metrics, and so is a live socket the server or the network drops with no close
-frame; cancellation is quiet. Timeouts, TLS, unexpected HTTP responses and decoding failures are reportable. Sync
+frame, and one the server closes with 1008 once its session ends (`failure_kind` refused); cancellation is quiet. Timeouts, TLS, unexpected HTTP responses and decoding failures are reportable. Sync
 files each once per outage: a retry that fails as the one before it did is a metric alone until its operation
 succeeds or fails another way. No URL, dynamic identifier, query string, authorization header or response body
 enters telemetry.

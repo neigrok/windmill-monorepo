@@ -167,8 +167,8 @@ struct SenderTests {
     #expect(await MainActor.run { !rig.engine.status.upgradeRequired })
   }
 
-  // A push that got no answer — a deadline, a dropped connection — never reached the server, which a failure the server
-  // answered did: the status tells the two apart, and the next push's end, answered or not, replaces what it said.
+  // A push that got no answer the engine could read — a deadline, a dropped connection — is not a failure the server
+  // answered: the status tells the two apart, and the next push's end, answered or not, replaces what it said.
   @Test(.timeLimit(.minutes(1))) func aPushTheServerNeverAnsweredIsUnanswered() async throws {
     let rig = try Rig(account: "A")
     rig.random.queue(raw: .max, count: 1)

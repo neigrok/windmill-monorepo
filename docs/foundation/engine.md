@@ -1547,6 +1547,8 @@ applies that rule, and holds nothing back signed out. `unansweredPushes` names t
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
 its size cap) — so a product can tell a server it never reached from one that answered with a failure.
+Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
+with a `5xx`, so a product can tell the log's outage from a refusal.
 
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
@@ -1776,6 +1778,9 @@ engine stops on any `426`.
    A matching check clears `mismatchReset`. When a check mismatches while `mismatchReset` is set,
    the client emits the event once more, clears `mismatchReset`, and stops checking that scope,
    recording the app version in `CursorRec.digestStop`; checks resume when the app version changes.
+   A stopped scope is still pulled and followed like any other: only its check is skipped. So a
+   replica whose every scope stopped, with nothing to push, still hears the server's
+   `426 upgrade-required` from its next pull.
 
 ### §7.6 Views
 
@@ -2329,6 +2334,8 @@ A thin dead row is `{t, id, life, born?, seq}`.
                                                 // authenticated callers; every product with a headline type
 ```
 
+A client reads `minSchema` from a `200` hello only: one above its registry `version` stops sync as
+the server's `426 upgrade-required` does (§9.6). Another status carrying a `minSchema` is no verdict.
 `holdsRecords` is present iff `as` is an account A; a hello whose credential does not resolve
 answers `401` (§9.1). `holdsRecords[p]` is true
 iff `acct:A/<p>` holds a row that `visible` (§7.6) accepts, of a `primary` type (§2.4): an existence

@@ -504,7 +504,7 @@ public final class UndoOffers {
 
 // What the person may need to know about sync: who is signed in, a pause waiting for re-authentication, an upgrade the
 // server requires, the network, the unsent entries (a sent one may already have landed), and an unfinished sign-in.
-// `unansweredPushes` are the scopes of `failedPushes` whose last push got no answer: the server was never reached.
+// `unansweredPushes` are the scopes of `failedPushes` whose last push got no answer the engine could read.
 @MainActor @Observable
 public final class SyncStatus {
   struct Snapshot: Sendable, Equatable {

@@ -376,6 +376,25 @@ struct TransportTests {
     ])
   }
 
+  // The server's 1008 close, sent once the socket's session stops resolving, ends the socket as a refusal: a metric each
+  // time and never an Issue.
+  @Test(.timeLimit(.minutes(1))) func aSessionEndedCloseIsARefusalWithoutAnIssue() async throws {
+    let recorder = TelemetryTests.Recorder()
+    let server = try SocketServer()
+    let port = try await server.loopback.start()
+    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3, telemetry: recorder)
+    let properties = ["operation": "sync_live_receive", "method": "GET", "route": "/v1/sync", "failure_kind": "refused"]
+    for count in 1...2 {
+      guard case .answered(.ok(let connection)) = await transport.openLive(token: SessionToken("secret")) else {
+        throw RigError("the socket did not open")
+      }
+      server.close(.protocolCode(.policyViolation))
+      #expect(try await connection.receive() == nil)
+      #expect(recorder.undated == Array(repeating: TelemetryTests.Recorded(name: "api_request_failed", kind: nil, properties: properties,
+                                                                         durationMs: nil), count: count))
+    }
+  }
+
   // An outage at the handshake files one Issue, and a metric for each refused upgrade.
   @Test(.timeLimit(.minutes(1))) func refusedUpgradesFileOneIssue() async throws {
     let recorder = TelemetryTests.Recorder()
