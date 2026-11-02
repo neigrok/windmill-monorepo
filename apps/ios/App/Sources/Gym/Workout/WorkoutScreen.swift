@@ -277,7 +277,7 @@ struct WorkoutLedger: View {
           }
       }.frame(height: typeSize.isAccessibilitySize ? nil : CGFloat(min(ledger.rows.count, 3)) * RoomSpace.minimumTarget)
         .frame(maxHeight: typeSize.isAccessibilitySize ? .infinity : nil)
-        .background(GymPalette.card).clipShape(RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+        .background(GymPalette.card).clipShape(.card)
         .padding(.horizontal, RoomSpace.inset)
       if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
     }.padding(.top, RoomSpace.related).background(GymPalette.canvas)
@@ -545,7 +545,7 @@ struct WorkoutRack: View {
       }.buttonStyle(GymInstrumentButtonStyle()).font(.title3.weight(.medium))
       Button { workout.logSet() } label: {
         Text("Log set").font(.headline).frame(maxWidth: .infinity, minHeight: 32)
-      }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
+      }.buttonStyle(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
         .accessibilityLabel(Self.spokenLog(workout.weightKg, reps: workout.reps))
         .accessibilityIdentifier("workout-log")
   }

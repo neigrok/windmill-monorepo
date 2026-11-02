@@ -309,14 +309,15 @@ UI tests find a room-menu row by its `room-…` identifier or its room's title t
 carried by the app's bundle.
 
 Every button role a room draws lives in `Theme/RoomControls.swift`: the primary (`RoomPrimaryStyle`), the
-secondary, the glass seat and a card's decision (`RoomDecisionStyle`, prominent or quiet, a
-destructive quiet one in system red). `RoomGlass` is the one Liquid Glass surface, the regular material before
+secondary (`RoomSecondaryStyle`, its label in the room's ink when given the room) and the glass seat. A card's
+decisions are the primary and the secondary at full width, stacked by `CardDecisions` beside `ChangeCard`; a removal
+is the secondary with the destructive role. `RoomGlass` is the one Liquid Glass surface, the regular material before
 iOS 26, under the seat, the floating act and the transient band. `GymTransient.Band` resolves the band's words
 and its one control from plain values, and `GymModel.dismissError(_:)` clears the error a band showed. A read
 the room cannot make goes through `GymModel.failRead(_:)`, which says `GymModel.unreadable` and reports under `gym_read`.
-`DestructiveQuestion` takes only telemetry and the account. `RoomSpace` names the 52 pt control height and the
-22 and 24 pt radii Coach's cards and the weigh-in keep apart from `cardRadius`; that drift, the drawn card
-decisions and the weigh-in's own rows wait on Figma in `docs/design/consistency.md`.
+`DestructiveQuestion` takes only telemetry and the account. Every card on a room's canvas takes `RoomSpace.cardRadius`,
+22 pt with continuous corners, through the `.card` shape; a card the system's inset-grouped list draws keeps the
+system's corners.
 
 The refactor draws the same pixels. Throwaway captures before and after it, in Dark and Daylight on iPhone Air
 (iOS 27.0) and iPhone 17 Pro (iOS 26.5), compare the Coach greeting, Routines with its floating plus, the routine

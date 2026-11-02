@@ -466,7 +466,7 @@ object Readout {
     }
     fun loadUnit(equipment: String?, loadCount: Int): String = when (equipment) {
         "dumbbell" -> if (loadCount == 2) "kg each" else "kg"
-        "barbell", "machine" -> "kg total"
+        "barbell" -> "kg total"
         "bodyweight" -> "kg added"
         else -> "kg"
     }

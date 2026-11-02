@@ -365,7 +365,7 @@ struct JournalScreen: View {
         if model.keepDue {
           HStack {
             Image(systemName: "iphone").font(.system(size: 14)); Text("Only on this phone").font(ShellType.meta); Spacer()
-            Button("Keep it") { model.keep() }.font(ShellType.secondaryAction).modifier(RoomSecondaryStyle()).tint(JournalPalette.lamp)
+            Button("Keep it") { model.keep() }.font(ShellType.secondaryAction).buttonStyle(RoomSecondaryStyle()).tint(JournalPalette.lamp)
           }.foregroundStyle(JournalPalette.inkDim).padding(.top, 18)
         }
       }

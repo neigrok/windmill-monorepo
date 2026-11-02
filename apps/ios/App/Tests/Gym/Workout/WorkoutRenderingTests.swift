@@ -14,13 +14,16 @@ import SyncTesting
 @testable import Windmill
 
 @MainActor final class WorkoutRenderingTests: XCTestCase {
-  struct SetFieldsProbe: View {
+  struct FixSetNumbersProbe: View {
     @State var load: Double
     @State var reps: Int
     let changed: (Double, Int) -> Void
     @FocusState var focused: Bool
     var body: some View {
-      Form { SetFields(weightKg: $load, reps: $reps, basis: MovementEquipment("other"), focus: $focused, identifier: "probe") }
+      Form {
+        LoadRow(weightKg: $load, basis: MovementEquipment("other"), focus: $focused, identifier: "probe-load")
+        RepsWheel(reps: $reps, identifier: "probe-reps")
+      }
         .onChange(of: load) { _, value in changed(value, reps) }
         .onChange(of: reps) { _, value in changed(load, value) }
     }
@@ -246,13 +249,13 @@ import SyncTesting
 
   // Fix set's numbers are one decimal-pad field and one native wheel: the field opens on the load, a typed load in either
   // separator lands, and an empty one gives way to the load before it; the wheel holds the reps alone.
-  func testSetFieldsTypeTheLoadAndTurnOneRepsWheel() async throws {
+  func testFixSetTypesTheLoadAndTurnsOneRepsWheel() async throws {
     func views<V: UIView>(_ view: UIView, _ type: V.Type) -> [V] {
       if let match = view as? V { return [match] }
       return view.subviews.flatMap { views($0, type) }
     }
     var seen = (load: -5.0, reps: 8)
-    let window = try host(SetFieldsProbe(load: -5, reps: 8, changed: { seen = ($0, $1) }), appearance: .light)
+    let window = try host(FixSetNumbersProbe(load: -5, reps: 8, changed: { seen = ($0, $1) }), appearance: .light)
     defer { window.isHidden = true; window.rootViewController = nil }
     try await Task.sleep(for: .milliseconds(300))
     window.layoutIfNeeded()

@@ -157,7 +157,7 @@ struct LogTab: View {
                     record: recordDot, unsent: gym.sessionIsUnsent(session.id))
         .padding(.horizontal, RoomSpace.inset).padding(.vertical, 14)
         .frame(minHeight: 76)
-        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.panel))
+        .background(GymPalette.card, in: .card)
     }.buttonStyle(.plain).accessibilityIdentifier("gym-log-session-\(session.id)")
       .contextMenu {
         Button("Open workout") { destination = .workout(session.id) }

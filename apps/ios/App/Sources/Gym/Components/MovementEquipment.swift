@@ -43,14 +43,7 @@ struct MovementEquipment {
     case .other, nil: nil
     }
   }
-  var unit: String {
-    switch kind {
-    case .dumbbell: loadCount == 1 ? "kg" : "kg each"
-    case .bodyweight: "kg added"
-    case .barbell: "kg total"
-    case .machine, .cable, .kettlebell, .other, nil: "kg"
-    }
-  }
+  var unit: String { Readout.loadUnit(equipment: value, loadCount: loadCount) }
   var help: String {
     switch kind {
     case .dumbbell: loadCount == 1 ? "Enter the dumbbell’s weight. Volume counts one dumbbell." : "Enter the weight of one dumbbell. Volume counts both."

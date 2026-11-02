@@ -77,7 +77,7 @@ class ReadoutTests {
             Triple("barbell", 1, "3 × 8 · 24 kg total"),
             Triple("dumbbell", 2, "3 × 8 · 24 kg each"),
             Triple("dumbbell", 1, "3 × 8 · 24 kg"),
-            Triple("machine", 1, "3 × 8 · 24 kg total"),
+            Triple("machine", 1, "3 × 8 · 24 kg"),
             Triple("bodyweight", 1, "3 × 8 · 24 kg added"),
             Triple("cable", 1, "3 × 8 · 24 kg"),
             Triple("kettlebell", 1, "3 × 8 · 24 kg"),

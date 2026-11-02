@@ -43,13 +43,14 @@ struct CoachDraftsCard: View {
       if let note {
         Text(note).font(.subheadline).foregroundStyle(GymPalette.inkDim).padding(.top, 14).accessibilityIdentifier("coach-save-routines-note")
       }
-      VStack(spacing: 10) {
+      CardDecisions {
         Button { apply() } label: {
-          HStack(spacing: RoomSpace.related) { if busy { ProgressView().tint(GymPalette.onAccent) }; Text("Apply") }
-        }.buttonStyle(RoomDecisionStyle(.prominent)).disabled(busy || closed)
+          HStack(spacing: RoomSpace.related) { if busy { ProgressView().controlSize(.regular).tint(GymPalette.inkDim) }; Text("Apply") }.frame(maxWidth: .infinity)
+        }.buttonStyle(RoomPrimaryStyle(room: .gym)).disabled(busy || closed)
           .accessibilityIdentifier("coach-save-routines")
-        Button("Reject") { coach.rejectDrafts(id) }.buttonStyle(RoomDecisionStyle(.quiet)).disabled(busy).accessibilityIdentifier("coach-reject-routines")
-      }.padding(.top, 16)
+        Button { coach.rejectDrafts(id) } label: { Text("Reject").frame(maxWidth: .infinity) }
+          .buttonStyle(RoomSecondaryStyle(room: .gym)).disabled(busy).accessibilityIdentifier("coach-reject-routines")
+      }
     }.modifier(ChangeCard(stroke: GymPalette.accent)).accessibilityElement(children: .contain).accessibilityIdentifier("coach-drafts")
   }
   // *Full body A* over its movements while it is open; closed, *3 movements* and the door chevron. A lone routine has no chevron.

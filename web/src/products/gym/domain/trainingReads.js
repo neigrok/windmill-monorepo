@@ -556,7 +556,7 @@ export const Readout = Object.freeze({
   /** @param {string | null} equipment @param {number} loadCount */
   loadUnit(equipment, loadCount) {
     if (equipment === 'dumbbell') return loadCount === 2 ? 'kg each' : 'kg';
-    if (equipment === 'barbell' || equipment === 'machine') return 'kg total';
+    if (equipment === 'barbell') return 'kg total';
     if (equipment === 'bodyweight') return 'kg added';
     return 'kg';
   },

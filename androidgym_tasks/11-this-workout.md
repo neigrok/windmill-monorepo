@@ -16,7 +16,7 @@
 **Change**
 - Title *This workout*. Subtitle *{N sets} logged · {routine}*: *4 sets logged · Push A*. A workout with no routine (one a connected agent started) ends the subtitle with `Readout.noRoutine` (13).
 - Rows are M3 `ListItem`s: `drag_handle` leading (always shown), name and meta, the forward arrow trailing.
-- Meta units follow equipment (08): *24 kg each*, *25 kg total*.
+- Meta units follow equipment (08): *24 kg each* for two dumbbells, *25 kg* for the cable Triceps Pushdown, which 03.4 draws in *kg total* (ledger, *Cable loads drawn as kg total*).
 - Only a movement with no sets swipes, **end-to-start only**, on `DeleteSwipeRow` (04) with the label *Remove movement*. The row is gone on release, with no Undo. A refused drop snaps the row back and the note line says why.
 - Delete `DropGround`.
 - Keep the TalkBack actions and **Add movement** in this management sheet; the main rack has no Add button. **Add movement** opens the existing picker for this live workout. Picker Cancel returns to **This workout**; cancelling custom creation returns to the picker. A successful selection or custom creation returns to the same preserved rack and selects the added movement.

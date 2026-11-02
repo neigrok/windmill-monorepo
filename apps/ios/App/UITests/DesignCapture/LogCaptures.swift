@@ -195,14 +195,15 @@ final class LogCaptures: DesignCapture {
       XCTAssertFalse(app.staticTexts["gym-weigh-in-refusal"].exists, "Typing an incomplete number does not announce a refusal")
       XCTAssertFalse(app.buttons["gym-weigh-in-save"].isEnabled)
       let date = app.buttons["gym-weigh-in-date"]
-      for _ in 0..<3 where !date.isHittable { app.scrollViews.firstMatch.swipeUp() }
+      let form = app.collectionViews.containing(.textField, identifier: "gym-weigh-in-weight").firstMatch
+      for _ in 0..<3 where !date.isHittable { form.swipeUp() }
       date.tap()
       XCTAssertTrue(app.buttons["gym-weigh-in-date-back"].waitForExistence(timeout: 5))
       app.buttons["gym-weigh-in-date-back"].tap()
       XCTAssertTrue(app.staticTexts["gym-weigh-in-refusal"].waitForExistence(timeout: 5))
       XCTAssertEqual(app.staticTexts["gym-weigh-in-refusal"].label, "Between 20 and 400 kg")
       XCTAssertFalse(app.buttons["gym-weigh-in-save"].isEnabled)
-      for _ in 0..<3 where !date.isHittable { app.scrollViews.firstMatch.swipeUp() }
+      for _ in 0..<3 where !date.isHittable { form.swipeUp() }
       XCTAssertTrue(date.isHittable)
       XCTAssertLessThanOrEqual(date.frame.maxY, app.keyboards.firstMatch.frame.minY)
       XCTAssertTrue(app.buttons["gym-weigh-in-cancel"].isHittable)

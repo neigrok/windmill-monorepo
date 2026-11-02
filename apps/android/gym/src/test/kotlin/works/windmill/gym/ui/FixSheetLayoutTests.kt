@@ -143,7 +143,7 @@ class FixSheetLayoutTests {
                 onSave = { FixOutcome.Corrected(set) }, onDelete = {},
                 exercise = Exercise("movement", "Movement", equipment = equipment.value)) }
         }
-        for ((kind, unit) in listOf("barbell" to "kg total", "dumbbell" to "kg each", "bodyweight" to "kg added", "machine" to "kg total", "legacy-cable" to "kg")) {
+        for ((kind, unit) in listOf("barbell" to "kg total", "dumbbell" to "kg each", "bodyweight" to "kg added", "machine" to "kg", "legacy-cable" to "kg")) {
             compose.runOnIdle { equipment.value = kind }
             compose.onNodeWithContentDescription("Load, $unit").assertTextEquals("−12.5")
         }

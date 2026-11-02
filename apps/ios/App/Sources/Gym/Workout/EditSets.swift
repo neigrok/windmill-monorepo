@@ -195,27 +195,18 @@ struct EditSetsSheet: View {
       .listRowBackground(GymPalette.card.overlay(opened ? GymPalette.accentSoft : .clear))
   }
 
-  // The open set's numbers as Fix set draws them (03.30): the load on the decimal pad, its field outlined in the accent while
-  // it is typed in, over the reps wheel; a target the plan refuses says so under the field.
+  // The open set's numbers as Fix set draws them (03.30): its Load row over the reps wheel; a target the plan refuses says so
+  // under the field.
   @ViewBuilder func editor(_ row: EditSetsDraft.Row) -> some View {
     let load = row.target.weightKg ?? opening.weightKg
     Divider().overlay(GymPalette.line)
-    LabeledContent("Load") {
-      HStack(spacing: RoomSpace.related) {
-        LoadField(weightKg: Binding(get: { typedLoad ?? load }, set: { typedLoad = $0 }), basis: basis, focus: $loadFocused,
-                  identifier: "edit-sets-load", ended: {
-                    let value = typedLoad ?? load
-                    typedLoad = nil
-                    if value != load { draft.retarget(row.id) { $0.weightKg = value } }
-                    let next = afterLoad; afterLoad = nil; next?()
-                  })
-          .multilineTextAlignment(.trailing).monospacedDigit()
-          .padding(.horizontal, 10).frame(width: 120, height: 36)
-          .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 10))
-          .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(loadFocused ? GymPalette.accent : .clear, lineWidth: 1.5) }
-        Text(basis.unit).foregroundStyle(GymPalette.inkDim).fixedSize()
-      }
-    }.foregroundStyle(GymPalette.ink).frame(minHeight: RoomSpace.minimumTarget)
+    LoadRow(weightKg: Binding(get: { typedLoad ?? load }, set: { typedLoad = $0 }), basis: basis, focus: $loadFocused,
+            identifier: "edit-sets-load", ended: {
+              let value = typedLoad ?? load
+              typedLoad = nil
+              if value != load { draft.retarget(row.id) { $0.weightKg = value } }
+              let next = afterLoad; afterLoad = nil; next?()
+            }).frame(minHeight: RoomSpace.minimumTarget)
     if let problem = draft.problem, problem.row == row.id {
       Text(problem.message).font(.footnote).foregroundStyle(GymPalette.alarm).frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("edit-sets-problem")

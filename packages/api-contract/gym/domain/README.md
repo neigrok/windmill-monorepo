@@ -81,8 +81,8 @@ entered per dumbbell, so `count` is the resolved `loadCount` for a movement whos
 an assisted set counts nothing. Every volume read takes the resolved catalogue.
 
 **Load unit.** `Readout.loadUnit` takes resolved `equipment` and `loadCount`: two dumbbells read
-`kg each`, one reads `kg`; barbell and machine read `kg total`; bodyweight reads `kg added`, including
-negative loads. Cable, kettlebell, unknown equipment and a missing exercise read `kg`. This is a
+`kg each`, one reads `kg`; barbell reads `kg total`; bodyweight reads `kg added`, including negative
+loads. Machine, cable, kettlebell, unknown equipment and a missing exercise read `kg`. This is a
 presentation read: it does not convert loads or volume. Its shared read cases use
 `{operation:"loadUnit", equipment?, loadCount}`. Screen formatters insert a space before this unit;
 Coach action and review presentation keeps its existing formatter.

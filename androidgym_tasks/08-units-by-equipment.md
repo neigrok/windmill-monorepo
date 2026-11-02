@@ -19,11 +19,11 @@
 **Change**
 - One load rule in the domain, next to `Readout` (with tests and shared vectors):
   - Dumbbells, two: *kg each*. Dumbbells, one: *kg*.
-  - Barbell and Machine: *kg total*.
+  - Barbell: *kg total*. Machine, cable, kettlebell and Other: *kg*.
   - Bodyweight: *kg added*. A negative number is band help and still reads *kg added* (e.g. *−10 kg added*).
   - Always a space before the unit.
 - Use a shared equipment-aware formatter outside Coach action cards: `targetWithUnit` takes the exercise; migrate routine summary, editor and receipt callers without losing supported cable/kettlebell behavior. Coach draft/action text retains its current formatting in this release under the owner's postponement of action-presentation changes. Apply the approved basis wording above to its drawn equipment only; preserve current wording for the two pending visual variants.
-  - 02.2: *3 × 8 · 75 kg total* (barbell, machine), *3 × 10 · 24 kg each* (dumbbells).
+  - 02.2: *3 × 8 · 75 kg total* (barbell), *3 × 10 · 24 kg each* (dumbbells). 02.2 and 02.5 draw the cable Triceps Pushdown in *kg total*; it reads *kg* (ledger, *Cable loads drawn as kg total*).
   - 02.5: the same strings under each movement in the editor.
 - Use *Barbell*, *Dumbbells*, *Bodyweight* and *Machine* for the four approved examples; preserve the existing *Cable* and *Kettlebell* values/labels for stored and seeded records. A name-only edit must retain equipment and load count exactly. Do not relabel cable as machine, kettlebell as dumbbell, or default an unlisted selection to barbell.
 - Designer-owned gate `android-gym-equipment-variants-design` supplies Cable/Kettlebell icons, chooser states and load-basis wording with human approval before those visual additions: the four drawn variants do not approve those additions. Until that follow-up is approved, retain the existing supported-record presentation and semantics for those values; do not force the four-example formatter onto them. Keep the narrower new-movement menu distinct from stored-record support.
