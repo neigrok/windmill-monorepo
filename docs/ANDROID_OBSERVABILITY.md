@@ -137,7 +137,8 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.savePhoto` | gym | Saving a Coach photo fails |
 | `gym.saveRoutine` | gym | Saving a routine fails |
 | `gym.saveRoutineDraft` | gym | Saving the routine editor's draft for recreation fails |
-| `gym.share` | gym | Sharing a workout fails |
+| `gym.share` | gym | Creating or copying a workout link fails |
+| `gym.shareLink` | gym | Opening the share sheet fails unexpectedly |
 | `gym.showWorkout` | gym | Showing the workout notification again fails |
 | `gym.start` | gym | Starting a workout fails |
 | `gym.storage.decode` | gym | A stored gym document or the workout controls cannot be decoded |
@@ -295,7 +296,8 @@ foot turns to Retry.
 | `session` | `delete` | `ok`, `refused`, `failed` | |
 | `session` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
 | `session` | `fix` | `ok`, `refused`, `failed` | |
-| `session` | `share` | `ok`, `failed` | |
+| `session` | `copy_link` | `ok`, `failed` | |
+| `session` | `share_link` | `ok`, `unavailable`, `failed` | |
 | `threads` | `delete` | `ok`, `refused`, `failed`, `cancelled` | yes |
 | `tile` | `open` | `ok`, `failed` | |
 | `tile` | `routines` | `ok`, `failed` | |
@@ -310,6 +312,8 @@ foot turns to Retry.
 | `workout` | `reorder` | `ok`, `failed` | |
 | `workout` | `show_notification` | `ok`, `refused` | |
 | `workout_bar` | `open` | `ok`, `refused` | |
+
+For `session/share_link`, `ok` means the system chooser opened; it does not report a selected app or delivery. `unavailable` means no activity handles the chooser and produces no Sentry Issue. Unexpected launch errors report `gym.shareLink` and `failed`. Properties contain only the screen, action and outcome labels.
 
 ## Adding a failure or an event
 

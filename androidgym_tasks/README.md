@@ -255,5 +255,6 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [111](111-release-mapping-headings.md) — Release mappings and accessible headings
 - [115](115-faint-ink-and-sheet-width.md) — Dark faint ink clears small-text contrast; every modal sheet is bounded to 560 dp
 - [116](116-coach-links.md) — Coach answer links open and keep their destinations when copied
+- [117](117-workout-link-sharesheet.md) — Share a workout link through the Android Sharesheet beside Copy link
 
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.
