@@ -5,8 +5,11 @@ import android.util.Log
 import io.sentry.Sentry
 import io.sentry.SentryEvent
 import io.sentry.android.core.SentryAndroid
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import works.windmill.platform.net.RequestDiagnostics
@@ -23,6 +26,7 @@ class AndroidTelemetry(
     private val credential: () -> String?,
     scope: CoroutineScope,
     products: EventSchemas,
+    storageDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : Telemetry {
     private val metadata = mapOf(
         "platform" to "android", "release" to release, "environment" to environment,
@@ -32,8 +36,10 @@ class AndroidTelemetry(
     private val client = RequestDiagnostics.attachTo(OkHttpClient())
 
     init {
-        val prefs = runCatching { context.getSharedPreferences("works.windmill.telemetry", Context.MODE_PRIVATE) }
-            .onFailure { capture("telemetry_storage", it) }.getOrNull()
+        val prefs by lazy {
+            runCatching { context.getSharedPreferences("works.windmill.telemetry", Context.MODE_PRIVATE) }
+                .onFailure { capture("telemetry_storage", it) }.getOrNull()
+        }
         events = EventQueue(
             userId, runCatching(credential).onFailure { capture("telemetry_credential", it) }.getOrNull(),
             read = { prefs?.getString("queue", null) },
@@ -49,14 +55,13 @@ class AndroidTelemetry(
                 try {
                     WindmillApi(baseUrl, { bearer }, client, diagnostics)
                         .send<EventBatchOut>("POST", "/v1/events", batch, operation = "telemetry_delivery").accepted
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
                 } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
                     throw EventDeliveryFailure(error, failureProperties)
                 }
             },
             failure = { operation, error, properties -> capture(operation, error, properties) },
-            scope = scope,
+            scope = CoroutineScope(scope.coroutineContext + storageDispatcher),
             schemas = EventSchemas.platform + products,
         )
     }

@@ -250,5 +250,6 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [106](106-notes-and-navigation-state.md) — Notes keep separate visits, handle swipes scroll, and failed reads can retry
 - [108](108-workout-writes-and-recovery.md) — Workout writes and recovery retain the whole saved source
 - [109](109-auth-and-rest.md) — Auth failures say what happened, and REST keeps its boundaries
+- [110](110-telemetry-queue.md) — Telemetry saves off the caller and dormant accounts yield capacity
 
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.

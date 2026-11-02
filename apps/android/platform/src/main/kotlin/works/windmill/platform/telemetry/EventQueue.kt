@@ -1,10 +1,14 @@
 package works.windmill.platform.telemetry
 
 import java.util.UUID
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,14 +24,52 @@ data class EventBatchIn(val sessionKey: String, val events: List<EventIn>, val p
 data class EventBatchOut(val accepted: Int)
 
 @Serializable
-private data class EventShelf(val sessionKey: String, val userId: String?, val events: List<EventIn>)
+private data class EventShelf(val sessionKey: String, val userId: String?, val events: List<EventIn>) {
+    fun drainable(currentUser: String?): Boolean = userId == null || userId == currentUser
+}
 
 @Serializable
 private data class EventStore(val shelves: List<EventShelf>) {
-    // `events` at the end of the owner's shelf; null owns the signed-out shelf. An owner without a shelf gets one.
-    fun appending(owner: String?, events: List<EventIn>): EventStore =
-        if (shelves.none { it.userId == owner }) EventStore(shelves + EventShelf(UUID.randomUUID().toString(), owner, events))
-        else EventStore(shelves.map { if (it.userId == owner) it.copy(events = it.events + events) else it })
+    fun prune(currentUser: String?): EventStore = EventStore(shelves.filter {
+        it.drainable(currentUser) || it.events.isNotEmpty()
+    })
+
+    fun identify(userId: String?, sessionKey: String): EventStore {
+        val retained = prune(userId).shelves
+        if (retained.any { it.userId == userId }) return EventStore(retained)
+        return EventStore(retained + EventShelf(sessionKey, userId, emptyList()))
+    }
+
+    fun append(owner: String?, events: List<EventIn>, sessionKey: String): EventStore {
+        if (shelves.none { it.userId == owner }) return EventStore(shelves + EventShelf(sessionKey, owner, events))
+        return EventStore(shelves.map { if (it.userId == owner) it.copy(events = it.events + events) else it })
+    }
+
+    fun add(event: EventIn, owner: String?, currentUser: String?, sessionKey: String): EventStore {
+        var retained = shelves
+        while (retained.sumOf { it.events.size } >= 500) {
+            val oldest = retained.indices.filter {
+                !retained[it].drainable(currentUser) && retained[it].events.isNotEmpty()
+            }.minWithOrNull(compareBy<Int> { retained[it].events.first().clientMs }.thenBy { it }) ?: return this
+            retained = EventStore(retained.mapIndexed { index, shelf ->
+                if (index == oldest) shelf.copy(events = shelf.events.drop(1)) else shelf
+            }).prune(currentUser).shelves
+        }
+        return EventStore(retained).append(owner, listOf(event), sessionKey)
+    }
+
+    fun retire(userId: String, carrying: Set<String>, currentUser: String?, sessionKey: String): EventStore {
+        val carried = shelves.filter { it.userId == userId }.flatMap { it.events }.filter { it.name in carrying }
+        val retained = EventStore(shelves.map {
+            if (it.userId == userId) it.copy(events = emptyList()) else it
+        }).prune(currentUser)
+        if (carried.isEmpty()) return retained
+        return retained.append(null, carried, sessionKey)
+    }
+
+    fun acknowledge(ids: Set<String>, currentUser: String?): EventStore = EventStore(shelves.map {
+        it.copy(events = it.events.filterNot { event -> event.id in ids })
+    }).prune(currentUser)
 }
 
 internal class EventDeliveryFailure(val error: Throwable, val properties: Map<String, String>) : Exception(error)
@@ -44,106 +86,129 @@ class EventQueue(
     private val retryMs: Long = 30_000,
     private val schemas: EventSchemas = EventSchemas.platform,
 ) {
-    private val lock = Any()
-    private val wake = Channel<Unit>(Channel.CONFLATED)
-    private var currentUser = userId
-    private var secret = credential
-    private var overflowReported = false
-    private var storageReported = false
-    private var store = try {
-        read()?.let { WindmillJson.decodeFromString<EventStore>(it) } ?: EventStore(emptyList())
-    } catch (error: Exception) {
-        failure("telemetry_restore", error, emptyMap())
-        EventStore(emptyList())
+    private sealed interface Command {
+        data class Add(val event: EventIn, val signedOut: Boolean) : Command
+        data class Identity(val userId: String?, val credential: String?) : Command
+        data class Retire(val userId: String, val carrying: Set<String>) : Command
+        data class Acknowledge(val ids: Set<String>, val applied: CompletableDeferred<Unit>) : Command
     }
 
+    private data class Snapshot(val store: EventStore, val userId: String?, val credential: String?) {
+        fun next(): Pair<EventBatchIn, String?>? = store.shelves.firstOrNull {
+            it.events.isNotEmpty() && it.drainable(userId)
+        }?.let { EventBatchIn(it.sessionKey, it.events.take(50), "android") to if (it.userId == null) null else credential }
+    }
+
+    private val commands = Channel<Command>(Channel.UNLIMITED)
+    private val snapshots = MutableStateFlow<Snapshot?>(null)
+
     init {
-        identity(userId, credential)
+        scope.launch {
+            try {
+                var store = try {
+                    read()?.let { WindmillJson.decodeFromString<EventStore>(it) } ?: EventStore(emptyList())
+                } catch (error: Exception) {
+                    coroutineContext.ensureActive()
+                    failure("telemetry_restore", error, emptyMap())
+                    EventStore(emptyList())
+                }
+                var currentUser = userId
+                var secret = credential
+                var overflowReported = false
+                var storageReported = false
+                var previous = store
+                store = store.identify(userId, UUID.randomUUID().toString())
+                var command = commands.tryReceive().getOrNull()
+                while (true) {
+                    val acknowledgements = mutableListOf<CompletableDeferred<Unit>>()
+                    while (command != null) {
+                        val change: Command = command
+                        when (change) {
+                            is Command.Add -> {
+                                val updated = store.add(change.event, if (change.signedOut) null else currentUser,
+                                    currentUser, UUID.randomUUID().toString())
+                                if (updated === store) {
+                                    if (!overflowReported) failure("telemetry_overflow", IllegalStateException("Event queue reached capacity"), emptyMap())
+                                    overflowReported = true
+                                }
+                                store = updated
+                            }
+                            is Command.Identity -> {
+                                currentUser = change.userId
+                                secret = change.credential
+                                store = store.identify(currentUser, UUID.randomUUID().toString())
+                            }
+                            is Command.Retire -> store = store.retire(change.userId, change.carrying, currentUser, UUID.randomUUID().toString())
+                            is Command.Acknowledge -> {
+                                store = store.acknowledge(change.ids, currentUser)
+                                overflowReported = false
+                                acknowledgements += change.applied
+                            }
+                        }
+                        command = commands.tryReceive().getOrNull()
+                    }
+                    snapshots.value = Snapshot(store, currentUser, secret)
+                    if (store != previous) {
+                        try {
+                            check(write(WindmillJson.encodeToString(EventStore.serializer(), store)))
+                            storageReported = false
+                        } catch (error: Exception) {
+                            coroutineContext.ensureActive()
+                            if (!storageReported) failure("telemetry_persist", error, emptyMap())
+                            storageReported = true
+                        }
+                    }
+                    acknowledgements.forEach { it.complete(Unit) }
+                    previous = store
+                    command = commands.receive()
+                }
+            } finally {
+                commands.cancel()
+            }
+        }
         scope.launch {
             var deliveryReported = false
-            for (signal in wake) {
-                while (true) {
-                    val next = synchronized(lock) {
-                        store.shelves.firstOrNull { it.events.isNotEmpty() && (it.userId == null || it.userId == currentUser) }
-                            ?.let { EventBatchIn(it.sessionKey, it.events.take(50), "android") to if (it.userId == null) null else secret }
-                    } ?: break
-                    val (batch, bearer) = next
-                    try {
-                        val accepted = send(batch, bearer)
-                        if (accepted != batch.events.size) {
-                            failure("telemetry_rejected", IllegalStateException("Event intake rejected entries"), emptyMap())
-                        }
-                        synchronized(lock) {
-                            store = store.copy(shelves = store.shelves.map {
-                                if (it.sessionKey != batch.sessionKey) it else it.copy(events = it.events.drop(batch.events.size))
-                            })
-                            overflowReported = false
-                            persist()
-                        }
-                        deliveryReported = false
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        val delivery = error as? EventDeliveryFailure
-                        val cause = delivery?.error ?: error
-                        if (!deliveryReported && TelemetryPolicy.report(cause) && !TelemetryPolicy.networkLoss(cause)) {
-                            failure("telemetry_delivery", cause, delivery?.properties.orEmpty())
-                            deliveryReported = true
-                        }
-                        delay(retryMs)
+            while (true) {
+                val (batch, bearer) = snapshots.mapNotNull { it?.next() }.first()
+                try {
+                    val accepted = send(batch, bearer)
+                    if (accepted != batch.events.size) {
+                        failure("telemetry_rejected", IllegalStateException("Event intake rejected entries"), emptyMap())
                     }
+                    val applied = CompletableDeferred<Unit>()
+                    commands.send(Command.Acknowledge(batch.events.map { it.id }.toSet(), applied))
+                    applied.await()
+                    deliveryReported = false
+                } catch (error: Exception) {
+                    coroutineContext.ensureActive()
+                    val delivery = error as? EventDeliveryFailure
+                    val cause = delivery?.error ?: error
+                    if (!deliveryReported && TelemetryPolicy.report(cause) && !TelemetryPolicy.networkLoss(cause)) {
+                        failure("telemetry_delivery", cause, delivery?.properties.orEmpty())
+                        deliveryReported = true
+                    }
+                    delay(retryMs)
                 }
             }
         }
     }
 
-    fun identity(userId: String?, credential: String?) = synchronized(lock) {
-        currentUser = userId
-        secret = credential
-        val retained = store.shelves.filter { it.userId == userId || it.events.isNotEmpty() }
-        store = EventStore(if (retained.any { it.userId == userId }) retained
-            else retained + EventShelf(UUID.randomUUID().toString(), userId, emptyList()))
-        persist()
-        wake.trySend(Unit)
-        Unit
+    fun identity(userId: String?, credential: String?) {
+        commands.trySend(Command.Identity(userId, credential))
     }
 
-    // Appended, not merged by time: a batch already in flight acknowledges the head of its shelf.
-    fun retire(userId: String, carrying: Set<String>) = synchronized(lock) {
-        val carried = store.shelves.filter { it.userId == userId }.flatMap { it.events }.filter { it.name in carrying }
-        store = EventStore(store.shelves.map { if (it.userId == userId) it.copy(events = emptyList()) else it }).appending(null, carried)
-        persist()
-        wake.trySend(Unit)
-        Unit
+    fun retire(userId: String, carrying: Set<String>) {
+        commands.trySend(Command.Retire(userId, carrying.toSet()))
     }
 
-    // A signed-out event waits on the signed-out shelf whoever is signed in.
-    fun add(name: String, properties: Map<String, String>, signedOut: Boolean = false) = synchronized(lock) {
+    fun add(name: String, properties: Map<String, String>, signedOut: Boolean = false) {
         if (!schemas.accepts(name)) {
             failure("telemetry_event_name", IllegalArgumentException("Invalid event name"), emptyMap())
-            return@synchronized
-        }
-        if (store.shelves.sumOf { it.events.size } >= 500) {
-            if (!overflowReported) failure("telemetry_overflow", IllegalStateException("Event queue reached capacity"), emptyMap())
-            overflowReported = true
-            return@synchronized
+            return
         }
         val props = schemas.properties(name, properties).mapValues { (key, value) ->
             if (key == "duration_ms") JsonPrimitive(value.toLongOrNull()?.coerceAtLeast(0) ?: 0) else JsonPrimitive(value)
         }
-        store = store.appending(if (signedOut) null else currentUser, listOf(EventIn(UUID.randomUUID().toString(), name, now(), props)))
-        persist()
-        wake.trySend(Unit)
-        Unit
-    }
-
-    private fun persist() {
-        try {
-            check(write(WindmillJson.encodeToString(EventStore.serializer(), store)))
-            storageReported = false
-        } catch (error: Exception) {
-            if (!storageReported) failure("telemetry_persist", error, emptyMap())
-            storageReported = true
-        }
+        commands.trySend(Command.Add(EventIn(UUID.randomUUID().toString(), name, now(), props), signedOut))
     }
 }
