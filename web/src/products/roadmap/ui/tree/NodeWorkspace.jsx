@@ -62,7 +62,7 @@ function renderInline(text, key) {
   return nodes;
 }
 
-function renderMarkdown(md) {
+export function renderMarkdown(md) {
   const blocks = [];
   let list = null;
   let para = null;

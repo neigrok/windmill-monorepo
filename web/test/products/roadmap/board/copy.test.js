@@ -360,3 +360,10 @@ test('copy — bulk selection formats full counts', () => {
     '0 selected', '1 selected', '3 selected', '1,200 selected',
   ]);
 });
+
+test('approved workspace gaps have one pinned string each', async () => {
+  const { WORKSPACE_EMPTY, NEW_LINK, HISTORY_EMPTY } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(WORKSPACE_EMPTY, { body: 'Add something for this step.', addNote: 'Add note' });
+  assert.deepEqual(NEW_LINK, { title: 'New link' });
+  assert.equal(HISTORY_EMPTY, 'No changes yet');
+});

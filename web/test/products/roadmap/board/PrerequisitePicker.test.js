@@ -27,8 +27,12 @@ import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 const completed = new Set(['wind']);
 const fixtureNodes = ${fixtureNodes.toString()};
 const withoutWind = ${withoutWind.toString()};
-window.mount = ({ total = 8 } = {}) => {
+window.mount = ({ total = 8, editing = null } = {}) => {
   const original = fixtureNodes(total);
+  if (editing) {
+    original[2].prerequisites = [];
+    original[1].prerequisites.push(original[2].id);
+  }
   function App() {
     const [open, setOpen] = useState(false);
     const [nodes, setNodes] = useState(original);
@@ -40,14 +44,24 @@ window.mount = ({ total = 8 } = {}) => {
       return () => window.removeEventListener('resize', resize);
     }, []);
     window.remove = () => setNodes(withoutWind(original));
+    window.blockSelected = () => setNodes(original.map((node) => {
+      if (node.id === 'step-0') return { ...node, prerequisites: ['wind'] };
+      if (node.id === 'step-1') return { ...node, prerequisites: ['step-0'] };
+      return node;
+    }));
+    window.refresh = () => setNodes((current) => [...current]);
     window.restore = () => setNodes(original);
     window.nodeCount = tree.nodes.length;
     return React.createElement('div', null,
       React.createElement('button', { onClick: () => setOpen(true) }, 'Open composer'),
       open && React.createElement(StepComposer, {
-        tree, completed, legend: [],
+        tree, completed, legend: [], editing,
         band: width < 744 ? 'phone' : width < 1024 ? 'tablet' : 'desktop',
         onClose: () => setOpen(false),
+        onEdit: (request) => {
+          (window.requests ??= []).push(request);
+          return { ok: false };
+        },
         onCreate: (request) => {
           (window.requests ??= []).push(request);
           return { ok: false };
@@ -99,7 +113,7 @@ after(async () => {
   await server?.close();
 });
 
-async function open(width, { total = 8, selected = [], name = 'Reefing basics' } = {}) {
+async function open(width, { total = 8, selected = [], name = 'Reefing basics', editing = null } = {}) {
   await serving;
   launching ??= chromium.launch({ headless: true });
   browser = await launching;
@@ -110,7 +124,7 @@ async function open(width, { total = 8, selected = [], name = 'Reefing basics' }
   try {
     await page.goto(`${origin}/picker-test`);
     await page.waitForFunction(() => window.entryReady);
-    await page.evaluate((options) => window.mount(options), { total });
+    await page.evaluate((options) => window.mount(options), { total, editing });
     await page.getByRole('button', { name: 'Open composer' }).click();
     if (name) await page.getByLabel('Name', { exact: true }).fill(name);
     await page.locator('.st-board-draft-needs').click();
@@ -179,7 +193,7 @@ for (const width of [390, 1440]) {
       await formReturned(page);
       assert.equal(await page.locator('.st-board-draft-needs').textContent(), 'PrerequisitesRead the wind');
       assert.deepEqual(await page.evaluate(() => ({ requests: window.requests ?? [], events: window.events })), {
-        requests: [], events: [{ name: 'roadmap_board_picker', props: { step: 'cancel' } }],
+        requests: [], events: [{ name: 'roadmap_board_picker', props: { step: 'cancel', mode: 'create' } }],
       });
       await page.locator('.st-board-draft-needs').click();
       await page.getByRole('checkbox', { name: 'Chart 2 Up next', exact: true }).click();
@@ -187,7 +201,7 @@ for (const width of [390, 1440]) {
       await formReturned(page);
       assert.equal(await page.locator('.st-board-draft-needs').textContent(), 'PrerequisitesRead the wind, Chart 2');
       assert.deepEqual(await page.evaluate(() => window.events.at(-1)), {
-        name: 'roadmap_board_picker', props: { step: 'apply', count: '2-5' },
+        name: 'roadmap_board_picker', props: { step: 'apply', mode: 'create', count: '2-5' },
       });
     } finally {
       await page.close();
@@ -212,7 +226,7 @@ for (const width of [390, 1440]) {
       assert.equal(await page.locator('.st-board-picker-more').count(), 0);
       assert.equal(await page.evaluate(() => !!document.activeElement.closest('.st-board-picker')), true);
       assert.deepEqual(await page.evaluate(() => window.events), Array.from({ length: 3 }, () => ({
-        name: 'roadmap_board_picker', props: { step: 'more' },
+        name: 'roadmap_board_picker', props: { step: 'more', mode: 'create' },
       })));
       await page.getByLabel('Find a step', { exact: true }).fill('');
       await page.keyboard.press('Backspace');
@@ -349,3 +363,43 @@ test('Chromium: a whitespace-only query on a large roadmap keeps the All steps c
     assert.deepEqual(errors, []);
   }
 });
+
+
+for (const width of [390, 1440]) {
+  test(`Chromium ${width}: edit revalidation removes the candidate from both selections and announces once`, async () => {
+    const { page, errors } = await open(width, { total: 65, editing: 'step-0', name: null });
+    try {
+      assert.deepEqual(await page.locator('.st-board-picker-chip').allTextContents(), ['Read the wind', 'Chart 1']);
+      await page.evaluate(() => window.blockSelected());
+      const notice = page.getByText('Chart 1 now comes after this step, so it left your selection.', { exact: true });
+      await notice.waitFor();
+      assert.deepEqual(await page.locator('.st-board-picker-chip').allTextContents(), ['Read the wind']);
+      assert.equal(await page.getByRole('checkbox', { name: 'Chart 1 Now comes after this step', exact: true }).getAttribute('aria-disabled'), 'true');
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_board_picker', props: { step: 'revalidated', mode: 'edit' } },
+      ]);
+      await page.evaluate(() => window.refresh());
+      await page.getByRole('button', { name: 'Show 20 more', exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll('.st-board-picker-row:not(.is-blocked)').length === 40);
+      assert.equal(await notice.isVisible(), true);
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_board_picker', props: { step: 'revalidated', mode: 'edit' } },
+        { name: 'roadmap_board_picker', props: { step: 'more', mode: 'edit' } },
+      ]);
+      await page.getByLabel('Find a step', { exact: true }).fill('Chart 1');
+      await notice.waitFor({ state: 'detached' });
+      assert.equal(await page.getByRole('checkbox', { name: 'Chart 1 Comes after this step', exact: true }).getAttribute('aria-disabled'), 'true');
+      await page.keyboard.press('Escape');
+      await formReturned(page, 'Edit step');
+      assert.equal(await page.locator('.st-board-draft-needs').textContent(), 'PrerequisitesRead the wind');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.getByRole('button', { name: 'Retry', exact: true }).waitFor();
+      assert.deepEqual(await page.evaluate(() => window.requests), [
+        { id: 'step-0', label: 'Chart 0', description: '', color: 'olive', prerequisites: ['wind'] },
+      ]);
+    } finally {
+      await page.close();
+      assert.deepEqual(errors, []);
+    }
+  });
+}

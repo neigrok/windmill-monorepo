@@ -322,3 +322,7 @@ export function backTo({ screen }) {
 export function draftLine({ step }) {
   return `for ${step}`;
 }
+
+export const WORKSPACE_EMPTY = { body: 'Add something for this step.', addNote: 'Add note' };
+export const NEW_LINK = { title: 'New link' };
+export const HISTORY_EMPTY = 'No changes yet';

@@ -8,14 +8,15 @@ import { kindOptions } from '../model/Legend.js';
 import { PrerequisiteChoices, StepDraft } from './StepDraft.js';
 import { PrerequisitePicker } from './PrerequisitePicker.jsx';
 import { KindChoice } from './BoardControls.jsx';
+import { coverBeneath } from './BoardView.jsx';
 import { useComposerFocus } from './composerFocus.js';
 import { StepIcons } from './StepIcons.jsx';
-import { COLUMN_TITLES, COMPOSER, DISCARD_DRAFT, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
+import { COLUMN_TITLES, COMPOSER, DISCARD_DRAFT, EDIT_STEP, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
 import './composer.css';
 
 const PALETTE = { nodes: NODE_COLOR_NAMES.map((color) => ({ color })) };
 
-function useComposerViewport(phone) {
+export function useComposerViewport(phone) {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     visible: typeof window === 'undefined' || !window.visualViewport ? null : {
@@ -54,14 +55,18 @@ function useComposerViewport(phone) {
 
 export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose }) {
   const phone = band === 'phone';
+  const mode = editing ? 'edit' : 'create';
+  const eventName = editing ? 'roadmap_board_edit' : 'roadmap_board_create';
   const viewport = useComposerViewport(phone);
-  const [stored, setDraft] = useState(() => new StepDraft());
+  const [stored, setDraft] = useState(() => editing ? StepDraft.forStep(tree.nodesById.get(editing)) : new StepDraft());
   const [picker, setPicker] = useState(null);
   const [discard, setDiscard] = useState(false);
   const [failed, setFailed] = useState(false);
   const [nameError, setNameError] = useState(null);
   const request = useRef(null);
   const dialog = useRef(null);
+  const layer = useRef(null);
+  const revalidationReported = useRef(null);
   const name = useRef(null);
   const needs = useRef(null);
   const returnToNeeds = useRef(false);
@@ -77,7 +82,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   const pickerLayout = phone ? 'phone' : viewport.panelFits ? 'panel' : 'page';
   const pickerPage = pickerOpen && pickerLayout !== 'panel';
   const placement = draft.placement(tree, completed);
-  const PlacementIcon = placement.column === 'locked' ? StepIcons.rowLocked : StepIcons.rowUpNext;
+  const PlacementIcon = { locked: StepIcons.rowLocked, upNext: StepIcons.rowUpNext, done: StepIcons.rowDone }[placement.column];
   const kinds = kindOptions(PALETTE, legend);
   const prerequisiteLabels = draft.prerequisites.map((id) => {
     const label = tree.nodesById.get(id).label;
@@ -94,6 +99,16 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
     if (!choices) returnToNeeds.current = true;
   }
 
+  useLayoutEffect(() => coverBeneath(layer.current), []);
+
+  const revalidation = choices?.revalidated.map((row) => row.id).join(',') || null;
+  useEffect(() => {
+    if (revalidation && revalidation !== revalidationReported.current) {
+      track('roadmap_board_picker', { step: 'revalidated', mode });
+    }
+    revalidationReported.current = revalidation;
+  }, [revalidation, mode]);
+
   useLayoutEffect(() => {
     if (pickerOpen || !returnToNeeds.current) return;
     returnToNeeds.current = false;
@@ -109,7 +124,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
       setDiscard(true);
       return;
     }
-    track('roadmap_board_create', { step: 'cancel' });
+    track(eventName, { step: 'cancel' });
     onClose();
   };
   const change = (patch) => {
@@ -117,26 +132,32 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
     request.current = null;
     setFailed(false);
   };
-  const create = () => {
+  const save = () => {
+    if (editing && !draft.dirty) {
+      track(eventName, { step: 'unchanged' });
+      onClose();
+      return;
+    }
     const errors = draft.validate();
     setNameError(errors.name);
     if (errors.name) {
       name.current.focus();
       return;
     }
-    if (failed) track('roadmap_board_create', { step: 'retry' });
-    request.current ??= draft.toCreateRequest(tree);
-    if (onCreate(request.current).ok) {
+    if (failed) track(eventName, { step: 'retry' });
+    request.current ??= editing ? draft.toEditRequest(tree) : draft.toCreateRequest(tree);
+    const result = editing ? onEdit(request.current) : onCreate(request.current);
+    if (result.ok) {
       onClose();
       return;
     }
-    track('roadmap_board_create', { step: 'failed' });
+    track(eventName, { step: 'failed' });
     setFailed(true);
   };
   const dismiss = () => {
     if (discard) return;
     if (pickerOpen) {
-      track('roadmap_board_picker', { step: 'cancel' });
+      track('roadmap_board_picker', { step: 'cancel', mode });
       closePicker();
       return;
     }
@@ -155,6 +176,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   const pickerView = pickerOpen && (
     <PrerequisitePicker
       choices={choices}
+      mode={mode}
       onChoices={setPicker}
       draft={draft}
       layout={pickerLayout}
@@ -172,14 +194,14 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
         {phone && (
           <button className="st-board-draft-cancel" type="button" onClick={cancel}>{COMPOSER.cancel}</button>
         )}
-        <h2 id={titleId}>{COMPOSER.title}</h2>
+        <h2 id={titleId}>{editing ? EDIT_STEP.title : COMPOSER.title}</h2>
         {phone && <span className="st-board-draft-balance" />}
       </header>
       <form
         className="st-board-composer-form"
         onSubmit={(event) => {
           event.preventDefault();
-          create();
+          save();
         }}
       >
         <div className="st-board-composer-scroll" tabIndex={-1}>
@@ -228,8 +250,8 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
             aria-disabled={tree.nodes.length === 0}
             onClick={() => {
               if (tree.nodes.length === 0) return;
-              track('roadmap_board_picker', { step: 'open' });
-              setPicker(new PrerequisiteChoices(tree, completed, { selected: draft.prerequisites }));
+              track('roadmap_board_picker', { step: 'open', mode });
+              setPicker(new PrerequisiteChoices(tree, completed, { selected: draft.prerequisites, editing }));
             }}
           >
             <strong>{COMPOSER.prerequisites}</strong>
@@ -238,7 +260,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
           </button>
           <div className="st-board-draft-placement" role="status">
             <strong><PlacementIcon />{COLUMN_TITLES[placement.column]}</strong>
-            <span>{placement.body}</span>
+            {placement.body && <span>{placement.body}</span>}
           </div>
         </div>
         <footer className="st-board-composer-actions">
@@ -261,7 +283,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
             ) : (
               <>
                 {!phone && <Button variant="secondary" onClick={cancel}>{COMPOSER.cancel}</Button>}
-                <Button size={phone ? 'lg' : 'md'} full={phone} type="submit">{COMPOSER.create}</Button>
+                <Button size={phone ? 'lg' : 'md'} full={phone} type="submit">{editing ? EDIT_STEP.save : COMPOSER.create}</Button>
               </>
             )}
           </div>
@@ -272,6 +294,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
 
   return createPortal(
     <div
+      ref={layer}
       style={viewport.style}
       className={`st-board-composer-layer ${phone ? 'is-phone' : 'is-wide'}`}
       onKeyDown={onKeyDown}
@@ -293,7 +316,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
           phone={phone}
           onKeep={() => setDiscard(false)}
           onDiscard={() => {
-            track('roadmap_board_create', { step: 'discard' });
+            track(eventName, { step: 'discard' });
             onClose();
           }}
         />
@@ -303,7 +326,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   );
 }
 
-function DiscardDraft({ phone, onKeep, onDiscard }) {
+export function DiscardDraft({ phone, onKeep, onDiscard }) {
   const dialog = useRef(null);
   const titleId = useId();
   const focus = useComposerFocus(dialog);

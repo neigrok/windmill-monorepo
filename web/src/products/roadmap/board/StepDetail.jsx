@@ -1,16 +1,11 @@
-// A step opened from the Board: the pushed page below 744px, the modal from 744px. Both frames arrange one body — the
-// identity, the status row, what the step needs and opens, the workspace and its history — and one set of verbs.
-// Complete and Reset act in place: the status row flips with an inline Undo for the hold window and a line names what
-// moved; nothing here toasts. While open the layer makes everything beneath it inert and keeps Tab inside; closing hands
-// focus back to the card the visit began on, or to the columns' tab stop. Measures from 01.04–01.11, 07.01–07.06 (phone), 02.01–02.04, 03.01–03.10
-// and 05.06 (from 744px).
+// Board step detail: a pushed page below 744px and a modal otherwise.
 
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
-import { NodeWorkspace, SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
-import { EventRow } from '../activity/EventRow.jsx';
+import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
+import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { coverBeneath } from './BoardView.jsx';
 import { deletionCost } from './acts.js';
 import { deleteCostLine } from '../ui/mobile/editorSheet.js';
@@ -19,13 +14,12 @@ import { StepIcons } from './StepIcons.jsx';
 import './modal.css';
 import './page.css';
 import {
-  COLUMN_TITLES, LABELS, LINK_COPIED, STATE_WORDS, STEP_DETAIL,
+  COLUMN_TITLES, LABELS, LINK_COPIED, STATE_WORDS, STEP_DETAIL, WORKSPACE_EMPTY, checkedToast,
   DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
 } from './copy.js';
 
 const UNDO_HOLD_MS = 6000;
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-const BRAND_CHECKS = { base: 'var(--color-brand)', ring: 'var(--color-brand)' };
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
 const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
@@ -68,20 +62,31 @@ export function StepDetail({
   const originRef = useRef(null);
   const deletedRef = useRef(null);
   const leaveRef = useRef(null);
+  const workspaceRef = useRef(null);
+  const editingRef = useRef(false);
   const titleId = useId();
   const sectionsId = useId();
   const [stepShown, setStepShown] = useState(id);
   const [section, setSection] = useState('overview');
   const [outcome, setOutcome] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [checked, setChecked] = useState(null);
   originRef.current = trail[0];
   leaveRef.current = surface === 'page' ? onBack : onClose;
+  editingRef.current = noteEditing;
 
   if (stepShown !== id) {
     setStepShown(id);
     setSection('overview');
     setOutcome(null);
     setDeleting(false);
+    setNoteEditing(false);
+    setChecked(null);
+  }
+
+  if (checked && !workspace?.subtasks?.some((item) => item.id === checked.id && item.done)) {
+    setChecked(null);
   }
 
   // One layer for the whole visit, whichever frame it holds. It covers everything beneath it and takes Escape wherever
@@ -92,13 +97,20 @@ export function StepDetail({
     const layer = layerRef.current;
     const uncover = coverBeneath(layer);
     const recover = () => {
+      if (layer.closest('[inert]') || document.querySelector('.st-board-composer-layer') || editingRef.current) return;
       if (document.activeElement !== null && document.activeElement !== document.body) return;
       (layer.querySelector('.st-board-step-status') ?? layer.querySelector('[role="dialog"]'))?.focus({ preventScroll: true });
     };
     const watcher = new MutationObserver(recover);
     watcher.observe(layer, { childList: true, subtree: true });
     const escape = (event) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || layer.closest('[inert]') || document.querySelector('.st-board-composer-layer')) return;
+      if (editingRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        workspaceRef.current?.close();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       leaveRef.current();
@@ -145,6 +157,7 @@ export function StepDetail({
   }, []);
 
   useEffect(() => {
+    if (layerRef.current.closest('[inert]') || document.querySelector('.st-board-composer-layer') || editingRef.current) return;
     layerRef.current.querySelector('[role="dialog"]').focus();
   }, [id, surface]);
 
@@ -157,6 +170,12 @@ export function StepDetail({
     const settle = setTimeout(() => setOutcome((current) => current && { ...current, undoable: false }), UNDO_HOLD_MS);
     return () => clearTimeout(settle);
   }, [outcome?.undoable, outcome?.kind]);
+
+  useEffect(() => {
+    if (!checked) return undefined;
+    const timer = setTimeout(() => setChecked(null), UNDO_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [checked]);
 
   const act = (action, extra = {}) => track('roadmap_board_step_action', { surface, action, ...extra });
 
@@ -207,8 +226,8 @@ export function StepDetail({
 
   // Tab wraps inside the layer.
   const onKeyDown = (event) => {
-    if (event.key !== 'Tab') return;
-    const stops = [...layerRef.current.querySelectorAll(FOCUSABLE)].filter((element) => element.getClientRects().length > 0);
+    if (event.key !== 'Tab' || event.defaultPrevented) return;
+    const stops = [...layerRef.current.querySelectorAll(FOCUSABLE)].filter((element) => !element.closest('[inert]') && element.getClientRects().length > 0);
     if (stops.length === 0) return;
     const [first, last] = [stops[0], stops[stops.length - 1]];
     const outside = !stops.includes(document.activeElement);
@@ -241,14 +260,37 @@ export function StepDetail({
       onDelete(id);
     },
   } : null;
-  const menu = <StepMenu items={menuItems} confirm={surface === 'modal' ? confirm : null} />;
+  const menu = noteEditing ? null : <StepMenu items={menuItems} confirm={surface === 'modal' ? confirm : null} />;
   const sheet = surface === 'page' && confirm ? <DeleteConfirmation confirm={confirm} phone /> : null;
-  const sections = editable ? <StepSections idPrefix={sectionsId} section={section} onSection={setSection} /> : null;
-  const actions = editable && facts.column !== 'locked'
-    ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset} />
+  const sections = editable && !noteEditing ? <StepSections idPrefix={sectionsId} section={section} onSection={setSection} /> : null;
+  const edit = editable && onEdit ? () => {
+    act('edit');
+    onEdit(id);
+  } : null;
+  const noteAction = surface === 'page' && section === 'workspace';
+  const editLabel = noteAction ? (workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote) : STEP_DETAIL.editStep;
+  const actions = editable && !noteEditing && (facts.column !== 'locked' || noteAction || edit)
+    ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset}
+        editLabel={editLabel} onEdit={noteAction ? () => workspaceRef.current?.openNote() : edit} />
     : null;
+  const liveChecked = checked && surface === 'page' && workspace?.subtasks?.some((item) => item.id === checked.id && item.done);
+  const checkedNotice = liveChecked && !noteEditing ? <div className="st-board-step-checked">
+    <span role="status" aria-live="polite">{checkedToast({ item: checked.label })}</span>
+    <button type="button" onClick={() => {
+      workspaceActions.onToggleSubtask(id, checked.id);
+      setChecked(null);
+      track('roadmap_board_workspace', { action: 'undo' });
+    }}>{LABELS.undo}</button>
+  </div> : null;
+  const requestClose = () => {
+    if (noteEditing) {
+      workspaceRef.current?.close();
+      return;
+    }
+    onClose();
+  };
   const content = (
-    <div id={`${sectionsId}-${shownSection}`} role={editable ? 'tabpanel' : undefined} aria-labelledby={editable ? `${sectionsId}-tab-${shownSection}` : undefined} className="st-board-step-panel">
+    <div id={`${sectionsId}-${shownSection}`} role={editable && !noteEditing ? 'tabpanel' : undefined} aria-labelledby={editable && !noteEditing ? `${sectionsId}-tab-${shownSection}` : undefined} className={`st-board-step-panel${noteEditing ? ' st-board-step-panel--editing' : ''}`}>
       {shownSection === 'overview' && (
         <Overview
           facts={facts}
@@ -260,19 +302,14 @@ export function StepDetail({
         />
       )}
       {shownSection === 'workspace' && (
-        <NodeWorkspace
-          nodeId={id}
-          workspace={workspace}
-          hue={BRAND_CHECKS}
-          checklistLabels={{ heading: STEP_DETAIL.subtasks, add: STEP_DETAIL.addSubtask }}
-          {...workspaceActions}
-        />
+        <StepWorkspace key={id} ref={workspaceRef} nodeId={id} title={titleOf(facts.step)} workspace={workspace}
+          actions={workspaceActions} phone={surface === 'page'} onEditing={setNoteEditing}
+          onEditNote={() => act('editNote')} onChecked={(item) => {
+            if (surface !== 'page') return;
+            setChecked(item.done ? null : { id: item.id, label: item.label });
+          }} />
       )}
-      {shownSection === 'history' && (
-        <div className="st-board-step-history">
-          {history.map((event) => <EventRow key={event.id} event={event} node={null} now={Date.now()} />)}
-        </div>
-      )}
+      {shownSection === 'history' && <StepHistory history={history} nodeId={id} phone={surface === 'page'} />}
     </div>
   );
 
@@ -284,20 +321,21 @@ export function StepDetail({
     const backLabel = previous ? titleOf(previous) : roadmapTitle;
     return (
       <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
-        <div className="st-board-step-page" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-          <div className="st-board-step-page-nav">
+        <div className="st-board-step-page" role="dialog" aria-modal="true" aria-labelledby={noteEditing ? undefined : titleId} aria-label={noteEditing ? STEP_DETAIL.editNote : undefined} tabIndex={-1}>
+          <div className="st-board-step-page-nav" inert={noteEditing ? '' : undefined}>
             <button type="button" className="st-board-step-page-back" aria-label={backTo({ screen: backLabel })} onClick={onBack}>
               <span className="st-board-step-page-back-glyph"><StepIcons.back /></span>
               <span className="st-board-step-page-back-label">{backLabel}</span>
             </button>
             {menu}
           </div>
-          <div className="st-board-step-page-scroll">
-            {identity}
-            {offer}
+          <div className="st-board-step-page-scroll" tabIndex={-1}>
+            {!noteEditing && identity}
+            {!noteEditing && offer}
             {content}
           </div>
           {sheet}
+          {checkedNotice}
           {(sections || actions) && (
             <div className="st-board-step-page-pinned">
               {sections}
@@ -310,18 +348,18 @@ export function StepDetail({
   }
   return (
     <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
-      <div className="st-board-step-scrim" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="st-board-step-scrim" onPointerDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
         <div className="st-board-step-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
           <div className="st-board-step-modal-tools">
             {identity}
             {menu}
-            <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.close} onClick={onClose}>
+            <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.close} onClick={requestClose}>
               <StepIcons.close />
             </button>
           </div>
           {sections}
-          <div className="st-board-step-modal-content">{content}</div>
-          {(offer || actions) && (
+          <div className="st-board-step-modal-content" tabIndex={-1}>{content}</div>
+          {!noteEditing && (offer || actions) && (
             <div className="st-board-step-modal-actions">
               {offer}
               {actions}
@@ -468,30 +506,20 @@ function StepSections({ idPrefix, section, onSection }) {
 }
 
 // Up next offers Complete; Done offers Reset, secondary, previewing what it returns to Locked.
-function StepActions({ facts, phone, onComplete, onReset }) {
+function StepActions({ facts, phone, onComplete, onReset, editLabel, onEdit }) {
   const [previewing, setPreviewing] = useState(false);
-  if (facts.column === 'upNext') {
-    return (
-      <div className="st-board-step-buttons">
-        <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={onComplete}>{STEP_DETAIL.complete}</button>
-      </div>
-    );
-  }
-  const preview = previewing ? resetPreview({ relocked: facts.relocks }) : null;
-  return (
-    <>
-      {preview && <p className="st-board-step-preview">{preview}</p>}
-      <div
-        className="st-board-step-buttons"
-        onPointerEnter={phone ? undefined : () => setPreviewing(true)}
-        onPointerLeave={() => setPreviewing(false)}
-        onFocus={() => setPreviewing(true)}
-        onBlur={() => setPreviewing(false)}
-      >
-        <button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={onReset}>{STEP_DETAIL.reset}</button>
-      </div>
-    </>
-  );
+  const preview = previewing && facts.column === 'done' ? resetPreview({ relocked: facts.relocks }) : null;
+  if (!onEdit && facts.column === 'locked') return null;
+  return <>
+    {preview && <p className="st-board-step-preview">{preview}</p>}
+    <div className="st-board-step-buttons">
+      {onEdit && <button type="button" className={`st-board-step-action st-board-step-action--secondary${phone && facts.column !== 'locked' ? ' st-board-step-action--text' : ''}`} onClick={onEdit}>{editLabel}</button>}
+      {facts.column === 'upNext' && <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={onComplete}>{STEP_DETAIL.complete}</button>}
+      {facts.column === 'done' && <button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={onReset}
+        onPointerEnter={phone ? undefined : () => setPreviewing(true)} onPointerLeave={() => setPreviewing(false)}
+        onFocus={() => setPreviewing(true)} onBlur={() => setPreviewing(false)}>{STEP_DETAIL.reset}</button>}
+    </div>
+  </>;
 }
 
 function SubtaskOffer({ onComplete }) {

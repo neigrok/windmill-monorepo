@@ -108,8 +108,12 @@ back row names the screen it returns to; closing pops the whole visit, and a lin
 Board with that step open. A view reads a step only on its own roadmap's route, and once that roadmap has loaded without
 the step, the step leaves the URL in place, so restoring it reopens nothing; with the gate closed the URL is never
 touched. While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape, wherever focus is,
-closes the modal or steps the page back. When the element holding focus gives way (an action replaced, Undo expiring, a
-workspace edit ending) focus lands on the status row, or the dialog where there is none. Closing returns focus to the card
+closes the topmost editor or confirmation before the detail. Edit step opens the shared composer over the detail.
+Workspace and History use `StepWorkspace.jsx`: named checkboxes, the shared note renderer, personal links and static
+activity rows grouped through `ActivityLog`. The note editor keeps a local draft and saves once through workspace actions;
+changed Cancel asks to discard. Formatting uses pure `formatNote`; phone keyboard sizing follows the composer viewport.
+A phone subtask check offers an in-page Undo for six seconds; desktop checks stay quiet. Editor completion returns focus
+to its opener; other disappearing controls recover to the status row or dialog. Closing returns focus to the card
 the visit began on, or to the columns' tab stop once that card has gone (deleted, or outside the branch View branch
 scoped). After a held delete, roving recovery uses current membership and skips the deleted card
 even while regroup still displays it. On phones, if no surviving card is visible yet, focus rests
@@ -148,7 +152,8 @@ unlock; Create reveals the new step. Reveal clears only query dimensions that hi
 preserves sort. Delete toast text is not tappable. Board completion keeps activity emits and skips
 the Graph ceremony and milestone offer.
 The owner's up next and done steps offer View branch, which closes the step and scopes the Board to its branch. A
-visitor gets the overview and the menu without Delete. The detail offers no Edit step yet.
+visitor gets the overview and the menu without Delete. Owners get Edit step beside Complete or Reset, or alone while
+locked; the phone Workspace action is Add note or Edit note.
 
 The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
 would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap
@@ -159,9 +164,13 @@ is done, Up next rests on Roadmap complete: the owner gets its body line, Share 
 reader gets the title alone.
 
 New step in the verbs row, tablet identity row, phone band, empty state or complete state opens `StepComposer` through
-the gated host mount. `StepDraft` owns validation and placement; the picker changes only draft
-prerequisites until creation. The host dispatches one `CreateNode` with the request's stable id and
-all prerequisite edges stamped together. Failure keeps the draft for Retry. Success reveals and
+the gated host mount. Edit step uses the same form with an existing step baseline; a clean Save closes
+without writing. `StepDraft` owns validation, dirty comparison and placement with the edited step
+replaced in the tree. The picker changes only draft prerequisites until Save; it groups the step
+and its descendants as unavailable, excludes them from match counts, and drops newly blocked
+selections with a notice that lasts until the next search or toggle. Deleted prerequisites leave silently. The host dispatches one `CreateNode` with the request's stable id and
+all prerequisite edges stamped together; edits send the full intended state through `onEdit` and
+return quietly to the detail, without a toast. Failure keeps the draft and exact request for Retry. Successful creation reveals and
 wakes the step in its derived column, clears only hiding query dimensions and offers targeted Undo.
 The composer sits inside an error boundary reporting `roadmap-board-composer` and portals its layer
 to `document.body`, covering the viewport independently of the shell's containing blocks. The tablet

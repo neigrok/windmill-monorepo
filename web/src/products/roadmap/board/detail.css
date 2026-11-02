@@ -503,3 +503,16 @@
   min-height: 56px;
   font-size: var(--text-lg);
 }
+
+.st-board-step-panel--editing {
+  height: 100%;
+}
+.st-board-step-page .st-board-step-action--text {
+  flex: none;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  line-height: 20px;
+}

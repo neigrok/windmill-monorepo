@@ -225,3 +225,80 @@ test('PrerequisiteChoices — revalidation silently drops deleted choices and re
   assert.deepEqual(next.selected.map((row) => row.state), ['Done']);
   assert.deepEqual(choices.selectedIds, ['parts', 'wind']);
 });
+
+test('StepDraft — editing retains a frozen baseline and every field can return to clean', () => {
+  const step = { id: 'wind', label: 'Read the wind', description: 'Look at the water', color: 'sky', prerequisites: ['parts'] };
+  const draft = StepDraft.forStep(step);
+  assert.deepEqual({ ...draft }, {
+    id: 'wind', name: 'Read the wind', description: 'Look at the water', color: 'sky', prerequisites: ['parts'],
+    baseline: { name: 'Read the wind', description: 'Look at the water', color: 'sky', prerequisites: ['parts'] },
+  });
+  assert.equal(draft.dirty, false);
+  assert.equal(Object.isFrozen(draft.baseline), true);
+  assert.equal(Object.isFrozen(draft.baseline.prerequisites), true);
+  for (const change of [{ name: 'Wind' }, { description: '' }, { color: 'gold' }, { prerequisites: [] }]) {
+    const changed = draft.with(change);
+    assert.equal(changed.dirty, true);
+    assert.equal(changed.with(draft.baseline).dirty, false);
+    assert.equal(changed.baseline, draft.baseline);
+  }
+  step.prerequisites.push('bowline');
+  assert.deepEqual(draft.prerequisites, ['parts']);
+  assert.deepEqual(draft.baseline.prerequisites, ['parts']);
+});
+
+test('StepDraft — editing derives placement with its replacement and reconciles the final request', () => {
+  const tree = sailing();
+  const draft = StepDraft.forStep(tree.nodesById.get('wind')).with({
+    name: '  Watch the wind  ', prerequisites: ['gone', 'dock', 'wind', 'bowline', 'parts'],
+  });
+  assert.deepEqual(draft.placement(tree, new Set(['parts'])), { column: 'locked', body: 'Tie a bowline isn’t done' });
+  const request = draft.toEditRequest(tree);
+  assert.ok(request instanceof EditStepRequest);
+  assert.deepEqual({ ...request }, {
+    id: 'wind', label: 'Watch the wind', description: '', color: 'sky', prerequisites: ['bowline', 'parts'],
+  });
+  assert.deepEqual(draft.reconcile(tree).prerequisites, ['bowline', 'parts']);
+  assert.deepEqual(draft.with({ prerequisites: ['parts'] }).placement(tree, new Set(['parts', 'wind'])), { column: 'done', body: null });
+
+});
+
+test('PrerequisiteChoices — editing uses the model descendant rule and excludes blocked rows from counts and paging', () => {
+  const tree = sailing(Array.from({ length: 25 }, (_, index) => ({ id: `extra-${index}`, label: `Extra ${index}`, prerequisites: [] })));
+  const choices = new PrerequisiteChoices(tree, new Set(['parts']), { editing: 'wind', selected: ['parts'] });
+  assert.deepEqual([...choices.blockedIds], ['wind', 'dock']);
+  assert.deepEqual(choices.blocked, [
+    { id: 'wind', label: 'Read the wind', color: 'sky', state: 'Up next', column: 'upNext', context: null, selected: false, reason: 'This step' },
+    { id: 'dock', label: 'Leave the dock', color: 'terracotta', state: 'Locked', column: 'locked', context: null, selected: false, reason: 'Comes after this step' },
+  ]);
+  assert.deepEqual([choices.total, choices.count, choices.rows.length, choices.nextCount], [27, 27, 20, 7]);
+  assert.deepEqual([choices.more().rows.length, choices.more().hasMore], [27, false]);
+  assert.equal(choices.toggle('wind'), choices);
+  assert.equal(choices.toggle('dock'), choices);
+  const searched = choices.search('wind');
+  assert.deepEqual([searched.count, searched.rows, searched.blocked.map((row) => row.id)], [0, [], ['wind']]);
+  assert.equal(choices.differsFrom(['parts', 'wind', 'dock']), false);
+});
+
+test('PrerequisiteChoices — revalidation removes a new descendant and preserves its notice until query or toggle', () => {
+  const original = sailing();
+  const completed = new Set(['parts']);
+  const draft = StepDraft.forStep(original.nodesById.get('wind')).with({ prerequisites: ['parts', 'bowline'] });
+  const choices = new PrerequisiteChoices(original, completed, { editing: 'wind', selected: draft.prerequisites });
+  const changed = new SkillTree({ id: 'sail', title: '', nodes: original.nodes.map((step) => step.id === 'bowline'
+    ? { ...step, prerequisites: ['wind'] } : step) });
+  const next = choices.reconcile(changed, completed);
+  assert.deepEqual(next.selectedIds, ['parts']);
+  assert.deepEqual(draft.reconcile(changed).prerequisites, ['parts']);
+  assert.deepEqual(next.revalidated, [{ id: 'bowline', label: 'Tie a bowline' }]);
+  assert.deepEqual(next.blocked.map((row) => [row.id, row.reason]), [
+    ['wind', 'This step'], ['bowline', 'Now comes after this step'], ['dock', 'Comes after this step'],
+  ]);
+  assert.deepEqual(next.reconcile(changed, new Set()).revalidated, next.revalidated);
+  assert.deepEqual(next.more().revalidated, next.revalidated);
+  assert.deepEqual(next.search('bowline').revalidated, []);
+  assert.deepEqual(next.search('bowline').blocked.map((row) => row.reason), ['Comes after this step']);
+  assert.deepEqual(next.toggle('parts').revalidated, []);
+  const removed = new SkillTree({ id: 'sail', title: '', nodes: original.nodes.filter((step) => step.id !== 'bowline') });
+  assert.deepEqual(choices.reconcile(removed, completed).revalidated, []);
+});

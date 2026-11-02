@@ -38,7 +38,9 @@ export function setNote(ws, markdown) {
 }
 
 export function addLink(ws, rawUrl) {
-  const link = parseLink(rawUrl);
+  const input = typeof rawUrl === 'string' ? { url: rawUrl } : rawUrl;
+  const link = parseLink(input.url);
+  if (link && input.title?.trim()) link.title = input.title.trim();
   if (!link) return ws;
   return { ...ws, links: [...ws.links, link] };
 }
@@ -72,4 +74,57 @@ function parseLink(rawUrl) {
 
 function newId() {
   return crypto.randomUUID?.() ?? `ws-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+}
+
+export function formatNote(text, selection, format) {
+  const start = Math.max(0, Math.min(text.length, selection.start));
+  const end = Math.max(start, Math.min(text.length, selection.end));
+  const kind = typeof format === 'string' ? format : format.kind;
+  const selected = text.slice(start, end);
+  if (kind === 'list') {
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+    const lastSelected = end > start ? end - 1 : end;
+    const nextBreak = text.indexOf('\n', lastSelected);
+    const lineEnd = nextBreak === -1 ? text.length : nextBreak;
+    const lines = text.slice(lineStart, lineEnd).split('\n');
+    const remove = lines.every((line) => line.startsWith('- '));
+    const replacement = lines.map((line) => remove ? line.slice(2) : line.startsWith('- ') ? line : `- ${line}`).join('\n');
+    return {
+      text: text.slice(0, lineStart) + replacement + text.slice(lineEnd),
+      selection: { start: lineStart, end: lineStart + replacement.length },
+    };
+  }
+  if (kind === 'link') {
+    const label = format.text || selected || format.url;
+    const replacement = `[${label}](${format.url})`;
+    return {
+      text: text.slice(0, start) + replacement + text.slice(end),
+      selection: { start: start + 1, end: start + 1 + label.length },
+    };
+  }
+  const marker = kind === 'bold' ? '**' : kind === 'italic' ? '*' : '';
+  if (!marker) return { text, selection: { start, end } };
+  const selectedMarker = selected.startsWith('**') && selected.endsWith('**') && selected.length >= 4 ? '**'
+    : selected.startsWith('*') && selected.endsWith('*') && selected.length >= 2 ? '*' : null;
+  if (selectedMarker) {
+    const inner = selected.slice(selectedMarker.length, -selectedMarker.length);
+    const nextMarker = selectedMarker === marker ? '' : marker;
+    const replacement = nextMarker + inner + nextMarker;
+    return { text: text.slice(0, start) + replacement + text.slice(end), selection: { start: start + nextMarker.length, end: start + nextMarker.length + inner.length } };
+  }
+  const outsideMarker = text.slice(start - 2, start) === '**' && text.slice(end, end + 2) === '**' ? '**'
+    : text.slice(start - 1, start) === '*' && text.slice(end, end + 1) === '*' ? '*' : null;
+  if (outsideMarker) {
+    const nextMarker = outsideMarker === marker ? '' : marker;
+    const replacement = nextMarker + selected + nextMarker;
+    const offset = start - outsideMarker.length + nextMarker.length;
+    return {
+      text: text.slice(0, start - outsideMarker.length) + replacement + text.slice(end + outsideMarker.length),
+      selection: { start: offset, end: offset + selected.length },
+    };
+  }
+  return {
+    text: text.slice(0, start) + marker + selected + marker + text.slice(end),
+    selection: { start: start + marker.length, end: end + marker.length },
+  };
 }

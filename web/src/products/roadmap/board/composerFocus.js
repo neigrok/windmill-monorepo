@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-const FOCUSABLE = 'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), textarea:not(:disabled), [tabindex="0"]';
+const FOCUSABLE = 'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [tabindex="0"]';
 
 export function useComposerFocus(ref, active = true) {
   const opener = useRef(typeof document === 'undefined' ? null : document.activeElement);
@@ -12,7 +12,10 @@ export function useComposerFocus(ref, active = true) {
     }
     requestAnimationFrame(() => {
       if (document.activeElement !== document.body && document.activeElement?.isConnected) return;
-      document.querySelector('.st-board [data-column] [tabindex="0"], .st-board .st-board-find-input, .st-board-state button')?.focus({ preventScroll: true });
+      const target = document.querySelector('.st-board-step-status')
+        ?? document.querySelector('.st-board-step-layer [role="dialog"]')
+        ?? document.querySelector('.st-board [data-column] [tabindex="0"], .st-board .st-board-find-input, .st-board-state button');
+      target?.focus({ preventScroll: true });
     });
   }, []);
 
@@ -23,6 +26,7 @@ export function useComposerFocus(ref, active = true) {
 
   return (event) => {
     if (!active || event.key !== 'Tab') return;
+    event.stopPropagation();
     const stops = [...ref.current.querySelectorAll(FOCUSABLE)].filter((element) => (
       !element.closest('[inert]') && element.getClientRects().length > 0
     ));
