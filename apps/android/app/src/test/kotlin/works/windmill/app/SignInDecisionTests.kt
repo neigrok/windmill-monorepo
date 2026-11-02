@@ -110,4 +110,46 @@ class SignInDecisionTests {
             } finally { scope.cancel() }
         }
     }
+
+    // A signed-in phone with nothing to push whose only scope stopped its digest checks, after two pulls whose digest did
+    // not match: it still pulls, hears the server's own 426 and shows Update required, having written nothing.
+    @Test fun anIdlePhoneWhoseEveryScopeStoppedStillShowsUpdateRequired() {
+        val engine = Engine.memory(SyncSchema.registry)
+        engine.signIn("A", mapOf("gym" to false), serverSchema = SyncSchema.registry.version)
+        val tokens = object : SessionTokens {
+            override fun token(account: String) = "token-$account"
+            override fun save(account: String, token: String) = Unit
+            override fun delete(account: String) = Unit
+            override fun accounts() = setOf("A")
+        }
+        val pulls = java.util.concurrent.atomic.AtomicInteger()
+        val pushes = java.util.concurrent.atomic.AtomicInteger()
+        val transport = object : SyncTransport {
+            override suspend fun hello(token: String?) = Reply.Answer(SyncResponse(200, Json.objectOf(
+                "serverTime" to Json.of(System.currentTimeMillis()), "epoch" to Json.of("epoch"),
+                "schema" to Json.of(SyncSchema.registry.version), "minSchema" to Json.of(SyncSchema.registry.minVersion),
+                "as" to Json.of("A"), "holdsRecords" to Json.objectOf("gym" to Json.of(false)))))
+            override suspend fun push(request: Json, token: String): Reply<SyncResponse> { pushes.incrementAndGet(); return Reply.Unreachable }
+            override suspend fun pull(request: Json, token: String?): Reply<SyncResponse> {
+                val envelope = listOf("serverTime" to Json.of(System.currentTimeMillis()), "epoch" to Json.of("epoch"))
+                if (pulls.incrementAndGet() > 2) return Reply.Answer(SyncResponse(426, Json.Obj(envelope + ("error" to Json.of("upgrade-required")))))
+                return Reply.Answer(SyncResponse(200, Json.Obj(envelope + listOf("as" to Json.of("A"), "pages" to Json.Arr(request.member("scopes").arr().map { asked ->
+                    Json.objectOf("scope" to asked.member("scope"), "kind" to Json.of("rows"), "rows" to Json.array(),
+                        "cursor" to Json.of(WireCursor("epoch", "live", 1).text), "more" to Json.of(false), "seq" to Json.of(1),
+                        "digest" to Json.of("1".padStart(64, '0')))
+                })))))
+            }
+            override suspend fun openLive(token: String) = Reply.Unreachable
+        }
+        val runtime = SyncRuntime(engine, transport, tokens, "test", products = listOf("gym"))
+        GymEngineSession(engine, runtime).use { session ->
+            compose.setContent { WindmillMaterial { EngineAccountDecision(session, AuthStore("https://test.invalid/".toHttpUrl(), MemorySessions()), Telemetry.None) } }
+            session.enter()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Update required").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Update required").assertIsDisplayed()
+            assertEquals(3, pulls.get())
+            assertEquals(0, pushes.get())
+            assertEquals(emptyList<Json>(), engine.snapshot().member("replicas").arr().flatMap { it["outbox"]?.arr().orEmpty() })
+        }
+    }
 }

@@ -6,6 +6,8 @@ daily reflection, and gym for training. One account connects the products. The
 
 The bet ledger lives in the dogfood tree, `t_9362d9bc883e0a1e`. Each bet's node carries its
 scope, progress, outcome and follow-ups. Implementation plans and delivery history belong there.
+The go-to-market plan, its funnels, benchmarks and per-action reports live in
+[marketing/](marketing/README.md).
 
 ## Shared principles
 

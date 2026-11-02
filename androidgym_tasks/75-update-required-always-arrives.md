@@ -1,19 +1,20 @@
 # Update required always arrives, and delivery state comes from the engine alone
 
-**Status:** Not started. Nothing visual changes; *Update required* already exists.
+**Status:** On main; checked on the local stack: with every scope pulled and an empty outbox, a backend whose minimum schema stands above the build answers the next pull 426 and *Update required* shows with no push; a 5xx on push reads *The log didn't answer*, and a 426 on push leaves no band; the server's 1008 close, after the session was revoked, reaches Android as a live refusal with no Sentry event. iOS was not driven on the local stack: its 1008 handling is covered by the Swift sync tests (`TransportTests.aSessionEndedCloseIsARefusalWithoutAnIssue` passes), and the web's 200-only minSchema by its engine tests. A refusal other than 426 on push was not driven on the stack.
 
-**Context:** when every scope on a phone is stopped at this version's digest, the phone makes no pull and has nothing to push. It never hears the server's `426 upgrade-required`, so *Update required* never shows. The task also closes PR #22's loose ends.
+**Context:** when every scope on a phone was stopped at this version's digest, the phone made no pull and had nothing to push. It never heard the server's `426 upgrade-required`, so *Update required* never showed. The task also closes PR #22's loose ends.
 
 **Current implementation** (paths under `apps/android/`)
-- `SyncRuntime.publishPullable` marks `Pulls.blocked` when every scope is digest-stopped (`sync-engine/…/SyncRuntime.kt:541-550`), and the puller skips stopped scopes (`:561`). Only the log foot reads `pulls` (`gym/…/store/HistoryReads.kt:69`).
-- Gym keeps its own delivery copy, `reportedTransport` (`app/…/WindmillApplication.kt:127-136`) and `training.reportDelivery` (`:212`), beside the engine's `failedPushes`, `unansweredPushes` and `holdsBack` (`sync-engine/…/Observation.kt:101-106`).
-- Android applies `minSchema` from any hello status (`SyncRuntime.kt:312`). iOS reads it only from a 200 (`apps/ios/Sync/Sources/SyncEngine/SyncEngine.swift:522-523`).
-- `GymEngineSessionTests.kt:338-344` sends `426 {minSchema}` without `error: upgrade-required`, a shape the server never sends.
-- Comments say an unanswered push "never reached the server" (`Observation.kt:99`; iOS `Observation.swift:507`, `SyncEngine.swift:308`). engine.md states the rule correctly (`:1546-1549`).
-- iOS files the server's 1008 close as a transport Issue (`apps/ios/Sync/Sources/SyncEngine/Transport.swift:247-256`). Android counts it as a refusal.
+- A digest-stopped scope is pulled and followed like any other; only its digest check is skipped (engine.md §7.5 step 4). The puller and the live socket no longer pass over stopped scopes, and `Pulls.blocked` means offline, an upgrade required or no seat (`sync-engine/…/SyncRuntime.kt`). iOS and web already pulled stopped scopes, so no hello was added on any engine.
+- The workout's delivery state reads the engine's observation: `EngineTraining.deliveryBlocker` maps `authPaused` to sign-in, no network or a gym scope in `unansweredPushes` to offline, and a gym scope in `unavailablePushes` (a 5xx) to *the log didn't answer*. An upgrade the server requires, or another answered refusal, names no blocker (`gym/…/store/EngineTraining.kt`); the missing update-required band is ledger entry 11y in `docs/design/consistency.md`. The engine records no failure for a push its account's newer token did not make (`SyncRuntime.takeReply`). The app passes `HTTPTransport` to `SyncRuntime` directly (`app/…/WindmillApplication.kt`).
+- Android reads `minSchema` only from a 200 hello, as iOS does; web now does the same (`web/src/platform/sync/engine.js`). engine.md §9.2 records the rule.
+- `GymEngineSessionTests.updateRequiredHelloKeepsAnonymousTrainingWritableWithoutSelectingTheProposedOwner` sends the server's real 426 body (`error: upgrade-required` in the sync envelope).
+- Comments say an unanswered push "got no answer the engine could read" (`Observation.kt`; iOS `Observation.swift`, `SyncEngine.swift`).
+- iOS reports the server's 1008 close as an `api_request_failed` metric with `failure_kind` `refused` and no Issue (`apps/ios/Sync/Sources/SyncEngine/Transport.swift`, `Telemetry.swift`). Android counts it as a refusal.
+- Tests: `SyncRuntimeTests.aDigestStoppedScopeIsStillPulledAndHearsTheServersUpgrade`, `SyncRuntimeTests.onlyASuccessfulHellosMinimumRequiresAnUpgrade`, `SignInDecisionTests.anIdlePhoneWhoseEveryScopeStoppedStillShowsUpdateRequired` (the dialog shows with no push and an empty outbox), `EngineTrainingTests.deliveryCopyReadsHowTheEnginesLastPushEnded` (with a 426 case), `EngineTrainingTests.aLateDeliveryFailureOfALeftReplicaLeavesTheCurrentOneAlone`, `SyncRuntimeTests.aPushRefusedUnderAnOldTokenRecordsNoFailureAndA5xxIsUnavailable`, iOS `TransportTests.aSessionEndedCloseIsARefusalWithoutAnIssue`, web `only a 200 hello says the app is too old by its minSchema`. Gym tests push through the engine's own sender with `EngineRoomFixture.push`.
 
 **Change**
-- When every scope is stopped, the engine still makes a bounded hello on foreground and on its backoff, so a `426 upgrade-required` reaches the update surface. Record the rule in engine.md, and give iOS the same behaviour.
+- When every scope is stopped, the engine still pulls them, so a `426 upgrade-required` reaches the update surface. Record the rule in engine.md; iOS and web already behave so.
 - Delete gym's `reportedTransport` / `reportDelivery` copy. The workout's delivery state reads the engine's observation.
 - Read `minSchema` only from a 200 hello, as iOS does.
 - The test sends the real 426 body through `GymEngineSession`.

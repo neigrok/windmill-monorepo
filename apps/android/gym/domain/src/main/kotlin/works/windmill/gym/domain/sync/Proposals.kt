@@ -160,14 +160,15 @@ class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name:
     }
 }
 
-// A proposal with its routine three ways: as this phone stores it, whether it is in sight, and as the log last confirmed it.
+// A proposal with its routine three ways: as this phone stores it, whether it is in sight, and as the log last confirmed
+// it. A confirmed routine row that is dead has no fields to read, and is no confirmed copy.
 data class ProposalState(val proposal: Proposal?, val routine: Routine?, val moment: Moment, val routineVisible: Boolean = true,
     val confirmedRoutine: Routine? = null) {
     constructor(read: Reader, id: Id<Proposal>) : this(read, read.repository(Proposal).find(id, ViewMode.stored))
     private constructor(read: Reader, proposal: Proposal?) : this(proposal,
         proposal?.let { read.repository(Routine).find(it.routineId, ViewMode.stored) }, read.moment,
         proposal?.let { read.repository(Routine).find(it.routineId, ViewMode.drawn) } != null,
-        proposal?.let { read.confirmed(Routine, it.routineId) }?.let { Routine.decode(Fields(it)) })
+        proposal?.let { read.confirmed(Routine, it.routineId) }?.takeIf { it.isVisible }?.let { Routine.decode(Fields(it)) })
 
     // What the log would answer the decision, said before it is sent. Applying asks more than turning down: the routine
     // must stand as the proposal found it, on the log and on this phone, and in sight.

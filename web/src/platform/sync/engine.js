@@ -551,7 +551,7 @@ export class BrowserSyncEngine {
       checkedHello = true;
       const hello = await this.request('hello');
       this.validateResponse('hello', hello.response);
-      if (hello.response.body?.minSchema > this.registry.version) { await this.upgrade(); return; }
+      if (hello.response.status === 200 && hello.response.body?.minSchema > this.registry.version) { await this.upgrade(); return; }
       const current = (device) => this.canSync() && network === this.networkGeneration && lifecycle === this.lifecycleGeneration
         && device.meta.authGeneration === generation && device.activeReplica.storageHandle === seat.storageHandle
         && device.activeReplica.id === seat.id && device.activeReplica.meta.account === seat.meta.account

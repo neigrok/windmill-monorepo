@@ -310,7 +310,7 @@ class WorkoutSession(
     var strandedCount: Int by mutableIntStateOf(0)
         private set
     private var enginePendingSessions by mutableStateOf(emptySet<String>())
-    // What is blocking delivery, read off the engine's status and its last reply.
+    // What is blocking delivery, read off the engine's status.
     var strandedBy: Blocker? by mutableStateOf(null)
         private set
     // A set logged into a session that closes under it belongs to no workout.
@@ -768,12 +768,7 @@ class WorkoutSession(
         // stranded.
         val stalledIds = stalled
         enginePendingSessions = training.pendingSessionIds()
-        val status = training.engine.status.state.value
-        val blocker = when {
-            status.authPaused -> Blocker.SignInLapsed
-            !status.online -> Blocker.Offline
-            else -> training.deliveryBlocker
-        }
+        val blocker = training.deliveryBlocker
         strandedCount = if (training.anonymous || blocker == null) 0 else sets.count { it.id in stalledIds }
         strandedBy = if (strandedCount == 0) null else blocker
         val waiting = enginePendingSessions.isNotEmpty()

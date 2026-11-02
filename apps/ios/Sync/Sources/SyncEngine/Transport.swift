@@ -218,7 +218,8 @@ final class WebSocketOpening: NSObject, URLSessionWebSocketDelegate, Sendable {
 }
 
 // An open `URLSessionWebSocketTask`: each message one JCS text frame, each frame read by the `SyncCore` parser. A close
-// frame with any code but a normal closure or going away is a fault; a socket that ends with none fails as it ended.
+// frame ends the socket quietly on a normal closure or going away, as a refusal on the server's session-ended 1008, and
+// as a fault on any other code; a socket that ends with none fails as it ended.
 final class WebSocketConnection: LiveConnection {
   let task: URLSessionWebSocketTask
   let diagnostics: TransportDiagnostics
@@ -246,6 +247,13 @@ final class WebSocketConnection: LiveConnection {
     } catch {
       switch task.closeCode {
       case .normalClosure, .goingAway:
+        return nil
+      case .policyViolation:
+        // The server closes with 1008 once the socket's session stops resolving: a refusal metric, never an Issue.
+        if !Task.isCancelled {
+          diagnostics.report(operation: "sync_live_receive", method: "GET", kind: "refused",
+                             durationMs: TransportDiagnostics.elapsed(since: start))
+        }
         return nil
       case .invalid:
         report(error, operation: "sync_live_receive", since: start)
