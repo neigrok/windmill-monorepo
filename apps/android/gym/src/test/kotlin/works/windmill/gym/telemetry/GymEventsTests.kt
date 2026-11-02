@@ -195,6 +195,7 @@ class GymEventsTests {
             sent += batch
             batch.events.size
         }, { operation, _, _ -> failures += operation }, backgroundScope, schemas = GymEvents.schemas)
+        runCurrent()
         val originalDisk = disk
         for (name in listOf("onboarding_custom", "onboarding_opened_private", "ONBOARDING_OPENED", "onboarding_")) {
             queue.add(name, mapOf("state" to "first_launch"))

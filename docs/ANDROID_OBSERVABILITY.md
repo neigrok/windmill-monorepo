@@ -23,10 +23,14 @@ names something the code still sends.
   message, request, extras, user and exception values. Each Issue is tagged with its static
   `operation`, `failure_kind`, the allowed properties and the build metadata, and is fingerprinted
   by its operation.
-- **Event queue:** events wait in the app's private preferences (`works.windmill.telemetry`), on a
-  shelf per account, at most 500. They leave in batches of 50 with the account's credential, or
-  none when signed out, and retry every 30 s. A signed-out account's shelf waits for that account
-  to sign in again. An event that tells of the account ending (`signedOutEvent`) waits on the
+- **Event queue:** one background worker owns restoration, ordered queue changes and saves to the
+  app's private preferences (`works.windmill.telemetry`), once after each burst of changes. Events
+  become durable after the worker saves them. Shelves hold at most 500 events in total; dormant
+  accounts' events give way, oldest first, to the current account and signed-out shelves. Otherwise
+  a dormant shelf waits for its account to sign in again. Events leave in batches of 50 with the
+  account's credential, or none when signed out, and retry every 30 s. Acknowledgements remove
+  exactly the sent event ids, including events moved by retirement. An event that tells of the
+  account ending (`signedOutEvent`) waits on the
   signed-out shelf instead, so the ending cannot strand it. An account that cannot return
   (`retireAccount`) sends the events it names, `account_delete`, without a credential and drops
   the rest.
@@ -163,7 +167,7 @@ operation. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentr
 | `telemetry_enqueue` | platform | An event cannot be queued |
 | `telemetry_event_name` | platform | An event name is malformed or uses a reserved prefix without registration |
 | `telemetry_identity` | platform | Switching or retiring the queue's account fails |
-| `telemetry_overflow` | platform | The queue reaches 500 events; once until a batch lands |
+| `telemetry_overflow` | platform | An event is refused because the current account and signed-out shelves alone hold 500 events; once until a batch lands |
 | `telemetry_persist` | platform | The queue cannot be saved; once until it saves again |
 | `telemetry_rejected` | platform | The intake accepts fewer events than were sent |
 | `telemetry_restore` | platform | The saved queue cannot be read at start |

@@ -3,6 +3,7 @@ package works.windmill.gym.store
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.Dispatcher
@@ -184,7 +185,8 @@ class GymEngineSessionTests {
             context.getSharedPreferences("works.windmill.telemetry", 0).edit().clear().commit()
             var credential: String? = "token-A"
             val telemetry = AndroidTelemetry(context, intake.url("/"), "android-test", "verification", "test", "123",
-                "A", { credential }, backgroundScope, GymEvents.schemas)
+                "A", { credential }, backgroundScope, GymEvents.schemas,
+                storageDispatcher = StandardTestDispatcher(testScheduler))
             val engine = Engine.memory(SyncSchema.registry)
             engine.signIn("A", mapOf("gym" to false))
             val tokens = Tokens().apply { save("A", "token-A") }
