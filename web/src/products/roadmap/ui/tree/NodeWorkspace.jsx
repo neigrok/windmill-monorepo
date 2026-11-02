@@ -57,14 +57,19 @@ function renderInline(text, key, sourceStart = null) {
     const end = start === null ? null : start + whole.length;
     const markerLength = next.kind === 'bold' ? 2 : 1;
     const source = start === null ? {} : {
-      'data-note-start': start, 'data-note-end': end,
+      'data-note-start': start,
+      'data-note-end': end,
       'data-note-content-start': start + markerLength,
       'data-note-content-end': start + markerLength + inner.length,
     };
     if (next.kind === 'link') {
       const content = plain(inner, start === null ? null : start + 1, `${k}-label`);
       if (SAFE_URL.test(url)) {
-        nodes.push(<a key={k} {...source} href={url} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>{content}</a>);
+        nodes.push(
+          <a key={k} {...source} href={url} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>
+            {content}
+          </a>,
+        );
       } else if (start !== null) {
         nodes.push(<span key={k} {...source}>{content}</span>);
       } else {
@@ -107,12 +112,20 @@ export function renderMarkdown(md, { sourceMap = false } = {}) {
       if (!list) list = [];
       const contentStart = start + line.length - bullet[1].length;
       const marker = sourceMap ? { 'data-note-marker': start + line.indexOf('-') } : {};
-      list.push(<li key={index} {...source} {...marker}>{renderInline(bullet[1], `l${index}`, sourceMap ? contentStart : null)}</li>);
+      list.push(
+        <li key={index} {...source} {...marker}>
+          {renderInline(bullet[1], `l${index}`, sourceMap ? contentStart : null)}
+        </li>,
+      );
       return;
     }
     if (sourceMap) {
       flushList();
-      blocks.push(<p key={`p${index}`} {...source}>{line ? renderInline(line, `t${index}`, start) : <br data-note-placeholder="" />}</p>);
+      blocks.push(
+        <p key={`p${index}`} {...source}>
+          {line ? renderInline(line, `t${index}`, start) : <br data-note-placeholder="" />}
+        </p>,
+      );
       return;
     }
     if (line.trim() === '') {

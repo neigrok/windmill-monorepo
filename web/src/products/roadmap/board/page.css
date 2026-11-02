@@ -120,7 +120,7 @@
 }
 
 .st-board-step-page .st-board-step-action.st-board-step-action--text {
-  flex: 0 0 auto;
+  flex: 0 0 76px;
   min-width: 76px;
   padding: 0 8px;
   border-color: transparent;

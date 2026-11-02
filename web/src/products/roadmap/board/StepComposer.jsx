@@ -4,18 +4,15 @@ import { AlertCircle, ChevronDown } from 'lucide-react';
 import { Button } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
 import { NODE_COLOR_NAMES } from '../theme.js';
-import { kindOptions } from '../model/Legend.js';
+import { kindOptionsForHues } from '../model/Legend.js';
 import { PrerequisiteChoices, StepDraft } from './StepDraft.js';
 import { PrerequisitePicker } from './PrerequisitePicker.jsx';
 import { KindChoice } from './BoardControls.jsx';
-import { coverBeneath } from './BoardView.jsx';
-import { useComposerFocus, useComposerViewport } from './composerFocus.js';
+import { coverBeneath, useComposerFocus, useComposerViewport } from './composerFocus.js';
 import { DiscardDraft } from './DiscardDraft.jsx';
 import { StepIcons } from './StepIcons.jsx';
 import { COLUMN_TITLES, COMPOSER, EDIT_STEP, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
 import './composer.css';
-
-const PALETTE = { nodes: NODE_COLOR_NAMES.map((color) => ({ color })) };
 
 export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose }) {
   const phone = band === 'phone';
@@ -53,7 +50,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   const pickerPage = pickerOpen && pickerLayout !== 'panel';
   const placement = draft.placement(tree, completed);
   const PlacementIcon = { locked: StepIcons.rowLocked, upNext: StepIcons.rowUpNext, done: StepIcons.rowDone }[placement.column] ?? StepIcons.rowUpNext;
-  const kinds = kindOptions(PALETTE, legend);
+  const kinds = kindOptionsForHues(NODE_COLOR_NAMES, legend);
   const prerequisiteLabels = draft.prerequisites.map((id) => {
     const label = tree.nodesById.get(id).label;
     return label?.trim() ? label : STEP_DETAIL.unnamed;

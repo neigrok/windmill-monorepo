@@ -233,15 +233,21 @@ function LinkEditor({ title, text = '', personal = false, onApply, onCancel }) {
     valid = false;
   }
   return (
-    <form ref={box} className="st-board-note-link-editor" aria-labelledby={headingId} onSubmit={(event) => {
-      event.preventDefault();
-      if (valid) onApply({ text: label.trim(), url: url.trim() });
-    }} onKeyDown={(event) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCancel();
-    }}>
+    <form
+      ref={box}
+      className="st-board-note-link-editor"
+      aria-labelledby={headingId}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (valid) onApply({ text: label.trim(), url: url.trim() });
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+      }}
+    >
       <div className="st-board-note-link-actions">
         <h3 id={headingId}>{title}</h3>
         <button type="button" onClick={onCancel}>{NOTE_EDITOR.cancel}</button>
@@ -408,13 +414,22 @@ const NoteEditor = forwardRef(function NoteEditor({ note, title, phone, layerBou
         if (kind === 'link') pressed = link !== null;
         if (kind === 'list') pressed = /^\s*-\s+/.test(draft.slice(draft.lastIndexOf('\n', selection.start - 1) + 1));
         return (
-          <button key={kind} type="button" aria-label={NOTE_EDITOR[kind]} aria-pressed={pressed} onPointerDown={(event) => event.preventDefault()} onClick={() => {
-            if (kind === 'link') {
-              setLink({ text: draft.slice(selectionRef.current.start, selectionRef.current.end) });
-              return;
-            }
-            apply({ kind });
-          }}><Glyph size={20} strokeWidth={2} aria-hidden /></button>
+          <button
+            key={kind}
+            type="button"
+            aria-label={NOTE_EDITOR[kind]}
+            aria-pressed={pressed}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (kind === 'link') {
+                setLink({ text: draft.slice(selectionRef.current.start, selectionRef.current.end) });
+                return;
+              }
+              apply({ kind });
+            }}
+          >
+            <Glyph size={20} strokeWidth={2} aria-hidden />
+          </button>
         );
       })}
       {phone && <button type="button" className="st-board-note-save" onClick={save}>{NOTE_EDITOR.save}</button>}
@@ -510,10 +525,14 @@ const NoteEditor = forwardRef(function NoteEditor({ note, title, phone, layerBou
         </div>
       )}
       {discarding && (
-        <DiscardDraft phone={phone} onKeep={() => setDiscarding(false)} onDiscard={() => {
-          workspaceEvent('noteDiscard');
-          onCancel();
-        }} />
+        <DiscardDraft
+          phone={phone}
+          onKeep={() => setDiscarding(false)}
+          onDiscard={() => {
+            workspaceEvent('noteDiscard');
+            onCancel();
+          }}
+        />
       )}
     </div>
   );

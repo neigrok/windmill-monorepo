@@ -1,6 +1,7 @@
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
+import { blockedPrerequisites } from './StepDraft.js';
 import { completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from './copy.js';
 
 export class StepSelection {
@@ -42,8 +43,8 @@ export function deletable(tree, ids) {
 export function editGesture(tree, request) {
   const step = tree.nodesById.get(request.id);
   if (!step) return null;
-  const descendants = new Set(tree.descendantsOf(request.id).map((candidate) => candidate.id));
-  if (request.prerequisites.some((id) => id === request.id || !tree.nodesById.has(id) || descendants.has(id))) return false;
+  const blocked = blockedPrerequisites(tree, request.id);
+  if (request.prerequisites.some((id) => !tree.nodesById.has(id) || blocked.has(id))) return false;
   const gesture = { kind: 'EditNode', id: request.id };
   if (request.label !== step.label) gesture.label = request.label;
   if (request.description !== (step.description ?? '')) gesture.description = request.description;

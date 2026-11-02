@@ -1,6 +1,38 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { boardFocusTarget } from './traversal.js';
 
 const FOCUSABLE = 'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [tabindex="0"]';
+
+const coveredLayers = new WeakMap();
+
+export function coverBeneath(layer) {
+  const root = layer.parentElement;
+  const floor = Number(getComputedStyle(layer).zIndex);
+  const covered = new Set();
+  const cover = () => {
+    for (const sibling of root.children) {
+      if (sibling === layer || covered.has(sibling) || Number(getComputedStyle(sibling).zIndex) > floor) continue;
+      const coverage = coveredLayers.get(sibling) ?? { owners: 0, inert: sibling.inert };
+      coverage.owners += 1;
+      coveredLayers.set(sibling, coverage);
+      sibling.inert = true;
+      covered.add(sibling);
+    }
+  };
+  cover();
+  const watcher = new MutationObserver(cover);
+  watcher.observe(root, { childList: true });
+  return () => {
+    watcher.disconnect();
+    for (const sibling of covered) {
+      const coverage = coveredLayers.get(sibling);
+      coverage.owners -= 1;
+      if (coverage.owners > 0) continue;
+      sibling.inert = coverage.inert;
+      coveredLayers.delete(sibling);
+    }
+  };
+}
 
 export const DetailFocusContext = createContext(null);
 
@@ -20,7 +52,7 @@ export function useComposerFocus(ref, active = true, { restore = true } = {}) {
         return;
       }
       if (document.activeElement !== document.body && document.activeElement?.isConnected) return;
-      document.querySelector('.st-board [data-column] [tabindex="0"], .st-board .st-board-find-input, .st-board-state button')?.focus({ preventScroll: true });
+      boardFocusTarget(document.querySelector('.st-board'))?.focus({ preventScroll: true });
     });
   }, [detailFocus, restore]);
 

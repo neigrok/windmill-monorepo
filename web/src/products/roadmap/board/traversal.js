@@ -9,6 +9,30 @@ export const RAIL = Symbol('rail Show');
 
 const COLUMN_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
+export function boardFocusTarget(root, { preferredId = null, excludeId = null, cards = true } = {}) {
+  if (!root) return null;
+  const selectors = [
+    ...(preferredId === null ? [] : [`.st-board-card[data-step-id="${CSS.escape(preferredId)}"]`]),
+    ...(cards ? ['[data-column] [tabindex="0"], [data-column][tabindex="0"]'] : []),
+    '.st-board-phone-segment[aria-selected="true"]',
+    '.st-board-find-input',
+    '.st-board-state button',
+    '[aria-busy="true"][tabindex]',
+  ];
+  for (const selector of selectors) {
+    const target = [...root.querySelectorAll(selector)].find((element) => (
+      !element.disabled && !element.closest('[inert], .is-leaving, .st-board-phone-pane:not(.is-shown)')
+      && element.getClientRects().length > 0
+      && getComputedStyle(element).visibility === 'visible'
+      && (excludeId === null || element.dataset.stepId !== excludeId)
+    ));
+    if (target) return target;
+  }
+  if (root.closest('[inert]') || root.getClientRects().length === 0 || getComputedStyle(root).visibility !== 'visible') return null;
+  root.tabIndex = -1;
+  return root;
+}
+
 export function columnStops({ cards, folded }) {
   return [...cards.map((card) => card.id), ...(folded ? [SHOW_ALL] : [])];
 }

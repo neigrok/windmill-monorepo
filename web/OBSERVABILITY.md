@@ -125,8 +125,14 @@ writes nothing and emits no bulk act, toast or selection-end event. A refused re
 selection open and emits no acted selection end; null receipts remain expected, not Issues.
 Edit emits `roadmap_board_edit` with `step` (`failed`, `retry`, `discard`, `cancel` or `unchanged`);
 a saved edit emits `step: saved` and booleans `name`, `description`, `kind` and `prerequisites` for
-changed fields. Workspace emits `roadmap_board_workspace` with only `action` (`subtaskAdd`,
-`subtaskToggle`, `subtaskDelete`, `noteSave`, `noteDiscard`, `linkAdd`, `linkDelete` or `undo`).
+changed fields. Opening the workspace note editor emits the step action `editNote`, including Add note.
+Workspace emits `roadmap_board_workspace` with only `action`: `subtaskAdd`, `subtaskToggle`,
+`subtaskDelete`, `linkAdd`, `linkDelete`, `noteSave` for a changed note saved through workspace actions,
+`noteDiscard` for confirming Discard draft, and `undo` for the phone checked toast. Saving an unchanged
+note writes nothing and emits no `noteSave`. System Back or remote detail closure silently drops the
+draft and emits no `noteDiscard`. These local workspace paths add no Sentry operation: render failures
+reach `roadmap-board-step`, composer render failures reach `roadmap-board-composer`, and edit-save
+exceptions reach `roadmap-board-edit`.
 Opening shortcut help while the gate is open emits `roadmap_shortcuts_open` with only `view`
 (`board` or `graph`). These events never carry note text, subtask labels, link URLs, ids or hues.
 A recolor or edit dispatch exception, or a missing session on an editable owner Board, reports

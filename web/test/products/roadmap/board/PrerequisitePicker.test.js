@@ -392,11 +392,20 @@ for (const width of [390, 1440]) {
       await page.keyboard.press('Escape');
       await formReturned(page, 'Edit step');
       assert.equal(await page.locator('.st-board-draft-needs').textContent(), 'PrerequisitesRead the wind');
+      await page.getByLabel('Name', { exact: true }).fill('Updated chart');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       await page.getByRole('button', { name: 'Retry', exact: true }).waitFor();
       assert.deepEqual(await page.evaluate(() => window.requests), [
-        { id: 'step-0', label: 'Chart 0', description: '', color: 'olive', prerequisites: ['wind'] },
+        { id: 'step-0', label: 'Updated chart', description: '', color: 'olive', prerequisites: ['wind'] },
       ]);
+      await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+      await page.getByLabel('Name', { exact: true }).fill('Chart 0');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.locator('.st-board-composer-layer').waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => ({ requests: window.requests, event: window.events.at(-1) })), {
+        requests: [{ id: 'step-0', label: 'Updated chart', description: '', color: 'olive', prerequisites: ['wind'] }],
+        event: { name: 'roadmap_board_edit', props: { step: 'unchanged' } },
+      });
     } finally {
       await page.close();
       assert.deepEqual(errors, []);

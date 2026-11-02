@@ -44,6 +44,16 @@ test('leaving the Board clears the visit without restoring focus into an inactiv
   assert.deepEqual(selectionState(ending, { type: 'left' }), IDLE);
 });
 
+test('restoration intent survives until every selection history entry has left', () => {
+  for (const phase of ['ending', 'endingKinds']) {
+    const pending = { ...cards, phase, focus: 'restore' };
+    assert.deepEqual(selectionState(pending, { type: 'focused' }), pending);
+    const left = selectionState(pending, { type: 'left' });
+    assert.deepEqual(left, { ...IDLE, visit, focus: 'restore' });
+    assert.deepEqual(selectionState(left, { type: 'focused' }), IDLE);
+  }
+});
+
 test('pending selection exit cannot restart, change choices, reopen kinds or produce another end', () => {
   for (const phase of ['ending', 'endingKinds']) {
     const pending = { ...cards, phase, focus: 'restore' };

@@ -664,10 +664,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · multi-select entry for keyboard and screen readers.** Phone multi-select starts only
   through a touch hold (wave-5 G14). Draw a keyboard and screen-reader entry before exposing one;
   the orchestrator owns its follow-up node.
-- **Board · edit copy across drawings.** The phone edit page inherits the composer fields and
-  placement preview; 02.02's *Step name* and count-only prerequisites row differ (G5). Blocked picker
-  rows say *Comes after this step* and *This step* on both bands; 09.09's *Unlocked by this step*
-  differs (G6). Keep *Prerequisites done: lands in Up next.*; reconcile 02.15's named-done line (G7).
+- **Board · phone Edit step field copy.** The edit page inherits the composer fields and placement
+  preview (wave-5 G5). Align [02.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1675):
+  its *Step name* label and count-only prerequisites row differ from *Name* and the selected step names.
+- **Board · blocked prerequisite reasons.** Both bands name blocked rows *Comes after this step*
+  and the edited step *This step* (wave-5 G6). Align desktop
+  [09.09](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=384-20365), which says
+  *Unlocked by this step* and omits the edited step.
+- **Board · edit placement preview.** Keep *Prerequisites done: lands in Up next.* (wave-5 G7).
+  Align [02.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=403-34462), which names
+  one completed prerequisite in its preview instead.
 - **Board · shortcut annotations.** 10.03's orange row bullets and stray *f* by Delete are drawing
   annotations, not UI (G15b). Remove them from the production specimen.
 - **Board · the topbar before a roadmap loads.** Desktop 02.09 (374:5067) and 02.10 (374:5202) draw the roadmap's

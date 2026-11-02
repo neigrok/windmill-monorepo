@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { track } from '../../../telemetry/beacon.js';
 import { StepSelection, deletable } from './acts.js';
 import { stepOf } from './stepAddress.js';
+import { boardFocusTarget } from './traversal.js';
 
 const IDLE = { phase: 'idle', visit: null, ids: [], focus: null };
 const SELECTING = new Set(['cards', 'kinds', 'closingKinds']);
@@ -41,6 +42,7 @@ export function selectionState(state, event) {
       return { ...IDLE, visit: state.focus ? state.visit : null, focus: state.focus };
     case 'focused':
       if (!state.focus) return state;
+      if (state.focus === 'restore' && state.phase !== 'idle') return state;
       return { ...state, visit: state.phase === 'idle' ? null : state.visit, focus: null };
     default:
       return state;
@@ -222,23 +224,18 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
 
   useLayoutEffect(() => {
     if (!state.focus || !active || !state.visit) return;
+    if (state.focus === 'restore' && state.phase !== 'idle') return;
     const { id, column } = state.visit;
     const shownIds = board?.shownCards(column, { doneExpanded }).cards.map((card) => card.id) ?? [];
     const stillShown = shown === column && shownIds.includes(id) && !leaving.has(id);
     const starter = stillShown ? root.current?.querySelector(`.st-board-phone-pane.is-shown .st-board-card:not(.is-leaving)[data-step-id="${CSS.escape(id)}"]`) : null;
-    const fallback = state.focus === 'restore'
-      ? root.current?.querySelector('button.st-board-phone-segment[aria-selected="true"]')
-        ?? root.current?.querySelector('.st-board-state button')
-        ?? root.current?.querySelector('[aria-busy="true"][tabindex]')
-        ?? root.current
-      : null;
+    const fallback = state.focus === 'restore' ? boardFocusTarget(root.current, { cards: false }) : null;
     const target = starter ?? fallback;
     if (!target) return;
-    if (target === root.current) target.tabIndex = -1;
     target.focus({ preventScroll: true });
     if (state.focus === 'restore') target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     transition({ type: 'focused' });
-  }, [state.focus, state.visit, active, board, shown, doneExpanded, leaving, root, transition]);
+  }, [state.focus, state.phase, state.visit, active, board, shown, doneExpanded, leaving, root, transition]);
 
   const starterId = state.visit && (SELECTING.has(state.phase) || state.focus) ? state.visit.id : null;
   return { selection: derived.selection, starterId, ...handlers };

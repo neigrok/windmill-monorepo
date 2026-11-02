@@ -102,7 +102,9 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
-import BoardView, { coverBeneath } from '/src/products/roadmap/board/BoardView.jsx';
+import BoardView from '/src/products/roadmap/board/BoardView.jsx';
+import { coverBeneath } from '/src/products/roadmap/board/composerFocus.js';
+import { boardFocusTarget } from '/src/products/roadmap/board/traversal.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { StepComposer } from '/src/products/roadmap/board/StepComposer.jsx';
@@ -290,6 +292,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
 window.coverBeneath = coverBeneath;
+window.boardFocusTarget = boardFocusTarget;
 window.entryReady = true;
 `;
 
@@ -601,6 +604,25 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order â€
       ['Card', 'Topbar'],
       ['Recolour', 'Graph overlay', 'Card', 'Topbar', 'Edge Ã—'],
     ]);
+    for (const lowerFirst of [true, false]) {
+      assert.deepEqual(await page.evaluate((lowerFirst) => {
+        const stage = document.getElementById('stage');
+        stage.innerHTML = '<button>Base</button><button inert>Already inert</button><div class="lower" style="position:absolute;z-index:18"></div><div class="upper" style="position:absolute;z-index:20"></div>';
+        const lower = coverBeneath(stage.querySelector('.lower'));
+        const upper = coverBeneath(stage.querySelector('.upper'));
+        const snapshot = () => [...stage.children].map((element) => element.inert);
+        const states = [snapshot()];
+        (lowerFirst ? lower : upper)();
+        states.push(snapshot());
+        (lowerFirst ? upper : lower)();
+        states.push(snapshot());
+        return states;
+      }, lowerFirst), [
+        [true, true, true, false],
+        [true, true, lowerFirst, false],
+        [false, true, false, false],
+      ]);
+    }
     assert.deepEqual(errors, []);
   } finally {
     await page.close();
@@ -1193,5 +1215,39 @@ test('Chromium: deleting both independent roots restores focus to the displayed 
       writes: window.writes,
     })), { name: 'New step', body: false, held: ['wind', 'knots'], writes: [] });
     assert.equal(await page.getByRole('tablist').count(), 0);
+  } finally { await page.close(); }
+});
+
+test('Chromium: Board recovery skips hidden empty panes and retiring or covered cards', async () => {
+  const page = await openSelectionPage(390, [
+    { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
+    { id: 'knots', label: 'Practise knots', prerequisites: [], color: 'olive' },
+  ], { completed: [] });
+  try {
+    const targets = await page.evaluate(() => {
+      const root = document.querySelector('.st-board');
+      const wind = root.querySelector('[data-step-id="wind"]');
+      const read = (options) => {
+        const target = window.boardFocusTarget(root, options);
+        return { step: target.dataset.stepId ?? null, role: target.getAttribute('role') };
+      };
+      const initial = read();
+      const preferred = read({ preferredId: 'knots' });
+      const excluded = read({ excludeId: 'wind' });
+      wind.classList.add('is-leaving');
+      const retiring = read({ preferredId: 'wind' });
+      wind.classList.remove('is-leaving');
+      wind.inert = true;
+      const covered = read({ preferredId: 'wind' });
+      wind.inert = false;
+      return { initial, preferred, excluded, retiring, covered };
+    });
+    assert.deepEqual(targets, {
+      initial: { step: 'wind', role: null },
+      preferred: { step: 'knots', role: null },
+      excluded: { step: null, role: 'tab' },
+      retiring: { step: null, role: 'tab' },
+      covered: { step: null, role: 'tab' },
+    });
   } finally { await page.close(); }
 });

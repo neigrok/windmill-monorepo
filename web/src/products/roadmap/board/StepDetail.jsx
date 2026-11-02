@@ -6,12 +6,12 @@ import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
-import { coverBeneath } from './BoardView.jsx';
 import { deletionCost } from './acts.js';
 import { deleteCostLine } from '../ui/mobile/editorSheet.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
 import { StepIcons } from './StepIcons.jsx';
-import { DetailFocusContext } from './composerFocus.js';
+import { coverBeneath, DetailFocusContext } from './composerFocus.js';
+import { boardFocusTarget } from './traversal.js';
 import './modal.css';
 import './page.css';
 import {
@@ -23,7 +23,6 @@ const UNDO_HOLD_MS = 6000;
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
-const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 const TAB_STOP = '[data-column] [tabindex="0"], [data-column][tabindex="0"]';
 
 const titleOf = (step) => step.label?.trim() || STEP_DETAIL.unnamed;
@@ -140,22 +139,18 @@ export function StepDetail({
       requestAnimationFrame(() => {
         const board = document.querySelector('.st-view-layer--board.is-active');
         if (!board) return;
-        const card = deletedRef.current === null
-          ? board.querySelector(`.st-board-card[data-step-id="${CSS.escape(returnTo)}"]`)
-          : null;
-        const returningStop = () => [...board.querySelectorAll(TAB_STOP)].find((element) => (
-          element.dataset.stepId !== deletedRef.current && element.getClientRects().length > 0
-        ));
-        const target = card ?? returningStop();
-        if (target) {
-          target.focus();
-          return;
-        }
-        if (deletedRef.current === null) return;
-        const fallback = board.querySelector('.st-board-phone-segment[aria-selected="true"], .st-board-find-input');
-        if (!fallback) return;
-        fallback.focus();
-        if (!fallback.matches('.st-board-phone-segment')) return;
+        const returningStop = () => {
+          const target = boardFocusTarget(board, { excludeId: deletedRef.current });
+          return target?.matches(TAB_STOP) ? target : null;
+        };
+        const target = boardFocusTarget(board, {
+          preferredId: deletedRef.current === null ? returnTo : null,
+          excludeId: deletedRef.current,
+        });
+        if (!target) return;
+        target.focus();
+        if (deletedRef.current === null || !target.matches('.st-board-phone-segment')) return;
+        const fallback = target;
         const waiting = new MutationObserver(() => {
           if (!board.isConnected || document.activeElement !== fallback) {
             waiting.disconnect();
@@ -496,11 +491,14 @@ function StepSections({ idPrefix, section, onSection }) {
   const tabs = useRef({});
   const onKeyDown = (event) => {
     const index = STEP_SECTIONS.indexOf(section);
-    const next = event.key === 'Home' ? STEP_SECTIONS[0]
-      : event.key === 'End' ? STEP_SECTIONS[STEP_SECTIONS.length - 1]
-        : event.key in ARROW_STEPS ? STEP_SECTIONS[(index + ARROW_STEPS[event.key] + STEP_SECTIONS.length) % STEP_SECTIONS.length]
-          : null;
-    if (next === null) return;
+    const targets = {
+      Home: STEP_SECTIONS[0],
+      End: STEP_SECTIONS.at(-1),
+      ArrowLeft: STEP_SECTIONS[(index - 1 + STEP_SECTIONS.length) % STEP_SECTIONS.length],
+      ArrowRight: STEP_SECTIONS[(index + 1) % STEP_SECTIONS.length],
+    };
+    const next = targets[event.key];
+    if (!next) return;
     event.preventDefault();
     onSection(next);
     tabs.current[next].focus();

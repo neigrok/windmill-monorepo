@@ -39,9 +39,18 @@ export function setNote(ws, markdown) {
 
 export function addLink(ws, value) {
   const input = typeof value === 'string' ? { url: value } : value;
-  const link = parseLink(input.url);
-  if (link && input.title?.trim()) link.title = input.title.trim();
-  if (!link) return ws;
+  const trimmed = input.url.trim();
+  if (!trimmed) return ws;
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+  let url;
+  try {
+    url = new URL(hasScheme ? trimmed : `https://${trimmed}`);
+  } catch {
+    return ws;
+  }
+  const domain = url.hostname.replace(/^www\./, '');
+  const title = input.title?.trim() || domain;
+  const link = { id: newId(), url: url.href, title, domain };
   return { ...ws, links: [...ws.links, link] };
 }
 
@@ -55,21 +64,6 @@ export function arcFraction(ws) {
   if (total === 0) return null;
   const done = ws.subtasks.filter((subtask) => subtask.done).length;
   return done / total;
-}
-
-// A bare host with no scheme gets https:// prepended; null when unparseable.
-function parseLink(rawUrl) {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return null;
-  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
-  let url;
-  try {
-    url = new URL(hasScheme ? trimmed : `https://${trimmed}`);
-  } catch {
-    return null;
-  }
-  const domain = url.hostname.replace(/^www\./, '');
-  return { id: newId(), url: url.href, title: domain, domain };
 }
 
 function newId() {
@@ -185,10 +179,12 @@ export class NoteDocument {
       if (collapsed) start = end;
     }
     for (const token of tokens.start) {
-      if (start > token.contentStart && start < token.contentEnd) closing += this.text.slice(token.contentEnd, token.end);
+      if (start <= token.contentStart || start >= token.contentEnd) continue;
+      closing += this.text.slice(token.contentEnd, token.end);
     }
     for (const token of tokens.end) {
-      if (end > token.contentStart && end < token.contentEnd) opening = this.text.slice(token.start, token.contentStart) + opening;
+      if (end <= token.contentStart || end >= token.contentEnd) continue;
+      opening = this.text.slice(token.start, token.contentStart) + opening;
     }
     const lineStart = this.text.lastIndexOf('\n', start - 1) + 1;
     const line = this.text.slice(lineStart, start);
@@ -215,12 +211,15 @@ export class NoteDocument {
 
   change(next, before) {
     const previous = this.projection;
-    if (next.text === previous.text && (!before || before.start === before.end)) return this.sourceSelection(next.selection);
+    const collapsed = !before || before.start === before.end;
+    if (next.text === previous.text && collapsed) return this.sourceSelection(next.selection);
     let start = 0;
-    while (start < previous.text.length && start < next.text.length && previous.text[start] === next.text[start]) start += 1;
+    const sharedLength = Math.min(previous.text.length, next.text.length);
+    while (start < sharedLength && previous.text[start] === next.text[start]) start += 1;
     let suffix = 0;
-    while (suffix < previous.text.length - start && suffix < next.text.length - start
-      && previous.text.at(-suffix - 1) === next.text.at(-suffix - 1)) suffix += 1;
+    while (suffix < sharedLength - start && previous.text.at(-suffix - 1) === next.text.at(-suffix - 1)) {
+      suffix += 1;
+    }
     if (before) {
       start = Math.min(start, before.start);
       suffix = Math.min(suffix, previous.text.length - before.end);

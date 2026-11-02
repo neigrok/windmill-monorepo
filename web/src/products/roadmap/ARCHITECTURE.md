@@ -64,8 +64,8 @@ selected, the Board opens that step's column (its tab, past the Done fold, or ou
 scrolls its card into view. The layer stays mounted across Board/Graph switches, so each column keeps
 its scroll there. Crossing 744px rebuilds the columns, and a column that folds to a rail starts at the
 top when it stands again.
-While the Board is shown, `coverBeneath` in `BoardView.jsx` makes everything stacked under its layer
-inert, the Graph's overlays and legend included.
+While the Board is shown, `coverBeneath` in `composerFocus.js` makes everything stacked under its layer
+inert, the Graph's overlays and legend included. Covered elements remain inert until the last covering layer closes.
 
 Each column renders only the cards in view plus ten either side (`ColumnCards.jsx`), estimating an
 unmeasured card's height from its text and the column's width, measuring each card as it renders and
@@ -115,8 +115,9 @@ then equal-width Recolor and Delete. `KindChoice follow={false}` moves focus wit
 applies only on activation. Re-picking the shared kind closes only the kinds row and keeps the
 selection, without writing, toasting or emitting an acted selection end. Recolor again also keeps
 the selection. Back and Escape close the kinds before ending selection.
-Selection owns same-URL history entries, separate from step visits. Ending selection restores its
-starting card only when it belongs to the filtered, displayed pane and is not leaving; otherwise
+Selection owns same-URL history entries, separate from step visits. Ending selection waits for its
+history entries to close, then restores its starting card only when it belongs to the filtered,
+displayed pane and is not leaving; otherwise
 focus returns to the pane's tab. If the pane is replaced, focus lands on its state action or loading
 stop. Losing ownership restores focus while the same Board remains active. Selection also ends on an act, an empty
 prune, leaving the Board, losing ownership or changing roadmaps. There is no keyboard entry into
@@ -136,8 +137,9 @@ touched. While open the layer makes everything beneath it inert and wraps Tab in
 closes the topmost editor or confirmation before the detail. Edit step opens the shared composer over the detail.
 Workspace and History use `StepWorkspace.jsx`: named checkboxes, the shared note renderer, personal links and static
 activity rows grouped through `ActivityLog`. The note editor keeps a local draft and saves once through workspace actions;
-changed Cancel asks to discard. Closing the detail through system Back or a remote deletion drops its local note draft
-without saving. Formatting uses pure `formatNote`; phone keyboard sizing follows the composer viewport. The editor keeps
+changed Cancel asks to discard. System Back and remote detail closure silently discard the unsaved note draft,
+consistent with the edit composer's G9 policy. Neither editor adds a navigation guard. Formatting uses pure
+`formatNote`; phone keyboard sizing follows the composer viewport. The editor keeps
 source ranges from the shared renderer; each browser edit changes only its mapped source span, preserving untouched note bytes.
 A phone subtask check offers an in-page Undo for six seconds; desktop checks stay quiet. Editor completion returns focus
 to its opener; other disappearing controls recover to the status row or dialog. Closing returns focus to the card
@@ -184,8 +186,8 @@ locked; the phone Workspace action is Add note or Edit note. The host opens Edit
 open detail and keeps the composer mounted only while that detail still names an existing step.
 `BoardComposer` in `useBoardActs.js` shares the host’s open, display and save guards.
 `BoardActs.edit` refuses missing, self or descendant prerequisites, diffs valid requests against the
-held projection, and quiets regroup before dispatching
-one `EditNode`, and emits rename activity when the name changes. A clean diff writes nothing.
+held projection, quiets regroup, dispatches one `EditNode`, and emits rename activity when the name changes.
+A clean diff writes nothing.
 The edit result carries no toast or targeted Undo.
 
 The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
@@ -215,7 +217,9 @@ selection and query so resizing between these layouts preserves them. With zero 
 Prerequisites row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots
 start in the first legend kind. Layout and focus handling live in `StepComposer.jsx`,
 `PrerequisitePicker.jsx`, `composerFocus.js`, `DiscardDraft.jsx` and `composer.css`; `composerFocus.js` owns shared layer
-focus and viewport hooks, while `StepDetail` owns fallback focus within the detail. The shared `KindChoice` lives in
+focus, viewport hooks and `coverBeneath`, the single rule for making covered layers inert; `StepDetail` owns
+fallback focus within the detail. `boardFocusTarget` in `traversal.js` owns fallback targets on the displayed
+Board, excluding covered, hidden and leaving elements. The shared `KindChoice` lives in
 `BoardControls.jsx` with its styles in `controls.css`.
 
 ## Package map

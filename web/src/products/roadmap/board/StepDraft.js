@@ -107,7 +107,7 @@ export class EditStepRequest {
   }
 }
 
-function blockedPrerequisites(tree, editing) {
+export function blockedPrerequisites(tree, editing) {
   if (!editing || !tree.nodesById.has(editing)) return new Set();
   return new Set([editing, ...tree.descendantsOf(editing).map((step) => step.id)]);
 }
