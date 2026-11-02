@@ -107,3 +107,30 @@ test('pendingStop — a newer displayed Board preserves an accepted completion o
   assert.deepEqual(pendingStop(layout, pending, new Set(['dock', 'wind', 'rig']), arrived), pending);
   assert.equal(pendingStop(layout, { ...pending, id: 'gone' }, new Set(['dock', 'wind', 'rig']), arrived), null);
 });
+
+test('entryStop — deletion picks the current Board entry on its surviving displayed card during regroup', () => {
+  const displayed = [
+    { name: 'locked', stops: ['dock', 'triangle', 'solo'] },
+    { name: 'upNext', stops: ['wind', 'bowline'] },
+    { name: 'done', stops: ['rig', 'parts', 'course'] },
+  ];
+  const current = [
+    { name: 'locked', stops: ['triangle', 'solo'] },
+    { name: 'upNext', stops: ['dock', 'bowline'] },
+    { name: 'done', stops: ['rig', 'parts', 'course'] },
+  ];
+  assert.deepEqual(entryStop(displayed, { last: 'upNext', byColumn: { upNext: 'wind' } }, current),
+    { column: 'locked', id: 'dock' });
+  assert.deepEqual(entryStop(displayed, { last: 'upNext', byColumn: { upNext: 'bowline' } }, current),
+    { column: 'upNext', id: 'bowline' });
+  assert.deepEqual(entryStop(current, { last: 'locked', byColumn: { locked: 'dock' } }, current),
+    { column: 'upNext', id: 'dock' });
+});
+
+test('entryStop — a phone pane uses a surviving displayed stop until the new entry reaches that pane', () => {
+  const displayed = [{ name: 'upNext', stops: ['wind', 'bowline'] }];
+  const current = [{ name: 'upNext', stops: ['dock', 'bowline'] }];
+  const memory = { last: 'upNext', byColumn: { upNext: 'wind' } };
+  assert.deepEqual(entryStop(displayed, memory, current), { column: 'upNext', id: 'bowline' });
+  assert.equal(entryStop(displayed, memory, [{ name: 'upNext', stops: [] }]), null);
+});

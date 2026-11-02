@@ -33,7 +33,9 @@ none and offers no Share, and after a failed load it offers no switch. Graph key
 `/` focuses *Find a step* there instead of opening Ask AI, which keeps ⌘K, and on the desktop editor, where both views
 carry the switch, G switches Board and Graph. C completes a focused Up next card. `boardKey` in
 `shortcuts/shortcutMap.js` owns these keys and their shared typing and covered-layer refusal: a step
-open over the Board, a dialog or the composer prevents them from acting.
+open over the Board, a dialog or the composer prevents them from acting. With the gate open, the
+host also refuses paste, global Undo/Redo and shortcut help while that layer covers it, including
+the composer’s picker. An uncovered Board still shares the session’s global keyboard Undo stack.
 
 `SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
 branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`
@@ -108,7 +110,9 @@ touched. While open the layer makes everything beneath it inert and wraps Tab in
 closes the modal or steps the page back. When the element holding focus gives way (an action replaced, Undo expiring, a
 workspace edit ending) focus lands on the status row, or the dialog where there is none. Closing returns focus to the card
 the visit began on, or to the columns' tab stop once that card has gone (deleted, or outside the branch View branch
-scoped). `StepFacts.js` reads the step off the
+scoped). After a held delete, roving recovery uses current membership and skips the deleted card
+even while regroup still displays it. On phones, if no surviving card is visible yet, focus rests
+on the selected column tab until its stop appears; moving focus cancels that handoff. `StepFacts.js` reads the step off the
 whole roadmap, whatever the Board filters: its column, its prerequisites and the steps it unlocks with their columns, what
 Complete would open and how many steps Reset would lock. Complete and Reset act in place through the Graph's progress
 writes and toast nothing: the status row flips with an inline Undo for six seconds and a line names what moved, and
@@ -155,8 +159,13 @@ the gated host mount. `StepDraft` owns validation and placement; the picker chan
 prerequisites until creation. The host dispatches one `CreateNode` with the request's stable id and
 all prerequisite edges stamped together. Failure keeps the draft for Retry. Success reveals and
 wakes the step in its derived column, clears only hiding query dimensions and offers targeted Undo.
-The composer is an error boundary under `roadmap-board-composer`. Its implementation and picker
-layouts live in `StepComposer.jsx`, `PrerequisitePicker.jsx` and `composer.css`.
+The composer sits inside an error boundary reporting `roadmap-board-composer`. At 1440px and wider,
+the picker is anchored beside the form; below that it replaces the form inside the composer, as a
+page in the 600px dialog from 744px and a full-screen page on phones. `StepComposer` owns picker
+selection and query so resizing between these layouts preserves them. With zero candidates the
+Prerequisites row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots
+start in the first legend kind. Layout and focus handling live in `StepComposer.jsx`,
+`PrerequisitePicker.jsx`, `composerFocus.js` and `composer.css`.
 
 ## Package map
 

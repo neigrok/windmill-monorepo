@@ -108,9 +108,17 @@ export class PrerequisiteChoices {
     Object.freeze(this);
   }
 
-  get fits() { return this.total <= 8; }
-  get hasMore() { return this.rows.length < this.count; }
-  get nextCount() { return Math.min(PAGE_SIZE, this.count - this.rows.length); }
+  get fits() {
+    return this.total <= 8;
+  }
+
+  get hasMore() {
+    return this.rows.length < this.count;
+  }
+
+  get nextCount() {
+    return Math.min(PAGE_SIZE, this.count - this.rows.length);
+  }
 
   search(query) {
     return new PrerequisiteChoices(this.tree, this.completed, { selected: this.selectedIds, query });
@@ -118,7 +126,9 @@ export class PrerequisiteChoices {
 
   toggle(id) {
     if (!this.tree.nodesById.has(id)) return this;
-    const selected = this.selectedIds.includes(id) ? this.selectedIds.filter((chosen) => chosen !== id) : [...this.selectedIds, id];
+    const selected = this.selectedIds.includes(id)
+      ? this.selectedIds.filter((chosen) => chosen !== id)
+      : [...this.selectedIds, id];
     return new PrerequisiteChoices(this.tree, this.completed, { selected, query: this.query, limit: this.limit });
   }
 

@@ -213,6 +213,7 @@ function BoardView({
             ? (
               <PhoneSegments
                 board={board}
+                focusBoard={nextBoard}
                 counts={motion.counts}
                 arrived={motion.arrived}
                 leaving={motion.leaving}
@@ -238,6 +239,7 @@ function BoardView({
                 <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={anchor} />
                 <BoardColumns
                   board={board}
+                  focusBoard={nextBoard}
                   counts={motion.counts}
                   arrived={motion.arrived}
                   leaving={motion.leaving}

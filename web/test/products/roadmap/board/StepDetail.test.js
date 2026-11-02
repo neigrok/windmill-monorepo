@@ -682,3 +682,38 @@ test('Chromium: the sole root keeps Delete unavailable; one of several roots can
     } finally { await page.context().close(); }
   }
 });
+
+for (const moveFocus of [false, true]) {
+  test(`Chromium: deleting the phone pane's last card focuses its segment during regroup${moveFocus ? ' without stealing a later focus move' : ' then follows the surviving card'}`, async () => {
+    await ready;
+    const errors = [];
+    const nodes = learnToSailNodes.filter((step) => !['bowline', 'solo'].includes(step.id));
+    const page = await openRoom({ viewport: { width: 390, height: 844 }, nodes }, errors);
+    try {
+      await card(page, 'Read the wind').click();
+      await page.getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name: 'Delete step' }).click();
+      const time = new Date('2026-11-02T12:00:00Z');
+      await page.clock.install({ time });
+      await page.clock.pauseAt(time);
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).evaluate((button) => button.click());
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      await page.clock.runFor(32);
+      assert.deepEqual(await page.evaluate(() => [
+        document.activeElement.matches('.st-board-phone-segment'),
+        document.activeElement.getAttribute('aria-selected'),
+      ]), [true, 'true']);
+      if (moveFocus) await page.getByRole('searchbox', { name: 'Find a step' }).focus();
+      await page.clock.runFor(800);
+      if (moveFocus) {
+        assert.equal(await page.evaluate(() => document.activeElement.matches('.st-board-find-input')), true);
+      } else {
+        await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'dock');
+        assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
+      }
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
+}

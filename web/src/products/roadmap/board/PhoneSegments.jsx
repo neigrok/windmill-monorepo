@@ -16,7 +16,7 @@ const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
 // The shown column is the host's: a pick here emits roadmap_board_column, the host following a selected step does not.
 export function PhoneSegments({
-  board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle = () => {}, counts = board,
+  board, focusBoard = board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone, query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle = () => {}, counts = board,
 }) {
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
   const tabs = useRef({});
@@ -55,8 +55,11 @@ export function PhoneSegments({
     [board, doneExpanded],
   );
   const layout = useMemo(() => [{ name: shown, stops: columnStops(shownCards[shown]) }], [shownCards, shown]);
-  const existingIds = useMemo(() => new Set(board.columns.flatMap((column) => column.cards.map((card) => card.id))), [board]);
-  const roving = useRovingFocus(layout, { revision: board, existingIds, onComplete: onComplete && ((id, door) => {
+  const recoveryLayout = useMemo(() => {
+    if (focusBoard === board) return layout;
+    return [{ name: shown, stops: columnStops(focusBoard.shownCards(shown, { doneExpanded })) }];
+  }, [focusBoard, board, layout, shown, doneExpanded]);
+  const roving = useRovingFocus(layout, { revision: board, existingIds: focusBoard.states, recoveryLayout, onComplete: onComplete && ((id, door) => {
     if (!onComplete(id, door)) return false;
     onShow('done');
     return true;

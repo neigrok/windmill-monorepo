@@ -15,7 +15,19 @@ export function columnStops({ cards, folded }) {
 
 // Tab enters on the last focused stop while it stands, else a column's own remembered stop, else the first Up next card.
 // `layout` lists the columns in reading order as { name, stops }; `memory` is { last, byColumn } from the focus.
-export function entryStop(layout, memory) {
+export function entryStop(layout, memory, recoveryLayout = layout) {
+  // Regroup retains old cards; a removed stop yields to the current entry wherever its card is still displayed.
+  if (recoveryLayout !== layout) {
+    const stop = entryStop(layout, memory);
+    const currentIds = new Set(recoveryLayout.flatMap((column) => column.stops));
+    if (stop === null || currentIds.has(stop.id)) return stop;
+    const recovery = entryStop(recoveryLayout, memory);
+    const displayed = layout.find((column) => column.stops.includes(recovery?.id));
+    if (displayed) return { column: displayed.name, id: recovery.id };
+    return entryStop(layout.map((column) => ({
+      ...column, stops: column.stops.filter((id) => currentIds.has(id)),
+    })), memory);
+  }
   const upNextFirst = [...layout].sort((a, b) => (b.name === 'upNext') - (a.name === 'upNext'));
   const remembering = [layout.find((column) => column.name === memory.last), ...upNextFirst]
     .find((column) => column?.stops.includes(memory.byColumn[column.name]));
@@ -86,12 +98,12 @@ function focusInView(element) {
 
 // Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
 // a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
-export function useRovingFocus(layout, { onComplete, existingIds, revision } = {}) {
+export function useRovingFocus(layout, { onComplete, existingIds, revision, recoveryLayout = layout } = {}) {
   const ref = useRef(null);
   const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
   const [pending, setPending] = useState(null);
-  const stop = entryStop(layout, memory);
+  const stop = entryStop(layout, memory, recoveryLayout);
   const following = pendingStop(layout, pending, existingIds, revision);
   if (following !== pending) setPending(following);
 

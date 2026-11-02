@@ -894,7 +894,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, []);
 
   useEffect(() => {
-    const onKey = (event) => {
+    const onEditorKey = (event) => {
+      const covered = stepDetailOpenRef.current || composerOpenRef.current || document.querySelector('[aria-modal="true"]') !== null;
       if (boardActiveRef.current && graphOnlyKey(event)) {
         const el = document.activeElement;
         const typingHere = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
@@ -902,6 +903,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         return;
       }
       if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        if (BOARD_OPEN && covered) return;
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
@@ -928,7 +930,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
       const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
-      const covered = stepDetailOpenRef.current || composerOpenRef.current || document.querySelector('[aria-modal="true"]') !== null;
       const boardAction = boardKey(event, { typing, covered });
       if (boardAction === 'find' && boardActiveRef.current) {
         const find = rootRef.current?.querySelector('.st-board-find-input');
@@ -958,6 +959,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         return;
       }
       if (event.key === '?' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (BOARD_OPEN && covered) return;
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
         event.preventDefault();
@@ -978,14 +980,15 @@ export function SkillTreeView({ treeId, demo = false }) {
         }
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onEditorKey);
+    return () => window.removeEventListener('keydown', onEditorKey);
   }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind, handleFocus, handleShowAll]);
 
   useEffect(() => {
     const onPaste = (event) => {
       if (readOnlyRef.current) return;
-      if (composerOpenRef.current) return;
+      const covered = stepDetailOpenRef.current || composerOpenRef.current || document.querySelector('[aria-modal="true"]') !== null;
+      if (composerOpenRef.current || (BOARD_OPEN && covered)) return;
       const el = document.activeElement;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
       const pasted = event.clipboardData?.getData('text/plain') ?? '';
@@ -1431,7 +1434,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const deleteStepFromDetail = (id) => {
     stepAddress.close();
     boardActs.delete(id);
-    focusBoard();
   };
   const handleStepCrash = (error) => {
     captureError('roadmap', 'roadmap-board-step', error?.stack ?? '', '#/app');

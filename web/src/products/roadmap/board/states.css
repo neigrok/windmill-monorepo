@@ -177,40 +177,6 @@
   padding: 0 0 var(--space-2);
 }
 
-/* ---- New step, the Board's creation verb as the one primary. ---- */
-.st-board-new-step {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  height: 52px;
-  padding: 0 var(--space-6);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--color-brand);
-  color: var(--text-on-accent);
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 16px;
-  line-height: 24px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background var(--duration-fast) var(--ease-standard);
-}
-@media (hover: hover) {
-  .st-board-new-step:hover {
-    background: var(--color-brand-hover);
-  }
-}
-.st-board-new-step:active {
-  background: var(--color-brand-active);
-}
-.st-board-new-step:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
-}
-
 /* ---- Roadmap complete: under the Up next heading from 744px, the phone's Up next pane on its own. ---- */
 .st-board-complete {
   flex-shrink: 0;

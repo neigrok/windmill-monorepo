@@ -110,11 +110,6 @@ export function StepComposer({ tree, completed, legend, band, onCreate, onClose 
     track('roadmap_board_create', { step: 'cancel' });
     onClose();
   };
-  const editing = () => {
-    setFailed(false);
-    request.current = null;
-    name.current.focus();
-  };
   const change = (patch) => {
     setDraft(draft.with(patch));
     request.current = null;
@@ -277,7 +272,16 @@ export function StepComposer({ tree, completed, legend, band, onCreate, onClose 
           <div>
             {failed ? (
               <>
-                <Button variant={phone ? 'ghost' : 'secondary'} onClick={editing}>{SAVE_FAILURE.keepEditing}</Button>
+                <Button
+                  variant={phone ? 'ghost' : 'secondary'}
+                  onClick={() => {
+                    setFailed(false);
+                    request.current = null;
+                    name.current.focus();
+                  }}
+                >
+                  {SAVE_FAILURE.keepEditing}
+                </Button>
                 <Button size={phone ? 'lg' : 'md'} type="submit">{SAVE_FAILURE.retry}</Button>
               </>
             ) : (

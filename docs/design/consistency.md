@@ -637,18 +637,33 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   Draw the recovery; *Couldn't sync this change* belongs to `rb-refused-sync`.
 - **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
   the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
-  and Apply. Track B owns this wave's implementation. The canon is ✅ 744 09.02–09.04: 470:23411,
+  and Apply. The implementation uses this page layout. The canon is ✅ 744 09.02–09.04: 470:23411,
   475:23809 and 470:23621, with darks 470:23881, 475:24021 and 470:24091.
+- **Board · picker at 1024–1439px.** The picker opens as a page inside the composer because the
+  anchored panel cannot fit beside the centred dialog. From 1440px it opens beside the form. Draw
+  the intermediate widths; the page uses the approved 744px structure.
+- **Board · empty-roadmap Prerequisites row.** With zero candidates, the row remains focusable
+  and shows *Prerequisites · None*, but is non-interactive (`aria-disabled`) and cannot open the
+  picker. Its empty-roadmap treatment is undrawn: pin whether the chevron remains and whether the
+  row is disabled or hidden.
+- **Board · default kind across surfaces.** The composer defaults to Sky, as the blank composer
+  frames show. The Graph plants new roots in the first legend kind (Terracotta if none exists),
+  and children inherit their parent’s kind. Pin whether Sky is the intended Board default or a
+  drawn example of the first legend kind.
+- **Board · large-picker context at 744px.** On phones, `pickerFor` adds *· N steps* above eight
+  candidates. That suffix is undrawn at 744px; the composer page currently uses lowercase
+  *for <draft>* without a total. Pin the large-roadmap context for that page.
 - **Board · picker without a draft name or with a removed prerequisite.** With no draft name the
-  phone header shows only *Prerequisites*, without a For line. A prerequisite deleted remotely is
+  phone and composer-page headers show only *Prerequisites*, without a For line. A prerequisite deleted remotely is
   dropped silently from the draft and selection, and placement recomputes. Draw these states; 10.11
   Selection revalidated is Edit copy.
 - **Board · phone large-picker dark and unreachable states.** Phone 10.x has no dark frames; dark
   uses the existing tokens with the light structure. Search runs synchronously in memory, so 10.09
   Searching and 10.10 Search unavailable are not reachable. Draw dark 10.x and align the search flows.
 - **Board · keyboard deletion and shared Undo.** Backspace on a Board card has no approved cost-line
-  flow and stays inert (`rb-kbd-dialog`). Command-Z still uses the global structural Undo stack.
-  `rb-simplify` owns reconciling that path with targeted Board toast Undo.
+  flow and stays inert (`rb-kbd-dialog`). On an uncovered Board, Command-Z still uses the global
+  structural Undo stack; the composer and picker block the host shortcut. `rb-simplify` owns
+  reconciling that path with targeted Board toast Undo.
 - **Board · the topbar before a roadmap loads.** Desktop 02.09 (374:5067) and 02.10 (374:5202) draw the roadmap's
   name with its switcher chevron and the Board/Graph switch, and no Share. Before the load answers, or after it
   fails, the build knows no name, so it shows none rather than *Untitled roadmap*, and it offers no Share. It shows

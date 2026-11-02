@@ -6,25 +6,10 @@ import { parse } from 'acorn';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { beacon, fixtureNodes, formReturned } from './composerFixture.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-function fixtureNodes(total) {
-  return [
-    { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
-    ...Array.from({ length: total - 1 }, (_, index) => ({
-      id: `chart-${index}`,
-      label: `Chart ${index}`,
-      prerequisites: ['wind'],
-      color: 'olive',
-    })),
-  ];
-}
 
-const beacon = `
-export function track(name, props) { (window.events ??= []).push({ name, props }); }
-export function reportError(error) { (window.reportedErrors ??= []).push(String(error)); }
-export function routeFamily(route) { return route; }
-`;
 const entry = `
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -134,12 +119,6 @@ async function open(width, options = {}) {
 async function closed(page) {
   await page.getByRole('dialog').waitFor({ state: 'detached' });
   await page.waitForFunction(() => document.activeElement.textContent === 'Open composer');
-}
-
-async function formReturned(page) {
-  await page.locator('.st-board-picker').waitFor({ state: 'detached' });
-  await page.waitForFunction(() => document.activeElement.matches('.st-board-draft-needs'));
-  assert.equal(await page.getByRole('dialog', { name: 'New step', exact: true }).count(), 1);
 }
 
 test('Composer fixture transforms its complete entry and imports the real action module with a complete beacon stub', async () => {
@@ -332,7 +311,7 @@ for (const width of [744, 1024, 1439, 1440]) {
         await page.keyboard.press('Tab');
         assert.equal(await page.evaluate(() => !!document.activeElement.closest('[role="dialog"]')), true);
         if (exit === 'Escape') await page.keyboard.press('Escape');
-        else await page.getByRole('button', { name: exit, exact: true }).click();
+        else await page.locator('.st-board-picker').getByRole('button', { name: exit, exact: true }).click();
         await formReturned(page);
         assert.equal(await page.locator('.st-board-draft-needs').textContent(), exit === 'Apply' ? 'PrerequisitesRead the wind' : 'PrerequisitesNone');
       }

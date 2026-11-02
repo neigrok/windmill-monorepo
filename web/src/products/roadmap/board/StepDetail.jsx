@@ -65,6 +65,7 @@ export function StepDetail({
   const facts = useMemo(() => new StepFacts(tree, { completed, completedAt }, id), [tree, completed, completedAt, id]);
   const layerRef = useRef(null);
   const originRef = useRef(null);
+  const deletedRef = useRef(null);
   const leaveRef = useRef(null);
   const titleId = useId();
   const sectionsId = useId();
@@ -110,9 +111,34 @@ export function StepDetail({
       requestAnimationFrame(() => {
         const board = document.querySelector('.st-view-layer--board.is-active');
         if (!board) return;
-        const card = board.querySelector(`.st-board-card[data-step-id="${CSS.escape(returnTo)}"]`);
-        const stop = [...board.querySelectorAll(TAB_STOP)].find((element) => element.getClientRects().length > 0);
-        (card ?? stop)?.focus();
+        const card = deletedRef.current === null
+          ? board.querySelector(`.st-board-card[data-step-id="${CSS.escape(returnTo)}"]`)
+          : null;
+        const returningStop = () => [...board.querySelectorAll(TAB_STOP)].find((element) => (
+          element.dataset.stepId !== deletedRef.current && element.getClientRects().length > 0
+        ));
+        const target = card ?? returningStop();
+        if (target) {
+          target.focus();
+          return;
+        }
+        if (deletedRef.current === null) return;
+        const fallback = board.querySelector('.st-board-phone-segment[aria-selected="true"], .st-board-find-input');
+        if (!fallback) return;
+        fallback.focus();
+        if (!fallback.matches('.st-board-phone-segment')) return;
+        const waiting = new MutationObserver(() => {
+          if (!board.isConnected || document.activeElement !== fallback) {
+            waiting.disconnect();
+            return;
+          }
+          const stop = returningStop();
+          if (!stop) return;
+          waiting.disconnect();
+          stop.focus();
+        });
+        fallback.addEventListener('blur', () => waiting.disconnect(), { once: true });
+        waiting.observe(board, { childList: true, subtree: true, attributes: true, attributeFilter: ['tabindex'] });
       });
     };
   }, []);
@@ -209,6 +235,7 @@ export function StepDetail({
     cancel: cancelDelete,
     remove: () => {
       onDeletePrompt?.('confirm');
+      deletedRef.current = id;
       setDeleting(false);
       onDelete(id);
     },

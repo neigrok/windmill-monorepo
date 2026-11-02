@@ -32,7 +32,7 @@ export function railToReveal(railed, column) {
 // The columns are one tab stop: the arrow keys rove across every card, the Show all row and a rail's Show. A column the
 // query emptied names its way out; when every column is empty, only Up next does.
 export function BoardColumns({
-  board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), onQuery, onComplete, onStandColumn, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle = () => {}, counts = board,
+  board, focusBoard = board, band, railed, onShowRail, selectedId, onSelect, doneExpanded, onExpandDone, query = new BoardQuery(), onQuery, onComplete, onStandColumn, arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle = () => {}, counts = board,
 }) {
   const showPressed = useRef(false);
   const stage = columnStage({ band, railed });
@@ -45,7 +45,14 @@ export function BoardColumns({
     name: column.name,
     stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(shown[column.name]),
   })), [shown, band, railed]);
-  const roving = useRovingFocus(layout, { revision: board, onComplete: onComplete && ((id, door) => {
+  const recoveryLayout = useMemo(() => {
+    if (focusBoard === board) return layout;
+    return focusBoard.columns.map((column) => ({
+      name: column.name,
+      stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(focusBoard.shownCards(column.name, { doneExpanded })),
+    }));
+  }, [focusBoard, board, layout, doneExpanded, band, railed]);
+  const roving = useRovingFocus(layout, { revision: board, recoveryLayout, existingIds: focusBoard.states, onComplete: onComplete && ((id, door) => {
     if (!onComplete(id, door)) return false;
     onStandColumn?.('done');
     return true;
