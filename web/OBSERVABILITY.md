@@ -154,13 +154,15 @@ sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new` or `browse`), o
 and `via` (`close`, `escape` or `scrim`). What's next emits `roadmap_whats_next` with `step`
 (`open`, `pick` or `close`) and `count` in `countBucket`'s `0`, `1`, `2-5`, `6-20` or `21+` buckets.
 Export emits `roadmap_export` with `outcome` (`done` or `failed`) and `door` (`more` or `sheet`).
+A missing projection or displayed tree emits `failed` without an Issue.
 A Graph search handing off to the Board emits `roadmap_graph_find` with `step: handoff`.
 Graph toast outcomes emit `roadmap_graph_toast` with `act` (`complete`, `create` or `link`) and
-`step` (`shown` or `undo`). Gated reader Share extends `link_copy` with `outcome` (`done` or
-`failed`); clipboard refusal is expected and creates no Issue. Identity render failures report
-`roadmap-identity`; unexpected export build/download failures report `roadmap-export`. Both use
-static operation names and stack frames. Restore and revert failures retain their existing
-operations. None of these events carries titles, ids, search text or roadmap names. State-word
+`step` (`shown` or `undo`). Successful gated reader Share emits `link_copy` with no properties;
+a clipboard refusal emits `roadmap_graph_toast` with `act: link` and `outcome: failed`, without
+a share-funnel beacon or Issue. Identity render failures report `roadmap-identity`; unexpected
+export build/download failures report `roadmap-export`; a Graph completion Undo failure reports
+`roadmap-step-restore`. All use static operation names and stack frames. Other restore and revert
+failures retain their existing operations. None of these events carries titles, ids, search text or roadmap names. State-word
 copy and focus-ring changes emit no new events.
 
 The switch, the tabs, the rail, Show all, the controls, the states, the step’s page and modal, and the

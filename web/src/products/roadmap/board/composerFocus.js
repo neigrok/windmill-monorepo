@@ -36,25 +36,31 @@ export function coverBeneath(layer) {
 
 export const DetailFocusContext = createContext(null);
 
-export function useComposerFocus(ref, active = true, { restore = true } = {}) {
+export function useComposerFocus(ref, active = true, { restore = true, preserveOutsideFocus = false } = {}) {
   const opener = useRef(typeof document === 'undefined' ? null : document.activeElement);
   const detailFocus = useContext(DetailFocusContext);
 
-  useEffect(() => () => {
-    if (!restore) return;
-    if (detailFocus) {
-      detailFocus.restore(opener);
-      return;
-    }
-    requestAnimationFrame(() => {
-      if (opener.current?.isConnected && !opener.current.closest('[inert]')) {
-        opener.current.focus({ preventScroll: true });
+  useEffect(() => {
+    const surface = ref.current;
+    return () => {
+      if (!restore) return;
+      if (detailFocus) {
+        detailFocus.restore(opener);
         return;
       }
-      if (document.activeElement !== document.body && document.activeElement?.isConnected) return;
-      boardFocusTarget(document.querySelector('.st-board'))?.focus({ preventScroll: true });
-    });
-  }, [detailFocus, restore]);
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        const outside = active !== document.body && active?.isConnected && !surface?.contains(active) && !active.closest('[inert]');
+        if (preserveOutsideFocus && outside) return;
+        if (opener.current?.isConnected && !opener.current.closest('[inert]')) {
+          opener.current.focus({ preventScroll: true });
+          return;
+        }
+        if (document.activeElement !== document.body && document.activeElement?.isConnected) return;
+        boardFocusTarget(document.querySelector('.st-board'))?.focus({ preventScroll: true });
+      });
+    };
+  }, [detailFocus, restore, preserveOutsideFocus, ref]);
 
   useEffect(() => {
     if (!active || ref.current?.contains(document.activeElement)) return;

@@ -1,14 +1,24 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFocus, onShowAll, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity, onBottom }) {
+  const barRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!onBottom) return undefined;
+    const bar = barRef.current;
+    const measure = () => onBottom(bar.offsetTop + bar.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [onBottom]);
   const activityHint = keyHint('Activity feed');
   const focusHint = keyHint('Focus on a step');
   const showAllHint = keyHint('All steps');
 
   return (
-    <div className="st-topbar">
+    <div className="st-topbar" ref={barRef}>
       <div className="st-brand">
         <a className="st-brand-home" href="#/" aria-label="Windmill — home">
           <span className="st-brand-name">Windmill</span>

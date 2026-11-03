@@ -167,6 +167,7 @@ export class BoardActs {
     reveal(outcome.reveal);
     c.showToast(outcome.message, {
       surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
+      ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
       action: { label: LABELS.undo, run: () => {
         const current = this.collaborators;
         try {

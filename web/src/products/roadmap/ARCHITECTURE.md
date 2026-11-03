@@ -31,7 +31,8 @@ and visitors to the Graph. The selected step carries across views. With the gate
 The demo keeps its existing chrome. While the Board awaits its roadmap, the row names no title or
 progress and offers no Share; after a failed load it offers no switch. From 744px, `/` focuses
 *Find a step* on either view and G switches Board and Graph for owners and readers. A non-empty
-Graph search hands off to the Board with its query and field focus kept. Ask AI keeps ⌘K.
+Graph search hands off to the Board with its query and field focus kept. The demo Board
+resolves `/` from its own header. Ask AI keeps ⌘K.
 Graph selection shortcuts do not act on the Board. C completes a focused Up next card; Backspace and Delete
 start a nine-second held delete on a deletable owner card, without a confirm. `boardKey` in
 `shortcuts/shortcutMap.js` owns these keys and their shared typing and covered-layer refusal: a step
@@ -39,13 +40,20 @@ open over the Board, a dialog or the composer prevents them from acting. With th
 host also refuses paste, global Undo/Redo and shortcut help while that layer covers it, including
 the composer’s picker. An uncovered Board still shares the session’s global keyboard Undo stack.
 
-The identity row routes verbs to the existing Share, Fork, TendBar and shortcuts surfaces. From
+`useRoadmapIdentityActs.js` owns the identity query handoff, read models and verbs that route to
+the existing Share, Fork, TendBar and shortcuts surfaces. Each surface restores its own opener:
+Dialog and the gated TendBar/Fork sheet share `useDialogFocus`; the composer uses
+`useComposerFocus`. Gated restores leave an intentional focus target outside the surface alone.
+More and the roadmap sheet close and focus their surviving trigger before invoking a verb. From
 1280px Find and Ask AI have their full forms; 1024–1279px folds them to icons, and 744–1023px
 puts Ask AI and Share in More. Phone owners open the roadmap sheet from the title. Its current
-row comes from the host projection and the remaining roadmaps from `listAllTrees`; navigation
+row comes from the host projection, with exact Up next and Locked counts from the unfiltered
+Board model, and the remaining roadmaps from `listAllTrees`; navigation
 uses the existing roadmap, new-roadmap and browse routes. Readers never receive the owner sheet.
 Export builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`,
-using the same download edge as the settings archive. Settings still exports all roadmaps as a zip.
+using the same download edge as the settings archive. The paste format uses the roadmap title
+as the root: a distinct root-step label and its completion are not preserved. Other exported
+steps retain their completion marks. Settings exports all roadmaps as a zip.
 
 On the gated Graph, the owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order,
 including a one-step roadmap, and hides at zero. Picking a row selects and reveals that canvas
@@ -53,8 +61,12 @@ step. Activity remains available through A; the feed never opens itself while id
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
 The identity replaces the plaque, wordmark and hairline, and only phones retain the Fork pill.
-The anonymous/lapsed desktop status sits beneath the measured identity. A row render failure
-reports `roadmap-identity` and restores legacy chrome with a view switch. Gate-closed chrome,
+The anonymous/lapsed desktop status sits beneath the measured identity. On the phone and tablet
+Graph, the existing device-only sign-in nudge sits beneath the row; the phone camera clears it,
+and its measured bottom contributes to the Graph viewport. A row render failure reports
+`roadmap-identity` and restores legacy chrome with a view switch. The fallback chrome measures
+its bottom, the switch sits below it with a named gap, and the switch bottom sets the Board inset.
+Gate-closed chrome,
 feed auto-open, shortcuts and viewport geometry retain their existing paths; state words use
 `board/copy.js` without changing ceremony structure or timing.
 
@@ -196,7 +208,9 @@ silently and reports `roadmap-board-delete` with stack frames.
 The host owns one toast slot. `BoardToast` serves both the Board and the gated Graph. Board toasts
 render inside `BoardView`, with a six-second Complete, Create or Recolor hold and nine-second Delete
 hold. A gated Graph completion without a milestone offer has a six-second toast with Undo through
-`restoreStep`; a milestone offer keeps its canvas ceremony. Graph creation has receipt-based Undo,
+`restoreStep`; a milestone offer keeps its canvas ceremony. Graph-toast Undo restores focus to
+the action’s captured control when it remains connected and uncovered, otherwise to the pressed
+view switch. Graph creation has receipt-based Undo,
 and a reader's copied link uses the same slot without Undo. Leaving a view dismisses its toast.
 Remote completions keep their announcements. Gate-closed Graph/List toasts keep their renderer and timing. Regroup delays only a new toast's entry: a visible toast and its Undo remain available during
 later motion. Complete Undo restores that step's progress; Create Undo reverts its exact session
