@@ -2012,7 +2012,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     : null;
   // The legacy phone lane keeps its List switch; the demo keeps its Graph switch.
   let lanePill = null;
-  if (BOARD_OPEN && readOnly && breakpoint !== 'desktop' && !boardActive) lanePill = viewSwitch;
+  if (BOARD_OPEN && readOnly && breakpoint !== 'desktop' && !boardActive && !identityCrashed) lanePill = viewSwitch;
   if (!BOARD_OPEN && listReady) lanePill = <ViewPill view={view} onSwitch={switchView} />;
   const tendPlaceholder = tree && tree.nodes.length === 0
     ? 'What do you want to learn or build?'
@@ -2687,7 +2687,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {mobileEditable && breakpoint === 'tablet' && (
-        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' && !boardActive ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH }}>
+        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' && !boardActive ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH, top: dockTop }}>
           <div className="st-dock-tenant" key={mobileSurface === 'editor' ? selectedNode.id : mobileSurface}>
             {mobileSurface === 'bulk' ? (
               <BulkBar
