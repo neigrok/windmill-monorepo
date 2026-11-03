@@ -394,7 +394,7 @@ deterministic modules, as compiled and as shipped (`runtimeElements`):
 - **Members.** `String.format`, `toUpperCase()`/`toLowerCase()` without a locale (`uppercase()` passes), `Math.pow`
   and `kotlin.math` `pow`/`exp`/`ln`/`log*`, `shuffled`/`random` on collections, `Class.*`, `Throwable.printStackTrace`,
   `Thread.*` but `currentThread`, `Object.wait`/`notify`; any `synchronized` (`monitorenter`); any `native` method.
-- **The model.** The 12 projects of §2.1 and no other, each in its directory; `:gym:domain` a `jvm` module with
+- **The model.** The 13 projects of §2.1 and no other, each in its directory; `:gym:domain` a `jvm` module with
   exactly the Kotlin JVM plugin set, depending on `:domain-kit`, `:sync-core`, `:sync-api`, `:sync-schema` only, its
   classpaths holding those projects, `kotlin-stdlib` and `org.jetbrains:annotations` and nothing else; no included
   build; test configurations may reach anything but `:app`, `:platform`, `:gym`.

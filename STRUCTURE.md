@@ -34,7 +34,8 @@ apps/
                             the dev-only SyncProbe/ app
   android/                  Kotlin/Compose gym app; :app, :platform, :gym (its presentation package
                             projects :gym:domain for the screens) and :gym:domain, the sync engine
-                            (:sync-*) and the domain kit (:domain-kit, :domain-kit-testing)
+                            (:sync-*), the domain kit (:domain-kit, :domain-kit-testing) and the
+                            product-neutral agent turn (:agent)
 packages/
   api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
 services/

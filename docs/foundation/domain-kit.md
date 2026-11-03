@@ -49,8 +49,8 @@ with their test support `DomainKitTesting` and `:domain-kit-testing`.
 product, its scope and names (`Gym.scope`, `Gym.Types.note`). Together they are the kit's whole lower
 boundary.
 
-**D-3 Layer.** One of: engine API, engine runtime, kit, product domain, UI, test, composition (the
-app). Each module belongs to exactly one, the row of §2.2 that lists it.
+**D-3 Layer.** One of: engine API, engine runtime, kit, product domain, agent, UI, test, composition
+(the app). Each module belongs to exactly one, the row of §2.2 that lists it.
 
 **D-4 Entity.** A product type whose values are records of one registry type (engine D-6, D-7). It
 has a typed id and a constructor from a record, and when the client writes it, the fields it writes
@@ -163,12 +163,15 @@ closed by package identity; the checked-in `Package.resolved` pins their revisio
 The app injects `SyncSchema.registry` into the runner and the UI modules, which do not import
 `SyncSchema`.
 
-The Kotlin modules `:sync-core`, `:sync-api`, `:sync-schema`, `:sync-testing` (ER-10), `:domain-kit`,
-`:domain-kit-testing` and `:gym:domain` are `jvm` modules; `:sync-engine`, `:platform`, `:gym` and
-`:app` are `android` modules. Each depends as its Swift twin above does, with `:sync-testing` for
-`SyncEngine` and `SyncTesting`; `:sync-engine` and `:platform`, with no twin above, follow §2.2.
-A Kotlin module `:a:b` lives at `apps/android/a/b`. `settings.gradle.kts` includes exactly these
-modules and no other build. A `jvm` module applies exactly the plugin set `{org.jetbrains.kotlin.jvm}`.
+The Kotlin modules `:sync-core`, `:sync-api`, `:sync-schema`, `:sync-model-server`, `:sync-testing`
+(ER-10), `:domain-kit`, `:domain-kit-testing`, `:gym:domain` and `:agent` are `jvm` modules;
+`:sync-engine`, `:platform`, `:gym` and `:app` are `android` modules. Each depends as its Swift twin
+above does, with `:sync-testing` for `SyncEngine` and `SyncTesting`; `:sync-engine`,
+`:sync-model-server`, `:platform` and `:agent`, with no twin above, follow §2.2. `:agent` holds the
+product-neutral turn of [the phone Coach](mobile/gym_coach.md) (§4): it depends on `:sync-core` and
+kotlinx-coroutines-core, so it is neither kit nor domain and §2.3's class rules do not read it. A
+Kotlin module `:a:b` lives at `apps/android/a/b`. `settings.gradle.kts` includes exactly these modules
+and no other build. A `jvm` module applies exactly the plugin set `{org.jetbrains.kotlin.jvm}`.
 
 ### §2.2 The layer rules, in test code
 
@@ -179,17 +182,21 @@ manifest. A test target is in the test layer. Every other module is in the one r
 |---|---|---|---|
 | composition | the app target | `:app` | anything |
 | engine API | `SyncCore`, `SyncAPI`, `SyncSchema` | `:sync-core`, `:sync-api`, `:sync-schema` | engine API |
-| engine runtime | `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`; `GRDB` | `:sync-engine` | engine API, engine runtime; `GRDB` from `SyncStore` only |
+| engine runtime | `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`; `GRDB` | `:sync-engine`, `:sync-model-server` | engine API, engine runtime; `GRDB` from `SyncStore` only |
 | engine test support | `SyncTesting` | `:sync-testing` | engine API, engine runtime |
 | kit | `DomainKit`, `DomainKitNFC` | `:domain-kit` | engine API, kit |
 | kit test support | `DomainKitTesting` | `:domain-kit-testing` | kit, engine API, `SyncEngine`, `SyncTesting` |
 | product domain | `GymDomain`, `JournalDomain` | `:gym:domain` | kit, engine API |
-| platform | `WindmillPlatform` | `:platform` | kit, engine API, `SyncEngine` |
-| product UI | `WindmillGym`, `WindmillJournal` | `:gym` | its own product domain, kit, engine API, `SyncEngine`, platform |
+| agent | none: the turn is in the app target | `:agent` | `:sync-core` |
+| platform | `WindmillPlatform` | `:platform` | kit, engine API, `SyncEngine`, agent |
+| product UI | `WindmillGym`, `WindmillJournal` | `:gym` | its own product domain, kit, engine API, `SyncEngine`, platform, agent |
 | test | test targets; the modules of the package whose identity is `swift-syntax` | test source sets | anything but platform, product UI and composition; `<M>Tests` also `<M>` |
 
 - No product domain depends on another product domain. Platform never depends on a product module,
   and a product UI on no other product's modules.
+- No kit or product-domain module depends on `:agent`, and `:agent` depends on no product. Its sources
+  name no product either: `LayeringTests` scans them for product nouns, and only a frozen `coach-…`
+  wire code may say that word.
 - The transitive closure of every kit and product-domain module stays inside kit and engine API. A
   dependency on a library product counts as a dependency on every target the product bundles.
 
