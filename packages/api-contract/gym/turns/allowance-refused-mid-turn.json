@@ -1,6 +1,7 @@
 {
   "case": "allowance-refused-mid-turn",
   "seat": "anon",
+  "clockMs": 1793000000000,
   "open": {
     "catalog": "catalog/1",
     "turnId": "tn_allowance_0001",
@@ -13,15 +14,15 @@
     {"stop_reason": "tool_use", "content": [
       {"type": "tool_use", "id": "toolu_1", "name": "list_routines", "input": {}}
     ]},
-    {"refused": "subject_exhausted"}
+    {"refused": "free_month_exhausted"}
   ],
   "events": [
     {"event": "calls", "data": {"batch": 1, "calls": [{"callId": "toolu_1", "name": "list_routines", "input": {}}]}},
     {"await": "results", "batch": 1},
-    {"event": "error", "data": {"code": "subject_exhausted"}}
+    {"event": "error", "data": {"code": "free_month_exhausted", "budgetResetsAtMs": 1793491200000}}
   ],
   "results": [
     {"batch": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"routines": []}}]}
   ],
-  "end": {"state": "failed", "code": "subject_exhausted"}
+  "end": {"state": "failed", "code": "free_month_exhausted"}
 }

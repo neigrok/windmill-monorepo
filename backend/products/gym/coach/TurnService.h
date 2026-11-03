@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <semaphore>
 #include <string>
 
@@ -35,11 +36,13 @@ namespace wm::gym::coach {
 constexpr int kVendorRounds = 2;
 constexpr int kMaxLiveTurns = 64;
 
-// `turn` set: admitted, running or — `resumed` — already open under the same body. `code` set: refused.
+// `turn` set: admitted, running or — `resumed` — already open under the same body. `code` set: refused,
+// with `allowance` in the shared USD read contract when the allowance that refused it was read; null otherwise.
 struct TurnAdmission {
   std::shared_ptr<Turn> turn;
   bool resumed = false;
   std::string code;
+  Json::Value allowance;
 };
 
 class TurnService {
@@ -61,13 +64,13 @@ public:
   // The principal's turn by id, or null — unknown, another principal's, or dropped after its linger.
   std::shared_ptr<Turn> find(const TurnPrincipal& principal, const std::string& turnId);
 
-  // The shared USD read contract for the seat, as `done.allowance` carries it; null where none applies.
-  Json::Value allowance(const TurnPrincipal& principal) const;
-
 private:
   void run(const std::shared_ptr<Turn>& turn);
   void sweep(std::uint64_t nowMs);
-  std::string allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const;
+  // §6.2 step 4: an empty admission, or the refusal of the allowance step.
+  TurnAdmission allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const;
+  // The seat's USD allowance; nothing where durable allowances do not apply to it.
+  std::optional<AiBudgetView> seatAllowance(const TurnPrincipal& principal) const;
 
   std::shared_ptr<CoachModel> model_;
   const AbilityCatalog& catalog_;

@@ -1,10 +1,12 @@
 #include "products/gym/coach/TurnApi.h"
 
+#include "platform/adapters/http/WriteRoutes.h"
 #include "platform/application/OAuthService.h"
 #include "test/DrogonLoopback.h"
 #include "test/products/gym/coach/TurnFixture.h"
 
 #include <chrono>
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -41,7 +43,7 @@ struct ApiHarness {
   std::string credential;
   const UserId account{"44444444-4444-4444-4444-444444444444"};
 
-  ApiHarness() {
+  explicit ApiHarness(bool durableAllowances = false) : h(durableAllowances) {
     const User user{account, Email{"lifter@example.test"}, "Lifter", {}};
     accounts.usersById[account.str()] = user;
     accounts.insertSession(authTokens.digestOf("s-live"), account, h.clock.now + 1'000'000, "", "", h.clock.now);
@@ -87,6 +89,16 @@ struct ApiHarness {
   drogon::HttpResponsePtr open(const drogon::HttpRequestPtr& request) {
     return settle([&](HttpCallback&& cb) { api.open(request, std::move(cb)); });
   }
+  // The open as its write route runs it: the completion is taken on the worker, before the reply lands.
+  drogon::HttpResponsePtr openObserved(const drogon::HttpRequestPtr& request) {
+    beginWriteRequest(request, {"/v1/gym/coach/turns", "gym.coach.turn.open", "gym", "rest", {drogon::Post}});
+    return settle([&](HttpCallback&& cb) {
+      api.open(request, [request, cb = std::move(cb)](const drogon::HttpResponsePtr& response) {
+        finishWriteRequest(request, response);
+        cb(response);
+      });
+    });
+  }
   drogon::HttpResponsePtr results(const drogon::HttpRequestPtr& request, const std::string& turnId) {
     return settle([&](HttpCallback&& cb) { api.results(request, std::move(cb), turnId); });
   }
@@ -108,6 +120,26 @@ std::string refusalOf(const drogon::HttpResponsePtr& response) {
   const Json::Value body = parse(std::string(response->getBody()));
   return std::to_string(static_cast<int>(response->getStatusCode())) + " " + body["code"].asString() + " | " + body["error"].asString();
 }
+
+// What the write observation says of a request: its completion lines and the Issues it files.
+struct WriteWatch : FailureReporter {
+  std::vector<std::string> outcomes;
+  std::vector<std::string> issues;
+
+  WriteWatch() {
+    installWriteSink([this](const WriteCompletion& completion) {
+      if (completion.operation == "gym.coach.turn.open") outcomes.push_back(completion.outcome);
+    });
+    installWriteReporter(std::shared_ptr<FailureReporter>(this, [](FailureReporter*) {}));
+  }
+  ~WriteWatch() {
+    installWriteSink({});
+    installWriteReporter({});
+  }
+  void report(const std::string& kind, const std::string& operation, const std::string&) override {
+    issues.push_back(kind + " " + operation);
+  }
+};
 
 // The frames of an SSE body, each `done` without its environment-dependent allowance.
 Json::Value framesOf(const std::string& body) {
@@ -223,4 +255,106 @@ TEST(gym_turn_route_opens_an_anonymous_seat_and_answers_results_and_stop_in_orde
   const drogon::HttpResponsePtr resumed = a.resume(ApiHarness::request("GET", "/v1/gym/coach/turns/tn_api_0000004", Json::Value(), {installation, "Connection: close"}), "tn_api_0000004");
   CHECK_EQ(framesOf(std::string(resumed->getBody())),
            parse(R"([{"event":"snapshot","data":{"text":"None yet.","state":"completed"}},{"event":"done","data":{"state":"completed"}}])"));
+}
+
+// §6.3, §6.5: an allowance refusal before the stream answers 429 with the allowance that refused it,
+// `budgetResetsAtMs` naming when that budget returns; its write line carries the code and it files no Issue.
+TEST(gym_turn_route_answers_an_allowance_refusal_429_with_the_allowance_and_files_no_issue) {
+  struct Case {
+    std::string code;
+    std::function<void(ApiHarness&)> arrange;
+    Json::Value allowance;
+  };
+  const Json::Value monthEnd = Json::Int64(1'701'388'800'000);
+  const Json::Value dayEnd = Json::Int64(1'700'006'400'000);
+  Json::Value account = parse(R"({"configured":true,"currency":"USD","limit":"0.250000000","period":"calendar_month_utc",
+      "remaining":"0.250000000","reserved":"0.000000000","tier":"logged_in","used":"0.000000000"})");
+  account["resetsAtMs"] = monthEnd;
+  const auto allowanceOf = [&](const char* code, const Json::Value& reset, const Json::Value& changes) {
+    Json::Value allowance = account;
+    allowance["code"] = code;
+    allowance["budgetResetsAtMs"] = reset;
+    for (const std::string& key : changes.getMemberNames()) allowance[key] = changes[key];
+    return allowance;
+  };
+  const std::vector<Case> cases{
+      {"subject_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.subject.spentNanos = 250'000'000; },
+       allowanceOf("subject_exhausted", monthEnd, parse(R"({"used":"0.250000000","remaining":"0.000000000"})"))},
+      {"free_month_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.freeMonth.spentNanos = a.h.limits.freeMonthlyNanos; },
+       allowanceOf("free_month_exhausted", monthEnd, Json::Value(Json::objectValue))},
+      {"free_day_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.freeDay.spentNanos = a.h.limits.freeDailyNanos; },
+       allowanceOf("free_day_exhausted", dayEnd, Json::Value(Json::objectValue))},
+      {"concurrency_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.concurrentCalls = 1; },
+       allowanceOf("concurrency_exhausted", Json::Value(), Json::Value(Json::objectValue))},
+      {"debt_outstanding", [](ApiHarness& a) { a.h.budgetRepository.totals.subject.debtNanos = 1; },
+       allowanceOf("debt_outstanding", Json::Value(), Json::Value(Json::objectValue))},
+      {"funding_required", [](ApiHarness& a) { a.h.subscriptions.subscribe(a.account); },
+       allowanceOf("funding_required", Json::Value(), parse(R"({"configured":false,"limit":null,"period":"billing_period",
+           "remaining":"0.000000000","resetsAtMs":null,"tier":"windmill_one"})"))}};
+  for (const Case& refusal : cases) {
+    WriteWatch watch;
+    ApiHarness a(true);
+    refusal.arrange(a);
+    const drogon::HttpResponsePtr response = a.openObserved(ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000005"), {"Cookie: wm_session=s-live"}));
+    CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
+    CHECK_EQ(response->getHeader("cache-control"), std::string("private, no-store"));
+    Json::Value expected(Json::objectValue);
+    expected["error"] = "Coach could not take this message.";
+    expected["code"] = refusal.code;
+    expected["allowance"] = refusal.allowance;
+    CHECK_EQ(parse(std::string(response->getBody())), expected);
+    CHECK(watch.outcomes == std::vector<std::string>{refusal.code});
+    CHECK(watch.issues.empty());
+    CHECK(a.h.failures->reports.empty());
+  }
+}
+
+// A lifetime allowance has no reset: the seat's allowance says so with nulls, and the refusal invents none.
+TEST(gym_turn_route_refuses_a_spent_lifetime_allowance_with_no_reset_moment) {
+  WriteWatch watch;
+  ApiHarness a;
+  a.h.budgetRepository.totals.subject.spentNanos = a.h.limits.anonymousLifetimeNanos;
+  const drogon::HttpResponsePtr response = a.openObserved(ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000006"), {"X-Windmill-Installation: " + a.credential}));
+  CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
+  CHECK_EQ(parse(std::string(response->getBody())), parse(R"({"error":"Coach could not take this message.","code":"subject_exhausted","allowance":{
+      "budgetResetsAtMs":null,"code":"subject_exhausted","configured":true,"currency":"USD","limit":"0.050000000","period":"lifetime",
+      "remaining":"0.000000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.050000000"}})"));
+  CHECK(watch.outcomes == std::vector<std::string>{"subject_exhausted"});
+  CHECK(watch.issues.empty());
+}
+
+// A refusal no allowance was read for carries none: the legacy window has no USD contract to name,
+// and `coach-busy` stays an expected 503. The accounting read failing is the one failure among them.
+TEST(gym_turn_route_omits_the_allowance_where_none_was_read_and_only_accounting_failure_is_an_issue) {
+  const std::string sentence = R"("error":"Coach could not take this message.")";
+  {
+    WriteWatch watch;
+    ApiHarness a;
+    a.h.usage.spentByProduct[""] = kFreeMonthlyAiNanos;
+    const drogon::HttpResponsePtr response = a.openObserved(ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000007"), {"Cookie: wm_session=s-live"}));
+    CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
+    CHECK_EQ(parse(std::string(response->getBody())), parse("{" + sentence + R"(,"code":"subject_exhausted"})"));
+    CHECK(watch.outcomes == std::vector<std::string>{"subject_exhausted"});
+    CHECK(watch.issues.empty());
+  }
+  {
+    WriteWatch watch;
+    ApiHarness a;
+    a.h.model->wired = false;
+    const drogon::HttpResponsePtr response = a.openObserved(ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000008"), {"Cookie: wm_session=s-live"}));
+    CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+    CHECK_EQ(parse(std::string(response->getBody())), parse("{" + sentence + R"(,"code":"coach-busy"})"));
+    CHECK(watch.outcomes == std::vector<std::string>{"coach-busy"});
+    CHECK(watch.issues.empty());
+  }
+  {
+    WriteWatch watch;
+    ApiHarness a(true);
+    a.h.budgetRepository.failRead = true;
+    const drogon::HttpResponsePtr response = a.openObserved(ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000009"), {"Cookie: wm_session=s-live"}));
+    CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+    CHECK_EQ(parse(std::string(response->getBody())), parse("{" + sentence + R"(,"code":"ai_accounting_unavailable"})"));
+    CHECK(watch.outcomes == std::vector<std::string>{"failed"});
+    CHECK(a.h.failures->reports == std::vector<std::string>{"gym:coach_turn.open:allowance unavailable"});
+  }
 }

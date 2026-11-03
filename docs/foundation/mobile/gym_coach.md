@@ -400,11 +400,11 @@ Admission, in order:
 | `text` | `{delta}`: visible answer text, in order. |
 | `calls` | `{batch, calls: [{callId, name, input}]}` |
 | `done` | `{state, truncated?, allowance}`; allowance follows the shared USD read contract |
-| `error` | `{code}` |
+| `error` | `{code, budgetResetsAtMs?}`; §6.5 says which codes name a moment |
 
 Heartbeat comments keep an idle stream open. A refusal before the stream starts is an HTTP error
-with a JSON body `{error, code}`. After the stream starts, it is an `error` event, and the stream
-closes.
+with a JSON body `{error, code}`, plus `allowance` in the shared USD read contract when the allowance
+that refused it was read. After the stream starts, it is an `error` event, and the stream closes.
 
 ### §6.4 Results
 
@@ -431,11 +431,11 @@ answers `204`. Any other body — including one for a batch that timed out — i
 | `coach-turn-order` | Results that do not answer the pending batch. |
 | `coach-turn-volume` | An ability call over G-6. |
 | `coach-rate-limited` | The technical burst or concurrency limit is reached; retry later. |
-| `subject_exhausted` | The device/account USD allowance cannot cover this request. |
+| `subject_exhausted` | The device/account USD allowance cannot cover this request. Names the end of its period; a lifetime allowance has none. |
 | `invalid_installation` | The installation credential is missing or invalid. |
 | `device_bound` | This installation is permanently associated with an account; sign in. |
-| `free_day_exhausted` | Shared free capacity is unavailable for this UTC day; include the daily budget reset. |
-| `free_month_exhausted` | Shared free capacity is unavailable for this UTC month. |
+| `free_day_exhausted` | Shared free capacity is unavailable for this UTC day. Names the end of that day. |
+| `free_month_exhausted` | Shared free capacity is unavailable for this UTC month. Names the end of that month. |
 | `concurrency_exhausted` | The principal already has its permitted number of unresolved calls. |
 | `funding_required` | One access has no active funded allowance period. |
 | `debt_outstanding` | An unresolved unfunded accounting overrun blocks further admission. |
@@ -443,6 +443,12 @@ answers `204`. Any other body — including one for a batch that timed out — i
 | `coach-busy` | The process is at capacity or its cost fuse is open. |
 | `coach-vendor-error` | The vendor failed. |
 | `coach-stream-replaced` | Another stream took over this turn; sent as the closing `error` of the stream it replaced. |
+
+The allowance codes are `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`,
+`concurrency_exhausted`, `funding_required` and `debt_outstanding`. Before the stream each answers
+`429`: an expected refusal, never a failure of the server. `coach-busy` and `coach-vendor-error` answer
+`503`. The moment a code names is `budgetResetsAtMs`, read from the refusal's `allowance` before the
+stream, where it is null if the code names none, and from the `error` event after it, which omits it then.
 
 ---
 

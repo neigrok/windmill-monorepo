@@ -1365,9 +1365,12 @@ iOS. It and the product differ in these places.
   (brand foundations: always visible); 08.49 and 08.50 draw a *Changed a movement* card, which no
   ability can land (`update_exercise` is withheld, B-1), so the build's landed write is *Made a
   movement*; 08.41's line counts UTF-8 bytes under the word *characters*, and its field grows to five
-  lines with the pasted draft where the board draws one; 08.44's reset day needs
-  `budgetResetsAtMs` on the turn route's refusal, which the backend does not send yet, so the line
-  ends at *this month* until it does, and the day follows the phone's locale (*Nov 1* in en_US).
+  lines with the pasted draft where the board draws one; 08.44's reset day comes from
+  `allowance.budgetResetsAtMs` on the turn route's refusal before the stream, and follows the phone's
+  locale (*Nov 1* in en_US). The backend code sends it under dogfood node
+  `gym-coach-turn-allowance-reset`; production sends it once that node is done, and until then the line
+  ends at *this month*. A refusal mid-turn names the same moment on its `error` frame, where iOS reads
+  only `code`, so that line always ends at *this month*.
 - **6x · The sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
   they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). The decision does
   not say so: iOS `AdoptionQuestion.named` and Android `PhoneSignInCopy` list workouts, routines, weigh-ins, movements
