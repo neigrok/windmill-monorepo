@@ -178,9 +178,9 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, touch = false } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
   firstPage = false;
 

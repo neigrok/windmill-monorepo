@@ -80,7 +80,9 @@ including a one-step roadmap, and hides at zero. Picking a row selects and revea
 step. Desktop and tablet owners open Activity through the identity callback or A on either
 view; the feed never opens itself while identity is mounted. On desktop, opening it from the Board switches to the
 Graph dock. At 744–1023px a separate Activity panel keeps the current view usable; its rows open
-step details, and X, Escape or the Activity callback closes it and returns focus to More.
+step details, and X, Escape or the Activity callback closes it and returns focus to More. It sits at
+172px from the page top, or 12px below the measured row, Board filter strip or Graph refusal banner
+when those reach lower, and paints beneath the row's menus and the Board's sort menu.
 Phone owners open Activity as a page inside the roadmap sheet through `sheet.activity`; A does
 nothing on phones. With at most eight roadmaps, the entry and Activity page share the 611px
 footprint, capped by the viewport; the search sheet keeps its taller layout. Back or the first
@@ -92,9 +94,9 @@ From 744px the Graph camera controls form a bottom-right pill whose viewport blo
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
 Graph toasts retain their intrinsic width, centering in the free canvas when they fit or across
 the canvas otherwise; `graphToastPlacement` owns measured clearance from the camera, minimap,
-panel and legend. Phone legacy toasts and completion toasts over an open editor use the top slot
-below the measured camera; other phone Graph toasts retain their bottom slot. Created steps
-reveal after the scene receives their model and the selected-step panel's insets.
+panel and legend. Phone Graph toasts hold the bottom slot, above the selected-step bar and any
+refusal card. Created steps reveal after the scene receives their model and the selected-step
+panel's insets.
 The identity replaces the plaque, wordmark and hairline, so share links and the demo mount inside
 the roadmap room's Shell while the gate is open (`inRoom` on the route's answer), keeping their URLs;
 the Shell is their way home and their Sign in. On the phone Graph, a single selected
@@ -114,10 +116,12 @@ bottom. A row render failure reports `roadmap-identity` and
 mounts legacy chrome with a view switch. Fallback chrome and switch border-box measurements feed
 the switch position and Board inset. Gate-closed chrome, feed auto-open, shortcuts and viewport
 geometry retain their existing paths. The selected-step bar sits outside the identity boundary;
-its render failures reach the room boundary. State words use `board/copy.js` without changing ceremony
+its render failures reach the room boundary. Focus in the bar moves to the row's pressed switch
+option when a tap deselects, and that tap's compatibility mousedown keeps it there. State words use `board/copy.js` without changing ceremony
 structure or timing. Gated Ask AI uses an overlay from 744px and a modal dock on phones, with
 examples above its field. The dock reuses composer viewport tracking to clear the keyboard, and
 Escape, scrim or submit dismisses it. The inline gate-closed phone bar keeps its existing behavior.
+With the row mounted, the demo's coach chip takes Escape only while it is the top thing on screen.
 
 `SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
 branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`

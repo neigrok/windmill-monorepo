@@ -170,3 +170,74 @@ hostTest('Chromium: phone Graph toast clears the camera and selected-step bar fo
     } finally { await page.close(); }
   }
 });
+
+hostTest('Chromium: a tap that deselects keeps focus on the pressed switch through its compatibility mousedown', async () => {
+  const { page, errors } = await openHost({ width: 390, touch: true });
+  try {
+    await page.evaluate(() => {
+      document.querySelector('canvas.st-canvas').addEventListener('pointerup', () => window.scene.select(null));
+      window.scene.select('wind');
+    });
+    const primary = page.locator('[data-graph-step-primary]');
+    await primary.focus();
+    await page.evaluate(() => {
+      window.tapEvents = [];
+      window.addEventListener('mousedown', (event) => window.tapEvents.push(`mousedown:${event.target.tagName}`), true);
+    });
+    await page.touchscreen.tap(30, 480);
+    await primary.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => window.tapEvents.length === 1);
+    assert.deepEqual(await page.evaluate(() => [window.tapEvents, document.activeElement?.matches('.st-board-switch-option[aria-pressed="true"]')]),
+      [['mousedown:CANVAS'], true]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: the reader bar title opens from a 44px hit area and leaves the bar 124px tall', async () => {
+  const { page, errors } = await openHost({ width: 320, role: 'reader' });
+  try {
+    await page.evaluate(() => window.scene.select('wind'));
+    const bar = page.locator('[data-graph-step-bar]');
+    await bar.waitFor();
+    assert.deepEqual(await bar.evaluate((element) => {
+      const title = element.querySelector('button.st-graph-step-title').getBoundingClientRect();
+      const state = element.querySelector('.st-graph-step-state').getBoundingClientRect();
+      return { bar: element.getBoundingClientRect().height, title: title.height, centred: title.top + title.height / 2 === state.top + state.height / 2 };
+    }), { bar: 124, title: 44, centred: true });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: a shown coach chip leaves Escape to the step page over it, and lets it through once retired', async () => {
+  const { page, errors } = await openHost({ width: 390, role: 'reader', demo: true });
+  try {
+    await page.waitForFunction(() => localStorage.getItem('wm-coach-done') === '1');
+    await page.evaluate(() => window.scene.select('wind'));
+    await page.getByRole('button', { name: 'Read the wind', exact: true }).click();
+    const step = page.getByRole('dialog', { name: 'Read the wind', exact: true });
+    await step.waitFor();
+    await page.keyboard.press('Escape');
+    await step.waitFor({ state: 'detached' });
+    await page.locator('[data-graph-step-bar]').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('[data-graph-step-bar]').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('[data-graph-step-bar]').waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: with the gate closed a shown coach chip still keeps every Escape to itself', async () => {
+  const { page, errors } = await openHost({ width: 1440, role: 'reader', demo: true, gate: 'closed' });
+  try {
+    await page.waitForFunction(() => localStorage.getItem('wm-coach-done') === '1');
+    await page.evaluate(() => {
+      window.escapes = 0;
+      window.addEventListener('keydown', (event) => { if (event.key === 'Escape') window.escapes += 1; });
+    });
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => window.escapes), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

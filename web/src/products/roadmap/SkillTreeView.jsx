@@ -98,6 +98,10 @@ const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const BOARD_OPEN = boardOpen();
 const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
+const ACTIVITY_PANEL_TOP = 172;
+const ACTIVITY_PANEL_GAP = 12;
+// The compatibility mousedown of a touch tap lands within this window of its pointer up.
+const TAP_MOUSEDOWN_MS = 350;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const NEXT_UP_SELECT_MS = 540;
@@ -1733,10 +1737,14 @@ export function SkillTreeView({ treeId, demo = false }) {
     const previous = graphBarRef.current;
     graphBarRef.current = null;
     if (detailId !== null || boardComposer !== null || forkOpen || !previous) return;
-    if (graphBarFocusedRef.current) {
-      graphBarFocusedRef.current = false;
-      focusGraph();
-    }
+    if (!graphBarFocusedRef.current) return;
+    graphBarFocusedRef.current = false;
+    focusGraph();
+    // A tap deselects on pointer up; the mousedown the browser sends after it would blur the option focus just reached.
+    const canvas = canvasRef.current;
+    const keepFocus = (event) => event.preventDefault();
+    canvas?.addEventListener('mousedown', keepFocus, { once: true });
+    setTimeout(() => canvas?.removeEventListener('mousedown', keepFocus), TAP_MOUSEDOWN_MS);
   }, [graphStep?.id, detailId, boardComposer, forkOpen, focusGraph]);
 
   const deviceOnly = status === 'ghost' && treeMine && !demo;
@@ -2311,7 +2319,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const graphToastStyle = identityActive && canvasView ? {
     '--graph-toast-center': graphToastPosition.center === null ? '50%' : `${graphToastPosition.center}px`,
     '--graph-toast-bottom': `${graphToastBottom}px`,
-    '--graph-toast-top': `${graphTop + CHROME_GAP}px`,
   } : undefined;
 
   const revealGraphToast = useCallback(() => {
@@ -2340,15 +2347,15 @@ export function SkillTreeView({ treeId, demo = false }) {
   });
   let tendPresentation = null;
   if (identityActive) tendPresentation = phone ? 'docked' : 'overlay';
-  const [tendTopInset, setTendTopInset] = useState(0);
+  const [rowChrome, setRowChrome] = useState({ bottom: 0, roomTop: 0 });
   useLayoutEffect(() => {
-    if (!identityActive || phone || !tendOpen) return undefined;
+    if (!identityActive || phone || !(tendOpen || feedVisible)) return undefined;
     const row = identityRef.current?.querySelector('.st-roadmap-identity');
     const filters = boardActive ? boardLayerRef.current?.querySelector('.st-board-strip') : null;
     const measure = () => {
       const rowBottom = row?.getBoundingClientRect().bottom ?? 0;
       const filterBottom = filters?.getBoundingClientRect().bottom ?? 0;
-      setTendTopInset(Math.max(rowBottom, filterBottom) + 16);
+      setRowChrome({ bottom: Math.max(rowBottom, filterBottom), roomTop: rootRef.current?.getBoundingClientRect().top ?? 0 });
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -2359,7 +2366,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       observer.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [identityActive, phone, tendOpen, boardActive, topbarBottom]);
+  }, [identityActive, phone, tendOpen, feedVisible, boardActive, topbarBottom, Boolean(refusal)]);
   const roadmapSwitcher = <TreeSwitcher current={currentRoadmap} listTrees={listAllTrees} onNew={newRoadmap}
     onRename={handleRenameTree} onPreviewTitle={previewTreeTitle} onDelete={handleDeleteTree} />;
   useEffect(() => {
@@ -2432,6 +2439,17 @@ export function SkillTreeView({ treeId, demo = false }) {
       onToggleActivity={toggleActivity}
     />
   );
+  const activityPanelTop = Math.max(ACTIVITY_PANEL_TOP,
+    rowChrome.bottom + ACTIVITY_PANEL_GAP + (graphRefusalShown ? CHROME_GAP + graphRefusalHeight : 0)) - rowChrome.roomTop;
+  const activityPanel = identityActive && owner && breakpoint === 'tablet' && feedVisible ? (
+    <aside className="st-roadmap-activity-panel" aria-label={ROADMAP_VERBS.activity} style={{ top: activityPanelTop }}>
+      <div className="st-roadmap-activity-header">
+        <h2>{ROADMAP_VERBS.activity}</h2>
+        <IconButton icon={<Icon name="x" size={20} />} label={LABELS.close} onClick={closeRowActivity} />
+      </div>
+      <ActivityRows groups={activityGroups} nodesById={nodesById} onOpenStep={openActivityStep} />
+    </aside>
+  ) : null;
   return (
     <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}${BOARD_OPEN ? ' st-root--board-enabled' : ''}`} ref={rootRef} onFocusCapture={identityActive ? rememberGraphFocus : undefined}>
       <canvas
@@ -2570,6 +2588,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               legend={legend}
             />
           </ErrorBoundary>
+          {boardActive && activityPanel}
         </div>
       )}
 
@@ -2658,7 +2677,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         <TendBar
           variant="desktop"
           presentation={tendPresentation}
-          topInset={tendTopInset}
+          topInset={rowChrome.bottom + 16}
           working={tendWorking}
           placeholder={identityActive && phone && tree?.nodes.length > 0 ? ASK_AI_PLACEHOLDER.phone : tendPlaceholder}
           examples={tendExamples}
@@ -2772,15 +2791,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </aside>
       )}
 
-      {identityActive && owner && breakpoint === 'tablet' && feedVisible && (
-        <aside className="st-roadmap-activity-panel" aria-label={ROADMAP_VERBS.activity}>
-          <div className="st-roadmap-activity-header">
-            <h2>{ROADMAP_VERBS.activity}</h2>
-            <IconButton icon={<Icon name="x" size={20} />} label={LABELS.close} onClick={closeRowActivity} />
-          </div>
-          <ActivityRows groups={activityGroups} nodesById={nodesById} onOpenStep={openActivityStep} />
-        </aside>
-      )}
+      {canvasView && activityPanel}
 
       {!identityActive && readOnly && breakpoint === 'phone' && (
         <BottomSheet
@@ -2943,6 +2954,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           nodeId={COACHED_NODE_ID}
           onMarkDone={() => completeStep(COACHED_NODE_ID)}
           completionCount={demoCompletions}
+          covered={identityActive ? keyboardCovered : undefined}
         />
       )}
 
@@ -2983,7 +2995,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {identityActive && canvasView && toast?.surface === 'graph' && (
-        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}${phone && sheetOpenNow ? ' st-graph-toast--sheet' : ''}`} style={graphToastStyle}>
+        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}`} style={graphToastStyle}>
           <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={boardToastShown} onToastReveal={revealGraphToast}
             onToastUndo={undoGraphToast} />
         </div>
