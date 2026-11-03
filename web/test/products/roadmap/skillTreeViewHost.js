@@ -120,6 +120,7 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
+    this.suppressArrivalToast = () => { window.arrivalToastSilenced = true; };
     this.projectToScreen = () => ({ x: 20, y: 300 });
     this.zoomBy = (factor) => window.cameraCalls.push(['zoomBy', factor]);
     this.focusWorking = (id, opts) => { if (!opts?.instant) window.cameraCalls.push(['focusWorking', id]); };

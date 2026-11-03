@@ -699,6 +699,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   owner signed in or on this device) keeps that layout while idle, Saving, Saved or Offline, with space reserved for
   the longest compact status. Readers and the demo publish no status, so their phone Shell keeps the mark, as journal
   and gym do; the reader frames (04.02, 04.06) draw it without. Draw or rule the reader's Shell.
+- **Board · arrival toast.** [Motion language](guidelines/motion-language.md) §7 ends the paste arrival on "Roadmap
+  planted · N steps". An owner's fresh tree opens on the frontier, which skips the arrival, so that sentence never
+  plays on a plant from the paste door. Readers and owners reloading on the Graph play the arrival without it. Rule
+  whether a fresh plant plays the arrival.
+- **Demo · coach card on a phone.** [P4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=64-2) draws the
+  card beside its step with an arrow. At phone width neither side fits, so the card seats under its step, or over it
+  near the bottom, with no arrow. Draw the phone seat.
 - **Design System · Dialog close target.** The shared `Dialog` close control is 28×28 with a 14px
   glyph; the approved [04.03 Fork dialog](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-29874)
   and the other dialog frames draw ✅ Close at 44×44 with a 20px glyph. Align the shared control and

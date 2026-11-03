@@ -435,7 +435,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       const owner = seed.mine === true && !shared && !demo;
       const opensOnFrontier = !savedCamera && owner;
       if (opensOnFrontier) scene.suppressArrival();
-      if (demo) scene.suppressArrivalToast();
+      const justPlanted = !demo && (plantedQuestRef.current || forkedFromDemoRef.current || peekBorn(seed.id));
+      if (!justPlanted) scene.suppressArrivalToast();
       scene.setModel(model);
       if (savedCamera) scene.restoreViewpoint(savedCamera);
       if (opensOnFrontier) {

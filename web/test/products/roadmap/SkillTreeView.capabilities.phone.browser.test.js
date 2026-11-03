@@ -156,6 +156,29 @@ for (const width of phones) {
     } finally { await page.close(); }
   });
 
+  hostTest(`§2.5 Phone Graph: demo mark any step done (G8-M5): CoachChip stays on screen and off its step at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, role: 'reader', demo: true, coached: true });
+    try {
+      await page.getByRole('button', { name: DEMO_COPY.coachButton, exact: true }).waitFor({ timeout: 8000 });
+      const seatFor = async (y) => {
+        await page.evaluate(({ x, y }) => {
+          window.scene.projectToScreen = () => ({ x, y });
+          window.dispatchEvent(new Event('resize'));
+        }, { x: width / 2, y });
+        const box = await page.locator('.wm-coach-card').boundingBox();
+        return {
+          onScreen: box.x >= 0 && box.x + box.width <= width,
+          clearOfStep: box.y >= y || box.y + box.height <= y,
+          under: box.y >= y,
+          arrow: await page.locator('.wm-coach').evaluate((chip) => chip.classList.contains('wm-coach--left') || chip.classList.contains('wm-coach--right')),
+        };
+      };
+      assert.deepEqual(await seatFor(300), { onScreen: true, clearOfStep: true, under: true, arrow: false });
+      assert.deepEqual(await seatFor(900), { onScreen: true, clearOfStep: true, under: false, arrow: false });
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
   hostTest(`§2.5 Demo CTA echo on Fork (G8-M12): the pill alone pulses after the coached step at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, role: 'reader', demo: true, coached: true, motion: true });
     try {

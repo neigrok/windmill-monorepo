@@ -11,6 +11,29 @@ const everyWidth = [320, 390, 744, 1440];
 const phones = [320, 390];
 const wide = [744, 1440];
 
+for (const [population, options] of [['an owner', {}], ['a reader', { role: 'reader' }], ['the demo', { role: 'reader', demo: true }]]) {
+  hostTest(`Copy honesty: opening a roadmap never tells ${population} it was planted`, async () => {
+    const { page, errors } = await openHost(options);
+    try {
+      await page.waitForFunction(() => window.arrivalToastSilenced === true);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const [plant, flag] of [['a planted quest', 'windmill:planted-quest'], ['a fork of the demo', 'windmill:forked-from-demo']]) {
+  hostTest(`Copy honesty: ${plant} keeps its arrival toast`, async () => {
+    const { page, errors } = await openHost({});
+    try {
+      await page.evaluate((key) => sessionStorage.setItem(key, '1'), flag);
+      await page.reload();
+      await page.waitForFunction(() => window.scene?.nodesById?.size > 0);
+      assert.equal(await page.evaluate(() => window.arrivalToastSilenced ?? false), false);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
 function openSheet(page) {
   return page.locator('.st-roadmap-title-button').click().then(() => page.getByRole('dialog', { name: ROADMAP_SHEET.title, exact: true }));
 }

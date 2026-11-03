@@ -26,6 +26,20 @@ for (const width of [744, 1024, 1440]) {
   }
 }
 
+hostTest('Chromium: the docked Activity head keeps Close at its far end', async () => {
+  const { page, errors } = await openHost({ width: 1440 });
+  try {
+    await page.keyboard.press('a');
+    const head = page.locator('.st-detail-panel--open .st-activity-head');
+    await head.waitFor();
+    assert.deepEqual(await head.evaluate((element) => {
+      const close = element.querySelector('button');
+      return element.getBoundingClientRect().right - parseFloat(getComputedStyle(element).paddingRight) - close.getBoundingClientRect().right;
+    }), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
 hostTest('Chromium: empty tablet Activity uses shipped copy, shrinks, and leaves the Board usable', async () => {
   const { page, errors } = await openHost({ width: 744, empty: true, surface: 'board' });
   try {

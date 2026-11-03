@@ -8,6 +8,7 @@ const SETTLE_AT = 0.9;          // camera settle fraction required before mounti
 const POLL_MS = 100;
 const CARD_WIDTH = 264;
 const ANCHOR_GAP = 18;          // px between the node's edge and the card
+const VIEW_MARGIN = 12;
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -107,12 +108,21 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
       container.style.display = 'block';
 
       const rightStart = origin.x + radius + ANCHOR_GAP;
-      const placeRight = rightStart + CARD_WIDTH <= vw - 12;
-      const left = placeRight ? rightStart : origin.x - radius - ANCHOR_GAP - CARD_WIDTH;
+      const leftStart = origin.x - radius - ANCHOR_GAP - CARD_WIDTH;
+      const placeRight = rightStart + CARD_WIDTH <= vw - VIEW_MARGIN;
+      const placeLeft = !placeRight && leftStart >= VIEW_MARGIN;
       container.classList.toggle('wm-coach--left', placeRight);   // arrow on the card's left, pointing back at the node
-      container.classList.toggle('wm-coach--right', !placeRight);
-      container.style.left = `${left}px`;
-      container.style.top = `${clamp(origin.y, 88, vh - 88)}px`;
+      container.classList.toggle('wm-coach--right', placeLeft);
+      if (placeRight || placeLeft) {
+        container.style.left = `${placeRight ? rightStart : leftStart}px`;
+        container.style.top = `${clamp(origin.y, 88, vh - 88)}px`;
+      } else {
+        // Neither side fits a phone: the card seats under its step, or over it near the bottom, with no arrow.
+        const halfCard = container.querySelector('.wm-coach-card').offsetHeight / 2;
+        const under = origin.y + radius + ANCHOR_GAP + halfCard;
+        container.style.left = `${clamp(origin.x - CARD_WIDTH / 2, VIEW_MARGIN, vw - CARD_WIDTH - VIEW_MARGIN)}px`;
+        container.style.top = `${under + halfCard <= vh - 88 ? under : origin.y - radius - ANCHOR_GAP - halfCard}px`;
+      }
 
       const ring = ringRef.current;
       if (ring) {
