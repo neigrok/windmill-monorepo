@@ -32,7 +32,7 @@ import { RefusedSync } from './board/SyncNotices.jsx';
 import { useRoomSyncNotices } from './sync/useRoomSyncNotices.js';
 import { useStepAddress, hashWithStep, stepIsStale } from './board/stepAddress.js';
 import { useTabletEditing } from './ui/tablet/useTabletEditing.js';
-import { markDoneTargets, sharedKind } from './selection/bulkSelection.js';
+import { bulkKindChoice, markDoneTargets } from './selection/bulkSelection.js';
 import { useGraphSelection } from './selection/useGraphSelection.js';
 import { ForkDoor } from './share/ForkDoor.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
@@ -72,7 +72,7 @@ import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { useGraphEditing } from './editing/useGraphEditing.js';
 import { useGraphStructure } from './editing/useGraphStructure.js';
-import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
+import { WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { reportRoadmapFailure } from './reportFailure.js';
@@ -502,7 +502,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const legendWithCounts = useMemo(() => (tree ? withCounts(legend, tree.nodes) : []), [legend, tree, states]);
   const inUse = useMemo(() => (tree ? inUseCount(legend, tree.nodes) : 0), [legend, tree, states]);
   const legendVisible = inUse >= 2 || legendForceOpen;
-  const recolorKinds = legend.length > 0 ? legend : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
 
   useEffect(() => {
     sceneRef.current?.applyStates(states);
@@ -517,10 +516,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     return new Map(tree.nodes.map((node) => [node.id, node]));
   }, [tree]);
 
-  const ringedKind = useMemo(
-    () => sharedKind([...selectedIds].map((id) => nodesById.get(id)?.color ?? DEFAULT_NODE_COLOR)),
-    [selectedIds, nodesById],
-  );
+  const bulkChoice = useMemo(() => bulkKindChoice(tree, [...selectedIds], legend), [tree, selectedIds, legend]);
 
   const handleRowHover = useCallback((id) => sceneRef.current?.spotlightNode(id), []);
   const handleRowLeave = useCallback(() => sceneRef.current?.spotlightNode(null), []);
@@ -1317,8 +1313,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onDelete={deleteNodeAt}
           onJump={handleSheetJump}
           selectedCount={selectedIds.size}
-          recolorKinds={recolorKinds}
-          ringedKind={ringedKind}
+          bulkChoice={bulkChoice}
           onBulkRecolor={bulkRecolor}
           onBulkDelete={bulkDelete}
           onBulkDone={leaveMulti}
@@ -1376,8 +1371,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         <GraphSelectionBar
           stepCount={selectedIds.size}
           linkCount={selectedEdges.size}
-          kinds={recolorKinds}
-          ringedKind={ringedKind}
+          choice={bulkChoice}
           onPreviewKind={(hue) => sceneRef.current?.previewKindSet([...selectedIdsRef.current], hue)}
           onRestoreKind={() => sceneRef.current?.restoreKindSet([...selectedIdsRef.current])}
           onRecolor={(hue) => bulkRecolor(hue, { silent: true })}

@@ -24,14 +24,6 @@ export class StepSelection {
     if (ids.length === this.ids.length && ids.every((id, index) => id === this.ids[index])) return this;
     return new StepSelection(ids);
   }
-
-  sharedKind(tree) {
-    if (this.count === 0) return null;
-    const steps = this.ids.map((id) => tree.nodesById.get(id));
-    if (steps.some((step) => !step)) return null;
-    const color = steps[0].color ?? DEFAULT_NODE_COLOR;
-    return steps.every((step) => (step.color ?? DEFAULT_NODE_COLOR) === color) ? color : null;
-  }
 }
 
 // A toast's Undo reverts the act it names and leaves everything later standing. A receipt the session has already spent

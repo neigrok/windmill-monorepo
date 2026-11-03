@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isGrouped, markDoneTargets, sharedKind } from '../../../../src/products/roadmap/selection/bulkSelection.js';
+import { bulkKindChoice, isGrouped, markDoneTargets, sharedKind } from '../../../../src/products/roadmap/selection/bulkSelection.js';
+import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { NODE_COLOR_NAMES } from '../../../../src/products/roadmap/theme.js';
 
 test('isGrouped — a single selection is not grouped (keeps the loud terracotta look)', () => {
   assert.equal(isGrouped(0), false);
@@ -38,19 +40,33 @@ test('markDoneTargets — a fully-complete set marks nothing', () => {
   );
 });
 
-test('sharedKind — an empty selection shares no kind (no ring)', () => {
-  assert.equal(sharedKind([]), null);
+const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+  { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
+  { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'], color: 'sky' },
+  { id: 'solo', label: 'Sail solo', prerequisites: ['dock'] },
+] });
+
+test('sharedKind — a selection shares a kind only when every step wears it and the tree still has them all', () => {
+  assert.equal(sharedKind(tree, []), null);
+  assert.equal(sharedKind(null, ['wind']), null);
+  assert.equal(sharedKind(tree, ['wind']), 'sky');
+  assert.equal(sharedKind(tree, ['wind', 'dock']), 'sky');
+  assert.equal(sharedKind(tree, ['solo']), 'terracotta');
+  assert.equal(sharedKind(tree, ['dock', 'solo']), null);
+  assert.equal(sharedKind(tree, ['wind', 'missing']), null);
 });
 
-test('sharedKind — a single node shares its own kind', () => {
-  assert.equal(sharedKind(['terracotta']), 'terracotta');
-});
-
-test('sharedKind — a set all of one kind shares it (the swatch rings)', () => {
-  assert.equal(sharedKind(['sage', 'sage', 'sage']), 'sage');
-});
-
-test('sharedKind — a mixed-kind set shares nothing (no ring until you pick)', () => {
-  assert.equal(sharedKind(['sage', 'terracotta']), null);
-  assert.equal(sharedKind(['sage', 'sage', 'gold']), null);
+test('bulkKindChoice — every bar offers the whole palette: the legend first under its names, the other hues under theirs', () => {
+  const legend = [{ id: 'k-learn', hue: 'sky', label: 'Learn' }, { id: 'k-ship', hue: 'gold', label: '' }, { id: 'k-twin', hue: 'sky', label: 'Twin' }];
+  const choice = bulkKindChoice(tree, ['wind', 'dock'], legend);
+  assert.deepEqual(choice, {
+    shared: 'sky',
+    kinds: [
+      { id: 'k-learn', hue: 'sky', label: 'Learn' },
+      { id: 'k-ship', hue: 'gold', label: 'Gold' },
+      ...NODE_COLOR_NAMES.filter((hue) => hue !== 'sky' && hue !== 'gold').map((hue) => ({ id: hue, hue, label: `${hue[0].toUpperCase()}${hue.slice(1)}` })),
+    ],
+  });
+  assert.equal(bulkKindChoice(tree, [], []).shared, null);
+  assert.deepEqual(bulkKindChoice(tree, [], []).kinds.map((kind) => kind.hue), NODE_COLOR_NAMES);
 });

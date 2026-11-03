@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, receiptUndo, recolorOutcome } from './acts.js';
+import { sharedKind } from '../selection/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { LABELS } from './copy.js';
@@ -49,7 +50,7 @@ export class BoardActs {
     if (!c.active || !c.owner || !c.tree) return { ok: false };
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     const selection = new StepSelection(ids.filter((id) => tree.nodesById.has(id)));
-    if (selection.count === 0 || selection.sharedKind(tree) === hue) return { ok: true, changed: false };
+    if (selection.count === 0 || sharedKind(tree, selection.ids) === hue) return { ok: true, changed: false };
     if (!c.session) {
       c.report('roadmap-board-recolor', new Error('Missing Board session'));
       return { ok: false };
