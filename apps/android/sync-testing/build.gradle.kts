@@ -13,6 +13,7 @@ dependencies {
     testImplementation(project(":sync-schema"))
     testImplementation(project(":sync-api"))
     testImplementation(project(":domain-kit"))
+    testImplementation(project(":agent"))
     testImplementation("org.ow2.asm:asm:9.7.1")
 }
 

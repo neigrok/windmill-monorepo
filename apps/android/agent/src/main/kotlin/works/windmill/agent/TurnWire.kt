@@ -15,8 +15,8 @@ sealed interface TurnEvent {
     data class Done(val state: TurnState, val truncated: Boolean) : TurnEvent
     data class Error(val code: String, val budgetResetsAtMs: Long?) : TurnEvent
 
-    // The frame after which the server closes this stream.
-    val closing: Boolean get() = this is Done || this is Error || this is Snapshot && state.terminal
+    // The frame after which the server closes this stream. A terminal snapshot is not one: the closing frame that names how the turn ended follows it.
+    val closing: Boolean get() = this is Done || this is Error
 
     companion object {
         fun of(event: String, data: Json): TurnEvent = readable {
@@ -29,9 +29,6 @@ sealed interface TurnEvent {
                 else -> throw TurnWireFault(TurnWireFault.unknownEvent)
             }
         }
-
-        // The state Stop answers with.
-        fun state(answer: ByteArray): TurnState = readable { state(Json.parse(answer)) }
 
         private fun state(data: Json): TurnState {
             val name = data.member("state").str()

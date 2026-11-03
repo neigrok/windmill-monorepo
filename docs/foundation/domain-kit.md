@@ -195,8 +195,8 @@ manifest. A test target is in the test layer. Every other module is in the one r
 - No product domain depends on another product domain. Platform never depends on a product module,
   and a product UI on no other product's modules.
 - No kit or product-domain module depends on `:agent`, and `:agent` depends on no product. Its sources
-  name no product either: `LayeringTests` scans them for product nouns, and only a frozen `coach-…`
-  wire code may say that word.
+  name no product either: `LayeringTests` scans them for product nouns, and only the frozen `coach-…`
+  wire codes of `TurnRefusal.codes`, quoted whole, may say that word.
 - The transitive closure of every kit and product-domain module stays inside kit and engine API. A
   dependency on a library product counts as a dependency on every target the product bundles.
 

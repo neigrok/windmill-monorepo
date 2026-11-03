@@ -59,7 +59,7 @@ data class TurnEnd(val state: TurnState, val text: String, val truncated: Boolea
 
 data class TurnActivity(val turnId: String, val stopping: Boolean, val reconnecting: Boolean)
 
-// How `run` came back. `abandoned` wrote nothing and the caller decides the record; the two stops ended the turn `stopped` on this phone alone, because the server never heard: `stoppedOffline` for want of a connection, `stopUnheard` for any other reason.
+// How `run` came back. `abandoned` was cancelled before it could say how the turn ended, and a write in flight can outlive that, so the caller re-reads the record before deciding it. The two stops ended the turn `stopped` on this phone alone, because the server never heard: `stoppedOffline` for want of a connection, `stopUnheard` for any other reason.
 enum class TurnExit { ended, withdrawn, abandoned, stoppedOffline, stopUnheard }
 
 // The record of the turn refused a write of its own (gone, ended, full): a defect of this turn on this phone, and it ends the turn.
@@ -79,7 +79,7 @@ interface TurnTransport {
     fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent>
     fun resume(turnId: String, seat: TurnSeat): Flow<TurnEvent>
     suspend fun answer(turnId: String, batch: Int, results: List<ToolOutcome>, seat: TurnSeat)
-    suspend fun stop(turnId: String, seat: TurnSeat): TurnState
+    suspend fun stop(turnId: String, seat: TurnSeat)
 }
 
 // A word telemetry may carry. No other string reaches it, so no question, answer, input, result or credential can.

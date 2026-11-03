@@ -2,6 +2,7 @@ package works.windmill.agent
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import works.windmill.sync.core.Json
 
@@ -34,12 +35,10 @@ class TurnWireTests {
         assertEquals(TurnWireFault.unreadable, fault { TurnEvent.of("text", data("""{"delta":1}""")) })
         assertEquals(TurnWireFault.unreadable, fault { TurnEvent.of("calls", data("""{"batch":0,"calls":[]}""")) })
         assertEquals(TurnWireFault.unreadable, fault { TurnEvent.of("calls", data("""{"batch":1.5,"calls":[]}""")) })
-        assertEquals(TurnWireFault.unreadable, fault { TurnEvent.state("not json".encodeToByteArray()) })
-        assertEquals(TurnState.stopped, TurnEvent.state("""{"state":"stopped"}""".encodeToByteArray()))
     }
 
     @Test fun onlyAClosingFrameCloses() {
-        assertEquals(listOf(true, true, true, false, false, false), listOf(
+        assertEquals(listOf(true, true, false, false, false, false), listOf(
             TurnEvent.Done(TurnState.completed, false), TurnEvent.Error("coach-busy", null), TurnEvent.Snapshot("", TurnState.failed, null),
             TurnEvent.Snapshot("", TurnState.running, null), TurnEvent.Text(""), TurnEvent.Calls(TurnBatch(1, emptyList())),
         ).map { it.closing })
@@ -96,6 +95,21 @@ class TurnWireTests {
         assertEquals(TurnRefusal(502, TurnRefusal.vendorError, null), refusal("<html>Bad gateway</html>", 502))
         assertEquals(TurnRefusal(500, TurnRefusal.vendorError, null), refusal("""{"code":""}""", 500))
         assertEquals(TurnRefusal(500, TurnRefusal.vendorError, null), refusal("""{"code":7}""", 500))
+    }
+
+    @Test fun aRefusalBodyOfAnyShapeIsARefusal() {
+        val bodies = listOf(byteArrayOf(0xC3.toByte(), 0x28, 0xFF.toByte())) + listOf("[1,2]", "\"oops\"", "null", """{"code":"x","allowance":null}""", """{"code":"x","allowance":7}""",
+            """{"code":"x","allowance":{"budgetResetsAtMs":1e300}}""", "[".repeat(5000), """{"code":"\ud800"}""", """{"code":"a","code":"b"}""").map { it.encodeToByteArray() }
+        for (body in bodies) assertEquals(500, TurnRefusal.of(500, body).status)
+    }
+
+    @Test fun anyPrefixOfABodyOrFrameFaultsOnlyAsAWireFault() {
+        val whole = """{"error":"éé\n","code":"free_month_exhausted","allowance":{"budgetResetsAtMs":1793491200000,"x":[1,2.5e3,true,null]}}"""
+        for (end in whole.indices) {
+            assertEquals(429, TurnRefusal.of(429, whole.substring(0, end).encodeToByteArray()).status)
+            val failure = runCatching { frames("event: error\ndata: ${whole.substring(0, end)}\n\n") }.exceptionOrNull()
+            assertTrue("$end → $failure", failure == null || failure is TurnWireFault)
+        }
     }
 
     @Test fun capsAreTheCodesTheServerRefills() {
