@@ -110,20 +110,17 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
       )}
 
       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-        {progress === 'complete' && (
+        {progress && (
           <button
             type="button"
-            style={{ ...verbBase, background: hue.base, border: `1.5px solid ${hue.ring}`, color: 'var(--text-on-accent)' }}
-            onClick={() => onMarkDone(node.id)}
+            style={progress === 'complete' ? { ...verbBase, background: hue.base, border: `1.5px solid ${hue.ring}`, color: 'var(--text-on-accent)' } : barkVerb}
+            onClick={() => {
+              if (progress === 'complete') return onMarkDone(node.id);
+              onUnmarkDone(node.id);
+            }}
           >
-            <Icon name="check" size={16} color="#fff" />
-            Mark done
-          </button>
-        )}
-        {progress === 'uncomplete' && (
-          <button type="button" style={barkVerb} onClick={() => onUnmarkDone(node.id)}>
-            <Icon name="rotate-ccw" size={16} />
-            Mark not done
+            <Icon name={progress === 'complete' ? 'check' : 'rotate-ccw'} size={16} color={progress === 'complete' ? '#fff' : undefined} />
+            {progress === 'complete' ? 'Mark done' : 'Mark not done'}
           </button>
         )}
         <button type="button" style={barkVerb} onClick={() => onAddStep(node.id)}>

@@ -16,7 +16,7 @@ export function RefusedSync({ band, code, count = 1, onRetry, onDiscard }) {
       {!phone && <CircleAlert className="board-refused-sync-icon" size={20} aria-hidden="true" />}
       <p className="board-refused-sync-message">
         <strong>{capacity ? REFUSED_CAPACITY.title : body}</strong>
-        {capacity && <span className="board-refused-sync-detail">{detail}</span>}
+        {capacity && <span className="board-refused-sync-detail"> {detail}</span>}
       </p>
       <div className="board-refused-sync-actions">
         <Button variant={capacity ? 'secondary' : 'ghost'} size={buttonSize} onClick={onDiscard}>

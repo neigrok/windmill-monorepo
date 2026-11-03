@@ -687,7 +687,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   camera group under the row. These approved interims still need their dedicated drawings.
 - **Board · desktop dock beneath the row.** With the gate open, the desktop step dock starts 8px
   below the measured identity row, so an open step never covers Share, Next, New step or More.
-  The desktop Graph dock beneath the row is drawn and owner-approved on 2026-11-03 in the wave-7 gap frames.
+  Owner-approved ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step
+  in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
 - **Board · one offline message.** Owner-approved 03.17 requires the Shell's global offline notice to yield
   when the active room publishes status through `shell/roomStatus.js`; rooms without published status keep
   the global notice. The wave-7 status-host track owns this integration.
@@ -698,6 +699,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · device-only Graph nudge.** The phone and tablet Graph keep *Saved on this device —
   sign in to keep it →* beneath the gated identity row. The phone camera clears this measured
   nudge; wave 7's status slot must retain its honesty line.
+- **Design System · Dialog close target.** The shared `Dialog` close control is 28×28 with a 14px
+  glyph; the approved [04.03 Fork dialog](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-29874)
+  and the other dialog frames draw ✅ Close at 44×44 with a 20px glyph. Align the shared control and
+  title clearance in a Design System change, with screenshots of Fork, Shortcuts, Share, SignIn,
+  Feedback and SyncDecisions. Keep this correction in `Dialog`, without a Fork-specific override.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.
@@ -1107,47 +1113,66 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   names no blocker. Under the owner's 2026-11-03 ruling (11z, D1) the update state belongs to the
   You row and the screen it opens, never to the workout.
 - **11z · Review wave D1–D7 (owner rulings 2026-11-03).** The 2026-11-02 external review of the
-  Android app raised seven visible items. Boards, links and the open questions are in
-  `androidgym_tasks/design-brief-review-wave.md`.
+  Android app raised seven visible items. Boards, links and rulings are in
+  `androidgym_tasks/design-brief-review-wave.md`; the iOS mirror's tasks are in
+  `iosgym_tasks/review-wave.md`.
   - *Row labels lose "set" (owner ruling).* A row is labelled by its number alone: *Set 1* reads
-    *1*. Counts (*5 sets*), the routine editor's *Sets* field and *Vary by set* keep the word. The
-    boards follow: the logger rows on 00.6, 03.1, 03.3, 03.4, 03.10–03.13, 03.33–03.35, 03.38–03.44,
-    03.46 and 03.52; Coach's diff rows on Android 08.22, 08.23, 08.27, 08.54, 08.55 and 08.65; iOS
-    02.15, 03.32, 08.22, 08.23 and 08.27. Android's logger still draws *Set N* on its rows
-    (`ui/LoggerScreen.kt:859`). Spoken row labels keep *Set N* for TalkBack. Open: whether the Fix set sheet's subtitle (*Bench Press · Set 1*; Android 03.3,
-    03.33; iOS 03.24, 03.25) is a row label, and the notification's *set 3 of 3* (04.1–04.3).
+    *1*, at every width. Counts (*5 sets*), the routine editor's *Sets* field, *Vary by set* and
+    the notification's *set 3 of 3* keep the word. The Fix set subtitle reads *Bench Press · 1*
+    (Android 03.3, 03.33); iOS titles its reps and Fix set sheets with the movement and the row's
+    place, *3 of 3* (iOS 03.24b, 03.25b, 🚧). Number-only boards: the logger rows on 00.6, 03.1, 03.3,
+    03.4, 03.10–03.13, 03.33–03.35, 03.38–03.44, 03.46 and 03.52; Coach's diff rows on Android 08.22,
+    08.23, 08.27, 08.54, 08.55 and 08.65; iOS 02.15, 03.32, 08.22, 08.23 and 08.27. Android's logger
+    still draws *Set N* on its rows (`ui/LoggerScreen.kt:859`); iOS titles its sheets *Set N*
+    (`Gym/Workout/WorkoutScreen.swift:99`, `Gym/Components/SetEditor.swift:246`) and labels per-set
+    rows *Set N* (`Gym/Routines/RoutineMovementEditor.swift:184`). Spoken labels keep *Set N*. The
+    onboarding glimpse's current row reads *3* too: Shell Android's glimpse frames (`66:5725`,
+    `66:5754`) and the Design System library's iOS `Onboarding / Glimpse / Gym` (`210:56`, *3 · target
+    100 × 5*; it reaches Shell iOS once the library is published and accepted). Its *set 3 of 5* and
+    its *Set 3 logged* confirmation keep the word. Android's glimpse still draws *Set 3*
+    (`ui/onboarding/OnboardingGlimpses.kt:349`).
   - *D1 · Delivery and connection problems (owner ruling).* A workout says nothing about sync: a
-    set it saved is expected to sync. Sync state lives in one static place, the You row (Shell 16f)
-    and the screen it opens (16g, 16h). The account seat on root screens carries a dot only while
-    the lifter can act. Android differs: the logger draws the stranded band under the clock row
-    (`ui/LoggerScreen.kt` `StrandedBand`), a cloud-off glyph on each unsent ledger row, and refusal
-    rows beside the ledger (`ui/RefusalBanner.kt`); Update required is a modal (11y); the log's
-    foot reads **Retry** · *That read failed.* where 05.22 reads *Older workouts didn’t load.* ·
-    Try again (11u).
+    set it saved is expected to sync. Sync state lives in one static place, reached from You:
+    Android Shell 16f–16n and the seat dot 00.11 (✅). The row and 16g count the things 16g lists;
+    waiting reads *They sync when you’re online.* only while the phone is offline, otherwise *They
+    sync as soon as the log answers.*; items read title, then *Kind · when*. Android differs: the
+    logger draws the stranded band (`ui/LoggerScreen.kt` `StrandedBand`), a cloud-off glyph on each
+    unsent ledger row and refusal rows beside the ledger (`ui/RefusalBanner.kt`); Update required
+    is a modal (11y); the log's foot reads **Retry** · *That read failed.* (11u). iOS differs: the
+    ledger draws an `iphone` glyph for an unsent set (`Gym/Workout/WorkoutScreen.swift:377`) and the
+    log row one (`Gym/Log/LogTab.swift:248`); the Update required alert opens over a workout
+    (`WindmillApp.swift` `UpdateRequiredAlert`); You's status reads *Not backed up yet* or *Syncing
+    paused · …* (`AppModel.identityStatus`). The iOS form (Shell iOS section 4d, 16f–16n; Gym iOS
+    00.11) is 🚧.
   - *D2 · Lock-screen notification (owner ruling).* A routine name is not sensitive: the public
     version may show it, as `notification/WorkoutNotifications.kt` and 04.4 do. The Quick Settings
-    tile is unchanged.
-  - *D3 · Links in Coach answers.* Android draws 08.66–08.67 (task 116), with three differences:
-    the link draws in the primary role (Daylight `#137A6C`) where the boards draw `text/link`
-    (`#106B5F`); an answer with several links offers Copy answer only, where 08.67 offers one
-    Copy link per link, up to three; the menu opens below the bubble over the composer, where
-    08.67 flips it above.
+    tile is unchanged. No iOS board redacts it.
+  - *D3 · Links in Coach answers.* The link draws in the primary role and an answer with several
+    links offers Copy answer only (owner rulings), as task 116 builds. One difference remains: the
+    menu opens below the bubble over the composer, where 08.67 flips it above. iOS renders no link
+    (`Gym/Coach/CoachMessages.swift`); 08.66–08.67 iOS are 🚧.
   - *D4 · Faint ink.* Android Dark `inkFaint` is `#898E88` (`ui/GymSkin.kt`, task 115), and the
-    Design System library's `dark/text/tertiary` Gym value is `#898E88`, published. The Gym file has
-    not accepted that library update, so its boards still resolve `text/tertiary` Dark to
-    `#727771`. iOS `dark/ios/gym/ink-faint` and web gym-night `--neutral-500` are still `#727771`.
-  - *D5 · Window sizes.* Every modal sheet is bounded to 560 dp and centred
-    (`platform/design/WindmillSheet.kt`, 02.27). The navigation rail and bounded column (00.9,
-    00.10) and the two logger layouts (03.52, 03.53) are not built: `app/AndroidManifest.xml`
-    requests portrait, and no screen reads the window size.
-  - *D6 · Share sheet.* Android draws 05.23–05.24 (task 117). The system chooser heads itself
-    *Sharing link* and ignores the app's title. At 320 dp and 200 % *Copied* breaks mid-word
-    (*Copie / d*) inside the equal-width row. Around the row, the sheet keeps 05.13b's build
-    values where 05.23 draws others: Revoke 15 SemiBold at 48 dp against Bold 16 at 56 dp, body
-    16/21 against 15/22, block gaps 12 against 14, link padding 12 against 16 × 10, bottom inset 20
-    against 40, Daylight link ink primary `#137A6C` against `text/link` `#106B5F`.
+    Design System library's `dark/text/tertiary` Gym value is `#898E88`, published; the Gym file has
+    not accepted that update, so its boards still resolve `text/tertiary` Dark to `#727771`. The
+    library's `dark/ios/gym/ink-faint` is `#898E88` too, not yet published. iOS `gym/ink-faint` Dark
+    is still `#727771` (`Theme.xcassets/gym/ink-faint.colorset`, `ios/ios-redesign.md`) though iOS
+    draws text in it (planned rows, Edit sets numbers). Web gym-night `--neutral-500` is still
+    `#727771`.
+  - *D5 · Window sizes (owner rulings).* Every screen no board draws uses the bounded column; the
+    rail grows with 200 % text; 03.52 follows its caption and the rack stays as today. Every modal
+    sheet is bounded to 560 dp and centred (`platform/design/WindmillSheet.kt`, 02.27). The rail,
+    bounded column (00.9, 00.10) and logger layouts (03.52, 03.53) are not built. The iOS app
+    targets iPhone only (`project.yml` `TARGETED_DEVICE_FAMILY: "1"`), so these have no iOS twin.
+  - *D6 · Share sheet.* Android draws 05.23–05.24 (task 117). The copied state is a check icon with
+    no word and the spoken *Link copied* (05.25, owner ruling); the build writes *Copied*, which
+    breaks mid-word at 320 dp and 200 %. The system chooser heads itself *Sharing link*. Around the
+    row the sheet keeps 05.13b's build values: Revoke 15 SemiBold at 48 dp against Bold 16 at 56 dp,
+    body 16/21 against 15/22, block gaps 12 against 14, link padding 12 against 16 × 10, bottom
+    inset 20 against 40, Daylight link ink primary `#137A6C` against `text/link` `#106B5F`. iOS
+    offers Copy link only (`Gym/Log/SessionShareSheet.swift`); 05.23–05.25 iOS are 🚧.
   - *D7 · Target row at 200 % text.* `ui/MovementForm.kt` `RoutineTargets` still collapses the
-    Target label at 320 dp and 200 %; 02.26's caption states the stacking rule and spacing.
+    Target label at 320 dp and 200 %; 02.26's caption states the stacking rule and spacing. iOS
+    draws targets as form rows and has no summary row.
 
 ### Parity rulings (owner, 2026-10-22)
 

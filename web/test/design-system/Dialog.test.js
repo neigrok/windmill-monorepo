@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import React from 'react';
 
-import { browserWith, findByClass, loadScreen, renderHook } from '../products/gym/harness.mjs';
+import { browserWith, elementsOf, findByClass, loadScreen, renderHook, textOf } from '../products/gym/harness.mjs';
 
 const DIALOG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/design-system/feedback/Dialog.jsx');
 
@@ -127,4 +127,86 @@ test('useDialogFocus clears the previous opener and captures the next opening in
   assert.deepEqual({ focused: surface.focused, active: document.activeElement.id }, {
     focused: ['dialog', 'opener', 'dialog', 'outside'], active: 'outside',
   });
+});
+
+test('Dialog declares the title name and keeps its id when the title changes', async (t) => {
+  browserWith();
+  const { Dialog } = await loadScreen('design-system/feedback/Dialog.jsx');
+  const props = { open: true, title: 'First title', children: 'Body' };
+  const view = renderHook(t, () => Dialog(props));
+  const card = () => elementsOf(view.tree).find((element) => element.props.role === 'dialog');
+  const id = card().props['aria-labelledby'];
+  const title = () => elementsOf(view.tree).find((element) => element.props.id === id);
+  assert.equal(typeof id, 'string');
+  assert.equal(textOf(title()), 'First title');
+  props.title = 'Next title';
+  view.redraw();
+  assert.deepEqual({ label: card().props['aria-labelledby'], title: textOf(title()) }, { label: id, title: 'Next title' });
+  props.labelledBy = 'custom-title';
+  view.redraw();
+  assert.equal(card().props['aria-labelledby'], 'custom-title');
+  assert.equal(textOf(title()), 'Next title');
+});
+
+test('Dialog without a title adds no dangling label and keeps the existing close dimensions', async (t) => {
+  browserWith();
+  const { Dialog } = await loadScreen('design-system/feedback/Dialog.jsx');
+  const view = renderHook(t, () => Dialog({ open: true, onClose() {}, children: 'Body' }));
+  const elements = elementsOf(view.tree);
+  const card = elements.find((element) => element.props.role === 'dialog');
+  const close = elements.find((element) => element.props['aria-label'] === 'Close');
+  const glyph = elementsOf(close).find((element) => element.type === 'svg');
+  assert.equal(card.props['aria-labelledby'], undefined);
+  assert.deepEqual([close.props.style.width, close.props.style.height, glyph.props.width, glyph.props.height], [28, 28, '14', '14']);
+});
+
+test('the shared Tab handler wraps both edges, filters unavailable controls and keeps empty surfaces focused', async (t) => {
+  const surface = focusSurface();
+  const previousStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = (element) => ({ visibility: element.visibility ?? 'visible' });
+  t.after(() => { globalThis.getComputedStyle = previousStyle; });
+  const stop = (id, overrides = {}) => ({
+    id, tabIndex: 0, matches() { return false; }, closest() { return null; }, getClientRects() { return [{}]; },
+    focus() { document.activeElement = this; }, ...overrides,
+  });
+  const first = stop('first');
+  const last = stop('last');
+  let candidates = [stop('disabled', { matches: () => true }), first, stop('hidden', { getClientRects: () => [] }),
+    stop('inert', { closest: () => ({}) }), stop('negative', { tabIndex: -1 }), stop('invisible', { visibility: 'hidden' }), last];
+  surface.card.querySelectorAll = () => candidates;
+  const { useDialogFocus } = await loadScreen('design-system/feedback/Dialog.jsx');
+  const cardRef = { current: surface.card };
+  const view = renderHook(t, () => useDialogFocus({ open: true, cardRef }));
+  const handler = view.tree;
+  view.redraw();
+  assert.equal(view.tree, handler);
+  const press = (active, shiftKey = false, key = 'Tab', defaultPrevented = false) => {
+    document.activeElement = active;
+    const event = { key, shiftKey, defaultPrevented, prevented: false, stopped: false,
+      preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+    handler(event);
+    return { active: document.activeElement.id, prevented: event.prevented, stopped: event.stopped };
+  };
+  assert.deepEqual(press(last), { active: 'first', prevented: true, stopped: true });
+  assert.deepEqual(press(first, true), { active: 'last', prevented: true, stopped: true });
+  assert.deepEqual(press(surface.card), { active: 'first', prevented: true, stopped: true });
+  assert.deepEqual(press(surface.card, true), { active: 'last', prevented: true, stopped: true });
+  assert.deepEqual(press(first), { active: 'first', prevented: false, stopped: true });
+  assert.deepEqual(press(first, false, 'Enter'), { active: 'first', prevented: false, stopped: false });
+  assert.deepEqual(press(last, false, 'Tab', true), { active: 'last', prevented: false, stopped: false });
+  candidates = [];
+  assert.deepEqual(press(surface.card), { active: 'dialog', prevented: true, stopped: true });
+});
+
+for (const recoverFocus of [false, true]) test(`shared focus recovers a removed focused child only when opted in: ${recoverFocus}`, async (t) => {
+  const surface = focusSurface();
+  const { useDialogFocus } = await loadScreen('design-system/feedback/Dialog.jsx');
+  const cardRef = { current: surface.card };
+  const view = renderHook(t, () => useDialogFocus({ open: true, cardRef, recoverFocus }));
+  document.activeElement = surface.body;
+  view.redraw();
+  assert.equal(document.activeElement, recoverFocus ? surface.card : surface.body);
+  document.activeElement = surface.outside;
+  view.redraw();
+  assert.equal(document.activeElement, surface.outside);
 });

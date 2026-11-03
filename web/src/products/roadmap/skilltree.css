@@ -2569,6 +2569,44 @@
   pointer-events: auto;
 }
 
+.st-graph-toast:not(.st-graph-toast--phone) .st-board-toast {
+  left: var(--graph-toast-center, 50%);
+  width: max-content;
+  max-width: calc(100% - 48px);
+  bottom: var(--graph-toast-bottom, 24px);
+}
+
+.st-toast.st-toast--graph {
+  left: var(--graph-toast-center, 50%);
+  width: max-content;
+  bottom: var(--graph-toast-bottom);
+  max-width: calc(100% - 48px);
+}
+
+.st-roadmap-identity-fallback--board .st-zoom-group,
+.st-roadmap-identity-fallback--board .st-activity-chip {
+  display: none;
+}
+
+@media (max-width: 743px) {
+  .st-graph-toast.st-graph-toast--phone {
+    right: 0;
+    left: 0;
+  }
+
+  .st-toast.st-toast--graph {
+    left: 50%;
+    width: auto;
+    max-width: calc(100% - 56px);
+  }
+
+  .st-toast.st-toast--graph,
+  .st-graph-toast--phone.st-graph-toast--sheet .st-board-toast {
+    top: var(--graph-toast-top);
+    bottom: auto;
+  }
+}
+
 .st-demo-board-identity {
   position: absolute;
   inset: 0 0 auto;
@@ -2623,7 +2661,18 @@
 
 .st-roadmap-device-nudge {
   position: absolute;
-  left: calc(env(safe-area-inset-left, 0px) + 12px);
-  right: calc(env(safe-area-inset-right, 0px) + 12px);
+  left: calc(env(safe-area-inset-left, 0px) + 16px);
+  right: calc(env(safe-area-inset-right, 0px) + 16px);
   pointer-events: auto;
+}
+
+@media (min-width: 744px) {
+  .st-mobile-chrome .st-roadmap-device-nudge {
+    left: calc(env(safe-area-inset-left, 0px) + 24px);
+  }
+}
+
+.st-root--board-enabled .st-detail-panel--tablet button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }

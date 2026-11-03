@@ -25,10 +25,14 @@ saved choice wins, and an empty or just-planted tree opens on the canvas. `board
 Board closed in production; off production, localStorage `windmill:board:dev` set to `1` opens it.
 With the gate open, `initialView` in `persistence/ViewPrefs.js` chooses the view: an owner's empty
 roadmap opens on the Board on every band. A non-empty just-planted roadmap opens on the Graph;
-otherwise a step link selects the Board, then a saved choice wins, then owners default to the Board
-and visitors to the Graph. The selected step carries across views. With the gate open, the host mounts one
-`RoadmapIdentity` above both layers for every non-demo role and band. The row persists across switches.
-The demo keeps its existing chrome. While the Board awaits its roadmap, the row names no title or
+otherwise a step link selects the Board. Once ownership is known, non-demo readers of a not-owned or
+ownership-demoted roadmap open the Graph regardless of a saved choice. The demo and an owned roadmap
+opened through a shared URL keep their saved choice. Other visits keep their saved choice, with owners
+defaulting to the Board and visitors to the Graph. Loading does not infer ownership. The selected step carries
+across views. With the gate open, the host mounts one `RoadmapIdentity` above both layers for every non-demo
+role and band. The row persists across switches.
+The identity precedes the Board in DOM and tab order. The demo keeps its existing chrome. While the
+Board awaits its roadmap, the row names no title or
 progress and offers no Share; after a failed load it offers no switch. From 744px, `/` focuses
 *Find a step* on either view and G switches Board and Graph for owners and readers. A non-empty
 Graph search hands off to the Board with its query and field focus kept. The demo Board
@@ -52,19 +56,28 @@ unfiltered Board model as Next. At 1,000 or more total steps, the sheet uses `ex
 both state counts are supplied; otherwise it uses the truthful done/total `progressLabel`.
 The remaining roadmaps come from `listAllTrees`; navigation
 uses the existing roadmap, new-roadmap and browse routes. Readers never receive the owner sheet.
-Identity menus share keyboard and outside-dismiss rules through `BoardControls`. `TreeSwitcher`
+Identity menus share keyboard and outside-dismiss rules through `BoardControls`. More and What's next
+share a focus-leave dismissal rule that keeps focus on its destination. `TreeSwitcher`
 owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by the row, sheet,
 cards and List.
 Export builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`,
-using the same download edge as the settings archive. The paste format uses the roadmap title
-as the root: a distinct root-step label and its completion are not preserved. Other exported
-steps retain their completion marks. Settings exports all roadmaps as a zip.
+using the same download edge as the settings archive. Exported Markdown carries a
+`<!-- windmill:roadmap -->` marker: its title is metadata, and every step, including each root,
+is a list item with its own completion mark. Kind changes are inline comments, keeping the nested
+list uninterrupted in Markdown viewers. Indentation preserves primary prerequisites; additional
+prerequisites become `needs also` notes. Kind descriptions and link labels are outside the paste format. Ordinary pasted plans keep their
+heading-created root and branches. Settings exports all roadmaps as a zip.
 
 On the gated Graph, the owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order,
 including a one-step roadmap, and hides at zero. Picking a row selects and reveals that canvas
 step. Activity remains available through A; the feed never opens itself while identity is mounted.
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
+Graph toasts retain their intrinsic width, centering in the free canvas when they fit or across
+the canvas otherwise; `graphToastPlacement` owns measured clearance from the camera, minimap,
+panel and legend. Phone legacy toasts and completion toasts over an open editor use the top slot
+below the measured camera; other phone Graph toasts retain their bottom slot. Created steps
+reveal after the scene receives their model and the selected-step panel's insets.
 The identity replaces the plaque, wordmark and hairline, and only phones retain the Fork pill.
 The anonymous/lapsed desktop status and the desktop dock sit beneath the measured identity, so
 an open step never covers the row's verbs. On the phone and tablet Graph, the existing

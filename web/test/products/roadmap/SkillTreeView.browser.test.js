@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { dirname, resolve } from 'node:path';
 import { beacon } from './board/composerFixture.js';
 
 // The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
@@ -20,6 +21,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
+import { Shell } from '/src/shell/chrome/Shell.jsx';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
@@ -28,6 +30,10 @@ if (params.has('milestone')) window.fixture.nodes[1].status = 'complete';
 if (params.has('single')) window.fixture.nodes = [{ ...window.fixture.nodes[0], status: 'none' }];
 if (params.has('large')) window.fixture.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
 if (params.has('empty')) window.fixture.nodes = [];
+if (params.has('legend')) {
+  window.fixture.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
+  window.fixture.nodes[1].color = 'olive';
+}
 SyncSession.prototype.start = function () {
   this.store = { save: () => Promise.resolve() };
   this.registry = null;
@@ -39,6 +45,7 @@ window.events = [];
 window.issues = [];
 window.ceremonies = [];
 window.revealed = [];
+window.revealFrames = [];
 window.copied = [];
 Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
   writeText: async (text) => {
@@ -55,7 +62,11 @@ if (params.has('crash')) {
     }
   };
 }
-createRoot(document.getElementById('root')).render(React.createElement(SkillTreeView, { treeId: 't_sail', demo: params.has('demo') }));
+const props = { treeId: 't_sail', demo: params.has('demo') };
+const content = params.has('shell')
+  ? React.createElement(Shell, { location: { pathname: '/app', hash: location.hash, search: location.search }, neutral: { Component: SkillTreeView, props } })
+  : React.createElement(SkillTreeView, props);
+createRoot(document.getElementById('root')).render(content);
 `;
 const scene = `
 export class SkillTreeScene {
@@ -70,8 +81,12 @@ export class SkillTreeScene {
     this.subscribeViewport = () => () => {};
     this.isPointerActive = () => false;
     this.setModel = (model) => { this.nodesById = new Map(model.nodes.map((node) => [node.id, node])); };
+    this.applyModel = this.setModel;
     this.setViewportInsets = (insets) => { window.cameraInsets = insets; };
-    this.revealNode = (id) => { window.revealed.push(id); };
+    this.revealNode = (id) => {
+      window.revealed.push(id);
+      window.revealFrames.push({ id, insets: window.cameraInsets, installed: this.nodesById.has(id) });
+    };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
     window.scene = new Proxy(this, { get(target, property) { return property in target ? target[property] : () => {}; } });
@@ -89,19 +104,20 @@ let server, browser, origin;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-roadmap-host-test`,
     plugins: [{ name: 'roadmap-host-contract-test', enforce: 'pre',
-      resolveId(id) {
+      resolveId(id, importer) {
         if (id === '/roadmap-host-entry.js') return '\0host-entry';
-        if (id.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
-        if (id.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
-        if (id.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
-        if (id.endsWith('/telemetry/beacon.js')) return '\0host-events';
-        if (id.endsWith('/telemetry/sentry.js')) return '\0host-issues';
+        const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
+        if (file.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
+        if (file.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
+        if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
+        if (file.endsWith('/telemetry/beacon.js')) return '\0host-events';
+        if (file.endsWith('/telemetry/sentry.js')) return '\0host-issues';
       },
       load(id) {
         if (id === '\0host-entry') return entry;
         if (id === '\0host-scene') return scene;
         if (id === '\0host-auth') return auth;
-        if (id === '\0host-signin') return 'export const useSignInDoor = () => () => { window.signInOpened = (window.signInOpened ?? 0) + 1; };';
+        if (id === '\0host-signin') return 'export const useSignInDoor = () => () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoorHost = () => () => {};';
         if (id === '\0host-events') return beacon;
         if (id === '\0host-issues') return 'export function captureError(product, operation, stack) { window.issues.push({ operation, stack: !!stack }); }';
       },
@@ -130,9 +146,9 @@ function hostTest(name, run) {
   });
 }
 
-async function openHost({ width = 1440, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false } = {}) {
+async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height: 1000 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce' });
   page.setDefaultTimeout(5000);
   const errors = [];
   const { fail } = runningTest.getStore();
@@ -155,6 +171,10 @@ async function openHost({ width = 1440, role = 'owner', gate = 'open', surface =
       if (single) data.nodes = [{ ...data.nodes[0], status: 'none' }];
       if (large) data.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
       if (empty) data.nodes = [];
+      if (legend) {
+        data.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
+        data.nodes[1].color = 'olive';
+      }
       body = { data, mine: role !== 'reader', visibility: 'public' };
     }
     if (path === '/v1/trees') body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }] };
@@ -163,7 +183,7 @@ async function openHost({ width = 1440, role = 'owner', gate = 'open', surface =
   });
   const params = new URLSearchParams({ role, gate, surface });
   if (role === 'reader') params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty, shell, legend })) {
     if (enabled) params.set(name, '1');
   }
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
@@ -301,6 +321,14 @@ hostTest('Chromium: Graph create reveals the step and Undo removes only that cre
     await page.locator('.st-graph-toast').waitFor();
     assert.equal(await page.locator('.st-roadmap-progress').getAttribute('aria-label'), '1 of 4 steps done');
     const created = await page.evaluate(() => window.session.lattice.toTreeData().nodes.find(({ label }) => label === 'Practice knots').id);
+    await page.waitForFunction((id) => window.revealFrames.at(-1)?.id === id, created);
+    assert.deepEqual(await page.evaluate(() => {
+      const frame = window.revealFrames.at(-1);
+      return { id: frame.id, installed: frame.installed, right: frame.insets.right };
+    }), { id: created, installed: true, right: 408 });
+    const previousReveals = await page.evaluate(() => window.revealed.length);
+    await page.locator('.st-board-toast-message').click();
+    await page.waitForFunction((previous) => window.revealed.length > previous, previousReveals);
     assert.equal(await page.evaluate(() => window.revealed.at(-1)), created);
     await page.locator('.st-board-toast-undo').click();
     await page.waitForFunction(() => document.querySelector('.st-roadmap-progress')?.getAttribute('aria-label') === '1 of 3 steps done');
@@ -491,6 +519,7 @@ for (const width of [320, 390, 744]) {
         const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]').getBoundingClientRect();
         return camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left;
       }), true);
+      assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => element.getBoundingClientRect().left), width === 744 ? 24 : 16);
       await nudge.click();
       assert.equal(await page.evaluate(() => window.signInOpened), 1);
       assert.deepEqual(errors, []);
@@ -541,6 +570,8 @@ hostTest('Chromium: crash fallback switch and Board inset follow the measured le
   try {
     const fallback = page.locator('.st-roadmap-identity-fallback');
     await fallback.waitFor();
+    assert.equal(await fallback.locator('.st-zoom-group').isVisible(), false);
+    assert.equal(await fallback.locator('.st-activity-chip').isVisible(), false);
     await page.waitForFunction(() => document.activeElement?.matches('.st-roadmap-fallback-switch [aria-pressed="true"]'));
     const geometry = () => page.evaluate(() => {
       const chrome = document.querySelector('.st-roadmap-identity-fallback .st-topbar');
@@ -571,3 +602,165 @@ hostTest('Chromium: crash fallback switch and Board inset follow the measured le
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const width of [744, 1024, 1440]) {
+  for (const menu of [false, true]) {
+    hostTest(`Chromium: Board identity precedes cards and Tab exits ${menu ? 'open menu' : 'More'} at ${width}px`, async () => {
+      const { page, errors } = await openHost({ width, surface: 'board' });
+      try {
+        assert.equal(await page.evaluate(() => {
+          const row = document.querySelector('.st-roadmap-identity');
+          const board = document.querySelector('.st-board');
+          return Boolean(row.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING);
+        }), true);
+        const more = page.locator('.st-roadmap-identity').getByRole('button', { name: 'More', exact: true });
+        if (menu) await more.click();
+        else await more.focus();
+        await page.keyboard.press('Tab');
+        await page.waitForFunction(() => document.querySelector('.st-board')?.contains(document.activeElement));
+        assert.equal(await page.evaluate(() => document.activeElement !== document.body && !document.activeElement.closest('[inert]')), true);
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+}
+
+for (const width of [744, 1024, 1280, 1440]) {
+  for (const legacy of [false, true]) {
+    hostTest(`Chromium: Graph ${legacy ? 'legacy' : 'completion'} toast keeps its drawn width and clears panel, minimap and camera at ${width}px`, async () => {
+      const { page, errors } = await openHost({ width, height: 900, legend: true });
+      try {
+        await page.evaluate(() => document.fonts.ready);
+        const time = new Date('2026-11-03T12:00:00Z');
+        await page.clock.install({ time: new Date(time.getTime() - 60000) });
+        await page.clock.pauseAt(time);
+        await page.evaluate(() => window.scene.select('wind'));
+        await page.locator('.st-detail-panel--open').waitFor();
+        await page.clock.runFor(300);
+        if (legacy) {
+          await page.evaluate(() => window.scene.options.onCeremonyToast('Read the wind done · Leave the dock up next'));
+        } else {
+          await page.getByRole('button', { name: width < 1024 ? 'Mark done' : 'Complete', exact: true }).click();
+          await page.locator('.st-graph-toast').waitFor();
+        }
+        await page.clock.runFor(300);
+        const selector = legacy ? '.st-toast' : '.st-graph-toast .st-board-toast';
+        await page.locator(selector).waitFor();
+        await page.waitForFunction((selector) => {
+          const toast = document.querySelector(selector).getBoundingClientRect();
+          return [...document.querySelectorAll('.st-graph-camera, .st-minimap, .st-legend-dock, .st-detail-panel--open')]
+            .filter((element) => element.getClientRects().length > 0)
+            .every((element) => {
+              const obstacle = element.getBoundingClientRect();
+              return toast.right <= obstacle.left || toast.left >= obstacle.right || toast.bottom <= obstacle.top || toast.top >= obstacle.bottom;
+            });
+        }, selector);
+        const geometry = await page.locator(selector).evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const message = element.querySelector('.st-board-toast-message, .st-toast-row > span');
+          const range = document.createRange();
+          range.selectNodeContents(message);
+          return { inCanvas: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+            lines: range.getClientRects().length, message: message.textContent };
+        });
+        assert.equal(geometry.inCanvas, true);
+        assert.equal(geometry.lines, 1);
+        assert.equal(geometry.message, 'Read the wind done · Leave the dock up next');
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+}
+
+hostTest('Chromium: tablet read-only Graph legend names its non-interactive swatches by kind', async () => {
+  const { page, errors } = await openHost({ width: 744, role: 'reader', legend: true });
+  try {
+    const legend = page.locator('.st-legend-dock');
+    await legend.waitFor();
+    assert.deepEqual(await legend.locator('[role="img"]').evaluateAll((elements) => elements.map((element) => ({
+      tag: element.tagName, name: element.getAttribute('aria-label'), tabIndex: element.tabIndex,
+    }))), [{ tag: 'SPAN', name: 'Build', tabIndex: -1 }, { tag: 'SPAN', name: 'Learn', tabIndex: -1 }]);
+    assert.equal(await legend.locator('button:not([aria-label])').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: tablet Mark not done uses the canon focus ring after keyboard completion', async () => {
+  const { page, errors } = await openHost({ width: 744 });
+  try {
+    await page.evaluate(() => window.scene.select('wind'));
+    const complete = page.getByRole('button', { name: 'Mark done', exact: true });
+    await complete.focus();
+    await page.keyboard.press('Enter');
+    const reset = page.getByRole('button', { name: 'Mark not done', exact: true });
+    await reset.waitFor();
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Mark not done');
+    assert.deepEqual(await reset.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const sample = document.createElement('span');
+      sample.style.color = 'var(--color-brand)';
+      element.append(sample);
+      const brand = getComputedStyle(sample).color;
+      sample.remove();
+      return { focused: element.matches(':focus-visible'), width: style.outlineWidth, style: style.outlineStyle,
+        offset: style.outlineOffset, brand: style.outlineColor === brand };
+    }), { focused: true, width: '2px', style: 'solid', offset: '2px', brand: true });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: phone legacy reader toast clears Focus, and editor completion clears the action row', async () => {
+  for (const role of ['reader', 'owner']) {
+    const { page, errors } = await openHost({ width: 390, role });
+    try {
+      if (role === 'reader') {
+        await page.evaluate(() => window.scene.options.onCeremonyToast('A roadmap update'));
+        await page.locator('.st-toast').waitFor();
+      } else {
+        await page.evaluate(() => window.scene.select('wind'));
+        await page.getByRole('button', { name: 'Mark done', exact: true }).click();
+        await page.locator('.st-graph-toast .st-board-toast').waitFor();
+      }
+      await page.waitForFunction((role) => {
+        const toast = document.querySelector('.st-graph-toast .st-board-toast, .st-toast').getBoundingClientRect();
+        const camera = document.querySelector('.st-view-actions').getBoundingClientRect();
+        const action = [...document.querySelectorAll('button')].find((element) => element.textContent.trim() === 'Mark not done');
+        return toast.top >= camera.bottom && (role === 'reader' || toast.bottom <= action.getBoundingClientRect().top);
+      }, role);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  }
+});
+
+hostTest('Chromium: Ask AI dims and covers navigation outside the real shell room', async () => {
+  const { page, errors } = await openHost({ shell: true });
+  try {
+    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'Ask AI', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Tell the tree what to change' }).waitFor();
+    assert.deepEqual(await page.locator('.st-tend-overlay').evaluate((overlay) => {
+      const rect = overlay.getBoundingClientRect();
+      const head = document.querySelector('.wm-head').getBoundingClientRect();
+      return {
+        parent: overlay.parentElement.className,
+        frame: [rect.left, rect.top, rect.right, rect.bottom],
+        viewport: [0, 0, window.innerWidth, window.innerHeight],
+        dims: getComputedStyle(overlay).backgroundColor !== 'rgba(0, 0, 0, 0)',
+        coversNavigation: document.elementFromPoint(head.left + head.width / 2, head.top + head.height / 2) === overlay,
+      };
+    }), { parent: 'wm-shell', frame: [0, 0, 1440, 1000], viewport: [0, 0, 1440, 1000], dims: true, coversNavigation: true });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [390, 744]) {
+  hostTest(`Chromium: reader Board crash fallback retains home without Graph camera at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, role: 'reader', crash: true, surface: 'board' });
+    try {
+      const fallback = page.locator('.st-roadmap-identity-fallback');
+      await fallback.waitFor();
+      assert.equal(await fallback.getByRole('link', { name: 'Windmill — home' }).count(), 1);
+      assert.equal(await fallback.getByRole('group', { name: 'Camera', exact: true }).count(), 0);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

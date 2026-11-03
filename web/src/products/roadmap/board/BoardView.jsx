@@ -153,21 +153,13 @@ function BoardView({
     boardFocusTarget(boardRef.current)?.focus();
   }, [frame]);
 
-  // A control the query took away hands focus to the Board's displayed fallback.
-  useEffect(() => {
+  // A removed control hands focus to the Board's displayed fallback.
+  useLayoutEffect(() => {
     const lost = lastFocus.current;
     if (lost === null || lost.isConnected) return;
     if (document.activeElement !== null && document.activeElement !== document.body) return;
     boardFocusTarget(boardRef.current)?.focus();
-  }, [query]);
-
-  useLayoutEffect(() => {
-    if (refusal !== null) return;
-    const lost = lastFocus.current;
-    if (!lost?.closest('[data-board-refusal]') || lost.isConnected) return;
-    if (document.activeElement !== null && document.activeElement !== document.body) return;
-    boardFocusTarget(boardRef.current)?.focus();
-  }, [refusal]);
+  }, [query, refusal]);
 
   const retry = () => {
     retried.current = true;

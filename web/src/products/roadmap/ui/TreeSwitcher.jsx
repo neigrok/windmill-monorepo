@@ -357,8 +357,8 @@ function Caret({ shown, identity = false }) {
   const size = identity ? 20 : 9;
   const opacity = shown ? 0.7 : 0;
   return (
-    <svg width={size} height={size} viewBox="0 0 12 12" fill="none" style={{ opacity: identity ? 1 : opacity, ...(identity ? { flexShrink: 0 } : {}), transition: 'opacity var(--duration-fast) var(--ease-standard)' }}>
-      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={size} height={size} viewBox={identity ? '0 0 20 20' : '0 0 12 12'} fill="none" style={{ opacity: identity ? 1 : opacity, ...(identity ? { flexShrink: 0, color: 'var(--text-secondary)' } : {}), transition: 'opacity var(--duration-fast) var(--ease-standard)' }}>
+      <path d={identity ? 'M5 7.5L10 12.5L15 7.5' : 'M3 4.5L6 7.5L9 4.5'} stroke="currentColor" strokeWidth={identity ? '1.66667' : '1.8'} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
