@@ -128,6 +128,7 @@
   box-shadow: none;
   font-size: 14px;
   line-height: 20px;
+  white-space: nowrap;
 }
 .st-board-step-page .st-board-step-identity--compact .st-board-step-identity-title {
   font-size: 20px;

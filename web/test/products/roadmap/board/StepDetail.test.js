@@ -775,6 +775,7 @@ for (const width of [390, 744, 1440]) {
         for (const tab of ['Overview', 'Workspace', 'History']) {
           await page.getByRole('tab', { name: tab, exact: true }).click();
           await page.waitForFunction((label) => document.querySelector('.st-board-step-sections [aria-selected="true"]')?.textContent === label, tab);
+          await page.evaluate(() => document.fonts.ready);
           const secondary = width < 744 && tab === 'Workspace' ? 'Add note' : 'Edit step';
           assert.deepEqual(await actions.getByRole('button').allTextContents(), primary ? [secondary, primary] : [secondary]);
           if (width < 744) {
@@ -785,13 +786,16 @@ for (const width of [390, 744, 1440]) {
             if (primary) {
               assert.deepEqual(await actions.locator('.st-board-step-buttons').evaluate((row) => {
                 const [secondary, primary] = row.querySelectorAll('button');
+                const text = document.createRange();
+                text.selectNodeContents(secondary);
                 return {
                   fontSize: getComputedStyle(secondary).fontSize,
                   secondaryWidth: secondary.getBoundingClientRect().width,
                   primaryWidth: primary.getBoundingClientRect().width,
                   gap: getComputedStyle(row).gap,
+                  textLines: text.getClientRects().length,
                 };
-              }), { fontSize: '14px', secondaryWidth: 76, primaryWidth: 274, gap: '8px' });
+              }), { fontSize: '14px', secondaryWidth: 76, primaryWidth: 274, gap: '8px', textLines: 1 });
             }
           }
           if (primary === null) {
@@ -808,6 +812,40 @@ for (const width of [390, 744, 1440]) {
       }
     });
   }
+
+  test(`Chromium ${width}: empty workspace add buttons center their icons with a six-pixel text gap`, async () => {
+    await ready;
+    const errors = [];
+    const page = await openRoom({ viewport: { width, height: 960 }, start: '#/app/sail?step=wind' }, errors);
+    try {
+      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+      const buttons = page.locator('.st-board-workspace-missing .st-board-step-action');
+      await buttons.first().waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      assert.deepEqual(await buttons.evaluateAll((buttons) => buttons.map((button) => {
+        const style = getComputedStyle(button);
+        const icon = button.querySelector('svg').getBoundingClientRect();
+        const bounds = button.getBoundingClientRect();
+        const text = document.createRange();
+        text.selectNode([...button.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim()));
+        return {
+          label: button.textContent,
+          display: style.display,
+          alignItems: style.alignItems,
+          justifyContent: style.justifyContent,
+          gap: style.gap,
+          textGap: Math.round(text.getBoundingClientRect().left - icon.right),
+          iconCentered: Math.abs(icon.top + icon.height / 2 - bounds.top - bounds.height / 2) < 1,
+        };
+      })), ['Add subtask', 'Add note', 'Add link'].map((label) => ({
+        label, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', textGap: 6, iconCentered: true,
+      })));
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
 
   test(`Chromium ${width}: Edit Save returns to its opener and Escape never closes the covered step`, async () => {
     await ready;

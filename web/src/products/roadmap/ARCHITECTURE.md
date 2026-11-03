@@ -66,14 +66,14 @@ step. Activity remains available through A; the feed never opens itself while id
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
 The identity replaces the plaque, wordmark and hairline, and only phones retain the Fork pill.
-The anonymous/lapsed desktop status sits beneath the measured identity. On the phone and tablet
-Graph, the existing device-only sign-in nudge sits beneath the row; the phone camera clears it,
-and its measured bottom contributes to the Graph viewport. A row render failure reports
-`roadmap-identity` and mounts legacy chrome with a view switch. Fallback chrome and switch
-measurements feed the switch position and Board inset; their browser geometry remains an open
-verification issue below. Gate-closed chrome, feed auto-open, shortcuts and viewport geometry
-retain their existing paths; state words use `board/copy.js` without changing ceremony structure
-or timing.
+The anonymous/lapsed desktop status and the desktop dock sit beneath the measured identity, so
+an open step never covers the row's verbs. On the phone and tablet Graph, the existing
+device-only sign-in nudge sits beneath the row; the phone camera clears it, and its measured
+bottom contributes to the Graph viewport. A row render failure reports `roadmap-identity` and
+mounts legacy chrome with a view switch. Fallback chrome and switch border-box measurements feed
+the switch position and Board inset. Gate-closed chrome, feed auto-open, shortcuts and viewport
+geometry retain their existing paths; state words use `board/copy.js` without changing ceremony
+structure or timing.
 
 `SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
 branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`
@@ -394,9 +394,6 @@ the URL selectable; owners can make a tree private again.
 
 ## Open work
 
-- Graph completion Undo does not yet pass the browser case that returns focus to Complete after
-  unrelated row activity. The crash-fallback switch and Board inset also have a failing browser
-  case against measured legacy chrome. Both require browser verification and correction.
 - Board, List and Graph each own a long-press recognizer; `rb-simplify` owns consolidation while
   preserving the Board hold/swipe exclusion and the legacy interaction contracts.
 - Icon slots are reassigned by distance rank each frame; stable node ownership could remove

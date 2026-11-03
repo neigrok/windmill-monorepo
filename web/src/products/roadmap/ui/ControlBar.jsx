@@ -10,7 +10,7 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFo
     const measure = () => onBottom(bar.offsetTop + bar.offsetHeight);
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(bar);
+    observer.observe(bar, { box: 'border-box' });
     return () => observer.disconnect();
   }, [onBottom]);
   const activityHint = keyHint('Activity feed');

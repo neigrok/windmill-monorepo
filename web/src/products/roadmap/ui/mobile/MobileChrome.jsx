@@ -64,7 +64,7 @@ export function MobileChrome({
     measure();
     const observer = new ResizeObserver(measure);
     for (const element of [plaqueRef.current, cameraRef.current, nudgeRef.current]) {
-      if (element) observer.observe(element);
+      if (element) observer.observe(element, { box: 'border-box' });
     }
     window.addEventListener('resize', measure);
     return () => {

@@ -102,7 +102,8 @@ const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const NEW_NODE_ICON = 'sparkles';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest';
 const CTA_ECHO_DELAY = 1500;
-const FALLBACK_CHROME_GAP = 8;
+// The space between a measured chrome row and what sits beneath it.
+const CHROME_GAP = 8;
 // The chrome measures itself within a frame of the first paint; past this the first view is the reader's to move.
 const FIRST_FRAME_REFRAME_MS = 1200;
 
@@ -1876,6 +1877,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   let dockOpen = composerOpen || (!boardActive && (!!selectedNode || feedVisible));
   if (readOnly) dockOpen = readOnlyDock && !!selectedNode && !boardActive;
   if (identityActive && breakpoint === 'tablet') dockOpen = canvasView && !!selectedNode;
+  // The desktop dock hangs below the identity row, so the row's verbs stay reachable while a step is open.
+  const dockTop = identityActive && breakpoint === 'desktop' ? topbarBottom + CHROME_GAP : undefined;
 
   const graphTop = canvasView ? Math.max(topbarBottom, graphChromeBottom) : topbarBottom;
   let viewportChromeBottom = null;
@@ -1931,7 +1934,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     const measure = () => setTopbarBottom(row.offsetHeight);
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(row);
+    observer.observe(row, { box: 'border-box' });
     return () => observer.disconnect();
   }, [demo, boardActive]);
   useEffect(() => {
@@ -1976,7 +1979,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setIdentityCrashed(true);
   }, []);
 
-  const fallbackSwitchTop = fallbackChromeBottom + FALLBACK_CHROME_GAP;
+  const fallbackSwitchTop = fallbackChromeBottom + CHROME_GAP;
   const fallbackHasSwitch = Boolean(viewSwitch);
   useLayoutEffect(() => {
     if (!identityCrashed) return undefined;
@@ -1985,10 +1988,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       setFallbackBottom(fallbackChromeBottom);
       return undefined;
     }
-    const measure = () => setFallbackBottom(control.offsetTop + control.offsetHeight + FALLBACK_CHROME_GAP);
+    const measure = () => setFallbackBottom(control.offsetTop + control.offsetHeight + CHROME_GAP);
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(control);
+    observer.observe(control, { box: 'border-box' });
     return () => observer.disconnect();
   }, [identityCrashed, fallbackChromeBottom, fallbackHasSwitch]);
   let boardTopInset = 0;
@@ -2271,7 +2274,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {!readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && (identityActive || !(boardActive && deviceNotice)) && (
-        <div style={{ position: 'absolute', top: identityActive ? topbarBottom + 8 : 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ position: 'absolute', top: identityActive ? topbarBottom + CHROME_GAP : 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>
       )}
@@ -2304,7 +2307,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {!readOnly && (
-        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: DOCK_WIDTH }}>
+        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: DOCK_WIDTH, top: dockTop }}>
           <div className="st-dock-tenant" key={composerOpen ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
             {composerOpen ? composer : selectedNode ? (
               <StepPanel
@@ -2490,7 +2493,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {readOnlyDock && (
-        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: breakpoint === 'tablet' ? TABLET_PANEL_WIDTH : DOCK_WIDTH }}>
+        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: breakpoint === 'tablet' ? TABLET_PANEL_WIDTH : DOCK_WIDTH, top: dockTop }}>
           <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'empty'}>
             {readOnlyDetail}
           </div>

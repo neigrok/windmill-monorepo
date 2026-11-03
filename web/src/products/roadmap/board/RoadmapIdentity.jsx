@@ -59,7 +59,7 @@ export function RoadmapIdentity({
     const report = () => onBottom(bar.current.offsetTop + bar.current.offsetHeight);
     report();
     const observer = new ResizeObserver(report);
-    observer.observe(bar.current);
+    observer.observe(bar.current, { box: 'border-box' });
     window.addEventListener('resize', report);
     return () => {
       observer.disconnect();
