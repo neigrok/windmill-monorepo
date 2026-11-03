@@ -10,7 +10,8 @@ point for the component showcase.
 
 | Area | Responsibility |
 |---|---|
-| `SkillTreeView.jsx` | The room host: load, one session, one toast slot, and every surface below |
+| `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
+| `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. Independent of React and WebGL |
 | `board/` | The identity row and the Board: query and columns, regroup, held actions, the shared toast, card gestures, step detail, composer and picker, view switch and copy |
 | `layout/` | Deterministic layout engines behind `index.js` |
@@ -19,7 +20,7 @@ point for the component showcase.
 | `persistence/` | HTTP repository, account tree registry and device preferences and ledgers |
 | `editing/` | The Graph's writes and what a changed lattice does to the picture |
 | `selection/`, `shortcuts/`, `input/` | The Graph's selection, the room's keys, the pure hold recognizer |
-| `ui/`, `ui/tree/`, `ui/tablet/` | Canvas chrome, the desktop step panel and the tablet's Graph panel |
+| `ui/`, `ui/tree/`, `ui/tablet/` | Canvas chrome, the Graph's docks, the desktop step panel and the tablet's Graph panel |
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, authored starter roadmaps and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
@@ -68,13 +69,14 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 
 ## Loading a roadmap
 
-`SkillTreeView.jsx` loads a tree through `HttpTreeRepository` or the account's device fallback, constructs
+`room/useRoomLoad.js` loads a tree through `HttpTreeRepository` or the account's device fallback, constructs
 `SkillTree`, derives progress through `UnlockRules`, runs layout and installs the render model in
 `SkillTreeScene`. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
 engines, labels.
 
 After load, `SyncSession` owns the durable lattice. Local gestures and remote frames both produce a projection
-through `syncStructure()` and `scene.applyModel`, and `TreeEditor` holds that projection.
+through `editing/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
+projection.
 
 A saved camera is scoped to its layout engine and format. Without one, an owner opens at working zoom over the
 frontier and a visitor receives the whole-tree fit and arrival ceremony. The owner's first view reframes as
@@ -85,7 +87,7 @@ chrome measurements arrive until the reader moves the camera.
 The host mounts one `RoadmapIdentity` above both layers for every role and band, passing `demo` for the
 sample. It persists across switches and precedes the Board in DOM and tab order. While the Board awaits its
 roadmap the row names no title or progress and offers no Share; after a failed load it offers no switch.
-`useRoadmapIdentityActs.js` owns the query handoff, read models and verbs that route to Share, Fork, Ask AI
+`room/useRowVerbs.js` owns the query handoff, read models and verbs that route to Share, Fork, Ask AI
 and shortcuts.
 
 | Width | Row |
@@ -144,7 +146,7 @@ reuses composer viewport tracking to clear the keyboard, and Escape, scrim or su
 
 ### Query
 
-`SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): sort, kinds on, search text and
+The room owns the Board's query (`BoardQuery` in `board/Board.js`): sort, kinds on, search text and
 branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored.
 `viewBranch` scopes the Board to a step, every ancestor and every descendant; availability and progress still
 read the whole roadmap.
@@ -359,9 +361,11 @@ their model and the selected-step panel's insets.
 
 ## Toasts and Undo
 
-The host owns one toast slot, and `BoardToast` serves both views. Board toasts render inside `BoardView`, with
-a six-second Complete, Create or Recolor hold and a nine-second Delete hold. Newer toasts replace older ones,
-with no coalescing. Leaving a view dismisses its toast. Remote completions keep their announcements.
+`useRoadmapToast` is the room's one toast slot, with one hold that starts when a toast is first shown; a newer toast
+replaces the older, with no coalescing. `toastSeat` says where a toast stands: a Board toast inside `BoardView`,
+where it waits out the regroup; a Graph toast over the canvas, leaving with it; anything else over whatever is
+showing. `BoardToast` renders them all but Ask AI's answers, which keep `tending/TendToast.jsx` and its Why?.
+Complete, Create and Recolor hold six seconds and Delete nine. Remote completions keep their announcements.
 
 Complete toast text reveals the single newly Up next step, or the completed step when zero or several unlock;
 Create reveals the new step. Reveal clears only query dimensions that hide its target and preserves sort.
@@ -371,12 +375,15 @@ its canvas ceremony. A reader's copied link uses the same slot without Undo. Gra
 the action's captured control when it stays connected and uncovered, then falls back to the pressed view
 switch.
 
-**Toast Undo is targeted; ⌘Z is global.** A toast's Undo reverts its own act: complete restores that step's
-progress, create and recolor revert their exact session receipts, and a held delete cancels. Later unrelated
-gestures stand. ⌘Z and ⇧⌘Z walk the session's global structural stack across both views, refused under a
-covering layer. `SyncSession.dispatch(gesture)` returns an opaque receipt or null when nothing applies;
-`revert(receipt)` restamps that captured inverse once and removes it from the stack. A successful discard
-invalidates session Undo and Redo and captured receipts, and dismisses only toasts backed by those receipts.
+**Toast Undo is targeted; ⌘Z is global.** A toast's Undo reverts its own act and later unrelated gestures stand.
+Complete restores that step's progress and a held delete cancels. Every other write holds its session receipt:
+`SyncSession.dispatch(gesture)` returns an opaque receipt or null when nothing applies, and `receiptUndo` calls
+`revert(receipt)`, which restamps that captured inverse once and removes it from the stack. A write the session
+refused says nothing happened. Ask AI wrote on the server, so its Undo deletes exactly what the run says it planted.
+
+⌘Z and ⇧⌘Z walk the session's global structural stack across both views, refused under a covering layer. A
+successful discard invalidates session Undo and Redo and captured receipts, and dismisses only toasts backed by those
+receipts.
 
 ## Domain and shared geometry
 
