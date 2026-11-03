@@ -142,8 +142,8 @@ commits and forbids pushing.
 - The runner guard follows Kotlin's coroutine context through an injected pure port. It cannot
   discover CoroutineContext from a synchronous function while obeying §2.3's owner denial; the
   actual context adapter belongs at the permitted boundary. No SyncAPI change or layering exception.
-- NFC's one-method class needs both `Normalizer` and `Normalizer$Form`; the spec owner table omits
-  the latter. Invokedynamic exceptions name only actual bootstrap owners.
+- The `Nfc` class needs both `Normalizer` and `Normalizer$Form`. Invokedynamic exceptions name only
+  actual bootstrap owners.
 - JSON follows Swift's depth-128, duplicate-key, surrogate, UTF-8 and nonzero-underflow checks.
   JCS keys sort by UTF-16; byte ordering uses UTF-8 without NFC normalization. NFC belongs to kit
   text values. Registry integers use Long; mint length must also fit Kotlin Int allocations.

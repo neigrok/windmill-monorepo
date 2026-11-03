@@ -2,8 +2,9 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
-Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`,
+`coach-onboarding-actions.json` and `../rules/collation.json` run in Swift and Kotlin and do not apply on the web (their
+rows say why); every other file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -46,6 +47,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `training-reads.json` | Prefill and the loads it offers ahead, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
+| `../rules/collation.json` | The kit's `Collation`, which orders `list_exercises`: `{read: "collation", names}` → `{result: {order}}`, the names sorted stably. Accents composed and decomposed, the marks of combining class 0 (U+FE0F, U+0E31, U+0941), case, punctuation, digits, emoji, ties at each level, and every edge of the combining table the toolchains share. The Swift rule writes the expectations; Swift and Kotlin claim them, and the web runs no replica executor |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
 
 Entity vectors may name `nonFinite: {path, value}` with `NaN`, `Infinity` or `-Infinity` to exercise the declared field check on a typed draft value. The harness exercises that check before completing whole-entity validation, keeping non-finite numbers outside wire JSON and production decoders.

@@ -199,13 +199,14 @@ executor, and the Kotlin and Swift replica executors. CI compares the SHA-256 of
 The corpus MUST include ties, empty pages, a 10,000-set history, fractional loads, and text with
 emoji and combining marks.
 
-The corpora hold `abilities/` (18 files), `rules/bodyweight.json` and `turns/`; no case holds a
+The corpora hold `abilities/` (18 files), `rules/bodyweight.json`, `rules/collation.json` and `turns/`; no case holds a
 10,000-set history yet. The server executor writes the `abilities/` expectations, catalog/2's
 `propose_workout_change.json` included, and claims every case (`AbilitiesCorpusTest.cpp`); it also claims the `GymEstimate` and training-read cases of
 `domain/training-reads.json`, apart from the cases its test lists as other rules. The Swift replica
 executor claims every case of the `abilities/` files, catalog/2's `propose_workout_change.json` included; the share cases, which run on the server executor (§4.3),
 it checks as refused on the phone. The Swift, Kotlin and web domain suites claim
-`rules/bodyweight.json`. The Kotlin suite marks `abilities/` and `turns/` not applicable, since
+`rules/bodyweight.json`; the Swift and Kotlin suites claim `rules/collation.json`, the order `list_exercises` reads on a
+phone, and the Kotlin suite reads `catalog.json` through the kit's `Catalog`. The Kotlin suite marks `abilities/` and `turns/` not applicable, since
 Android runs no replica executor. The server loop and the iOS turn driver replay `turns/`.
 
 ---
