@@ -7,7 +7,7 @@ register('../../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { MobileChrome } = await import('../../../../../src/products/roadmap/ui/mobile/MobileChrome.jsx');
-const { FORK_OFFER, OPEN_STEP, STATE_WORDS } = await import('../../../../../src/products/roadmap/board/copy.js');
+const { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } = await import('../../../../../src/products/roadmap/board/copy.js');
 
 const render = (props = {}) => renderToStaticMarkup(React.createElement(MobileChrome, {
   title: 'Learn to sail', progress: { done: 3, total: 8 }, dominantKind: 'sky', onFork() {}, ...props,
@@ -39,7 +39,7 @@ test('the selected-step bar has the owner action and reader title action with ex
         : '<span class="st-graph-step-title">Read the wind</span>';
       const expected = '<div class="st-mobile-chrome" style="position:absolute;inset:0;pointer-events:none;z-index:20">'
         + '<div class="st-graph-step-bar" data-graph-step-bar=""><div class="st-graph-step-heading">'
-        + title + `<span class="st-graph-step-state">${STATE_WORDS[state]}</span></div>`
+        + title + `<span class="st-graph-step-state">${COLUMN_TITLES[state]}</span></div>`
         + '<button type="button" class="st-graph-step-primary" data-graph-step-primary="">'
         + (reader ? FORK_OFFER : OPEN_STEP) + '</button></div></div>';
       assert.equal(render({ identity: true, band: 'phone', cameraVisible: false,

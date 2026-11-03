@@ -49,7 +49,9 @@ the composer’s picker. An uncovered Board still shares the session’s global 
 `useRoadmapIdentityActs.js` owns the identity query handoff, read models and verbs that route to
 the existing Share, Fork, TendBar and shortcuts surfaces. Each surface restores its own opener:
 Dialog and the gated TendBar/Fork sheet share `useDialogFocus`; the composer uses
-`useComposerFocus`. Gated restores leave an intentional focus target outside the surface alone.
+`useComposerFocus`. The shared `design-system/feedback/dialogFocus.js` primitive owns focusable
+elements and Tab wrapping for Dialog and Board layers; initial focus, coverage and return
+targets stay with each layer. Gated restores leave an intentional focus target outside the surface alone.
 More and the roadmap sheet close and focus their surviving trigger before invoking a verb. From
 1280px Find and Ask AI have their full forms; 1024–1279px folds them to icons, and 744–1023px
 puts Ask AI and Share in More. Phone owners open the roadmap sheet from the title. Its current
@@ -58,6 +60,8 @@ unfiltered Board model as Next. At 1,000 or more total steps, the sheet uses `ex
 both state counts are supplied; otherwise it uses the truthful done/total `progressLabel`.
 The remaining roadmaps come from `listAllTrees`; navigation
 uses the existing roadmap, new-roadmap and browse routes. Readers never receive the owner sheet.
+The demo uses the reader verbs and sample badge. `RoadmapSheet` owns title search above eight
+roadmaps, the query highlight and the keyboard-aware search/New roadmap footer.
 Identity menus share keyboard and outside-dismiss rules through `BoardControls`. More and What's next
 share a focus-leave dismissal rule that keeps focus on its destination. `TreeSwitcher`
 owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by the row, sheet,
@@ -76,6 +80,11 @@ step. Desktop and tablet owners open Activity through the identity callback or A
 view; the feed never opens itself while identity is mounted. On desktop, opening it from the Board switches to the
 Graph dock. At 744–1023px a separate Activity panel keeps the current view usable; its rows open
 step details, and X, Escape or the Activity callback closes it and returns focus to More.
+Phone owners open Activity as a page inside the roadmap sheet through `sheet.activity`; A does
+nothing on phones. Back or the first Escape returns to the roadmap page, and a row closes the
+sheet before opening its step over the current view. `activity/ActivityRows.jsx` owns the shared
+tablet and phone rows, removed-step treatment and empty state. More reads `activityOpen` to
+retain its pressed state while the tablet panel is visible.
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
 Graph toasts retain their intrinsic width, centering in the free canvas when they fit or across
@@ -172,7 +181,8 @@ and never completes. A real Complete button follows the card in DOM order; Tab r
 or leaving focus closes it. Crossing the threshold offers one 8ms haptic where supported.
 
 On an active owner phone Board, a 500ms touch hold within 10px starts pane-scoped selection.
-`HoldGesture` and `SwipeGesture` cancel each other on claim; scroll and pointer cancellation stop
+Board and Graph share the pure `input/HoldGesture.js` recognizer; their adapters own timers.
+The List retains its own recognizer. `HoldGesture` and `SwipeGesture` cancel each other on claim; scroll and pointer cancellation stop
 the hold, and its release never opens a step. Holding survives unrelated renders; card callbacks
 keep their identities. `BoardView` mounts `useStepSelection`, which owns selection, history and focus
 transitions separately from the Graph/List multi-select. Its current immutable `StepSelection` reads
@@ -413,6 +423,10 @@ in-flight frames, socket phase, browser connectivity and the current refusal. Th
 one refusal per lane; ownership and authentication refusals keep their existing host path.
 Reading the snapshot does not mutate those facts, and status emission does no work without
 subscribers. The drain path clears refusals whose lane has no pending writes.
+`subscribeRefusals` delivers refusal records independently of status snapshots. The host attaches
+one reporting callback per session in both gate states, deduplicating bounded codes without
+React state updates. Gate-closed sessions do not subscribe to status or run its pending-count
+computations and display timers for refusal reporting.
 `sync/status.js` derives Offline after a three-second socket grace (immediately when the browser
 is offline), Saving after 300ms pending, and Saved for two seconds after a live drain. Refusals
 suppress Saving and Saved. The host supplies the clock and publishes through the product-neutral
@@ -487,8 +501,6 @@ the URL selectable; owners can make a tree private again.
 
 ## Open work
 
-- Board, List and Graph each own a long-press recognizer; `rb-simplify` owns consolidation while
-  preserving the Board hold/swipe exclusion and the legacy interaction contracts.
 - Icon slots are reassigned by distance rank each frame; stable node ownership could remove
   unnecessary sorting and slot swaps.
 - Remote structural deletion prunes scene selection without pruning React's selection sets, so

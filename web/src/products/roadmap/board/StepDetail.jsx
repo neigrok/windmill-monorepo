@@ -8,7 +8,7 @@ import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from './acts.js';
 import { deleteCostLine } from '../ui/mobile/editorSheet.js';
-import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
+import { StepFacts, STEP_SECTIONS, offersCompletion, titleOf } from './StepFacts.js';
 import { handleMenuKey } from './BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
 import { coverBeneath, DetailFocusContext, wrapTab } from './composerFocus.js';
@@ -24,8 +24,6 @@ const UNDO_HOLD_MS = 6000;
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
 const TAB_STOP = '[data-column] [tabindex="0"], [data-column][tabindex="0"]';
-
-const titleOf = (step) => step.label?.trim() || STEP_DETAIL.unnamed;
 
 // `address` is the open step and how it was reached (stepAddress.js). Without `editable` the reader gets the overview and
 // the menu alone: no sections, no Complete, no Delete.

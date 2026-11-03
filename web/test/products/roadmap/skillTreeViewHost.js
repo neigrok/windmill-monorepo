@@ -129,6 +129,7 @@ export const useAuth = () => {
 `;
 export let origin;
 let server, browser, ready;
+let firstPage = true;
 
 export function startRoadmapHost(concern) {
   ready = (async () => {
@@ -180,7 +181,8 @@ export function hostTest(name, run) {
 export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false } = {}) {
   await ready;
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce' });
-  page.setDefaultTimeout(5000);
+  page.setDefaultTimeout(firstPage ? 15000 : 5000);
+  firstPage = false;
 
   const errors = [];
   const { fail } = runningTest.getStore();

@@ -111,7 +111,7 @@ static Sentry operation `roadmap-board-step` with its stack frames and closes it
 Board completion emits `roadmap_board_complete` with `door` (`swipe` or `key`), and toast Undo emits
 `roadmap_board_undo` with `act` (`complete`, `create`, `delete` or `recolor`). Tapping completion or creation toast text emits
 `roadmap_board_toast_reveal` with `act` (`complete` or `create`). Delete emits `roadmap_board_delete` with `step`
-(`confirm`, `cancel`, `held` or `sent`); `held` carries `door` (`menu`, `key` or `bulk`), and `sent` occurs only when release returns a dispatch receipt and also carries `via`
+(`confirm`, `cancel`, `held` or `sent`) and `view` (`board` or `graph`); `held` carries `door` (`menu`, `key` or `bulk`), and `sent` occurs only when release returns a dispatch receipt and also carries `via`
 (`timer`, `replaced` or `left`). The step-menu `delete` action continues to mean that its menu item was pressed.
 Opening the composer emits `roadmap_board_create` with `step: open` and `door` (`verbs`, `band`, `empty` or
 `complete`) and `view` (`board` or `graph`); the identity row's New step button uses `door: verbs`. A successful create emits
@@ -156,7 +156,8 @@ The gated identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, 
 sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new`, `search` or `browse`), or
 `step: close` and `via` (`close`, `escape` or `scrim`). Search emits once per opening that receives
 a typed query, never its text; the pinned New roadmap button adds `door: search` to `step: new`.
-Activity entry uses `roadmap_verb` with `verb: activity` and `door: more` or `sheet`. What's next emits `roadmap_whats_next` with `step: open`,
+Activity entry uses `roadmap_verb` with `verb: activity` and `door: more` or `sheet`. The phone
+sheet emits it only when its Activity page opens; a missing slot exposes no entry. What's next emits `roadmap_whats_next` with `step: open`,
 then either `pick` or `close`; focus leaving the popover emits `close`, and a pick does not also emit close. Each event's `count` uses the value captured
 on opening, in `countBucket`'s allowlisted `0`, `1`, `2-5`, `6-20` or `21+` buckets. No user content
 enters these events.
@@ -165,9 +166,11 @@ A missing projection or displayed tree emits `failed` without an Issue.
 A Graph search handing off to the Board emits `roadmap_graph_find` with `step: handoff`.
 Graph toast outcomes emit `roadmap_graph_toast` with `act` (`complete`, `create`, `delete` or `link`) and
 `step` (`shown` or `undo`). The Graph detail menu uses the shared nine-second held delete and
-its Undo cancels that hold; `roadmap_board_delete` retains its held/sent events. Successful gated reader Share emits `link_copy` with no properties;
+its Undo cancels that hold; `roadmap_board_delete` distinguishes the originating view throughout
+confirmation, hold and release. Successful gated reader Share emits `link_copy` with no properties;
 a clipboard refusal emits `roadmap_graph_toast` with `act: link` and `outcome: failed`, without
-a share-funnel beacon or Issue. Identity render failures report `roadmap-identity`; unexpected
+a share-funnel beacon or Issue. Identity render failures report `roadmap-identity`. The selected-step
+bar sits outside that boundary; a bar render failure reaches the room handler. Unexpected
 export build/download failures report `roadmap-export`; a Graph completion Undo failure reports
 `roadmap-step-restore`. All use static operation names and stack frames. Other restore and revert
 failures retain their existing operations. None of these events carries titles, ids, search text or roadmap names. State-word
@@ -183,7 +186,8 @@ The device line emits `roadmap_device_line` with `step: shown` once per visit, `
 (`anonymous` or `lapsed`) and `place` (`row` or `shell`); tapping its phone row emits
 `step: sign_in`. The phone reader Board's Fork offer emits `roadmap_verb` with `verb: fork`,
 `door: offer`, `view: board` and `band: phone`. The phone Graph bar's Fork emits the same event with `door: bar`, `view: graph` and `band: phone`.
-Activity's A key emits `roadmap_verb` with `verb: activity` and `door: key`. Ask AI retains its
+From 744px Activity's A key emits `roadmap_verb` with `verb: activity` and `door: key`; on
+phones A does nothing. Ask AI retains its
 existing verb and tending outcomes. The demo uses reader row events, while `demo_open` is
 unchanged. The existing `fork_attempt` and `fork_claim` retain their meanings.
 
@@ -191,7 +195,8 @@ Unexpected refused codes (`bad-frame`, `server-error` and unknown codes) report
 `roadmap-sync-refused` once per code per session in both gate states. Capacity and
 missing-tree refusals are expected and emit no Issue. Unexpected discard failures report
 `roadmap-sync-discard` in both gate states. Refusal product events remain tied to the gated
-visible surfaces. Refusal Issues include the bounded refusal code as a tag, and deduplication
+visible surfaces. A refusal-only session subscription supplies the reports without enabling full
+status snapshots, status timers or host re-renders for gate-closed users. Refusal Issues include the bounded refusal code as a tag, and deduplication
 keeps different codes distinct. An epoch-notification failure after the discard transaction commits
 reports `roadmap-sync-notify` without turning the successful discard into a failure. An IndexedDB
 epoch-check failure before a structure or progress write send reports `roadmap-sync-send` and
