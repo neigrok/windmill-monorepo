@@ -87,7 +87,8 @@
 }
 
 .st-roadmap-icon:hover,
-.st-roadmap-icon[aria-expanded="true"] {
+.st-roadmap-icon[aria-expanded="true"],
+.st-roadmap-icon[aria-pressed="true"] {
   background: var(--color-brand-soft);
 }
 
@@ -381,16 +382,36 @@
   padding-bottom: 12px;
 }
 
-.st-roadmap-activity-icon {
-  display: inline-block;
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  background: var(--text-secondary);
-  mask: url('./activity.svg') center / 20px 20px no-repeat;
+.st-board-sheet.st-roadmap-sheet--activity {
+  height: 611px;
+  overflow: hidden;
 }
 
-.st-roadmap-menu > button > .st-roadmap-activity-icon,
-.st-roadmap-sheet-link > .st-roadmap-activity-icon {
-  flex: 0 0 20px;
+.st-roadmap-sheet--activity > .st-board-sheet-heading {
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.st-roadmap-sheet-back {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.st-roadmap-sheet-activity {
+  flex: 1;
+  margin: 0 -16px;
+  padding: 0 16px;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
 }

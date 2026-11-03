@@ -138,6 +138,8 @@ test('Graph hold starts multi-select at 500ms and swallows the lift without a ta
   ]);
   assert.equal(controller.lastTap, null);
   assert.equal(controller.longPressTimer, null);
+  assert.equal(controller.hold, null);
+  assert.equal(controller.longPressFired, false);
 });
 
 test('Graph hold before 500ms remains a tap; a refused multi-select also retains the tap', (t) => {
@@ -191,6 +193,8 @@ test('Graph hold leaves pinch ownership and cancellation with the active tool', 
   assert.equal(controller.pinch, null);
   assert.equal(controller.activePointerId, null);
   assert.equal(controller.longPressTimer, null);
+  assert.equal(controller.hold, null);
+  assert.equal(controller.longPressFired, false);
 });
 
 test('Graph hold cancels on pointer cancellation, tool replacement and controller unbinding', (t) => {
@@ -207,6 +211,8 @@ test('Graph hold cancels on pointer cancellation, tool replacement and controlle
       ...(end === 'pointercancel' ? [['press', null], ['cancel']] : []),
     ]);
     assert.equal(controller.longPressTimer, null);
+    assert.equal(controller.hold, null);
+    assert.equal(controller.longPressFired, false);
   }
 });
 
@@ -259,4 +265,36 @@ test('Graph movement after an accepted hold still consumes the release', (t) => 
     ['press', 'visible-step'], ['down', { x: 100, y: 100 }, 'visible-step'],
     ['hold', 'visible-step'], ['drag', { x: 140, y: 100 }], ['press', null],
   ]);
+});
+
+
+test('production cleanup: unbinding cancels a pending hold before it can start multi-select', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { controller, calls, pointer } = holdController();
+  controller.onDown(pointer);
+  t.mock.timers.tick(499);
+  controller.unbind();
+  t.mock.timers.tick(1);
+  assert.deepEqual(calls, [
+    ['press', 'visible-step'], ['down', { x: 100, y: 100 }, 'visible-step'],
+  ]);
+  assert.equal(controller.hold, null);
+  assert.equal(controller.longPressTimer, null);
+  assert.equal(controller.longPressFired, false);
+});
+
+test('Graph movement clears a cancelled pending hold but retains an accepted hold until release', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const elapsed of [499, 500]) {
+    const { controller, pointer } = holdController();
+    controller.onDown(pointer);
+    t.mock.timers.tick(elapsed);
+    const moved = { ...pointer, clientX: pointer.clientX + 11 };
+    controller.onMove(moved);
+    assert.equal(controller.hold !== null, elapsed === 500);
+    assert.equal(controller.longPressTimer, null);
+    controller.onUp(moved);
+    assert.equal(controller.hold, null);
+    assert.equal(controller.longPressFired, false);
+  }
 });

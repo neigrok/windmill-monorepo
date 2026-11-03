@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
+import { Activity, Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
 import { Tooltip } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { TreeSwitcher } from '../ui/TreeSwitcher.jsx';
 import { FindStep, NewStep, handleMenuKey, dismissOverlayOutside } from './BoardControls.jsx';
-import { ActivityIcon, RoadmapSheet } from './RoadmapSheet.jsx';
+import { RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { countBucket } from './acts.js';
 import { DEMO_BYLINE, LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from './copy.js';
@@ -16,7 +16,7 @@ const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 
 export function RoadmapIdentity({
   band, view, role, title, switcher, progress, onSwitchView, find, next,
-  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity,
+  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
 }) {
   const bar = useRef(null);
   const titleButton = useRef(null);
@@ -38,7 +38,7 @@ export function RoadmapIdentity({
       { verb: 'askAI', label: ROADMAP_VERBS.askAI, icon: Sparkles, key: '⌘K', act: onAskAI },
       { verb: 'share', label: ROADMAP_VERBS.shareRoadmap, icon: Share, act: onShare },
     ] : []),
-    { verb: 'activity', label: ROADMAP_VERBS.activity, icon: ActivityIcon, key: 'A', act: onActivity },
+    { verb: 'activity', label: ROADMAP_VERBS.activity, icon: Activity, key: 'A', act: onActivity },
     { verb: 'export', label: ROADMAP_VERBS.export, icon: Download, act: onExport },
     { verb: 'settings', label: ROADMAP_VERBS.settings, icon: Settings, act: onSettings },
     { verb: 'shortcuts', label: ROADMAP_VERBS.keyboardShortcuts, icon: Keyboard, key: '?', act: onShortcuts },
@@ -259,6 +259,7 @@ export function RoadmapIdentity({
               aria-label={ROADMAP_VERBS.more}
               aria-haspopup="menu"
               aria-expanded={open === 'more'}
+              aria-pressed={activityOpen}
               onClick={() => toggle('more')}
             >
               <MoreHorizontal size={20} aria-hidden />
@@ -295,7 +296,6 @@ export function RoadmapIdentity({
           onShare={onShare}
           onExport={onExport}
           onSettings={onSettings}
-          onActivity={onActivity}
           onClose={close}
         />
       )}
