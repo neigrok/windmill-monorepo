@@ -14,8 +14,9 @@ not 98 distinct routes. Shared state families use component variants instead of 
 establishes conditional states; runtime evidence is recorded separately. The marker does not claim
 a remote deployment check, every branch exercised, bug-free behavior, or new human design approval.
 All current Roadmap flow/state boards are reconciled. 🧩 identifies reusable components and owner
-links. Existing AI Review/Apply remains a 💡 proposal awaiting human review; the separate Board view is
-✅ Ready for dev ([proposal](roadmap-board-proposal.md)).
+links. Existing AI Review/Apply remains a 💡 proposal awaiting human review. The Board has its own pages
+([proposal](roadmap-board-proposal.md)); the List boards on Web Mobile describe a view the product no longer has, and the
+designer deletes them in the 🚀 pass.
 
 Web and Web Mobile are separate. Product primitives live on Components; helper-local settings and
 shortcut primitives remain beside their variants. Shared Shell/Home drawings are thin links to their
@@ -132,6 +133,5 @@ AI failure prompt-retention copy, mobile empty-tree recovery, narrow shortcuts o
 published input sizing adapter, DOM/canvas fruit treatment and Marketing capability copy.
 A current bug can be accurately drawn and marked reconciled; that does not resolve the bug.
 
-Product event coverage for progress and visibility writes is tracked by dogfood node
-`roadmap-web-progress-share-events`. This phase does not claim those events arrive. Reconciliation
-is tracked by `roadmap-web-figma-coverage-20261024` in tree `t_9362d9bc883e0a1e`.
+[`web/OBSERVABILITY.md`](../../web/OBSERVABILITY.md) tables every Board and Graph step against its
+event. Reconciliation is tracked by `roadmap-web-figma-coverage-20261024` in tree `t_9362d9bc883e0a1e`.
