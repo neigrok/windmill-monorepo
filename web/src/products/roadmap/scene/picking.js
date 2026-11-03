@@ -4,8 +4,8 @@ import { NODE_SIZE, BODY_WU, ROOT_BODY_SCALE, SELECTED_SCALE, MIN_BODY_PX, MIN_R
 
 const PICK_RADIUS = NODE_SIZE * 0.65;
 // Screen-px hit floors in every mode, so a tiny body is still a target; capped at half the gap to the nearest neighbour.
-export const POINTER_HIT_PX = 24;
-export const TOUCH_HIT_PX = 44;
+const POINTER_HIT_PX = 24;
+const TOUCH_HIT_PX = 44;
 
 // The disc itself always takes the hit; beyond it the screen-px floor reaches out, but never past halfway to the
 // nearest other node, so a crowded overview never answers a tap with an ambiguous pick — it reports `crowded` instead.
@@ -38,7 +38,7 @@ export function hitTest(grid, nodesById, camera, x, y, pointerType, selectedId =
 }
 
 // Distance to the closest other node within `radius`, else `Infinity`.
-export function nearestNeighbourDistance(grid, nodesById, node, radius) {
+function nearestNeighbourDistance(grid, nodesById, node, radius) {
   let closest = Infinity;
   for (const otherId of grid.within(node.x - radius, node.y - radius, node.x + radius, node.y + radius)) {
     if (otherId === node.id) continue;
