@@ -80,16 +80,16 @@ test('one roadmap exports its current marks as a paste-format Markdown file with
   const file = buildRoadmapExport(tree, { completed: new Set(['wind']) });
   assert.deepEqual(file, {
     name: 'learn-to-sail-12345678.md',
-    text: '# Learn to sail\n- [x] Read the wind\n  - Leave the dock\n    Check the lines.',
+    text: '# Learn to sail\n<!-- windmill:roadmap -->\n## <!-- windmill:kind terracotta -->\n- Learn to sail\n  - [x] Read the wind\n    - Leave the dock\n      Check the lines.',
   });
   const replanted = parsePlan(file.text);
   assert.equal(serializePlan(replanted, replanted.kinds), file.text);
   assert.deepEqual(buildRoadmapExport({ id: 't_abcdefghijk', title: '🌱', nodes: [], kinds: [] }, null), {
-    name: 'roadmap-abcdefgh.md', text: '# 🌱',
+    name: 'roadmap-abcdefgh.md', text: '# 🌱\n<!-- windmill:roadmap -->',
   });
 });
 
-test('the paste format uses the roadmap title as its root and does not preserve a distinct root label or completion', async () => {
+test('export and Settings zip preserve a distinct root label and its completion under the roadmap title', async () => {
   const { buildRoadmapExport } = await import('../../../../src/products/roadmap/settings/exportArchive.js');
   const { parsePlan, serializePlan } = await import('../../../../src/products/roadmap/paste/planGrammar.js');
   const tree = {
@@ -102,25 +102,34 @@ test('the paste format uses the roadmap title as its root and does not preserve 
   const file = buildRoadmapExport(tree, { completed: new Set(['root', 'wind']) });
   assert.deepEqual(file, {
     name: 'learn-to-sail-12345678.md',
-    text: '# Learn to sail\n- [x] Read the wind\n  - Leave the dock',
+    text: '# Learn to sail\n<!-- windmill:roadmap -->\n## <!-- windmill:kind terracotta -->\n- [x] Choose a course\n  - [x] Read the wind\n    - Leave the dock',
   });
   const replanted = parsePlan(file.text);
   assert.deepEqual(replanted, {
     title: 'Learn to sail',
     missingRoot: false,
     nodes: [
-      { id: 'learn-to-sail', label: 'Learn to sail', color: 'terracotta', prerequisites: [], icon: 'sparkles' },
-      { id: 'read-the-wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['learn-to-sail'], status: 'complete' },
+      { id: 'choose-a-course', label: 'Choose a course', color: 'terracotta', prerequisites: [], icon: 'sparkles', status: 'complete' },
+      { id: 'read-the-wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['choose-a-course'], status: 'complete' },
       { id: 'leave-the-dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['read-the-wind'] },
     ],
     kinds: [],
     gutter: [
-      { glyph: '◉', nodeId: 'learn-to-sail', liberty: null },
+      { glyph: null, nodeId: null, liberty: null },
+      { glyph: null, nodeId: null, liberty: null },
+      { glyph: null, nodeId: null, liberty: null },
+      { glyph: '✓', nodeId: 'choose-a-course', liberty: null },
       { glyph: '✓', nodeId: 'read-the-wind', liberty: null },
       { glyph: '·', nodeId: 'leave-the-dock', liberty: null },
     ],
-    readout: { steps: 3, branches: 0, done: 1 },
+    readout: { steps: 3, branches: 0, done: 2 },
     imperfections: [],
   });
   assert.equal(serializePlan(replanted, replanted.kinds), file.text);
+  const archive = bytes([file]);
+  const nameLength = archive.view.getUint16(26, true);
+  const textLength = archive.view.getUint32(22, true);
+  const archivedText = archive.text(30 + nameLength, textLength);
+  assert.equal(archivedText, file.text);
+  assert.deepEqual(parsePlan(archivedText), replanted);
 });

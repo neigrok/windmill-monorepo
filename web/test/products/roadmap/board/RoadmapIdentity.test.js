@@ -236,7 +236,44 @@ test('Chromium: More loops arrow focus, Escape and Tab close, and an item closes
   } finally { await page.close(); }
 });
 
-test('Chromium: Next uses Board reasons, restores focus on Escape/outside/pick, and scrolls all rows', async () => {
+for (const width of [1440, 1024, 744]) {
+  test(`Chromium: ${width} Board More traverses to the displayed strip, and reverse Tab returns to New step`, async () => {
+    const page = await openRow(width, { band: width === 744 ? 'tablet' : 'desktop', board: true, switcher: true });
+    try {
+      await withBrowserErrors(page, async () => {
+        const more = page.getByRole('button', { name: 'More', exact: true });
+        await more.focus();
+        await page.keyboard.press('Tab');
+        assert.equal(await focus(page), 'All');
+        await more.click();
+        await page.keyboard.press('Tab');
+        assert.deepEqual([await page.getByRole('menu').count(), await focus(page)], [0, 'All']);
+        await more.click();
+        await page.keyboard.press('Shift+Tab');
+        assert.deepEqual([await page.getByRole('menu').count(), await focus(page)], [0, 'New step']);
+      });
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: More and Next both close when focus leaves their anchor and retain its destination', async () => {
+  const page = await openRow(1440, { view: 'tree' });
+  try {
+    await withBrowserErrors(page, async () => {
+      for (const name of ['More', 'Next · 2']) {
+        await page.getByRole('button', { name, exact: true }).click();
+        await page.getByRole('button', { name: 'Outside', exact: true }).focus();
+        assert.deepEqual([await page.locator('.st-roadmap-menu, .st-roadmap-next').count(), await focus(page)], [0, 'Outside']);
+      }
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_whats_next')), [
+        { name: 'roadmap_whats_next', props: { step: 'open', count: '2-5' } },
+        { name: 'roadmap_whats_next', props: { step: 'close', count: '2-5' } },
+      ]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: Next uses Board reasons, closes on Tab out, restores focus on Escape/outside/pick, and scrolls all rows', async () => {
   const page = await openRow(1440, { view: 'tree' });
   try {
     await withBrowserErrors(page, async () => {
@@ -249,9 +286,7 @@ test('Chromium: Next uses Board reasons, restores focus on Escape/outside/pick, 
       await next.click();
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
-      assert.deepEqual([await page.getByRole('dialog').count(), await focus(page)], [1, 'Share']);
-      await page.keyboard.press('Escape');
-      assert.deepEqual([await page.getByRole('dialog').count(), await focus(page)], [0, 'Next · 2']);
+      assert.deepEqual([await page.getByRole('dialog').count(), await focus(page)], [0, 'Share']);
       await next.click();
       await page.getByRole('button', { name: 'Outside' }).click();
       assert.deepEqual([await page.getByRole('dialog').count(), await focus(page)], [0, 'Next · 2']);

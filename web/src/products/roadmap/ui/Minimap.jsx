@@ -37,7 +37,10 @@ export function Minimap({ nodes, states, bounds, subscribeViewport, onPanTo }) {
   const [night, setNight] = useState(false);
 
   useEffect(() => {
-    const read = () => setNight(isNightFor(dotsRef.current));
+    const read = () => {
+      if (!dotsRef.current) return;
+      setNight(isNightFor(dotsRef.current));
+    };
     read();
     const observer = new MutationObserver(read);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'], subtree: true });

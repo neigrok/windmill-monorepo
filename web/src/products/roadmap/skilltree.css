@@ -2560,13 +2560,40 @@
 
 .st-graph-toast {
   position: absolute;
-  inset: 0;
+  inset: 0 var(--graph-toast-right, 0px) 0 var(--graph-toast-left, 0px);
   z-index: 50;
   pointer-events: none;
 }
 
 .st-graph-toast .st-board-toast {
   pointer-events: auto;
+}
+
+.st-graph-toast:not(.st-graph-toast--phone) .st-board-toast {
+  bottom: var(--graph-toast-bottom, 24px);
+}
+
+.st-toast.st-toast--graph {
+  left: calc((100% + var(--graph-toast-left) - var(--graph-toast-right)) / 2);
+  bottom: var(--graph-toast-bottom);
+  max-width: calc(100% - var(--graph-toast-left) - var(--graph-toast-right) - 32px);
+}
+
+.st-roadmap-identity-fallback--board .st-zoom-group {
+  display: none;
+}
+
+@media (max-width: 743px) {
+  .st-graph-toast.st-graph-toast--phone {
+    right: 0;
+    left: 0;
+  }
+
+  .st-toast.st-toast--graph,
+  .st-graph-toast--phone.st-graph-toast--sheet .st-board-toast {
+    top: var(--graph-toast-top);
+    bottom: auto;
+  }
 }
 
 .st-demo-board-identity {
@@ -2626,4 +2653,10 @@
   left: calc(env(safe-area-inset-left, 0px) + 12px);
   right: calc(env(safe-area-inset-right, 0px) + 12px);
   pointer-events: auto;
+}
+
+@media (min-width: 744px) {
+  .st-mobile-chrome .st-roadmap-device-nudge {
+    left: calc(env(safe-area-inset-left, 0px) + 24px);
+  }
 }

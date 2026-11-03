@@ -90,12 +90,18 @@ export function RoadmapIdentity({
   const verb = (name, door = 'row') => track('roadmap_verb', {
     verb: name, door, view: view === 'tree' ? 'graph' : 'board', band,
   });
-  const close = useCallback((outcome = 'close') => {
+  const close = useCallback((outcome = 'close', restoreFocus = true) => {
     if (overlay?.kind === 'next') track('roadmap_whats_next', { step: outcome, count: countBucket(overlay.count) });
     flushSync(() => setOverlay(null));
+    if (!restoreFocus) return;
     const triggers = { sheet: titleButton, more: moreButton, next: nextButton };
     triggers[overlay?.kind]?.current?.focus();
   }, [overlay]);
+  const leaveOverlay = useCallback((event) => {
+    const root = open === 'more' ? moreBox.current : nextBox.current;
+    if (!open || event.currentTarget !== root || root.contains(event.relatedTarget)) return;
+    close('close', false);
+  }, [open, close]);
 
   useEffect(() => {
     if (open !== 'more' && open !== 'next') return undefined;
@@ -178,7 +184,7 @@ export function RoadmapIdentity({
             }}
           />
         )}
-        {nextAvailable && <div ref={nextBox} className="st-roadmap-popover-anchor">
+        {nextAvailable && <div ref={nextBox} className="st-roadmap-popover-anchor" onBlur={leaveOverlay}>
           <Tooltip label={nextChip(next)} side="bottom" disabled={!desktop || open === 'next'}>
             <button
               ref={nextButton}
@@ -241,7 +247,7 @@ export function RoadmapIdentity({
             onFork();
           }} />
         )}
-        {moreAvailable && <div ref={moreBox} className="st-roadmap-popover-anchor">
+        {moreAvailable && <div ref={moreBox} className="st-roadmap-popover-anchor" onBlur={leaveOverlay}>
           <Tooltip label={ROADMAP_VERBS.more} side="bottom" disabled={!desktop || open === 'more'}>
             <button
               ref={moreButton}

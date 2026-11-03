@@ -309,14 +309,18 @@ test('serializePlan round-trips a parsePlan document — nodes and kinds land id
 
   assert.equal(markdown, [
     '# Learn WebGL',
-    '## Basics',
-    '- [x] Read the spec',
-    '- Draw a triangle',
-    '  - Understand shaders',
-    '## Projects',
-    '- Particle system',
-    '  - Terrain renderer',
-    '    Just a stray thought',
+    '<!-- windmill:roadmap -->',
+    '## Basics <!-- windmill:kind terracotta -->',
+    '- Learn WebGL',
+    '  - Basics',
+    '    - [x] Read the spec',
+    '    - Draw a triangle',
+    '      - Understand shaders',
+    '## Projects <!-- windmill:kind olive -->',
+    '  - Projects',
+    '    - Particle system',
+    '      - Terrain renderer',
+    '        Just a stray thought',
   ].join('\n'));
 
   const reparsed = parsePlan(markdown, KINDS);
@@ -329,12 +333,10 @@ test('serializePlan completion source: a live progress overlay wins over the doc
   const treeData = { title: parsed.title, nodes: parsed.nodes };
 
   const seeded = serializePlan(treeData, parsed.kinds, null);
-  assert.match(seeded, /- \[x\] Read the spec/);
-  assert.match(seeded, /^- Draw a triangle$/m);
+  assert.deepEqual(parsePlan(seeded, KINDS).nodes, parsed.nodes);
 
   const overlaid = serializePlan(treeData, parsed.kinds, new Set(['draw-a-triangle']));
-  assert.match(overlaid, /^- Read the spec$/m);
-  assert.match(overlaid, /- \[x\] Draw a triangle/);
+  assert.deepEqual(parsePlan(overlaid, KINDS).nodes, parsed.nodes.map(({ status, ...node }) => (node.id === 'draw-a-triangle' ? { ...node, status: 'complete' } : node)));
 
   // The Progress `{ completed }` shape resolves the same as a bare Set.
   const asProgress = serializePlan(treeData, parsed.kinds, { completed: new Set(['draw-a-triangle']) });
@@ -358,10 +360,13 @@ test('serializePlan is best-effort on a multi-parent DAG — primary parent inde
 
   assert.match(find('Build the walking skeleton').description, /needs also: Sketch the core flow on paper/);
   assert.match(find('Launch it where your people are').description, /needs also: Make the landing page, Wire up analytics and feedback/);
-  assert.match(find('Run a friendly beta').description, /needs also: Smooth the first-run experience, Handle failure gracefully/);
+  assert.deepEqual(find('Run a friendly beta').prerequisites, [find('Smooth the first-run experience').id]);
+  assert.match(find('Run a friendly beta').description, /needs also: Handle failure gracefully/);
 
-  assert.match(find('Dogfood it for a week').description, /needs also: Make the core feature real/);
-  assert.match(find('Wire up analytics and feedback').description, /needs also: Make the core feature real/);
+  for (const label of ['Dogfood it for a week', 'Wire up analytics and feedback']) {
+    assert.deepEqual(find(label).prerequisites, [find('Make the core feature real').id]);
+    assert.equal(find(label).description, shipV1.nodes.find((node) => node.label === label).description);
+  }
 });
 
 test('serializePlan emits the url string from { url, label } link objects, never [object Object]', () => {
@@ -386,6 +391,62 @@ test('serializePlan emits the url string from { url, label } link objects, never
   const back = parsePlan(markdown, kinds);
   const child = back.nodes.find((node) => node.label === 'Draw a triangle');
   assert.deepStrictEqual(child.links, ['https://example.com/tri', 'https://bare.example/x']);
+});
+
+test('exports round-trip every root, completion, note, link and cross-kind primary dependency without a synthetic title step', () => {
+  const tree = {
+    title: 'Learn to sail',
+    nodes: [
+      { id: 'choose-a-course', label: 'Choose a course', color: 'sky', prerequisites: [], icon: 'sparkles', status: 'complete', description: 'Start nearby.\nCheck the dates.', links: ['https://example.com/course'] },
+      { id: 'read-the-wind', label: 'Read the wind', color: 'olive', prerequisites: ['choose-a-course'], status: 'complete' },
+      { id: 'leave-the-dock', label: 'Leave the dock', color: 'sky', prerequisites: ['read-the-wind'] },
+      { id: 'pack-a-bag', label: 'Pack a bag', color: 'gold', prerequisites: [], status: 'complete' },
+    ],
+  };
+  const kinds = [{ id: 'sky', hue: 'sky', label: '', description: '' }];
+  const markdown = serializePlan(tree, kinds);
+  assert.equal(markdown, [
+    '# Learn to sail', '<!-- windmill:roadmap -->', '## <!-- windmill:kind sky -->',
+    '- [x] Choose a course', '  Start nearby.', '  Check the dates.', '  https://example.com/course',
+    '## <!-- windmill:kind olive -->', '  - [x] Read the wind',
+    '## <!-- windmill:kind sky -->', '    - Leave the dock',
+    '## <!-- windmill:kind gold -->', '- [x] Pack a bag',
+  ].join('\n'));
+  const parsed = parsePlan(markdown);
+  assert.equal(parsed.title, tree.title);
+  assert.deepEqual(parsed.nodes, tree.nodes);
+  assert.deepEqual(parsed.readout, { steps: 4, branches: 0, done: 3 });
+  assert.equal(serializePlan(parsed, parsed.kinds), markdown);
+});
+
+test('empty exports and empty roadmap titles do not synthesize or rename steps', () => {
+  for (const title of ['', 'A roadmap', '#']) {
+    const markdown = serializePlan({ title, nodes: [] }, []);
+    const parsed = parsePlan(markdown);
+    assert.equal(parsed.title, title);
+    assert.deepEqual(parsed.nodes, []);
+    assert.deepEqual(parsed.readout, { steps: 0, branches: 0, done: 0 });
+    assert.equal(serializePlan(parsed, parsed.kinds), markdown);
+  }
+});
+
+test('exported named kinds preserve hues on a fresh import and respect bind-only existing kinds on append', () => {
+  const kinds = [{ id: 'sailing', hue: 'sky', label: 'Sailing', description: '' }];
+  const markdown = serializePlan({ title: 'Sail', nodes: [
+    { id: 'wind', label: 'Wind', color: 'sky', prerequisites: [], status: 'complete' },
+  ] }, kinds);
+  const parsed = parsePlan(markdown);
+  assert.deepEqual(parsed.nodes, [{ id: 'wind', label: 'Wind', color: 'sky', prerequisites: [], icon: 'sparkles', status: 'complete' }]);
+  assert.deepEqual(parsed.kinds, [{ id: 'sailing', hue: 'sky', label: 'Sailing', description: '', source: 'added' }]);
+  assert.equal(serializePlan(parsed, parsed.kinds), markdown);
+  const existing = [{ id: 'weather', hue: 'sky', label: 'Weather', description: 'Keep this label.' }];
+  const appended = parsePlan(markdown, existing, { bindOnly: true });
+  assert.deepEqual(appended.kinds, [
+    { ...existing[0], source: 'existing' },
+    { id: 'sailing', hue: 'terracotta', label: 'Sailing', description: '', source: 'added' },
+  ]);
+  assert.deepEqual(appended.nodes, [{ id: 'wind', label: 'Wind', color: 'terracotta', prerequisites: [], icon: 'sparkles', status: 'complete' }]);
+  assert.deepEqual(existing, [{ id: 'weather', hue: 'sky', label: 'Weather', description: 'Keep this label.' }]);
 });
 
 test('every prerequisite references an emitted id, single-parented', () => {

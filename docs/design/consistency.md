@@ -687,7 +687,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   camera group under the row. These approved interims still need their dedicated drawings.
 - **Board · desktop dock beneath the row.** With the gate open, the desktop step dock starts 8px
   below the measured identity row, so an open step never covers Share, Next, New step or More.
-  No frame draws the gated desktop Graph with a step open; draw the dock's placement there.
+  ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
 - **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file
   in the paste format, with the browser download as feedback; Settings retains the all-roadmaps
   zip. G24 copies the reader's roadmap link and uses the existing *Link copied* toast. Draw these

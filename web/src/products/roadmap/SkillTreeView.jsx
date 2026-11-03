@@ -213,6 +213,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const layoutRef = useRef(null); // the requested engine, and the name of the engine that produced the current picture
   const layoutCacheRef = useRef({ signature: '', result: null });
   const firstFrameRef = useRef(null); // { id, at } — the step the first view opened on, until the chrome has measured itself
+  const graphRevealRef = useRef(null);
+  useEffect(() => { graphRevealRef.current = null; }, [treeId]);
   const insetsRef = useRef(null); // the live chrome insets, for the first view: the load lands long after the chrome has
   const legendDockRef = useRef(null);
   const completedRef = useRef(new Set());
@@ -1336,7 +1338,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [selectedNode, tree, states]);
 
   const handleSheetJump = useCallback((id) => {
-    sceneRef.current?.revealNode(id);
+    if (identityActiveRef.current && selectedIdRef.current !== id) graphRevealRef.current = id;
+    else sceneRef.current?.revealNode(id);
     setSelectedId(id);
   }, [setSelectedId]);
 
@@ -1390,6 +1393,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const switchView = useCallback((next) => {
     if (BOARD_OPEN && next !== shownView) {
+      graphRevealRef.current = null;
       shareRequestRef.current += 1;
       boardToastRef.current?.onLeave?.('left');
       if (boardToastRef.current) dismissToast();
@@ -1899,6 +1903,13 @@ export function SkillTreeView({ treeId, demo = false }) {
     insetsRef.current = insets;
     if (!scene) return;
     scene.setViewportInsets(insets);
+    const reveal = graphRevealRef.current;
+    if (reveal && scene.nodesById.has(reveal)) {
+      graphRevealRef.current = null;
+      firstFrameRef.current = null;
+      scene.revealNode(reveal);
+      return;
+    }
     // Each piece of chrome measures itself a beat after the first paint, so the first view is framed again on every
     // inset it publishes — until the window closes, or the reader moves the camera and the view becomes theirs.
     const first = firstFrameRef.current;
@@ -1910,7 +1921,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     }
     scene.focusWorking(first.id, { instant: true });
     firstFrameRef.current = { ...first, camera: scene.getViewpoint() };
-  }, [scene, insets]);
+  }, [scene, insets, identityActive ? selectedId : null, identityActive ? renderModel : null]);
 
   // The legend dock's height is its rows', so it publishes its measured box the way the action lane publishes its
   // inset: the corner it holds is a block no caption may sit under.
@@ -1940,6 +1951,42 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     if (toast?.surface === 'graph' && (!canvasView || !identityActive)) dismissToast();
   }, [toast?.surface, canvasView, identityActive, dismissToast]);
+
+  const [graphToastBottom, setGraphToastBottom] = useState(24);
+  useLayoutEffect(() => {
+    if (!identityActive || !canvasView || !toast || phone) return undefined;
+    const root = rootRef.current;
+    const measure = () => {
+      const shownToast = root.querySelector('.st-graph-toast .st-board-toast, .st-toast');
+      const camera = root.querySelector('.st-graph-camera');
+      if (!shownToast || !camera) return;
+      const toastBox = shownToast.getBoundingClientRect();
+      const cameraBox = camera.getBoundingClientRect();
+      const overlaps = toastBox.left < cameraBox.right && toastBox.right > cameraBox.left;
+      const bottom = overlaps ? root.getBoundingClientRect().bottom - cameraBox.top + CHROME_GAP : 24;
+      setGraphToastBottom(bottom);
+    };
+    const resized = new ResizeObserver(measure);
+    resized.observe(root);
+    const watchToast = () => {
+      const shownToast = root.querySelector('.st-graph-toast .st-board-toast, .st-toast');
+      if (shownToast) resized.observe(shownToast);
+      measure();
+    };
+    const mounted = new MutationObserver(watchToast);
+    mounted.observe(root, { childList: true, subtree: true });
+    watchToast();
+    return () => {
+      resized.disconnect();
+      mounted.disconnect();
+    };
+  }, [identityActive, canvasView, toast?.key, phone, insets]);
+  const graphToastStyle = identityActive && canvasView ? {
+    '--graph-toast-left': `${insets.left}px`,
+    '--graph-toast-right': `${insets.right}px`,
+    '--graph-toast-bottom': `${graphToastBottom}px`,
+    '--graph-toast-top': `${graphTop + CHROME_GAP}px`,
+  } : undefined;
 
   const revealGraphToast = useCallback(() => {
     if (toast?.reveal) handleSheetJump(toast.reveal);
@@ -2004,6 +2051,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const legacyChrome = readOnly ? (
     <MobileChrome
       view={legacyMobileView}
+      cameraVisible={!identityCrashed || !boardActive}
       onTopBottom={identityCrashed ? setFallbackChromeBottom : undefined}
       title={tree?.title}
       progress={{ done: shownStats?.done ?? 0, total: shownStats?.total ?? 0 }}
@@ -2098,6 +2146,42 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
+      {identityActive ? (
+        <div className="st-roadmap-identity-host" ref={identityRef}>
+          <ErrorBoundary fallback={legacyChrome} onCrash={handleIdentityCrash}>
+            <RoadmapIdentity
+              band={breakpoint}
+              view={boardActive ? 'board' : 'tree'}
+              role={owner ? 'owner' : 'reader'}
+              title={boardAwaitsRoadmap ? undefined : tree?.title}
+              switcher={owner && !phone && !boardAwaitsRoadmap ? roadmapSwitcher : null}
+              progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
+              onSwitchView={viewSwitch ? switchView : null}
+              find={!phone && boardFacts.loaded && !boardFacts.empty ? identityFind : null}
+              next={canvasView && owner && !phone && graphNext?.count > 0 ? identityNext : null}
+              onAskAI={canTend && owner ? openRowTend : null}
+              onShare={!boardAwaitsRoadmap && tree ? shareFromRow : null}
+              onNewStep={owner && boardFacts.loaded ? openRowCreate : null}
+              onExport={owner && boardFacts.loaded ? exportFromRow : null}
+              onSettings={owner ? openRowSettings : null}
+              onShortcuts={owner ? openRowShortcuts : null}
+              onFork={!owner && forkPresent ? openRowFork : null}
+              sheet={phone && owner && boardFacts.loaded ? identitySheet : null}
+              onBottom={setTopbarBottom}
+            />
+          </ErrorBoundary>
+        </div>
+      ) : identityCrashed ? (
+        <div className={`st-roadmap-identity-fallback${boardActive ? ' st-roadmap-identity-fallback--board' : ''}`}>
+          {legacyChrome}
+          {viewSwitch && (
+            <div ref={fallbackSwitchRef} className="st-roadmap-fallback-switch" style={{ top: fallbackSwitchTop }}>
+              {viewSwitch}
+            </div>
+          )}
+        </div>
+      ) : null}
+
       {boardMounted && (
         <div ref={boardLayerRef} className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
           <ErrorBoundary fallback={null} onCrash={handleBoardCrash}>
@@ -2179,41 +2263,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </ErrorBoundary>
       )}
 
-      {identityActive ? (
-        <div className="st-roadmap-identity-host" ref={identityRef}>
-          <ErrorBoundary fallback={legacyChrome} onCrash={handleIdentityCrash}>
-            <RoadmapIdentity
-              band={breakpoint}
-              view={boardActive ? 'board' : 'tree'}
-              role={owner ? 'owner' : 'reader'}
-              title={boardAwaitsRoadmap ? undefined : tree?.title}
-              switcher={owner && !phone && !boardAwaitsRoadmap ? roadmapSwitcher : null}
-              progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
-              onSwitchView={viewSwitch ? switchView : null}
-              find={!phone && boardFacts.loaded && !boardFacts.empty ? identityFind : null}
-              next={canvasView && owner && !phone && graphNext?.count > 0 ? identityNext : null}
-              onAskAI={canTend && owner ? openRowTend : null}
-              onShare={!boardAwaitsRoadmap && tree ? shareFromRow : null}
-              onNewStep={owner && boardFacts.loaded ? openRowCreate : null}
-              onExport={owner && boardFacts.loaded ? exportFromRow : null}
-              onSettings={owner ? openRowSettings : null}
-              onShortcuts={owner ? openRowShortcuts : null}
-              onFork={!owner && forkPresent ? openRowFork : null}
-              sheet={phone && owner && boardFacts.loaded ? identitySheet : null}
-              onBottom={setTopbarBottom}
-            />
-          </ErrorBoundary>
-        </div>
-      ) : identityCrashed ? (
-        <div className="st-roadmap-identity-fallback">
-          {legacyChrome}
-          {viewSwitch && (
-            <div ref={fallbackSwitchRef} className="st-roadmap-fallback-switch" style={{ top: fallbackSwitchTop }}>
-              {viewSwitch}
-            </div>
-          )}
-        </div>
-      ) : legacyChrome}
+      {!identityActive && !identityCrashed && legacyChrome}
 
       {demo && boardActive && (
         <header ref={demoIdentityRef} className={`st-demo-board-identity${phone ? ' st-demo-board-identity--phone' : ''}`}>
@@ -2264,6 +2314,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onSubmit={submitTend}
           onDismiss={() => setTendOpen(false)}
           preserveOutsideFocus={identityActive}
+          portalTarget={identityActive ? rootRef.current?.closest('.wm-shell') ?? document.body : null}
         />
       )}
 
@@ -2570,14 +2621,14 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {identityActive && canvasView && toast?.surface === 'graph' && (
-        <div className={phone ? 'st-graph-toast st-graph-toast--phone' : 'st-graph-toast'}>
+        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}${phone && sheetOpenNow ? ' st-graph-toast--sheet' : ''}`} style={graphToastStyle}>
           <BoardToast toast={toast} phone={phone} onToastShown={boardToastShown} onToastReveal={revealGraphToast}
             onToastUndo={undoGraphToast} />
         </div>
       )}
 
       {toast && !['board', 'graph'].includes(toast.surface) && (
-        <div className={`st-toast ${toast.leaving ? 'is-leaving' : ''} ${toast.detail && toastWhyOpen ? 'st-toast--expanded' : ''}`} role="status" key={toast.key}>
+        <div style={graphToastStyle} className={`st-toast${identityActive && canvasView ? ' st-toast--graph' : ''} ${toast.leaving ? 'is-leaving' : ''} ${toast.detail && toastWhyOpen ? 'st-toast--expanded' : ''}`} role="status" key={toast.key}>
           <div className="st-toast-row">
             <span>{toast.message}</span>
             {toast.detail && (
