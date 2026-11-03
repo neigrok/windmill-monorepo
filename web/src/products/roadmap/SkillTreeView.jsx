@@ -1392,9 +1392,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The initial view is decided ONCE, the moment the tree is ready: on phones, and on every band while the Board is open.
   const phone = breakpoint === 'phone';
   const owner = treeMine && !shared && !demo && !demotion;
+  const reader = Boolean(tree) && !demo && (!treeMine || Boolean(demotion));
   const stepAddress = useStepAddress();
   if (view === null && (phone || BOARD_OPEN) && tree) {
-    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id, canAddFirstStep: owner }));
+    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, reader, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id, canAddFirstStep: owner }));
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
@@ -1403,7 +1404,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // Until the tree arrives, the Board's skeleton or load error stands where the Board would open: the saved choice, or
   // the owner's default anywhere but a share or the demo.
   const openingView = view ?? (BOARD_OPEN && !tree
-    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, empty: false, born: peekBorn(treeId), boardOpen: true, linkedStep: stepAddress.id })
+    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, reader, empty: false, born: peekBorn(treeId), boardOpen: true, linkedStep: stepAddress.id })
     : null);
   const boardFacts = {
     crashed: boardCrashed,

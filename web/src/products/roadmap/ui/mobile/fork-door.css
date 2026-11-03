@@ -1,0 +1,8 @@
+.st-fork-sheet {
+  outline: none;
+}
+
+.st-fork-sheet:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}

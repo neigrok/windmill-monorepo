@@ -687,7 +687,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   camera group under the row. These approved interims still need their dedicated drawings.
 - **Board · desktop dock beneath the row.** With the gate open, the desktop step dock starts 8px
   below the measured identity row, so an open step never covers Share, Next, New step or More.
-  ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
+  Owner-approved ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step
+  in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
+- **Board · one offline message.** Owner-approved 03.17 requires the Shell's global offline notice to yield
+  when the active room publishes status through `shell/roomStatus.js`; rooms without published status keep
+  the global notice. The wave-7 status-host track owns this integration.
 - **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file
   in the paste format, with the browser download as feedback; Settings retains the all-roadmaps
   zip. G24 copies the reader's roadmap link and uses the existing *Link copied* toast. Draw these
@@ -702,6 +706,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   for status keeps that layout while idle, Saving, Saved or Offline, with space reserved for the
   longest compact status. Rooms without a publisher retain the production mark and navigation;
   reconciling that mobile mark with the canon remains a gate-lift task.
+- **Design System · Dialog close target.** The shared `Dialog` close control is 28×28 with a 14px
+  glyph; the approved [04.03 Fork dialog](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-29874)
+  and the other dialog frames draw ✅ Close at 44×44 with a 20px glyph. Align the shared control and
+  title clearance in a Design System change, with screenshots of Fork, Shortcuts, Share, SignIn,
+  Feedback and SyncDecisions. Keep this correction in `Dialog`, without a Fork-specific override.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

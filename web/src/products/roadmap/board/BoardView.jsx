@@ -13,6 +13,10 @@ import { useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
 import { BoardToast } from './BoardToast.jsx';
+import { DeviceLine, RefusedSync } from './SyncNotices.jsx';
+import { FORK_OFFER } from './copy.js';
+import { Button } from '../../../design-system/core/Button.jsx';
+import { track } from '../../../telemetry/beacon.js';
 
 const EVERY_STEP = new BoardQuery();
 
@@ -25,7 +29,6 @@ function BoardView({
   selectedId,
   onSelect,
   onAnchor = () => {},
-  notice = null,
   refusal = null,
   deviceLine = null,
   onFork = null,
@@ -70,6 +73,7 @@ function BoardView({
   const consumedReveal = useRef(null);
   const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
+  const topGap = phone && deviceLine ? '0px' : 'var(--space-3)';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
   const canSelect = editable && active && phone && nextBoard !== null;
@@ -149,13 +153,13 @@ function BoardView({
     boardFocusTarget(boardRef.current)?.focus();
   }, [frame]);
 
-  // A control the query took away hands focus to the Board's displayed fallback.
-  useEffect(() => {
+  // A removed control hands focus to the Board's displayed fallback.
+  useLayoutEffect(() => {
     const lost = lastFocus.current;
     if (lost === null || lost.isConnected) return;
     if (document.activeElement !== null && document.activeElement !== document.body) return;
     boardFocusTarget(boardRef.current)?.focus();
-  }, [query]);
+  }, [query, refusal]);
 
   const retry = () => {
     retried.current = true;
@@ -168,15 +172,34 @@ function BoardView({
     if (revealFocus.current?.dataset.stepId !== id) motion.settle(id);
   };
 
+  const refusedNotice = refusal && (
+    <div className="st-board-refusal" data-board-refusal="">
+      <RefusedSync band={breakpoint} code={refusal.code} count={refusal.count}
+        onRetry={refusal.onRetry} onDiscard={refusal.onDiscard} />
+    </div>
+  );
+  const phoneNotices = phone && (refusal || onFork) && (
+    <div className="st-board-phone-notices">
+      {refusedNotice}
+      {onFork && (
+        <Button variant="secondary" full onClick={() => {
+          track('roadmap_verb', { verb: 'fork', door: 'offer', view: 'board', band: 'phone' });
+          onFork();
+        }}>{FORK_OFFER}</Button>
+      )}
+    </div>
+  );
+
   return (
     <div
       ref={boardRef}
       onFocus={(event) => { lastFocus.current = event.target; }}
       onPointerDown={(event) => motion.settle(event.target.closest('.st-board-card')?.dataset.stepId)}
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
-      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + var(--space-3))` : undefined, paddingBottom: bottomInset }}
+      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined, paddingBottom: bottomInset }}
     >
-      {notice}
+      {phone && deviceLine && <DeviceLine text={deviceLine.text} onSignIn={deviceLine.onSignIn} />}
+      {frame !== 'columns' && !phone && refusedNotice}
       {frame === 'loading' && <BoardSkeleton phone={phone} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}
       {frame === 'empty' && <EmptyRoadmap onNewStep={onNewStep && (() => onNewStep('empty'))} />}
@@ -188,6 +211,7 @@ function BoardView({
             ? (
               <PhoneSegments
                 board={board}
+                beforeBand={phoneNotices}
                 focusBoard={nextBoard}
                 counts={motion.counts}
                 arrived={motion.arrived}
@@ -222,6 +246,7 @@ function BoardView({
             : (
               <>
                 <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={anchor} />
+                {refusedNotice}
                 <BoardColumns
                   board={board}
                   focusBoard={nextBoard}
@@ -248,6 +273,7 @@ function BoardView({
             )}
         </UpNextRest.Provider>
       )}
+      {frame !== 'columns' && phoneNotices}
       <BoardToast
         toast={toast}
         phone={phone}

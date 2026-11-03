@@ -25,9 +25,12 @@ saved choice wins, and an empty or just-planted tree opens on the canvas. `board
 Board closed in production; off production, localStorage `windmill:board:dev` set to `1` opens it.
 With the gate open, `initialView` in `persistence/ViewPrefs.js` chooses the view: an owner's empty
 roadmap opens on the Board on every band. A non-empty just-planted roadmap opens on the Graph;
-otherwise a step link selects the Board, then a saved choice wins, then owners default to the Board
-and visitors to the Graph. The selected step carries across views. With the gate open, the host mounts one
-`RoadmapIdentity` above both layers for every non-demo role and band. The row persists across switches.
+otherwise a step link selects the Board. Once ownership is known, non-demo readers of a not-owned or
+ownership-demoted roadmap open the Graph regardless of a saved choice. The demo and an owned roadmap
+opened through a shared URL keep their saved choice. Other visits keep their saved choice, with owners
+defaulting to the Board and visitors to the Graph. Loading does not infer ownership. The selected step carries
+across views. With the gate open, the host mounts one `RoadmapIdentity` above both layers for every non-demo
+role and band. The row persists across switches.
 The identity precedes the Board in DOM and tab order. The demo keeps its existing chrome. While the
 Board awaits its roadmap, the row names no title or
 progress and offers no Share; after a failed load it offers no switch. From 744px, `/` focuses

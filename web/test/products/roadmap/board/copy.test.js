@@ -452,3 +452,13 @@ test('completion copy accepts a count without treating step ids as display names
   assert.equal(completedToast({ step: 'Rig the boat yourself', unlocked: ['Practice tacking'] }),
     'Rig the boat yourself done · Practice tacking up next');
 });
+
+test('copy — approved capacity and plural refusal wording preserves singular copy and full counts', async () => {
+  const { REFUSED_CAPACITY, refusedSyncBody, discardChanges } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(REFUSED_CAPACITY, { title: 'This roadmap is at its limit.', body: 'This change can’t sync.' });
+  assert.deepEqual([1, 3, 1200].map((count) => ({ body: refusedSyncBody({ count }), discard: discardChanges({ count }) })), [
+    { body: 'Couldn’t sync this change.', discard: 'Discard change' },
+    { body: 'Couldn’t sync 3 changes.', discard: 'Discard 3 changes' },
+    { body: 'Couldn’t sync 1,200 changes.', discard: 'Discard 1,200 changes' },
+  ]);
+});
