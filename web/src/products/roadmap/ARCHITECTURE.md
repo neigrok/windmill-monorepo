@@ -422,9 +422,17 @@ stamped gesture as their tombstones and respliced edges. Undo restores the captu
 edges. Concurrent peer edges stamped after that gesture remain recoverable through masked work;
 existing masked edges are not cleaned retroactively.
 
-`SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' derived pending writes,
-in-flight frames, socket phase, browser connectivity and the current refusal. The session retains
-one refusal per lane; ownership and authentication refusals keep their existing host path.
+`SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' unconfirmed user writes,
+pending gestures, unconfirmed in-flight frames, socket phase, browser connectivity and the current refusal.
+`sync/pendingWrites.js` owns unconfirmed-register comparisons and pending-gesture accounting for
+the session, stored lanes and device-tree renames. Status coverage comes from confirmed baselines, independently of
+the subscription's wire coverage.
+With the Board gate open, each local gesture contributes one HLC stamp and its written register
+references, including a create with prerequisite edges. Pending gestures persist with each lane,
+survive retries and reload, and clear on confirmation of their fields or discard. A partial
+acknowledgement or a newer unrelated write cannot confirm the rest of a gesture.
+Legacy records recover distinct surviving stamps; overwritten gestures cannot be reconstructed.
+The session retains one refusal per lane; ownership and authentication refusals keep their existing host path.
 Reading the snapshot does not mutate those facts, and status emission does no work without
 subscribers. The drain path clears refusals whose lane has no pending writes.
 `subscribeRefusals` delivers refusal records independently of status snapshots. The host attaches
@@ -433,7 +441,9 @@ React state updates. Gate-closed sessions do not subscribe to status or run its 
 computations and display timers for refusal reporting.
 `sync/status.js` derives Offline after a three-second socket grace (immediately when the browser
 is offline), Saving after 300ms pending, and Saved for two seconds after a live drain. Refusals
-suppress Saving and Saved. The host supplies the clock and publishes through the product-neutral
+suppress Saving and Saved. Discard rebaselines do not count as user writes or produce a Saved
+announcement, and an online rebaseline does not claim Offline. Real pending writes in the other
+lane retain their Saving state. The host supplies the clock and publishes through the product-neutral
 `shell/roomStatus.js` service only while the gated identity is mounted. Sync status belongs to
 signed-in owners; readers and the demo publish none, and a device line takes precedence.
 
@@ -443,24 +453,28 @@ neither publish nor release the next room. The Shell mounts an empty polite live
 its first text and retains the node across idle, Saving, Saved and Offline. From 744px the line
 is visible; phones show the short form where supplied. Registered phone rooms reserve the status
 slot and keep the mark hidden throughout the visit, so status changes do not move navigation.
+Desktop rooms reserve the status width across idle and populated states. Phone device-only rooms
+keep an empty publication for the Sign in seat, with their device text below the identity row.
 Rooms without a publisher keep the existing header. Below 360px Saving and Saved are announced
 only, and Offline uses a named icon button. Its controlled design-system Tooltip opens below the
 slot for four seconds, until another tap, an outside tap or Escape. The button has one accessible
 name; the tooltip does not repeat it as a description.
 
-The global offline notice yields only to a room payload carrying `connectivity: 'offline'`.
-Idle, Saving, Saved and device-only lines do not claim connectivity, so they retain the global
-notice when the device is offline. The host passes refusal code, refused-lane count and stable
+The global offline notice yields to a registered room before the first paint, including idle and
+device-only publications. Rooms without a publisher retain the global notice.
+The host passes refusal code, refused-lane gesture count and stable
 Retry/Discard actions to the shared `RefusedSync` component on both Board and Graph. The notice
 owns capacity-specific Retry suppression and uses the refused-lane count for its message and
 Discard label. The Graph measures its notice into the camera's usable viewport and clears the
 selected-step dock from 744px. On the gated phone Graph, `MobileChrome` reports the selected-step
 bar footprint through `onBarBottom`; the refusal card clears that bar or the reader Fork pill. Retry clears the refusal and reconnects through the existing graft/flush
 path. A successful discard invalidates session Undo/Redo and captured receipts; only toast actions
-backed by those receipts are dismissed. Progress-based completion Undo remains available during a
+backed by those receipts are dismissed. Phone toasts are hidden while a refusal stands so Retry
+and Discard stay reachable. Progress-based completion Undo remains available during a
 structure-only replacement and rebaseline; its durable save waits for the replacement's new epoch.
 Structure edits remain blocked during rebaselining, and a progress-lane replacement blocks progress
-editing. An unsent held delete remains available.
+editing. The composer retains its draft and disables saving during the replacement and rebaseline.
+An unsent held delete remains available.
 
 Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this tree.
 Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A
@@ -475,8 +489,9 @@ them early. A legacy record starts at epoch zero with unknown confirmed baseline
 Every save carries the epochs its writer loaded. Its transaction joins only matching lanes and
 returns a typed stale result for any older epoch; an unaffected lane can still save. Discard
 atomically restores the refused lane's confirmed baseline and increments only that lane's epoch.
-It does not store an empty replacement. The current session retains its previous emitted view
-until the server rebaseline arrives, while an offline reload opens the stored confirmed roadmap.
+It does not store an empty replacement. The current session projects the confirmed lane immediately,
+without waiting for storage or a server reply; a failed replacement restores the pending projection.
+The Board skips regroup animation for the replacement. An offline reload opens the stored confirmed roadmap.
 Discard prevents stale saves and re-sends after the atomic epoch bump; it cannot retract frames
 already sent before that commit or undo writes the server has accepted.
 
@@ -495,7 +510,9 @@ nothing, reconnect timers are deduplicated, and closing a session sets its phase
 transport rules apply with either Board gate state.
 
 `LocalTreeRegistry` associates device trees with accounts, and device reads require identity
-confirmed on this document load. A remembered face does not authorize a store read.
+confirmed on this document load. A remembered face does not authorize a store read. A session lapse
+retains the confirmed device owner and pending work on this document; the same account's sign-in
+resumes synchronization. Explicit sign-out and a different account still invoke device cleanup.
 `ProgressStore.drainInto` migrates older local marks into the private lane. Displayed completion
 dates use the server's `markedAt`; local completion clocks support only incomplete local history.
 
@@ -505,6 +522,10 @@ the URL selectable; owners can make a tree private again.
 
 ## Open work
 
+- Wire retry coverage uses actor frontiers. An accepted newer write can cover an earlier rejected
+  write in that frontier without confirming its fields, and a partial chunk can cover the rest of
+  its gesture. The gated status retains the exact pending work; the retry transport needs separate
+  protocol regression coverage before changing its flush rule.
 - Icon slots are reassigned by distance rank each frame; stable node ownership could remove
   unnecessary sorting and slot swaps.
 - Remote structural deletion prunes scene selection without pruning React's selection sets, so

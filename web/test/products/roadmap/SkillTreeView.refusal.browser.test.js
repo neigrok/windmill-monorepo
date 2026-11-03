@@ -95,6 +95,7 @@ for (const width of [390, 1440]) {
       await page.evaluate(() => {
         const session = window.session;
         session.inFlight.set('fixture-drained', session.lattice.frontier());
+        session.structureWrites.set('fixture-drained', session.lattice.toFrame());
         session.receiveAck({ frameId: 'fixture-drained' });
       });
       await alert.waitFor({ state: 'detached' });
@@ -153,6 +154,36 @@ hostTest('Chromium: a structure discard preserves the Graph completion Undo', as
     await page.locator('.st-graph-toast .st-board-toast-undo').click();
     await page.getByRole('button', { name: 'Complete', exact: true }).waitFor();
     assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), false);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+hostTest('Chromium: one create with a prerequisite counts once and discard clears it before a slow reply', async () => {
+  const { page, errors } = await openHost({ width: 390, surface: 'board', shell: true, fixedClock: true });
+  try {
+    await page.evaluate(() => {
+      const session = window.session;
+      session.dispatch({ kind: 'CreateNode', id: 'knots', label: 'Practice knots', prerequisites: ['wind'] });
+      session.inFlight.set('fixture-create', session.lattice.frontier());
+      session.receiveReject({ frameId: 'fixture-create', code: 'bad-frame' });
+    });
+    const alert = page.getByRole('alert');
+    await alert.waitFor();
+    assert.equal(await alert.getByText(REFUSED_SYNC.body, { exact: true }).count(), 1);
+    assert.equal(await alert.getByRole('button', { name: REFUSED_SYNC.discard, exact: true }).count(), 1);
+    assert.equal(await page.evaluate(() => window.session.statusSnapshot().structureGestures), 1);
+    await alert.getByRole('button', { name: REFUSED_SYNC.discard, exact: true }).click();
+    await alert.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => !window.session.discardPending && window.session.rebaselining?.has('structure'));
+    assert.equal(await page.evaluate(() => window.scene.nodesById.has('knots')), false);
+    assert.equal(await page.locator('[data-step-id="knots"]').count(), 0);
+    await page.clock.runFor(10000);
+    assert.equal(await page.evaluate(() => window.roomStatus()), null);
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_sync_offline')), []);
+    await page.evaluate(() => window.session.receiveState({ ...window.serverTree, seq: 2 }));
+    await page.waitForFunction(() => window.session.ready);
+    assert.equal(await page.evaluate(() => window.roomStatus()), null);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

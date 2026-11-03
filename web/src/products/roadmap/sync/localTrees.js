@@ -4,6 +4,7 @@
 
 import { SyncSession } from './SyncSession.js';
 import { SyncStore } from './SyncStore.js';
+import { pendingGestures } from './pendingWrites.js';
 import { HlcClock, TreeLattice, hlcText } from './lattice.js';
 import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
@@ -105,7 +106,7 @@ export async function loadDeviceTree(treeId) {
 
 // The registry keeps the listing title and the blob takes one stamped title write, so the name
 // survives the claim's flush.
-export async function renameLocalTree(treeId, title) {
+export async function renameLocalTree(treeId, title, { trackGestures = false } = {}) {
   const next = title.trim();
   if (!next) return;
   const registry = new LocalTreeRegistry();
@@ -121,7 +122,11 @@ export async function renameLocalTree(treeId, title) {
     const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
     lattice.seedClock(clock);
     lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
-    const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs });
+    const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs,
+      ...(trackGestures ? { gestures: {
+        structure: pendingGestures(lattice.toFrame(), saved.confirmed?.structure, saved.gestures?.structure),
+        progress: saved.gestures?.progress ?? {},
+      } } : {}) });
     if (result.status === 'saved') {
       registry.rename(treeId, next);
       return;
@@ -177,7 +182,7 @@ export async function moveLocalTree(fromId, toId) {
   const saved = await store.load(fromId).catch(() => null);
   if (saved?.frame) {
     const result = await store.save(toId, { frame: saved.frame, progress: saved.progress, lastSeq: 0,
-      epochs: { structure: 0, progress: 0 } });
+      epochs: { structure: 0, progress: 0 }, ...(saved.gestures ? { gestures: saved.gestures } : {}) });
     if (result.status !== 'saved') throw new Error('local tree destination changed');
     await store.clear(fromId).catch(() => {});
   }

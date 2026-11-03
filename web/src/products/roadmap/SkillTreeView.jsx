@@ -203,6 +203,10 @@ function useRoadmapSyncStatus(session, enabled, clock = SYNC_CLOCK) {
       const pending = snapshot.structurePending + snapshot.progressPending
         + snapshot.structureInFlight + snapshot.progressInFlight;
       if (snapshot.phase === 'live' || previous?.phase === 'live') facts.lastLiveAt = now;
+      if (Boolean(snapshot.rebaselining) !== Boolean(previous?.rebaselining)) {
+        facts.pendingSince = null;
+        facts.drainedAt = null;
+      }
       if (pending > 0 && facts.pendingSince === null) facts.pendingSince = now;
       if (pending === 0) {
         if (previous && facts.pendingSince !== null && snapshot.phase === 'live') facts.drainedAt = now;
@@ -233,9 +237,9 @@ function useRoadmapSyncStatus(session, enabled, clock = SYNC_CLOCK) {
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
-  const { status, refresh, account } = useAuth();
+  const { status, refresh, account, lapsed: sessionLapsed } = useAuth();
 
-  // `account` must be the shell's server-confirmed account; the “nobody” answer comes from resolveDeviceOwner.
+  // Account authority comes from the shell; a lapse retains this document's device owner.
   useEffect(() => { if (account) confirmDeviceOwner(account.id); }, [account]);
 
   const [lapsed, setLapsed] = useState(false);
@@ -701,7 +705,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // A local row renames the blob + device index and never PATCHes the server; a server row goes through the registry.
   const handleRenameTree = useCallback((id, title, { local = false } = {}) => {
     if (id === treeId && collabRef.current?.renameTree(title)) return undefined;
-    if (local) return renameLocalTree(id, title);
+    if (local) return renameLocalTree(id, title, { trackGestures: BOARD_OPEN });
     return renameTree(id, title);
   }, [treeId]);
 
@@ -1257,7 +1261,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       // Only owned trees enter the device index, so a visited share cannot be claimed.
       collabRef.current?.close();
       peersRef.current.clear();
-      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
+      const session = new SyncSession({ treeId: seed.id, title: seed.title, trackGestures: BOARD_OPEN, registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
         .onTreeChanged((data) => onTreeChangedRef.current?.(data))
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
@@ -1747,7 +1751,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const { snapshot: syncSnapshot, state: syncState } = useRoadmapSyncStatus(syncSession?.treeId === treeId ? syncSession : null, identityActive);
   const deviceEligible = identityActive && deviceOnly && owner && syncSession?.treeId === treeId;
-  const deviceKind = deviceEligible ? (lapsed ? 'lapsed' : 'anonymous') : null;
+  const deviceKind = deviceEligible ? (sessionLapsed || lapsed ? 'lapsed' : 'anonymous') : null;
   const deviceText = deviceKind === 'lapsed' ? LAPSED_SESSION : ANONYMOUS_OWNER;
   const signInFromDevice = useCallback(() => {
     if (!deviceKind) return;
@@ -1759,14 +1763,17 @@ export function SkillTreeView({ treeId, demo = false }) {
   const syncEligible = identityActive && owner && status === 'signed-in' && !deviceLine;
   const refused = identityActive && owner ? syncSnapshot?.refused : null;
   const refusalCode = refusalEventCode(refused);
-  const refusedCount = refused?.lane === 'structure' ? syncSnapshot?.structurePending : syncSnapshot?.progressPending;
+  const refusedCount = refused?.lane === 'structure' ? syncSnapshot?.structureGestures : syncSnapshot?.progressGestures;
   const retrySync = useCallback(() => {
     if (!refused) return;
     track('roadmap_sync_refused', { step: 'retry', lane: refused.lane, code: refusalCode });
     syncSession.retry();
   }, [syncSession, refused, refusalCode]);
   const discardSync = useCallback(async () => {
-    if (!refused || !await syncSession.discard()) return;
+    if (!refused) return;
+    const discarded = syncSession.discard();
+    if (syncSession.discardPending) setBoardQuiet((current) => current + 1);
+    if (!await discarded) return;
     track('roadmap_sync_refused', { step: 'discard', lane: refused.lane, code: refusalCode });
   }, [syncSession, refused, refusalCode]);
   const refusal = useMemo(() => refused ? {
@@ -1808,8 +1815,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (changed) track('roadmap_sync_offline', { step: offline ? 'shown' : 'cleared', pending });
   }, [treeId, syncSession, syncEligible, syncState, syncSnapshot]);
   const roomStatusLease = useRef(null);
-  const roomStatusEnabled = identityActive && (syncEligible || Boolean(deviceLine && !phone));
-  useEffect(() => {
+  const roomStatusEnabled = identityActive && (syncEligible || Boolean(deviceLine));
+  useLayoutEffect(() => {
     if (!roomStatusEnabled) return undefined;
     const lease = registerRoomStatus();
     roomStatusLease.current = lease;
@@ -1818,14 +1825,14 @@ export function SkillTreeView({ treeId, demo = false }) {
       lease.release();
     };
   }, [treeId, roomStatusEnabled]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const lease = roomStatusLease.current;
     if (!lease) return;
-    if (deviceLine && !phone) {
-      lease.publish({ line: deviceLine.text });
+    if (deviceLine) {
+      lease.publish(phone ? { narrow: 'device' } : { line: deviceLine.text });
       return;
     }
-    if (!syncState) {
+    if (!syncEligible || !syncState) {
       lease.publish(null);
       return;
     }
@@ -1833,7 +1840,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       ? { line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline' }
       : { line: SYNC_STATUS[syncState], narrow: 'announce' };
     lease.publish(roomStatus);
-  }, [treeId, roomStatusEnabled, deviceLine, phone, syncState]);
+  }, [treeId, roomStatusEnabled, deviceLine, phone, syncEligible, syncState]);
 
   useEffect(() => {
     if (!scene) return undefined;
@@ -1973,8 +1980,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     setCompleted(next.completed);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
+    if (BOARD_OPEN) pushProgress(targets, 'complete');
     for (const id of targets) {
-      pushProgress(id, 'complete');
+      if (!BOARD_OPEN) pushProgress(id, 'complete');
       const node = nodesById.get(id);
       emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
     }
@@ -2602,7 +2610,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       {shownComposer !== null && (
         <ErrorBoundary fallback={null} onCrash={handleComposerCrash}>
           <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
-            editing={shownComposer.editing ?? null} preserveOutsideFocus={identityActive} onEdit={(request) => composerDoor.saveEdit(request)}
+            editing={shownComposer.editing ?? null} savingBlocked={Boolean(syncSnapshot?.rebaselining)} preserveOutsideFocus={identityActive} onEdit={(request) => composerDoor.saveEdit(request)}
             onCreate={(request) => boardActs.create(request)} onClose={closeBoardComposer} />
         </ErrorBoundary>
       )}
@@ -2669,7 +2677,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       {!identityActive && !readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && !(boardActive && deviceNotice) && (
         <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
+          <StatusChip>{sessionLapsed || lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>
       )}
 
@@ -2976,7 +2984,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       {identityActive && canvasView && toast?.surface === 'graph' && (
         <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}${phone && sheetOpenNow ? ' st-graph-toast--sheet' : ''}`} style={graphToastStyle}>
-          <BoardToast toast={toast} phone={phone} onToastShown={boardToastShown} onToastReveal={revealGraphToast}
+          <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={boardToastShown} onToastReveal={revealGraphToast}
             onToastUndo={undoGraphToast} />
         </div>
       )}

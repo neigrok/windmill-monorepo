@@ -14,7 +14,7 @@ import { StepIcons } from './StepIcons.jsx';
 import { COLUMN_TITLES, COMPOSER, EDIT_STEP, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
 import './composer.css';
 
-export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose, preserveOutsideFocus = false }) {
+export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose, preserveOutsideFocus = false, savingBlocked = false }) {
   const phone = band === 'phone';
   const missingStep = Boolean(editing && !tree.nodesById.has(editing));
   const mode = editing ? 'edit' : 'create';
@@ -105,7 +105,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
     setFailed(false);
   };
   const save = () => {
-    if (missingStep) return;
+    if (missingStep || savingBlocked) return;
     if (editing && !draft.dirty) {
       track(eventName, { step: 'unchanged' });
       onClose();
@@ -179,7 +179,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
       >
         <div className="st-board-composer-scroll" tabIndex={-1}>
           {nameError && <p className="st-board-draft-name-error" id={errorId}>{nameError}</p>}
-          {failed && !phone && (
+          {failed && !savingBlocked && !phone && (
             <div className="st-board-composer-failure" role="alert">
               <AlertCircle size={20} aria-hidden />
               <span>{SAVE_FAILURE.body}</span>
@@ -239,9 +239,9 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
           )}
         </div>
         <footer className="st-board-composer-actions">
-          {failed && phone && <p role="alert">{SAVE_FAILURE.body}</p>}
+          {failed && !savingBlocked && phone && <p role="alert">{SAVE_FAILURE.body}</p>}
           <div>
-            {failed ? (
+            {failed && !savingBlocked ? (
               <>
                 <Button
                   variant={phone ? 'ghost' : 'secondary'}
@@ -253,12 +253,12 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
                 >
                   {SAVE_FAILURE.keepEditing}
                 </Button>
-                <Button size={phone ? 'lg' : 'md'} type="submit">{SAVE_FAILURE.retry}</Button>
+                <Button size={phone ? 'lg' : 'md'} type="submit" disabled={savingBlocked}>{SAVE_FAILURE.retry}</Button>
               </>
             ) : (
               <>
                 {!phone && <Button variant="secondary" onClick={cancel}>{COMPOSER.cancel}</Button>}
-                <Button size={phone ? 'lg' : 'md'} full={phone} type="submit">{editing ? EDIT_STEP.save : COMPOSER.create}</Button>
+                <Button size={phone ? 'lg' : 'md'} full={phone} type="submit" disabled={savingBlocked}>{editing ? EDIT_STEP.save : COMPOSER.create}</Button>
               </>
             )}
           </div>

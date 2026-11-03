@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useLayoutEffect, useState, useSyncExternalStore } from 'react';
 
 let current = null;
 let publisher = null;
@@ -48,5 +48,10 @@ const getPublication = () => current;
 const serverPublication = () => null;
 
 export function useRoomStatus() {
-  return useSyncExternalStore(subscribeRoomStatus, getPublication, serverPublication);
+  const publication = useSyncExternalStore(subscribeRoomStatus, getPublication, serverPublication);
+  const [, redraw] = useState(0);
+  useLayoutEffect(() => {
+    if (publication !== getPublication()) redraw((version) => version + 1);
+  }, [publication]);
+  return publication;
 }

@@ -3,6 +3,7 @@
 
 import { TreeLattice } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
+import { pendingGestures } from './pendingWrites.js';
 
 const DB_NAME = 'windmill-sync';
 const STORE = 'trees';
@@ -95,6 +96,12 @@ export class SyncStore {
             merged[field] = joinLane(lane, stored[field], value[field]);
             const confirmed = value.confirmed?.[lane];
             if (confirmed != null) merged.confirmed[lane] = joinLane(lane, stored.confirmed[lane], confirmed);
+            if (value.gestures?.[lane]) {
+              merged.gestures ??= { structure: {}, progress: {} };
+              merged.gestures[lane] = pendingGestures({}, merged.confirmed[lane], {
+                ...stored.gestures?.[lane], ...value.gestures[lane],
+              });
+            }
             if (lane === 'structure') merged.lastSeq = Math.max(stored.lastSeq, value.lastSeq ?? 0);
           }
           store.put(merged, treeId);
@@ -130,6 +137,7 @@ export class SyncStore {
           }
           const field = lane === 'structure' ? 'frame' : 'progress';
           value[field] = value.confirmed[lane];
+          if (value.gestures) value.gestures[lane] = {};
           value.epochs[lane] += 1;
           if (lane === 'structure') value.lastSeq = 0;
           store.put(value, treeId);
@@ -221,6 +229,7 @@ function normalizeRecord(value = {}) {
     lastSeq: value.lastSeq ?? 0,
     epochs: { structure: value.epochs?.structure ?? 0, progress: value.epochs?.progress ?? 0 },
     confirmed: { structure: value.confirmed?.structure ?? null, progress: value.confirmed?.progress ?? null },
+    ...(value.gestures ? { gestures: structuredClone(value.gestures) } : {}),
   };
 }
 

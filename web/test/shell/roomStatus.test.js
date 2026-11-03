@@ -2,6 +2,7 @@ import { SYNC_STATUS, SYNC_OFFLINE_SHORT } from '../../src/products/roadmap/boar
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getRoomStatus, registerRoomStatus, subscribeRoomStatus, useRoomStatus } from '../../src/shell/roomStatus.js';
+import { useLayoutEffect } from 'react';
 import { renderHook } from '../products/gym/harness.mjs';
 
 const offline = { line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline' };
@@ -66,4 +67,21 @@ test('connectivity is an explicit publication fact and its changes notify withou
   ]);
   unsubscribe();
   room.release();
+});
+
+
+test('a room publication made during mount layout is read before passive subscription', (t) => {
+  let lease;
+  const frames = [];
+  const view = renderHook(t, () => {
+    useLayoutEffect(() => {
+      lease = registerRoomStatus();
+      return lease.release;
+    }, []);
+    const status = useRoomStatus();
+    frames.push(status);
+    return status;
+  });
+  assert.deepEqual(frames, [null, { status: null }]);
+  assert.deepEqual(view.tree, { status: null });
 });

@@ -267,3 +267,23 @@ test('the network coming back hands the owner their trees, and the network dying
   assert.deepEqual((await listAllTrees()).map((tree) => [tree.id, tree.origin]), [['t_a', 'device']], 'a blip after a confirmed answer keeps the account');
   assert.equal((await loadDeviceTree('t_a')).title, 'A private therapy plan');
 });
+
+test('a lapse in this confirmed document keeps the same owner’s unsynced tree readable', async () => {
+  const saved = blobFor('t_a', 'A private therapy plan', 'unsynced step');
+  const device = browser({ index: { t_a: A_PRIVATE, t_anon: ANON }, hash: '#/app/t_a', blobs: { t_a: saved } });
+  serverSaying({ me: 'u_a' });
+  const before = await loadDeviceTree('t_a');
+
+  serverSaying({});
+  assert.deepEqual(await loadDeviceTree('t_a'), before);
+  assert.deepEqual((await listAllTrees()).map((tree) => [tree.id, tree.origin]), [['t_a', 'device'], ['t_anon', 'device']]);
+  assert.equal(deviceOwner(), 'u_a');
+  assert.equal(window.location.hash, '#/app/t_a');
+  assert.deepEqual(device.index(), { t_a: A_PRIVATE, t_anon: ANON });
+  assert.deepEqual(device.blobIds(), ['t_a']);
+
+  serverSaying({ me: 'u_a' });
+  assert.deepEqual(await loadDeviceTree('t_a'), before);
+  serverSaying({ me: 'u_b' });
+  assert.equal(await loadDeviceTree('t_a'), null);
+});

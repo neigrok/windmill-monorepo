@@ -11,7 +11,7 @@ const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: BoardView } = await import('../../../../src/products/roadmap/board/BoardView.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
-const { ANONYMOUS_OWNER } = await import('../../../../src/products/roadmap/board/copy.js');
+const { ANONYMOUS_OWNER, createdToast } = await import('../../../../src/products/roadmap/board/copy.js');
 
 for (const breakpoint of ['desktop', 'tablet', 'phone']) {
   test(`BoardView notices: ${breakpoint} keeps the device line and Fork offer on phones`, () => {
@@ -82,6 +82,7 @@ window.openRoom = (nodes, options = {}) => {
         React.createElement(BoardView, {
           tree, completed, completedAt, active: true, breakpoint: band, topInset: 110,
           query, onQuery: setQuery, onSelect: select,
+          toast: options.toast, onToastShown: () => call('toast_shown'),
           deviceLine: options.device ? { text: ANONYMOUS_OWNER, onSignIn: signIn } : null,
           refusal: refused && { ...refused, onRetry: retry, onDiscard: discard },
           onFork: options.reader && band === 'phone' ? fork : null,
@@ -261,3 +262,24 @@ test('Chromium Board notices: an empty phone pane receives focus after the refus
     assert.equal(await page.evaluate(() => document.activeElement.matches('.st-board-phone-pane.is-shown[tabindex="0"]')), true);
   });
 });
+
+
+for (const width of [320, 390]) {
+  test(`Chromium Board notices: ${width}px refusal and creation toast never overlap`, async () => {
+    const toast = { key: 1, message: createdToast({ step: 'Read the wind', column: 'upNext' }), action: { label: 'Undo' } };
+    await inRoom(width, { refusal: { code: 'bad-frame', count: 1 }, toast }, async (page) => {
+      await page.getByRole('alert').waitFor();
+      await page.clock.runFor(6000);
+      assert.equal(await page.locator('.st-board-toast').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.calls ?? []), []);
+      await page.evaluate(() => window.clearRefusal());
+      await page.getByRole('alert').waitFor({ state: 'detached' });
+      await page.clock.runFor(120);
+      await page.locator('.st-board-toast').waitFor();
+      assert.deepEqual(await page.evaluate(() => window.calls), ['toast_shown']);
+      await page.evaluate(() => window.showRefusal({ code: 'bad-frame', count: 1 }));
+      await page.getByRole('alert').waitFor();
+      assert.equal(await page.locator('.st-board-toast').count(), 0);
+    });
+  });
+}

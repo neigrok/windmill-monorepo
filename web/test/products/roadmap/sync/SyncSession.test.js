@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 
 function sessionWith({ notify = () => {}, registry = null, save = () => Promise.resolve(), reportFailure = () => {}, Session = SyncSession } = {}) {
-  const session = new Session({ treeId: 'tree', registry, store: { save }, reportFailure });
+  const session = new Session({ trackGestures: true, treeId: 'tree', registry, store: { save }, reportFailure });
   session.seed({ id: 'tree', title: 'Tree', nodes: [{ id: 'root', label: 'Root', prerequisites: [] }] });
   session.onTreeChanged(notify);
   return session;
@@ -12,7 +12,7 @@ function sessionWith({ notify = () => {}, registry = null, save = () => Promise.
 const snapshot = (session) => session.lattice.toTreeData().nodes.map(({ id, label, prerequisites }) => ({ id, label, prerequisites }));
 
 test('dispatch returns null before ready and for gestures writing nothing', () => {
-  const session = new SyncSession({ treeId: 'tree', registry: null });
+  const session = new SyncSession({ trackGestures: true, treeId: 'tree', registry: null });
   assert.equal(session.dispatch({ kind: 'CreateNode', id: 'x' }), null);
   assert.equal(session.revert({}), false);
   assert.deepEqual(session.undoStack, []);
@@ -156,6 +156,9 @@ for (const action of ['dispatch', 'revert', 'undo', 'redo', 'renameTree']) {
       assert.deepEqual([session.undoStack.length, session.redoStack.length], {
         dispatch: [1, 0], revert: [0, 0], undo: [0, 1], redo: [1, 0], renameTree: [0, 0],
       }[action]);
+      assert.deepEqual({ structure: session.statusSnapshot().structureGestures, progress: session.statusSnapshot().progressGestures }, {
+        structure: { dispatch: 1, revert: 2, undo: 2, redo: 3, renameTree: 1 }[action], progress: 0,
+      });
       if (action === 'dispatch') assert.equal(Object.isFrozen(result), true);
       if (action === 'revert' || action === 'renameTree') assert.equal(result, true);
       if (action === 'renameTree') assert.equal(session.lattice.title, 'New title');
@@ -199,7 +202,7 @@ class TestSocket extends EventTarget {
   message(frame) { this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) })); }
 }
 
-function connectedSession(t, overrides = {}) {
+function connectedSession(t, overrides = {}, trackGestures = true) {
   t.mock.method(globalThis, 'setInterval', () => 0);
   t.mock.method(globalThis, 'clearInterval', () => {});
   const priorSocket = globalThis.WebSocket;
@@ -220,7 +223,7 @@ function connectedSession(t, overrides = {}) {
     },
     ...overrides,
   };
-  const session = new SyncSession({ treeId: 'tree', store, registry: null });
+  const session = new SyncSession({ trackGestures, treeId: 'tree', store, registry: null });
   t.after(() => session.close());
   session.connect();
   session.ws.open();
@@ -243,15 +246,15 @@ test('status snapshots are frozen, stable and cover both lanes, socket transitio
   const seen = [];
   const stop = session.subscribeStatus((value) => seen.push(value));
   assert.deepEqual(seen, [{ phase: 'live', online: true, structurePending: 0, progressPending: 0,
-    structureInFlight: 0, progressInFlight: 0, refused: null, receiptVersion: 0 }]);
+    structureInFlight: 0, progressInFlight: 0, structureGestures: 0, progressGestures: 0, rebaselining: false, refused: null, receiptVersion: 0 }]);
   assert.equal(session.statusSnapshot(), seen[0]);
   assert.equal(Object.isFrozen(seen[0]), true);
   session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
-  assert.deepEqual(seen.at(-1), { ...seen[0], structurePending: 1, structureInFlight: 1 });
+  assert.deepEqual(seen.at(-1), { ...seen[0], structurePending: 1, structureInFlight: 1, structureGestures: 1 });
   session.markProgress('root', 'complete');
-  assert.deepEqual(seen.at(-1), { ...seen[0], structurePending: 1, progressPending: 1, structureInFlight: 1, progressInFlight: 1 });
+  assert.deepEqual(seen.at(-1), { ...seen[0], structurePending: 1, progressPending: 1, structureInFlight: 1, progressInFlight: 1, structureGestures: 1, progressGestures: 1 });
   session.receiveAck({ frameId: [...session.inFlight.keys()][0] });
-  assert.deepEqual(seen.at(-1), { ...seen[0], progressPending: 1, progressInFlight: 1 });
+  assert.deepEqual(seen.at(-1), { ...seen[0], progressPending: 1, progressInFlight: 1, progressGestures: 1 });
   session.receiveProgressAck({ frameId: [...session.progressInFlight.keys()][0] });
   assert.deepEqual(seen.at(-1), seen[0]);
   session.ws.close();
@@ -303,7 +306,7 @@ test('retry uses reconnect and graft flush and preserves the refusal episode for
   assert.equal(session.statusSnapshot().refused.episode, episode);
 });
 
-test('structure discard durably replaces one lane, preserves projection and progress, and invalidates receipts', async (t) => {
+test('structure discard immediately restores confirmed projection, preserves progress, and invalidates receipts', async (t) => {
   const { session, saves } = connectedSession(t);
   const server = session.lattice.toFrame();
   const projections = [];
@@ -322,12 +325,12 @@ test('structure discard durably replaces one lane, preserves projection and prog
   assert.equal(session.revert(receipt), false);
   assert.equal(session.statusSnapshot().receiptVersion, 1);
   assert.equal(session.dispatch({ kind: 'CreateNode', id: 'blocked' }), null);
-  assert.deepEqual(projections, [['Local']]);
+  assert.deepEqual(projections, [['Local'], ['Root'], ['Root']]);
   session.connect();
   session.ws.open();
   assert.deepEqual(session.ws.frames[0], { t: 'subscribe', treeId: 'tree', lastSeq: 0, vector: {} });
   session.receiveState({ ...server, seq: 1 });
-  assert.deepEqual(projections, [['Local'], ['Root']]);
+  assert.deepEqual(projections, [['Local'], ['Root'], ['Root'], ['Root']]);
   assert.equal(session.ready, true);
   assert.deepEqual(session.progress.toFrame(), progress);
 });
@@ -345,13 +348,13 @@ test('progress discard preserves structure and its outbox until a fresh progress
   assert.deepEqual(saves.at(-1).progress, { marks: [] });
   assert.deepEqual(session.lattice.toFrame(), structure);
   assert.equal(session.pendingEditCount(), 1);
-  assert.deepEqual(overlays, []);
+  assert.deepEqual(overlays, [[], []]);
   assert.equal(session.ready, false);
   session.receiveState({ nodes: [], edges: [], kinds: [], seq: 1 });
   assert.equal(session.ready, false);
   session.receiveProgressGraft({ marks: [] });
   assert.equal(session.ready, true);
-  assert.deepEqual(overlays, [[]]);
+  assert.deepEqual(overlays, [[], [], []]);
 });
 
 test('discard quiesces structure writes and defers preserved-lane progress persistence while replacement awaits', async (t) => {
@@ -414,7 +417,7 @@ test('browser online changes publish immediately and listeners leave with the se
   globalThis.document = new EventTarget();
   globalThis.WebSocket = TestSocket;
   t.after(() => { globalThis.window = priorWindow; globalThis.document = priorDocument; globalThis.WebSocket = priorSocket; });
-  const session = new SyncSession({ treeId: 'tree', registry: null,
+  const session = new SyncSession({ trackGestures: true, treeId: 'tree', registry: null,
     store: { load: async () => null, requestPersistent: async () => true, save: async () => {} } });
   t.after(() => session.close());
   const snapshots = [];
@@ -495,7 +498,7 @@ test('start refreshes browser connectivity after an asynchronous local load', as
     else delete globalThis.navigator;
   });
   let load;
-  const session = new SyncSession({ treeId: 'tree', registry: null,
+  const session = new SyncSession({ trackGestures: true, treeId: 'tree', registry: null,
     store: { load: () => new Promise((resolve) => { load = resolve; }), requestPersistent: async () => true, save: async () => {} } });
   t.after(() => session.close());
   const started = session.start();
@@ -568,7 +571,7 @@ test('close publishes offline with empty in-flight maps while retaining the unac
   session.subscribeStatus((state) => states.push(state));
   session.close();
   assert.deepEqual(states.at(-1), { phase: 'offline', online: true, structurePending: 1, progressPending: 1,
-    structureInFlight: 0, progressInFlight: 0, refused: null, receiptVersion: 0 });
+    structureInFlight: 0, progressInFlight: 0, structureGestures: 1, progressGestures: 1, rebaselining: false, refused: null, receiptVersion: 0 });
   assert.equal(session.statusHandlers.size, 0);
 });
 
@@ -609,6 +612,40 @@ test('refusal-only subscribers add no full status computation or pending-delta s
   assert.equal(session.refusalHandlers.size, 0);
 });
 
+test('refusal-only reporting with gesture tracking disabled adds no status or pending scans and persists no gesture metadata', (t) => {
+  const { session, saves } = connectedSession(t, {}, false);
+  const reads = [];
+  for (const method of ['statusSnapshot', 'pendingEditCount', 'pendingProgressCount']) {
+    const original = session[method].bind(session);
+    t.mock.method(session, method, (...args) => {
+      reads.push(method);
+      return original(...args);
+    });
+  }
+  const deltaSince = session.lattice.deltaSince.bind(session.lattice);
+  t.mock.method(session.lattice, 'deltaSince', (vector) => {
+    if (vector != null) reads.push('structure-delta');
+    return deltaSince(vector);
+  });
+  const seen = [];
+  session.subscribeRefusals((refusal) => seen.push(refusal));
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  session.receiveAck({ frameId: [...session.inFlight.keys()][0] });
+  session.markProgress('root', 'complete');
+  session.receiveProgressAck({ frameId: [...session.progressInFlight.keys()][0] });
+  session.receiveLive({ t: 'subgraph', seq: 2, nodes: [{ id: 'peer', createdAt: '999:0:peer' }], edges: [], kinds: [] });
+  session.emitStatus();
+  assert.deepEqual(reads, []);
+  assert.deepEqual(seen, []);
+  assert.deepEqual(session.gestures, { structure: {}, progress: {} });
+  assert.equal(saves.every((value) => !Object.hasOwn(value, 'gestures')), true);
+  assert.equal(session.statusHandlers.size, 0);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Refused' });
+  refuseLast(session, 'structure');
+  assert.deepEqual(reads, ['structure-delta']);
+  assert.deepEqual(seen, [session.refusals.get('structure')]);
+});
+
 test('refusal-only subscriptions replay current lanes and stop at unsubscribe or session close', (t) => {
   const { session } = connectedSession(t);
   session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
@@ -646,4 +683,187 @@ test('refusal-only subscribers follow the existing refusal eligibility and add n
   session.receiveReject({ t: 'reject', frameId: 'untracked', code: 'server-error' });
   assert.deepEqual(seen, []);
   assert.equal(session.statusHandlers.size, 0);
+});
+
+test('a create with prerequisites is one pending gesture; retry, partial acknowledgements and discard preserve lane counts', async (t) => {
+  const { session } = connectedSession(t);
+  const server = session.lattice.toFrame();
+  session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', prerequisites: ['root'] });
+  const createdFrame = [...session.inFlight.keys()].at(-1);
+  assert.equal(session.statusSnapshot().structurePending, 2);
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  session.dispatch({ kind: 'RenameNode', id: 'child', label: 'First rename' });
+  session.dispatch({ kind: 'RenameNode', id: 'child', label: 'Second rename' });
+  assert.equal(session.statusSnapshot().structureGestures, 3);
+  session.receiveAck({ frameId: createdFrame });
+  assert.equal(session.statusSnapshot().structureGestures, 2);
+  refuseLast(session, 'structure');
+  session.markProgress('root', 'complete');
+  session.markProgress('root', 'none');
+  assert.equal(session.statusSnapshot().progressGestures, 2);
+  session.retry();
+  assert.equal(session.statusSnapshot().structureGestures, 2);
+  session.connect();
+  session.ws.open();
+  session.receiveState({ ...server, seq: 1 });
+  assert.equal(session.statusSnapshot().structureGestures, 2);
+  refuseLast(session, 'structure');
+  assert.equal(await session.discard(), true);
+  assert.equal(session.statusSnapshot().structureGestures, 0);
+  assert.equal(session.statusSnapshot().progressGestures, 2);
+});
+
+test('discard immediately projects the confirmed tree and suppresses transport work through a slow rebaseline', async (t) => {
+  let finish;
+  const { session, saves } = connectedSession(t, { replaceLane: () => new Promise((resolve) => { finish = resolve; }) });
+  const confirmed = session.lattice.toFrame();
+  const projected = [];
+  session.onTreeChanged((tree) => projected.push(tree.nodes.map((node) => node.id)));
+  session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', prerequisites: ['root'] });
+  refuseLast(session, 'structure');
+  const discarding = session.discard();
+  assert.deepEqual(projected, [['root', 'child'], ['root']]);
+  const expected = { phase: 'syncing', online: true, structurePending: 0, progressPending: 0,
+    structureInFlight: 0, progressInFlight: 0, structureGestures: 0, progressGestures: 0,
+    rebaselining: true, refused: null, receiptVersion: 0 };
+  assert.deepEqual(session.statusSnapshot(), expected);
+  const value = structuredClone(saves.at(-1));
+  value.epochs.structure += 1;
+  value.frame = value.confirmed.structure;
+  value.lastSeq = 0;
+  finish({ status: 'replaced', value });
+  assert.equal(await discarding, true);
+  assert.deepEqual(session.statusSnapshot(), { ...expected, receiptVersion: 1 });
+  session.connect();
+  session.ws.open();
+  assert.deepEqual(session.statusSnapshot(), { ...expected, receiptVersion: 1 });
+  session.receiveState({ ...confirmed, seq: 1 });
+  assert.deepEqual(session.statusSnapshot(), { ...expected, phase: 'live', rebaselining: false, receiptVersion: 1 });
+});
+
+test('failed discard restores the unconfirmed projection without losing the gesture count', async (t) => {
+  let fail;
+  const { session } = connectedSession(t, { replaceLane: () => new Promise((_resolve, reject) => { fail = reject; }) });
+  const projected = [];
+  session.onTreeChanged((tree) => projected.push(tree.nodes.map((node) => node.label)));
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Kept draft' });
+  refuseLast(session, 'structure');
+  const discarding = session.discard();
+  assert.deepEqual(projected, [['Kept draft'], ['Root']]);
+  fail(new Error('storage unavailable'));
+  assert.equal(await discarding, false);
+  assert.deepEqual(projected, [['Kept draft'], ['Root'], ['Kept draft']]);
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+});
+
+for (const lane of ['structure', 'progress']) {
+  test(`${lane} discard finishes and reconnects when both immediate and durable projection notifications fail`, async (t) => {
+    const { session, saves } = connectedSession(t);
+    const errors = [];
+    session.reportFailure = (operation, error) => errors.push({ operation, error });
+    if (lane === 'structure') session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Refused' });
+    else session.markProgress('root', 'complete');
+    refuseLast(session, lane);
+    const failure = new Error('private callback failure');
+    if (lane === 'structure') session.onTreeChanged(() => { throw failure; });
+    else session.onProgress(() => { throw failure; });
+    assert.equal(await session.discard(), true);
+    assert.equal(session.discardPending, false);
+    assert.ok(session.reconnectTimer);
+    assert.equal(session.epochs[lane], 1);
+    assert.deepEqual(saves.at(-1)[lane === 'structure' ? 'frame' : 'progress'], saves.at(-1).confirmed[lane]);
+    assert.deepEqual(errors, [
+      { operation: 'roadmap-sync-notify', error: failure },
+      { operation: 'roadmap-sync-notify', error: failure },
+    ]);
+    assert.ok(errors.every(({ error }) => error.stack));
+  });
+}
+
+test('one bulk progress action counts as one gesture and acknowledges all its marks', (t) => {
+  const { session } = connectedSession(t);
+  session.markProgress(['root', 'child'], 'complete');
+  assert.deepEqual({ pending: session.statusSnapshot().progressPending, gestures: session.statusSnapshot().progressGestures }, { pending: 2, gestures: 1 });
+  const frame = session.ws.frames.at(-1);
+  assert.deepEqual(frame.marks.map(({ node, status }) => ({ node, status })), [
+    { node: 'child', status: 'complete' }, { node: 'root', status: 'complete' },
+  ]);
+  assert.equal(frame.marks[0].at, frame.marks[1].at);
+  session.receiveProgressAck({ frameId: frame.frameId });
+  assert.deepEqual({ pending: session.statusSnapshot().progressPending, gestures: session.statusSnapshot().progressGestures }, { pending: 0, gestures: 0 });
+});
+
+test('a lapsed roadmap session retains its write and gesture through same-account reconnect, then drains on acknowledgement', (t) => {
+  const { session } = connectedSession(t);
+  const server = session.lattice.toFrame();
+  session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Kept on device', prerequisites: ['root'] });
+  const bank = session.lattice.toFrame();
+  const legacySignals = [];
+  window.addEventListener('wm-edit-forbidden', (event) => legacySignals.push(event.detail.code));
+  refuseLast(session, 'structure', 'sign-in-required');
+  assert.deepEqual(legacySignals, ['sign-in-required']);
+  assert.deepEqual(session.lattice.toFrame(), bank);
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  assert.equal(session.statusSnapshot().refused, null);
+  session.forceReconnect();
+  session.connect();
+  session.ws.open();
+  session.receiveState({ ...server, seq: 1 });
+  assert.deepEqual(session.lattice.toFrame(), bank);
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  const resend = session.ws.frames.at(-1);
+  assert.equal(resend.intent, 'flush');
+  session.receiveAck({ frameId: resend.frameId });
+  assert.deepEqual({ pending: session.statusSnapshot().structurePending, gestures: session.statusSnapshot().structureGestures }, { pending: 0, gestures: 0 });
+  assert.deepEqual(session.confirmedStructure.toFrame(), bank);
+});
+
+test('a newer accepted gesture cannot clear an older refused write to another record', (t) => {
+  const { session } = connectedSession(t);
+  session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Pending child', prerequisites: ['root'] });
+  refuseLast(session, 'structure');
+  const refusal = session.statusSnapshot().refused;
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Accepted root' });
+  session.receiveAck({ frameId: [...session.inFlight.keys()].at(-1) });
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  assert.equal(session.statusSnapshot().structurePending, 2);
+  assert.equal(session.statusSnapshot().refused, refusal);
+  assert.deepEqual(snapshot(session), [
+    { id: 'root', label: 'Accepted root', prerequisites: [] },
+    { id: 'child', label: 'Pending child', prerequisites: ['root'] },
+  ]);
+});
+
+test('one chunk acknowledgement cannot clear a partly confirmed multi-record gesture', (t) => {
+  const { session } = connectedSession(t);
+  session.phase = 'offline';
+  const ids = Array.from({ length: 8 }, (_, index) => `large-${index}`);
+  session.dispatch({ kind: 'ImportSubgraph', nodes: ids.map((id) => ({ id, label: id, description: 'x'.repeat(50000) })), edges: [] });
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  session.phase = 'live';
+  session.flush();
+  const frames = [...session.inFlight.keys()];
+  assert.ok(frames.length > 1);
+  const firstSize = session.structureWrites.get(frames[0]).nodes.length;
+  session.receiveAck({ frameId: frames[0] });
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  assert.equal(session.statusSnapshot().structurePending, ids.length - firstSize);
+  session.receiveReject({ frameId: frames.at(-1), code: 'bad-frame' });
+  const refusal = session.statusSnapshot().refused;
+  session.noteDrained();
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  assert.equal(session.statusSnapshot().refused, refusal);
+  for (const frameId of frames.slice(1)) {
+    if (session.inFlight.has(frameId)) session.receiveAck({ frameId });
+  }
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+});
+
+test('a session without gesture tracking keeps the legacy save shape and skips gesture metadata', () => {
+  const saves = [];
+  const session = new SyncSession({ treeId: 'tree', registry: null, store: { save: async (_id, value) => saves.push(value) } });
+  session.seed({ id: 'tree', title: 'Tree', nodes: [{ id: 'root', label: 'Root', prerequisites: [] }] });
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Legacy' });
+  assert.deepEqual(session.gestures, { structure: {}, progress: {} });
+  assert.equal(Object.hasOwn(saves.at(-1), 'gestures'), false);
 });
