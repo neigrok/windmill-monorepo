@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { dirname, resolve } from 'node:path';
 import { beacon } from './board/composerFixture.js';
 
 // The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
@@ -99,13 +100,14 @@ let server, browser, origin;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-roadmap-host-test`,
     plugins: [{ name: 'roadmap-host-contract-test', enforce: 'pre',
-      resolveId(id) {
+      resolveId(id, importer) {
         if (id === '/roadmap-host-entry.js') return '\0host-entry';
-        if (id.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
-        if (id.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
-        if (id.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
-        if (id.endsWith('/telemetry/beacon.js')) return '\0host-events';
-        if (id.endsWith('/telemetry/sentry.js')) return '\0host-issues';
+        const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
+        if (file.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
+        if (file.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
+        if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
+        if (file.endsWith('/telemetry/beacon.js')) return '\0host-events';
+        if (file.endsWith('/telemetry/sentry.js')) return '\0host-issues';
       },
       load(id) {
         if (id === '\0host-entry') return entry;

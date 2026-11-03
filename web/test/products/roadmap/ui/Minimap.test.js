@@ -12,9 +12,13 @@ import { createRoot } from 'react-dom/client';
 import { Minimap } from '/src/products/roadmap/ui/Minimap.jsx';
 const observer = { disconnected: false, callback: null };
 window.MutationObserver = class {
-  constructor(callback) { observer.callback = callback; }
-  observe() {}
-  disconnect() { observer.disconnected = true; }
+  constructor(callback) { this.callback = callback; }
+  observe(_target, options) {
+    if (options.attributeFilter?.includes('data-theme')) observer.callback = this.callback;
+  }
+  disconnect() {
+    if (observer.callback === this.callback) observer.disconnected = true;
+  }
 };
 const room = createRoot(document.getElementById('root'));
 room.render(React.createElement(Minimap, {
