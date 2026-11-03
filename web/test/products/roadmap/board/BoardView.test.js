@@ -989,7 +989,9 @@ test('Chromium: sole roots, scrolling and cancelled touches never start selectio
     await root.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
     await page.clock.runFor(600);
     await root.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true });
+    await root.dispatchEvent('click');
     assert.equal(await page.locator('.st-board-bulk').count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
     await page.getByRole('tab', { name: 'Up next, 2 steps' }).click();
     const card = page.locator('.st-board-card[data-step-id="bowline"]');
     for (const cancel of ['pointercancel', 'move', 'scroll']) {
@@ -1016,6 +1018,34 @@ test('Chromium: sole roots, scrolling and cancelled touches never start selectio
       'roadmap_board_select {"step":"start"}', 'roadmap_board_select {"step":"end","via":"left"}',
     ]);
   } finally { await page.close(); }
+});
+
+test('Chromium: a hold without selection swallows release on the single root and every reader column; the next tap opens', async () => {
+  const cases = [
+    { nodes: [{ id: 'root', label: 'Start', prerequisites: [] }], options: { completed: [] }, tab: 'Up next, 1 step', id: 'root' },
+    { nodes: learnToSailNodes, options: { owner: false }, tab: 'Locked, 3 steps', id: 'dock' },
+    { nodes: learnToSailNodes, options: { owner: false }, tab: 'Up next, 2 steps', id: 'bowline' },
+    { nodes: learnToSailNodes, options: { owner: false }, tab: 'Done, 3 steps', id: 'course' },
+  ];
+  for (const { nodes, options, tab, id } of cases) {
+    const page = await openSelectionPage(390, nodes, options);
+    try {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      const card = page.locator(`.st-board-phone-pane.is-shown .st-board-card[data-step-id="${id}"]`);
+      const before = await page.evaluate(() => location.href);
+      await card.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+      await page.clock.runFor(500);
+      await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+      await card.dispatchEvent('click');
+      assert.equal(await page.locator('.st-board-bulk').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
+      assert.equal(await page.evaluate(() => location.href), before);
+      assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), []);
+      await touchStep(page, id);
+      await page.waitForFunction(() => window.opened?.length === 1);
+      assert.deepEqual(await page.evaluate(() => window.opened), [id]);
+    } finally { await page.close(); }
+  }
 });
 
 test('Chromium: an unrelated parent render preserves card memoization and a hold already 200ms underway', async () => {

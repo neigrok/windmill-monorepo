@@ -138,19 +138,42 @@ for (const width of [390, 1024]) {
     } finally { await page.close(); }
   });
 
-  test(`workspace ${width}: changed Cancel asks once, Escape keeps editing, Discard writes nothing`, async () => {
+  test(`workspace ${width}: changed Cancel focuses and traps Discard above inert layers, then restores focus`, async () => {
     const page = await open(width);
     try {
       await page.getByRole('button', { name: 'Edit', exact: true }).click();
       await page.getByRole('textbox', { name: 'Note', exact: true }).fill('Changed');
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
       await page.getByRole('dialog', { name: 'Discard draft?' }).waitFor();
+      await page.waitForFunction(() => document.activeElement?.matches('.st-board-discard'));
+      assert.deepEqual(await page.evaluate(() => ({
+        portal: document.querySelector('.st-board-composer-layer').parentElement === document.body,
+        detailCovered: Boolean(document.querySelector('.st-board-step-layer').closest('[inert]')),
+        cancelCovered: Boolean([...document.querySelectorAll('.st-board-note-editor button')].find((button) => button.textContent === 'Cancel').closest('[inert]')),
+        sheetCovered: Boolean(document.querySelector('.st-board-discard').closest('[inert]')),
+      })), { portal: true, detailCovered: true, cancelCovered: true, sheetCovered: false });
+      await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Keep editing');
+      await page.keyboard.press('Shift+Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Discard');
+      await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Keep editing');
       await page.keyboard.press('Escape');
       await page.getByRole('dialog', { name: 'Discard draft?' }).waitFor({ state: 'hidden' });
+      await page.clock.runFor(20);
+      await page.waitForFunction(() => document.activeElement?.textContent === 'Cancel');
+      assert.equal(await page.locator('.st-board-step-layer').evaluate((element) => Boolean(element.closest('[inert]'))), false);
       assert.equal(await page.evaluate(() => window.closed ?? false), false);
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+      await page.clock.runFor(20);
+      await page.waitForFunction(() => document.activeElement?.textContent === 'Cancel');
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
       await page.getByRole('button', { name: 'Discard', exact: true }).click();
       await page.locator('.st-board-workspace-note').waitFor();
+      await page.clock.runFor(20);
+      await page.waitForFunction(() => document.activeElement?.textContent === 'Edit');
+      assert.equal(await page.locator('.st-board-step-layer').evaluate((element) => Boolean(element.closest('[inert]'))), false);
       assert.deepEqual(await page.evaluate(() => window.writes ?? []), []);
       assert.deepEqual(await page.evaluate(() => window.events.filter((event) => event.name === 'roadmap_board_workspace')), [{ name: 'roadmap_board_workspace', props: { action: 'noteDiscard' } }]);
     } finally { await page.close(); }
