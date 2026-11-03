@@ -45,6 +45,7 @@ const coachFiles = Contract.files('gym').filter((path) => path === 'gym/catalog.
 const notApplicable = {
   'gym/domain/recovery-actions.json': 'the web holds no signed-out workout: its gym opens behind the account gate',
   'gym/domain/coach-onboarding-actions.json': 'the web carries no anonymous routine import door',
+  'gym/domain/coach-conversation-actions.json': 'a web Coach turn writes its conversation on the server (gym Coach §4.6); the web holds no thread or message entity',
   ...Object.fromEntries(coachFiles.map((path) => [path, 'the web runs no replica executor'])),
 };
 

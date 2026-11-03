@@ -334,7 +334,7 @@ class GymServerRules : ServerRules {
                 }
                 "workoutProposal" -> {
                     if (!created) continue
-                    val sessionId = value(row, "sessionId")!!.str(); val session = staged[key("session", sessionId)]
+                    val sessionId = (value(row, "sessionId") as? Json.Str)?.value ?: ""; val session = staged[key("session", sessionId)]
                     if (c.origin.isReplica) {
                         if (value(row, "door") != Json.of("ask") || (value(row, "connection") ?: Json.of("")) != Json.of("") || (value(row, "agent") ?: Json.of("")) != Json.of("")) throw Refusal("invalid")
                         if (c.guards.none { it.key == key("session", sessionId) && it.field == "plan" && it.stamp == session?.lattice?.fields?.get("plan")?.stamp }) throw Refusal("invalid")
@@ -342,7 +342,7 @@ class GymServerRules : ServerRules {
                     if (session?.isAlive != true) throw Refusal("unknown-record")
                     val plan = value(session, "plan")?.orNull() ?: throw Refusal("invalid")
                     if (closed(session, records("set"), c.serverNow)) throw Refusal("session-finished")
-                    val base = entries(plan); val lines = value(row, "changes")!!.arr(); val proposed = document(lines)
+                    val base = entries(plan); val lines = (value(row, "changes") as? Json.Arr)?.values.orEmpty(); val proposed = document(lines)
                     if (proposed.size > 50 || lines != diff(base, proposed)) throw Refusal("invalid")
                     checkPlanShape(base, proposed, ::known)
                     checkLoggedKept(base, proposed, session.key.id.json, records("set"))

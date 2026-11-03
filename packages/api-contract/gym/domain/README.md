@@ -3,8 +3,8 @@
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
 v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`,
-`coach-onboarding-actions.json` and `../rules/collation.json` run in Swift and Kotlin and do not apply on the web (their
-rows say why); every other file runs in all three.
+`coach-onboarding-actions.json`, `coach-conversation-actions.json` and `../rules/collation.json` run in Swift and Kotlin and do
+not apply on the web (their rows say why); every other file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -25,7 +25,7 @@ The ability conformance corpus beside this one, `../abilities/` ([README](../../
 executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`): each case runs through `RunAbility` over its
 given records as the case's seat at its moment, and the result's JCS bytes, its SHA-256 and the records the gesture writes
 are compared with the server's golden. The Coach `thread` and `message` entities keep a rule book of their own
-(`CoachRules.book`) until every gym implementation carries them, so `rules.json` stays the book the three share.
+(`CoachRules.book`, in Swift and Kotlin) until every gym implementation carries them, so `rules.json` stays the book the three share.
 
 ## Files
 
@@ -37,6 +37,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
 | `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Kotlin and Swift claim the cases, while web carries no anonymous import door |
+| `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin and Swift claim the cases; a web turn writes its conversation on the server, so the web holds no `thread` or `message` entity |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
@@ -167,6 +168,10 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `ReviseWorkoutPlan` | `{sessionId,base,operations}`; `base` is the plan the editor read, `operations` a non-empty list applied in order (below) | `null`; one guarded write of the whole `plan`, or nothing when the plan stands |
 | `ProposeWorkout` | `{id,sessionId,entries,summary}`; `entries` is the whole plan proposed | Proposal id; the diff against the stored plan, guarding `plan`; the stored plan makes no proposal |
 | `ApplyWorkoutProposal`, `DismissWorkoutProposal` | `{id}` | `null`; apply predicts the settled state and the session's `plan` |
+| `OpenTurn` | `{thread?,question,pictures?}`; `pictures` are `{id,mediaType,localOnly?}`; `ids` mint the thread when none is named, the lifter's message, then the Coach message | `{thread,lifter,coach}`; one gesture of the thread, the two messages and the `runningTurn` device row |
+| `EndTurn` | `{message,state,text?,truncated?}`; `text` absent keeps the partial text | `null`; one gesture of `state`, `text`, `receipt` and `truncated` with `runningTurn` cleared, or nothing once a writer ended the turn |
+| `AbilityCall.recorded` | `{message:{id,fields},call}`, with no records: a pure rule | `{recorded,callsBytes}`: the first form the message's calls hold within 32,768 UTF-8 bytes of JCS, in order whole (the read less the rows earlier `ok` calls hold by identity), without `input`, its read as counts alone (`readTruncated`), refused `coach-turn-volume` with its id and name alone, or `null`; `callsBytes` is the calls' size after it |
+| `ReadServed.week` | `{at}`, with no records: a pure rule | `{week}`: the Monday 00:00 UTC at or before `at`, at least 1 |
 
 **Plan operations.** Each names an entry by its `index` in the plan and a planned set by `set`, both from 0:
 `{op:"retarget",index,set,target:{reps?,weightKg?}}` replaces one planned set's target;

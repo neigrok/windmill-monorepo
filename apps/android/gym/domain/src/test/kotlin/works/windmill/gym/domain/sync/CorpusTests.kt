@@ -4,6 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.domain.kit.*
 import works.windmill.domain.testing.*
+import works.windmill.gym.domain.coach.*
 import works.windmill.sync.api.Notice
 import works.windmill.sync.api.NoticeContent
 import works.windmill.sync.api.ViewMode
@@ -23,7 +24,8 @@ class CorpusTests {
         "gym/domain/bodyweight-actions.json", "gym/domain/routines-actions.json", "gym/domain/catalogue-actions.json",
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
         "gym/domain/recovery-actions.json", "gym/domain/coach-onboarding-actions.json", "gym/domain/training-reads.json", "gym/domain/units.json",
-        "gym/rules/bodyweight.json", "gym/rules/collation.json", "gym/domain/workout-plan-actions.json", "gym/domain/workout-proposals-actions.json")
+        "gym/rules/bodyweight.json", "gym/rules/collation.json", "gym/domain/workout-plan-actions.json", "gym/domain/workout-proposals-actions.json",
+        "gym/domain/coach-conversation-actions.json")
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
@@ -116,6 +118,7 @@ class CorpusTests {
             "gym/domain/units.json" -> unitsForm(vector.input)
             "gym/domain/workout-plan-actions.json" -> workoutPlan(vector, input!!)
             "gym/domain/workout-proposals-actions.json" -> workoutProposals(vector, input!!)
+            "gym/domain/coach-conversation-actions.json" -> coachConversation(vector, input!!)
             else -> error("unclaimed gym file ${vector.file}")
         }
     }
@@ -382,6 +385,23 @@ class CorpusTests {
             "ApplyWorkoutProposal" -> corpus.decision(ApplyWorkoutProposal(f.ref("id", WorkoutProposal)), vector, { Json.Null }, ::refusalForm)
             "DismissWorkoutProposal" -> corpus.decision(DismissWorkoutProposal(f.ref("id", WorkoutProposal)), vector, { Json.Null }, ::refusalForm)
             else -> error("unclaimed workout proposal action")
+        }
+    }
+
+    fun coachConversation(vector: Vector, input: Json): Json {
+        val f = Fields(input)
+        return when (vector.input.member("action").str()) {
+            "OpenTurn" -> corpus.decision(OpenTurn(f.optionalRef("thread", CoachThread), f.string("question"), f.optionalList("pictures", Picture) ?: emptyList()), vector,
+                { Json.objectOf("thread" to it.thread.json, "lifter" to it.lifter.json, "coach" to it.coach.json) }, ::refusalForm)
+            "EndTurn" -> corpus.decision(EndTurn(f.ref("message", CoachMessage), MessageState.valueOf(f.string("state")), f.optionalString("text"), f.bool("truncated", false)), vector,
+                { Json.Null }, ::refusalForm)
+            "AbilityCall.recorded" -> {
+                val message = CoachMessage.fromForm(input.member("message"))
+                val recorded = message.recorded(AbilityCall.decode(input.member("call")))
+                Json.objectOf("recorded" to (recorded?.json ?: Json.Null), "callsBytes" to Json.of(message.copy(calls = message.calls + listOfNotNull(recorded)).callsBytes))
+            }
+            "ReadServed.week" -> Json.objectOf("week" to Json.of(ReadServed.week(f.instant("at"))))
+            else -> error("unclaimed coach conversation action")
         }
     }
 
