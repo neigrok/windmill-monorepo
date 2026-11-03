@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
+import { boardOpen } from './board/gate.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
 
@@ -47,12 +48,13 @@ function pathTarget(pathname = typeof window === 'undefined' ? '' : window.locat
   return id ? { treeId: id } : null;
 }
 
-// Returns a { Component, props } descriptor, or null to let the next product answer.
+// Returns a { Component, props, inRoom } descriptor, or null to let the next product answer. `inRoom` mounts a share
+// link or the demo inside the room's chrome: the identity row replaces the wordmark, so the Shell is their way home.
 function render({ hash, pathname, search }) {
   // The hash wins over the /t/:id path when it names an app destination.
   const pathShare = pathTarget(pathname);
   if (pathShare && !hash.startsWith('#/')) {
-    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false } };
+    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false }, inRoom: boardOpen() };
   }
 
   if (hash.startsWith('#/browse')) return { Component: BrowsePage, props: {} };
@@ -62,7 +64,7 @@ function render({ hash, pathname, search }) {
   if (!isApp) return null;
 
   const target = appTarget(hash);
-  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo } };
+  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo }, inRoom: boardOpen() };
 }
 
 // Explicit sign-out and account replacement wipe stamped work; a session lapse never calls this hook.

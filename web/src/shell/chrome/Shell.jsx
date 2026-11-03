@@ -81,8 +81,9 @@ function RoomLink({ href, label, active }) {
 
 const HOME_SCOPE = { theme: null, brand: 'clay' };
 
-function resolveRoom(pathname, neutral) {
+function resolveRoom(pathname, neutral, roomProduct) {
   if (neutral) return { kind: 'neutral', scope: HOME_SCOPE, neutral };
+  if (roomProduct) return { kind: 'product', scope: roomProduct.shell.scope, product: roomProduct };
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/app') return { kind: 'home', scope: HOME_SCOPE };
   const product = PRODUCTS.find((p) => p.shell && (path === p.shell.room || path.startsWith(`${p.shell.room}/`)));
@@ -116,13 +117,13 @@ function RoomContent({ room, location }) {
   return <Suspense fallback={<RoomFallback Ghost={product.shell.Ghost} />}><Component {...props} /></Suspense>;
 }
 
-export function Shell({ location, neutral = null }) {
+export function Shell({ location, neutral = null, roomProduct = null }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const { resolved: appearance } = useAppearance();
   const roomStatus = useRoomStatus();
-  const room = resolveRoom(location.pathname, neutral);
+  const room = resolveRoom(location.pathname, neutral, roomProduct);
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
 
@@ -165,7 +166,7 @@ export function Shell({ location, neutral = null }) {
         {roomStatus && <RoomStatus status={roomStatus.status} />}
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
-          {roomStatus && status === 'ghost' ? (
+          {(roomStatus || roomProduct) && status === 'ghost' ? (
             <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button>
           ) : (
             <AccountSeat

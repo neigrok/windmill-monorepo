@@ -138,3 +138,32 @@ test('an idle registered room retains its Shell layout and empty live region', a
   assert.deepEqual(announcements.map(textOf), ['']);
   assert.equal(elementsOf(rendered.tree).filter((element) => element.type === 'button').length, 0);
 });
+
+test('a room the route names holds the product chrome on a path outside /app', async (t) => {
+  browser();
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const { PRODUCTS } = await loadScreen('shell/products.js');
+  const roadmap = PRODUCTS.find((product) => product.id === 'roadmap');
+  const shared = { pathname: '/', hash: '#/t/t_shared', search: '' };
+  const view = renderHook(t, () => Shell({ location: shared, roomProduct: roadmap }), { context });
+  assert.deepEqual(elementsOf(view.tree).filter((element) => element.type?.name === 'RoomLink').map((element) => [element.props.label, element.props.active]),
+    [['Home', false], ...PRODUCTS.filter((product) => product.shell?.status === 'open').map((product) => [product.label, product === roadmap])]);
+  const content = elementsOf(view.tree).find((element) => element.type?.name === 'RoomContent');
+  assert.deepEqual([content.props.room.kind, content.props.room.product, content.props.location], ['product', roadmap, shared]);
+});
+
+test('a signed-out visitor in a route-named room gets the drawn Sign in, not the avatar', async (t) => {
+  browser();
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const { PRODUCTS } = await loadScreen('shell/products.js');
+  const roadmap = PRODUCTS.find((product) => product.id === 'roadmap');
+  const seatIn = (props) => {
+    const view = renderHook(t, () => Shell(props), { context: { ...context, user: null, status: 'ghost' } });
+    const seat = elementsOf(view.tree).find((element) => element.props.className === 'wm-head-seat');
+    return seat.props.children.props.className ?? seat.props.children.type.name;
+  };
+  assert.deepEqual([
+    seatIn({ location: { pathname: '/', hash: '#/demo', search: '' }, roomProduct: roadmap }),
+    seatIn({ location }),
+  ], ['wm-head-sign-in', 'AccountSeat']);
+});

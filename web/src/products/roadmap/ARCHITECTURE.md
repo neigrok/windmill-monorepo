@@ -95,7 +95,9 @@ the canvas otherwise; `graphToastPlacement` owns measured clearance from the cam
 panel and legend. Phone legacy toasts and completion toasts over an open editor use the top slot
 below the measured camera; other phone Graph toasts retain their bottom slot. Created steps
 reveal after the scene receives their model and the selected-step panel's insets.
-The identity replaces the plaque, wordmark and hairline. On the phone Graph, a single selected
+The identity replaces the plaque, wordmark and hairline, so share links and the demo mount inside
+the roadmap room's Shell while the gate is open (`inRoom` on the route's answer), keeping their URLs;
+the Shell is their way home and their Sign in. On the phone Graph, a single selected
 step shows a bottom bar with its title and derived state. Owners open its step page from Open step;
 readers and the demo open it from the title and keep Fork as the primary action. The detail opens
 over the Graph, and Back preserves selection. Its Edit step uses the shared composer. The bar

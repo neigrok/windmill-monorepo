@@ -201,7 +201,8 @@ function AppRoutes() {
   for (const product of PRODUCTS) {
     const match = product.render(location);
     if (match) {
-      const { Component, props } = match;
+      const { Component, props, inRoom } = match;
+      if (inRoom) return <Suspense fallback={<RouteFallback mark={false} />}><Shell location={location} roomProduct={product} /></Suspense>;
       return <Suspense fallback={<RouteFallback />}><Component {...props} /></Suspense>;
     }
   }
