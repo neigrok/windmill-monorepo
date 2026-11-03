@@ -6,7 +6,7 @@ import { parseEdgeKey } from '../scene/edgeKey.js';
 const NEW_NODE_ICON = 'sparkles';
 
 // Every write the Graph's own surfaces make: the scene's gestures, the docks and the tablet panel all come through here.
-export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legendRef, readOnlyRef, selection, emit, showToast, setAutoFocusNameId, setComposerOpen }) {
+export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legendRef, desktopEditorRef, selection, emit, showToast, setAutoFocusNameId, setComposerOpen }) {
   const { selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
 
   const undo = useCallback(() => collabRef.current?.undo(), []);
@@ -38,7 +38,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
   }, [setSelectedId, emit]);
 
   const handleCreateRoot = useCallback(() => {
-    if (readOnlyRef.current) return;
+    if (!desktopEditorRef.current) return;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
     const color = legendRef.current[0]?.hue ?? 'terracotta';
     collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color });

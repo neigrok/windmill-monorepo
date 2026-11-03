@@ -23,7 +23,7 @@ function readViewMode() {
   const width = typeof window === 'undefined' ? DESKTOP_MIN : window.innerWidth;
   const breakpoint = breakpointFor(width);
   const shared = isShared();
-  return { breakpoint, shared, readOnly: shared || breakpoint !== 'desktop' };
+  return { breakpoint, shared, desktopEditor: !shared && breakpoint === 'desktop' };
 }
 
 export function useViewMode() {
@@ -31,7 +31,7 @@ export function useViewMode() {
   useEffect(() => {
     const sync = () => setView((prev) => {
       const next = readViewMode();
-      return prev.breakpoint === next.breakpoint && prev.readOnly === next.readOnly && prev.shared === next.shared ? prev : next;
+      return prev.breakpoint === next.breakpoint && prev.shared === next.shared ? prev : next;
     });
     window.addEventListener('resize', sync);
     window.addEventListener('hashchange', sync);

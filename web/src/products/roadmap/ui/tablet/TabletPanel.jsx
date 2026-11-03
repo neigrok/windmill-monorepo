@@ -3,6 +3,7 @@
 import React from 'react';
 import { Icon } from '../../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
+import { GraphDock } from '../GraphChrome.jsx';
 import { TabletEditor } from './TabletEditor.jsx';
 
 const shellBase = {
@@ -222,40 +223,38 @@ function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete
   );
 }
 
-export function TabletPanel({ tablet, open, top, width, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, kinds, autoFocusName, isRoot, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, recolorKinds, ringedKind, onBulkRecolor, onBulkDelete, onBulkDone }) {
+export function TabletPanel({ tablet, open, top, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, kinds, autoFocusName, isRoot, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, recolorKinds, ringedKind, onBulkRecolor, onBulkDelete, onBulkDone }) {
   const { surface, aim } = tablet;
   return (
-    <aside className={`st-detail-panel st-detail-panel--tablet ${open ? 'st-detail-panel--open' : ''}`} style={{ width, top }}>
-      <div className="st-dock-tenant" key={surface === 'editor' ? selectedNode.id : surface}>
-        {surface === 'bulk' && (
-          <BulkBar count={selectedCount} kinds={recolorKinds} ringedKind={ringedKind} onRecolor={onBulkRecolor} onDelete={onBulkDelete} onDone={onBulkDone} />
-        )}
-        {surface === 'aim' && (
-          <AimBar sourceLabel={nodesById.get(aim.sourceId)?.label} direction={aim.direction} onToggleDirection={tablet.flipAimDirection} onCancel={() => tablet.setAim(null)} />
-        )}
-        {surface === 'remove' && <RemoveLinkBar onRemove={tablet.removeLink} onCancel={() => tablet.setRemoving(null)} />}
-        {surface === 'editor' && (
-          <TabletEditor
-            key={selectedNode.id}
-            node={selectedNode}
-            state={selectedState}
-            prerequisites={prerequisites}
-            unlocks={unlocks}
-            completedAt={completedAt}
-            kinds={kinds}
-            autoFocusName={autoFocusName}
-            onRename={tablet.renameStep}
-            onAddStep={tablet.addStepUnder}
-            onConnect={tablet.enterAim}
-            onSetKind={tablet.recolorStep}
-            onMarkDone={onMarkDone}
-            onUnmarkDone={onUnmarkDone}
-            onDelete={onDelete}
-            onJump={onJump}
-            isRoot={isRoot}
-          />
-        )}
-      </div>
-    </aside>
+    <GraphDock open={open} top={top} tablet tenant={surface === 'editor' ? selectedNode.id : surface}>
+      {surface === 'bulk' && (
+        <BulkBar count={selectedCount} kinds={recolorKinds} ringedKind={ringedKind} onRecolor={onBulkRecolor} onDelete={onBulkDelete} onDone={onBulkDone} />
+      )}
+      {surface === 'aim' && (
+        <AimBar sourceLabel={nodesById.get(aim.sourceId)?.label} direction={aim.direction} onToggleDirection={tablet.flipAimDirection} onCancel={() => tablet.setAim(null)} />
+      )}
+      {surface === 'remove' && <RemoveLinkBar onRemove={tablet.removeLink} onCancel={() => tablet.setRemoving(null)} />}
+      {surface === 'editor' && (
+        <TabletEditor
+          key={selectedNode.id}
+          node={selectedNode}
+          state={selectedState}
+          prerequisites={prerequisites}
+          unlocks={unlocks}
+          completedAt={completedAt}
+          kinds={kinds}
+          autoFocusName={autoFocusName}
+          onRename={tablet.renameStep}
+          onAddStep={tablet.addStepUnder}
+          onConnect={tablet.enterAim}
+          onSetKind={tablet.recolorStep}
+          onMarkDone={onMarkDone}
+          onUnmarkDone={onUnmarkDone}
+          onDelete={onDelete}
+          onJump={onJump}
+          isRoot={isRoot}
+        />
+      )}
+    </GraphDock>
   );
 }

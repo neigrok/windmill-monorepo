@@ -10,8 +10,8 @@ import { withBrowserErrors } from './composerFixture.js';
 const CLOCK_START = new Date('2026-11-02T12:00:00Z');
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const source = await readFile(new URL('../../../../src/products/roadmap/SkillTreeView.jsx', import.meta.url), 'utf8');
-const { code } = await transformWithEsbuild(source, 'SkillTreeView.jsx', { loader: 'jsx' });
+const source = await readFile(new URL('../../../../src/products/roadmap/editing/useGraphStructure.js', import.meta.url), 'utf8');
+const { code } = await transformWithEsbuild(source, 'useGraphStructure.js', { loader: 'jsx' });
 const treeHandlers = [];
 const visit = (node) => {
   if (!node || typeof node !== 'object') return;

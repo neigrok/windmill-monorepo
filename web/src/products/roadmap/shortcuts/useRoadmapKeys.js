@@ -3,7 +3,7 @@ import { boardKey, graphOnlyKey } from './shortcutMap.js';
 
 // The room's window-level keys: Ask AI, the editor's chords, the Board's letters and pasted plans.
 export function useRoadmapKeys({
-  canTend, tendOpen, setTendOpen, keyboardCovered, activityActsRef, boardActiveRef, boardSwitchRef, readOnlyRef, composerOpenRef,
+  canTend, tendOpen, setTendOpen, keyboardCovered, activityActsRef, boardActiveRef, boardSwitchRef, desktopEditorRef, composerOpenRef,
   identityRef, sceneRef, editorRef, legendRef, feedSummonedRef, highlightedKindIdRef, clearHighlightedKind,
   selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, selectAll, clearEdges,
   undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, handleFocus, handleShowAll,
@@ -39,14 +39,14 @@ export function useRoadmapKeys({
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !typing) event.preventDefault();
         return;
       }
-      if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      if (desktopEditorRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         if (covered) return;
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
         return;
       }
-      if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+      if (desktopEditorRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
         event.preventDefault();
@@ -96,7 +96,7 @@ export function useRoadmapKeys({
         setShortcutsOpen((visible) => !visible);
         return;
       }
-      if (!readOnlyRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
+      if (desktopEditorRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
         if (selectedIdsRef.current.size + selectedEdgesRef.current.size > 1) { event.preventDefault(); bulkDelete(); return; }
@@ -115,7 +115,7 @@ export function useRoadmapKeys({
 
   useEffect(() => {
     const onPaste = (event) => {
-      if (readOnlyRef.current) return;
+      if (!desktopEditorRef.current) return;
       const covered = keyboardCovered();
       if (composerOpenRef.current || covered) return;
       const el = document.activeElement;

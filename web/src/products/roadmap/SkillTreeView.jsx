@@ -8,10 +8,10 @@ import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { useViewMode } from './ui/useViewMode.js';
 import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
-import { GraphChrome, FORK_PILL, GRAPH_CAMERA_SIZE } from './ui/GraphChrome.jsx';
+import { EmptyGraphCard, GraphChrome, GraphDock, GraphSelectionBar, FORK_PILL } from './ui/GraphChrome.jsx';
+import { useGraphGeometry } from './ui/useGraphGeometry.js';
 import { TendBar } from './tending/TendBar.jsx';
-import { useTend } from './tending/useTend.js';
-import { fetchTending } from './tending/tendingClient.js';
+import { useRoomTend } from './tending/useTend.js';
 import { TabletPanel } from './ui/tablet/TabletPanel.jsx';
 import BoardView from './board/BoardView.jsx';
 import { coverBeneath } from './board/composerFocus.js';
@@ -43,10 +43,9 @@ import { ActivityRows } from './activity/ActivityRows.jsx';
 import { useActivity } from './activity/useActivity.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
-import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
-import { layoutNameFrom, loadLayoutEngine, layoutTree } from './layout/index.js';
-import { frontierTarget, viewportInsets, graphToastPlacement, DOCK_WIDTH, TABLET_PANEL_WIDTH } from './ui/viewport.js';
+import { layoutNameFrom, loadLayoutEngine } from './layout/index.js';
+import { frontierTarget, viewportInsets } from './ui/viewport.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
@@ -71,12 +70,14 @@ import { parsePlan } from './paste/planGrammar.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { useGraphEditing } from './editing/useGraphEditing.js';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
+import { useGraphStructure } from './editing/useGraphStructure.js';
+import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { useRoadmapKeys } from './shortcuts/useRoadmapKeys.js';
 import { CoachChip } from './demo/CoachChip.jsx';
-import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
+import { useDemoCoach } from './demo/useDemoCoach.js';
+import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, FORKED_FROM_DEMO_KEY, DEMO_COPY } from './demo/demoStage.js';
 
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
@@ -86,11 +87,6 @@ const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const PLANTED_QUEST_KEY = 'windmill:planted-quest';
-const CTA_ECHO_DELAY = 1500;
-// The space between a measured chrome row and what sits beneath it.
-const CHROME_GAP = 8;
-// The chrome measures itself within a frame of the first paint; past this the first view is the reader's to move.
-const FIRST_FRAME_REFRAME_MS = 1200;
 
 function consumeSessionFlag(key) {
   try {
@@ -111,7 +107,7 @@ function reportBoardFailure(operation, error) {
 
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
-  const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
+  const { breakpoint, desktopEditor: desktopView, shared } = useViewMode();
   const { status, refresh, account, lapsed: sessionLapsed } = useAuth();
 
   const identityRef = useRef(null);
@@ -137,8 +133,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const sceneRef = useRef(null);
   const editorRef = useRef(null);
   const treeRef = useRef(null);
-  const layoutRef = useRef(null); // the requested engine, and the name of the engine that produced the current picture
-  const layoutCacheRef = useRef({ signature: '', result: null });
   const firstFrameRef = useRef(null); // { id, at } — the step the first view opened on, until the chrome has measured itself
   const graphRevealRef = useRef(null);
   useEffect(() => { graphRevealRef.current = null; }, [treeId]);
@@ -149,15 +143,13 @@ export function SkillTreeView({ treeId, demo = false }) {
   const repoRef = useRef(null);
   const collabRef = useRef(null);
   const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, collabRef, sceneRef });
-  const readOnly = viewReadOnly || !!demotion;
-  const readOnlyRef = useRef(readOnly);
+  const desktopEditor = desktopView && !demotion;
+  const desktopEditorRef = useRef(desktopEditor);
   const [syncSession, setSyncSession] = useState(null);
   const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection }
   const onTreeChangedRef = useRef(null);
-  const maskedShownRef = useRef('');
   const applyRemoteProgressRef = useRef(null);
 
-  const invalidRef = useRef(false);
   const plantedQuestRef = useRef(null); // null until consumed; survives StrictMode’s double effect
   const forkedFromDemoRef = useRef(null);
   const demoRef = useRef(demo);
@@ -178,10 +170,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     onHighlightKind, onLegendOpenChange, openLegendFromPicker,
   } = useLegend({ seedRef, collabRef, editorRef, sceneRef });
 
-  const {
-    workspaceByNode, hydrateWorkspaces, pushArcs,
-    onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink,
-  } = useWorkspace({ seedRef, sceneRef });
+  const { workspaceByNode, hydrateWorkspaces, pushArcs, ...workspaceActions } = useWorkspace({ seedRef, sceneRef });
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -201,10 +190,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [topbarBottom, setTopbarBottom] = useState(0); // px
   const [graphChromeBottom, setGraphChromeBottom] = useState(0);
-  const graphRefusalRef = useRef(null);
-  const [graphRefusalHeight, setGraphRefusalHeight] = useState(0);
   const [graphBarBottom, setGraphBarBottom] = useState(0);
-  const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
@@ -228,29 +214,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     || document.querySelector('[aria-modal="true"]') !== null, []);
   const switchFocusRef = useRef(false);
   const switchOptionRef = useRef(null);
-  const [coachAllowed, setCoachAllowed] = useState(false);
-  const [demoCompletions, setDemoCompletions] = useState(0);
-  const [ctaEcho, setCtaEcho] = useState(false);
-
-  // Everything a layout reads: the engine, the DAG and order (the trunk), color and createdAt (trunk election and
-  // sibling ties) — and the label only for an engine that reserves each caption's box, so a rename never re-runs the
-  // others.
-  const layoutPositions = useCallback((nextTree) => {
-    const { requestedName, engine } = layoutRef.current;
-    const readsCaptions = engine.constructor.readsCaptions;
-    const rows = nextTree.allNodes.map((node) => JSON.stringify([
-      node.id, [...node.prerequisites].sort(), node.order ?? '', node.color ?? '', node.createdAt ?? null,
-      readsCaptions ? node.label : '',
-    ]));
-    const signature = `${requestedName}|${rows.sort().join('|')}`;
-    if (layoutCacheRef.current.signature !== signature) {
-      layoutCacheRef.current = { signature, result: layoutTree(engine, nextTree) };
-    }
-    const result = layoutCacheRef.current.result;
-    layoutRef.current.name = result.name;
-    sceneRef.current?.setReorderHint(result.engine.constructor.reorder);
-    return new Map(result.positions);
-  }, []);
+  const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
 
   const states = useMemo(() => {
     if (!tree) return new Map();
@@ -259,9 +223,6 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
 
-  // Structure durability lives in the lattice; nothing is written here.
-  const persistEdits = useCallback(() => {}, []);
-
   // Records only that THIS DEVICE witnessed these completions; callers pass freshly computed values, since state setters are async.
   const witnessProgress = useCallback((next) => {
     if (demoRef.current) return;
@@ -269,37 +230,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
   }, [shared, demotion]);
 
-  const [tendingEnabled, setTendingEnabled] = useState(false);
-  const [tendOpen, setTendOpen] = useState(false);
-  useEffect(() => {
-    if (!treeMine || status !== 'signed-in' || demo) { setTendingEnabled(false); return undefined; }
-    let alive = true;
-    fetchTending().then((summary) => { if (alive) setTendingEnabled(!!summary?.enabled); });
-    return () => { alive = false; };
-  }, [treeMine, status, demo, treeId]);
-
-  const canTend = tendingEnabled && treeMine && !shared && !demo && !demotion;
-
-  const undoTend = useCallback((planted) => {
-    if (!planted.length) return;
-    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] });
-    showToast('AI changes reverted');
-  }, [showToast]);
-
-  const onTendFace = useCallback((face) => {
-    setTendOpen(false);
-    if (face.kind === 'empty') return;
-    const isReceipt = face.kind === 'receipt';
-    const hasUndo = isReceipt && face.created && face.created.length > 0;
-    if (hasUndo) window.setTimeout(() => sceneRef.current?.frameNodes(face.created), 600);
-    showToast(face.line, {
-      duration: isReceipt ? 6000 : 5000,
-      detail: isReceipt ? face.detail : undefined,
-      action: hasUndo ? { label: 'Undo', run: () => undoTend(face.created) } : undefined,
-    });
-  }, [showToast, undoTend]);
-
-  const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
+  const { canTend, tendOpen, setTendOpen, tendWorking, submitTend } = useRoomTend({ treeId, treeMine, status, shared, demo, demotion, collabRef, sceneRef, showToast });
 
   const handlePanStateChange = useCallback((isPanning) => setPanning(isPanning), []);
 
@@ -309,70 +240,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     openActivity, closeActivity,
   } = useActivity({ sceneRef, selectedId });
 
-  // Every structural edit and undo/redo funnels through here; new SkillTree re-validates the DAG.
-  const syncStructure = useCallback(() => {
-    const editor = editorRef.current;
-    const sceneNow = sceneRef.current;
-    if (!editor || !sceneNow) return;
-
-    // A concurrent edit can leave a cycle: render without those edges and surface it.
-    let nextTree;
-    let cycles = null;
-    try {
-      nextTree = new SkillTree(editor.treeData);
-    } catch {
-      const renderable = makeRenderable(editor.treeData);
-      nextTree = new SkillTree(renderable.tree);
-      cycles = renderable.cycles;
-    }
-
-    // A tree no engine can lay out keeps the picture it has: the edit lives in the lattice and the next one retries.
-    let positions;
-    try {
-      positions = layoutPositions(nextTree);
-    } catch (error) {
-      console.error('[layout] the edit could not be laid out; the picture is one step behind', error);
-      showToast('That edit could not be drawn — the picture is one step behind');
-      return;
-    }
-    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current });
-    const model = nextTree.toRenderModel(positions, nextStates);
-    sceneNow.applyModel(model);
-    treeRef.current = nextTree;
-    setTree(nextTree);
-    setRenderModel(model);
-    setBounds(sceneNow.getBounds());
-    persistEdits();
-
-    const invalid = !!(cycles && cycles.length > 0);
-    if (invalid && !invalidRef.current) {
-      const labelOf = (id) => editor.treeData.nodes.find((n) => n.id === id)?.label || id;
-      const ring = cycles[0];
-      console.log('[loose] rendering invalid graph, cycles:', cycles);
-      showToast(`Cycle: ${[...ring, ring[0]].map(labelOf).join(' → ')} — remove a link to fix it`);
-    }
-    invalidRef.current = invalid;
-  }, [layoutPositions, persistEdits, showToast]);
-
-  const onTreeChanged = useCallback((treeData) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.present = treeData;
-    syncStructure();
-    syncLegendFromTree(treeData);
-
-    const masked = collabRef.current?.maskedWork?.() ?? [];
-    const key = masked.map((m) => m.id).sort().join(',');
-    if (masked.length && key !== maskedShownRef.current) {
-      maskedShownRef.current = key;
-      const count = masked.reduce((sum, m) => sum + m.children.length, 0);
-      showToast(`${count} step${count === 1 ? '' : 's'} kept under a deleted node`, {
-        action: { label: 'Restore', run: () => masked.forEach((m) => collabRef.current?.dispatch({ kind: 'ResurrectNode', id: m.id })) },
-      });
-    } else if (!masked.length) {
-      maskedShownRef.current = '';
-    }
-  }, [syncStructure, showToast, syncLegendFromTree]);
+  const { layoutRef, layoutCacheRef, layoutPositions, onTreeChanged } = useGraphStructure({
+    editorRef, sceneRef, treeRef, collabRef, completedRef, showToast, syncLegendFromTree, setTree, setRenderModel, setBounds,
+  });
   onTreeChangedRef.current = onTreeChanged;
 
   const pageTitle = tree?.title?.trim();
@@ -403,14 +273,14 @@ export function SkillTreeView({ treeId, demo = false }) {
     undo, redo, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
     deleteNodeAt, deleteSelected, bulkDelete, handleSetKind, reorderContext, handleSetNodeOrder, bulkRecolor, graftImported,
   } = useGraphEditing({
-    collabRef, editorRef, sceneRef, treeRef, legendRef, readOnlyRef,
+    collabRef, editorRef, sceneRef, treeRef, legendRef, desktopEditorRef,
     selection: { selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti },
     emit, showToast, setAutoFocusNameId, setComposerOpen,
   });
 
   // The scene is constructed once; React drives it through the methods below.
   useEffect(() => {
-    const editing = readOnlyRef.current ? {} : {
+    const editing = !desktopEditorRef.current ? {} : {
       onCreateChild: handleCreateChild,
       onConnectNodes: handleConnect,
       onDeleteNode: deleteNodeAt,
@@ -425,7 +295,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       onSetNodeOrder: handleSetNodeOrder,
     };
     const nextScene = new SkillTreeScene(canvasRef.current, {
-      readOnly: readOnlyRef.current,
+      readOnly: !desktopEditorRef.current,
       reorderHint: layoutCacheRef.current.result?.engine.constructor.reorder ?? 'none',
       onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
@@ -475,7 +345,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, []);
 
   useRoadmapKeys({
-    canTend, tendOpen, setTendOpen, keyboardCovered, activityActsRef, boardActiveRef, boardSwitchRef, readOnlyRef, composerOpenRef,
+    canTend, tendOpen, setTendOpen, keyboardCovered, activityActsRef, boardActiveRef, boardSwitchRef, desktopEditorRef, composerOpenRef,
     identityRef, sceneRef, editorRef, legendRef, feedSummonedRef, highlightedKindIdRef, clearHighlightedKind,
     selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, selectAll, clearEdges,
     undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, handleFocus, handleShowAll,
@@ -483,7 +353,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   });
 
   useEffect(() => {
-    if (!scene || viewReadOnly) return undefined;
+    if (!scene || !desktopView) return undefined;
     let timer = null;
     const unsubscribe = scene.subscribeViewport(() => {
       clearTimeout(timer);
@@ -493,12 +363,12 @@ export function SkillTreeView({ treeId, demo = false }) {
       }, 400);
     });
     return () => { clearTimeout(timer); unsubscribe(); };
-  }, [scene, treeId, viewReadOnly]);
+  }, [scene, treeId, desktopView]);
 
   useEffect(() => {
-    if (viewReadOnly || loading || !seedRef.current) return;
+    if (!desktopView || loading || !seedRef.current) return;
     placeStore.save({ treeId, layout: layoutRef.current.name, camera: sceneRef.current?.getViewpoint?.() ?? null, selectedId });
-  }, [selectedId, loading, treeId, viewReadOnly]);
+  }, [selectedId, loading, treeId, desktopView]);
 
   useEffect(() => {
     if (autoFocusNameId && selectedId !== autoFocusNameId) setAutoFocusNameId(null);
@@ -549,14 +419,14 @@ export function SkillTreeView({ treeId, demo = false }) {
       if (cancelled) return;
 
       const scene = sceneRef.current;
-      const priorLedger = demo || readOnlyRef.current ? null : returnLedger.load(seed.id);
+      const priorLedger = !demo && desktopEditorRef.current ? returnLedger.load(seed.id) : null;
       const sinceIds = ReturnLedger.since(overlay.completed, priorLedger, states);
       if (sinceIds.length) {
         scene.armReturnRecap(sinceIds, `Welcome back · ${sinceIds.length} step${sinceIds.length > 1 ? 's' : ''} done since your last visit`);
       }
       // The first view: a saved place is restored (clamped to the zoom range); the owner with none opens on the
       // frontier at the working zoom, no glide; a visitor keeps the whole-tree fit and the arrival ceremony.
-      const place = viewReadOnly ? null : placeStore.load(layoutRef.current.name);
+      const place = desktopView ? placeStore.load(layoutRef.current.name) : null;
       const returning = place?.treeId === seed.id ? place : null;
       const savedCamera = returning?.camera
         && [returning.camera.x, returning.camera.y, returning.camera.zoom].every(Number.isFinite)
@@ -571,7 +441,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       if (savedCamera) scene.restoreViewpoint(savedCamera);
       if (opensOnFrontier) {
         const target = frontierTarget(nextTree, overlay, { selectedId: restoredSelection });
-        scene.setViewportInsets(insetsRef.current ?? viewportInsets({ breakpoint, dockOpen: !!restoredSelection && !viewReadOnly }));
+        scene.setViewportInsets(insetsRef.current ?? viewportInsets({ breakpoint, dockOpen: !!restoredSelection && desktopView }));
         scene.focusWorking(target, { instant: true });
         firstFrameRef.current = { id: target, at: Date.now(), camera: scene.getViewpoint() };
       }
@@ -593,8 +463,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       pushArcs();
       setBounds(scene.getBounds());
       if (restoredSelection) setSelectedId(restoredSelection);
-      if (!viewReadOnly) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: scene.getViewpoint(), selectedId: restoredSelection });
-      if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
+      if (desktopView) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: scene.getViewpoint(), selectedId: restoredSelection });
+      if (!demo && desktopEditorRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
@@ -659,20 +529,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [states]);
 
   useEffect(() => { completedRef.current = completed; }, [completed]);
-  useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
+  useEffect(() => { desktopEditorRef.current = desktopEditor; }, [desktopEditor]);
   useEffect(() => { composerOpenRef.current = composerOpen; }, [composerOpen]);
-
-  useEffect(() => {
-    if (!demo || status === 'loading') return undefined;
-    let coachDone = false;
-    try { coachDone = !!localStorage.getItem(COACH_DONE_KEY); } catch { /* private mode */ }
-    if (status !== 'signed-in') { setCoachAllowed(coachEligible({ coachDone, signedIn: false, ownsTrees: false })); return undefined; }
-    let cancelled = false;
-    listAllTrees()
-      .then((trees) => { if (!cancelled) setCoachAllowed(coachEligible({ coachDone, signedIn: true, ownsTrees: trees.length > 0 })); })
-      .catch(() => { if (!cancelled) setCoachAllowed(false); });
-    return () => { cancelled = true; };
-  }, [demo, status]);
 
   const nodesById = useMemo(() => {
     if (!tree) return new Map();
@@ -926,43 +784,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   if (phoneGraph && forkPillPresent) phoneGraphBottom = FORK_PILL_FOOTPRINT;
   if (phoneGraph && graphStep) phoneGraphBottom = graphBarBottom;
 
-  const closeRowActivity = useCallback(() => {
-    activityActsRef.current.closeActivity();
-    requestAnimationFrame(() => {
-      const more = identityRef.current?.querySelector('[data-roadmap-more]');
-      more?.focus({ preventScroll: true });
-    });
-  }, []);
-  const openRowActivity = useCallback((door) => {
-    const current = activityActsRef.current;
-    if (!current.enabled) return;
-    if (door === 'key') track('roadmap_verb', { verb: 'activity', door: 'key' });
-    if (current.feedVisible) {
-      closeRowActivity();
-      return;
-    }
-    if (current.breakpoint === 'desktop' && current.boardActive) {
-      current.switchView('tree');
-      switchFocusRef.current = false;
-    }
-    current.setSelectedId(null);
-    current.openActivity();
-  }, [closeRowActivity]);
-  const openActivityStep = useCallback((id) => {
-    const current = activityActsRef.current;
-    current.closeActivity();
-    if (current.canvasView) graphStepReturnRef.current = true;
-    current.addressOpen(id, 'activity');
-  }, []);
-  activityActsRef.current = {
-    enabled: owner && !phone,
-    feedVisible, breakpoint, boardActive, canvasView, switchView, setSelectedId,
-    openActivity, closeActivity, addressOpen: stepAddress.open,
-    open: openRowActivity, close: closeRowActivity,
-  };
-  const sheetActivity = useMemo(() => owner && phone
-    ? { groups: activityGroups, nodesById, onOpenStep: openActivityStep }
-    : null, [owner, phone, activityGroups, nodesById, openActivityStep]);
   const openGraphFork = useCallback(() => {
     if (graphStep) track('roadmap_verb', { verb: 'fork', door: 'bar', view: 'graph', band: 'phone' });
     setForkOpen(true);
@@ -993,7 +814,6 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // Once ever per milestone: the ledger survives reloads and an undo/re-complete.
   function milestoneOffer(prevCompleted, nextCompleted) {
-    // Gate on the genuine read-only signals, NOT the width-derived readOnly.
     if (!treeMine || shared || demo || demotion || !tree) return null;
     const fresh = detectMilestones(tree, prevCompleted, nextCompleted)
       .filter((milestone) => !milestoneLedger.has(treeId, milestone.id));
@@ -1021,13 +841,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
     if (quiet || door === 'board') return next;
-    if (demo) {
-      setDemoCompletions((count) => count + 1);
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (id === COACHED_NODE_ID && !reduced) {
-        setTimeout(() => { setCtaEcho(true); setTimeout(() => setCtaEcho(false), 2600); }, CTA_ECHO_DELAY);
-      }
-    }
+    noteCompletion(id);
     const offer = milestoneOffer(completed, next.completed);
     if (offer) {
       sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
@@ -1202,23 +1016,17 @@ export function SkillTreeView({ treeId, demo = false }) {
     />
   );
 
-  const readOnlyDetail = selectedNode && (
-    <StepPanel
-      readOnly
-      node={selectedNode}
-      state={selectedState}
-      prerequisites={prerequisites}
-      unlocks={unlocks}
-      completedAt={completedAt[selectedId]}
-      history={selectedHistory}
-      workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
-      kinds={legend}
-      onReveal={handleRevealNode}
-      onJump={handleSheetJump}
-      onMarkComplete={demo ? handleMarkComplete : undefined}
-      onClose={() => setSelectedId(null)}
-    />
-  );
+  const stepFacts = {
+    node: selectedNode,
+    state: selectedState,
+    prerequisites,
+    completedAt: completedAt[selectedId],
+    history: selectedHistory,
+    workspace: workspaceByNode[selectedId] ?? emptyWorkspace(),
+    kinds: legend,
+    onReveal: handleRevealNode,
+    onClose: () => setSelectedId(null),
+  };
 
   // While the Board stands in for a roadmap that has not loaded, the topbar names nothing and offers no Share; a failed
   // load offers no Graph either, whose load error would cover the topbar with no way back.
@@ -1233,139 +1041,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     : ASK_AI_PLACEHOLDER.wide;
   const tendExamples = tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : [];
   // The docked panel: the desktop editor's dock also hosts the composer and the feed; below 744px a step opens from the bar.
-  const readOnlyDock = readOnly && !phone && !tabletEditor;
+  const readOnlyDock = !desktopEditor && !phone && !tabletEditor;
   const activityOpen = owner && feedVisible;
   const dockOpen = !phone && (composerOpen || (canvasView && (!!selectedNode || activityOpen)));
-  const graphRefusalShown = Boolean(canvasView && refusal);
-  const refusalClearance = graphRefusalShown ? graphRefusalHeight + CHROME_GAP : 0;
-  const dockTop = phone ? undefined : topbarBottom + CHROME_GAP + refusalClearance;
-  const graphRefusalStyle = phone
-    ? { bottom: phoneGraphBottom + 16 }
-    : { top: topbarBottom + CHROME_GAP };
-  const attachGraphRefusal = useCallback((element) => {
-    if (!element && graphRefusalRef.current?.contains(document.activeElement)) {
-      identityRef.current?.querySelector('.st-board-switch-option[aria-pressed="true"]')?.focus({ preventScroll: true });
-    }
-    graphRefusalRef.current = element;
-  }, []);
-  useLayoutEffect(() => {
-    if (!graphRefusalShown) return undefined;
-    const element = graphRefusalRef.current;
-    const measure = () => setGraphRefusalHeight(element?.offsetHeight ?? 0);
-    measure();
-    const observer = new ResizeObserver(measure);
-    if (element) observer.observe(element, { box: 'border-box' });
-    return () => observer.disconnect();
-  }, [graphRefusalShown]);
-  const refusalTopInset = graphRefusalShown && !phone ? graphRefusalHeight + CHROME_GAP : 0;
-  const refusalBottomInset = graphRefusalShown && phone ? graphRefusalHeight + phoneGraphBottom + 24 : 0;
-  const graphTop = canvasView ? Math.max(topbarBottom + refusalTopInset, graphChromeBottom) : topbarBottom;
-  const insets = useMemo(
-    () => {
-      const base = viewportInsets({
-        breakpoint, dockOpen, legendBox,
-        rowBottom: graphTop,
-        barBottom: phoneGraphBottom,
-        cameraBlock: canvasView && !phone ? GRAPH_CAMERA_SIZE : null,
-      });
-      if (!refusalBottomInset) return base;
-      return { ...base, bottom: Math.max(base.bottom, refusalBottomInset) };
-    },
-    [breakpoint, dockOpen, legendBox, graphTop, canvasView, phone, phoneGraphBottom, refusalBottomInset],
-  );
-  // The row and the legend publish their measured boxes after the first paint, so the first view — framed a moment
-  // earlier against insets that were still guesses — is framed once more as soon as the real ones arrive.
-  useEffect(() => {
-    insetsRef.current = insets;
-    if (!scene) return;
-    scene.setViewportInsets(insets);
-    const reveal = graphRevealRef.current;
-    if (reveal && scene.nodesById.has(reveal)) {
-      graphRevealRef.current = null;
-      firstFrameRef.current = null;
-      scene.revealNode(reveal);
-      return;
-    }
-    // Each piece of chrome measures itself a beat after the first paint, so the first view is framed again on every
-    // inset it publishes — until the window closes, or the reader moves the camera and the view becomes theirs.
-    const first = firstFrameRef.current;
-    if (!first) return;
-    const now = scene.getViewpoint();
-    if (Date.now() - first.at >= FIRST_FRAME_REFRAME_MS || now.x !== first.camera.x || now.y !== first.camera.y || now.zoom !== first.camera.zoom) {
-      firstFrameRef.current = null;
-      return;
-    }
-    scene.focusWorking(first.id, { instant: true });
-    firstFrameRef.current = { ...first, camera: scene.getViewpoint() };
-  }, [scene, insets, selectedId, renderModel]);
-
-  // The legend dock's height is its rows', so it publishes its measured box: the corner it holds is a block no caption
-  // may sit under.
-  useEffect(() => {
-    const dock = legendDockRef.current;
-    if (!dock) {
-      setLegendBox(null);
-      return undefined;
-    }
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setLegendBox((box) => (box && box.width === width && box.height === height ? box : { width, height }));
-    });
-    observer.observe(dock);
-    return () => observer.disconnect();
-  }, [legendVisible]);
-
-  useEffect(() => {
-    if (toast?.surface === 'graph' && !canvasView) dismissToast();
-  }, [toast?.surface, canvasView, dismissToast]);
-
-  const [graphToastPosition, setGraphToastPosition] = useState({ center: null, bottom: 24 });
-  useLayoutEffect(() => {
-    if (!canvasView || !toast || phone) return undefined;
-    const root = rootRef.current;
-    const obstacleSelector = '.st-graph-camera, .st-minimap, .st-legend-dock, .st-detail-panel--open';
-    const measure = () => {
-      const shownToast = root.querySelector('.st-graph-toast .st-board-toast, .st-toast');
-      if (!shownToast) return;
-      const rootBox = root.getBoundingClientRect();
-      const obstacles = [...root.querySelectorAll(obstacleSelector)]
-        .filter((element) => element.getClientRects().length > 0)
-        .map((element) => {
-          const box = element.getBoundingClientRect();
-          return { left: box.left - rootBox.left, right: box.right - rootBox.left, top: box.top - rootBox.top, bottom: box.bottom - rootBox.top };
-        });
-      const position = graphToastPlacement({
-        width: rootBox.width, height: rootBox.height,
-        toastWidth: shownToast.offsetWidth, toastHeight: shownToast.offsetHeight,
-        leftInset: insets.left, rightInset: insets.right, obstacles, gap: CHROME_GAP,
-      });
-      setGraphToastPosition((current) => current.center === position.center && current.bottom === position.bottom ? current : position);
-    };
-    const resized = new ResizeObserver(measure);
-    resized.observe(root);
-    const watchToast = () => {
-      const shownToast = root.querySelector('.st-graph-toast .st-board-toast, .st-toast');
-      if (shownToast) resized.observe(shownToast);
-      for (const obstacle of root.querySelectorAll(obstacleSelector)) resized.observe(obstacle);
-      measure();
-    };
-    const mounted = new MutationObserver(watchToast);
-    mounted.observe(root, { childList: true, subtree: true });
-    watchToast();
-    root.addEventListener('transitionend', measure);
-    return () => {
-      root.removeEventListener('transitionend', measure);
-      resized.disconnect();
-      mounted.disconnect();
-    };
-  }, [canvasView, toast?.key, phone, insets]);
-  const phoneToastClearance = phoneGraphBottom + 12 + (graphRefusalShown ? graphRefusalHeight + 8 : 0);
-  const graphToastBottom = phone ? Math.max(24, phoneToastClearance) : graphToastPosition.bottom;
-  const graphToastStyle = canvasView ? {
-    '--graph-toast-center': graphToastPosition.center === null ? '50%' : `${graphToastPosition.center}px`,
-    '--graph-toast-bottom': `${graphToastBottom}px`,
-  } : undefined;
-
   const revealGraphToast = useCallback(() => {
     if (toast?.reveal) handleSheetJump(toast.reveal);
   }, [toast?.reveal, handleSheetJump]);
@@ -1384,32 +1062,24 @@ export function SkillTreeView({ treeId, demo = false }) {
   const {
     openRowTend, openRowFork, openRowShortcuts, openRowSettings, openRowCreate, identityFind, graphNext,
     identityNext, shareFromRow, exportFromRow, newRoadmap, currentRoadmap, identitySheet,
+    closeRowActivity, openRowActivity, openActivityStep,
   } = useRoadmapIdentityActs({
     owner, phone, treeId, tree, boardTree, shownStats, boardActive, completed, completedAt,
     boardQuery, boardQueryRef, setBoardQuery, switchView, switchFocusRef, setTendOpen, setForkOpen,
     setShortcutsOpen, setShareOpen, newStepFromBoard, handleSheetJump, editorRef, showToast, reportBoardFailure,
-    shareRequestRef, currentTreeIdRef, graphViewRef, activity: sheetActivity,
+    shareRequestRef, currentTreeIdRef, graphViewRef, identityRef, graphStepReturnRef, activityActsRef,
+    breakpoint, canvasView, feedVisible, activityGroups, nodesById, setSelectedId, openActivity, closeActivity, addressOpen: stepAddress.open,
   });
-  const [tendTopInset, setTendTopInset] = useState(0);
-  useLayoutEffect(() => {
-    if (phone || !tendOpen) return undefined;
-    const row = identityRef.current?.querySelector('.st-roadmap-identity');
-    const filters = boardActive ? boardLayerRef.current?.querySelector('.st-board-strip') : null;
-    const measure = () => {
-      const rowBottom = row?.getBoundingClientRect().bottom ?? 0;
-      const filterBottom = filters?.getBoundingClientRect().bottom ?? 0;
-      setTendTopInset(Math.max(rowBottom, filterBottom) + 16);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    if (row) observer.observe(row);
-    if (filters) observer.observe(filters);
-    window.addEventListener('resize', measure);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [phone, tendOpen, boardActive, topbarBottom]);
+  useEffect(() => {
+    if (toast?.surface === 'graph' && !canvasView) dismissToast();
+  }, [toast?.surface, canvasView, dismissToast]);
+
+  const { insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset } = useGraphGeometry({
+    breakpoint, phone, canvasView, boardActive, dockOpen, refusal, topbarBottom, graphChromeBottom, phoneGraphBottom,
+    scene, selectedId, renderModel, toastKey: toast?.key ?? null, tendOpen, legendVisible,
+    rootRef, identityRef, boardLayerRef, legendDockRef, insetsRef, firstFrameRef, graphRevealRef,
+  });
+
   const roadmapSwitcher = <TreeSwitcher current={currentRoadmap} listTrees={listAllTrees} onNew={newRoadmap}
     onRename={handleRenameTree} onPreviewTitle={previewTreeTitle} onDelete={handleDeleteTree} />;
   const handleIdentityCrash = useCallback((error) => reportBoardFailure('roadmap-identity', error), []);
@@ -1422,22 +1092,11 @@ export function SkillTreeView({ treeId, demo = false }) {
         style={boardActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
       />
 
-      {!readOnly && (
+      {desktopEditor && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} collabRef={collabRef} selection={selectedId} />
       )}
 
-      {!readOnly && tree && tree.nodes.length === 0 && !boardActive && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 15, pointerEvents: 'none' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-6) var(--space-7)', background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)', pointerEvents: 'auto', textAlign: 'center' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>This tree is empty</div>
-            <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Add a first step to start growing it.</p>
-            <Button onClick={handleCreateRoot}>Add your first step</Button>
-            {breakpoint === 'desktop' && (
-              <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>or paste a plan — ⌘V</p>
-            )}
-          </div>
-        </div>
-      )}
+      {desktopEditor && tree && tree.nodes.length === 0 && !boardActive && <EmptyGraphCard onAddFirstStep={handleCreateRoot} />}
 
       <div className="st-roadmap-identity-host" ref={identityRef}>
         <ErrorBoundary
@@ -1523,7 +1182,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
             stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
             workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
-            workspaceActions={{ onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }}
+            workspaceActions={workspaceActions}
             history={selectedHistory}
             onOpenStep={(id) => stepAddress.open(id, 'step')}
             onBack={stepAddress.back}
@@ -1599,66 +1258,50 @@ export function SkillTreeView({ treeId, demo = false }) {
             onOpenChange={onLegendOpenChange}
             selectedId={highlightedKindId}
             onHighlight={onHighlightKind}
-            {...(readOnly ? {} : {
+            {...(desktopEditor ? {
               onRename: onRenameKind,
               onRecolor: onRecolorKind,
               onAdd: onAddKind,
               onRemove: onRemoveKind,
               onDescribe: onDescribeKind,
-            })}
+            } : {})}
           />
         </div>
       )}
 
-      {!readOnly && (
-        <aside className={`st-detail-panel ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: DOCK_WIDTH, top: dockTop }}>
-          <div className="st-dock-tenant" key={composerOpen ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
-            {composerOpen ? composer : selectedNode ? (
-              <StepPanel
-                node={selectedNode}
-                state={selectedState}
-                prerequisites={prerequisites}
-                completedAt={completedAt[selectedId]}
-                history={selectedHistory}
-                workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
-                autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
-                onRename={handleRename}
-                onAddSubtask={onAddSubtask}
-                onToggleSubtask={onToggleSubtask}
-                onEditSubtask={onEditSubtask}
-                onDeleteSubtask={onDeleteSubtask}
-                onSetNote={onSetNote}
-                onAddLink={onAddLink}
-                onDeleteLink={onDeleteLink}
-                onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
-                onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
-                onSetKind={handleSetKind}
-                kinds={legend}
-                onOpenLegend={openLegendFromPicker}
-                onMarkComplete={handleMarkComplete}
-                onReset={resetStep}
-                onReveal={handleRevealNode}
-                onDelete={deleteNodeAt}
-                onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
-                onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
-                onClose={() => setSelectedId(null)}
-              />
-            ) : feedVisible ? (
-              <ActivityFeed
-                groups={activityGroups}
-                count={eventCount}
-                nodesById={nodesById}
-                now={Date.now()}
-                hoveredId={hoveredId}
-                newIds={newEventIds}
-                onClose={closeRowActivity}
-                onHoverNode={handleRowHover}
-                onLeaveNode={handleRowLeave}
-                onRevealNode={handleRevealNode}
-              />
-            ) : null}
-          </div>
-        </aside>
+      {desktopEditor && (
+        <GraphDock open={dockOpen} top={dockTop} tenant={composerOpen ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
+          {composerOpen ? composer : selectedNode ? (
+            <StepPanel
+              {...stepFacts}
+              {...workspaceActions}
+              autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
+              onRename={handleRename}
+              onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
+              onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
+              onSetKind={handleSetKind}
+              onOpenLegend={openLegendFromPicker}
+              onMarkComplete={handleMarkComplete}
+              onReset={resetStep}
+              onDelete={deleteNodeAt}
+              onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
+              onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
+            />
+          ) : feedVisible ? (
+            <ActivityFeed
+              groups={activityGroups}
+              count={eventCount}
+              nodesById={nodesById}
+              now={Date.now()}
+              hoveredId={hoveredId}
+              newIds={newEventIds}
+              onClose={closeRowActivity}
+              onHoverNode={handleRowHover}
+              onLeaveNode={handleRowLeave}
+              onRevealNode={handleRevealNode}
+            />
+          ) : null}
+        </GraphDock>
       )}
 
       {activityOpen && breakpoint === 'tablet' && (
@@ -1676,7 +1319,6 @@ export function SkillTreeView({ treeId, demo = false }) {
           tablet={tablet}
           open={tablet.surface !== 'empty' && !boardActive}
           top={dockTop}
-          width={TABLET_PANEL_WIDTH}
           selectedNode={selectedNode}
           selectedState={selectedState}
           nodesById={nodesById}
@@ -1700,11 +1342,17 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {readOnlyDock && (
-        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${dockOpen ? 'st-detail-panel--open' : ''}`} style={{ width: breakpoint === 'tablet' ? TABLET_PANEL_WIDTH : DOCK_WIDTH, top: dockTop }}>
-          <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'empty'}>
-            {readOnlyDetail}
-          </div>
-        </aside>
+        <GraphDock open={dockOpen} top={dockTop} tablet={breakpoint === 'tablet'} tenant={selectedNode ? selectedNode.id : 'empty'}>
+          {selectedNode && (
+            <StepPanel
+              {...stepFacts}
+              readOnly
+              unlocks={unlocks}
+              onJump={handleSheetJump}
+              onMarkComplete={demo ? handleMarkComplete : undefined}
+            />
+          )}
+        </GraphDock>
       )}
 
       {demotion && !demotion.cardOpen && (
@@ -1740,40 +1388,20 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {!readOnly && selectedIds.size + selectedEdges.size > 1 && (
-        <div className="st-selection-bar" role="status">
-          <span className="st-selection-count">{selectedIds.size + selectedEdges.size} selected</span>
-          {selectedIds.size > 0 && (
-            <div className="st-step-kinds" role="group" aria-label="Recolour selected steps">
-              {recolorKinds.map((kind) => {
-                const name = kind.label || kind.hue.charAt(0).toUpperCase() + kind.hue.slice(1);
-                return (
-                  <button
-                    key={kind.id}
-                    type="button"
-                    className={`st-step-swatch ${kind.hue === ringedKind ? 'st-step-swatch--current' : ''}`}
-                    style={{ background: KIND_CSS[kind.hue].base }}
-                    title={name}
-                    aria-label={`Recolour selection to ${name}`}
-                    onPointerEnter={() => sceneRef.current?.previewKindSet([...selectedIdsRef.current], kind.hue)}
-                    onPointerLeave={() => sceneRef.current?.restoreKindSet([...selectedIdsRef.current])}
-                    onClick={() => bulkRecolor(kind.hue, { silent: true })}
-                  />
-                );
-              })}
-            </div>
-          )}
-          {selectedIds.size > 0 && (
-            <button type="button" className="st-selection-done" onClick={bulkMarkDone}>Mark all done</button>
-          )}
-          <span
-            className="st-selection-delete"
-            onPointerEnter={() => sceneRef.current?.previewDeleteCostSet([...selectedIdsRef.current])}
-            onPointerLeave={() => sceneRef.current?.clearDeleteCost()}
-          >
-            <Button variant="danger" size="sm" onClick={bulkDelete}>Delete</Button>
-          </span>
-        </div>
+      {desktopEditor && selectedIds.size + selectedEdges.size > 1 && (
+        <GraphSelectionBar
+          stepCount={selectedIds.size}
+          linkCount={selectedEdges.size}
+          kinds={recolorKinds}
+          ringedKind={ringedKind}
+          onPreviewKind={(hue) => sceneRef.current?.previewKindSet([...selectedIdsRef.current], hue)}
+          onRestoreKind={() => sceneRef.current?.restoreKindSet([...selectedIdsRef.current])}
+          onRecolor={(hue) => bulkRecolor(hue, { silent: true })}
+          onMarkDone={bulkMarkDone}
+          onPreviewDelete={() => sceneRef.current?.previewDeleteCostSet([...selectedIdsRef.current])}
+          onClearDelete={() => sceneRef.current?.clearDeleteCost()}
+          onDelete={bulkDelete}
+        />
       )}
 
       {canvasView && toast?.surface === 'graph' && (
@@ -1820,7 +1448,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} view={boardActive ? 'board' : 'graph'} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={!desktopEditor} view={boardActive ? 'board' : 'graph'} />
 
       <ShareDialog
         key={treeId}

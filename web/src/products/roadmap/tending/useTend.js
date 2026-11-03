@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { startTend, fetchRun } from './tendingClient.js';
+import { fetchTending, startTend, fetchRun } from './tendingClient.js';
 import { isTerminal, runFace } from './receipts.js';
 
 const POLL_INTERVAL_MS = 1200;
@@ -42,4 +42,41 @@ async function pollToRest(runId, aliveRef) {
   if (!aliveRef.current) return null;
   const last = await fetchRun(runId);
   return isTerminal(last) ? last : null;
+}
+
+// Ask AI in the room: who may use it, whether it is open, and the toast each answer leaves behind.
+export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, collabRef, sceneRef, showToast }) {
+  const [tendingEnabled, setTendingEnabled] = useState(false);
+  const [tendOpen, setTendOpen] = useState(false);
+  useEffect(() => {
+    if (!treeMine || status !== 'signed-in' || demo) { setTendingEnabled(false); return undefined; }
+    let alive = true;
+    fetchTending().then((summary) => { if (alive) setTendingEnabled(!!summary?.enabled); });
+    return () => { alive = false; };
+  }, [treeMine, status, demo, treeId]);
+
+  const canTend = tendingEnabled && treeMine && !shared && !demo && !demotion;
+
+  const undoTend = useCallback((planted) => {
+    if (!planted.length) return;
+    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] });
+    showToast('AI changes reverted');
+  }, [showToast]);
+
+  const onTendFace = useCallback((face) => {
+    setTendOpen(false);
+    if (face.kind === 'empty') return;
+    const isReceipt = face.kind === 'receipt';
+    const hasUndo = isReceipt && face.created && face.created.length > 0;
+    if (hasUndo) window.setTimeout(() => sceneRef.current?.frameNodes(face.created), 600);
+    showToast(face.line, {
+      duration: isReceipt ? 6000 : 5000,
+      detail: isReceipt ? face.detail : undefined,
+      action: hasUndo ? { label: 'Undo', run: () => undoTend(face.created) } : undefined,
+    });
+  }, [showToast, undoTend]);
+
+  const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
+
+  return { canTend, tendOpen, setTendOpen, tendWorking, submitTend };
 }
