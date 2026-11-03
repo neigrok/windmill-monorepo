@@ -28,26 +28,6 @@
   color: var(--text-primary);
 }
 
-.st-roadmap-switcher > div {
-  max-width: 100%;
-}
-
-.st-roadmap-switcher > div > button {
-  max-width: 100% !important;
-  height: 44px;
-  margin-left: 0 !important;
-  padding: 0 4px 0 0 !important;
-  font-size: 24px !important;
-  line-height: 32px;
-}
-
-.st-roadmap-switcher > div > button svg {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  opacity: 1 !important;
-}
-
 .st-roadmap-progress {
   flex-shrink: 0;
   white-space: nowrap;

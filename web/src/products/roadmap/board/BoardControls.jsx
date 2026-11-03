@@ -13,8 +13,33 @@ import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
 } from './copy.js';
 
-const SORT_STEPS = { ArrowDown: 1, ArrowUp: -1 };
+const MENU_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const SHEET_FOCUSABLE = 'button, input, [tabindex="0"]';
+
+export function dismissOverlayOutside(event, root, onClose) {
+  if (root?.contains(event.target)) return;
+  event.preventDefault();
+  onClose();
+}
+
+export function handleMenuKey(event, { root, selector = '[role="menuitem"]', onEscape, onTab }) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    onEscape();
+    return;
+  }
+  if (event.key === 'Tab') {
+    onTab?.();
+    return;
+  }
+  const direction = MENU_STEPS[event.key];
+  if (!direction) return;
+  event.preventDefault();
+  const options = [...root.querySelectorAll(selector)];
+  const current = options.indexOf(root.ownerDocument.activeElement);
+  options[(current + direction + options.length) % options.length]?.focus();
+}
 
 export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
   return (
@@ -163,9 +188,9 @@ function clear(onQuery, what, from) {
   onQuery((current) => current.without(what));
 }
 
-// Find a step: from 744px a pill with the / keycap, on the phone the band's field. Escape clears first, then leaves.
-// A search emits once it is committed (Enter, or leaving the field) and never says what was asked.
-export function FindStep({ query, onQuery, phone = false, folded = false, onExpand }) {
+// Find uses the full field from 1280px, a folded icon at 744–1279px, and the phone band's field.
+// Escape clears before leaving; Enter or blur commits one content-free search event.
+export function FindStep({ query, onQuery, phone = false, folded = false, tooltip = true, onExpand }) {
   const input = useRef(null);
   const toggle = useRef(null);
   const focusExpanded = useRef(false);
@@ -221,7 +246,7 @@ export function FindStep({ query, onQuery, phone = false, folded = false, onExpa
         className="st-board-find-toggle"
         aria-label={LABELS.findStep}
         aria-keyshortcuts="/"
-        title={LABELS.findStep}
+        title={tooltip ? LABELS.findStep : undefined}
         onClick={() => {
           flushSync(() => setExpanded(true));
           input.current?.focus();
@@ -252,7 +277,7 @@ export function FindStep({ query, onQuery, phone = false, folded = false, onExpa
         onFocus={() => setExpanded(true)}
         onBlur={() => {
           commit();
-          if (!typed) setExpanded(false);
+          setExpanded(false);
         }}
       />
       {typed && (
@@ -406,19 +431,9 @@ function SortOptions({ sort, onPick, onDismiss }) {
     list.current.querySelector('[aria-checked="true"]')?.focus();
   }, []);
 
-  const onKeyDown = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      onDismiss();
-      return;
-    }
-    if (!(event.key in SORT_STEPS)) return;
-    event.preventDefault();
-    const options = [...list.current.querySelectorAll('[role="menuitemradio"]')];
-    const at = options.indexOf(document.activeElement);
-    options[(at + SORT_STEPS[event.key] + options.length) % options.length].focus();
-  };
+  const onKeyDown = (event) => handleMenuKey(event, {
+    root: list.current, selector: '[role="menuitemradio"]', onEscape: onDismiss,
+  });
 
   const option = (value) => (
     <button
@@ -579,7 +594,7 @@ export function PhoneTools({ worn, query, onQuery, onNewStep }) {
   );
 }
 
-// A bottom sheet over the whole Board: the scrim and × dismiss it, Escape too, and Tab stays inside while it is open.
+// The sheet covers its host surface; scrim, × and Escape dismiss it, while Tab stays inside.
 export function Sheet({ host, variant, title, onClose, children }) {
   const sheet = useRef(null);
   const titleId = useId();
@@ -606,7 +621,7 @@ export function Sheet({ host, variant, title, onClose, children }) {
   return createPortal(
     <div className="st-board-sheet-layer" onKeyDown={onKeyDown}>
       <div className="st-board-sheet-scrim" aria-hidden onClick={() => onClose('scrim')} />
-      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}`} tabIndex={variant === 'roadmap' ? -1 : undefined} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}`} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <span className="st-board-sheet-grabber" aria-hidden />
         <div className="st-board-sheet-heading">
           <h2 id={titleId} className="st-board-sheet-title">{title}</h2>

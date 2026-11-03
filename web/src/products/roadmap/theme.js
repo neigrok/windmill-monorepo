@@ -22,6 +22,10 @@ export const KIND_CSS = Object.fromEntries(NODE_COLOR_NAMES.map((name) => [name,
   glow: `var(--kind-${name}-glow)`,
 }]));
 
+export function hueOf(color) {
+  return KIND_CSS[color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+}
+
 // Tier indices are what the shaders receive; higher = more progress.
 const TIER_LOCKED = 0;
 const TIER_AVAILABLE = 1;

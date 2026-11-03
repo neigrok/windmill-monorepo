@@ -9,6 +9,7 @@ import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from './acts.js';
 import { deleteCostLine } from '../ui/mobile/editorSheet.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
+import { handleMenuKey } from './BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
 import { coverBeneath, DetailFocusContext } from './composerFocus.js';
 import { boardFocusTarget } from './traversal.js';
@@ -592,24 +593,14 @@ function StepMenu({ items, confirm }) {
     return () => window.removeEventListener('pointerdown', away);
   }, [open]);
 
-  const onKeyDown = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
+  const onKeyDown = (event) => handleMenuKey(event, {
+    root: box.current,
+    onEscape: () => {
       setOpen(false);
       opener.current.focus();
-      return;
-    }
-    if (event.key === 'Tab') {
-      setOpen(false);
-      return;
-    }
-    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-    if (!step) return;
-    event.preventDefault();
-    const choices = [...box.current.querySelectorAll('[role="menuitem"]')];
-    choices[(choices.indexOf(document.activeElement) + step + choices.length) % choices.length].focus();
-  };
+    },
+    onTab: () => setOpen(false),
+  });
 
   return (
     <div className="st-board-step-menu" ref={box}>

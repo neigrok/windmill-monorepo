@@ -4,6 +4,7 @@
 // docs/design/consistency.md, and owed a redraw from the boards.
 
 import { KIND_CSS, isNightFor, sceneTheme } from '../theme.js';
+import { completedToast, upNextCount } from '../board/copy.js';
 
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // A node carries its kind as --kind-* tokens and follows the room by itself. An edge is an SVG stroke
@@ -182,7 +183,7 @@ export function mountHero(wrap) {
   const fcta = el('a', 'fcta', wrap, FORK_IC + '<span>Fork this tree</span>');
   fcta.href = '#/demo';
   fcta.tabIndex = -1;   // hero is aria-hidden; keep this link out of the tab order
-  const toast = el('div', 'toastp', wrap, 'Step unlocked: Rig the mast · <b>2 steps opened</b>');
+  const toast = el('div', 'toastp', wrap, `${completedToast({ step: 'Rig the mast', unlocked: [] })} · <b>${upNextCount({ count: 2 })}</b>`);
   const ct = plq.querySelector('.ct');
 
   // scale-to-fit: world only; labels hide below 0.8×

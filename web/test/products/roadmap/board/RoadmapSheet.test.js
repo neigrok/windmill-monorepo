@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { beacon, withBrowserErrors } from './composerFixture.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -47,7 +48,7 @@ function start() {
         },
         load(id) {
           if (id === '\0roadmap-sheet-entry') return entry;
-          if (id === '\0roadmap-sheet-beacon') return 'export function track(name, props) { (window.events ??= []).push({ name, props }); }';
+          if (id === '\0roadmap-sheet-beacon') return beacon;
         },
         configureServer(vite) {
           vite.middlewares.use('/roadmap-sheet-test', (_request, response) => {
@@ -71,11 +72,13 @@ after(async () => {
 async function open(options = {}, width = 390, theme = 'light') {
   await start();
   const page = await browser.newPage({ viewport: { width, height: 844 } });
-  await page.goto(`${origin}/roadmap-sheet-test`);
-  await page.waitForFunction(() => window.entryReady);
-  await page.evaluate(([options, theme]) => { document.documentElement.dataset.theme = theme; window.mount(options); }, [options, theme]);
-  await page.locator('#title').click();
-  await page.getByRole('dialog', { name: 'Roadmap', exact: true }).waitFor();
+  await withBrowserErrors(page, async () => {
+    await page.goto(`${origin}/roadmap-sheet-test`);
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate(([options, theme]) => { document.documentElement.dataset.theme = theme; window.mount(options); }, [options, theme]);
+    await page.locator('#title').click();
+    await page.getByRole('dialog', { name: 'Roadmap', exact: true }).waitFor();
+  });
   return page;
 }
 
@@ -84,20 +87,22 @@ for (const width of [320, 390]) {
     test(`Chromium: roadmap sheet ${width} ${theme} shows current first, compact counts and drawn tiles`, async () => {
       const page = await open({}, width, theme);
       try {
-        await page.locator('.st-roadmap-sheet-tree').nth(2).waitFor();
-        assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').evaluateAll((rows) => rows.map((row) => ({
-          title: row.querySelector('.st-roadmap-sheet-tree-name').textContent,
-          count: row.querySelector('.st-roadmap-sheet-count').textContent,
-          current: row.getAttribute('aria-current'),
-          checked: Boolean(row.querySelector('.st-roadmap-sheet-check svg')),
-        }))), [
-          { title: 'Learn to sail', count: '3/8', current: 'true', checked: true },
-          { title: 'Coastal navigation handbook', count: '3.2k/5k', current: null, checked: false },
-          { title: 'Spanish basics', count: '12/40', current: null, checked: false },
-        ]);
-        assert.deepEqual(await page.locator('.st-roadmap-sheet-verbs button').allTextContents(), ['Ask AI', 'Share', 'Export', 'Settings']);
-        assert.equal(await page.locator('.st-roadmap-sheet-progress, [type="search"]').count(), 0);
-        assert.equal(await page.getByRole('dialog').evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+        await withBrowserErrors(page, async () => {
+          await page.locator('.st-roadmap-sheet-tree').nth(2).waitFor();
+          assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').evaluateAll((rows) => rows.map((row) => ({
+            title: row.querySelector('.st-roadmap-sheet-tree-name').textContent,
+            count: row.querySelector('.st-roadmap-sheet-count').textContent,
+            current: row.getAttribute('aria-current'),
+            checked: Boolean(row.querySelector('.st-roadmap-sheet-check svg')),
+          }))), [
+            { title: 'Learn to sail', count: '3/8', current: 'true', checked: true },
+            { title: 'Coastal navigation handbook', count: '3.2k/5k', current: null, checked: false },
+            { title: 'Spanish basics', count: '12/40', current: null, checked: false },
+          ]);
+          assert.deepEqual(await page.locator('.st-roadmap-sheet-verbs button').allTextContents(), ['Ask AI', 'Share', 'Export', 'Settings']);
+          assert.equal(await page.locator('.st-roadmap-sheet-progress, [type="search"]').count(), 0);
+          assert.equal(await page.getByRole('dialog').evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+        });
       } finally { await page.close(); }
     });
   }
@@ -106,66 +111,74 @@ for (const width of [320, 390]) {
 test('Chromium: sheet traps Tab and Escape, scrim and close return focus to the title', async () => {
   const page = await open();
   try {
-    await page.getByRole('button', { name: 'Close', exact: true }).focus();
-    await page.keyboard.press('Shift+Tab');
-    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Planted in public');
-    await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Close');
-    await page.keyboard.press('Escape');
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'title');
-    await page.locator('#title').click();
-    await page.locator('.st-board-sheet-scrim').click({ position: { x: 10, y: 10 } });
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'title');
-    await page.locator('#title').click();
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'title');
-    assert.deepEqual(await page.evaluate(() => window.events), [
-      { name: 'roadmap_sheet', props: { step: 'close', via: 'escape' } },
-      { name: 'roadmap_sheet', props: { step: 'close', via: 'scrim' } },
-      { name: 'roadmap_sheet', props: { step: 'close', via: 'close' } },
-    ]);
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('button', { name: 'Close', exact: true }).focus();
+      await page.keyboard.press('Shift+Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Planted in public');
+      await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Close');
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'title');
+      await page.locator('#title').click();
+      await page.locator('.st-board-sheet-scrim').click({ position: { x: 10, y: 10 } });
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'title');
+      await page.locator('#title').click();
+      await page.getByRole('button', { name: 'Close', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'title');
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_sheet', props: { step: 'close', via: 'escape' } },
+        { name: 'roadmap_sheet', props: { step: 'close', via: 'scrim' } },
+        { name: 'roadmap_sheet', props: { step: 'close', via: 'close' } },
+      ]);
+    });
   } finally { await page.close(); }
 });
 
 test('Chromium: a failed list keeps current, null tiles disappear, and large progress stays exact', async () => {
   const page = await open({ fail: true, noAsk: true,
-    current: { id: 'coast', title: 'Coastal navigation handbook', done: 3200, total: 5000, dominantKind: 'olive' } }, 320);
+    current: { id: 'coast', title: 'Coastal navigation handbook', done: 3200, upNext: 30, locked: 1770, total: 5000, dominantKind: 'olive' } }, 320);
   try {
-    assert.deepEqual(await page.locator('.st-roadmap-sheet-tree-name').allTextContents(), ['Coastal navigation handbook']);
-    assert.deepEqual(await page.locator('.st-roadmap-sheet-verbs button').allTextContents(), ['Share', 'Export', 'Settings']);
-    assert.equal(await page.locator('.st-roadmap-sheet-progress').textContent(), '3,200 of 5,000 steps done');
-    const widths = await page.locator('.st-roadmap-sheet-verbs button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().width));
-    assert.equal(Math.max(...widths) - Math.min(...widths) < 1, true);
+    await withBrowserErrors(page, async () => {
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-tree-name').allTextContents(), ['Coastal navigation handbook']);
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-verbs button').allTextContents(), ['Share', 'Export', 'Settings']);
+      assert.equal(await page.locator('.st-roadmap-sheet-progress').textContent(), '3,200 done · 30 up next · 1,770 locked');
+      const widths = await page.locator('.st-roadmap-sheet-verbs button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().width));
+      assert.equal(Math.max(...widths) - Math.min(...widths) < 1, true);
+    });
   } finally { await page.close(); }
 });
 
 test('Chromium: every tile and navigation act runs after dismissal with bounded events', async () => {
   const page = await open();
   try {
-    for (const label of ['Ask AI', 'Share', 'Export', 'Settings', 'New roadmap', 'Planted in public']) {
-      await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click();
+    await withBrowserErrors(page, async () => {
+      for (const label of ['Ask AI', 'Share', 'Export', 'Settings', 'New roadmap', 'Planted in public']) {
+        await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click();
+        await page.getByRole('dialog').waitFor({ state: 'detached' });
+        await page.locator('#title').click();
+      }
+      await page.locator('.st-roadmap-sheet-tree').filter({ hasText: 'Spanish basics' }).click();
       await page.getByRole('dialog').waitFor({ state: 'detached' });
-      await page.locator('#title').click();
-    }
-    await page.locator('.st-roadmap-sheet-tree').filter({ hasText: 'Spanish basics' }).click();
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
-    assert.deepEqual(await page.evaluate(() => window.actions), ['askAI', 'share', 'export', 'settings', 'new', 'browse', 'spanish'].map((name) => ({ name, closed: true, focused: 'title' })));
-    assert.deepEqual(await page.evaluate(() => window.events), [
-      ...['askAI', 'share', 'export', 'settings'].map((verb) => ({ name: 'roadmap_verb', props: { verb, door: 'sheet', view: 'graph', band: 'phone' } })),
-      ...['new', 'browse', 'switch'].map((step) => ({ name: 'roadmap_sheet', props: { step } })),
-    ]);
+      assert.deepEqual(await page.evaluate(() => window.actions), ['askAI', 'share', 'export', 'settings', 'new', 'browse', 'spanish'].map((name) => ({ name, closed: true, focused: 'title' })));
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        ...['askAI', 'share', 'export', 'settings'].map((verb) => ({ name: 'roadmap_verb', props: { verb, door: 'sheet', view: 'graph', band: 'phone' } })),
+        ...['new', 'browse', 'switch'].map((step) => ({ name: 'roadmap_sheet', props: { step } })),
+      ]);
+    });
   } finally { await page.close(); }
 });
 
 test('Chromium: choosing the current roadmap only dismisses', async () => {
   const page = await open();
   try {
-    await page.locator('[aria-current="true"]').click();
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
-    assert.deepEqual(await page.evaluate(() => ({ actions: window.actions ?? [], events: window.events ?? [], focused: document.activeElement.id })), { actions: [], events: [], focused: 'title' });
+    await withBrowserErrors(page, async () => {
+      await page.locator('[aria-current="true"]').click();
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => ({ actions: window.actions ?? [], events: window.events ?? [], focused: document.activeElement.id })), { actions: [], events: [], focused: 'title' });
+    });
   } finally { await page.close(); }
 });
 
@@ -173,13 +186,41 @@ test('Chromium: choosing the current roadmap only dismisses', async () => {
 test('Chromium: current roadmap renders while the registry is pending and stays authoritative', async () => {
   const page = await open({ pending: true });
   try {
-    await page.waitForFunction(() => typeof window.resolveTrees === 'function');
-    assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').allTextContents(), ['Learn to sail3/8']);
-    await page.evaluate(() => window.resolveTrees([
-      { id: 'spanish', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' },
-      { id: 'sail', title: 'Stale title', done: 0, total: 8, dominantKind: 'sky' },
-    ]));
-    await page.locator('.st-roadmap-sheet-tree').nth(1).waitFor();
-    assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').allTextContents(), ['Learn to sail3/8', 'Spanish basics12/40']);
+    await withBrowserErrors(page, async () => {
+      await page.waitForFunction(() => typeof window.resolveTrees === 'function');
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').allTextContents(), ['Learn to sail3/8']);
+      await page.evaluate(() => window.resolveTrees([
+        { id: 'spanish', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' },
+        { id: 'sail', title: 'Stale title', done: 0, total: 8, dominantKind: 'sky' },
+      ]));
+      await page.locator('.st-roadmap-sheet-tree').nth(1).waitFor();
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').allTextContents(), ['Learn to sail3/8', 'Spanish basics12/40']);
+    });
+  } finally { await page.close(); }
+});
+
+for (const stateCounts of [{}, { upNext: 30 }, { locked: 1770 }]) {
+  test(`Chromium: sheet progress stays truthful when counts are missing ${JSON.stringify(stateCounts)}`, async () => {
+    const page = await open({ current: {
+      id: 'coast', title: 'Coastal navigation handbook', done: 3200, total: 5000, ...stateCounts,
+    } });
+    try {
+      await withBrowserErrors(page, async () => {
+        assert.equal(await page.locator('.st-roadmap-sheet-progress').textContent(), '3,200 of 5,000 steps done');
+      });
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: exact progress includes zero counts from 1,000 and stays absent below the abbreviation threshold', async () => {
+  const page = await open({ current: { id: 'coast', title: 'Coastal navigation handbook', done: 1000, total: 1000, upNext: 0, locked: 0 } });
+  try {
+    await withBrowserErrors(page, async () => {
+      assert.equal(await page.locator('.st-roadmap-sheet-progress').textContent(), '1,000 done · 0 up next · 0 locked');
+      await page.evaluate(() => window.mount({ current: { id: 'coast', title: 'Coastal navigation handbook', done: 999, total: 999, upNext: 0, locked: 0 } }));
+      await page.locator('#title').click();
+      await page.getByRole('dialog', { name: 'Roadmap', exact: true }).waitFor();
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-progress').allTextContents(), []);
+    });
   } finally { await page.close(); }
 });

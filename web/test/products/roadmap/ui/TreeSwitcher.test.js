@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { register } from 'node:module';
+
+register('../../../jsxLoader.mjs', import.meta.url);
+const React = (await import('react')).default;
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { TreeSwitcher } = await import('../../../../src/products/roadmap/ui/TreeSwitcher.jsx');
+const props = {
+  current: { id: 'sail', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky' },
+  listTrees: async () => [], onNew() {},
+};
+
+for (const variant of ['graph', 'identity']) {
+  test(`TreeSwitcher ${variant} matches its full markup`, async () => {
+    const expected = (await readFile(new URL(`TreeSwitcher.${variant}.html`, import.meta.url), 'utf8')).trimEnd();
+    assert.equal(renderToStaticMarkup(React.createElement(TreeSwitcher, { ...props, variant })), expected);
+    if (variant === 'graph') assert.equal(renderToStaticMarkup(React.createElement(TreeSwitcher, props)), expected);
+  });
+}
