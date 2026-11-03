@@ -1398,6 +1398,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onMarkDone={() => completeStep(COACHED_NODE_ID)}
           completionCount={demoCompletions}
           covered={keyboardCovered}
+          bottomChrome={phoneGraphBottom}
         />
       )}
 

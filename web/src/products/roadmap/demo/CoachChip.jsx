@@ -15,7 +15,7 @@ const prefersReducedMotion = () =>
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, covered }) {
+export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, covered, bottomChrome = 0 }) {
   const [shown, setShown] = useState(false);
   const [retired, setRetired] = useState(false);
   const containerRef = useRef(null);
@@ -98,8 +98,8 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
       if (!origin) return;
       const edge = scene.projectToScreen(n.x + NODE_SIZE, n.y);
       const radius = Math.abs(edge.x - origin.x) / 2;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
+      const vw = container.parentElement.clientWidth;
+      const vh = container.parentElement.clientHeight;
 
       if (origin.x < -radius || origin.x > vw + radius || origin.y < -radius || origin.y > vh + radius) {
         container.style.display = 'none';
@@ -107,6 +107,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
       }
       container.style.display = 'block';
 
+      const halfCard = container.querySelector('.wm-coach-card').offsetHeight / 2;
       const rightStart = origin.x + radius + ANCHOR_GAP;
       const leftStart = origin.x - radius - ANCHOR_GAP - CARD_WIDTH;
       const placeRight = rightStart + CARD_WIDTH <= vw - VIEW_MARGIN;
@@ -115,13 +116,12 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
       container.classList.toggle('wm-coach--right', placeLeft);
       if (placeRight || placeLeft) {
         container.style.left = `${placeRight ? rightStart : leftStart}px`;
-        container.style.top = `${clamp(origin.y, 88, vh - 88)}px`;
+        container.style.top = `${clamp(origin.y, 88, vh - Math.max(88, bottomChrome + VIEW_MARGIN + halfCard))}px`;
       } else {
         // Neither side fits a phone: the card seats under its step, or over it near the bottom, with no arrow.
-        const halfCard = container.querySelector('.wm-coach-card').offsetHeight / 2;
         const under = origin.y + radius + ANCHOR_GAP + halfCard;
         container.style.left = `${clamp(origin.x - CARD_WIDTH / 2, VIEW_MARGIN, vw - CARD_WIDTH - VIEW_MARGIN)}px`;
-        container.style.top = `${under + halfCard <= vh - 88 ? under : origin.y - radius - ANCHOR_GAP - halfCard}px`;
+        container.style.top = `${under + halfCard <= vh - Math.max(88, bottomChrome + VIEW_MARGIN) ? under : origin.y - radius - ANCHOR_GAP - halfCard}px`;
       }
 
       const ring = ringRef.current;
@@ -137,7 +137,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
     const unsubscribe = scene.subscribeViewport?.(place);
     window.addEventListener('resize', place);
     return () => { unsubscribe?.(); window.removeEventListener('resize', place); };
-  }, [scene, nodeId, shown]);
+  }, [scene, nodeId, shown, bottomChrome]);
 
   // While the chip is the top thing on screen, Esc retires it and nothing else — capture + stop, so the press cannot also deselect.
   useEffect(() => {

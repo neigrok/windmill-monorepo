@@ -111,6 +111,25 @@ for (const width of phones) {
     } finally { await page.close(); }
   });
 
+  hostTest(`§2.5 Phone Graph: inside the Shell the coach card seats clear of the selected-step bar at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, height: 844, role: 'reader', demo: true, coached: true, shell: true });
+    try {
+      await page.getByRole('button', { name: DEMO_COPY.coachButton, exact: true }).waitFor({ timeout: 8000 });
+      await page.evaluate((x) => {
+        window.scene.projectToScreen = () => ({ x, y: 560 });
+        window.scene.select('wind');
+      }, width / 2);
+      const bar = page.locator('[data-graph-step-bar]');
+      await bar.waitFor();
+      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      await page.waitForFunction(() => document.querySelector('.wm-coach-card').getBoundingClientRect().bottom
+        <= document.querySelector('[data-graph-step-bar]').getBoundingClientRect().top);
+      await bar.getByRole('button', { name: 'Read the wind', exact: true }).click({ timeout: 2000 });
+      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
   hostTest(`§2.5 Demo CTA echo on Fork (G8-M12): the pill alone pulses after the coached step at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, role: 'reader', demo: true, coached: true, motion: true });
     try {
