@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Minimap } from '/src/products/roadmap/ui/Minimap.jsx';
+import { Minimap } from '/src/products/roadmap/graph/Minimap.jsx';
 const observer = { disconnected: false, callback: null };
 window.MutationObserver = class {
   constructor(callback) { this.callback = callback; }

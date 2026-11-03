@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
-import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
+import { SAFE_URL } from '../graph/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from '../board/acts.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion, titleOf } from './StepFacts.js';

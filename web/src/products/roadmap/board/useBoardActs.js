@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, receiptUndo, recolorOutcome } from './acts.js';
-import { sharedKind } from '../selection/bulkSelection.js';
+import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { LABELS } from '../copy.js';

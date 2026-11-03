@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { StepPanel, ReadOnlyStateChip } = await import('../../../../src/products/roadmap/ui/StepPanel.jsx');
+const { StepPanel, ReadOnlyStateChip } = await import('../../../../src/products/roadmap/graph/StepPanel.jsx');
 
 test('StepPanel — the available reader chip uses Up next with the same open state glyph', () => {
   const chip = React.createElement(ReadOnlyStateChip, { state: 'available', hue: { ring: 'var(--kind-olive-ring)' } });
@@ -22,6 +22,6 @@ for (const state of ['available', 'complete', 'locked']) {
       prerequisites: state === 'locked' ? [{ id: 'wind', label: 'Read the wind', complete: false }] : [],
     };
     assert.equal(renderToStaticMarkup(React.createElement(StepPanel, props)),
-      readFileSync(new URL(`./StepPanel.${state}.html`, import.meta.url), 'utf8').trimEnd());
+      readFileSync(new URL(`StepPanel.${state}.html`, import.meta.url), 'utf8').trimEnd());
   });
 }

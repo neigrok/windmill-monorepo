@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { closuresIn } from '../sourceClosures.js';
 
-const geometry = await closuresIn('ui/useGraphGeometry.js');
+const geometry = await closuresIn('graph/useGraphGeometry.js');
 
 test('a reveal waits for the step\'s model and the panel\'s insets, and takes over from the first frame', () => {
   const calls = [];

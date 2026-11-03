@@ -6,7 +6,7 @@ import { Board, BoardQuery } from './Board.js';
 import { useStepSelection } from './useStepSelection.js';
 import { boardFocusTarget } from './traversal.js';
 import { kindOptions } from '../model/Legend.js';
-import { bulkKindChoice } from '../selection/bulkSelection.js';
+import { bulkKindChoice } from '../model/bulkSelection.js';
 import { FilterStrip } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { useRegroup } from './ColumnCards.jsx';

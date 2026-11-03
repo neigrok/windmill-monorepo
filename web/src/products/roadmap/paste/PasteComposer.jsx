@@ -3,7 +3,7 @@
 // The deterministic parser is the only door into TreeData; the AI handle only rewrites the text.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { KindLegend } from '../ui/tree/KindLegend.jsx';
+import { KindLegend } from '../graph/tree/KindLegend.jsx';
 import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind } from '../model/Legend.js';
 import { KIND_CSS } from '../theme.js';
 import { API_BASE } from '../../../shell/apiBase.js';

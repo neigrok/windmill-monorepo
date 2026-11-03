@@ -5,7 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 register('../../../../jsxLoader.mjs', import.meta.url);
-const { NodeWorkspace, renderMarkdown, SAFE_URL } = await import('../../../../../src/products/roadmap/ui/tree/NodeWorkspace.jsx');
+const { NodeWorkspace, renderMarkdown, SAFE_URL } = await import('../../../../../src/products/roadmap/graph/tree/NodeWorkspace.jsx');
 const { Icon } = await import('../../../../../src/design-system/Icon.jsx');
 
 const note = '**Read** the *wind*\nUse [charts](https://example.test/chart?x=1&y=2) and [email](mailto:coach@example.test).\n\n- Watch <water>\n- [Blocked](javascript:alert)\n\n[Relative](/local) [Data](data:text/html,unsafe) [HTTP](HTTP://example.test)';

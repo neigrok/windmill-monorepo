@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activeSurface } from '../../../../../src/products/roadmap/ui/tablet/useTabletEditing.js';
+import { activeSurface } from '../../../../../src/products/roadmap/graph/tablet/useTabletEditing.js';
 
 test('activeSurface — nothing selected is the empty (closed) panel', () => {
   assert.equal(activeSurface({ multiMode: false, aim: null, removing: null, selectedNode: null }), 'empty');

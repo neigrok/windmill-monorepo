@@ -19,7 +19,7 @@ import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { boardKey } from '/src/products/roadmap/shortcuts/shortcutMap.js';
 import { Board, BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
-import { TreeSwitcher } from '/src/products/roadmap/ui/TreeSwitcher.jsx';
+import { TreeSwitcher } from '/src/products/roadmap/identity/TreeSwitcher.jsx';
 const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
   { id: 'wind', label: 'Read the wind', color: 'sky', prerequisites: [], description: 'An excerpt that stays off the compact row.' },
   { id: 'bowline', label: 'Tie a bowline', color: 'olive', prerequisites: [] },

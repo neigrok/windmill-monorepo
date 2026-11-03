@@ -1,5 +1,5 @@
 import { DEFAULT_NODE_COLOR, NODE_COLOR_NAMES } from '../theme.js';
-import { kindOptionsForHues } from '../model/Legend.js';
+import { kindOptionsForHues } from './Legend.js';
 
 export function isGrouped(size) {
   return size >= 2;

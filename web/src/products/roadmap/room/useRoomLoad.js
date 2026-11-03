@@ -13,7 +13,7 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { SyncSession } from '../sync/SyncSession.js';
 import { refusalReporter } from '../sync/refusals.js';
 import { loadDeviceTree } from '../sync/localTrees.js';
-import { frontierTarget, opensOnFrontier, viewportInsets } from '../ui/viewport.js';
+import { frontierTarget, opensOnFrontier, viewportInsets } from '../graph/viewport.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const deviceTrees = new LocalTreeRegistry();

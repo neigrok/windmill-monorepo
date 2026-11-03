@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bulkKindChoice, isGrouped, markDoneTargets, sharedKind } from '../../../../src/products/roadmap/selection/bulkSelection.js';
+import { bulkKindChoice, isGrouped, markDoneTargets, sharedKind } from '../../../../src/products/roadmap/model/bulkSelection.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { NODE_COLOR_NAMES } from '../../../../src/products/roadmap/theme.js';
 

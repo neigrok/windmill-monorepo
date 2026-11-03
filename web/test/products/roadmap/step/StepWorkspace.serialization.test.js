@@ -5,7 +5,7 @@ import React from 'react';
 
 register('../../../jsxLoader.mjs', import.meta.url);
 const { readNote } = await import('../../../../src/products/roadmap/step/StepWorkspace.jsx');
-const { renderMarkdown } = await import('../../../../src/products/roadmap/ui/tree/NodeWorkspace.jsx');
+const { renderMarkdown } = await import('../../../../src/products/roadmap/graph/tree/NodeWorkspace.jsx');
 const { formatNote, NoteDocument } = await import('../../../../src/products/roadmap/model/NodeWorkspace.js');
 
 function text(value) {

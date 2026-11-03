@@ -11,7 +11,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
-import { TreeSwitcher } from '/src/products/roadmap/ui/TreeSwitcher.jsx';
+import { TreeSwitcher } from '/src/products/roadmap/identity/TreeSwitcher.jsx';
 createRoot(document.getElementById('fixture')).render(React.createElement(TreeSwitcher, {
   current: { id: 'sail', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky' },
   listTrees: async () => [], onNew() {},

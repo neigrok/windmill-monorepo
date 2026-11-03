@@ -4,7 +4,7 @@ import { Bold, Italic, Link, List } from 'lucide-react';
 import { Icon } from '../../../design-system/Icon.jsx';
 import { track } from '../../../telemetry/beacon.js';
 import { formatNote, NoteDocument } from '../model/NodeWorkspace.js';
-import { renderMarkdown, SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
+import { renderMarkdown, SAFE_URL } from '../graph/tree/NodeWorkspace.jsx';
 import { ActivityLog } from '../activity/ActivityLog.js';
 import { ActorAvatar, EventSentence, relativeTime } from '../activity/grammar.jsx';
 import { DiscardDraft } from './DiscardDraft.jsx';

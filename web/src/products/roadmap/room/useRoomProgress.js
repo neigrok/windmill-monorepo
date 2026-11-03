@@ -7,7 +7,7 @@ import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { detectMilestones } from '../model/milestones.js';
 import { advanceProgress, milestoneAnnouncement, progressChanges } from '../model/progress.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
-import { markDoneTargets } from '../selection/bulkSelection.js';
+import { markDoneTargets } from '../model/bulkSelection.js';
 
 const NO_PROGRESS = Object.freeze({ completed: new Set(), completedAt: {} });
 

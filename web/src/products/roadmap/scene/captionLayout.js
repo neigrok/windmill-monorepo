@@ -104,7 +104,7 @@ function inside(rect, area) {
   return rect.left >= area.left && rect.right <= area.right && rect.top >= area.top && rect.bottom <= area.bottom;
 }
 
-// A corner-anchored chrome box (`ui/viewport.js` blocks) against the live viewport.
+// A corner-anchored chrome box (`graph/viewport.js` blocks) against the live viewport.
 function blockRect(block, view) {
   const left = block.left ?? view.viewportWidth - block.right - block.width;
   const top = block.top ?? view.viewportHeight - block.bottom - block.height;

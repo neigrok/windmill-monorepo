@@ -3,7 +3,7 @@ import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
 import { notePlantedQuest, stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
-import { useViewMode } from '../ui/useViewMode.js';
+import { useViewMode } from '../room/useViewMode.js';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR, prefersReducedMotion } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';

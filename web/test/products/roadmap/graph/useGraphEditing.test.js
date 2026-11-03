@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
-import { useGraphEditing } from '../../../../src/products/roadmap/editing/useGraphEditing.js';
-import { useTabletEditing } from '../../../../src/products/roadmap/ui/tablet/useTabletEditing.js';
+import { useGraphEditing } from '../../../../src/products/roadmap/graph/useGraphEditing.js';
+import { useTabletEditing } from '../../../../src/products/roadmap/graph/tablet/useTabletEditing.js';
 import { useRoomTend } from '../../../../src/products/roadmap/tending/useTend.js';
 import { parsePlan } from '../../../../src/products/roadmap/paste/planGrammar.js';
 import { edgeKey } from '../../../../src/products/roadmap/scene/edgeKey.js';

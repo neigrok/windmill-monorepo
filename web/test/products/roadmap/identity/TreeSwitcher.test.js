@@ -6,7 +6,7 @@ import { register } from 'node:module';
 register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { TreeSwitcher } = await import('../../../../src/products/roadmap/ui/TreeSwitcher.jsx');
+const { TreeSwitcher } = await import('../../../../src/products/roadmap/identity/TreeSwitcher.jsx');
 const props = {
   current: { id: 'sail', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky' },
   listTrees: async () => [], onNew() {},

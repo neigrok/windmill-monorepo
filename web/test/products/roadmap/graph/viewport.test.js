@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { viewportInsets, frontierTarget, graphToastPlacement, opensOnFrontier } from '../../../../src/products/roadmap/ui/viewport.js';
+import { viewportInsets, frontierTarget, graphToastPlacement, opensOnFrontier } from '../../../../src/products/roadmap/graph/viewport.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 
 const MINIMAP_BLOCK = { left: 24, bottom: 24, width: 186, height: 146 };

@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const entry = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TabletEditor } from '/src/products/roadmap/ui/tablet/TabletEditor.jsx';
+import { TabletEditor } from '/src/products/roadmap/graph/tablet/TabletEditor.jsx';
 const noop = () => {};
 function Room() {
   const [state, setState] = useState('available');
@@ -98,7 +98,7 @@ for (const [state, verb] of [['available', 'complete'], ['complete', 'uncomplete
   test(`progressVerb — ${state} offers ${verb}`, async () => {
     const { register } = await import('node:module');
     register('../../../../jsxLoader.mjs', import.meta.url);
-    const { progressVerb } = await import('../../../../../src/products/roadmap/ui/tablet/TabletEditor.jsx');
+    const { progressVerb } = await import('../../../../../src/products/roadmap/graph/tablet/TabletEditor.jsx');
     assert.equal(progressVerb(state), verb);
   });
 }

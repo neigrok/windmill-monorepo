@@ -7,7 +7,7 @@ import { browserWith, renderHook } from '../../../gym/harness.mjs';
 
 test('useWorkspace — checking the last subtask fills the gauge and never completes the step', async (t) => {
   browserWith();
-  const { useWorkspace } = await import('../../../../../src/products/roadmap/ui/tree/useWorkspace.js');
+  const { useWorkspace } = await import('../../../../../src/products/roadmap/graph/tree/useWorkspace.js');
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const calls = [];
   const sceneRef = { current: new Proxy({}, { get: (_, name) => (arcs) => calls.push([name, Object.fromEntries(arcs)]) }) };
@@ -40,7 +40,7 @@ test('useWorkspace — checking the last subtask fills the gauge and never compl
 
 test('useWorkspace — unchecking a subtask on a full gauge reopens only the gauge, and the checklist persists', async (t) => {
   browserWith();
-  const { useWorkspace } = await import('../../../../../src/products/roadmap/ui/tree/useWorkspace.js');
+  const { useWorkspace } = await import('../../../../../src/products/roadmap/graph/tree/useWorkspace.js');
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const calls = [];
   const sceneRef = { current: new Proxy({}, { get: (_, name) => (arcs) => calls.push([name, Object.fromEntries(arcs)]) }) };

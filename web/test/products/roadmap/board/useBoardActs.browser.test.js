@@ -10,7 +10,7 @@ import { withBrowserErrors } from '../browserFixture.js';
 const CLOCK_START = new Date('2026-11-02T12:00:00Z');
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const source = await readFile(new URL('../../../../src/products/roadmap/editing/useGraphStructure.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../../../src/products/roadmap/graph/useGraphStructure.js', import.meta.url), 'utf8');
 const { code } = await transformWithEsbuild(source, 'useGraphStructure.js', { loader: 'jsx' });
 const treeHandlers = [];
 const visit = (node) => {
