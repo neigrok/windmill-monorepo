@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { hueOf, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { deleteCostLine, progressVerb } from '../ui/mobile/editorSheet.js';
 import { buildOutline, nextUp, treatmentOf, indentPx, progressOf } from './outline.js';
 import { filterOutline } from './explore.js';
@@ -39,9 +39,7 @@ const JUMP_OFFSET = 84;
 const BLUR_COMMIT_MS = 140;
 const TREATMENT_WORDS = { done: STATE_WORDS.done, ready: STATE_WORDS.upNext, locked: STATE_WORDS.locked };
 
-export function hueOf(color) {
-  return KIND_CSS[color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
-}
+export { hueOf } from '../theme.js';
 
 export function hueVars(hue) {
   return { '--k-base': hue.base, '--k-ring': hue.ring, '--k-soft': hue.soft, '--k-glow': hue.glow };

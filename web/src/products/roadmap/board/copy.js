@@ -197,10 +197,10 @@ export function branchChip({ step }) {
   return `Branch · ${step}`;
 }
 
-export function completedToast({ step, unlocked }) {
-  if (unlocked.length === 0) return `${step} done`;
-  if (unlocked.length === 1) return `${step} done · ${unlocked[0]} up next`;
-  return `${step} done · ${formatCount(unlocked.length)} up next`;
+export function completedToast({ step, unlocked = [], unlockedCount = unlocked.length }) {
+  if (unlockedCount === 0) return `${step} done`;
+  if (unlockedCount === 1 && unlocked.length === 1) return `${step} done · ${unlocked[0]} up next`;
+  return `${step} done · ${formatCount(unlockedCount)} up next`;
 }
 
 export function completedStepsToast({ count, unlocked }) {

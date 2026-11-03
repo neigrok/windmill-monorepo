@@ -3,8 +3,9 @@ import { flushSync } from 'react-dom';
 import { Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
 import { Tooltip } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
-import { DEFAULT_NODE_COLOR, KIND_CSS } from '../theme.js';
-import { FindStep, NewStep } from './BoardControls.jsx';
+import { hueOf } from '../theme.js';
+import { TreeSwitcher } from '../ui/TreeSwitcher.jsx';
+import { FindStep, NewStep, handleMenuKey, dismissOverlayOutside } from './BoardControls.jsx';
 import { RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { countBucket } from './acts.js';
@@ -26,6 +27,7 @@ export function RoadmapIdentity({
   const phone = band === 'phone';
   const owner = role === 'owner';
   const tablet = band === 'tablet';
+  const desktop = band === 'desktop';
   const context = `${band}:${view}:${role}`;
   const nextAvailable = !phone && owner && view === 'tree' && next?.count > 0;
   const sheetAvailable = phone && owner && sheet !== null && sheet !== undefined && title !== undefined;
@@ -39,8 +41,8 @@ export function RoadmapIdentity({
     { verb: 'shortcuts', label: ROADMAP_VERBS.keyboardShortcuts, icon: Keyboard, key: '?', act: onShortcuts },
   ].filter((item) => item.act);
   const moreAvailable = !phone && owner && menuItems.length > 0;
-  const available = overlay?.kind === 'more' ? moreAvailable : overlay?.kind === 'next' ? nextAvailable : sheetAvailable;
-  const open = overlay?.context === context && available ? overlay.kind : null;
+  const available = { more: moreAvailable, next: nextAvailable, sheet: sheetAvailable };
+  const open = overlay?.context === context && available[overlay.kind] ? overlay.kind : null;
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 1280px)');
@@ -68,28 +70,35 @@ export function RoadmapIdentity({
     if (overlay.kind === 'next') track('roadmap_whats_next', { step: 'close', count: countBucket(overlay.count) });
     setOverlay(null);
     if (document.activeElement === document.body) {
-      (titleButton.current ?? bar.current.querySelector('[aria-pressed="true"], button, input') ?? bar.current)?.focus();
+      const title = titleButton.current;
+      const selectedView = bar.current.querySelector('[aria-pressed="true"]');
+      const firstControl = bar.current.querySelector('button, input');
+      if (title) {
+        title.focus();
+        return;
+      }
+      if (selectedView) {
+        selectedView.focus();
+        return;
+      }
+      (firstControl ?? bar.current).focus();
     }
   }, [overlay, open]);
 
   const verb = (name, door = 'row') => track('roadmap_verb', {
     verb: name, door, view: view === 'tree' ? 'graph' : 'board', band,
   });
-  const close = useCallback(() => {
-    if (overlay?.kind === 'next') track('roadmap_whats_next', { step: 'close', count: countBucket(next?.count ?? overlay.count) });
+  const close = useCallback((outcome = 'close') => {
+    if (overlay?.kind === 'next') track('roadmap_whats_next', { step: outcome, count: countBucket(overlay.count) });
     flushSync(() => setOverlay(null));
-    const button = overlay?.kind === 'sheet' ? titleButton.current : overlay?.kind === 'more' ? moreButton.current : nextButton.current;
-    button?.focus();
-  }, [overlay, next?.count]);
+    const triggers = { sheet: titleButton, more: moreButton, next: nextButton };
+    triggers[overlay?.kind]?.current?.focus();
+  }, [overlay]);
 
   useEffect(() => {
     if (open !== 'more' && open !== 'next') return undefined;
     const box = open === 'more' ? moreBox : nextBox;
-    const away = (event) => {
-      if (box.current?.contains(event.target)) return;
-      if (open === 'next') event.preventDefault();
-      close();
-    };
+    const away = (event) => dismissOverlayOutside(event, box.current, close);
     const escape = (event) => {
       if (open !== 'next' || event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
@@ -120,24 +129,12 @@ export function RoadmapIdentity({
     setOverlay({ kind, context, ...(kind === 'next' ? { count: next.count } : {}) });
   };
 
-  const menuKeys = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-      return;
-    }
-    if (event.key === 'Tab') {
-      close();
-      return;
-    }
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    event.preventDefault();
-    const options = [...moreBox.current.querySelectorAll('[role="menuitem"]')];
-    const direction = event.key === 'ArrowDown' ? 1 : -1;
-    const index = options.indexOf(document.activeElement);
-    options[(index + direction + options.length) % options.length]?.focus();
-  };
+  const menuKeys = (event) => handleMenuKey(event, { root: moreBox.current, onEscape: close, onTab: close });
+  const showSwitcher = title !== undefined && !sheetAvailable && !phone && owner && !!switcher;
+  const showHeading = title !== undefined && !sheetAvailable && !showSwitcher;
+  const identitySwitcher = React.isValidElement(switcher) && switcher.type === TreeSwitcher
+    ? React.cloneElement(switcher, { variant: 'identity' })
+    : switcher;
 
   return (
     <div
@@ -148,21 +145,14 @@ export function RoadmapIdentity({
       data-view={view}
     >
       <div className="st-roadmap-context">
-        {title !== undefined && (sheetAvailable ? (
-          <button
-            ref={titleButton}
-            className="st-roadmap-title st-roadmap-title-button"
-            type="button"
-            aria-label={title}
-            aria-haspopup="dialog"
-            aria-expanded={open === 'sheet'}
-            onClick={() => toggle('sheet')}
-          >
+        {sheetAvailable && (
+          <button ref={titleButton} className="st-roadmap-title st-roadmap-title-button" type="button"
+            aria-label={title} aria-haspopup="dialog" aria-expanded={open === 'sheet'} onClick={() => toggle('sheet')}>
             {title}
           </button>
-        ) : !phone && owner && switcher ? (
-          <div className="st-roadmap-switcher">{switcher}</div>
-        ) : <h1 ref={titleButton} tabIndex={-1} className="st-roadmap-title" title={title}>{title}</h1>)}
+        )}
+        {showSwitcher && <div className="st-roadmap-switcher">{identitySwitcher}</div>}
+        {showHeading && <h1 ref={titleButton} tabIndex={-1} className="st-roadmap-title" title={title}>{title}</h1>}
       </div>
       {title !== undefined && progress && (
         <span className="st-roadmap-progress" aria-label={progressLabel(progress)}>
@@ -172,9 +162,10 @@ export function RoadmapIdentity({
       {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} />}
       {!phone && <>
         <div className="st-roadmap-space" />
-        {find && <FindStep {...find} folded={!fullDesktop} onExpand={() => verb('find')} />}
+        {find && <FindStep {...find} folded={!fullDesktop} tooltip={desktop} onExpand={() => verb('find')} />}
         {owner && !tablet && onAskAI && (
           <RowButton
+            tooltip={desktop}
             label={ROADMAP_VERBS.askAI}
             icon={Sparkles}
             expanded={fullDesktop}
@@ -187,7 +178,7 @@ export function RoadmapIdentity({
           />
         )}
         {nextAvailable && <div ref={nextBox} className="st-roadmap-popover-anchor">
-          <Tooltip label={nextChip(next)} side="bottom">
+          <Tooltip label={nextChip(next)} side="bottom" disabled={!desktop || open === 'next'}>
             <button
               ref={nextButton}
               type="button"
@@ -206,7 +197,7 @@ export function RoadmapIdentity({
             <div className="st-roadmap-next-list" tabIndex={-1}>
               {next.cards.map((card) => {
                 const reason = reasonLine(card);
-                const kind = KIND_CSS[card.step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+                const kind = hueOf(card.step.color);
                 return (
                   <button
                     key={card.id}
@@ -214,8 +205,7 @@ export function RoadmapIdentity({
                     type="button"
                     style={{ '--roadmap-kind': kind.base }}
                     onClick={() => {
-                      track('roadmap_whats_next', { step: 'pick', count: countBucket(next.count) });
-                      close();
+                      close('pick');
                       next.onOpen(card.id);
                     }}
                   >
@@ -231,13 +221,13 @@ export function RoadmapIdentity({
           </div>}
         </div>}
         {(!owner || !tablet) && onShare && (
-          <RowButton label={ROADMAP_VERBS.share} icon={Share} onClick={() => {
+          <RowButton tooltip={desktop} label={ROADMAP_VERBS.share} icon={Share} onClick={() => {
             verb('share');
             onShare();
           }} />
         )}
         {owner && onNewStep && (
-          <Tooltip label={LABELS.newStep} side="bottom">
+          <Tooltip label={LABELS.newStep} side="bottom" disabled={!desktop}>
             <NewStep compact={tablet} onClick={() => {
               verb('newStep');
               onNewStep();
@@ -245,13 +235,13 @@ export function RoadmapIdentity({
           </Tooltip>
         )}
         {!owner && onFork && (
-          <RowButton label={ROADMAP_VERBS.fork} icon={GitFork} expanded primary onClick={() => {
+          <RowButton tooltip={desktop} label={ROADMAP_VERBS.fork} icon={GitFork} expanded primary onClick={() => {
             verb('fork');
             onFork();
           }} />
         )}
         {moreAvailable && <div ref={moreBox} className="st-roadmap-popover-anchor">
-          <Tooltip label={ROADMAP_VERBS.more} side="bottom">
+          <Tooltip label={ROADMAP_VERBS.more} side="bottom" disabled={!desktop || open === 'more'}>
             <button
               ref={moreButton}
               type="button"
@@ -295,12 +285,12 @@ export function RoadmapIdentity({
   );
 }
 
-function RowButton({ label, icon: Icon, expanded = false, primary = false, brand = false, keycap, onClick }) {
+function RowButton({ label, tooltip, icon: Icon, expanded = false, primary = false, brand = false, keycap, onClick }) {
   const classes = [expanded ? 'st-roadmap-chip' : 'st-roadmap-icon'];
   if (primary) classes.push('st-roadmap-fork');
   if (brand) classes.push('st-roadmap-ask');
   return (
-    <Tooltip label={label} side="bottom">
+    <Tooltip label={label} side="bottom" disabled={!tooltip}>
       <button type="button" className={classes.join(' ')} aria-label={label} onClick={onClick}>
         <Icon size={20} aria-hidden />
         {expanded && <span>{label}</span>}

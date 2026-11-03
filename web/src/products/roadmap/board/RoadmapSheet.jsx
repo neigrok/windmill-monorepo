@@ -1,9 +1,9 @@
 import React, { useEffect, useId, useState } from 'react';
 import { Check, ChevronRight, Compass, Download, Plus, Share, Sparkles, Sun } from 'lucide-react';
 import { track } from '../../../telemetry/beacon.js';
-import { DEFAULT_NODE_COLOR, KIND_CSS } from '../theme.js';
+import { hueOf } from '../theme.js';
 import { Sheet } from './BoardControls.jsx';
-import { ROADMAP_SHEET, ROADMAP_VERBS, progressFigure, progressLabel } from './copy.js';
+import { ROADMAP_SHEET, ROADMAP_VERBS, exactProgress, progressFigure, progressLabel } from './copy.js';
 
 export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, onSettings, onClose }) {
   const { current, listTrees } = sheet;
@@ -31,6 +31,8 @@ export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, on
     callback();
   };
 
+  const hasStateCounts = current.upNext != null && current.locked != null;
+  const currentProgress = hasStateCounts ? exactProgress(current) : progressLabel(current);
   const rows = [current, ...(loaded?.id === current.id ? loaded.rows : []).filter((tree) => tree.id !== current.id)];
   const verbs = [
     { verb: 'askAI', label: ROADMAP_VERBS.askAI, Icon: Sparkles, callback: onAskAI },
@@ -42,7 +44,7 @@ export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, on
   return (
     <Sheet host={document.body} variant="roadmap" title={ROADMAP_SHEET.title} onClose={close}>
       <h3 className="st-roadmap-sheet-name">{current.title}</h3>
-      {current.total >= 1000 && <p className="st-roadmap-sheet-progress">{progressLabel(current)}</p>}
+      {current.total >= 1000 && <p className="st-roadmap-sheet-progress">{currentProgress}</p>}
       {verbs.length > 0 && (
         <div className="st-roadmap-sheet-verbs">
           {verbs.map(({ verb, label, Icon, callback }) => (
@@ -64,7 +66,7 @@ export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, on
         {rows.map((tree) => {
           const selected = tree.id === current.id;
           const progress = { done: tree.done ?? 0, total: tree.total ?? 0 };
-          const hue = KIND_CSS[tree.dominantKind]?.base ?? KIND_CSS[DEFAULT_NODE_COLOR].base;
+          const hue = hueOf(tree.dominantKind).base;
           return (
             <button
               key={tree.id}

@@ -22,7 +22,7 @@ export const DEMO_COPY = {
   plaqueByline: 'Windmill demo',
   coachSentence: `This step is ${STATE_WORDS.upNext} — mark it done.`,
   coachButton: 'Mark it done',
-  unlockToast: completedToast({ step: 'Rig the boat yourself', unlocked: COACHED_CHILDREN }),
+  unlockToast: completedToast({ step: 'Rig the boat yourself', unlockedCount: COACHED_CHILDREN.length }),
   forkToast: 'Forked — 17 steps planted',
 };
 

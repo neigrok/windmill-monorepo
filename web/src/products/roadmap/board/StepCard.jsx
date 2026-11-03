@@ -2,13 +2,13 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { HoldGesture, HOLD_MS, SwipeGesture, SWIPE_REVEAL } from './gestures.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { hueOf } from '../theme.js';
 import { completeStepAction, STEP_DETAIL, reasonLine } from './copy.js';
 
 export const StepCard = React.memo(function StepCard({ card, selected = false, arrived = false, tabIndex = 0, onSelect, swipe = false, open = false, onSwipe, onComplete, leaving = false, dimmed = false, selecting = false, checked = false, onHold }) {
   const reason = reasonLine(card);
   const description = card.step.description?.trim() ?? '';
-  const kind = KIND_CSS[card.step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+  const kind = hueOf(card.step.color);
   const cardButton = (
     <button
       type="button"

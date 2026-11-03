@@ -46,6 +46,11 @@ function ground({ reduced = false, night = false } = {}) {
         toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
       };
     }
+    addEventListener() {}
+    querySelector(selector) {
+      assert.equal(selector, '.ct');
+      return { textContent: '6' };
+    }
     appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
     setAttribute(name, value) {
       if (name === 'class') this.className = value;
@@ -79,6 +84,7 @@ function ground({ reduced = false, night = false } = {}) {
   };
   const stage = plot();
 
+  globalThis.cancelAnimationFrame = () => {};
   globalThis.matchMedia = () => ({ matches: reduced });
   globalThis.document = {
     documentElement: root,
@@ -208,5 +214,20 @@ test('a mount hands back a teardown that lets go of every observer and empties t
   for (const stage of [dom.stage, second]) {
     assert.deepEqual(stage.children, [], 'a world is left standing for the next mount to stack on');
     assert.equal(stage.style.cssText, '', 'the stage keeps the width and height the still gave it');
+  }
+});
+
+
+test('the hero completion toast keeps its emphasized count and approved state words', async () => {
+  const dom = ground({ reduced: true });
+  const { mountHero } = await load(true);
+  const hero = mountHero(dom.stage);
+  try {
+    const toast = dom.stage.children.find((child) => child.classList.contains('toastp'));
+    assert.deepEqual({ tag: toast.tagName, className: toast.className, html: toast.innerHTML }, {
+      tag: 'div', className: 'toastp', html: 'Rig the mast done · <b>2 up next</b>',
+    });
+  } finally {
+    hero.teardown();
   }
 });

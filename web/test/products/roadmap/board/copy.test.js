@@ -431,3 +431,14 @@ test('copy — the roadmap sheet gives exact progress in state order', () => {
   assert.equal(exactProgress({ done: 1, upNext: 2, locked: 3 }), '1 done · 2 up next · 3 locked');
   assert.equal(exactProgress({ done: 1200, upNext: 3400, locked: 5600 }), '1,200 done · 3,400 up next · 5,600 locked');
 });
+
+
+test('completion copy accepts a count without treating step ids as display names', () => {
+  assert.deepEqual([0, 1, 2].map((unlockedCount) => completedToast({ step: 'Rig the boat yourself', unlockedCount })), [
+    'Rig the boat yourself done',
+    'Rig the boat yourself done · 1 up next',
+    'Rig the boat yourself done · 2 up next',
+  ]);
+  assert.equal(completedToast({ step: 'Rig the boat yourself', unlocked: ['Practice tacking'] }),
+    'Rig the boat yourself done · Practice tacking up next');
+});
