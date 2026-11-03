@@ -29,6 +29,11 @@ export function railToReveal(railed, column) {
   return column === railed ? swapRail(railed) : railed;
 }
 
+// A rail offers Show only while its column holds something to show.
+function railStops(column) {
+  return column.count > 0 ? [RAIL] : [];
+}
+
 // The columns are one tab stop: the arrow keys rove across every card, the Show all row and a rail's Show. A column the
 // query emptied names its way out; when every column is empty, only Up next does.
 export function BoardColumns({
@@ -43,13 +48,13 @@ export function BoardColumns({
   );
   const layout = useMemo(() => board.columns.map((column) => ({
     name: column.name,
-    stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(shown[column.name]),
-  })), [shown, band, railed]);
+    stops: stage[column.name] === 'rail' ? railStops(counts[column.name]) : columnStops(shown[column.name]),
+  })), [shown, counts, band, railed]);
   const recoveryLayout = useMemo(() => {
     if (focusBoard === board) return layout;
     return focusBoard.columns.map((column) => ({
       name: column.name,
-      stops: stage[column.name] === 'rail' ? [RAIL] : columnStops(focusBoard.shownCards(column.name, { doneExpanded })),
+      stops: stage[column.name] === 'rail' ? railStops(focusBoard[column.name]) : columnStops(focusBoard.shownCards(column.name, { doneExpanded })),
     }));
   }, [focusBoard, board, layout, doneExpanded, band, railed]);
   const roving = useRovingFocus(layout, { revision: board, recoveryLayout, existingIds: focusBoard.states, onDelete, onComplete: onComplete && ((id, door) => {
@@ -175,11 +180,13 @@ function ColumnRail({ column, tabIndex, onShow }) {
           })}
         </div>
       )}
-      <button type="button" className="st-board-columns-show" tabIndex={tabIndex} onClick={onShow}>
-        <Chevron size={20} />
-        <span aria-hidden>{LABELS.show}</span>
-        <span className="st-board-spoken">{showColumn({ column: column.name })}</span>
-      </button>
+      {column.count > 0 && (
+        <button type="button" className="st-board-columns-show" tabIndex={tabIndex} onClick={onShow}>
+          <Chevron size={20} />
+          <span aria-hidden>{LABELS.show}</span>
+          <span className="st-board-spoken">{showColumn({ column: column.name })}</span>
+        </button>
+      )}
     </section>
   );
 }
