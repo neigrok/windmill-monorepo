@@ -101,8 +101,11 @@ data class LastTime(val exerciseId: Id<Exercise>, val session: Session? = null,
     val isUnread: Boolean get() = !isComplete && session == null
 
     companion object {
-        fun of(exerciseId: Id<Exercise>, log: TrainingLog): LastTime {
-            for (session in log.drawnSessions.filter { !it.isOpen }) {
+        fun of(exerciseId: Id<Exercise>, log: TrainingLog): LastTime = of(exerciseId, log.drawnSessions, log)
+
+        // The newest of the given closed sessions, in their order, holding a set of the movement.
+        fun of(exerciseId: Id<Exercise>, among: List<Session>, log: TrainingLog): LastTime {
+            for (session in among.filter { !it.isOpen }) {
                 val sets = log.sets(session.id).filter { it.exerciseId == exerciseId }
                 if (sets.isNotEmpty()) return LastTime(exerciseId, session, sets, log.firstPullComplete)
             }

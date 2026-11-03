@@ -20,6 +20,7 @@ import works.windmill.sync.testing.Vector
 class CorpusTests {
     val book = GymRules.book
     val corpus = ProductCorpus(book)
+    val catalog = Catalog(Contract.json("gym/catalog.json"))
     val paths = listOf("gym/domain/rules.json", "gym/domain/values.json", "gym/domain/notes-actions.json",
         "gym/domain/bodyweight-actions.json", "gym/domain/routines-actions.json", "gym/domain/catalogue-actions.json",
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
@@ -27,13 +28,15 @@ class CorpusTests {
         "gym/rules/bodyweight.json", "gym/rules/collation.json", "gym/domain/workout-plan-actions.json", "gym/domain/workout-proposals-actions.json",
         "gym/domain/coach-conversation-actions.json")
 
+    val abilities = listOf("create_exercise", "create_routine", "get_last_times", "get_session", "get_sessions", "get_stats", "last_time",
+        "list_bodyweight", "list_exercises", "list_notes", "list_routines", "list_sessions", "propose_routine_change",
+        "propose_routine_removal", "propose_workout_change", "revoke_share", "save_note", "share_session").map { "gym/abilities/$it.json" }
+
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
-        val notApplicable = files.filter { path ->
-            path.startsWith("gym/abilities/") || path.startsWith("gym/turns/")
-        }.associateWith { "Android runs no replica executor" }
+        val notApplicable = files.filter { it.startsWith("gym/turns/") }
         val readByCatalogTests = "gym/catalog.json"
-        assertEquals((paths + readByCatalogTests + notApplicable.keys).sorted(), files)
+        assertEquals((paths + abilities + readByCatalogTests + notApplicable).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
@@ -46,9 +49,48 @@ class CorpusTests {
             } catch (error: Exception) { failures += "$path · ${vector.name}\n  threw ${error.javaClass.simpleName}: ${error.message}" }
             cases++
         }
+        val abilityCases = abilities.flatMap(Contract::abilityCases)
+        for (case in abilityCases) {
+            try {
+                val actual = ability(case)
+                val expected = abilityExpected(case)
+                if (actual.jcs != expected.jcs) failures += "${case.file} · ${case.name}\n  got    ${actual.jcs}\n  expect ${expected.jcs}"
+            } catch (error: Exception) { failures += "${case.file} · ${case.name}\n  threw ${error.javaClass.simpleName}: ${error.message}" }
+        }
         failures.forEach(::println)
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
-        println("Gym corpus: ${paths.size + 1}/${files.size} files, $cases cases, ${notApplicable.size} explicitly not applicable (Android runs no replica executor), no pending case, no unclaimed file")
+        val shares = abilityCases.count { it.call in AbilityExecutor.serverRun }
+        val refused = abilityCases.count { it.call !in AbilityExecutor.serverRun && it.expect["refused"] != null }
+        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${abilityCases.size} ability cases (${abilityCases.size - shares - refused} results byte-equal, $refused refused alike, $shares shares refused on the phone), ${notApplicable.size} explicitly not applicable (the turn exchanges, which Android's turn driver does not run yet), no pending case, no unclaimed file")
+    }
+
+    // Coach §3.5, INV-1, INV-2: the case's call through the executor's action over its records as its seat at its moment, beside a thread and a running Coach message of this turn.
+    fun ability(case: AbilityCase): Json {
+        val turn = Id("turnAAAAAAAAAAA1", CoachMessage)
+        val thread = "thrdAAAAAAAAAAA1"
+        val stamp = "${case.now}:0:r_aaaaaaaaaaaa"
+        fun row(type: String, id: String, seq: Int, vararg fields: Pair<String, Json>) = Json.objectOf("t" to Json.of(type), "id" to Json.of(id), "seq" to Json.of(seq),
+            "life" to Json.array(Json.of("alive"), Json.of(stamp)), "f" to Json.Obj(fields.map { (name, value) -> name to Json.array(value, Json.of(stamp)) }))
+        val conversation = listOf(
+            row(CoachThread.type, thread, 1_000_000, "title" to Json.of("How heavy today?")),
+            row(CoachMessage.type, turn.record.string!!, 1_000_001, "threadId" to Json.of(thread), "role" to Json.of("coach"),
+                "replica" to Json.of("rp_00000000000000000000000000000001"), "state" to Json.of("running"), "at" to Json.of(case.now)),
+        )
+        val action = RunAbility(AbilityRequest("call-1", case.call, case.input), turn, case.seat, catalog, case.appBaseUrl ?: "https://windmill.works")
+        val decision = corpus.decision(action, case.vector(conversation), { outcome -> when (outcome) {
+            is AbilityOutcome.Result -> Json.objectOf("result" to Json.parse(outcome.jcs), "sha256" to Json.of(outcome.sha256))
+            is AbilityOutcome.Refused -> Json.objectOf("refused" to Json.of(outcome.code.code))
+        } }, ::refusalForm)
+        return case.answer(decision, CoachMessage.type)
+    }
+
+    // What the corpus says of a case on this phone. Shares are server records, so the phone refuses one that reaches it. The corpus is the server tool's golden, and on the phone the gate's G-3 stands before the tool, so an input the schema refuses answers `invalid-input` where the tool answered `invalid-arguments`.
+    fun abilityExpected(case: AbilityCase): Json {
+        fun refused(code: AbilityRefusal) = Json.objectOf("refused" to Json.of(code.code), "writes" to Json.Arr(emptyList()))
+        if (case.call in AbilityExecutor.serverRun) return refused(AbilityRefusal.notOffered)
+        val code = case.expect["refused"]?.str() ?: return case.expect
+        val gated = code == AbilityRefusal.invalidArguments.code && JsonSchema(catalog.ability(case.call)!!.input).fault(case.input) != null
+        return refused(if (gated) AbilityRefusal.invalidInput else AbilityRefusal.entries.single { it.code == code })
     }
 
     @Test fun everySharedLocalRuleAndCodeIsCovered() {
