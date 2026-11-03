@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HoldGesture, HOLD_MS, SwipeGesture } from '../../../../src/products/roadmap/board/gestures.js';
+import { SwipeGesture } from '../../../../src/products/roadmap/board/gestures.js';
+import { HoldGesture, HOLD_MS } from '../../../../src/products/roadmap/input/HoldGesture.js';
 
 test('swipe claims only horizontal leading movement outside OS edges', () => {
   const swipe = new SwipeGesture({ x: 80, y: 100, width: 390 });

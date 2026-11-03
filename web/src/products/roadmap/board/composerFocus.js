@@ -1,7 +1,30 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { boardFocusTarget } from './traversal.js';
 
-const FOCUSABLE = 'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [tabindex="0"]';
+const FOCUSABLE = 'button, a[href], input, textarea, select, [contenteditable="true"], [tabindex]';
+
+export function focusableElements(root) {
+  if (!root) return [];
+  return [...root.querySelectorAll(FOCUSABLE)].filter((element) => (
+    !element.matches(':disabled')
+    && !(element.hasAttribute('tabindex') && element.tabIndex < 0)
+    && !element.closest('[inert], [hidden]')
+    && element.getClientRects().length > 0
+    && !['hidden', 'collapse'].includes(root.ownerDocument.defaultView.getComputedStyle(element).visibility)
+  ));
+}
+
+export function wrapTab(event, root) {
+  if (event.key !== 'Tab' || event.defaultPrevented || !root || root.closest('[inert]')) return;
+  event.stopPropagation();
+  const stops = focusableElements(root);
+  const current = root.ownerDocument.activeElement;
+  const edge = event.shiftKey ? stops[0] : stops.at(-1);
+  if (stops.includes(current) && current !== edge) return;
+  event.preventDefault();
+  const target = event.shiftKey ? stops.at(-1) : stops[0];
+  (target ?? root).focus();
+}
 
 const coveredLayers = new WeakMap();
 
@@ -68,26 +91,8 @@ export function useComposerFocus(ref, active = true, { restore = true, preserveO
   }, [active]);
 
   return (event) => {
-    if (!active || event.key !== 'Tab') return;
-    event.stopPropagation();
-    const stops = [...ref.current.querySelectorAll(FOCUSABLE)].filter((element) => (
-      !element.closest('[inert]') && element.getClientRects().length > 0
-    ));
-    const first = stops[0];
-    const last = stops.at(-1);
-    if (!first) {
-      event.preventDefault();
-      return;
-    }
-    if (event.shiftKey && (document.activeElement === first || !stops.includes(document.activeElement))) {
-      event.preventDefault();
-      last.focus();
-      return;
-    }
-    if (!event.shiftKey && (document.activeElement === last || !stops.includes(document.activeElement))) {
-      event.preventDefault();
-      first.focus();
-    }
+    if (!active) return;
+    wrapTab(event, ref.current);
   };
 }
 

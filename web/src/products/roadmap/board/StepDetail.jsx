@@ -11,7 +11,7 @@ import { deleteCostLine } from '../ui/mobile/editorSheet.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
 import { handleMenuKey } from './BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
-import { coverBeneath, DetailFocusContext } from './composerFocus.js';
+import { coverBeneath, DetailFocusContext, wrapTab } from './composerFocus.js';
 import { boardFocusTarget } from './traversal.js';
 import './modal.css';
 import './page.css';
@@ -21,7 +21,6 @@ import {
 } from './copy.js';
 
 const UNDO_HOLD_MS = 6000;
-const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
 const TAB_STOP = '[data-column] [tabindex="0"], [data-column][tabindex="0"]';
@@ -236,21 +235,7 @@ export function StepDetail({
     },
   ].filter(Boolean);
 
-  // Tab wraps inside the layer.
-  const onKeyDown = (event) => {
-    if (event.key !== 'Tab' || event.defaultPrevented) return;
-    const stops = [...layerRef.current.querySelectorAll(FOCUSABLE)].filter((element) => !element.closest('[inert]') && element.getClientRects().length > 0);
-    if (stops.length === 0) return;
-    const [first, last] = [stops[0], stops[stops.length - 1]];
-    const outside = !stops.includes(document.activeElement);
-    if (event.shiftKey && (document.activeElement === first || outside)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && (document.activeElement === last || outside)) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  const onKeyDown = (event) => wrapTab(event, layerRef.current);
 
   const offer = editable && section === 'workspace' && offersCompletion(workspace, facts.column)
     ? <SubtaskOffer onComplete={() => complete('completeFromSubtasks')} />
@@ -679,14 +664,7 @@ function DeleteConfirmation({ confirm, phone = false }) {
             confirm.cancel();
             return;
           }
-          if (event.key === 'Tab') {
-            event.preventDefault();
-            event.stopPropagation();
-            const buttons = [...ref.current.querySelectorAll('button')];
-            const direction = event.shiftKey ? -1 : 1;
-            const next = (buttons.indexOf(document.activeElement) + direction + buttons.length) % buttons.length;
-            buttons[next].focus();
-          }
+          wrapTab(event, ref.current);
         }}>
         <h3 id={title}>{confirm.title}</h3>
         <p id={description}>{confirm.cost}</p>

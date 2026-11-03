@@ -6,10 +6,10 @@ import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { TreeSwitcher } from '../ui/TreeSwitcher.jsx';
 import { FindStep, NewStep, handleMenuKey, dismissOverlayOutside } from './BoardControls.jsx';
-import { RoadmapSheet } from './RoadmapSheet.jsx';
+import { ActivityIcon, RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { countBucket } from './acts.js';
-import { LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from './copy.js';
+import { DEMO_BYLINE, LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from './copy.js';
 import './identity.css';
 
 const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
@@ -18,7 +18,6 @@ export function RoadmapIdentity({
   band, view, role, title, switcher, progress, onSwitchView, find, next,
   onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity,
 }) {
-  // The demo uses the non-owner presentation; onActivity is accepted without adding a door.
   const bar = useRef(null);
   const titleButton = useRef(null);
   const moreButton = useRef(null);
@@ -39,6 +38,7 @@ export function RoadmapIdentity({
       { verb: 'askAI', label: ROADMAP_VERBS.askAI, icon: Sparkles, key: '⌘K', act: onAskAI },
       { verb: 'share', label: ROADMAP_VERBS.shareRoadmap, icon: Share, act: onShare },
     ] : []),
+    { verb: 'activity', label: ROADMAP_VERBS.activity, icon: ActivityIcon, key: 'A', act: onActivity },
     { verb: 'export', label: ROADMAP_VERBS.export, icon: Download, act: onExport },
     { verb: 'settings', label: ROADMAP_VERBS.settings, icon: Settings, act: onSettings },
     { verb: 'shortcuts', label: ROADMAP_VERBS.keyboardShortcuts, icon: Keyboard, key: '?', act: onShortcuts },
@@ -152,6 +152,7 @@ export function RoadmapIdentity({
       data-role={role}
       data-view={view}
     >
+      {role === 'demo' && phone && <span className="st-roadmap-sample">{DEMO_BYLINE.phone}</span>}
       <div className="st-roadmap-context">
         {sheetAvailable && (
           <button ref={titleButton} className="st-roadmap-title st-roadmap-title-button" type="button"
@@ -162,6 +163,7 @@ export function RoadmapIdentity({
         {showSwitcher && <div className="st-roadmap-switcher">{identitySwitcher}</div>}
         {showHeading && <h1 ref={titleButton} tabIndex={-1} className="st-roadmap-title" title={title}>{title}</h1>}
       </div>
+      {role === 'demo' && !phone && <span className="st-roadmap-sample">{DEMO_BYLINE.wide}</span>}
       {title !== undefined && progress && (
         <span className="st-roadmap-progress" aria-label={progressLabel(progress)}>
           {progressFigure({ ...progress, compact: phone })}
@@ -293,6 +295,7 @@ export function RoadmapIdentity({
           onShare={onShare}
           onExport={onExport}
           onSettings={onSettings}
+          onActivity={onActivity}
           onClose={close}
         />
       )}
