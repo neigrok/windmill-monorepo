@@ -13,39 +13,20 @@ class TrainingHistory(private val read: Reader) {
         val dates = (read.repository(Proposal).record(b.id, ViewMode.drawn)?.rc ?: 0).compareTo(read.repository(Proposal).record(a.id, ViewMode.drawn)?.rc ?: 0)
         if (dates == 0) b.id.compareTo(a.id) else dates
     }
-    private val finished get() = log.drawnSessions.filter { !it.isOpen }
-
-    private fun exerciseDocument(value: Exercise): Json = Json.Obj((value.fields() + mapOf("id" to value.id.json,
-        "custom" to Json.of(SeedExercises.all.none { it.id == value.id })) +
-        (if (value.equipment == "dumbbell") mapOf("loadCount" to Json.of(value.loadCount)) else emptyMap()) +
-        if (value.aliases.isEmpty()) emptyMap() else mapOf("aliases" to Json.Arr(value.aliases.map(Json::of)))).toList())
+    private val drawnSessions = log.drawnSessions
+    private val finished get() = drawnSessions.filter { !it.isOpen }
 
     fun exercises(): Json = Json.Arr(catalogue.exercises.sortedWith { a, b ->
         compareBytes(a.pattern, b.pattern).takeIf { it != 0 } ?: compareBytes(a.name, b.name).takeIf { it != 0 } ?: a.id.compareTo(b.id)
     }.map(::exerciseDocument))
 
-    private fun sessionDocument(value: Session): Json = Json.Obj(buildList {
-        add("id" to value.id.json); add("startedAt" to Json.of(value.startedAt.ms))
-        value.finishedAt?.let { add("finishedAt" to Json.of(it.ms)) }
-        value.routineId?.let { add("routineId" to it.json) }; value.plan?.let { add("plan" to it.json) }
-        value.displayName?.let { add("routineName" to Json.of(it)) }
-    })
-
-    private fun setDocument(value: TrainingSet): Json = Json.Obj(buildList {
-        add("id" to value.id.json); add("exerciseId" to value.exerciseId.json)
-        value.setNumber?.let { add("setNumber" to Json.of(it)) }
-        add("weightKg" to Json.of(value.weightKg)); add("reps" to Json.of(value.reps))
-        add("note" to Json.of(value.note)); add("completedAt" to Json.of(value.completedAt.ms))
-        value.rpe?.let { add("rpe" to Json.of(it)) }
-    })
-
-    fun session(id: Id<Session>): Json = log.drawnSessions.firstOrNull { it.id == id }?.let {
+    fun session(id: Id<Session>): Json = drawnSessions.firstOrNull { it.id == id }?.let {
         Json.objectOf("session" to sessionDocument(it), "sets" to Json.Arr(log.sets(id).map(::setDocument)))
     } ?: Json.Null
 
     private fun tonnage(sets: List<TrainingSet>): Double? = GymVolume.of(sets, catalogue)
 
-    private fun summary(value: Session): Json {
+    fun summary(value: Session): Json {
         val sets = log.sets(value.id)
         val result = sessionDocument(value).obj().toMutableMap()
         result.putAll(mapOf("setCount" to Json.of(sets.size), "workingSetCount" to Json.of(sets.size), "tonnageKg" to (tonnage(sets)?.let(Json::of) ?: Json.Null),
@@ -61,7 +42,7 @@ class TrainingHistory(private val read: Reader) {
         val before = f.optionalInstant("before")?.ms ?: SessionRules.maxInstantMs
         val beforeId = f.optionalString("beforeId") ?: ""
         val limit = f.optionalInt("limit")?.takeIf { it > 0 }?.coerceAtMost(200) ?: 50
-        return Json.Arr(log.drawnSessions.filter { it.startedAt.ms < before || (it.startedAt.ms == before && compareBytes(it.id.record.string ?: "", beforeId) > 0) }.take(limit).map(::summary))
+        return Json.Arr(drawnSessions.filter { it.startedAt.ms < before || (it.startedAt.ms == before && compareBytes(it.id.record.string ?: "", beforeId) > 0) }.take(limit).map(::summary))
     }
 
     fun lastTime(id: Id<Exercise>): Json {
@@ -187,7 +168,7 @@ class TrainingHistory(private val read: Reader) {
         val result = proposalHead(value).obj().toMutableMap()
         result["name"] = Json.of(value.proposedName)
         result["changes"] = Json.Arr(value.changes.mapIndexed { index, change -> Json.Obj(buildList {
-            addAll(change.json.obj().toList()); add("position" to Json.of(index + 1)); if (change.kind == "removed") add("loggedSets" to Json.of(log.drawnSessions.sumOf { session -> log.sets(session.id).count { it.exerciseId == change.exerciseId } }))
+            addAll(change.json.obj().toList()); add("position" to Json.of(index + 1)); if (change.kind == "removed") add("loggedSets" to Json.of(drawnSessions.sumOf { session -> log.sets(session.id).count { it.exerciseId == change.exerciseId } }))
         }) })
         value.baseName?.let { result["baseName"] = Json.of(it) }; value.baseRevision?.let { result["baseRevision"] = Json.of(it) }
         return Json.Obj(result.toList())
@@ -197,14 +178,21 @@ class TrainingHistory(private val read: Reader) {
         add("id" to value.id.json); add("name" to Json.of(value.name)); add("position" to Json.of(value.position))
         add("entries" to Json.Arr(value.entries.mapIndexed { index, entry -> Json.Obj(entry.json.obj().toList() + ("position" to Json.of(index + 1))) }))
         value.revision?.let { add("revision" to Json.of(it)) }
-        log.drawnSessions.firstOrNull { it.routineId == value.id }?.let { add("lastTrainedAt" to Json.of(it.startedAt.ms)) }
-        proposalValues.firstOrNull { it.routineId == value.id && it.state == "pending" }?.let { add("pendingProposal" to proposalHead(it)) }
+        lastTrainedAt(value.id)?.let { add("lastTrainedAt" to Json.of(it.ms)) }
+        pendingProposal(value.id)?.let { add("pendingProposal" to proposalHead(it)) }
     })
 
-    fun routines(): Json = Json.Arr(routineValues.sortedWith { a, b ->
-        val dates = (log.drawnSessions.firstOrNull { it.routineId == b.id }?.startedAt?.ms ?: -1).compareTo(log.drawnSessions.firstOrNull { it.routineId == a.id }?.startedAt?.ms ?: -1)
+    fun lastTrainedAt(routine: Id<Routine>): Instant? = drawnSessions.firstOrNull { it.routineId == routine }?.startedAt
+
+    fun pendingProposal(routine: Id<Routine>): Proposal? = proposalValues.firstOrNull { it.routineId == routine && it.state == "pending" }
+
+    // The routines that hold a movement, the most recently trained first, then by their position and id.
+    val program: List<Routine> get() = routineValues.sortedWith { a, b ->
+        val dates = (lastTrainedAt(b.id)?.ms ?: -1).compareTo(lastTrainedAt(a.id)?.ms ?: -1)
         if (dates != 0) dates else a.position.compareTo(b.position).takeIf { it != 0 } ?: a.id.compareTo(b.id)
-    }.map(::routineDocument))
+    }
+
+    fun routines(): Json = Json.Arr(program.map(::routineDocument))
 
     fun routine(id: Id<Routine>): Json {
         val value = routineValues.firstOrNull { it.id == id } ?: return Json.Null
@@ -240,4 +228,27 @@ class TrainingHistory(private val read: Reader) {
     }
 
     fun review(id: Id<Session>): Json = SessionReview.of(id, log)?.json ?: Json.Null
+
+    // The documents a movement, a workout and a set read as, on every read that prints one. A set's number stands only once the log confirmed it (Coach INV-3).
+    companion object {
+        fun exerciseDocument(value: Exercise): Json = Json.Obj((value.fields() + mapOf("id" to value.id.json,
+            "custom" to Json.of(SeedExercises.all.none { it.id == value.id })) +
+            (if (value.equipment == "dumbbell") mapOf("loadCount" to Json.of(value.loadCount)) else emptyMap()) +
+            if (value.aliases.isEmpty()) emptyMap() else mapOf("aliases" to Json.Arr(value.aliases.map(Json::of)))).toList())
+
+        fun sessionDocument(value: Session): Json = Json.Obj(buildList {
+            add("id" to value.id.json); add("startedAt" to Json.of(value.startedAt.ms))
+            value.finishedAt?.let { add("finishedAt" to Json.of(it.ms)) }
+            value.routineId?.let { add("routineId" to it.json) }; value.plan?.let { add("plan" to it.json) }
+            value.displayName?.let { add("routineName" to Json.of(it)) }
+        })
+
+        fun setDocument(value: TrainingSet): Json = Json.Obj(buildList {
+            add("id" to value.id.json); add("exerciseId" to value.exerciseId.json)
+            value.setNumber?.let { add("setNumber" to Json.of(it)) }
+            add("weightKg" to Json.of(value.weightKg)); add("reps" to Json.of(value.reps))
+            add("note" to Json.of(value.note)); add("completedAt" to Json.of(value.completedAt.ms))
+            value.rpe?.let { add("rpe" to Json.of(it)) }
+        })
+    }
 }

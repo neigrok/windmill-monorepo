@@ -137,26 +137,40 @@ object ProposalRules {
         RoutineChange.between(base, proposed.map { it.validated(Path("entries")) })
 }
 
-class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name: String, val entries: List<RoutineEntry>, val summary: String,
+// What a proposal comes to before it is planned: refused, nothing to propose, or the validated proposal with the plan that
+// mints it, so an executor composing the action answers with the proposal it wrote.
+sealed interface Proposed<out P> {
+    data class Refuse(val refusal: GymRefusal) : Proposed<Nothing>
+    data object Unchanged : Proposed<Nothing>
+    data class Minted<P : Writable<P>>(val proposal: Valid<P>, val plan: Plan) : Proposed<P>
+}
+
+// A null name keeps the routine's own.
+class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name: String?, val entries: List<RoutineEntry>, val summary: String,
     val removing: Boolean = false) : Action<ProposeRoutine.Loaded, Id<Proposal>, GymRefusal> {
     data class Loaded(val routine: Routine?, val catalogue: Catalogue, val moment: Moment, val routineVisible: Boolean = true)
     override val scope = Proposal.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = Loaded(read.repository(Routine).find(routineId, ViewMode.stored), Catalogue(read, ViewMode.stored), read.moment,
         read.repository(Routine).find(routineId, ViewMode.drawn) != null)
-    override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Proposal>, GymRefusal> {
-        val base = loaded.routine?.takeIf { loaded.routineVisible } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, routineId.ref, path = Refused.Path.predicted)))
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Proposal>, GymRefusal> = when (val proposed = proposed(loaded)) {
+        is Proposed.Refuse -> Decision.Refuse(proposed.refusal)
+        Proposed.Unchanged -> Decision.Unchanged(id)
+        is Proposed.Minted -> Decision.Write(proposed.plan, id)
+    }
+    fun proposed(over: Loaded): Proposed<Proposal> {
+        val base = over.routine?.takeIf { over.routineVisible } ?: return Proposed.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, routineId.ref, path = Refused.Path.predicted)))
         val proposed = if (removing) emptyList() else RoutineRules.entries.apply(entries, Path("entries"))
-        val proposedName = if (removing) "" else RoutineRules.name.apply(name, Path("name"))
-        if (proposed.any { loaded.catalogue.find(it.exerciseId) == null }) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.unknownExercise), id.ref, path = Refused.Path.predicted)))
+        val proposedName = if (removing) "" else RoutineRules.name.apply(name ?: base.name, Path("name"))
+        if (proposed.any { over.catalogue.find(it.exerciseId) == null }) return Proposed.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.unknownExercise), id.ref, path = Refused.Path.predicted)))
         val changes = RoutineChange.between(base.entries, proposed)
-        RoutineRules.floored(changes, loaded.catalogue)
-        if (!removing && base.name == proposedName && base.entries == proposed) return Decision.Unchanged(id)
-        val proposal = Proposal(id, base.id, if (removing) "remove" else "revise", proposedName, summary, changes)
+        RoutineRules.floored(changes, over.catalogue)
+        if (!removing && base.name == proposedName && base.entries == proposed) return Proposed.Unchanged
+        val proposal = Valid(Proposal(id, base.id, if (removing) "remove" else "revise", proposedName, summary, changes), Proposal, at = over.moment)
         val plan = Plan()
-        plan.create(Valid(proposal, Proposal, at = loaded.moment))
+        plan.create(proposal)
         plan.guardRead(base.id, listOf("entries", "name"))
-        return Decision.Write(plan, id)
+        return Proposed.Minted(proposal, plan)
     }
 }
 

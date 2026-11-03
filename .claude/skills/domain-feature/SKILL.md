@@ -328,7 +328,7 @@ That is CI's command (`.github/workflows/ios.yml`). A second checkout or worktre
 |---|---|---|
 | `:domain-kit` | `domain-kit/src/main/kotlin/works/windmill/domain/kit/` | the kit (`Entities`, `Values`, `Rules`, `Reading`, `Plans`, `Actions`, `Drafts`, `Refusals`, `Time`, `Nfc`, `Collation`, `Abilities`) |
 | `:domain-kit-testing` | `domain-kit-testing/src/main/kotlin/works/windmill/domain/testing/` | `Contract`, `ProductCorpus`, `KitCorpus`, the checks, `withActionContext`; its tests hold `KitLayeringTests` |
-| `:gym:domain` | `gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/` | the gym domain, one file per feature plus `GymRules.kt`; tests beside it under `src/test/…/gym/domain/sync/` |
+| `:gym:domain` | `gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/`, `coach/` | the gym domain, one file per feature plus `GymRules.kt`, and `coach/`, the Coach's conversation records and replica executor; tests beside each under `src/test/…/gym/domain/` |
 
 Kotlin has no journal domain; a new product domain is a new `jvm` module, added to `settings.gradle.kts` and to both
 layering tests' module tables (below) in the same change. The app composes `ActionRunner(replica, SyncSchema.registry,
@@ -343,11 +343,12 @@ cd apps/android
 ./gradlew :domain-kit-testing:test :domain-kit-testing:corpus :domain-kit-testing:layering :sync-testing:layering   # the kit corpus and both layering tasks
 ```
 
-The first prints `Gym corpus: 18/51 files, 1048 cases, 33 explicitly not applicable …, no unclaimed file`; the second `kit corpus: 12/12 files, 490/490
+The first prints `Gym corpus: 37/52 files, 1116 cases, 68 ability cases (47 results byte-equal, 16 refused alike, 5 shares refused on the phone), 15 explicitly not applicable …, no unclaimed file`; the second `kit corpus: 12/12 files, 490/490
 vectors` and `layering: 5 deterministic modules, … compiled classes, 0 findings`. `./gradlew build` (CI,
 `.github/workflows/android.yml`) runs all of it, with `ANDROID_SENTRY_DSN` set.
 
-**Tests.** `CorpusTests.kt` is the one vector runner: `paths` lists every file under `packages/api-contract/gym/`,
+**Tests.** `CorpusTests.kt` is the one vector runner: `paths` and `abilities` list every file under `packages/api-contract/gym/`,
+`Contract.abilityCases` reads an ability file and `ability(case)` runs it through `RunAbility`, and
 `run(vector)` switches on `vector.file`, then on the case's `action` or `read`, building each decider from the case's
 `input` through `Fields(input)` (`f.ref("id", Proposal)`, `f.instant(…)`, `f.list("entries", RoutineEntry)`) and
 `<E>.fromForm(json)`; `corpus.save(WeighIn, GymRefusal, vector, blank, { it.copy(kg = …) }, result, ::refusalForm)`,

@@ -43,31 +43,36 @@ object WorkoutProposalRules {
 }
 
 // The Coach's whole plan for the open workout, as a diff against the plan this phone stores, guarding it. The proposal
-// refuses what the log would: a movement it cannot name, a second entry of one, and a change to a movement with a logged
-// set, which must stand in the proposal as it stands in the plan.
+// refuses what the log would: a movement it cannot name, more entries of a movement than the plan gave it (one, for a
+// movement it does not hold), and a change to the entries of a movement with a logged set, which may move but stand in the
+// proposal as they stand in the plan.
 class ProposeWorkout(val id: Id<WorkoutProposal>, val sessionId: Id<Session>, val entries: List<RoutineEntry>, val summary: String) :
     Action<OpenWorkout, Id<WorkoutProposal>, GymRefusal> {
     override val scope = WorkoutProposal.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = OpenWorkout(read, sessionId)
-    override fun decide(loaded: OpenWorkout, ids: IDSource): Decision<Id<WorkoutProposal>, GymRefusal> {
-        loaded.refusal(id.ref)?.let { return Decision.Refuse(it) }
-        val stored = loaded.plan.entries
-        val proposal = Valid(WorkoutProposal(id, sessionId, summary, RoutineChange.between(stored, entries)), WorkoutProposal, at = loaded.moment)
-        if (entries.any { loaded.catalogue.find(it.exerciseId) == null }) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.unknownExercise, id.ref))
-        entries.withIndex().firstOrNull { (at, entry) -> entries.take(at).any { it.exerciseId == entry.exerciseId } }?.let { (at, _) ->
-            throw Violation(WorkoutPlanRules.duplicate, Path("entries") + at + "exerciseId", Violation.Reason.Custom("duplicate"))
-        }
-        val changed = (stored + entries).map { it.exerciseId }.distinct().firstOrNull { movement ->
-            movement in loaded.logged && stored.firstOrNull { it.exerciseId == movement } != entries.firstOrNull { it.exerciseId == movement }
-        }
-        if (changed != null) return Decision.Refuse(WorkoutPlanRules.logged(changed, id.ref))
-        RoutineRules.floored(proposal.value.changes, loaded.catalogue)
-        if (entries == stored) return Decision.Unchanged(id)
+    override fun decide(loaded: OpenWorkout, ids: IDSource): Decision<Id<WorkoutProposal>, GymRefusal> = when (val proposed = proposed(loaded)) {
+        is Proposed.Refuse -> Decision.Refuse(proposed.refusal)
+        Proposed.Unchanged -> Decision.Unchanged(id)
+        is Proposed.Minted -> Decision.Write(proposed.plan, id)
+    }
+    fun proposed(over: OpenWorkout): Proposed<WorkoutProposal> {
+        over.refusal(id.ref)?.let { return Proposed.Refuse(it) }
+        val stored = over.plan.entries
+        if (entries == stored) return Proposed.Unchanged
+        val proposal = Valid(WorkoutProposal(id, sessionId, summary, RoutineChange.between(stored, entries)), WorkoutProposal, at = over.moment)
+        if (entries.any { over.catalogue.find(it.exerciseId) == null }) return Proposed.Refuse(GymRefusal.predicted(Gym.Codes.unknownExercise, id.ref))
+        fun held(plan: List<RoutineEntry>, movement: Id<Exercise>) = plan.filter { it.exerciseId == movement }
+        entries.withIndex().firstOrNull { (at, entry) ->
+            held(entries.take(at + 1), entry.exerciseId).size > maxOf(1, held(stored, entry.exerciseId).size)
+        }?.let { (at, _) -> throw Violation(WorkoutPlanRules.duplicate, Path("entries") + at + "exerciseId", Violation.Reason.Custom("duplicate")) }
+        val changed = (stored + entries).map { it.exerciseId }.firstOrNull { it in over.logged && held(stored, it) != held(entries, it) }
+        if (changed != null) return Proposed.Refuse(WorkoutPlanRules.logged(changed, id.ref))
+        RoutineRules.floored(proposal.value.changes, over.catalogue)
         val plan = Plan()
         plan.create(proposal)
         plan.guardRead(sessionId, listOf("plan"))
-        return Decision.Write(plan, id)
+        return Proposed.Minted(proposal, plan)
     }
 }
 

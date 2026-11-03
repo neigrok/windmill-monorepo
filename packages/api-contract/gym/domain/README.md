@@ -22,7 +22,8 @@ answers otherwise, each by the one field it reads by another rule, and the one c
 without its session).
 
 The ability conformance corpus beside this one, `../abilities/` ([README](../../README.md)), is claimed by the Swift replica
-executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`): each case runs through `RunAbility` over its
+executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`) and the Kotlin one
+(`apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/coach/`, `CorpusTests`): each case runs through `RunAbility` over its
 given records as the case's seat at its moment, and the result's JCS bytes, its SHA-256 and the records the gesture writes
 are compared with the server's golden. The Coach `thread` and `message` entities keep a rule book of their own
 (`CoachRules.book`, in Swift and Kotlin) until every gym implementation carries them, so `rules.json` stays the book the three share.
