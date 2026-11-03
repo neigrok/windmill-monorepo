@@ -6,12 +6,15 @@ import { graphToastPlacement, viewportInsets } from './viewport.js';
 const CHROME_GAP = 8;
 // The chrome measures itself within a frame of the first paint; past this the first view is the reader's to move.
 const FIRST_FRAME_REFRAME_MS = 1200;
+// The tablet Activity panel's drawn seat from the page top, and its gap beneath whatever reaches lower.
+const ACTIVITY_PANEL_TOP = 172;
+const ACTIVITY_PANEL_GAP = 12;
 
 // Where everything over the canvas sits: what each piece of chrome measures of itself becomes the camera's insets, the
-// dock's seat, the refusal card's seat and the toast's clearance.
+// dock's seat, the refusal card's seat, the toast's clearance and the tablet Activity panel's seat.
 export function useGraphGeometry({
   breakpoint, phone, canvasView, boardActive, dockOpen, refusal, topbarBottom, graphChromeBottom, phoneGraphBottom,
-  scene, selectedId, renderModel, toastKey, tendOpen, legendVisible,
+  scene, selectedId, renderModel, toastKey, tendOpen, activityOpen, legendVisible,
   rootRef, identityRef, boardLayerRef, legendDockRef, insetsRef, firstFrameRef, graphRevealRef,
 }) {
   const graphRefusalRef = useRef(null);
@@ -144,15 +147,15 @@ export function useGraphGeometry({
     '--graph-toast-bottom': `${graphToastBottom}px`,
   } : undefined;
 
-  const [tendTopInset, setTendTopInset] = useState(0);
+  const [rowChrome, setRowChrome] = useState({ bottom: 0, roomTop: 0 });
   useLayoutEffect(() => {
-    if (phone || !tendOpen) return undefined;
+    if (phone || !(tendOpen || activityOpen)) return undefined;
     const row = identityRef.current?.querySelector('.st-roadmap-identity');
     const filters = boardActive ? boardLayerRef.current?.querySelector('.st-board-strip') : null;
     const measure = () => {
       const rowBottom = row?.getBoundingClientRect().bottom ?? 0;
       const filterBottom = filters?.getBoundingClientRect().bottom ?? 0;
-      setTendTopInset(Math.max(rowBottom, filterBottom) + 16);
+      setRowChrome({ bottom: Math.max(rowBottom, filterBottom), roomTop: rootRef.current?.getBoundingClientRect().top ?? 0 });
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -163,7 +166,9 @@ export function useGraphGeometry({
       observer.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [phone, tendOpen, boardActive, topbarBottom]);
+  }, [phone, tendOpen, activityOpen, boardActive, topbarBottom, Boolean(refusal)]);
+  const tendTopInset = rowChrome.bottom + 16;
+  const activityPanelTop = Math.max(ACTIVITY_PANEL_TOP, rowChrome.bottom + ACTIVITY_PANEL_GAP + refusalClearance) - rowChrome.roomTop;
 
-  return { insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset };
+  return { insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset, activityPanelTop };
 }

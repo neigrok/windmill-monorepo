@@ -77,7 +77,9 @@ including a one-step roadmap, and hides at zero. Picking a row selects and revea
 step. Desktop and tablet owners open Activity through the identity callback or A on either
 view; the feed never opens itself and carries no unread signal. On desktop, opening it from the Board switches to the
 Graph dock. At 744–1023px a separate Activity panel keeps the current view usable; its rows open
-step details, and X, Escape or the Activity callback closes it and returns focus to More.
+step details, and X, Escape or the Activity callback closes it and returns focus to More. It sits at
+172px from the page top, or 12px below the measured row, Board filter strip or Graph refusal banner
+when those reach lower, and paints beneath the row's menus and the Board's sort menu.
 Phone owners open Activity as a page inside the roadmap sheet through `sheet.activity`; A does
 nothing on phones. With at most eight roadmaps, the entry and Activity page share the 611px
 footprint, capped by the viewport; the search sheet keeps its taller layout. Back or the first
@@ -89,9 +91,11 @@ From 744px the Graph camera controls form a bottom-right pill whose viewport blo
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
 Graph toasts retain their intrinsic width, centering in the free canvas when they fit or across
 the canvas otherwise; `graphToastPlacement` owns measured clearance from the camera, minimap,
-panel and legend. Phone Graph toasts hold the bottom slot above the selected-step bar. Created steps
-reveal after the scene receives their model and the selected-step panel's insets.
-On the phone Graph, a single selected
+panel and legend. Phone Graph toasts hold the bottom slot, above the selected-step bar and any
+refusal card. Created steps reveal after the scene receives their model and the selected-step
+panel's insets.
+Share links and the demo mount inside the roadmap room's Shell (`inRoom` on the route's answer), keeping
+their URLs; the Shell is their way home and their Sign in. On the phone Graph, a single selected
 step shows a bottom bar with its title and derived state. Owners open its step page from Open step;
 readers and the demo open it from the title and keep Fork as the primary action. The detail opens
 over the Graph, and Back preserves selection. Its Edit step uses the shared composer. The bar
@@ -109,10 +113,12 @@ leaves `ViewSwitch` at the row's position with focus on it: the Shell carries th
 separate, and the fallback's measured bottom feeds the same insets as the row. A Board render failure reports
 `roadmap-board` and shows the Graph with focus on the row's pressed switch; choosing Board tries it again. The
 selected-step bar sits outside the identity boundary;
-its render failures reach the room boundary. State words use `board/copy.js` without changing ceremony
-structure or timing. Ask AI uses an overlay from 744px and a modal dock on phones, with
+its render failures reach the room boundary. Focus in the bar moves to the row's pressed switch
+option when a tap deselects, and that tap's compatibility mousedown keeps it there. State words use `board/copy.js`
+without changing ceremony structure or timing. Ask AI uses an overlay from 744px and a modal dock on phones, with
 examples above its field. The dock reuses composer viewport tracking to clear the keyboard, and
 Escape, scrim or submit dismisses it.
+The demo's coach chip takes Escape only while it is the top thing on screen.
 
 `SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
 branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`

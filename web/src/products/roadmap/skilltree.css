@@ -2326,6 +2326,8 @@
 }
 
 button.st-graph-step-title {
+  margin: -10px 0;
+  padding: 10px 0;
   cursor: pointer;
 }
 
@@ -2358,9 +2360,8 @@ button.st-graph-step-title {
 
 .st-roadmap-activity-panel {
   position: absolute;
-  top: 172px;
   right: 16px;
-  z-index: 35;
+  z-index: 23;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2372,6 +2373,10 @@ button.st-graph-step-title {
   border-radius: 20px;
   background: var(--surface-card);
   box-shadow: var(--shadow-lg);
+}
+
+.st-view-layer--board .st-roadmap-activity-panel {
+  z-index: 2;
 }
 
 .st-roadmap-activity-header {
@@ -2430,6 +2435,29 @@ button.st-graph-step-title {
 .st-roadmap-activity-rows .st-event-text b,
 .st-roadmap-activity-rows .st-event-obj {
   color: var(--text-secondary);
+}
+
+.st-roadmap-activity-rows .st-event-obj i {
+  width: 11px;
+  height: 11px;
+}
+
+.st-roadmap-activity-rows .st-event-avatar > div {
+  border: 0 !important;
+  background: var(--surface-sunken) !important;
+  box-shadow: none !important;
+  color: var(--text-secondary) !important;
+  font-family: var(--font-body) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+
+.st-roadmap-activity-rows .st-event-badge {
+  box-sizing: border-box;
+  right: -3px;
+  bottom: -3px;
+  border: 2px solid var(--surface-card);
+  box-shadow: none;
 }
 
 .st-roadmap-activity-rows .st-event-time {

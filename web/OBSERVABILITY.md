@@ -191,8 +191,8 @@ The device line emits `roadmap_device_line` with `step: shown` once per visit, `
 `door: offer`, `view: board` and `band: phone`. The phone Graph bar's Fork emits the same event with `door: bar`, `view: graph` and `band: phone`.
 From 744px Activity's A key emits `roadmap_verb` with `verb: activity` and `door: key`; on
 phones A does nothing. Ask AI retains its
-existing verb and tending outcomes. The demo uses reader row events, while `demo_open` is
-unchanged. The existing `fork_attempt` and `fork_claim` retain their meanings.
+existing verb and tending outcomes. The demo uses reader row events. `demo_open` carries only `treeId`,
+always the one public demo roadmap's constant id; no other roadmap product event carries a tree id. The existing `fork_attempt` and `fork_claim` retain their meanings.
 Session expiry, including the 20-second account poll, retains device work and reaches the lapsed
 line. It is an expected auth outcome, not an Issue. Unexpected account refresh failures report
 `auth-session` with a real stack. Explicit sign-out and account replacement retain their cleanup.

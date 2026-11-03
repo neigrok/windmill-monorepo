@@ -673,6 +673,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   read-only step page, with Fork remaining primary. The approved
   [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343)
   has no visual tap affordance on that title. Draw the interactive title treatment.
+- **Board · filter strip at 744.** The built strip ends at y=172; 08.13 draws it ending at y=160.
+  The tablet Activity panel keeps the drawn 12px gap beneath the strip, so on the Board it stands at
+  y=184 where [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws
+  y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
 - **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph.
   The Board shortcuts dialog does not list A because its approved specimen has no Activity row.
   Draw that row before adding it to `BOARD_SHORTCUT_GROUPS`; A does nothing on phones.

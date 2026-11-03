@@ -83,6 +83,8 @@ const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
+// The compatibility mousedown of a touch tap lands within this window of its pointer up.
+const TAP_MOUSEDOWN_MS = 350;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
@@ -796,10 +798,14 @@ export function SkillTreeView({ treeId, demo = false }) {
     const previous = graphBarRef.current;
     graphBarRef.current = null;
     if (detailId !== null || boardComposer !== null || forkOpen || !previous) return;
-    if (graphBarFocusedRef.current) {
-      graphBarFocusedRef.current = false;
-      focusGraph();
-    }
+    if (!graphBarFocusedRef.current) return;
+    graphBarFocusedRef.current = false;
+    focusGraph();
+    // A tap deselects on pointer up; the mousedown the browser sends after it would blur the option focus just reached.
+    const canvas = canvasRef.current;
+    const keepFocus = (event) => event.preventDefault();
+    canvas?.addEventListener('mousedown', keepFocus, { once: true });
+    setTimeout(() => canvas?.removeEventListener('mousedown', keepFocus), TAP_MOUSEDOWN_MS);
   }, [graphStep?.id, detailId, boardComposer, forkOpen, focusGraph]);
 
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({
@@ -1078,9 +1084,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     breakpoint, canvasView, feedVisible, activityGroups, nodesById, setSelectedId, openActivity, closeActivity, addressOpen: stepAddress.open,
   });
 
-  const { insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset } = useGraphGeometry({
+  const { insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset, activityPanelTop } = useGraphGeometry({
     breakpoint, phone, canvasView, boardActive, dockOpen, refusal, topbarBottom, graphChromeBottom, phoneGraphBottom,
-    scene, selectedId, renderModel, toastKey: toast?.key ?? null, tendOpen, legendVisible,
+    scene, selectedId, renderModel, toastKey: toast?.key ?? null, tendOpen, activityOpen, legendVisible,
     rootRef, identityRef, boardLayerRef, legendDockRef, insetsRef, firstFrameRef, graphRevealRef,
   });
 
@@ -1088,6 +1094,15 @@ export function SkillTreeView({ treeId, demo = false }) {
     onRename={handleRenameTree} onPreviewTitle={previewTreeTitle} onDelete={handleDeleteTree} />;
   const handleIdentityCrash = useCallback((error) => reportBoardFailure('roadmap-identity', error), []);
 
+  const activityPanel = activityOpen && breakpoint === 'tablet' ? (
+    <aside className="st-roadmap-activity-panel" aria-label={ROADMAP_VERBS.activity} style={{ top: activityPanelTop }}>
+      <div className="st-roadmap-activity-header">
+        <h2>{ROADMAP_VERBS.activity}</h2>
+        <IconButton icon={<Icon name="x" size={20} />} label={LABELS.close} onClick={closeRowActivity} />
+      </div>
+      <ActivityRows groups={activityGroups} nodesById={nodesById} onOpenStep={openActivityStep} />
+    </aside>
+  ) : null;
   return (
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef} onFocusCapture={rememberGraphFocus}>
       <canvas
@@ -1169,6 +1184,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               legend={legend}
             />
           </ErrorBoundary>
+          {boardActive && activityPanel}
         </div>
       )}
 
@@ -1308,15 +1324,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </GraphDock>
       )}
 
-      {activityOpen && breakpoint === 'tablet' && (
-        <aside className="st-roadmap-activity-panel" aria-label={ROADMAP_VERBS.activity}>
-          <div className="st-roadmap-activity-header">
-            <h2>{ROADMAP_VERBS.activity}</h2>
-            <IconButton icon={<Icon name="x" size={20} />} label={LABELS.close} onClick={closeRowActivity} />
-          </div>
-          <ActivityRows groups={activityGroups} nodesById={nodesById} onOpenStep={openActivityStep} />
-        </aside>
-      )}
+      {canvasView && activityPanel}
 
       {tabletEditor && (
         <TabletPanel
@@ -1389,6 +1397,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           nodeId={COACHED_NODE_ID}
           onMarkDone={() => completeStep(COACHED_NODE_ID)}
           completionCount={demoCompletions}
+          covered={keyboardCovered}
         />
       )}
 
