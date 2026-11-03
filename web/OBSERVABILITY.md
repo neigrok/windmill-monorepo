@@ -81,9 +81,11 @@ conversation, question, identifier or server text is reported.
 
 ## Roadmap
 
-Every event and Sentry operation below fires in production for every reader, on every band. The Board is the only path
-into a roadmap; nothing stands in front of it. Properties are allowlisted, bounded labels: no title, step or roadmap id,
-kind name, search text, email or server sentence enters them. `demo_open`'s `treeId` is the one constant the bundle ships.
+The Board is the only path into a roadmap and nothing stands in front of it: every event and Sentry operation below fires
+in production for whichever reader and band reach its step. Properties are allowlisted, bounded labels: no title, step or
+roadmap id, kind name, search text, email or server sentence enters them. Three rows are the exceptions, and none carries
+what a person wrote: `demo_open`'s `treeId` is the one constant the bundle ships, `birth`'s `quest` is an authored id, and
+`birth` and `claim` carry a raw count.
 
 `test/products/roadmap/observability.test.mjs` fails when a roadmap event name or Sentry operation in the code is missing
 from these tables, or a name in the tables is missing from the code.
