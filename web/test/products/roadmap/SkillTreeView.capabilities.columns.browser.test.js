@@ -1,4 +1,4 @@
-// §2.5 of the wave-8 architecture: what the List showed about a roadmap has its Board home.
+// §2.5 of the wave-8 architecture: what a roadmap shows lives in its columns.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';

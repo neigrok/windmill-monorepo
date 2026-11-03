@@ -4,8 +4,7 @@ import { coverBeneath } from '../step/composerFocus.js';
 import { ViewPrefs, boardCanShow, clearBorn, initialView, peekBorn, viewToShow } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 
-// Board or Graph: decided once the moment the tree is ready, remembered per tree, and given up only where the Board cannot
-// show. A switch keeps focus on the option it pressed; a key or a crash lands on the option the row now shows pressed.
+// Board or Graph: decided once the tree is ready, remembered per tree, and given up only where the Board cannot show.
 export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep, scene, anchors, onLeave, onSwitched }) {
   const { identityRef, boardLayerRef } = anchors;
   const { owner, reader, role, demo, shared, breakpoint } = who;
@@ -33,8 +32,7 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
     track('roadmap_view_open', { view: decision.view === 'board' ? 'board' : 'graph', band: breakpoint, role, door: decision.door });
   }, [treeId, view, breakpoint, role]);
 
-  // Until the tree arrives, the Board's skeleton or load error stands where the Board would open: the saved choice, or
-  // the owner's default anywhere but a share or the demo.
+  // Until the tree arrives, the skeleton or load error stands where the Board would open: the saved choice, or the owner's default.
   const openingView = view ?? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, reader, empty: false, born: peekBorn(treeId), linkedStep }).view;
   const boardFacts = {
     crashed: boardCrashed,
@@ -45,8 +43,7 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
   const shownView = viewToShow(openingView, boardFacts);
   const boardActive = shownView === 'board';
 
-  // The Board stays mounted through a reload or an emptied tree, so Done's fold survives (its columns, and their scroll,
-  // give way to the skeleton or the empty roadmap); only a crash drops it.
+  // The Board stays mounted through a reload or an emptied tree, so Done's fold survives; only a crash drops it.
   if (boardActive) boardShownRef.current = true;
   const boardMounted = !boardCrashed && boardShownRef.current;
   useEffect(() => (boardActive ? coverBeneath(boardLayerRef.current) : undefined), [boardActive]);
@@ -69,6 +66,7 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
     switchOptionRef.current = active?.classList.contains('st-board-switch-option') ? active : null;
   }, [treeId, shownView, onLeave, onSwitched, viewPrefs]);
 
+  // A switch keeps focus on the option it pressed; a key or a crash lands on the option the row now shows pressed.
   useEffect(() => {
     if (!switchFocusRef.current) return;
     switchFocusRef.current = false;
@@ -92,8 +90,7 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
 
   return {
     decidedView: view, shownView, boardActive, canvasView: !boardActive, boardFacts, boardMounted, switchView, crashBoard,
-    // While the Board stands in for a roadmap that has not loaded, the row names nothing and offers no Share; a failed
-    // load offers no Graph either, whose load error would cover the row with no way back.
+    // A Board standing in for an unloaded roadmap names nothing; a failed load offers no Graph, whose error would cover the row.
     boardAwaitsRoadmap: boardActive && !boardFacts.loaded,
     onSwitchView: boardCanShow({ ...boardFacts, crashed: false }) && !(boardActive && loadError) ? switchView : null,
   };

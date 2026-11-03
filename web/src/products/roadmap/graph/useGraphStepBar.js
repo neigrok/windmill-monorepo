@@ -3,8 +3,7 @@ import { COLUMN_OF_STATE } from '../model/UnlockRules.js';
 import { titleOf } from '../step/StepFacts.js';
 import { track } from '../../../telemetry/beacon.js';
 
-// The phone Graph's bottom bar: the one selected step while nothing covers it, else the reader's Fork pill. A bar that goes
-// with focus inside hands focus back to the Graph.
+// The phone Graph's bar: the one selected step while nothing covers it; going with focus inside, it hands focus to the Graph.
 export function useGraphStepBar({ phoneGraph, selection, selectedNode, selectedState, covered, forkPresent, forkOpen, setForkOpen, rootRef, focusGraph }) {
   const { selectedIds, selectedEdges } = selection;
   const barRef = useRef(null);

@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { PHONE_WORKING_ZOOM, WORKING_ZOOM } from '../theme.js';
 import { SkillTreeScene } from '../scene/SkillTreeScene.js';
 
-// The canvas's scene, constructed once per set of write handlers; React drives it through its methods. Only the desktop
-// editor's scene takes gestures that write.
+// The canvas's scene, constructed once per set of write handlers; only the desktop editor's scene takes gestures that write.
 export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint, onPickNothing, showToast }) {
   const { canvasRef, rootRef } = anchors;
   const [scene, setScene] = useState(null);

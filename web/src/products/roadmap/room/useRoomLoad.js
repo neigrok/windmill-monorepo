@@ -43,8 +43,7 @@ async function readRoadmap({ treeId, demo, signal }) {
   return { seed, overlay, serverActivity };
 }
 
-// The tree and everything it carries, from the door to a live session: repository, domain, layout, the first view, then the
-// socket. A step's place on this device is saved as the reader moves. Each load replaces the last; a retry runs it again.
+// From the door to a live session: repository, domain, layout, the first view, then the socket; a retry runs it again.
 export function useRoomLoad({ treeId, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, dismissToast, desktopEditorRef, onRemoteProgress }) {
   const { sceneRef, sessionRef, projectionRef, treeRef, seedRef, peersRef } = room;
   const [placeStore] = useState(() => new PlaceStore());

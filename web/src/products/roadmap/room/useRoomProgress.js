@@ -12,8 +12,7 @@ import { markDoneTargets } from '../model/bulkSelection.js';
 
 const NO_PROGRESS = Object.freeze({ completed: new Set(), completedAt: {} });
 
-// Every mark on a step, from any surface or any device: the room's progress, what it unlocked, the milestone it may have
-// reached and the Graph toast that says so. The snapshot is always the freshest, so a held Undo never restores stale marks.
+// Every mark on a step, from any surface or device; the snapshot is always the freshest, so a held Undo restores no stale marks.
 export class RoomProgress {
   constructor(collaborators) {
     this.update(collaborators);
@@ -76,8 +75,7 @@ export class RoomProgress {
     } } };
   }
 
-  // The detail says its outcome in place; Board acts and Graph completions own their Undo toast. `tree` is what the
-  // caller is showing, which a held delete may have projected.
+  // The detail says its outcome in place; `tree` is what the caller shows, which a held delete may have projected.
   complete(id, { quiet = false, door, at = Date.now(), tree } = {}) {
     const c = this.collaborators;
     const before = this.snapshot;
@@ -127,8 +125,7 @@ export class RoomProgress {
     if (id) this.mark([id], 'none', id);
   }
 
-  // The step's mark goes back as it was, with no ceremony and no activity. Its completion time cannot: the progress lattice
-  // dates every mark it sends, so an Undo of Reset completes the step at the Undo's time.
+  // The mark goes back with no ceremony or activity, but the lattice dates every mark: an Undo of Reset completes at the Undo's time.
   restore(id, snapshot) {
     this.mark([id], snapshot.completed.has(id) ? 'complete' : 'none', id);
   }
@@ -139,7 +136,7 @@ export class RoomProgress {
     return next;
   }
 
-  // A viewer keeps the owner's displayed progress; every owner surface adopts its private lane. Returns what to say about it.
+  // A viewer keeps the owner's displayed progress; an owner adopts their private lane and is told what moved.
   adoptRemote(overlay) {
     const tree = this.collaborators.treeRef.current;
     if (!this.ownMarks || !tree) return null;

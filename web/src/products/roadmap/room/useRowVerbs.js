@@ -9,9 +9,8 @@ import { buildRoadmapExport, downloadExport } from '../settings/exportArchive.js
 import { treeShareUrl } from '../share/ShareDialog.jsx';
 import { deleteLocalTree, renameLocalTree } from '../sync/localTrees.js';
 
-// What the identity row reads and does: Find's handoff to the Board, the Next chip, the phone's roadmap sheet, and the verbs
-// that route to Share, Export and Activity.
-export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, address, graphStepReturnRef, identityRef, sessionRef, projectionRef, revealOnGraph, setSelectedId, setShareOpen, showToast }) {
+// What the identity row reads and does: Find's handoff, the Next chip, the switcher, the phone's sheet and its verbs.
+export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast }) {
   const { owner, phone, breakpoint } = who;
   const { boardActive, canvasView, switchView } = view;
   const { completed, completedAt } = progress;
@@ -130,7 +129,7 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
     onPreviewTitle: (id, title) => {
       if (id === treeId) document.title = `${title.trim() || 'Untitled roadmap'} — Windmill`;
     },
-    // A local row renames the blob and device index and never PATCHes the server; a server row goes through the registry.
+    // A local row renames the blob and device index; a server row goes through the registry.
     onRename: (id, title, { local = false } = {}) => {
       if (id === treeId && sessionRef.current?.renameTree(title)) return undefined;
       return local ? renameLocalTree(id, title) : renameTree(id, title);

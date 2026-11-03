@@ -4,8 +4,7 @@ const LEAVE_MS = 280; // matches the CSS exit
 const HOLD_MS = 4000;
 const HOLD_WITH_ACTION_MS = 6000;
 
-// Where a toast stands. A Board toast waits out the regroup inside the Board and a Graph toast leaves with the canvas;
-// Ask AI speaks in its own pill. Any other stands over whatever is showing: the Board's slot, unless a step covers it.
+// A Board toast waits out the regroup, a Graph toast leaves with the canvas, Ask AI has its pill; any other stands over what shows.
 export function toastSeat(toast, { canvasView, stepOpen }) {
   if (!toast || toast.surface === 'tend') return null;
   if (toast.surface === 'board') return 'board';

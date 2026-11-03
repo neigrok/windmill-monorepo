@@ -39,8 +39,8 @@ export class ViewPrefs {
   }
 }
 
-// Empty or just-planted roadmaps open the canvas, except editable empty Boards. Step links open the Board and confirmed
-// readers the Graph; other visits keep their saved choice, and a saved `list` from before the Board reads as `board`.
+// Empty or just-planted roadmaps open the canvas, except editable empty Boards; step links open the Board, readers the Graph,
+// and other visits keep their saved choice, with a saved `list` reading as `board`.
 export function initialView({ saved, owner, reader = false, empty, born = false, linkedStep = null, canAddFirstStep = false }) {
   if (owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
   if (born) return { view: 'tree', door: 'born' };

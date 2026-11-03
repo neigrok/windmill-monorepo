@@ -26,8 +26,7 @@ export class StepSelection {
   }
 }
 
-// A toast's Undo reverts the act it names and leaves everything later standing. A receipt the session has already spent
-// reverts nothing.
+// A toast's Undo reverts the act it names and leaves everything later standing; a spent receipt reverts nothing.
 export function receiptUndo({ session, receipt, before, onReverted, onFailure }) {
   return {
     label: LABELS.undo,

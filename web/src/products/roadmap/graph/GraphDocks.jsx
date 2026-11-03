@@ -1,5 +1,4 @@
-// The Graph's right-hand seats, one per band and role: the desktop editor's dock holds the paste composer, the step or the
-// feed; the tablet owner's panel holds its editing bars; a reader's dock reads the step. Below 744px a step opens from the bar.
+// The Graph's right-hand seats by band and role: the desktop editor's dock, the tablet owner's panel, and a reader's dock.
 
 import React, { useMemo } from 'react';
 import { Icon, IconButton } from '../../../design-system';

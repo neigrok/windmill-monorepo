@@ -13,7 +13,10 @@ const POLL_CEILING_MS = 90000;  // ceiling before we stop watching
 export function useTend({ treeId, onFace }) {
   const [working, setWorking] = useState(false);
   const aliveRef = useRef(true);
-  useEffect(() => () => { aliveRef.current = false; }, []);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   const submit = useCallback(async (prompt) => {
     if (working || !prompt.trim()) return;
