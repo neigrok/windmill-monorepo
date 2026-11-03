@@ -44,10 +44,6 @@ export class BoardActs {
 
   update(collaborators) { this.collaborators = collaborators; }
 
-  invalidateReceipts() {
-    this.collaborators.dismissInvalidatedToast?.();
-  }
-
   recolor(ids, hue) {
     const c = this.collaborators;
     if (!c.active || !c.owner || !c.tree) return { ok: false };
@@ -69,7 +65,7 @@ export class BoardActs {
     const outcome = recolorOutcome(selection.ids);
     c.showToast(outcome.message, {
       surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
-      action: { label: LABELS.undo, run: () => {
+      action: { label: LABELS.undo, receipt: true, run: () => {
         const current = this.collaborators;
         try {
           current.onQuiet();
@@ -172,7 +168,7 @@ export class BoardActs {
     c.showToast(outcome.message, {
       surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
       ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
-      action: { label: LABELS.undo, run: () => {
+      action: { label: LABELS.undo, receipt: true, run: () => {
         const current = this.collaborators;
         try {
           if (!c.session.revert(receipt)) return;
@@ -273,7 +269,7 @@ export function useBoardActs(collaborators) {
     const previous = receiptRef.current;
     receiptRef.current = { session: collaborators.session, version: collaborators.receiptVersion };
     if (previous.session !== collaborators.session || previous.version == null || collaborators.receiptVersion <= previous.version) return;
-    acts.invalidateReceipts();
+    acts.collaborators.dismissInvalidatedToast?.();
   }, [acts, collaborators.session, collaborators.receiptVersion]);
   useEffect(() => {
     if (collaborators.session?.ready && acts.pending?.releaseVia) acts.release(acts.pending.releaseVia);

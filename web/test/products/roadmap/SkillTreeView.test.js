@@ -33,9 +33,20 @@ function collectHandlers(code) {
     if (node.type === 'FunctionDeclaration' && ['completeStep', 'useRoadmapSyncStatus'].includes(node.id.name)) {
       identityHandlers.set(node.id.name, code.slice(node.start, node.end));
     }
-    if (node.type === 'VariableDeclarator' && ['onIdentityQuery', 'shareFromRow', 'exportFromRow', 'undoGraphToast'].includes(node.id.name)) {
+    if (node.type === 'VariableDeclarator' && ['onIdentityQuery', 'shareFromRow', 'exportFromRow', 'undoGraphToast', 'handleSheetJump', 'discardSync'].includes(node.id.name)) {
       const callback = node.init.arguments[0];
       identityHandlers.set(node.id.name, code.slice(callback.start, callback.end));
+    }
+    if (node.type === 'Property' && node.key.name === 'dismissInvalidatedToast') {
+      identityHandlers.set('dismissInvalidatedToast', code.slice(node.value.start, node.value.end));
+    }
+    if (node.type === 'CallExpression' && node.callee.name === 'useEffect') {
+      const callback = node.arguments[0];
+      const body = code.slice(callback.start, callback.end);
+      if (body.includes('insetsRef.current = insets;')) {
+        identityHandlers.set('publishInsets', body);
+        identityHandlers.set('insetDependencies', code.slice(node.arguments[1].start, node.arguments[1].end));
+      }
     }
     for (const child of Object.values(node)) {
       if (Array.isArray(child)) child.forEach(visit);
@@ -422,7 +433,6 @@ test('Graph-toast Undo uses its captured visible origin, otherwise the pressed v
   }
 });
 
-
 function syncClock() {
   let now = 1000;
   let key = 0;
@@ -507,4 +517,80 @@ test('host sync refuses stale session readings, fast acks never flash Saving, an
   hook.redraw();
   assert.deepEqual({ ...hook.tree }, { snapshot: null, state: null });
   assert.deepEqual([first.count(), second.count(), clock.count()], [0, 0, 0]);
+});
+
+test('Graph reveal waits for the selected step model and panel insets, while a repeated selection reveals immediately', () => {
+  for (const [active, selected] of [[false, 'wind'], [true, 'course'], [true, 'wind']]) {
+    const calls = [];
+    const graphRevealRef = { current: null };
+    const jump = runInNewContext(`(${identityHandlers.get('handleSheetJump')})`, {
+      identityActiveRef: { current: active }, selectedIdRef: { current: selected }, graphRevealRef,
+      sceneRef: { current: { revealNode: (id) => calls.push(['reveal', id]) } },
+      setSelectedId: (id) => calls.push(['select', id]),
+    });
+    jump('wind');
+    assert.deepEqual(calls, active && selected !== 'wind' ? [['select', 'wind']] : [['reveal', 'wind'], ['select', 'wind']]);
+    assert.equal(graphRevealRef.current, active && selected !== 'wind' ? 'wind' : null);
+  }
+  const calls = [];
+  const graphRevealRef = { current: 'wind' };
+  const firstFrameRef = { current: null };
+  const insets = { top: 112, right: 408, bottom: 24, left: 24, blocks: [] };
+  const scene = {
+    nodesById: new Map(),
+    setViewportInsets: (value) => calls.push(['insets', value]),
+    revealNode: (id) => calls.push(['reveal', id]),
+  };
+  const publish = runInNewContext(`(${identityHandlers.get('publishInsets')})`, {
+    insetsRef: { current: null }, insets, scene, graphRevealRef, firstFrameRef,
+  });
+  publish();
+  assert.equal(graphRevealRef.current, 'wind');
+  scene.nodesById.set('wind', {});
+  firstFrameRef.current = { id: 'course' };
+  publish();
+  assert.deepEqual(calls, [['insets', insets], ['insets', insets], ['reveal', 'wind']]);
+  assert.equal(graphRevealRef.current, null);
+  assert.equal(firstFrameRef.current, null);
+});
+
+
+test('closed identity gate keeps selection and model changes out of initial camera framing dependencies', () => {
+  const scene = {};
+  const insets = {};
+  const dependencies = (identityActive, selectedId, renderModel) => [...runInNewContext(identityHandlers.get('insetDependencies'), {
+    scene, insets, identityActive, selectedId, renderModel,
+  })];
+  assert.deepEqual(dependencies(false, 'wind', {}), [scene, insets, null, null]);
+  assert.deepEqual(dependencies(false, 'dock', {}), [scene, insets, null, null]);
+  const model = {};
+  assert.deepEqual(dependencies(true, 'wind', model), [scene, insets, 'wind', model]);
+});
+
+test('host reports discard only after the session confirms success', async () => {
+  for (const result of [false, true]) {
+    const events = [];
+    let finish;
+    const discard = runInNewContext(`(${identityHandlers.get('discardSync')})`, {
+      refused: { lane: 'structure' }, refusalCode: 'server-error',
+      syncSession: { discard: () => new Promise((resolve) => { finish = resolve; }) },
+      track: (name, props) => events.push([name, { ...props }]),
+    });
+    const pending = discard();
+    assert.deepEqual(events, []);
+    finish(result);
+    await pending;
+    assert.deepEqual(events, result ? [['roadmap_sync_refused', { step: 'discard', lane: 'structure', code: 'server-error' }]] : []);
+  }
+});
+
+test('host invalidates only receipt-backed Undo, preserving progress and held-delete toasts', () => {
+  for (const [act, receipt] of [['create', true], ['recolor', true], ['complete', false], ['delete', false]]) {
+    const calls = [];
+    const dismiss = runInNewContext(`(${identityHandlers.get('dismissInvalidatedToast')})`, {
+      boardToastRef: { current: { act, action: { receipt } } }, dismissToast: () => calls.push('dismiss'),
+    });
+    dismiss();
+    assert.deepEqual(calls, receipt ? ['dismiss'] : []);
+  }
 });

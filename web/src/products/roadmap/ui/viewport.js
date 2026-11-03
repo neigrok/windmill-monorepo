@@ -53,6 +53,22 @@ function legendBlocks(legendBox) {
   return [{ ...LEGEND_CORNER, width: legendBox.width, height: legendBox.height }];
 }
 
+export function graphToastPlacement({ width, height, toastWidth, toastHeight, leftInset, rightInset, obstacles, gap = 8 }) {
+  const freeWidth = width - leftInset - rightInset;
+  const center = toastWidth <= freeWidth ? leftInset + freeWidth / 2 : width / 2;
+  const left = center - toastWidth / 2;
+  const right = center + toastWidth / 2;
+  let bottom = 24;
+  for (let pass = 0; pass < obstacles.length; pass += 1) {
+    for (const obstacle of obstacles) {
+      const overlaps = left < obstacle.right + gap && right > obstacle.left - gap
+        && height - bottom > obstacle.top - gap && height - bottom - toastHeight < obstacle.bottom + gap;
+      if (overlaps) bottom = height - obstacle.top + gap;
+    }
+  }
+  return { center, bottom };
+}
+
 // The frontier: the selection the device remembers, else the top Next-up row, else the most recent completion this
 // browser witnessed, else the crown of the largest tree. Null only on an empty tree.
 export function frontierTarget(tree, states, { selectedId = null, completedAt = {} } = {}) {

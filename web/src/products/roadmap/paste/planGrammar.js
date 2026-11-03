@@ -6,11 +6,18 @@
 const PLAN_HUES = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const ROOT_LABEL_MAX = 200;
 const KIND_LABEL_MAX = 24;
+const EXPORT_MARKER = '<!-- windmill:roadmap -->';
 
 // `bindOnly`: a heading matching no existing kind mints a fresh hue instead of relabeling one.
 export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
   const lines = scanLines(text);
   const root = takeRoot(lines);
+  const marker = lines.findIndex((line, at) => at > root.line && line.kind !== 'blank');
+  root.exported = root.line >= 0 && lines[marker]?.content === EXPORT_MARKER;
+  if (root.exported) {
+    lines[marker].kind = 'blank';
+    if (lines[root.line].kind === 'text' && root.title === '#') root.title = '';
+  }
   const grove = growNodes(lines, root, existingKinds, bindOnly);
   return assemble(root, grove, lines);
 }
@@ -85,15 +92,18 @@ class KindBook {
     return this.kinds[0]?.hue ?? PLAN_HUES[0];
   }
 
-  claim(heading) {
+  claim(heading, exportHue) {
     const label = heading.trim();
-    const bound = this.kinds.find((kind) => kind.label !== '' && kind.label.trim().toLowerCase() === label.toLowerCase());
+    const bound = this.kinds.find((kind) => kind.label !== '' && kind.label.trim().toLowerCase() === label.toLowerCase() && (!exportHue || kind.hue === exportHue));
     if (bound) {
       this.claimed.add(bound.id);
       return bound;
     }
+    if (exportHue && this.bindOnly && this.kinds.some((kind) => kind.hue === exportHue)) return this.claim(heading);
     if (!this.bindOnly) {
-      const starter = this.kinds.find((kind) => kind.source === 'existing' && !this.claimed.has(kind.id));
+      const starter = exportHue
+        ? this.kinds.find((kind) => kind.hue === exportHue)
+        : this.kinds.find((kind) => kind.source === 'existing' && !this.claimed.has(kind.id));
       if (starter) {
         starter.label = label.slice(0, KIND_LABEL_MAX);
         starter.description = '';
@@ -103,7 +113,7 @@ class KindBook {
       }
     }
     const taken = new Set(this.kinds.map((kind) => kind.hue));
-    const hue = PLAN_HUES.find((candidate) => !taken.has(candidate));
+    const hue = exportHue ?? PLAN_HUES.find((candidate) => !taken.has(candidate));
     if (hue) {
       const minted = { id: this.mintId(label), hue, label: label.slice(0, KIND_LABEL_MAX), description: '', source: 'added' };
       this.kinds.push(minted);
@@ -127,20 +137,26 @@ class KindBook {
 // Draft nodes carry an index-parent; `marks` is the gutter's raw material, one per line that spoke.
 function growNodes(lines, root, existingKinds, bindOnly = false) {
   const book = new KindBook(existingKinds, bindOnly);
-  const nodes = [{ role: 'root', label: root.title, hue: book.firstHue(), parent: -1, checked: false, notes: [], links: [], line: root.line }];
+  const nodes = root.exported ? [] : [{ role: 'root', label: root.title, hue: book.firstHue(), parent: -1, checked: false, notes: [], links: [], line: root.line }];
   const marks = lines.map(() => null);
-  if (root.line >= 0) marks[root.line] = { node: 0, glyph: '◉', liberties: [] };
+  if (root.line >= 0 && !root.exported) marks[root.line] = { node: 0, glyph: '◉', liberties: [] };
 
-  let branch = 0; // the index steps fall back to — the root until a heading opens a branch
-  let hue = nodes[0].hue;
+  let branch = root.exported ? -1 : 0;
+  let hue = book.firstHue();
   const stack = []; // open steps, shallow → deep: { level, index, ordered, anchor }
 
   lines.forEach((line, at) => {
     if (at === root.line || line.kind === 'blank') return;
 
-    // A branch heading claims a kind and resets the indent world under it.
+    // Export headings only switch kind; ordinary paste headings also open a branch.
     if (line.kind === 'heading') {
-      hue = book.claim(line.content).hue;
+      const exportedKind = root.exported && line.content.match(/^(?:(.*?) )?<!-- windmill:kind (terracotta|olive|gold|brick|sky|plum) -->$/);
+      if (exportedKind) {
+        hue = exportedKind[1] ? book.claim(exportedKind[1], exportedKind[2]).hue : exportedKind[2];
+      } else {
+        hue = book.claim(line.content).hue;
+      }
+      if (root.exported) return;
       nodes.push({ role: 'branch', label: line.content, hue, parent: 0, checked: false, notes: [], links: [], line: at });
       branch = nodes.length - 1;
       stack.length = 0;
@@ -151,6 +167,12 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
     // Depth is dependency, numbers chain, bullets fan, [x] arrives done. A level jump past the
     // previous line clamps to the nearest real ancestor.
     if (line.kind === 'item') {
+      const exportedKind = root.exported && line.content.match(/^(.*?) <!-- windmill:kind (terracotta|olive|gold|brick|sky|plum)(?: (.*?))? -->$/);
+      if (exportedKind) {
+        line.content = exportedKind[1];
+        hue = exportedKind[3] ? book.claim(unescapeExportText(exportedKind[3]), exportedKind[2]).hue : exportedKind[2];
+      }
+      if (root.exported) line.content = unescapeExportText(line.content);
       const liberties = [];
       if (line.ragged) liberties.push({ type: 'clamp', detail: 'mixed indent clamped' });
       let level = line.level;
@@ -174,6 +196,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
 
     // Anything else is a note on the nearest step; a bare URL becomes a link. Nothing is dropped.
     const nearest = nodes.length - 1;
+    if (nearest < 0) return;
     if (/^https?:\/\/\S+$/.test(line.content)) nodes[nearest].links.push(line.content);
     else nodes[nearest].notes.push(line.content);
     marks[at] = { node: nearest, glyph: '¶', liberties: [{ type: 'note', detail: 'kept as a note' }] };
@@ -182,14 +205,14 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
   return { nodes, marks, kinds: book.kinds };
 }
 
-// Duplicate labels get " (2)" exhaustively, ids are slug + occurrence counter (never time, never
-// random), and parents become prerequisite arrays.
+// Ordinary pastes rename duplicate labels; exports retain them. IDs use a slug and occurrence
+// counter, and parents become prerequisite arrays.
 function assemble(root, grove, lines) {
   const labels = new Set();
   const ids = new Set();
   const named = grove.nodes.map((draft, index) => {
     let label = draft.label;
-    if (label !== '' && labels.has(label)) {
+    if (!root.exported && label !== '' && labels.has(label)) {
       let n = 2;
       while (labels.has(`${label} (${n})`)) n += 1;
       label = `${label} (${n})`;
@@ -208,7 +231,7 @@ function assemble(root, grove, lines) {
   });
 
   const nodes = named.map(({ draft, id, label }, index) => {
-    const node = { id, label, color: draft.hue, prerequisites: index === 0 ? [] : [named[draft.parent].id] };
+    const node = { id, label, color: draft.hue, prerequisites: draft.parent < 0 ? [] : [named[draft.parent].id] };
     if (index === 0) node.icon = 'sparkles'; // the root wears the birth spark
     if (draft.checked) node.status = 'complete';
     if (draft.notes.length > 0) node.description = draft.notes.join('\n');
@@ -253,79 +276,31 @@ function slug(label) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 }
 
-// The inverse: a TreeData back into plan-grammar markdown. Best-effort — the grammar is strictly
-// single-parent and colours a node by its enclosing `## section`, so a general DAG cannot
-// round-trip. Extra prerequisites, and a primary parent in another colour section, are kept as a
-// `needs also: <label>, …` note that reparses into the description; kind descriptions and link
-// labels are lost. Labels, single-parent shape, colours and completion marks survive exactly.
+function escapeExportText(text, comment = false) {
+  return text.replace(comment ? /[&<>\r\n-]/g : /[&<>\r\n]/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
+function unescapeExportText(text) {
+  return text.replace(/&#(38|60|62|13|10|45);/g, (_, code) => String.fromCharCode(Number(code)));
+}
+
+// Export list items preserve primary dependencies; extra prerequisites become `needs also` notes.
+// Kind descriptions and link labels are not represented in Markdown.
 
 // The app carries links as { url, label } objects; parsePlan produces bare url strings.
 const linkUrl = (link) => (typeof link === 'string' ? link : link?.url ?? '');
 export function serializePlan(treeData, kinds, progress) {
   const nodes = treeData.nodes ?? [];
   const title = treeData.title ?? '';
-  if (nodes.length === 0) return `# ${title}`;
-
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const kindByHue = new Map((kinds ?? []).map((kind) => [kind.hue, kind]));
   const completed = completedNodeIds(treeData, progress);
-  const root = nodes.find((node) => node.prerequisites.length === 0) ?? nodes[0];
-
-  // Each colour is one `## section`, in first-appearance order, except the root's own, which stays
-  // loose unless a branch node names it.
-  const order = [];
-  const byColor = new Map();
-  for (const node of nodes) {
-    if (node === root) continue;
-    if (!byColor.has(node.color)) { byColor.set(node.color, []); order.push(node.color); }
-    byColor.get(node.color).push(node);
-  }
-
-  const branchNode = (color) => {
-    const kind = kindByHue.get(color);
-    if (!kind) return null;
-    return (byColor.get(color) ?? []).find((node) => node.prerequisites[0] === root.id && node.label === kind.label) ?? null;
-  };
-  const looseColor = byColor.has(root.color) && branchNode(root.color) === null ? root.color : null;
-
-  const out = [`# ${title}`];
-  if (root.description) for (const line of String(root.description).split('\n')) out.push(line);
-  if (root.links) for (const link of root.links) { const url = linkUrl(link); if (url) out.push(url); }
-
-  if (looseColor !== null) renderForest(byColor.get(looseColor), root.id, completed, byId, out);
-
-  for (const color of order) {
-    if (color === looseColor) continue;
-    const heading = branchNode(color);
-    const kind = kindByHue.get(color);
-    out.push(`## ${heading ? heading.label : kind ? kind.label : color}`);
-    const content = heading ? byColor.get(color).filter((node) => node !== heading) : byColor.get(color);
-    renderForest(content, heading ? heading.id : null, completed, byId, out);
-  }
-
-  return out.join('\n');
-}
-
-// A live overlay — a Set, an array, or a Progress `{ completed }` — wins; with none, the
-// document's seed statuses answer.
-function completedNodeIds(treeData, progress) {
-  if (progress == null) return new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id));
-  if (progress instanceof Set) return progress;
-  if (Array.isArray(progress)) return new Set(progress);
-  if (progress.completed) return progress.completed instanceof Set ? progress.completed : new Set(progress.completed);
-  return new Set();
-}
-
-// One colour section as nested list items: prerequisites[0] is the indent parent when it lives in
-// this same section, otherwise the node sits at the top under the container. Notes ride under each
-// step: description, `needs also`, then bare-URL links.
-function renderForest(content, containerId, completed, byId, out) {
-  const contentIds = new Set(content.map((node) => node.id));
+  const out = [`# ${title}`, EXPORT_MARKER];
   const childrenOf = new Map();
   const roots = [];
-  for (const node of content) {
+  for (const node of nodes) {
     const parent = node.prerequisites[0];
-    if (parent !== undefined && contentIds.has(parent)) {
+    if (parent !== undefined && byId.has(parent)) {
       if (!childrenOf.has(parent)) childrenOf.set(parent, []);
       childrenOf.get(parent).push(node);
     } else {
@@ -333,22 +308,30 @@ function renderForest(content, containerId, completed, byId, out) {
     }
   }
 
+  let hue = null;
   const walk = (node, depth) => {
+    const kind = kindByHue.get(node.color);
+    const kindLabel = kind?.label ? ` ${escapeExportText(kind.label, true)}` : '';
+    const kindMarker = node.color === hue ? '' : ` <!-- windmill:kind ${node.color}${kindLabel} -->`;
+    hue = node.color;
     const box = completed.has(node.id) ? '[x] ' : '';
-    out.push(`${'  '.repeat(depth)}- ${box}${node.label}`);
+    out.push(`${'  '.repeat(depth)}- ${box}${escapeExportText(node.label)}${kindMarker}`);
     const noteIndent = '  '.repeat(depth + 1);
     if (node.description) for (const line of String(node.description).split('\n')) out.push(noteIndent + line);
-    const also = strandedPrereqs(node, contentIds, containerId, byId);
-    if (also) out.push(noteIndent + also);
+    const also = node.prerequisites.filter((id, index) => index > 0 || !byId.has(id));
+    if (also.length > 0) out.push(`${noteIndent}needs also: ${also.map((id) => byId.get(id)?.label ?? id).join(', ')}`);
     if (node.links) for (const link of node.links) { const url = linkUrl(link); if (url) out.push(noteIndent + url); }
     for (const child of childrenOf.get(node.id) ?? []) walk(child, depth + 1);
   };
   for (const node of roots) walk(node, 0);
+  return out.join('\n');
 }
 
-// The prerequisites indentation can't express, kept as a note that reparses into the description.
-function strandedPrereqs(node, contentIds, containerId, byId) {
-  const stranded = node.prerequisites.filter((id, index) => !(index === 0 && (contentIds.has(id) || id === containerId)));
-  if (stranded.length === 0) return null;
-  return `needs also: ${stranded.map((id) => byId.get(id)?.label ?? id).join(', ')}`;
+// A live overlay wins; with none, the document's seed statuses answer.
+function completedNodeIds(treeData, progress) {
+  if (progress == null) return new Set((treeData.nodes ?? []).filter((node) => node.status === 'complete').map((node) => node.id));
+  if (progress instanceof Set) return progress;
+  if (Array.isArray(progress)) return new Set(progress);
+  if (progress.completed) return progress.completed instanceof Set ? progress.completed : new Set(progress.completed);
+  return new Set();
 }

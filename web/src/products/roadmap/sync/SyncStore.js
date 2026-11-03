@@ -1,19 +1,20 @@
-// Durable local store for one tree's lattice: one IndexedDB record per tree holding
-// { frame, progress, lastSeq }, written together so a crash never tears them. The coverage vector
-// is not persisted; it is rebuilt from the next server graft.
-// `save` is a read-join-put inside a single transaction: the join must run synchronously inside
-// get.onsuccess and issue the put before yielding, never `await get()` then `await put()`.
+// Each lane keeps its projected lattice, server-confirmed baseline and discard epoch in one record.
+// A transaction joins matching epochs only; a discarded lane can never be revived by an older writer.
 
 import { TreeLattice } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 
 const DB_NAME = 'windmill-sync';
 const STORE = 'trees';
+const LANES = ['structure', 'progress'];
+const CHANNEL = 'windmill-roadmap-lane-epochs';
 
 export class SyncStore {
   constructor() {
     this.dbPromise = null;
-    this.chain = Promise.resolve();  // serialize saves so at most one txn per store is in flight
+    this.chain = Promise.resolve();
+    this.listeners = new Map();
+    this.channel = null;
   }
 
   db() {
@@ -31,7 +32,6 @@ export class SyncStore {
     return this.dbPromise;
   }
 
-  // Asks the browser not to evict us; reports whether it agreed.
   async requestPersistent() {
     try { return await navigator.storage?.persist?.() ?? false; } catch { return false; }
   }
@@ -40,12 +40,14 @@ export class SyncStore {
     const db = await this.db();
     return new Promise((resolve, reject) => {
       const request = db.transaction(STORE, 'readonly').objectStore(STORE).get(treeId);
-      request.onsuccess = () => resolve(request.result ?? null);
+      request.onsuccess = () => {
+        const value = request.result ? normalizeRecord(request.result) : null;
+        resolve(value);
+      };
       request.onerror = () => reject(request.error);
     });
   }
 
-  // Every tree with a blob on this device.
   async treeIds() {
     const db = await this.db();
     return new Promise((resolve, reject) => {
@@ -64,11 +66,11 @@ export class SyncStore {
     });
   }
 
-  // Read-join-put in one transaction. `value` = { frame, progress, lastSeq }; the caller must
-  // have snapshotted it synchronously (no awaits between lattice state and here).
   save(treeId, value) {
-    this.chain = this.chain.then(() => this.saveOnce(treeId, value)).catch(() => {});
-    return this.chain;
+    const snapshot = { ...value, epochs: { ...(value.epochs ?? { structure: 0, progress: 0 }) } };
+    const pending = this.chain.then(() => this.saveOnce(treeId, snapshot));
+    this.chain = pending.catch(() => {});
+    return pending;
   }
 
   async saveOnce(treeId, value) {
@@ -77,29 +79,148 @@ export class SyncStore {
       const txn = db.transaction(STORE, 'readwrite');
       const store = txn.objectStore(STORE);
       const get = store.get(treeId);
+      let result, failure;
       get.onsuccess = () => {
-        const stored = get.result;
-        const merged = stored ? mergeValues(stored, value) : value;  // synchronous — keeps the txn alive
-        store.put(merged, treeId);
+        try {
+          const stored = normalizeRecord(get.result);
+          const merged = normalizeRecord(stored);
+          const staleLanes = [];
+          for (const lane of LANES) {
+            const field = lane === 'structure' ? 'frame' : 'progress';
+            if (value[field] === undefined) continue;
+            if ((value.epochs?.[lane] ?? 0) !== stored.epochs[lane]) {
+              staleLanes.push(lane);
+              continue;
+            }
+            merged[field] = joinLane(lane, stored[field], value[field]);
+            const confirmed = value.confirmed?.[lane];
+            if (confirmed != null) merged.confirmed[lane] = joinLane(lane, stored.confirmed[lane], confirmed);
+            if (lane === 'structure') merged.lastSeq = Math.max(stored.lastSeq, value.lastSeq ?? 0);
+          }
+          store.put(merged, treeId);
+          result = { status: staleLanes.length ? 'stale' : 'saved', staleLanes, value: merged };
+        } catch (error) {
+          failure = error;
+          txn.abort();
+        }
       };
-      txn.oncomplete = () => resolve();
-      txn.onerror = () => reject(txn.error);
-      txn.onabort = () => reject(txn.error);
+      txn.oncomplete = () => resolve(result);
+      txn.onerror = () => reject(failure ?? txn.error);
+      txn.onabort = () => reject(failure ?? txn.error);
     });
+  }
+
+  replaceLane(treeId, lane, epoch) {
+    const pending = this.chain.then(async () => {
+      const db = await this.db();
+      return new Promise((resolve, reject) => {
+        const txn = db.transaction(STORE, 'readwrite');
+        const store = txn.objectStore(STORE);
+        const get = store.get(treeId);
+        let result;
+        get.onsuccess = () => {
+          const value = normalizeRecord(get.result);
+          if (value.epochs[lane] !== epoch) {
+            result = { status: 'stale', value };
+            return;
+          }
+          if (value.confirmed[lane] == null) {
+            result = { status: 'unavailable', value };
+            return;
+          }
+          const field = lane === 'structure' ? 'frame' : 'progress';
+          value[field] = value.confirmed[lane];
+          value.epochs[lane] += 1;
+          if (lane === 'structure') value.lastSeq = 0;
+          store.put(value, treeId);
+          result = { status: 'replaced', value };
+        };
+        txn.oncomplete = () => {
+          if (result.status === 'replaced') {
+            try { this.publishEpoch(treeId, lane, result.value.epochs[lane]); }
+            catch (error) { result.notificationError = error; }
+          }
+          resolve(result);
+        };
+        txn.onerror = () => reject(txn.error);
+        txn.onabort = () => reject(txn.error);
+      });
+    });
+    this.chain = pending.catch(() => {});
+    return pending;
+  }
+
+  // The wire send runs inside the read transaction: a discard cannot commit between its check and send.
+  async withEpoch(treeId, lane, epoch, send) {
+    const db = await this.db();
+    return new Promise((resolve, reject) => {
+      const txn = db.transaction(STORE, 'readonly');
+      const get = txn.objectStore(STORE).get(treeId);
+      let result, failure;
+      get.onsuccess = () => {
+        try {
+          const value = normalizeRecord(get.result);
+          if (value.epochs[lane] !== epoch) {
+            result = { status: 'stale', staleLanes: [lane], value };
+            return;
+          }
+          send();
+          result = { status: 'current' };
+        } catch (error) {
+          failure = error;
+          txn.abort();
+        }
+      };
+      txn.oncomplete = () => resolve(result);
+      txn.onerror = () => reject(failure ?? txn.error);
+      txn.onabort = () => reject(failure ?? txn.error);
+    });
+  }
+
+  subscribeEpochs(treeId, handler) {
+    if (!this.channel && typeof BroadcastChannel === 'function') {
+      this.channel = new BroadcastChannel(CHANNEL);
+      this.channel.unref?.();
+      this.channel.onmessage = ({ data }) => {
+        if (!LANES.includes(data?.lane) || !Number.isSafeInteger(data.epoch)) return;
+        for (const listener of this.listeners.get(data.treeId) ?? []) listener(data);
+      };
+    }
+    const handlers = this.listeners.get(treeId) ?? new Set();
+    handlers.add(handler);
+    this.listeners.set(treeId, handlers);
+    return () => {
+      handlers.delete(handler);
+      if (!handlers.size) this.listeners.delete(treeId);
+      if (this.listeners.size) return;
+      this.channel?.close();
+      this.channel = null;
+    };
+  }
+
+  publishEpoch(treeId, lane, epoch) {
+    const event = { treeId, lane, epoch };
+    for (const listener of this.listeners.get(treeId) ?? []) listener(event);
+    if (typeof BroadcastChannel !== 'function') return;
+    const channel = this.channel ?? new BroadcastChannel(CHANNEL);
+    try { channel.postMessage(event); }
+    finally { if (channel !== this.channel) channel.close(); }
   }
 }
 
-// max(lastSeq) is safe: the union frame covers whatever either lastSeq claims to have seen.
-function mergeValues(a, b) {
-  const lattice = new TreeLattice();
-  lattice.join(a.frame);
-  lattice.join(b.frame);
-  const progress = new ProgressLattice();
-  if (a.progress) progress.join(a.progress);
-  if (b.progress) progress.join(b.progress);
+function normalizeRecord(value = {}) {
   return {
-    frame: lattice.toFrame(),
-    progress: progress.toFrame(),
-    lastSeq: Math.max(a.lastSeq ?? 0, b.lastSeq ?? 0),
+    frame: value.frame ?? { nodes: [], edges: [], kinds: [] },
+    progress: value.progress ?? { marks: [] },
+    lastSeq: value.lastSeq ?? 0,
+    epochs: { structure: value.epochs?.structure ?? 0, progress: value.epochs?.progress ?? 0 },
+    confirmed: { structure: value.confirmed?.structure ?? null, progress: value.confirmed?.progress ?? null },
   };
+}
+
+function joinLane(lane, left, right) {
+  const lattice = lane === 'structure' ? new TreeLattice() : new ProgressLattice();
+  if (left) lattice.join(left);
+  if (right) lattice.join(right);
+  return lattice.toFrame();
 }

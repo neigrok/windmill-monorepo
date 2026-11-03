@@ -152,7 +152,7 @@ The gated identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, 
 `sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
 sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new` or `browse`), or `step: close`
 and `via` (`close`, `escape` or `scrim`). What's next emits `roadmap_whats_next` with `step: open`,
-then either `pick` or `close`; a pick does not also emit close. Each event's `count` uses the value captured
+then either `pick` or `close`; focus leaving the popover emits `close`, and a pick does not also emit close. Each event's `count` uses the value captured
 on opening, in `countBucket`'s allowlisted `0`, `1`, `2-5`, `6-20` or `21+` buckets. No user content
 enters these events.
 Export emits `roadmap_export` with `outcome` (`done` or `failed`) and `door` (`more` or `sheet`).
@@ -172,6 +172,7 @@ offline episode and `pending` bucketed through `countBucket`. Saving and Saved e
 Refusals emit `roadmap_sync_refused` with `step` (`shown`, `retry` or `discard`), `lane`
 (`structure` or `progress`) and `code` (`tree-too-large`, `bad-frame`, `no-such-tree`,
 `server-error` or `other`). Shown fires once for the refused frame, including across re-flushes.
+Discard fires only after the session confirms a successful discard.
 The device line emits `roadmap_device_line` with `step: shown` once per visit, `line`
 (`anonymous` or `lapsed`) and `place` (`row` or `shell`); tapping its phone row emits
 `step: sign_in`. The phone reader Board's Fork offer emits `roadmap_verb` with `verb: fork`,
@@ -181,9 +182,17 @@ retain their meanings.
 Unexpected refused codes (`bad-frame`, `server-error` and unknown codes) report
 `roadmap-sync-refused` once per code per session while the Board gate is open. Capacity and
 missing-tree refusals are expected and emit no Issue. Unexpected discard failures report
-`roadmap-sync-discard`. Reports carry static operation names and call-site stacks; events never
-carry titles, identifiers, raw counts, server reasons or user content. The existing sync failure
+`roadmap-sync-discard`. Refusal Issues include the bounded refusal code as a tag, and deduplication
+keeps different codes distinct. An epoch-notification failure after the discard transaction commits
+reports `roadmap-sync-notify` without turning the successful discard into a failure. An IndexedDB
+epoch-check failure before a structure or progress write send reports `roadmap-sync-send` and
+retains the pending bank in both gate states. Reports carry static operation names and call-site
+stacks; events never carry titles, identifiers, raw counts, server reasons or user content. The existing sync failure
 operations retain their meanings. Gate-closed Fork presentation changes emit no new event.
+The room registration keeps the Shell live region mounted while its status is idle. A published
+Offline state suppresses the global offline notice; anonymous and lapsed device lines do not.
+The shared controlled Tooltip and these presentation changes emit no additional product events;
+the existing offline shown/cleared events describe the connectivity episode.
 
 The switch, the tabs, the rail, Show all, the controls, the states, the step’s page and modal, and the
 composer and picker exist only while the Board’s development gate

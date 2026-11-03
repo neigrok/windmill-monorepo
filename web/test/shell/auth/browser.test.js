@@ -1,8 +1,10 @@
+import { SYNC_STATUS, ANONYMOUS_OWNER, LAPSED_SESSION } from '../../../src/products/roadmap/board/copy.js';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { withBrowserErrors } from '../../products/roadmap/board/composerFixture.js';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -66,10 +68,12 @@ after(async () => { await ready; await browser?.close(); await server?.close(); 
 async function open(context, name) {
   await context.route('**/v1/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ user: { id: 'A', name: 'Ada' } }) }));
   const page = await context.newPage();
-  await page.goto(`${origin}/auth-test`);
-  await page.waitForFunction(() => typeof mountAuth === 'function');
-  await page.evaluate((name) => mountAuth(name), name);
-  await page.getByRole('alert').filter({ hasText: 'Update required.' }).waitFor();
+  await withBrowserErrors(page, async () => {
+    await page.goto(`${origin}/auth-test`);
+    await page.waitForFunction(() => typeof mountAuth === 'function');
+    await page.evaluate((name) => mountAuth(name), name);
+    await page.getByRole('alert').filter({ hasText: 'Update required.' }).waitFor();
+  });
   return page;
 }
 
@@ -417,4 +421,58 @@ test('Chromium: a persisted restore refreshes the account; focus and delayed aut
     const retained = await page.evaluate(async () => (await engine.store.read()).device.toJSON());
     assert.deepEqual(retained, { ...before.device, meta: { ...before.device.meta, authGeneration: retained.meta.authGeneration } });
   } finally { await context.close(); }
+});
+
+
+test('Chromium: the global offline notice yields only to an explicitly offline room publication', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'auth-room-connectivity');
+    await withBrowserErrors(page, async () => {
+      const notice = page.getByText('Offline. Coach, echoes, nudges, voice and export need a connection.', { exact: true });
+      await page.evaluate(async () => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        syncSession.publish({ online: false });
+      });
+      await notice.waitFor();
+      await page.evaluate(async () => {
+        const { registerRoomStatus } = await import('/src/shell/roomStatus.js');
+        window.firstRoom = registerRoomStatus();
+      });
+      assert.equal(await notice.count(), 1);
+      for (const status of [
+        { line: ANONYMOUS_OWNER },
+        { line: LAPSED_SESSION },
+        { line: SYNC_STATUS.saving, narrow: 'announce' },
+        { line: 'Offline without a connectivity claim' },
+      ]) {
+        await page.evaluate((status) => firstRoom.publish(status), status);
+        assert.equal(await notice.count(), 1);
+      }
+      await page.evaluate(() => firstRoom.publish({ line: 'Room offline', connectivity: 'offline' }));
+      await notice.waitFor({ state: 'detached' });
+      await page.evaluate(async () => {
+        const { registerRoomStatus } = await import('/src/shell/roomStatus.js');
+        window.secondRoom = registerRoomStatus();
+        secondRoom.publish({ line: 'Another room offline', connectivity: 'offline' });
+        firstRoom.release();
+      });
+      assert.equal(await notice.count(), 0);
+      await page.evaluate(() => secondRoom.publish(null));
+      await notice.waitFor();
+      await page.evaluate(() => secondRoom.publish({ line: 'Room offline', connectivity: 'offline' }));
+      await notice.waitFor({ state: 'detached' });
+      await page.evaluate(() => secondRoom.release());
+      await notice.waitFor();
+      await page.evaluate(async () => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        syncSession.publish({ online: true });
+        secondRoom.release();
+      });
+      await notice.waitFor({ state: 'detached' });
+    });
+  } finally {
+    await context.close();
+  }
 });

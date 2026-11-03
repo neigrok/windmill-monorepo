@@ -1,9 +1,9 @@
 // The /app shell: a room switcher, the account seat, and the active room. data-brand and
 // data-theme are stamped together — palettes.css keys a room's ground on the pair.
 
-import React, { Suspense, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CloudOff } from 'lucide-react';
-import { BrandMark } from '../../design-system';
+import { BrandMark, Tooltip } from '../../design-system';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -18,9 +18,12 @@ import { useRoomStatus } from '../roomStatus.js';
 const STATUS_TOOLTIP_HOLD = 4000;
 
 function RoomStatus({ status }) {
+  const line = status?.line ?? '';
+  const [announcement, setAnnouncement] = useState('');
   const [tooltipLine, setTooltipLine] = useState(null);
-  const tooltip = tooltipLine === status.line;
-  const tooltipId = useId();
+  const tooltip = Boolean(line) && tooltipLine === line;
+  // The live region commits empty before its first announcement.
+  useEffect(() => setAnnouncement(line), [line]);
   const root = useRef(null);
   useEffect(() => {
     if (!tooltip) {
@@ -43,20 +46,22 @@ function RoomStatus({ status }) {
     };
   }, [tooltip, tooltipLine]);
 
-  const icon = status.icon === 'offline' ? <CloudOff size={16} aria-hidden="true" /> : null;
+  const icon = status?.icon === 'offline' ? <CloudOff size={16} aria-hidden="true" /> : null;
   return (
-    <div ref={root} className={`wm-room-status${status.narrow ? ` wm-room-status--${status.narrow}` : ''}`}>
-      <span className="wm-room-status-announcement" role="status" aria-live="polite" aria-atomic="true" aria-label={status.line}>{status.line}</span>
-      <span className="wm-room-status-full" aria-hidden="true">{status.line}</span>
-      <span className="wm-room-status-compact" aria-hidden="true">{icon}{status.short ?? status.line}</span>
-      {status.narrow === 'icon' && <button
-        type="button"
-        className="wm-room-status-tap"
-        aria-label={status.line}
-        aria-describedby={tooltip ? tooltipId : undefined}
-        onClick={() => setTooltipLine(tooltip ? null : status.line)}
-      >{icon}</button>}
-      {tooltip && <span id={tooltipId} className="wm-room-status-tooltip" role="tooltip">{status.line}</span>}
+    <div ref={root} className={`wm-room-status${status?.narrow ? ` wm-room-status--${status.narrow}` : ''}`}>
+      <span className="wm-room-status-announcement" role="status" aria-live="polite" aria-atomic="true">{announcement}</span>
+      <span className="wm-room-status-full" aria-hidden="true">{line}</span>
+      <span className="wm-room-status-compact" aria-hidden="true">{icon}{status?.short ?? line}</span>
+      {status?.narrow === 'icon' && <span className="wm-room-status-narrow">
+        <Tooltip label={line} side="bottom" align="end" open={tooltip}>
+          <button
+            type="button"
+            className="wm-room-status-tap"
+            aria-label={line}
+            onClick={() => setTooltipLine(tooltip ? null : line)}
+          >{icon}</button>
+        </Tooltip>
+      </span>}
     </div>
   );
 }
@@ -157,7 +162,7 @@ export function Shell({ location, neutral = null }) {
             <RoomLink key={p.id} href={p.shell.room} label={p.label} active={room.product?.id === p.id} />
           ))}
         </nav>
-        {roomStatus && <RoomStatus status={roomStatus} />}
+        {roomStatus && <RoomStatus status={roomStatus.status} />}
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
           {roomStatus && status === 'ghost' ? <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button> : <AccountSeat

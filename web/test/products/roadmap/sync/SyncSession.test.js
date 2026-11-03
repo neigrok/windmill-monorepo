@@ -145,11 +145,13 @@ function connectedSession(t, overrides = {}) {
   const saves = [];
   const store = {
     save: async (treeId, value) => { saves.push(structuredClone(value)); },
-    replaceLane: async (treeId, lane, frame) => {
+    replaceLane: async (treeId, lane, epoch) => {
       const value = structuredClone(saves.at(-1));
-      if (lane === 'structure') { value.frame = frame; value.lastSeq = 0; }
-      else value.progress = frame;
+      value.epochs[lane] = epoch + 1;
+      if (lane === 'structure') { value.frame = value.confirmed.structure; value.lastSeq = 0; }
+      else value.progress = value.confirmed.progress;
       saves.push(value);
+      return { status: 'replaced', value };
     },
     ...overrides,
   };
@@ -246,10 +248,10 @@ test('structure discard durably replaces one lane, preserves projection and prog
   const progress = session.progress.toFrame();
   refuseLast(session, 'structure');
   assert.equal(await session.discard(), true);
-  assert.deepEqual(session.lattice.toFrame(), { nodes: [], edges: [], kinds: [] });
+  assert.deepEqual(session.lattice.toFrame(), server);
   assert.deepEqual(session.progress.toFrame(), progress);
   assert.deepEqual(saves.at(-1).progress, progress);
-  assert.deepEqual(saves.at(-1).frame.nodes, []);
+  assert.deepEqual(saves.at(-1).frame, server);
   assert.deepEqual(session.undoStack, []);
   assert.deepEqual(session.redoStack, []);
   assert.equal(session.revert(receipt), false);
@@ -287,7 +289,7 @@ test('progress discard preserves structure and its outbox until a fresh progress
   assert.deepEqual(overlays, [[]]);
 });
 
-test('discard quiesces pending saves, incoming frames and local writes while replacement awaits', async (t) => {
+test('discard quiesces structure writes and defers preserved-lane progress persistence while replacement awaits', async (t) => {
   let finish;
   const { session, saves } = connectedSession(t, { replaceLane: () => new Promise((resolve) => { finish = resolve; }) });
   session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
@@ -306,14 +308,20 @@ test('discard quiesces pending saves, incoming frames and local writes while rep
   session.flush();
   assert.equal(session.dispatch({ kind: 'RenameNode', id: 'root', label: 'No write' }), null);
   assert.deepEqual(session.lattice.toFrame(), previous);
-  assert.deepEqual(session.progress.toFrame(), { marks: [] });
+  const progress = session.progress.toFrame();
+  assert.equal(progress.marks[0].status, 'complete');
   assert.equal(saves.length, count);
-  finish();
+  const replacement = structuredClone(saves.at(-1));
+  replacement.epochs.structure += 1;
+  replacement.frame = replacement.confirmed.structure;
+  replacement.lastSeq = 0;
+  finish({ status: 'replaced', value: replacement });
   assert.equal(await discarding, true);
+  assert.deepEqual(saves.at(-1).progress, progress);
   session.connect();
   session.ws.open();
   socket.message({ t: 'subgraph', intent: 'delta', seq: 9, ...previous });
-  assert.deepEqual(session.lattice.toFrame().nodes, []);
+  assert.deepEqual(session.lattice.toFrame(), replacement.frame);
 });
 
 test('failed discard restores the refusal, preserves receipts and reports one real-stack boundary failure', async (t) => {
@@ -431,4 +439,70 @@ test('start refreshes browser connectivity after an asynchronous local load', as
   load(null);
   await started;
   assert.equal(session.statusSnapshot().online, false);
+});
+
+test('status reads are pure and an unobserved local edit performs no pending-delta scans', (t) => {
+  const { session } = connectedSession(t);
+  const reads = [];
+  const delta = session.lattice.deltaSince.bind(session.lattice);
+  t.mock.method(session.lattice, 'deltaSince', (vector) => {
+    if (vector != null) reads.push(vector);
+    return delta(vector);
+  });
+  session.phase = 'offline';
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Quiet edit' });
+  assert.deepEqual(reads, []);
+  const refusal = Object.freeze({ lane: 'progress', code: 'server-error' });
+  session.refusals.set('progress', refusal);
+  const cache = session.status;
+  const state = session.statusSnapshot();
+  assert.equal(state.refused, refusal);
+  assert.equal(session.refusals.get('progress'), refusal);
+  assert.equal(session.status, cache);
+  session.noteDrained();
+  assert.equal(session.refusals.has('progress'), false);
+});
+
+test('reject and socket close clear progress in-flight state without dropping its pending marks', (t) => {
+  const { session } = connectedSession(t);
+  session.markProgress('root', 'complete');
+  const pending = session.progress.toFrame();
+  const frameId = [...session.progressInFlight.keys()][0];
+  session.receiveReject({ t: 'reject', frameId, code: 'server-error' });
+  assert.equal(session.progressInFlight.size, 0);
+  assert.deepEqual(session.progress.toFrame(), pending);
+  session.flushProgress();
+  assert.equal(session.progressInFlight.size, 1);
+  session.ws.close();
+  assert.equal(session.progressInFlight.size, 0);
+  assert.equal(session.phase, 'offline');
+  assert.deepEqual(session.progress.toFrame(), pending);
+});
+
+test('stale socket open, message and close events cannot change a replacement connection', (t) => {
+  const { session } = connectedSession(t);
+  const old = session.ws;
+  session.connect();
+  const current = session.ws;
+  current.open();
+  const before = session.lattice.toFrame();
+  old.open();
+  old.message({ t: 'subgraph', intent: 'delta', seq: 99, nodes: [{ id: 'stale', createdAt: '99:0:server' }] });
+  old.close();
+  assert.equal(session.ws, current);
+  assert.equal(session.phase, 'syncing');
+  assert.deepEqual(session.lattice.toFrame(), before);
+  assert.deepEqual(current.frames, [{ t: 'subscribe', treeId: 'tree', lastSeq: 1, vector: { server: '1:0:server' } }]);
+});
+
+test('close publishes offline with empty in-flight maps while retaining the unacknowledged bank', (t) => {
+  const { session } = connectedSession(t);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Pending' });
+  session.markProgress('root', 'complete');
+  const states = [];
+  session.subscribeStatus((state) => states.push(state));
+  session.close();
+  assert.deepEqual(states.at(-1), { phase: 'offline', online: true, structurePending: 1, progressPending: 1,
+    structureInFlight: 0, progressInFlight: 0, refused: null, receiptVersion: 0 });
+  assert.equal(session.statusHandlers.size, 0);
 });

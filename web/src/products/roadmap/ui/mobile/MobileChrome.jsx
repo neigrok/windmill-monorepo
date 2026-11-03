@@ -34,6 +34,7 @@ export function MobileChrome({
   onZoomOut,
   cameraRight = 24,
   cameraBottom = 24,
+  cameraVisible = true,
   onTopBottom,
 }) {
   const [pressed, setPressed] = useState(false);
@@ -73,7 +74,7 @@ export function MobileChrome({
       observer.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [onTopBottom, identityNudge, identity, canvasView, rowBottom, phoneCameraTop, tablet, panelOpen]);
+  }, [onTopBottom, identityNudge, identity, canvasView, rowBottom, phoneCameraTop, tablet, panelOpen, cameraVisible]);
 
   // The list and the Board never render this: each carries the device notice under its header.
   const signInNudge = onSignInToKeep ? (
@@ -291,7 +292,7 @@ export function MobileChrome({
       )}
 
       {/* The phone camera clears the row and its device notice; legacy readers keep it under the wordmark. */}
-      {canvasView && !wideCamera && (
+      {canvasView && cameraVisible && !wideCamera && (
         <div
           className="st-view-actions"
           ref={cameraRef}
@@ -318,7 +319,7 @@ export function MobileChrome({
         </div>
       )}
 
-      {canvasView && wideCamera && (
+      {canvasView && cameraVisible && wideCamera && (
         <div className="st-graph-camera" role="group" aria-label="Camera"
           style={{ right: cameraRight, bottom: cameraBottom }}>
           <button type="button" className="st-graph-camera-zoom" aria-label="Zoom out" title="Zoom out" onClick={onZoomOut}>

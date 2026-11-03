@@ -130,8 +130,7 @@ a.wm-switch-btn:hover {
 }
 
 .wm-room-status-compact,
-.wm-room-status-tap,
-.wm-room-status-tooltip {
+.wm-room-status-narrow {
   display: none;
 }
 
@@ -154,6 +153,10 @@ a.wm-switch-btn:hover {
   }
 
   .wm-room-status {
+    display: flex;
+    align-items: center;
+    width: 72px;
+    height: 44px;
     margin-right: 8px;
   }
 
@@ -169,19 +172,16 @@ a.wm-switch-btn:hover {
 }
 
 @media (max-width: 359px) {
-  .wm-room-status--announce {
-    position: absolute;
-    width: 0;
-    margin: 0;
+  .wm-room-status {
+    width: 44px;
   }
 
-  .wm-head--status:has(.wm-room-status--announce) {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .wm-room-status--announce .wm-room-status-compact,
-  .wm-room-status--icon .wm-room-status-compact {
+  .wm-room-status-compact {
     display: none;
+  }
+
+  .wm-room-status-narrow {
+    display: inline-flex;
   }
 
   .wm-room-status-tap {
@@ -201,23 +201,6 @@ a.wm-switch-btn:hover {
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
-  }
-
-  .wm-room-status-tooltip {
-    display: block;
-    position: absolute;
-    top: calc(100% - 8px);
-    right: -38px;
-    padding: 6px 10px;
-    background: var(--surface-inverse);
-    color: var(--neutral-0);
-    font-family: var(--font-body);
-    font-size: var(--text-xs);
-    font-weight: 600;
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
-    animation: wm-fade-in-up var(--duration-fast) var(--ease-soft);
-    z-index: 20;
   }
 }
 

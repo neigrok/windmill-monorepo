@@ -1,3 +1,4 @@
+import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/products/roadmap/board/copy.js';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
@@ -6,15 +7,19 @@ import { createServer } from 'vite';
 import { beacon, withBrowserErrors } from '../../products/roadmap/board/composerFixture.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const offline = { line: 'Offline · changes will sync', short: 'Offline', icon: 'offline', narrow: 'icon' };
+const offline = { line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon' };
 const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
-import { publishRoomStatus } from '/src/shell/roomStatus.js';
+import { registerRoomStatus } from '/src/shell/roomStatus.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
-window.publish = publishRoomStatus;
+window.publish = (status) => {
+  window.statusLease ??= registerRoomStatus();
+  window.statusLease.publish(status);
+  return () => { window.statusLease.release(); window.statusLease = null; };
+};
 createRoot(document.getElementById('root')).render(React.createElement(Shell, {
   location: { pathname: '/app', hash: '', search: '' },
   neutral: { Component: () => React.createElement('button', { id: 'outside' }, 'Outside') },
@@ -81,7 +86,7 @@ for (const width of [1440, 744, 390, 320]) {
     await visit(t, width, async (page) => {
       await page.evaluate((status) => window.publish(status), offline);
       await page.locator('.wm-room-status').waitFor();
-      assert.equal(await page.getByRole('status').getAttribute('aria-label'), offline.line);
+      assert.equal(await page.getByRole('status').getAttribute('aria-label'), null);
       assert.equal(await page.getByRole('status').textContent(), offline.line);
       assert.equal(await page.locator('.wm-room-status-full').isVisible(), width >= 744);
       assert.equal(await page.locator('.wm-room-status-compact').isVisible(), width >= 360 && width < 744);
@@ -91,9 +96,9 @@ for (const width of [1440, 744, 390, 320]) {
       const nav = await page.locator('.wm-switch').boundingBox();
       const slot = await page.locator('.wm-room-status').boundingBox();
       assert.equal(nav.x + nav.width <= slot.x, true);
-      for (const line of ['Saving…', 'Saved']) {
+      for (const line of [SYNC_STATUS.saving, SYNC_STATUS.saved]) {
         await page.evaluate((line) => window.publish({ line, narrow: 'announce' }), line);
-        await page.getByRole('status', { name: line, exact: true }).waitFor();
+        await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, line);
         assert.equal(await page.locator('.wm-room-status-compact').isVisible(), width >= 360 && width < 744);
         assert.equal(await page.locator('.wm-room-status-full').isVisible(), width >= 744);
         assert.equal(await page.locator('.wm-room-status-announcement').evaluate((element) => getComputedStyle(element).clipPath), 'inset(50%)');
@@ -111,6 +116,7 @@ test('the icon tooltip closes after four seconds, a second tap, and an outside t
     const tap = page.getByRole('button', { name: offline.line, exact: true });
     await tap.click();
     await page.getByRole('tooltip').waitFor();
+    assert.equal(await tap.getAttribute('aria-describedby'), null);
     assert.equal(await page.getByRole('tooltip').textContent(), offline.line);
     const box = await page.getByRole('tooltip').boundingBox();
     assert.equal(box.x >= 0 && box.x + box.width <= 320, true);
@@ -131,27 +137,27 @@ test('the icon tooltip closes after four seconds, a second tap, and an outside t
 
 test('the live region stays mounted across status changes and equal publication makes no mutation', async (t) => {
   await visit(t, 744, async (page) => {
-    await page.evaluate(() => window.publish({ line: 'Saving…', narrow: 'announce' }));
-    await page.getByRole('status', { name: 'Saving…', exact: true }).waitFor();
-    await page.evaluate(() => {
+    await page.evaluate((line) => window.publish({ line, narrow: 'announce' }), SYNC_STATUS.saving);
+    await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, SYNC_STATUS.saving);
+    await page.evaluate((line) => {
       window.liveRegion = document.querySelector('[role="status"]');
       window.mutations = [];
       new MutationObserver((records) => window.mutations.push(...records.map((record) => record.type)))
         .observe(window.liveRegion, { attributes: true, childList: true, characterData: true, subtree: true });
-      window.publish({ line: 'Saved', narrow: 'announce' });
-    });
-    await page.getByRole('status', { name: 'Saved', exact: true }).waitFor();
+      window.publish({ line, narrow: 'announce' });
+    }, SYNC_STATUS.saved);
+    await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, SYNC_STATUS.saved);
     assert.equal(await page.evaluate(() => window.liveRegion === document.querySelector('[role="status"]')), true);
-    await page.evaluate(() => { window.mutations = []; window.publish({ line: 'Saved', narrow: 'announce' }); });
+    await page.evaluate((line) => { window.mutations = []; window.publish({ line, narrow: 'announce' }); }, SYNC_STATUS.saved);
     assert.deepEqual(await page.evaluate(() => window.mutations), []);
   });
 });
 
 test('the longest device line and account seat fit together at 744', async (t) => {
   await visit(t, 744, async (page) => {
-    const line = 'Saved on this device — sign in to keep it';
+    const line = ANONYMOUS_OWNER;
     await page.evaluate((line) => window.publish({ line }), line);
-    await page.getByRole('status', { name: line, exact: true }).waitFor();
+    await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, line);
     const nav = await page.locator('.wm-switch').boundingBox();
     const slot = await page.locator('.wm-room-status').boundingBox();
     const seat = await page.locator('.wm-head-seat').boundingBox();
@@ -162,3 +168,58 @@ test('the longest device line and account seat fit together at 744', async (t) =
     assert.equal(await page.evaluate(() => window.signInOpened), true);
   }, '?ghost');
 });
+
+
+for (const width of [390, 320]) {
+  test(`registered idle, saving, saved and offline states keep the same phone chrome at ${width}`, async (t) => {
+    await visit(t, width, async (page) => {
+      await page.evaluate(() => window.publish(null));
+      await page.getByRole('status').waitFor({ state: 'attached' });
+      const geometry = () => page.evaluate(() => {
+        const box = (selector) => {
+          const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
+          return { x, y, width, height };
+        };
+        return {
+          mark: getComputedStyle(document.querySelector('.wm-head-mark')).display,
+          nav: box('.wm-switch'), slot: box('.wm-room-status'), seat: box('.wm-head-seat'),
+        };
+      });
+      const idle = await geometry();
+      assert.equal(idle.mark, 'none');
+      assert.equal(idle.slot.width, width < 360 ? 44 : 72);
+      await page.evaluate(() => { window.originalRegion = document.querySelector('[role="status"]'); });
+      for (const status of [{ line: SYNC_STATUS.saving, narrow: 'announce' }, { line: SYNC_STATUS.saved, narrow: 'announce' }, null, offline, null]) {
+        await page.evaluate((status) => window.publish(status), status);
+        await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, status?.line ?? '');
+        assert.deepEqual(await geometry(), idle);
+        assert.equal(await page.evaluate(() => window.originalRegion === document.querySelector('[role="status"]')), true);
+      }
+    });
+  });
+}
+
+for (const status of [offline, { line: ANONYMOUS_OWNER }]) {
+  test(`first publication ${status.line} adds text to an already committed live region`, async (t) => {
+    await visit(t, 744, async (page) => {
+      await page.evaluate((status) => {
+        window.announcementChanges = [];
+        const observer = new MutationObserver((records) => {
+          for (const record of records) {
+            if (record.target.nodeType !== Node.ELEMENT_NODE || record.target.getAttribute('role') !== 'status') continue;
+            window.announcementChanges.push({
+              type: record.type,
+              added: [...record.addedNodes].map((node) => ({ type: node.nodeType, text: node.textContent })),
+            });
+          }
+        });
+        observer.observe(document.querySelector('.wm-head'), { childList: true, subtree: true });
+        window.publish(status);
+      }, status);
+      await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, status.line);
+      assert.deepEqual(await page.evaluate(() => window.announcementChanges), [
+        { type: 'childList', added: [{ type: 3, text: status.line }] },
+      ]);
+    });
+  });
+}

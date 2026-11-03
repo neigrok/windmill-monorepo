@@ -108,16 +108,27 @@ export async function loadDeviceTree(treeId) {
 export async function renameLocalTree(treeId, title) {
   const next = title.trim();
   if (!next) return;
-  new LocalTreeRegistry().rename(treeId, next);
+  const registry = new LocalTreeRegistry();
   const store = new SyncStore();
-  const saved = await store.load(treeId).catch(() => null);
-  if (!saved?.frame) return;
-  const lattice = new TreeLattice(treeId);
-  lattice.join(saved.frame);
-  const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
-  lattice.seedClock(clock);
-  lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
-  await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0 });
+  let saved = await store.load(treeId).catch(() => null);
+  if (!saved?.frame) {
+    registry.rename(treeId, next);
+    return;
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const lattice = new TreeLattice(treeId);
+    lattice.join(saved.frame);
+    const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
+    lattice.seedClock(clock);
+    lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
+    const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs });
+    if (result.status === 'saved') {
+      registry.rename(treeId, next);
+      return;
+    }
+    saved = result.value;
+  }
+  throw new Error('local tree changed during rename');
 }
 
 // No server call, ever. The caller must close any live session first, or its pagehide flush
@@ -165,7 +176,9 @@ export async function moveLocalTree(fromId, toId) {
   const store = new SyncStore();
   const saved = await store.load(fromId).catch(() => null);
   if (saved?.frame) {
-    await store.save(toId, { frame: saved.frame, progress: saved.progress, lastSeq: 0 });
+    const result = await store.save(toId, { frame: saved.frame, progress: saved.progress, lastSeq: 0,
+      epochs: { structure: 0, progress: 0 } });
+    if (result.status !== 'saved') throw new Error('local tree destination changed');
     await store.clear(fromId).catch(() => {});
   }
   for (const PerTreeStore of [WorkspaceStore, LegendStore]) {

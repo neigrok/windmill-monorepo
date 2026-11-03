@@ -5,7 +5,7 @@ let publisher = null;
 const listeners = new Set();
 
 export function getRoomStatus() {
-  return current;
+  return current?.status ?? null;
 }
 
 export function subscribeRoomStatus(listener) {
@@ -13,28 +13,40 @@ export function subscribeRoomStatus(listener) {
   return () => listeners.delete(listener);
 }
 
-export function publishRoomStatus(status) {
+export function registerRoomStatus() {
   const lease = {};
   publisher = lease;
-  const next = status ? Object.freeze({ ...status }) : null;
-  const unchanged = current === next || (current && next
-    && current.line === next.line && current.short === next.short
-    && current.icon === next.icon && current.narrow === next.narrow);
-  if (!unchanged) {
-    current = next;
-    for (const listener of listeners) listener();
-  }
-  return () => {
-    if (publisher !== lease) return;
-    publisher = null;
-    if (!current) return;
-    current = null;
-    for (const listener of listeners) listener();
+  current = Object.freeze({ status: null });
+  for (const listener of listeners) listener();
+  return {
+    publish(status) {
+      if (publisher !== lease) return;
+      const previous = current.status;
+      const next = status ? Object.freeze({ ...status }) : null;
+      if (previous === next) return;
+      if (previous && next) {
+        const unchanged = previous.line === next.line
+          && previous.short === next.short
+          && previous.icon === next.icon
+          && previous.narrow === next.narrow
+          && previous.connectivity === next.connectivity;
+        if (unchanged) return;
+      }
+      current = Object.freeze({ status: next });
+      for (const listener of listeners) listener();
+    },
+    release() {
+      if (publisher !== lease) return;
+      publisher = null;
+      current = null;
+      for (const listener of listeners) listener();
+    },
   };
 }
 
-const serverStatus = () => null;
+const getPublication = () => current;
+const serverPublication = () => null;
 
 export function useRoomStatus() {
-  return useSyncExternalStore(subscribeRoomStatus, getRoomStatus, serverStatus);
+  return useSyncExternalStore(subscribeRoomStatus, getPublication, serverPublication);
 }

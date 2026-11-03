@@ -28,7 +28,8 @@ roadmap opens on the Board on every band. A non-empty just-planted roadmap opens
 otherwise a step link selects the Board, then a saved choice wins, then owners default to the Board
 and visitors to the Graph. The selected step carries across views. With the gate open, the host mounts one
 `RoadmapIdentity` above both layers for every non-demo role and band. The row persists across switches.
-The demo keeps its existing chrome. While the Board awaits its roadmap, the row names no title or
+The identity precedes the Board in DOM and tab order. The demo keeps its existing chrome. While the
+Board awaits its roadmap, the row names no title or
 progress and offers no Share; after a failed load it offers no switch. From 744px, `/` focuses
 *Find a step* on either view and G switches Board and Graph for owners and readers. A non-empty
 Graph search hands off to the Board with its query and field focus kept. The demo Board
@@ -52,24 +53,34 @@ unfiltered Board model as Next. At 1,000 or more total steps, the sheet uses `ex
 both state counts are supplied; otherwise it uses the truthful done/total `progressLabel`.
 The remaining roadmaps come from `listAllTrees`; navigation
 uses the existing roadmap, new-roadmap and browse routes. Readers never receive the owner sheet.
-Identity menus share keyboard and outside-dismiss rules through `BoardControls`. `TreeSwitcher`
+Identity menus share keyboard and outside-dismiss rules through `BoardControls`. More and What's next
+share a focus-leave dismissal rule that keeps focus on its destination. `TreeSwitcher`
 owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by the row, sheet,
 cards and List.
 Export builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`,
-using the same download edge as the settings archive. The paste format uses the roadmap title
-as the root: a distinct root-step label and its completion are not preserved. Other exported
-steps retain their completion marks. Settings exports all roadmaps as a zip.
+using the same download edge as the settings archive. Exported Markdown carries a
+`<!-- windmill:roadmap -->` marker: its title is metadata, and every step, including each root,
+is a list item with its own completion mark. Kind changes are inline comments, keeping the nested
+list uninterrupted in Markdown viewers. Indentation preserves primary prerequisites; additional
+prerequisites become `needs also` notes. Kind descriptions and link labels are outside the paste format. Ordinary pasted plans keep their
+heading-created root and branches. Settings exports all roadmaps as a zip.
 
 On the gated Graph, the owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order,
 including a one-step roadmap, and hides at zero. Picking a row selects and reveals that canvas
 step. Activity remains available through A; the feed never opens itself while identity is mounted.
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
+Graph toasts retain their intrinsic width, centering in the free canvas when they fit or across
+the canvas otherwise; `graphToastPlacement` owns measured clearance from the camera, minimap,
+panel and legend. Phone legacy toasts and completion toasts over an open editor use the top slot
+below the measured camera; other phone Graph toasts retain their bottom slot. Created steps
+reveal after the scene receives their model and the selected-step panel's insets.
 The identity replaces the plaque, wordmark and hairline. Phone Graph readers retain the Fork pill;
 the phone Board receives its Fork opener through `onFork`, without pill padding. From 744px the
 Fork host chooses the centred dialog with either gate state; phones retain the sheet.
-The desktop dock sits beneath the measured identity, so an open step never covers the row's verbs.
-The gated host derives one anonymous or lapsed device line: the Shell carries it from 744px,
+From 744px the selected-step dock sits beneath the measured identity and any Graph refusal banner,
+so neither the row's verbs nor the refusal actions are covered.
+The gated host derives an anonymous or lapsed device line: the Shell carries it from 744px,
 and both phone views receive the tappable `DeviceLine`. The phone camera clears its measured
 bottom. A row render failure reports `roadmap-identity` and
 mounts legacy chrome with a view switch. Fallback chrome and switch border-box measurements feed
@@ -379,29 +390,69 @@ owns bringing all callers under one failure-containment policy when gate parity 
 `SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' derived pending writes,
 in-flight frames, socket phase, browser connectivity and the current refusal. The session retains
 one refusal per lane; ownership and authentication refusals keep their existing host path.
+Reading the snapshot does not mutate those facts, and status emission does no work without
+subscribers. The drain path clears refusals whose lane has no pending writes.
 `sync/status.js` derives Offline after a three-second socket grace (immediately when the browser
 is offline), Saving after 300ms pending, and Saved for two seconds after a live drain. Refusals
 suppress Saving and Saved. The host supplies the clock and publishes through the product-neutral
 `shell/roomStatus.js` service only while the gated identity is mounted. Sync status belongs to
 signed-in owners; readers and the demo publish none, and a device line takes precedence.
 
-The Shell keeps one full-line polite live region. From 744px the line is visible; phones show
-the short form where supplied. Below 360px Saving and Saved are announced only, and Offline uses
-an icon whose tap opens the full-line tooltip for four seconds, until another tap or outside tap.
-The host passes refusal code, refused-lane count and stable Retry/Discard actions to the Board
-and Graph notice component. The Graph measures its notice into the camera's usable viewport.
-Retry clears the refusal and reconnects through the existing graft/flush path. A successful
-discard invalidates session Undo/Redo and captured receipts; receipt-backed Board and Graph
-toasts are dismissed while an unsent held delete remains available.
+The room-status service separates its registration lease from the current payload. An eligible
+owner keeps that lease while idle; releasing it removes the Shell slot. A superseded lease can
+neither publish nor release the next room. The Shell mounts an empty polite live region before
+its first text and retains the node across idle, Saving, Saved and Offline. From 744px the line
+is visible; phones show the short form where supplied. Registered phone rooms reserve the status
+slot and keep the mark hidden throughout the visit, so status changes do not move navigation.
+Rooms without a publisher keep the existing header. Below 360px Saving and Saved are announced
+only, and Offline uses a named icon button. Its controlled design-system Tooltip opens below the
+slot for four seconds, until another tap, an outside tap or Escape. The button has one accessible
+name; the tooltip does not repeat it as a description.
+
+The global offline notice yields only to a room payload carrying `connectivity: 'offline'`.
+Idle, Saving, Saved and device-only lines do not claim connectivity, so they retain the global
+notice when the device is offline. The host passes refusal code, refused-lane count and stable
+Retry/Discard actions to the Board and Graph notice component. The Graph measures its notice into
+the camera's usable viewport and clears the selected-step dock from 744px. On phones,
+`BottomSheet` reports its footprint through `onHeight`; the host uses that clearance without
+observing the sheet's DOM. Retry clears the refusal and reconnects through the existing graft/flush
+path. A successful discard invalidates session Undo/Redo and captured receipts; only toast actions
+backed by those receipts are dismissed. Progress-based completion Undo remains available during a
+structure-only replacement and rebaseline; its durable save waits for the replacement's new epoch.
+Structure edits remain blocked during rebaselining, and a progress-lane replacement blocks progress
+editing. An unsent held delete remains available.
 
 Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this tree.
 Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A
 genesis seed reads `null`, unknown. A restore re-adds the step with a fresh stamp, so its
 `createdMs` becomes the time of the restore.
 
-`SyncStore` saves `{frame, progress, lastSeq}` in one IndexedDB record with transactional read-join-put.
-Coverage is rebuilt on subscribe. Saves are queued before sending, but not awaited; transaction
-failures are swallowed by the store's queue. Do not treat an in-memory edit as confirmed durable.
+`SyncStore` keeps projected `frame` and `progress` lanes, `lastSeq`, per-lane `epochs`, and separate
+server-confirmed baselines in one IndexedDB record. Baselines join server grafts and live writes,
+or the exact retained sent writes after their acknowledgement; local pending writes never enter
+them early. A legacy record starts at epoch zero with unknown confirmed baselines.
+
+Every save carries the epochs its writer loaded. Its transaction joins only matching lanes and
+returns a typed stale result for any older epoch; an unaffected lane can still save. Discard
+atomically restores the refused lane's confirmed baseline and increments only that lane's epoch.
+It does not store an empty replacement. The current session retains its previous emitted view
+until the server rebaseline arrives, while an offline reload opens the stored confirmed roadmap.
+Discard prevents stale saves and re-sends after the atomic epoch bump; it cannot retract frames
+already sent before that commit or undo writes the server has accepted.
+
+Epoch notifications tell live tabs to adopt the stored lane and reconnect. Every structure or
+progress write send checks its epoch inside an IndexedDB read transaction in both Board gate
+states. An IndexedDB read failure retains the pending bank and reports `roadmap-sync-send`; a delayed epoch
+notification cannot bypass the transaction check. Epoch subscriptions close with the session.
+Renaming a device tree
+carries the loaded epochs and retries a stale result; moving one retains its source if the
+destination rejects an epoch. Saves are serialized, expose their transaction result to the
+caller, and keep the queue usable after failure. An in-memory edit alone is not confirmed durable.
+
+A closed socket clears both lanes' in-flight bookkeeping without dropping their pending lattice
+writes. Progress rejections also clear their in-flight entry. Events from superseded sockets do
+nothing, reconnect timers are deduplicated, and closing a session sets its phase offline. These
+transport rules apply with either Board gate state.
 
 `LocalTreeRegistry` associates device trees with accounts, and device reads require identity
 confirmed on this document load. A remembered face does not authorize a store read.

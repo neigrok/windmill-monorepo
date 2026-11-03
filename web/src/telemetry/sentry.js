@@ -68,14 +68,23 @@ function framesFromStack(stack) {
   return frames.reverse();
 }
 
-export function captureError(kind, message, stack, route) {
+export function captureError(kind, message, stack, route, tags = {}) {
   // The whole body is guarded: captureError runs from the window 'error' handler, so a throw here
   // would re-dispatch 'error' → captureError → throw.
   try {
     if (!parsed || muted()) return;
     const type = String(kind || 'Error').slice(0, 40);
     const value = String(message ?? 'unknown').slice(0, 1000);
-    if (!allowed(`${type}|${value}|${route}`)) return;
+    const labels = {};
+    for (const [key, label] of Object.entries(tags)) {
+      if (key === 'kind') continue;
+      if (!/^[a-z][a-z0-9_]{0,39}$/.test(key) || typeof label !== 'string') continue;
+      if (!/^[a-z0-9][a-z0-9_.-]{0,79}$/.test(label)) continue;
+      labels[key] = label;
+    }
+    const tagSignature = Object.keys(labels).sort().map((key) => `${key}:${labels[key]}`).join('|');
+    const signature = `${type}|${value}|${route}${tagSignature ? `|${tagSignature}` : ''}`;
+    if (!allowed(signature)) return;
     const id = eventId();
     const event = {
       event_id: id,
@@ -85,9 +94,8 @@ export function captureError(kind, message, stack, route) {
       logger: 'windmill-web',
       environment: import.meta.env?.PROD ? 'production' : 'development',
       ...(RELEASE ? { release: RELEASE } : {}),
-      tags: { kind: type },
-      // Already reduced to its family by reportError, the one caller: falling back to
-      // window.location.href here would put the magic-link and shared-workout secrets back.
+      tags: { ...labels, kind: type },
+      // Callers supply a route family; the full location can contain magic-link or sharing secrets.
       request: { url: route || '' },
       exception: { values: [{ type, value, stacktrace: { frames: framesFromStack(stack) } }] },
     };

@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
-import { BoardActs, BoardComposer } from '../../../../src/products/roadmap/board/useBoardActs.js';
+import { BoardActs, BoardComposer, useBoardActs } from '../../../../src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
+import { renderHook } from '../../gym/harness.mjs';
 
 function fixture(overrides = {}) {
   const calls = [];
@@ -543,18 +544,35 @@ test('invalid edit prerequisites refuse before quiet, dispatch, activity or an e
 });
 
 
-test('receipt invalidation dismisses its captured toast without releasing a held delete', () => {
+test('receipt invalidation dismisses its captured toast without releasing a held delete', (t) => {
   const calls = [];
-  const { acts, c } = fixture({ dismissInvalidatedToast: () => calls.push('dismiss') });
+  const { c } = fixture({ receiptVersion: 0, dismissInvalidatedToast: () => calls.push('dismiss') });
+  const previousWindow = globalThis.window;
+  globalThis.window = { addEventListener() {}, removeEventListener() {} };
+  const hook = renderHook(t, () => useBoardActs(c));
+  t.after(() => { globalThis.window = previousWindow; });
+  const acts = hook.tree.acts;
   acts.delete(['wind'], 'menu');
-  const held = c.held;
+  const held = hook.tree.held;
   const pending = acts.pending;
-  acts.invalidateReceipts();
+  c.receiptVersion = 1;
+  hook.redraw();
   assert.deepEqual(calls, ['dismiss']);
   assert.equal(acts.held, held);
   assert.equal(acts.pending, pending);
-  assert.equal(c.held, held);
+  assert.equal(hook.tree.held, held);
 });
+
+for (const action of ['create', 'recolor', 'complete', 'delete']) {
+  test(`${action} identifies only receipt-backed Undo for invalidation`, () => {
+    const { acts, c } = fixture();
+    if (action === 'create') acts.create({ id: 'new', label: 'New step', description: '', color: 'sky', prerequisites: [] });
+    if (action === 'recolor') acts.recolor(['wind'], 'sky');
+    if (action === 'complete') acts.complete('wind', 'key');
+    if (action === 'delete') acts.delete(['wind'], 'menu');
+    assert.equal(c.toast.action.receipt === true, ['create', 'recolor'].includes(action));
+  });
+}
 
 
 test('a held delete whose timer expires during discard waits for the server baseline', () => {
