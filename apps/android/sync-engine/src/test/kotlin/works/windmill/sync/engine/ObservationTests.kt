@@ -87,6 +87,42 @@ class ObservationTests {
             assertTrue(loaded(view).records.isEmpty())
         }
     }
+    // §7.12: every change of the active replica is heard once, in order, after its transaction; a change that rolled back, a sign-in that rebinds the anon replica and a commit say nothing; the flow ends with the engine.
+    @Test fun everyChangeOfTheActiveReplicaIsHeardOnceAndInOrder() = runBlocking<Unit> {
+        var drawn = 0
+        val identities = object : IdentitySource {
+            override fun opaqueID() = "g${++drawn}"
+            override fun draw(bound: Int) = 0
+            override fun replicaID() = "rp_${++drawn}"
+        }
+        Engine(registry, MemoryStore(registry, initial), object : EngineClock { override fun now() = 1_000L }, identities, "actor").use { engine ->
+            val heard = CopyOnWriteArrayList<ActiveReplicaChange>()
+            val hearing = launch(Dispatchers.Unconfined, start = CoroutineStart.UNDISPATCHED) { engine.activeReplicaChanges().collect { heard.add(it) } }
+            engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0001"))))))
+            assertEquals(emptyList<ActiveReplicaChange>(), heard.toList())
+
+            engine.failNextCommit()
+            assertThrows(CommitFailure::class.java) { engine.signIn("A", mapOf("probe" to false)) }
+            assertEquals(emptyList<ActiveReplicaChange>(), heard.toList())
+
+            engine.signIn("A", mapOf("probe" to false))
+            assertEquals("replica", engine.activeReplica())
+            assertEquals(emptyList<ActiveReplicaChange>(), heard.toList())
+
+            assertTrue(engine.signOut("keep").flag("complete"))
+            val anon = engine.activeReplica()
+            engine.signIn("A", mapOf("probe" to false))
+            engine.reidentify()
+            val reidentified = engine.activeReplica()
+            assertTrue(engine.signOut("keep").flag("complete"))
+            assertEquals(listOf(ActiveReplicaChange("replica", anon), ActiveReplicaChange(anon, "replica"),
+                ActiveReplicaChange("replica", reidentified), ActiveReplicaChange(reidentified, engine.activeReplica())), heard.toList())
+
+            engine.close()
+            withTimeout(5_000) { hearing.join() }
+            assertTrue(hearing.isCompleted)
+        }
+    }
     private suspend fun loaded(view: RecordsView, matches: (RecordsView.Snapshot) -> Boolean = { true }): RecordsView.Snapshot = withTimeout(5_000) {
         (view.state.first { it is RecordsView.State.Loaded && matches(it.snapshot) } as RecordsView.State.Loaded).snapshot
     }

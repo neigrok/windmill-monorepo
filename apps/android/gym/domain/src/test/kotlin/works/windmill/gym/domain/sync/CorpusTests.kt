@@ -34,9 +34,10 @@ class CorpusTests {
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
-        val notApplicable = files.filter { it.startsWith("gym/turns/") }
+        // The turn's exchanges replay as the phone, through :agent's driver and :gym's host on a real engine, not as vectors of this module.
+        val replayedByTheTurnTests = files.filter { it.startsWith("gym/turns/") }
         val readByCatalogTests = "gym/catalog.json"
-        assertEquals((paths + abilities + readByCatalogTests + notApplicable).sorted(), files)
+        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
@@ -61,7 +62,7 @@ class CorpusTests {
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
         val shares = abilityCases.count { it.call in AbilityExecutor.serverRun }
         val refused = abilityCases.count { it.call !in AbilityExecutor.serverRun && it.expect["refused"] != null }
-        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${abilityCases.size} ability cases (${abilityCases.size - shares - refused} results byte-equal, $refused refused alike, $shares shares refused on the phone), ${notApplicable.size} explicitly not applicable (the turn exchanges, which Android's turn driver does not run yet), no pending case, no unclaimed file")
+        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${abilityCases.size} ability cases (${abilityCases.size - shares - refused} results byte-equal, $refused refused alike, $shares shares refused on the phone), ${replayedByTheTurnTests.size} replayed by the turn tests, no pending case, no unclaimed file")
     }
 
     // Coach §3.5, INV-1, INV-2: the case's call through the executor's action over its records as its seat at its moment, beside a thread and a running Coach message of this turn.

@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import works.windmill.gym.coach.CoachStore
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.onboarding.CoachOnboardingStore
+import works.windmill.gym.coach.turn.CoachTurns
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.presentation.Ids
 import works.windmill.gym.presentation.WorkoutClock
@@ -41,6 +42,8 @@ class TrainingStore(
     elapsedNanos: () -> Long = System::nanoTime,
     localCoach: LocalCoach? = null,
     coachOnboarding: CoachOnboardingStore? = null,
+    // The phone Coach's turns, which no screen sends yet.
+    val coachTurns: CoachTurns? = null,
     readDispatcher: CoroutineDispatcher = Dispatchers.Default,
     // Asks the sync runtime for the account's copy again; false when it is not pulling.
     pullAgain: suspend () -> Boolean = { false },
