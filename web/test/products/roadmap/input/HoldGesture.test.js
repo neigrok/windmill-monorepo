@@ -38,7 +38,6 @@ test('a cancelled or released early hold cannot fire later; cancellation after f
   assert.equal(held.release(), true);
 });
 
-
 test('fractional performance timestamps fire at the scheduled deadline', () => {
   for (const at of [1.23456, 18.349896, 44.222667, 123456.789123]) {
     const hold = new HoldGesture({ x: 0, y: 0, at });
@@ -46,4 +45,31 @@ test('fractional performance timestamps fire at the scheduled deadline', () => {
     assert.equal(hold.advance(at + HOLD_MS), true);
     assert.equal(hold.release(), true);
   }
+});
+
+test('hold fires once at 500ms and swallows only the held release', () => {
+  const hold = new HoldGesture({ x: 50, y: 70, at: 100 });
+  assert.equal(HOLD_MS, 500);
+  assert.equal(hold.advance(599), false);
+  hold.move(55, 75);
+  assert.equal(hold.advance(600), true);
+  assert.equal(hold.advance(800), false);
+  assert.equal(hold.release(), true);
+  assert.equal(hold.advance(1000), false);
+  const tap = new HoldGesture({ x: 50, y: 70 });
+  assert.equal(tap.release(), false);
+  assert.equal(tap.advance(500), false);
+});
+
+test('hold cancels at 10px in any direction, or on explicit scroll/pointer cancellation', () => {
+  for (const [x, y] of [[60, 70], [50, 80], [56, 78]]) {
+    const hold = new HoldGesture({ x: 50, y: 70 });
+    hold.move(x, y);
+    assert.equal(hold.advance(500), false);
+    assert.equal(hold.release(), false);
+  }
+  const cancelled = new HoldGesture({ x: 50, y: 70 });
+  cancelled.cancel();
+  assert.equal(cancelled.advance(500), false);
+  assert.equal(cancelled.release(), false);
 });

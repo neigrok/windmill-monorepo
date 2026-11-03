@@ -28,7 +28,6 @@ export class InputController {
 
   setTool(tool) {
     this.cancelHold();
-    this.longPressFired = false;
     this.tool = tool;
     this.activePointerId = null;
     this.touches.clear();
@@ -82,7 +81,7 @@ export class InputController {
     this.downTime = performance.now();
     this.tool.onPointerDown(pos, event, pressed);
     // onLongPress returns true iff it armed multi-select; onUp then swallows the lift so the gesture never also taps.
-    this.longPressFired = false;
+    this.cancelHold();
     if (event.pointerType === 'touch' && this.context.onLongPress && pressed != null) {
       const hold = new HoldGesture({ x: pos.x, y: pos.y, at: this.downTime, cancelAtLimit: false });
       this.hold = hold;
@@ -100,7 +99,7 @@ export class InputController {
     if (this.pinch) { this.updatePinch(); return; }
     if (this.activePointerId === event.pointerId) {
       this.hold?.move(pos.x, pos.y);
-      if (this.hold?.cancelled) this.cancelHold();
+      if (this.hold?.cancelled && !this.hold.fired) this.cancelHold();
       this.tool.onPointerDrag(pos, event);
     } else if (this.activePointerId === null) this.tool.onPointerMove(pos, event);
   };
@@ -123,11 +122,10 @@ export class InputController {
     this.context.press?.(null);
     if (event.type === 'pointercancel') {
       this.tool.onPointerCancel();
-      this.longPressFired = false;
       this.lastTap = null;
       return;
     }
-    if (held) { this.longPressFired = false; return; } // the long-press consumed this gesture
+    if (held) return; // the long-press consumed this gesture
     const pos = this.localPos(event);
     const zoomed = this.tool.onPointerUp(pos, event) === true;
     if (zoomed) { this.lastTap = null; return; } // the tap already zoomed; no ladder step on top of it
@@ -153,7 +151,6 @@ export class InputController {
   // A second finger abandons the first finger’s gesture and tracks the spread + midpoint.
   beginPinch(pointerId) {
     this.cancelHold(); // a second finger is a pinch, not a hold
-    this.longPressFired = false;
     if (this.activePointerId !== null) {
       this.tool.onPointerCancel();
       this.context.press?.(null);
@@ -168,6 +165,8 @@ export class InputController {
     if (this.longPressTimer !== null) clearTimeout(this.longPressTimer);
     this.longPressTimer = null;
     this.hold?.cancel();
+    this.hold = null;
+    this.longPressFired = false;
   }
 
   updatePinch() {

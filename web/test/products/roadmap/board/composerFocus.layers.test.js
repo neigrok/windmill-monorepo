@@ -130,7 +130,19 @@ test('Chromium Tab edges: Sheet wraps Shift+Tab and recovers outside focus', asy
   });
 });
 
-test('Chromium Tab edges: nested DeleteConfirmation owns Tab and restores its opener', async () => {
+test('Chromium Sheet keeps closing on a prevented Escape that reaches its layer', async () => {
+  await run('sheet', async (page) => {
+    await page.evaluate(() => {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      event.preventDefault();
+      document.getElementById('sheet-first').dispatchEvent(event);
+    });
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert.equal(await page.getByRole('dialog').count(), 0);
+  });
+});
+
+test('Chromium Tab edges: nested DeleteConfirmation keeps native inner movement, wraps and restores its opener', async () => {
   await run('detail', async (page) => {
     await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
     await page.getByRole('menuitem', { name: STEP_DETAIL.deleteStep, exact: true }).click();
@@ -140,6 +152,8 @@ test('Chromium Tab edges: nested DeleteConfirmation owns Tab and restores its op
     assert.equal(await focused(page), DELETE_CONFIRM.delete);
     await page.keyboard.press('Tab');
     assert.equal(await focused(page), DELETE_CONFIRM.cancel);
+    await page.keyboard.press('Tab');
+    assert.equal(await focused(page), DELETE_CONFIRM.delete);
     await page.keyboard.press('Escape');
     await page.getByRole('alertdialog').waitFor({ state: 'detached' });
     await page.waitForFunction(() => document.activeElement.matches('.st-board-step-menu > button'));
@@ -147,14 +161,14 @@ test('Chromium Tab edges: nested DeleteConfirmation owns Tab and restores its op
   });
 });
 
-test('Chromium Tab edges: a replaced picker page supplies its own current edges', async () => {
+test('Chromium Tab edges: a replaced picker page ends at Cancel while Apply is disabled', async () => {
   await run('composer', async (page) => {
     await page.locator('.st-board-draft-needs').click();
     await page.getByRole('dialog', { name: PICKER.title, exact: true }).waitFor();
     const first = page.locator('.st-board-picker-back');
     await first.focus();
     await page.keyboard.press('Shift+Tab');
-    assert.equal(await focused(page), PICKER.apply);
+    assert.equal(await focused(page), PICKER.cancel);
     await page.keyboard.press('Tab');
     assert.equal(await first.evaluate((element) => element === document.activeElement), true);
     await page.keyboard.press('Escape');

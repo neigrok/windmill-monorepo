@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 
 register('../../../jsxLoader.mjs', import.meta.url);
+register('./activityRowsLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { DEMO_BYLINE } = await import('../../../../src/products/roadmap/board/copy.js');

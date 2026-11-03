@@ -9,7 +9,7 @@ import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { KIND_CSS, hueOf } from '../theme.js';
-import { focusableElements, wrapTab } from './composerFocus.js';
+import { focusableElements, wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
 } from './copy.js';
@@ -595,7 +595,7 @@ export function PhoneTools({ worn, query, onQuery, onNewStep }) {
 }
 
 // The sheet covers its host surface; scrim, × and Escape dismiss it, while Tab stays inside.
-export function Sheet({ host, variant, title, onClose, children, style, className = '' }) {
+export function Sheet({ host, variant, title, onClose, children, style, className = '', headingStart, onPointerDownCapture, onClickCapture }) {
   const sheet = useRef(null);
   const titleId = useId();
 
@@ -604,7 +604,6 @@ export function Sheet({ host, variant, title, onClose, children, style, classNam
   }, []);
 
   const onKeyDown = (event) => {
-    if (event.defaultPrevented) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -615,11 +614,13 @@ export function Sheet({ host, variant, title, onClose, children, style, classNam
   };
 
   return createPortal(
-    <div className="st-board-sheet-layer" style={style} onKeyDown={onKeyDown}>
+    <div className="st-board-sheet-layer" style={style} onKeyDown={onKeyDown}
+      onPointerDownCapture={onPointerDownCapture} onClickCapture={onClickCapture}>
       <div className="st-board-sheet-scrim" aria-hidden onClick={() => onClose('scrim')} />
       <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}${className ? ` ${className}` : ''}`} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <span className="st-board-sheet-grabber" aria-hidden />
         <div className="st-board-sheet-heading">
+          {headingStart}
           <h2 id={titleId} className="st-board-sheet-title">{title}</h2>
           <button type="button" className="st-board-sheet-close" aria-label={LABELS.close} onClick={() => onClose('close')}><CloseGlyph /></button>
         </div>

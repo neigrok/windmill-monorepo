@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { wrapTab } from './dialogFocus.js';
 
 // The gate's one rule: the end of the body has been reached when what is left below the fold is
 // within a couple of pixels — a fractional scrollTop never lands exactly on the last pixel.
@@ -42,31 +43,8 @@ export function useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus = 
   });
 
   return useCallback((event) => {
-    if (!open || event.defaultPrevented || event.key !== 'Tab') return;
-    const card = cardRef.current;
-    if (!card) return;
-    event.stopPropagation();
-    const stops = [...card.querySelectorAll('a[href], button, input, select, textarea, summary, [contenteditable], [tabindex]')]
-      .filter((element) => element.tabIndex >= 0 && !element.matches(':disabled')
-        && !element.closest('[inert]') && element.getClientRects().length > 0
-        && getComputedStyle(element).visibility !== 'hidden');
-    const first = stops[0];
-    const last = stops.at(-1);
-    if (!first) {
-      event.preventDefault();
-      card.focus();
-      return;
-    }
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || !stops.includes(active))) {
-      event.preventDefault();
-      last.focus();
-      return;
-    }
-    if (!event.shiftKey && (active === last || !stops.includes(active))) {
-      event.preventDefault();
-      first.focus();
-    }
+    if (!open) return;
+    wrapTab(event, cardRef.current);
   }, [open, cardRef]);
 }
 

@@ -1,6 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { beacon, withBrowserErrors, learnToSailNodes, boardEvents as events, focusedBoardStep as focused, boardColumns as columnsOf } from './composerFixture.js';
@@ -8,6 +9,8 @@ import { beacon, withBrowserErrors, learnToSailNodes, boardEvents as events, foc
 import { DEMO_BYLINE, LABELS, ROADMAP_VERBS } from '../../../../src/products/roadmap/board/copy.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
+const activityRowsModule = `${root}/src/products/roadmap/activity/ActivityRows.jsx`;
+const activityRowsFixture = fileURLToPath(new URL('./ActivityRows.fixture.jsx', import.meta.url));
 const entry = `
 import React, { useCallback, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -89,6 +92,7 @@ function start() {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-roadmap-identity-test`,
     plugins: [{ name: 'roadmap-identity-test', enforce: 'pre',
       resolveId(id) {
+          if (id.endsWith('/activity/ActivityRows.jsx') && !existsSync(activityRowsModule)) return activityRowsFixture;
         if (id === '/roadmap-identity-entry.js') return '\0roadmap-identity-entry';
         if (id.endsWith('/telemetry/beacon.js')) return '\0roadmap-identity-beacon';
       },
@@ -528,6 +532,23 @@ for (const [width, band] of [[1440, 'desktop'], [1024, 'desktop'], [744, 'tablet
         await page.evaluate(() => window.patch({ activity: false, onActivity: null }));
         await more.click();
         assert.equal(await page.getByRole('menuitem', { name: ROADMAP_VERBS.activity, exact: true }).count(), 0);
+      });
+    } finally { await page.close(); }
+  });
+}
+
+for (const view of ['board', 'tree']) {
+  test(`Chromium: Activity keeps tablet More pressed on ${view} while its menu is closed`, async () => {
+    const page = await openRow(744, { band: 'tablet', view, activity: true, activityOpen: true });
+    try {
+      await withBrowserErrors(page, async () => {
+        const more = page.getByRole('button', { name: ROADMAP_VERBS.more, exact: true });
+        assert.deepEqual([await more.getAttribute('aria-pressed'), await more.getAttribute('aria-expanded')], ['true', 'false']);
+        await more.click();
+        await page.keyboard.press('Escape');
+        assert.deepEqual([await more.getAttribute('aria-pressed'), await more.getAttribute('aria-expanded')], ['true', 'false']);
+        await page.evaluate(() => window.patch({ activityOpen: false }));
+        assert.equal(await more.getAttribute('aria-pressed'), 'false');
       });
     } finally { await page.close(); }
   });
