@@ -6,11 +6,12 @@ import { LINK_COPIED } from './board/copy.js';
 import { listAllTrees } from './persistence/TreeRegistry.js';
 import { treeShareUrl } from './share/ShareDialog.jsx';
 import { buildRoadmapExport, downloadExport } from './settings/exportArchive.js';
+import { reportRoadmapFailure } from './reportFailure.js';
 
 export function useRoadmapIdentityActs({
   owner, phone, treeId, tree, boardTree, shownStats, boardActive, completed, completedAt,
   boardQuery, boardQueryRef, setBoardQuery, switchView, switchFocusRef, setTendOpen, setForkOpen,
-  setShortcutsOpen, setShareOpen, newStepFromBoard, handleSheetJump, editorRef, showToast, reportBoardFailure,
+  setShortcutsOpen, setShareOpen, newStepFromBoard, handleSheetJump, editorRef, showToast,
   shareRequestRef, currentTreeIdRef, graphViewRef, identityRef, graphStepReturnRef, activityActsRef,
   breakpoint, canvasView, feedVisible, activityGroups, nodesById, setSelectedId, openActivity, closeActivity, addressOpen,
 }) {
@@ -67,10 +68,10 @@ export function useRoadmapIdentityActs({
       downloadExport(buildRoadmapExport({ ...projection, nodes: boardTree.nodes }, { completed }));
       track('roadmap_export', { outcome: 'done', door });
     } catch (error) {
-      reportBoardFailure('roadmap-export', error);
+      reportRoadmapFailure('roadmap-export', error);
       track('roadmap_export', { outcome: 'failed', door });
     }
-  }, [phone, completed, boardTree, editorRef, reportBoardFailure]);
+  }, [phone, completed, boardTree, editorRef]);
   const closeRowActivity = useCallback(() => {
     activityActsRef.current.closeActivity();
     requestAnimationFrame(() => {

@@ -205,7 +205,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
     const [revision, setRevision] = useState(0);
     const address = useStepAddress();
     const progress = useMemo(() => ({ completed: new Set(options.completed ?? ['course', 'parts', 'rig']), completedAt: { course: 1, parts: 2, rig: 3 } }), []);
-    const { toast, showToast, dismissToast, boardToastShown } = useRoadmapToast();
+    const { toast, showToast, dismissToast, toastShown } = useRoadmapToast();
     session.onTreeChanged((data) => setTree(new SkillTree(data)));
     window.writes ??= [];
     window.selectionAttempts ??= [];
@@ -243,7 +243,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
         onNewStep: () => {},
         onComplete: (id, door) => acts.complete(id, door),
         onRecolor: (ids, hue) => acts.recolor(ids, hue), onDelete: (ids, door) => acts.delete(ids, door),
-        toast, onToastShown: boardToastShown,
+        toast, onToastShown: toastShown,
         onToastUndo: () => { toast.action.run(); dismissToast(); },
       }));
   }

@@ -237,7 +237,7 @@ function completionHost({ offer = null, restoreError = null } = {}) {
       calls.push(['restore', id, snapshot]);
     } } },
     track: (name, props) => calls.push(['event', name, { ...props }]),
-    reportBoardFailure: (operation, error) => calls.push(['failure', operation, error]),
+    reportRoadmapFailure: (operation, error) => calls.push(['failure', operation, error]),
   };
   return { calls, completed, completedAt, origin, complete: runInNewContext(`(${identityHandlers.get('completeStep')})`, scope) };
 }
@@ -320,7 +320,7 @@ test('Export uses displayed nodes through a held deletion and reports unexpected
         calls.push(['download', file]);
         if (failed) throw error;
       },
-      reportBoardFailure: (operation, failure) => calls.push(['failure', operation, failure]),
+      reportRoadmapFailure: (operation, failure) => calls.push(['failure', operation, failure]),
       track: (name, props) => calls.push(['event', name, { ...props }]),
     });
     exportRoadmap();
@@ -352,7 +352,7 @@ test('Export without a projection or displayed tree reports a failed outcome wit
       phone: false, editorRef: { current: { treeData: projection } }, boardTree,
       buildRoadmapExport: () => assert.fail('unavailable exports must not build'),
       downloadExport: () => assert.fail('unavailable exports must not download'),
-      reportBoardFailure: () => assert.fail('unavailable projections are expected'),
+      reportRoadmapFailure: () => assert.fail('unavailable projections are expected'),
       track: (name, props) => calls.push([name, { ...props }]),
     });
     exportRoadmap();
@@ -376,7 +376,10 @@ test('Graph-toast Undo uses its captured visible origin, otherwise the pressed v
     const undo = runInNewContext(`(${identityHandlers.get('undoGraphToast')})`, {
       document,
       toast: { focusTarget: origin, action: { run: () => calls.push('undo') } },
-      dismissToast: () => calls.push('dismiss'),
+      runToastAction: (shown) => {
+        shown.action.run();
+        calls.push('dismiss');
+      },
       requestAnimationFrame: (callback) => callback(),
       identityRef: { current: { querySelector: (selector) => {
         assert.equal(selector, '.st-board-switch-option[aria-pressed="true"]');
@@ -533,7 +536,7 @@ test('host invalidates only receipt-backed Undo, preserving progress and held-de
   for (const [act, receipt] of [['create', true], ['recolor', true], ['complete', false], ['delete', false]]) {
     const calls = [];
     const dismiss = runInNewContext(`(${identityHandlers.get('dismissInvalidatedToast')})`, {
-      boardToastRef: { current: { act, action: { receipt } } }, dismissToast: () => calls.push('dismiss'),
+      dismissToastIf: (leaves) => { if (leaves({ act, action: { receipt } })) calls.push('dismiss'); },
     });
     dismiss();
     assert.deepEqual(calls, receipt ? ['dismiss'] : []);

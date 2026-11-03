@@ -1,4 +1,4 @@
-// Every Board string, phone and desktop alike. Step titles arrive as plain strings; reasonLine reads them off a card.
+// Every string in the roadmap room, phone and desktop alike. Step titles arrive as plain strings; reasonLine reads them off a card.
 
 export const STATE_WORDS = { locked: 'locked', upNext: 'up next', done: 'done' };
 export const COLUMN_TITLES = { locked: 'Locked', upNext: 'Up next', done: 'Done' };
@@ -239,6 +239,38 @@ export function recoloredToast({ count }) {
 
 export function deletedStepsToast({ count }) {
   return `${stepCount(count)} deleted`;
+}
+
+export const GRAPH_TOAST = {
+  stepDeleted: 'Step deleted',
+  stepAdded: 'Step added',
+  renamed: 'Renamed',
+  recolored: 'Recolored',
+  linked: 'Linked',
+  linkRemoved: 'Link removed',
+  restore: 'Restore',
+  undrawnEdit: 'That edit could not be drawn — the picture is one step behind',
+};
+
+export const TEND_TOAST = { why: 'Why?', hide: 'Hide', reverted: 'AI changes reverted' };
+
+export function deletedSelectionToast({ steps, links }) {
+  const parts = [];
+  if (steps > 0) parts.push(stepCount(steps));
+  if (links > 0) parts.push(`${formatCount(links)} ${links === 1 ? 'link' : 'links'}`);
+  return `${parts.join(' and ')} deleted`;
+}
+
+export function graftedToast({ count, under = null }) {
+  return `Added ${stepCount(count)}${under ? ` under “${under}”` : ''}`;
+}
+
+export function keptStepsToast({ count }) {
+  return `${stepCount(count)} kept under a deleted node`;
+}
+
+export function cycleToast({ ring }) {
+  return `Cycle: ${ring.join(' → ')} — remove a link to fix it`;
 }
 
 export function deleteStepsAction({ count }) {

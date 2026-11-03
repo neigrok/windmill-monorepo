@@ -3,6 +3,7 @@ import { layoutTree } from '../layout/index.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { makeRenderable } from '../model/renderableGraph.js';
+import { GRAPH_TOAST, cycleToast, keptStepsToast } from '../board/copy.js';
 
 // From a changed lattice to the picture: validate the DAG, lay it out, hand the scene its model and offer back masked work.
 export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, completedRef, showToast, syncLegendFromTree, setTree, setRenderModel, setBounds }) {
@@ -54,7 +55,7 @@ export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, com
       positions = layoutPositions(nextTree);
     } catch (error) {
       console.error('[layout] the edit could not be laid out; the picture is one step behind', error);
-      showToast('That edit could not be drawn — the picture is one step behind');
+      showToast(GRAPH_TOAST.undrawnEdit);
       return;
     }
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current });
@@ -70,7 +71,7 @@ export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, com
       const labelOf = (id) => editor.treeData.nodes.find((n) => n.id === id)?.label || id;
       const ring = cycles[0];
       console.log('[loose] rendering invalid graph, cycles:', cycles);
-      showToast(`Cycle: ${[...ring, ring[0]].map(labelOf).join(' → ')} — remove a link to fix it`);
+      showToast(cycleToast({ ring: [...ring, ring[0]].map(labelOf) }));
     }
     invalidRef.current = invalid;
   }, [layoutPositions, showToast]);
@@ -87,8 +88,8 @@ export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, com
     if (masked.length && key !== maskedShownRef.current) {
       maskedShownRef.current = key;
       const count = masked.reduce((sum, m) => sum + m.children.length, 0);
-      showToast(`${count} step${count === 1 ? '' : 's'} kept under a deleted node`, {
-        action: { label: 'Restore', run: () => masked.forEach((m) => collabRef.current?.dispatch({ kind: 'ResurrectNode', id: m.id })) },
+      showToast(keptStepsToast({ count }), {
+        action: { label: GRAPH_TOAST.restore, run: () => masked.forEach((m) => collabRef.current?.dispatch({ kind: 'ResurrectNode', id: m.id })) },
       });
     } else if (!masked.length) {
       maskedShownRef.current = '';

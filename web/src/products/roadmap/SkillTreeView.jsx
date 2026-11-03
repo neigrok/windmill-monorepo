@@ -11,6 +11,7 @@ import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
 import { EmptyGraphCard, GraphChrome, GraphDock, GraphSelectionBar, FORK_PILL } from './ui/GraphChrome.jsx';
 import { useGraphGeometry } from './ui/useGraphGeometry.js';
 import { TendBar } from './tending/TendBar.jsx';
+import { TendToast } from './tending/TendToast.jsx';
 import { useRoomTend } from './tending/useTend.js';
 import { TabletPanel } from './ui/tablet/TabletPanel.jsx';
 import BoardView from './board/BoardView.jsx';
@@ -18,7 +19,7 @@ import { coverBeneath } from './board/composerFocus.js';
 import { BoardQuery, COLUMN_OF_STATE } from './board/Board.js';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './board/RoadmapIdentity.jsx';
 import { BoardToast } from './board/BoardToast.jsx';
-import { useRoadmapToast } from './board/useRoadmapToast.js';
+import { toastSeat, useRoadmapToast } from './board/useRoadmapToast.js';
 import { completedToast, completedStepsToast, forkedToast, plantedToast, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS } from './board/copy.js';
 import { useRoadmapIdentityActs } from './useRoadmapIdentityActs.js';
 import { useRoomAuthority } from './useRoomAuthority.js';
@@ -74,6 +75,7 @@ import { useGraphStructure } from './editing/useGraphStructure.js';
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
+import { reportRoadmapFailure } from './reportFailure.js';
 import { useRoadmapKeys } from './shortcuts/useRoadmapKeys.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { useDemoCoach } from './demo/useDemoCoach.js';
@@ -86,13 +88,7 @@ const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-
-function reportBoardFailure(operation, error) {
-  const stack = typeof error?.stack === 'string' && error.stack.trim()
-    ? error.stack
-    : new Error(operation).stack;
-  captureError('roadmap', operation, stack, '#/app');
-}
+const leavesWithItsView = (toast) => toast.surface === 'board' || toast.surface === 'graph';
 
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
@@ -148,7 +144,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId, selectAll, clearEdges, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick,
     enterMulti, leaveMulti, toggleMember, collapse,
   } = useGraphSelection(sceneRef);
-  const { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast } = useRoadmapToast();
+  const { toast, showToast, toastShown, pauseToast, dismissToast, dismissToastIf, runToastAction } = useRoadmapToast();
   const composerOpenRef = useRef(false);
 
   const {
@@ -259,7 +255,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [treeId]);
 
   const {
-    undo, redo, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
+    undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
     deleteNodeAt, deleteSelected, bulkDelete, handleSetKind, reorderContext, handleSetNodeOrder, bulkRecolor, graftImported,
   } = useGraphEditing({
     collabRef, editorRef, sceneRef, treeRef, legendRef, desktopEditorRef,
@@ -293,7 +289,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         else closeActivity();
       },
       onNodeHover: (id) => setHoveredId(id),
-      onCeremonyToast: showToast,
+      onCeremonyToast: (message, options) => showToast(message, { ...options, surface: 'graph' }),
       ...editing,
     });
     sceneRef.current = nextScene;
@@ -496,10 +492,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => {
       cancelled = true;
       wanted.abort();
-      if (boardToastRef.current) {
-        boardToastRef.current.onLeave?.('left');
-        dismissToast();
-      }
+      dismissToast('left');
       collabRef.current?.close();
       collabRef.current = null;
       setSyncSession(null);
@@ -581,10 +574,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   const reader = Boolean(tree) && !demo && (!treeMine || Boolean(demotion));
   const role = demo ? 'demo' : owner ? 'owner' : 'reader';
   const tablet = useTabletEditing({
-    tabletEditor, scene, tree, nodesById, selectedNode, collabRef, editorRef,
+    tabletEditor, scene, tree, nodesById, selectedNode, editorRef,
     selection: { multiMode, selectedIdRef, setSelectedId, enterMulti, toggleMember },
-    editing: { undo, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind },
-    showToast,
+    editing: { announce, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind },
   });
   const { stopEditing } = tablet;
   const stepAddress = useStepAddress();
@@ -639,8 +631,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (next !== shownView) {
       graphRevealRef.current = null;
       shareRequestRef.current += 1;
-      boardToastRef.current?.onLeave?.('left');
-      if (boardToastRef.current) dismissToast();
+      dismissToastIf(leavesWithItsView, 'left');
       setBoardComposer(null);
     }
     if (next === 'board') {
@@ -655,7 +646,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     switchFocusRef.current = true;
     const active = document.activeElement;
     switchOptionRef.current = active?.classList.contains('st-board-switch-option') ? active : null;
-  }, [treeId, stopEditing, collapse, dismissToast, shownView]);
+  }, [treeId, stopEditing, collapse, dismissToastIf, shownView]);
 
   // A switch keeps focus on the option it pressed; a key or a crash lands on the pressed option the row now shows.
   useEffect(() => {
@@ -680,7 +671,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [boardActive, owner]);
 
   const handleBoardCrash = useCallback((error) => {
-    captureError('roadmap', 'roadmap-board', error?.stack ?? '', '#/app');
+    reportRoadmapFailure('roadmap-board', error);
     setBoardCrashed(true);
     setBoardComposer(null);
     setView('tree');
@@ -746,7 +737,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (held && canvasView) setSelectedId(null);
   };
   const handleStepCrash = (error) => {
-    captureError('roadmap', 'roadmap-board-step', error?.stack ?? '', '#/app');
+    reportRoadmapFailure('roadmap-board-step', error);
     stepAddress.close();
     focusBoard();
   };
@@ -853,7 +844,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           boardActs.collaborators.restoreStep(id, snapshot);
           track('roadmap_graph_toast', { act: 'complete', step: 'undo' });
         } catch (error) {
-          reportBoardFailure('roadmap-step-restore', error);
+          reportRoadmapFailure('roadmap-step-restore', error);
         }
       } },
     });
@@ -913,18 +904,12 @@ export function SkillTreeView({ treeId, demo = false }) {
     completeStep, restoreStep, showToast, setQuery: setBoardQuery, now: Date.now,
     receiptVersion: syncSnapshot?.receiptVersion,
     syncReady: syncSession?.ready,
-    dismissInvalidatedToast: () => {
-      const current = boardToastRef.current;
-      if (current?.action?.receipt) dismissToast();
-    },
-    clearBoardToast: () => {
-      const toast = boardToastRef.current;
-      if (toast?.surface === 'board' || (toast?.surface === 'graph' && toast.act === 'delete')) dismissToast();
-    },
+    dismissInvalidatedToast: () => dismissToastIf((shown) => shown.action?.receipt),
+    clearBoardToast: () => dismissToastIf((shown) => shown.surface === 'board' || (shown.surface === 'graph' && shown.act === 'delete')),
     onGraphReveal: handleSheetJump, graphFocusTarget: boardComposer?.opener,
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
-    track, emit, report: reportBoardFailure,
+    track, emit, report: reportRoadmapFailure,
   });
   const boardTree = useMemo(() => boardHeld && tree ? boardHeld.projected(tree) : tree, [boardHeld, tree]);
   const heldGraphModel = useMemo(() => {
@@ -948,7 +933,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
   const closeBoardComposer = () => setBoardComposer(null);
   const handleComposerCrash = (error) => {
-    reportBoardFailure('roadmap-board-composer', error);
+    reportRoadmapFailure('roadmap-board-composer', error);
     setBoardComposer(null);
     focusBoard();
   };
@@ -1046,19 +1031,20 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [toast?.reveal, handleSheetJump]);
   const undoGraphToast = useCallback(() => {
     const origin = toast?.focusTarget;
-    toast?.action?.run();
-    dismissToast();
+    runToastAction(toast);
     requestAnimationFrame(() => {
+      if (document.activeElement !== document.body) return;
       if (origin !== document.body && origin?.isConnected && !origin.closest('[inert]')) {
         origin.focus({ preventScroll: true });
         if (document.activeElement === origin) return;
       }
       identityRef.current?.querySelector('.st-board-switch-option[aria-pressed="true"]')?.focus({ preventScroll: true });
     });
-  }, [toast, dismissToast]);
+  }, [toast, runToastAction]);
   useEffect(() => {
     if (toast?.surface === 'graph' && !canvasView) dismissToast();
   }, [toast?.surface, canvasView, dismissToast]);
+  const seat = toastSeat(toast, { canvasView, stepOpen: shownDetailId !== null });
 
   const {
     openRowTend, openRowFork, openRowShortcuts, openRowSettings, openRowCreate, identityFind, graphNext,
@@ -1067,7 +1053,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   } = useRoadmapIdentityActs({
     owner, phone, treeId, tree, boardTree, shownStats, boardActive, completed, completedAt,
     boardQuery, boardQueryRef, setBoardQuery, switchView, switchFocusRef, setTendOpen, setForkOpen,
-    setShortcutsOpen, setShareOpen, newStepFromBoard, handleSheetJump, editorRef, showToast, reportBoardFailure,
+    setShortcutsOpen, setShareOpen, newStepFromBoard, handleSheetJump, editorRef, showToast,
     shareRequestRef, currentTreeIdRef, graphViewRef, identityRef, graphStepReturnRef, activityActsRef,
     breakpoint, canvasView, feedVisible, activityGroups, nodesById, setSelectedId, openActivity, closeActivity, addressOpen: stepAddress.open,
   });
@@ -1080,7 +1066,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const roadmapSwitcher = <TreeSwitcher current={currentRoadmap} listTrees={listAllTrees} onNew={newRoadmap}
     onRename={handleRenameTree} onPreviewTitle={previewTreeTitle} onDelete={handleDeleteTree} />;
-  const handleIdentityCrash = useCallback((error) => reportBoardFailure('roadmap-identity', error), []);
+  const handleIdentityCrash = useCallback((error) => reportRoadmapFailure('roadmap-identity', error), []);
 
   return (
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef} onFocusCapture={rememberGraphFocus}>
@@ -1154,10 +1140,10 @@ export function SkillTreeView({ treeId, demo = false }) {
               quiet={boardQuiet}
               onDisplayedOverall={setBoardOverall}
               reveal={boardReveal}
-              toast={toast?.surface === 'board' ? toast : null}
-              onToastShown={boardToastShown}
+              toast={seat === 'board' ? toast : null}
+              onToastShown={toastShown}
               onToastReveal={() => boardActs.revealToast(toast)}
-              onToastUndo={() => { toast?.action?.run(); dismissToast(); focusBoard(); }}
+              onToastUndo={() => { runToastAction(toast); focusBoard(); }}
               query={boardQuery}
               onQuery={setBoardQuery}
               legend={legend}
@@ -1402,37 +1388,16 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {canvasView && toast?.surface === 'graph' && (
+      {seat === 'room' && (
         <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}`} style={graphToastStyle}>
-          <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={boardToastShown} onToastReveal={revealGraphToast}
+          <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={toastShown} onToastReveal={revealGraphToast}
             onToastUndo={undoGraphToast} />
         </div>
       )}
 
-      {toast && !['board', 'graph'].includes(toast.surface) && (
-        <div style={graphToastStyle} className={`st-toast${canvasView ? ' st-toast--graph' : ''} ${toast.leaving ? 'is-leaving' : ''} ${toast.detail && toastWhyOpen ? 'st-toast--expanded' : ''}`} role="status" key={toast.key}>
-          <div className="st-toast-row">
-            <span>{toast.message}</span>
-            {toast.detail && (
-              <button
-                className="st-toast-why"
-                onClick={() => {
-                  toastTimersRef.current.forEach(clearTimeout);
-                  toastTimersRef.current = [];
-                  setToastWhyOpen((open) => !open);
-                }}
-              >
-                {toastWhyOpen ? 'Hide' : 'Why?'}
-              </button>
-            )}
-            {toast.action && (
-              <button className="st-toast-undo" onClick={() => { toast.action.run(); dismissToast(); }}>
-                {toast.action.label}
-              </button>
-            )}
-          </div>
-          {toast.detail && toastWhyOpen && <p className="st-toast-detail">{toast.detail}</p>}
-        </div>
+      {toast?.surface === 'tend' && (
+        <TendToast key={toast.key} toast={toast} overCanvas={canvasView} style={graphToastStyle}
+          onShown={toastShown} onPause={pauseToast} onAct={() => runToastAction(toast)} />
       )}
 
       {ticker.length > 0 && (
