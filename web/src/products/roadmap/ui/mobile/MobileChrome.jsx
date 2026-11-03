@@ -5,7 +5,7 @@ import { Icon } from '../../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { TABLET_PANEL_WIDTH } from '../viewport.js';
 import { DeviceLine } from '../../board/SyncNotices.jsx';
-import { FORK_OFFER, OPEN_STEP, STATE_WORDS } from '../../board/copy.js';
+import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } from '../../board/copy.js';
 
 const SAFE_TOP = 'var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px))';
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
@@ -316,7 +316,7 @@ export function MobileChrome({
                 {step.title}
               </button>
             ) : <span className="st-graph-step-title">{step.title}</span>}
-            <span className="st-graph-step-state">{STATE_WORDS[step.state]}</span>
+            <span className="st-graph-step-state">{COLUMN_TITLES[step.state]}</span>
           </div>
           <button type="button" className="st-graph-step-primary" data-graph-step-primary=""
             onClick={onFork ?? (() => onOpenStep?.(step.id))}>

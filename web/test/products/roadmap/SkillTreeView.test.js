@@ -40,10 +40,16 @@ function collectHandlers(code) {
     if (node.type === 'Property' && node.key.name === 'dismissInvalidatedToast') {
       identityHandlers.set('dismissInvalidatedToast', code.slice(node.value.start, node.value.end));
     }
+    if (node.type === 'CallExpression' && node.callee.property?.name === 'subscribeRefusals') {
+      const callback = node.arguments[0];
+      identityHandlers.set('reportRefusal', code.slice(callback.start, callback.end));
+    }
+    if (node.type === 'CallExpression' && node.callee.name === 'useRoadmapSyncStatus') {
+      identityHandlers.set('syncStatusEnabled', code.slice(node.arguments[1].start, node.arguments[1].end));
+    }
     if (node.type === 'CallExpression' && node.callee.name === 'useEffect') {
       const callback = node.arguments[0];
       const body = code.slice(callback.start, callback.end);
-      if (body.includes('const reportedCode = refusalEventCode(reportedRefusal)')) identityHandlers.set('reportRefusal', body);
       if (body.includes('insetsRef.current = insets;')) {
         identityHandlers.set('publishInsets', body);
         identityHandlers.set('insetDependencies', code.slice(node.arguments[1].start, node.arguments[1].end));
@@ -212,7 +218,6 @@ test('create composers remain visible without a detail but cannot write through 
   assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
 });
 
-
 test('the Graph create verb stamps its view and is unavailable outside the owner identity', () => {
   for (const owner of [false, true]) {
     const calls = [];
@@ -376,7 +381,6 @@ test('Export uses displayed nodes through a held deletion and reports unexpected
   }
 });
 
-
 test('Graph completion Undo reports a restore failure under its own operation', () => {
   const error = new Error('restore failed');
   const host = completionHost({ restoreError: error });
@@ -404,7 +408,6 @@ test('Export without a projection or displayed tree reports a failed outcome wit
     assert.deepEqual(calls, [['roadmap_export', { outcome: 'failed', door: 'more' }]]);
   }
 });
-
 
 test('Graph-toast Undo uses its captured visible origin, otherwise the pressed view switch', () => {
   for (const kind of ['connected', 'removed', 'covered', 'body', 'nonfocusable']) {
@@ -556,7 +559,6 @@ test('Graph reveal waits for the selected step model and panel insets, while a r
   assert.equal(firstFrameRef.current, null);
 });
 
-
 test('closed identity gate keeps selection and model changes out of initial camera framing dependencies', () => {
   const scene = {};
   const insets = {};
@@ -597,7 +599,6 @@ test('host invalidates only receipt-backed Undo, preserving progress and held-de
   }
 });
 
-
 test('Activity uses the Board key map on either view and yields to a covering layer, typing and readers', () => {
   const boundary = host();
   boundary.key({ key: 'a' });
@@ -610,59 +611,56 @@ test('Activity uses the Board key map on either view and yields to a covering la
   }
 });
 
-test('Activity hands desktop Board to Graph but leaves the tablet Board in place, and toggles closed', () => {
+test('Activity hands desktop Board to Graph, preserves the tablet Board, and never opens the desktop feed on phones', () => {
   for (const breakpoint of ['desktop', 'tablet', 'phone']) {
     const calls = [];
-    const scope = {
-      identityActive: true, owner: true, feedVisible: false, breakpoint, boardActive: true,
-      closeRowActivity: () => calls.push('close'),
-      switchView: (view) => calls.push(['view', view]), switchFocusRef: { current: true },
+    const current = {
+      enabled: breakpoint !== 'phone', feedVisible: false, breakpoint, boardActive: true,
+      switchView: (view) => calls.push(['view', view]),
       setSelectedId: (id) => calls.push(['select', id]), openActivity: () => calls.push('open'),
+    };
+    const scope = {
+      activityActsRef: { current }, switchFocusRef: { current: true },
+      closeRowActivity: () => calls.push('close'),
       track: (name, props) => calls.push([name, { ...props }]),
     };
     const open = runInNewContext(`(${identityHandlers.get('openRowActivity')})`, scope);
     open('key');
-    assert.deepEqual(calls, [
+    assert.deepEqual(calls, breakpoint === 'phone' ? [] : [
       ['roadmap_verb', { verb: 'activity', door: 'key' }],
       ...(breakpoint === 'desktop' ? [['view', 'tree']] : []), ['select', null], 'open',
     ]);
     calls.length = 0;
-    scope.feedVisible = true;
+    current.feedVisible = true;
     open();
-    assert.deepEqual(calls, ['close']);
+    assert.deepEqual(calls, breakpoint === 'phone' ? [] : ['close']);
     calls.length = 0;
-    scope.identityActive = false;
+    current.enabled = false;
     open();
     assert.deepEqual(calls, []);
   }
 });
 
-test('P4 reports unexpected refusal once per code per session with the gate closed and emits no surface event', () => {
+test('P4 reports through the refusal-only callback once per code per session without surface events or full status subscription', () => {
   const issues = [];
   const events = [];
   const scope = {
-    syncSession: {}, syncReportsRef: { current: null }, refused: null,
-    reportedRefusal: { code: 'protocol_error', episode: 1, lane: 'structure' },
-    refusalCode: 'protocol_error', refusalEventCode: (refusal) => refusal.code,
+    reportedCodes: new Set(), refusalEventCode: (refusal) => refusal.code,
     isExpectedRefusal: (refusal) => refusal.code === 'capacity',
     captureError: (product, operation, stack, route, tags) => issues.push({ product, operation, stack: Boolean(stack), route, tags: { ...tags } }),
     track: (name, props) => events.push([name, { ...props }]),
   };
   const report = runInNewContext(`(${identityHandlers.get('reportRefusal')})`, scope);
-  report();
-  report();
-  scope.reportedRefusal = { ...scope.reportedRefusal, episode: 2 };
-  report();
+  report({ code: 'protocol_error', episode: 1, lane: 'structure' });
+  report({ code: 'protocol_error', episode: 1, lane: 'structure' });
+  report({ code: 'protocol_error', episode: 2, lane: 'structure' });
   assert.deepEqual(issues, [{ product: 'roadmap', operation: 'roadmap-sync-refused', stack: true, route: '#/app', tags: { code: 'protocol_error' } }]);
   assert.deepEqual(events, []);
-  scope.reportedRefusal = { code: 'capacity', episode: 3, lane: 'structure' };
-  report();
+  report({ code: 'capacity', episode: 3, lane: 'structure' });
   assert.equal(issues.length, 1);
-  scope.syncSession = {};
-  scope.reportedRefusal = { code: 'protocol_error', episode: 1, lane: 'structure' };
-  report();
+  scope.reportedCodes = new Set();
+  report({ code: 'protocol_error', episode: 1, lane: 'structure' });
   assert.equal(issues.length, 2);
-  scope.refused = scope.reportedRefusal;
-  report();
-  assert.deepEqual(events, [['roadmap_sync_refused', { step: 'shown', lane: 'structure', code: 'protocol_error' }]]);
+  assert.equal(runInNewContext(identityHandlers.get('syncStatusEnabled'), { identityActive: false }), false);
+  assert.equal(runInNewContext(identityHandlers.get('syncStatusEnabled'), { identityActive: true }), true);
 });

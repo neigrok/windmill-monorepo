@@ -189,7 +189,10 @@ export class BoardActs {
   }
 
   deletePrompt(step) {
-    if (step === 'confirm' || step === 'cancel') this.collaborators.track('roadmap_board_delete', { step });
+    if (step !== 'confirm' && step !== 'cancel') return;
+    const c = this.collaborators;
+    const view = c.active ? 'board' : 'graph';
+    c.track('roadmap_board_delete', { step, view });
   }
 
   delete(ids, door = 'menu') {
@@ -226,7 +229,7 @@ export class BoardActs {
       } },
     });
     if (graph) c.track('roadmap_graph_toast', { act: 'delete', step: 'shown' });
-    c.track('roadmap_board_delete', { step: 'held', door });
+    c.track('roadmap_board_delete', { step: 'held', door, view: surface });
     if (door === 'bulk') c.track('roadmap_board_bulk', { step: 'delete', count: countBucket(selected.length) });
     return true;
   }
@@ -244,7 +247,7 @@ export class BoardActs {
     try {
       if (!pending.session) throw new Error('Missing Board session');
       const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids });
-      if (receipt) c.track('roadmap_board_delete', { step: 'sent', via });
+      if (receipt) c.track('roadmap_board_delete', { step: 'sent', via, view: pending.surface });
       if (!receipt) c.onQuiet();
     } catch (error) {
       c.onQuiet();

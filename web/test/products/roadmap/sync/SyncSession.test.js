@@ -571,3 +571,79 @@ test('close publishes offline with empty in-flight maps while retaining the unac
     structureInFlight: 0, progressInFlight: 0, refused: null, receiptVersion: 0 });
   assert.equal(session.statusHandlers.size, 0);
 });
+
+test('refusal-only subscribers add no full status computation or pending-delta scans to ordinary writes and acknowledgements', (t) => {
+  const { session } = connectedSession(t);
+  let snapshots = 0;
+  let pendingReads = 0;
+  let deltaReads = 0;
+  const statusSnapshot = session.statusSnapshot.bind(session);
+  const pendingEditCount = session.pendingEditCount.bind(session);
+  const deltaSince = session.lattice.deltaSince.bind(session.lattice);
+  t.mock.method(session, 'statusSnapshot', () => { snapshots += 1; return statusSnapshot(); });
+  t.mock.method(session, 'pendingEditCount', () => { pendingReads += 1; return pendingEditCount(); });
+  t.mock.method(session.lattice, 'deltaSince', (vector) => {
+    if (vector != null) deltaReads += 1;
+    return deltaSince(vector);
+  });
+  const seen = [];
+  const unsubscribe = session.subscribeRefusals((refusal) => seen.push(refusal));
+  assert.equal(session.statusHandlers.size, 0);
+  assert.equal(session.refusalHandlers.size, 1);
+  assert.deepEqual(seen, []);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  session.receiveAck({ frameId: [...session.inFlight.keys()][0] });
+  session.markProgress('root', 'complete');
+  session.receiveProgressAck({ frameId: [...session.progressInFlight.keys()][0] });
+  session.receiveLive({ t: 'subgraph', seq: 2, nodes: [{ id: 'peer', createdAt: '999:0:peer' }], edges: [], kinds: [] });
+  session.emitStatus();
+  assert.deepEqual({ snapshots, pendingReads, deltaReads, seen }, { snapshots: 0, pendingReads: 0, deltaReads: 0, seen: [] });
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Refused' });
+  refuseLast(session, 'structure');
+  const refusal = session.refusals.get('structure');
+  assert.deepEqual(seen, [refusal]);
+  assert.equal(Object.isFrozen(refusal), true);
+  assert.deepEqual({ snapshots, pendingReads, deltaReads }, { snapshots: 0, pendingReads: 0, deltaReads: 1 });
+  assert.equal(session.statusHandlers.size, 0);
+  unsubscribe();
+  assert.equal(session.refusalHandlers.size, 0);
+});
+
+test('refusal-only subscriptions replay current lanes and stop at unsubscribe or session close', (t) => {
+  const { session } = connectedSession(t);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  refuseLast(session, 'structure', 'tree-too-large');
+  const structure = session.refusals.get('structure');
+  const first = [];
+  const unsubscribe = session.subscribeRefusals((refusal) => first.push(refusal));
+  assert.deepEqual(first, [structure]);
+  session.markProgress('root', 'complete');
+  refuseLast(session, 'progress', 'server-error');
+  const progress = session.refusals.get('progress');
+  assert.deepEqual(first, [structure, progress]);
+  unsubscribe();
+  const second = [];
+  session.subscribeRefusals((refusal) => second.push(refusal));
+  assert.deepEqual(second, [structure, progress]);
+  session.retry();
+  assert.deepEqual(first, [structure, progress]);
+  assert.deepEqual(second, [structure, progress]);
+  assert.equal(session.refusalHandlers.size, 1);
+  session.close();
+  assert.equal(session.refusalHandlers.size, 0);
+  assert.deepEqual(second, [structure, progress]);
+});
+
+test('refusal-only subscribers follow the existing refusal eligibility and add no auth or untracked reports', (t) => {
+  const { session } = connectedSession(t);
+  const seen = [];
+  session.subscribeRefusals((refusal) => seen.push(refusal));
+  t.mock.method(console, 'warn', () => {});
+  for (const code of ['not-yours', 'nobodys-tree', 'sign-in-required']) {
+    session.dispatch({ kind: 'RenameNode', id: 'root', label: code });
+    refuseLast(session, 'structure', code);
+  }
+  session.receiveReject({ t: 'reject', frameId: 'untracked', code: 'server-error' });
+  assert.deepEqual(seen, []);
+  assert.equal(session.statusHandlers.size, 0);
+});

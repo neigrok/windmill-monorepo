@@ -2680,15 +2680,10 @@ button.st-graph-step-title {
 }
 
 .st-graph-step-state {
-  flex: none;
-  min-width: 104px;
+  flex: 0 0 30%;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 18px;
-}
-
-.st-graph-step-state::first-letter {
-  text-transform: uppercase;
 }
 
 .st-graph-step-primary {
@@ -2751,21 +2746,48 @@ button.st-graph-step-title {
 }
 
 .st-roadmap-activity-rows .st-event {
+  height: 48px;
   min-height: 48px;
+  align-items: center;
   gap: 8px;
-  padding: 8px 8px 8px 0;
+  padding: 4px 0;
 }
 
 .st-roadmap-activity-rows .st-event-text {
-  overflow: visible;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   white-space: normal;
   font-size: 14px;
   line-height: 20px;
 }
 
 .st-roadmap-activity-rows .st-daysep {
-  padding: 12px 0 8px;
-  font-size: 12px;
+  padding: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-secondary);
+}
+
+.st-roadmap-activity-rows .st-daysep:first-child {
+  padding-top: 4px;
+}
+
+.st-roadmap-activity-rows .st-event-text b,
+.st-roadmap-activity-rows .st-event-obj {
+  color: var(--text-secondary);
+}
+
+.st-roadmap-activity-rows .st-event-time {
+  margin-top: 0;
+}
+
+.st-roadmap-activity-rows .st-event--static:hover {
+  background: none;
 }
 
 .st-roadmap-activity-rows .st-daysep::before,

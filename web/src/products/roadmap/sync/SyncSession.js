@@ -89,6 +89,7 @@ export class SyncSession {
     this.onOnline = null;   // network-return reconnect
     this.closed = false;
     this.statusHandlers = new Set();
+    this.refusalHandlers = new Set();
     this.online = typeof navigator === 'undefined' || navigator.onLine !== false;
     this.refusals = new Map();
     this.refusalEpisodes = new Map();
@@ -111,6 +112,12 @@ export class SyncSession {
     this.status = this.statusSnapshot();
     handler(this.status);
     return () => this.statusHandlers.delete(handler);
+  }
+
+  subscribeRefusals(handler) {
+    this.refusalHandlers.add(handler);
+    for (const refusal of this.refusals.values()) handler(refusal);
+    return () => this.refusalHandlers.delete(handler);
   }
 
   statusSnapshot() {
@@ -584,7 +591,9 @@ export class SyncSession {
       const previous = this.refusalEpisodes.get(lane);
       const episode = previous?.signature === signature ? previous.episode : Object.freeze({});
       this.refusalEpisodes.set(lane, { signature, episode });
-      this.refusals.set(lane, Object.freeze({ lane, code: frame.code, episode }));
+      const refusal = Object.freeze({ lane, code: frame.code, episode });
+      this.refusals.set(lane, refusal);
+      for (const handler of this.refusalHandlers) handler(refusal);
     }
     if (frame.frameId) {
       this.inFlight.delete(frame.frameId);
@@ -886,6 +895,7 @@ export class SyncSession {
     this.progressWrites.clear();
     this.emitStatus();
     this.statusHandlers.clear();
+    this.refusalHandlers.clear();
   }
 }
 

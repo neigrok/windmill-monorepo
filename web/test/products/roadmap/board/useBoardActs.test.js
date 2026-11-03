@@ -38,15 +38,15 @@ for (const via of ['timer', 'replaced', 'left']) {
     acts.delete(['wind'], 'menu');
     assert.equal(c.held.ids[0], 'wind');
     assert.equal(c.toast.holdMs, 9000);
-    assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
+    assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }]]);
     c.toast.onLeave(via);
     c.toast.onLeave(via);
     acts.release(via);
     assert.equal(c.held, null);
     assert.deepEqual(calls, [
-      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
+      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }],
       ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
-      ['event', 'roadmap_board_delete', { step: 'sent', via }],
+      ['event', 'roadmap_board_delete', { step: 'sent', via, view: 'board' }],
     ]);
   });
 }
@@ -57,7 +57,7 @@ test('delete Undo restores the projection and sends nothing even when its toast 
   c.toast.action.run();
   c.toast.onLeave('timer');
   assert.equal(c.held, null);
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ['quiet'], ['reveal', 'wind'], ['event', 'roadmap_board_undo', { act: 'delete' }]]);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }], ['quiet'], ['reveal', 'wind'], ['event', 'roadmap_board_undo', { act: 'delete' }]]);
 });
 
 test('a new held delete releases its predecessor and owns its own Undo', () => {
@@ -84,7 +84,7 @@ test('a no-op release clears the projection without reporting an expected refusa
   acts.delete(['wind'], 'menu');
   acts.release('timer');
   assert.equal(c.held, null);
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ['quiet']]);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }], ['quiet']]);
   assert.deepEqual(c.errors, []);
 });
 
@@ -94,7 +94,7 @@ test('an unexpected release failure reports its original error for stack frames'
   acts.delete(['wind'], 'menu');
   acts.release('timer');
   assert.equal(c.held, null);
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ['quiet'], ['report', 'roadmap-board-delete']]);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }], ['quiet'], ['report', 'roadmap-board-delete']]);
   assert.deepEqual(c.errors, [error]);
 });
 
@@ -274,8 +274,8 @@ test('delete confirmation and cancellation only emit their bounded event', () =>
   acts.deletePrompt('cancel');
   acts.deletePrompt('private content');
   assert.deepEqual(calls, [
-    ['event', 'roadmap_board_delete', { step: 'confirm' }],
-    ['event', 'roadmap_board_delete', { step: 'cancel' }],
+    ['event', 'roadmap_board_delete', { step: 'confirm', view: 'board' }],
+    ['event', 'roadmap_board_delete', { step: 'cancel', view: 'board' }],
   ]);
 });
 
@@ -287,7 +287,6 @@ test('Board create and held release use the common dispatch receipt policy', () 
   acts.release('timer');
   assert.deepEqual(options, [undefined, undefined]);
 });
-
 
 test('toast reveal clears only query parts hiding its target and keeps sort', () => {
   const { acts, calls } = fixture({ query: new BoardQuery({ search: 'wind', kinds: ['blue'], sort: 'oldest' }) });
@@ -336,8 +335,8 @@ for (const via of ['timer', 'left']) {
       { id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] },
     ]);
     assert.deepEqual(calls, [
-      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
-      ['event', 'roadmap_board_delete', { step: 'sent', via }],
+      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }],
+      ['event', 'roadmap_board_delete', { step: 'sent', via, view: 'board' }],
     ]);
   });
 }
@@ -381,16 +380,16 @@ test('bulk and key deletion use one held entity and reject the sole root', () =>
   c.toast.onLeave('timer');
   acts.release('left');
   assert.deepEqual(calls, [
-    ['event', 'roadmap_board_delete', { step: 'held', door: 'bulk' }],
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'bulk', view: 'board' }],
     ['event', 'roadmap_board_bulk', { step: 'delete', count: '2-5' }],
     ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind', 'dock'] }],
-    ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
+    ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer', view: 'board' }],
   ]);
   calls.length = 0;
   assert.equal(acts.delete(['dock'], 'key'), true);
   c.toast.action.run();
   assert.deepEqual(calls, [
-    ['event', 'roadmap_board_delete', { step: 'held', door: 'key' }],
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'key', view: 'board' }],
     ['quiet'], ['reveal', 'dock'], ['event', 'roadmap_board_undo', { act: 'delete' }],
   ]);
 });
@@ -516,7 +515,7 @@ test('bulk Undo cancels the entire hold without sending any selected step', () =
   acts.release('left');
   assert.equal(c.held, null);
   assert.deepEqual(calls, [
-    ['event', 'roadmap_board_delete', { step: 'held', door: 'bulk' }],
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'bulk', view: 'board' }],
     ['event', 'roadmap_board_bulk', { step: 'delete', count: '2-5' }],
     ['quiet'], ['reveal', 'wind'], ['event', 'roadmap_board_undo', { act: 'delete' }],
   ]);
@@ -553,7 +552,6 @@ test('invalid edit prerequisites refuse before quiet, dispatch, activity or an e
   assert.equal(c.toast, undefined);
 });
 
-
 test('receipt invalidation dismisses its captured toast without releasing a held delete', (t) => {
   const calls = [];
   const { c } = fixture({ receiptVersion: 0, dismissInvalidatedToast: () => calls.push('dismiss') });
@@ -584,7 +582,6 @@ for (const action of ['create', 'recolor', 'complete', 'delete']) {
   });
 }
 
-
 test('a held delete whose timer expires during discard waits for the server baseline', () => {
   const { acts, c, calls } = fixture();
   acts.delete(['wind'], 'menu');
@@ -594,18 +591,17 @@ test('a held delete whose timer expires during discard waits for the server base
   assert.equal(acts.held, held);
   assert.equal(acts.pending.held, held);
   assert.equal(acts.pending.releaseVia, 'timer');
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }]]);
   c.session.rebaselining = null;
   acts.release(acts.pending.releaseVia);
   assert.equal(acts.held, null);
   assert.equal(acts.pending, null);
   assert.deepEqual(calls, [
-    ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }],
     ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
-    ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
+    ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer', view: 'board' }],
   ]);
 });
-
 
 test('Graph detail edits use the same action and receipt policy as Board detail edits', () => {
   for (const graphActive of [false, true]) {
@@ -633,7 +629,7 @@ for (const undo of [false, true]) {
     assert.deepEqual(acts.pending.surface, 'graph');
     assert.deepEqual(calls, [
       ['event', 'roadmap_graph_toast', { act: 'delete', step: 'shown' }],
-      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
+      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'graph' }],
     ]);
     calls.length = 0;
     if (undo) c.toast.action.run();
@@ -644,7 +640,7 @@ for (const undo of [false, true]) {
       ['quiet'], ['graph reveal', 'wind'], ['event', 'roadmap_graph_toast', { act: 'delete', step: 'undo' }],
     ] : [
       ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
-      ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
+      ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer', view: 'graph' }],
     ]);
   });
 }
@@ -668,7 +664,18 @@ for (const origin of ['board', 'graph']) {
     assert.equal(acts.held, null);
     assert.deepEqual(calls, [
       ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
-      ['event', 'roadmap_board_delete', { step: 'sent', via: 'left' }],
+      ['event', 'roadmap_board_delete', { step: 'sent', via: 'left', view: origin }],
     ]);
   });
 }
+
+test('delete confirmation and cancellation identify the current Graph surface', () => {
+  const { acts, calls } = fixture({ active: false, graphActive: true });
+  acts.deletePrompt('confirm');
+  acts.deletePrompt('cancel');
+  acts.deletePrompt('other');
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'confirm', view: 'graph' }],
+    ['event', 'roadmap_board_delete', { step: 'cancel', view: 'graph' }],
+  ]);
+});

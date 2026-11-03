@@ -5,16 +5,16 @@ import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
 import { coverBeneath, useComposerViewport } from '../board/composerFocus.js';
 import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../board/copy.js';
 
-export function TendBar({ variant = 'phone', presentation = null, placeholder = ASK_AI_PLACEHOLDER.wide, examples = [], working, onSubmit, onDismiss, preserveOutsideFocus = false, portalTarget = null }) {
+export function TendBar({ variant = 'phone', presentation = null, topInset = 0, placeholder = ASK_AI_PLACEHOLDER.wide, examples = [], working, onSubmit, onDismiss, preserveOutsideFocus = false, portalTarget = null }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const desktop = variant === 'desktop';
   const docked = presentation === 'docked';
   const modal = presentation !== null;
   const managesFocus = modal || (desktop && preserveOutsideFocus);
+  const formStyle = formStyles[presentation ?? variant];
   const formRef = useRef(null);
   const layerRef = useRef(null);
-  const viewport = useComposerViewport(docked);
 
   useEffect(() => {
     if (!modal || !layerRef.current) return undefined;
@@ -59,7 +59,7 @@ export function TendBar({ variant = 'phone', presentation = null, placeholder = 
         dialogFocus(event);
         if (event.key === 'Escape' && !managesFocus) onDismiss?.();
       }}
-      style={docked ? dockedForm : desktop || modal ? deskForm : phoneForm}
+      style={formStyle}
     >
       {starters}
       <div style={shell}>
@@ -88,22 +88,39 @@ export function TendBar({ variant = 'phone', presentation = null, placeholder = 
   );
 
   if (!desktop && !modal) return bar;
-  const overlayStyle = modal ? {
+  const overlayStyle = {
     ...scrim,
     position: portalTarget || docked ? 'fixed' : 'absolute',
-    background: 'var(--surface-overlay)',
-    paddingTop: docked ? 0 : 173,
-    alignItems: docked ? 'flex-end' : 'flex-start',
-    paddingBottom: docked ? 12 : 0,
-    boxSizing: 'border-box',
-    ...viewport.style,
-  } : portalTarget ? { ...scrim, position: 'fixed' } : scrim;
-  const overlay = (
-    <div ref={layerRef} className="st-tend-overlay" data-presentation={presentation ?? undefined} style={overlayStyle} onMouseDown={(event) => { if (event.target === event.currentTarget) onDismiss?.(); }}>
-      {bar}
-    </div>
-  );
+  };
+  if (modal) {
+    Object.assign(overlayStyle, {
+      background: 'var(--surface-overlay)',
+      paddingTop: docked ? 0 : topInset,
+      alignItems: docked ? 'flex-end' : 'flex-start',
+      paddingBottom: docked ? 12 : 0,
+      boxSizing: 'border-box',
+    });
+  }
+  const dismissScrim = (event) => {
+    if (event.target === event.currentTarget) onDismiss?.();
+  };
+  const overlayProps = {
+    className: 'st-tend-overlay',
+    'data-presentation': presentation ?? undefined,
+    style: overlayStyle,
+    onClick: modal ? dismissScrim : undefined,
+    onMouseDown: modal ? undefined : dismissScrim,
+    children: bar,
+  };
+  const overlay = docked
+    ? <DockedLayer layerRef={layerRef} {...overlayProps} />
+    : <div ref={layerRef} {...overlayProps} />;
   return portalTarget ? createPortal(overlay, portalTarget) : overlay;
+}
+
+function DockedLayer({ layerRef, style, ...props }) {
+  const viewport = useComposerViewport(true);
+  return <div ref={layerRef} {...props} style={{ ...style, ...viewport.style }} />;
 }
 
 export default TendBar;
@@ -139,6 +156,7 @@ const scrim = {
 };
 const deskForm = { width: 'min(560px, calc(100vw - 48px))' };
 const dockedForm = { width: 'calc(100% - 24px)' };
+const formStyles = { phone: phoneForm, desktop: deskForm, overlay: deskForm, docked: dockedForm };
 const exampleRow = { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 };
 const exampleChip = {
   display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px',

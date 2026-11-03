@@ -677,14 +677,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the switch while loading, but not after a failed load: the Graph's load error veils the topbar, so the switch would
   lead where a pointer cannot come back from. Draw what the topbar names before the name is known, and say whether
   the switch belongs on 02.10 once the Graph's load error leaves the topbar reachable.
-- **Board · Activity, demo identity and sheet search.** With the development gate open, Activity
-  has only the A shortcut, the demo retains its existing chrome and honest byline, and the phone
-  roadmap sheet has no switcher search. G1, G11 and G17 need approved wave-8 frames before the
-  gate lifts; the orchestrator owns their design follow-ups.
-- **Board · Graph and compact-row interims.** G2 hands a Graph search to the Board while keeping
-  the query and field focus. G-F expands the drawn wide Find field into the compact row. G3 uses
-  the existing TendBar overlay from More or the phone sheet, and G4 retains the phone Graph
-  camera group under the row. These approved interims still need their dedicated drawings.
+- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and
+  field focus. G4 retains the phone Graph camera group under the row and needs its dedicated drawing.
+- **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's
+  read-only step page, with Fork remaining primary. The approved
+  [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343)
+  has no visual tap affordance on that title. Draw the interactive title treatment.
+- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph.
+  The Board shortcuts dialog does not list A because its approved specimen has no Activity row.
+  Draw that row before adding it to `BOARD_SHORTCUT_GROUPS`; A does nothing on phones.
+- **Board · Activity live signal.** Approved G8-A1 touch feeds have no live dot. The gate-open
+  desktop host also hides `.st-activity-live`, while the gate-closed feed retains the live dot.
+  Reconcile the shared feed treatment when the legacy chrome retires.
 - **Board · dock beneath the row.** With the gate open, the step dock from 744px starts 8px
   below the measured identity row and clears any Graph refusal banner, so an open step never
   covers Share, Next, New step, More or refusal actions.
