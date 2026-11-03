@@ -183,9 +183,13 @@ export function useRoadmapToast() {
   return { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast };
 }
 
-const SYNC_CLOCK = { now: () => Date.now(), setTimeout: (...args) => setTimeout(...args), clearTimeout: (id) => clearTimeout(id) };
+const SYNC_CLOCK = {
+  now: () => Date.now(),
+  setTimeout: (...args) => setTimeout(...args),
+  clearTimeout: (id) => clearTimeout(id),
+};
 
-export function useRoadmapSyncStatus(session, enabled, clock = SYNC_CLOCK) {
+function useRoadmapSyncStatus(session, enabled, clock = SYNC_CLOCK) {
   const [reading, setReading] = useState(null);
   useEffect(() => {
     if (!enabled || !session) return undefined;
@@ -195,7 +199,8 @@ export function useRoadmapSyncStatus(session, enabled, clock = SYNC_CLOCK) {
     const update = (snapshot) => {
       clock.clearTimeout(timer);
       const now = clock.now();
-      const pending = snapshot.structurePending + snapshot.progressPending + snapshot.structureInFlight + snapshot.progressInFlight;
+      const pending = snapshot.structurePending + snapshot.progressPending
+        + snapshot.structureInFlight + snapshot.progressInFlight;
       if (snapshot.phase === 'live' || previous?.phase === 'live') facts.lastLiveAt = now;
       if (pending > 0 && facts.pendingSince === null) facts.pendingSince = now;
       if (pending === 0) {
@@ -209,10 +214,16 @@ export function useRoadmapSyncStatus(session, enabled, clock = SYNC_CLOCK) {
         facts.pendingSince === null ? null : facts.pendingSince + SAVING_DELAY_MS,
         facts.drainedAt === null ? null : facts.drainedAt + SAVED_HOLD_MS,
       ].filter((deadline) => deadline !== null && deadline > now);
-      if (deadlines.length) timer = clock.setTimeout(() => update(session.statusSnapshot()), Math.min(...deadlines) - now);
+      if (deadlines.length) {
+        const nextDeadline = Math.min(...deadlines);
+        timer = clock.setTimeout(() => update(session.statusSnapshot()), nextDeadline - now);
+      }
     };
     const unsubscribe = session.subscribeStatus(update);
-    return () => { unsubscribe(); clock.clearTimeout(timer); };
+    return () => {
+      unsubscribe();
+      clock.clearTimeout(timer);
+    };
   }, [session, enabled, clock]);
   if (!enabled || reading?.session !== session) return { snapshot: null, state: null };
   return reading;
@@ -1639,7 +1650,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const refusal = useMemo(() => refused ? {
     code: refused.code,
     count: refusedCount,
-    onRetry: isCapacityRefusal(refused) ? null : retrySync,
+    onRetry: retrySync,
     onDiscard: discardSync,
   } : null, [refused, refusedCount, retrySync, discardSync]);
   const syncReportsRef = useRef(null);

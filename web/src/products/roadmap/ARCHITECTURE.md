@@ -415,8 +415,10 @@ name; the tooltip does not repeat it as a description.
 The global offline notice yields only to a room payload carrying `connectivity: 'offline'`.
 Idle, Saving, Saved and device-only lines do not claim connectivity, so they retain the global
 notice when the device is offline. The host passes refusal code, refused-lane count and stable
-Retry/Discard actions to the Board and Graph notice component. The Graph measures its notice into
-the camera's usable viewport and clears the selected-step dock from 744px. On phones,
+Retry/Discard actions to the shared `RefusedSync` component on both Board and Graph. The notice
+owns capacity-specific Retry suppression and uses the refused-lane count for its message and
+Discard label. The Graph measures its notice into the camera's usable viewport and clears the
+selected-step dock from 744px. On phones,
 `BottomSheet` reports its footprint through `onHeight`; the host uses that clearance without
 observing the sheet's DOM. Retry clears the refusal and reconnects through the existing graft/flush
 path. A successful discard invalidates session Undo/Redo and captured receipts; only toast actions
