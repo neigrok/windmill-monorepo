@@ -37,12 +37,14 @@ export const ROADMAP_VERBS = {
   settings: 'Settings',
   keyboardShortcuts: 'Keyboard shortcuts',
   fork: 'Fork',
+  activity: 'Activity',
 };
 export const ROADMAP_SHEET = {
   title: 'Roadmap',
   yourRoadmaps: 'Your roadmaps',
   newRoadmap: 'New roadmap',
   plantedInPublic: 'Planted in public',
+  findRoadmap: 'Find a roadmap',
 };
 export const NOTHING_UP_NEXT = 'Nothing up next yet';
 
@@ -391,3 +393,23 @@ export function discardChanges({ count }) {
   if (count > 1) return `Discard ${formatCount(count)} changes`;
   return REFUSED_SYNC.discard;
 }
+
+export function roadmapsHeading({ count }) {
+  return `${ROADMAP_SHEET.yourRoadmaps} · ${formatCount(count)}`;
+}
+
+export function roadmapMatches({ shown, total }) {
+  return `${formatCount(shown)} of ${formatCount(total)} roadmaps`;
+}
+
+export const DEMO_BYLINE = { wide: 'Windmill sample', phone: 'Sample' };
+export const ASK_AI_PLACEHOLDER = {
+  phone: 'What should change?',
+  wide: 'Tell the tree what to change…',
+  empty: 'What do you want to learn or build?',
+};
+export const OPEN_STEP = 'Open step';
+export const ACTIVITY = {
+  heading: 'Activity',
+  empty: 'No activity yet — changes you make will appear here.',
+};

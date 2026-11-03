@@ -16,8 +16,9 @@ const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 
 export function RoadmapIdentity({
   band, view, role, title, switcher, progress, onSwitchView, find, next,
-  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom,
+  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity,
 }) {
+  // The demo uses the non-owner presentation; onActivity is accepted without adding a door.
   const bar = useRef(null);
   const titleButton = useRef(null);
   const moreButton = useRef(null);
