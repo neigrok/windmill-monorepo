@@ -1,7 +1,7 @@
 // What the overlay chrome tells the camera and the captions: the px it covers on each side of the canvas, the corners it
 // holds, and the step a first view opens on. Every number is view state — nothing here observes the DOM.
 
-import { planNextUp } from './nextUpPlan.js';
+import { Board } from '../board/Board.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 
 // The docked panels' widths, applied as inline widths by the panels themselves so one number moves both the chrome and
@@ -69,16 +69,15 @@ export function graphToastPlacement({ width, height, toastWidth, toastHeight, le
   return { center, bottom };
 }
 
-// The frontier: the selection the device remembers, else the top Next-up row, else the most recent completion this
+// The frontier: the selection the device remembers, else the top Up next card, else the most recent completion this
 // browser witnessed, else the crown of the largest tree. Null only on an empty tree.
-export function frontierTarget(tree, states, { selectedId = null, completedAt = {} } = {}) {
+export function frontierTarget(tree, progress, { selectedId = null } = {}) {
   if (selectedId && tree.nodesById.has(selectedId)) return selectedId;
-  const plan = planNextUp(tree, states);
-  if (plan.mount && plan.featured.length > 0) return plan.featured[0].id;
-  const latest = tree.nodes
-    .filter((node) => states.get(node.id) === 'complete' && Number.isFinite(completedAt[node.id]))
-    .sort((a, b) => completedAt[b.id] - completedAt[a.id])[0];
-  if (latest) return latest.id;
+  const board = new Board(tree, progress);
+  const upNext = board.upNext.cards[0];
+  if (upNext) return upNext.id;
+  const latest = board.done.cards[0];
+  if (latest && Number.isFinite(progress.completedAt?.[latest.id])) return latest.id;
   const crown = [...tree.roots()].sort((a, b) => tree.trunk.leafCountOf(b.id) - tree.trunk.leafCountOf(a.id) || cmpOrder(a, b))[0];
   return crown?.id ?? null;
 }

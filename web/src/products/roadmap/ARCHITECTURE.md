@@ -75,7 +75,7 @@ heading-created root and branches. Settings exports all roadmaps as a zip.
 On the Graph, the owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order,
 including a one-step roadmap, and hides at zero. Picking a row selects and reveals that canvas
 step. Desktop and tablet owners open Activity through the identity callback or A on either
-view; the feed never opens itself while identity is mounted. On desktop, opening it from the Board switches to the
+view; the feed never opens itself and carries no unread signal. On desktop, opening it from the Board switches to the
 Graph dock. At 744–1023px a separate Activity panel keeps the current view usable; its rows open
 step details, and X, Escape or the Activity callback closes it and returns focus to More.
 Phone owners open Activity as a page inside the roadmap sheet through `sheet.activity`; A does

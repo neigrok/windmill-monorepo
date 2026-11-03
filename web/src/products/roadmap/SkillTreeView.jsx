@@ -20,7 +20,7 @@ import { coverBeneath } from './board/composerFocus.js';
 import { BoardQuery, COLUMN_OF_STATE } from './board/Board.js';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './board/RoadmapIdentity.jsx';
 import { BoardToast } from './board/BoardToast.jsx';
-import { completedToast, completedStepsToast, upNextCount, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS, SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER, LAPSED_SESSION } from './board/copy.js';
+import { completedToast, completedStepsToast, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS, SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER, LAPSED_SESSION } from './board/copy.js';
 import { useRoadmapIdentityActs } from './useRoadmapIdentityActs.js';
 import { StepDetail } from './board/StepDetail.jsx';
 import { titleOf } from './board/StepFacts.js';
@@ -42,8 +42,6 @@ import { ShareDialog, treeShareUrl } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { ActivityRows } from './activity/ActivityRows.jsx';
-import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
-import { planNextUp } from './ui/nextUpPlan.js';
 import { useActivity } from './activity/useActivity.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
@@ -91,8 +89,6 @@ const viewPrefs = new ViewPrefs();
 const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
-const NEXT_UP_SELECT_MS = 540;
-const NEXT_UP_ENTER_MS = 600;
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const NEW_NODE_ICON = 'sparkles';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest';
@@ -407,14 +403,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [scene, setScene] = useState(null);
   const [autoFocusNameId, setAutoFocusNameId] = useState(null);
 
-  // Ordinary paths call setSelectedId; only the Next-up glide’s timeout reaches commitSelectedId, after re-checking its epoch.
-  const nextUpSelectRef = useRef({ epoch: 0, timer: null });
-  const cancelNextUpSelect = useCallback(() => {
-    const pending = nextUpSelectRef.current;
-    pending.epoch += 1;
-    window.clearTimeout(pending.timer);
-    pending.timer = null;
-  }, []);
   // Must use projectEdge, not selectEdge: selectEdge's node-clear cascade reads lagging scene.selectedIds and would wipe a still-selected edge.
   const reconcileProjections = useCallback((nodeSet, edgeSet) => {
     const total = nodeSet.size + edgeSet.size;
@@ -423,45 +411,40 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, []);
 
   const setSelectedId = useCallback((id) => {
-    cancelNextUpSelect();
     const nodes = id ? new Set([id]) : new Set();
     setSelectedIds(nodes);
     setSelectedEdges(new Set());
     reconcileProjections(nodes, new Set());
-  }, [cancelNextUpSelect, reconcileProjections]);
+  }, [reconcileProjections]);
 
   const onSelectionToggle = useCallback((id) => {
-    cancelNextUpSelect();
     const next = new Set(selectedIdsRef.current);
     if (next.has(id)) next.delete(id); else next.add(id);
     setSelectedIds(next);
     reconcileProjections(next, selectedEdgesRef.current);
-  }, [cancelNextUpSelect, reconcileProjections]);
+  }, [reconcileProjections]);
   const onMarqueeSelect = useCallback((ids, additive) => {
-    cancelNextUpSelect();
     const next = additive ? new Set(selectedIdsRef.current) : new Set();
     for (const id of ids) next.add(id);
     const nextEdges = additive ? selectedEdgesRef.current : new Set();
     setSelectedIds(next);
     if (!additive) setSelectedEdges(new Set());
     reconcileProjections(next, nextEdges);
-  }, [cancelNextUpSelect, reconcileProjections]);
+  }, [reconcileProjections]);
 
   const onEdgeToggle = useCallback((edge) => {
-    cancelNextUpSelect();
     const key = edgeKey(edge.from, edge.to);
     const next = new Set(selectedEdgesRef.current);
     if (next.has(key)) next.delete(key); else next.add(key);
     setSelectedEdges(next);
     reconcileProjections(selectedIdsRef.current, next);
-  }, [cancelNextUpSelect, reconcileProjections]);
+  }, [reconcileProjections]);
 
   const onEdgePick = useCallback(() => {
-    cancelNextUpSelect();
     setSelectedIds(new Set());
     setSelectedEdges(new Set());
     commitSelectedId(null);
-  }, [cancelNextUpSelect]);
+  }, []);
 
   const [reloadKey, setReloadKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
@@ -587,10 +570,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const handlePanStateChange = useCallback((isPanning) => setPanning(isPanning), []);
 
   const {
-    emit, seedActivity, ticker, newEventIds, unreadCount, activityPing,
+    emit, seedActivity, ticker, newEventIds,
     feedVisible, feedSummonedRef, activityGroups, selectedHistory, eventCount,
-    toggleActivity, openActivity, closeActivity,
-  } = useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpSelect, setSelectedId });
+    openActivity, closeActivity,
+  } = useActivity({ sceneRef, selectedId });
 
   // Every structural edit and undo/redo funnels through here; new SkillTree re-validates the DAG.
   const syncStructure = useCallback(() => {
@@ -910,8 +893,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const handleFocus = useCallback(() => {
     const scene = sceneRef.current;
     if (!scene || !tree) return;
-    scene.focusWorking(selectedIdRef.current ?? frontierTarget(tree, states, { completedAt }));
-  }, [tree, states, completedAt]);
+    scene.focusWorking(selectedIdRef.current ?? frontierTarget(tree, { completed, completedAt }));
+  }, [tree, completed, completedAt]);
 
   const handleShowAll = useCallback(() => {
     const scene = sceneRef.current;
@@ -947,8 +930,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
         event.preventDefault();
-        cancelNextUpSelect();
-        const ids = editorRef.current?.treeData.nodes.map((n) => n.id) ?? [];
+            const ids = editorRef.current?.treeData.nodes.map((n) => n.id) ?? [];
         const set = new Set(ids);
         setSelectedIds(set);
         setSelectedEdges(new Set());
@@ -1014,7 +996,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
     window.addEventListener('keydown', onEditorKey);
     return () => window.removeEventListener('keydown', onEditorKey);
-  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind, handleFocus, handleShowAll, keyboardCovered]);
+  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind, handleFocus, handleShowAll, keyboardCovered]);
 
   useEffect(() => {
     const onPaste = (event) => {
@@ -1133,7 +1115,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       scene.setModel(model);
       if (savedCamera) scene.restoreViewpoint(savedCamera);
       if (opensOnFrontier) {
-        const target = frontierTarget(nextTree, states, { selectedId: restoredSelection, completedAt: overlay.completedAt });
+        const target = frontierTarget(nextTree, overlay, { selectedId: restoredSelection });
         scene.setViewportInsets(insetsRef.current ?? viewportInsets({ breakpoint, dockOpen: !!restoredSelection && !viewReadOnly }));
         scene.focusWorking(target, { instant: true });
         firstFrameRef.current = { id: target, at: Date.now(), camera: scene.getViewpoint() };
@@ -1202,8 +1184,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => {
       cancelled = true;
       wanted.abort();
-      cancelNextUpSelect();
-      if (boardToastRef.current) {
+        if (boardToastRef.current) {
         boardToastRef.current.onLeave?.('left');
         dismissToast();
       }
@@ -1238,22 +1219,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => { cancelled = true; };
   }, [demo, status]);
 
-  const nextUpPlanRef = useRef(null);
-  if (!feedVisible || !tree) nextUpPlanRef.current = null;
-  else if (nextUpPlanRef.current === null) nextUpPlanRef.current = planNextUp(tree, states);
-  const nextUpPlan = nextUpPlanRef.current;
-
-  const readyCount = useMemo(() => {
-    if (!tree || tree.nodes.length <= 1) return 0;
-    let count = 0;
-    for (const state of states.values()) if (state === 'available') count += 1;
-    return count;
-  }, [tree, states]);
-  let readyPill = null;
-  if (nextUpPlan?.mount) {
-    readyPill = nextUpPlan.mode === 'allDone' ? nextUpPlan.pill : upNextCount({ count: readyCount });
-  }
-
   const nodesById = useMemo(() => {
     if (!tree) return new Map();
     return new Map(tree.nodes.map((node) => [node.id, node]));
@@ -1267,31 +1232,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const handleRowHover = useCallback((id) => sceneRef.current?.spotlightNode(id), []);
   const handleRowLeave = useCallback(() => sceneRef.current?.spotlightNode(null), []);
   const handleRevealNode = useCallback((id) => sceneRef.current?.revealNode(id), []);
-
-  const handleNextUpOpen = useCallback((id) => {
-    cancelNextUpSelect();
-    const pending = nextUpSelectRef.current;
-    const epoch = pending.epoch;
-    sceneRef.current?.spotlightNode(null);
-    sceneRef.current?.revealNode(id);
-    pending.timer = window.setTimeout(() => {
-      pending.timer = null;
-      if (pending.epoch !== epoch) return;
-      sceneRef.current?.spotlightNode(null);
-      commitSelectedId(id);
-      setSelectedIds(new Set([id]));
-      setSelectedEdges(new Set());
-      sceneRef.current?.selectEdge(null);
-    }, NEXT_UP_SELECT_MS);
-  }, [cancelNextUpSelect]);
-
-  const handleNextUpAddStep = useCallback(() => {
-    const nodes = editorRef.current?.treeData.nodes ?? [];
-    if (nodes.length === 0) return;
-    const parents = new Set(nodes.flatMap((node) => node.prerequisites));
-    const anchor = [...nodes].reverse().find((node) => !parents.has(node.id)) ?? nodes[nodes.length - 1];
-    handleCreateChild(anchor.id);
-  }, [handleCreateChild]);
 
   const selectedNode = selectedId ? nodesById.get(selectedId) ?? null : null;
   const selectedState = selectedId ? states.get(selectedId) ?? 'locked' : null;
@@ -2411,18 +2351,6 @@ export function SkillTreeView({ treeId, demo = false }) {
                 onHoverNode={handleRowHover}
                 onLeaveNode={handleRowLeave}
                 onRevealNode={handleRevealNode}
-                readyPill={readyPill}
-                nextUp={nextUpPlan?.mount ? (
-                  <NextUp
-                    plan={nextUpPlan}
-                    nodesById={nodesById}
-                    states={states}
-                    onHoverNode={handleRowHover}
-                    onLeaveNode={handleRowLeave}
-                    onOpenStep={handleNextUpOpen}
-                    onAddStep={handleNextUpAddStep}
-                  />
-                ) : null}
               />
             ) : null}
           </div>

@@ -8,9 +8,7 @@ const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { ActivityFeed } = await import('../../../../src/products/roadmap/activity/ActivityFeed.jsx');
 
-test('ActivityFeed — Up next leads the feed without changing its Activity section', () => {
-  const feed = React.createElement(ActivityFeed, {
-    groups: [], count: 0, nodesById: new Map(), nextUp: React.createElement('p', null, 'Read the wind'), readyPill: '1 up next',
-  });
+test('ActivityFeed — the feed is Activity alone, without a live dot', () => {
+  const feed = React.createElement(ActivityFeed, { groups: [], count: 0, nodesById: new Map() });
   assert.equal(renderToStaticMarkup(feed), readFileSync(new URL('./ActivityFeed.html', import.meta.url), 'utf8').trimEnd());
 });

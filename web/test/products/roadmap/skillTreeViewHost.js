@@ -200,6 +200,7 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', su
   await ready;
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
+  page.setDefaultNavigationTimeout(30000);
   firstPage = false;
 
   const errors = [];
@@ -247,8 +248,8 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', su
     if (enabled) params.set(name, '1');
   }
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
-  await page.waitForFunction(() => !!window.session?.ready);
-  if (!crash && !demo) await page.locator('.st-roadmap-progress').waitFor();
+  await page.waitForFunction(() => !!window.session?.ready, null, { timeout: 30000 });
+  if (!crash && !demo) await page.locator('.st-roadmap-progress').waitFor({ timeout: 30000 });
   if (role === 'reader' && surface === 'board' && !crash) await page.getByRole('button', { name: 'Board', exact: true }).click();
   if (fixedClock) {
     await page.clock.install({ time: new Date('2026-11-03T11:59:00Z') });

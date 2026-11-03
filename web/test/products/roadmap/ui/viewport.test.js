@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { viewportInsets, frontierTarget, graphToastPlacement } from '../../../../src/products/roadmap/ui/viewport.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { UnlockRules } from '../../../../src/products/roadmap/model/UnlockRules.js';
 
 const MINIMAP_BLOCK = { left: 24, bottom: 24, width: 186, height: 146 };
 
@@ -34,18 +33,18 @@ function forest() {
   ] });
 }
 
-test('the frontier is the remembered selection, else the top Next-up row, else the latest completion, else the biggest crown', () => {
+test('the frontier is the remembered selection, else the top Up next card, else the latest completion, else the biggest crown', () => {
   const tree = forest();
-  const states = (completed) => UnlockRules.derive(tree, { completed: new Set(completed) });
+  const progress = (completed, completedAt = {}) => ({ completed: new Set(completed), completedAt });
 
-  assert.equal(frontierTarget(tree, states(['big']), { selectedId: 's1' }), 's1');
-  assert.equal(frontierTarget(tree, states(['big']), { selectedId: 'gone' }), 'b1', 'a stale selection falls through; b1 unlocks b3, the others nothing');
-  assert.equal(frontierTarget(tree, states(['big', 'b1', 'b2', 'b3', 'small', 's1']), { completedAt: { b3: 5, s1: 9, big: 1 } }), 's1', 'all done: the latest completion');
-  assert.equal(frontierTarget(tree, states(['big', 'b1', 'b2', 'b3', 'small', 's1']), {}), 'big', 'nothing witnessed: the crown with the most leaves');
+  assert.equal(frontierTarget(tree, progress(['big']), { selectedId: 's1' }), 's1');
+  assert.equal(frontierTarget(tree, progress(['big']), { selectedId: 'gone' }), 'b1', 'a stale selection falls through; b1 unlocks b3 and leads Up next');
+  assert.equal(frontierTarget(tree, progress(['big', 'b1', 'b2', 'b3', 'small', 's1'], { b3: 5, s1: 9, big: 1 })), 's1', 'all done: the latest completion');
+  assert.equal(frontierTarget(tree, progress(['big', 'b1', 'b2', 'b3', 'small', 's1'])), 'big', 'nothing witnessed: the crown with the most leaves');
   const blocked = new SkillTree({ id: 'b', title: 'B', nodes: [{ id: 'r', label: 'r', prerequisites: [] }, { id: 'c', label: 'c', prerequisites: ['r'] }] });
-  assert.equal(frontierTarget(blocked, UnlockRules.derive(blocked, { completed: new Set() }), {}), 'r', 'the available root is the frontier');
+  assert.equal(frontierTarget(blocked, progress([])), 'r', 'the available root is the frontier');
   const empty = new SkillTree({ id: 'e', title: 'E', nodes: [] });
-  assert.equal(frontierTarget(empty, new Map(), {}), null);
+  assert.equal(frontierTarget(empty, progress([])), null);
 });
 
 test('the identity row replaces the top inset and the camera block clears the open dock or panel', () => {

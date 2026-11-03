@@ -1,24 +1,16 @@
-import { ACTIVITY, COLUMN_TITLES } from '../board/copy.js';
+import { ACTIVITY } from '../board/copy.js';
 import React from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { EventRow } from './EventRow.jsx';
 
-export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds, onClose, onHoverNode, onLeaveNode, onRevealNode, nextUp = null, readyPill = null }) {
+export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds, onClose, onHoverNode, onLeaveNode, onRevealNode }) {
   return (
     <div className="st-activity">
       <div className="st-activity-head">
-        <span>{nextUp ? COLUMN_TITLES.upNext : 'Activity'}</span>
-        <span className="st-activity-count">{nextUp ? readyPill : count}</span>
-        <span className="st-activity-live" title="Live" />
+        <span>{ACTIVITY.heading}</span>
+        <span className="st-activity-count">{count}</span>
         <IconButton icon={<Icon name="x" size={14} />} label="Close activity" size="sm" onClick={onClose} />
       </div>
-      {nextUp}
-      {nextUp && (
-        <div className="st-activity-head st-activity-head--section">
-          <span>Activity</span>
-          <span className="st-activity-count">{count}</span>
-        </div>
-      )}
       <div className="st-activity-list">
         {groups.length === 0 ? (
           <div className="st-activity-empty">{ACTIVITY.empty}</div>

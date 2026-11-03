@@ -10,10 +10,8 @@ import {
   LABELS,
   ROADMAP_VERBS,
   ROADMAP_SHEET,
-  NOTHING_UP_NEXT,
   nextChip,
   upNextCount,
-  moreUpNext,
   upNextIn,
   unlocksWhen,
   completedStepsToast,
@@ -421,10 +419,6 @@ test('copy — roadmap next counts use full numbers and the pinned state words',
   assert.deepEqual([0, 1, 2, 1200].map((count) => upNextCount({ count })), [
     '0 up next', '1 up next', '2 up next', '1,200 up next',
   ]);
-  assert.deepEqual([0, 1, 2, 1200].map((count) => moreUpNext({ count })), [
-    '+ 0 more up next', '+ 1 more up next', '+ 2 more up next', '+ 1,200 more up next',
-  ]);
-  assert.equal(NOTHING_UP_NEXT, 'Nothing up next yet');
   assert.equal(upNextIn({ lens: 'Sailing' }), 'Up next in Sailing');
   assert.equal(unlocksWhen({ step: 'Read the wind' }), 'Unlocks when ‘Read the wind’ is done.');
 });

@@ -46,7 +46,6 @@ export const ROADMAP_SHEET = {
   plantedInPublic: 'Planted in public',
   findRoadmap: 'Find a roadmap',
 };
-export const NOTHING_UP_NEXT = 'Nothing up next yet';
 
 export const LINK_COPIED = 'Link copied';
 export const EMPTY_ROADMAP = { title: 'Your first step', body: 'Give your roadmap a place to start.', action: 'New step' };
@@ -140,10 +139,6 @@ export function nextChip({ count }) {
 
 export function upNextCount({ count }) {
   return `${formatCount(count)} up next`;
-}
-
-export function moreUpNext({ count }) {
-  return `+ ${formatCount(count)} more up next`;
 }
 
 export function upNextIn({ lens }) {
