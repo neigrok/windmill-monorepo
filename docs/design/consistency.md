@@ -562,20 +562,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   their own values.
 - **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
   legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
-  384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six
+  384:19561). The shipped `graph/StepPanel.jsx` offers only the legend's kinds, falling back to the six
   hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
 - **Board · no Complete offer after the last subtask in the Graph.** The Board's step page and modal
   offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
-  desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`ui/StepPanel.jsx`)
+  desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`graph/StepPanel.jsx`)
   fills the gauge and nothing else; no drawing covers the Graph.
 - **Board · where the modal's status row sits.** The step modal 03.01 (184:1693) draws *Up next* under
   the step links' divider; the core-loop modals (02.01–02.04) and every phone step page draw the status
-  row under the description. `board/StepDetail.jsx` follows the core loop. Redraw 03.01 or rule.
+  row under the description. `step/StepDetail.jsx` follows the core loop. Redraw 03.01 or rule.
 - **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
   prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
   lists it plainly. The build follows each drawing. Choose one.
 - **Board · two names for the checklist.** The Board's step workspace says *Subtasks* and *Add subtask*
-  (07.01, 03.08); the Graph's step panel (`ui/StepPanel.jsx` through `ui/tree/Checklist.jsx`) says
+  (07.01, 03.08); the Graph's step panel (`graph/StepPanel.jsx` through `graph/tree/Checklist.jsx`) says
   *Checklist* and *Add a sub-task*, and its add menu *Sub-task*. Choose one name for both views.
 - **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
@@ -586,7 +586,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   in the Shell file and builds it.
 - **Board · two pairs of view glyphs.** The phone identity row (258:1397) draws Board as three
   outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
-  strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
+  strokes and Graph as a branching tree. `identity/ViewSwitch.jsx` follows each band: phones draw the
   icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
 - **Board · two skeleton cards.** The desktop Skeleton card (369:4027) breathes opacity 1 → .6 over
   1200ms ease-glow for as long as the roadmap loads; the phone Skeleton card (369:10026) holds still,

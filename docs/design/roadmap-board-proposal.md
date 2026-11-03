@@ -92,7 +92,7 @@ switched-to state.
   hold window; a secondary line names the outcome. No toast from a page or a modal. Reset is always
   secondary and quiet.
 - The `…` menu holds the same three verbs on both pages: *Copy link · Open in Graph · Delete step*.
-- **Delete step:** a confirm with the cost line from `board/copy.js`
+- **Delete step:** a confirm with the cost line from `copy.js`
   (*Removes this step · 1 branch resplices*), then a delete held for nine seconds with Undo, as
   `guidelines/system-architecture.md` §3 requires on the web, then the regrouped Board.
 - A step pushed from a step names the previous screen in its back label.

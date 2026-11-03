@@ -297,5 +297,5 @@ Tabs, Tag, Toast, Tooltip.
 
 The Windmill-specific families — **SkillNode**, **SkillConnector**, **Checklist**,
 **KindLegend**, **ProgressBar** — live with the roadmap product
-(`web/src/products/roadmap/ui/tree/`): they are the roadmap's vocabulary, not the brand's. If
+(`web/src/products/roadmap/graph/tree/`): they are the roadmap's vocabulary, not the brand's. If
 journal or gym needs a generic progress bar, author one here rather than reaching across.
