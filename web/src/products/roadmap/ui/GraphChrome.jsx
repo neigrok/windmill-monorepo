@@ -205,28 +205,25 @@ export function GraphDock({ open, top, tablet = false, tenant, children }) {
   );
 }
 
-export function GraphSelectionBar({ stepCount, linkCount, kinds, ringedKind, onPreviewKind, onRestoreKind, onRecolor, onMarkDone, onPreviewDelete, onClearDelete, onDelete }) {
+export function GraphSelectionBar({ stepCount, linkCount, choice, onPreviewKind, onRestoreKind, onRecolor, onMarkDone, onPreviewDelete, onClearDelete, onDelete }) {
   return (
     <div className="st-selection-bar" role="status">
       <span className="st-selection-count">{stepCount + linkCount} selected</span>
       {stepCount > 0 && (
         <div className="st-step-kinds" role="group" aria-label="Recolour selected steps">
-          {kinds.map((kind) => {
-            const name = kind.label || kind.hue.charAt(0).toUpperCase() + kind.hue.slice(1);
-            return (
-              <button
-                key={kind.id}
-                type="button"
-                className={`st-step-swatch ${kind.hue === ringedKind ? 'st-step-swatch--current' : ''}`}
-                style={{ background: KIND_CSS[kind.hue].base }}
-                title={name}
-                aria-label={`Recolour selection to ${name}`}
-                onPointerEnter={() => onPreviewKind(kind.hue)}
-                onPointerLeave={onRestoreKind}
-                onClick={() => onRecolor(kind.hue)}
-              />
-            );
-          })}
+          {choice.kinds.map((kind) => (
+            <button
+              key={kind.id}
+              type="button"
+              className={`st-step-swatch ${kind.hue === choice.shared ? 'st-step-swatch--current' : ''}`}
+              style={{ background: KIND_CSS[kind.hue].base }}
+              title={kind.label}
+              aria-label={`Recolour selection to ${kind.label}`}
+              onPointerEnter={() => onPreviewKind(kind.hue)}
+              onPointerLeave={onRestoreKind}
+              onClick={() => onRecolor(kind.hue)}
+            />
+          ))}
         </div>
       )}
       {stepCount > 0 && (

@@ -68,6 +68,38 @@ export function viewToShow(view, board) {
 // Session-scoped one-shot birth stamp: a planting door stamps the tree it made, the view decision
 // peeks and clears it.
 const BORN_KEY = 'windmill:born';
+// Session-scoped one-shot notes a planting door leaves for what it planted to say on its first open.
+const PLANTED_QUEST_KEY = 'windmill:planted-quest';
+const FORKED_KEY = 'windmill:forked-from-demo';
+
+function leaveNote(key, storage) {
+  try {
+    storage.setItem(key, '1');
+  } catch {
+  }
+}
+
+function takeNote(key, storage) {
+  try {
+    if (storage.getItem(key) !== '1') return false;
+    storage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function notePlantedQuest(storage = globalThis.sessionStorage) {
+  leaveNote(PLANTED_QUEST_KEY, storage);
+}
+
+export function noteForked(storage = globalThis.sessionStorage) {
+  leaveNote(FORKED_KEY, storage);
+}
+
+export function takePlantNote(storage = globalThis.sessionStorage) {
+  return { quest: takeNote(PLANTED_QUEST_KEY, storage), forked: takeNote(FORKED_KEY, storage) };
+}
 
 export function stampBorn(treeId, storage = globalThis.sessionStorage) {
   try {

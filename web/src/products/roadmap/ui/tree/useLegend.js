@@ -8,7 +8,7 @@ import { deriveLegend, withCounts, freeHue, addKind, recolorKind } from '../../m
 
 const legendStore = new LegendStore();
 
-export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
+export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
   const [legend, setLegend] = useState([]);
   const [legendOpen, setLegendOpen] = useState(true); // remembered per tree
   const [legendForceOpen, setLegendForceOpen] = useState(false); // the picker's "+" summoned the key on a 1-kind tree
@@ -54,37 +54,37 @@ export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
 
 
   const onRenameKind = useCallback((id, label) => {
-    collabRef.current?.dispatch({ kind: 'RenameKind', id, label });
+    sessionRef.current?.dispatch({ kind: 'RenameKind', id, label });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'rename' });
-  }, [collabRef]);
+  }, [sessionRef]);
   const onDescribeKind = useCallback((id, description) => {
-    collabRef.current?.dispatch({ kind: 'DescribeKind', id, description });
+    sessionRef.current?.dispatch({ kind: 'DescribeKind', id, description });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'describe' });
-  }, [collabRef]);
+  }, [sessionRef]);
   const onAddKind = useCallback((hue) => {
     const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
     if (next === legendRef.current) return; // hue taken or palette full — nothing added
     const added = next[next.length - 1];
-    collabRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
+    sessionRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'add' });
-  }, [collabRef]);
+  }, [sessionRef]);
 
   // Remove is offered only for a kind no node wears; read the editor's live nodes against a stale click.
   const onRemoveKind = useCallback((id) => {
-    const nodes = editorRef.current?.treeData.nodes ?? [];
+    const nodes = projectionRef.current?.nodes ?? [];
     const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
     if (!target || target.count > 0) return;
-    collabRef.current?.dispatch({ kind: 'RemoveKind', id });
+    sessionRef.current?.dispatch({ kind: 'RemoveKind', id });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'remove' });
-  }, [collabRef, editorRef]);
+  }, [sessionRef, projectionRef]);
 
   // Recolor swaps the kind's hue AND repaints every node of the old hue, as one atomic gesture.
   const onRecolorKind = useCallback((id, targetHue) => {
     const { newHue } = recolorKind(legendRef.current, id, targetHue);
     if (!newHue) return;
-    collabRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
+    sessionRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'recolor' });
-  }, [collabRef]);
+  }, [sessionRef]);
 
   // State tracks the kind id, but the scene is handed the HUE, null to clear.
   const onHighlightKind = useCallback((id) => {

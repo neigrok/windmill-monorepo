@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
-import { stampBorn } from '../persistence/ViewPrefs.js';
+import { notePlantedQuest, stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
 import { useViewMode } from '../ui/useViewMode.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -9,7 +9,6 @@ import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';
 import { ROSTER } from './roster/index.js';
 
-const PLANTED_QUEST_KEY = 'windmill:planted-quest';
 const SEED_EASE_MS = 600;
 const CROSSFADE_MS = 280;   // the reduced-motion beat
 const MINT_TIMEOUT_MS = 10000;  // past this the server isn't answering
@@ -70,7 +69,7 @@ export function QuestShelf() {
     const ease = new Promise((resolve) => setTimeout(resolve, reduced() ? CROSSFADE_MS : SEED_EASE_MS));
     try {
       const [treeId] = await Promise.all([mint, ease]);
-      try { sessionStorage.setItem(PLANTED_QUEST_KEY, '1'); } catch { /* the toast just says Roadmap */ }
+      notePlantedQuest();
       stampBorn(treeId); // a quest's first open is the canvas
       window.location.hash = `#/app/${treeId}`;
     } catch {

@@ -1,11 +1,18 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { layoutTree } from '../layout/index.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { makeRenderable } from '../model/renderableGraph.js';
+import { GRAPH_TOAST, cycleToast, keptStepsToast } from '../board/copy.js';
+
+const NO_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
 // From a changed lattice to the picture: validate the DAG, lay it out, hand the scene its model and offer back masked work.
-export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, completedRef, showToast, syncLegendFromTree, setTree, setRenderModel, setBounds }) {
+export function useGraphStructure({ room, progressActs, showToast, syncLegendFromTree }) {
+  const { projectionRef, sceneRef, treeRef, sessionRef } = room;
+  const [tree, setTree] = useState(null);
+  const [renderModel, setRenderModel] = useState(null);
+  const [bounds, setBounds] = useState(NO_BOUNDS);
   const layoutRef = useRef(null); // the requested engine, and the name of the engine that produced the current picture
   const layoutCacheRef = useRef({ signature: '', result: null });
   const invalidRef = useRef(false);
@@ -33,17 +40,17 @@ export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, com
 
   // Every structural edit and undo/redo funnels through here; new SkillTree re-validates the DAG.
   const syncStructure = useCallback(() => {
-    const editor = editorRef.current;
+    const projection = projectionRef.current;
     const sceneNow = sceneRef.current;
-    if (!editor || !sceneNow) return;
+    if (!projection || !sceneNow) return;
 
     // A concurrent edit can leave a cycle: render without those edges and surface it.
     let nextTree;
     let cycles = null;
     try {
-      nextTree = new SkillTree(editor.treeData);
+      nextTree = new SkillTree(projection);
     } catch {
-      const renderable = makeRenderable(editor.treeData);
+      const renderable = makeRenderable(projection);
       nextTree = new SkillTree(renderable.tree);
       cycles = renderable.cycles;
     }
@@ -54,10 +61,10 @@ export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, com
       positions = layoutPositions(nextTree);
     } catch (error) {
       console.error('[layout] the edit could not be laid out; the picture is one step behind', error);
-      showToast('That edit could not be drawn — the picture is one step behind');
+      showToast(GRAPH_TOAST.undrawnEdit);
       return;
     }
-    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current });
+    const nextStates = UnlockRules.derive(nextTree, progressActs.snapshot);
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
     treeRef.current = nextTree;
@@ -67,33 +74,40 @@ export function useGraphStructure({ editorRef, sceneRef, treeRef, collabRef, com
 
     const invalid = !!(cycles && cycles.length > 0);
     if (invalid && !invalidRef.current) {
-      const labelOf = (id) => editor.treeData.nodes.find((n) => n.id === id)?.label || id;
+      const labelOf = (id) => projection.nodes.find((n) => n.id === id)?.label || id;
       const ring = cycles[0];
       console.log('[loose] rendering invalid graph, cycles:', cycles);
-      showToast(`Cycle: ${[...ring, ring[0]].map(labelOf).join(' → ')} — remove a link to fix it`);
+      showToast(cycleToast({ ring: [...ring, ring[0]].map(labelOf) }));
     }
     invalidRef.current = invalid;
   }, [layoutPositions, showToast]);
 
   const onTreeChanged = useCallback((treeData) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.present = treeData;
+    if (!projectionRef.current) return;
+    projectionRef.current = treeData;
     syncStructure();
     syncLegendFromTree(treeData);
 
-    const masked = collabRef.current?.maskedWork?.() ?? [];
+    const masked = sessionRef.current?.maskedWork?.() ?? [];
     const key = masked.map((m) => m.id).sort().join(',');
     if (masked.length && key !== maskedShownRef.current) {
       maskedShownRef.current = key;
       const count = masked.reduce((sum, m) => sum + m.children.length, 0);
-      showToast(`${count} step${count === 1 ? '' : 's'} kept under a deleted node`, {
-        action: { label: 'Restore', run: () => masked.forEach((m) => collabRef.current?.dispatch({ kind: 'ResurrectNode', id: m.id })) },
+      showToast(keptStepsToast({ count }), {
+        action: { label: GRAPH_TOAST.restore, run: () => masked.forEach((m) => sessionRef.current?.dispatch({ kind: 'ResurrectNode', id: m.id })) },
       });
     } else if (!masked.length) {
       maskedShownRef.current = '';
     }
   }, [syncStructure, showToast, syncLegendFromTree]);
 
-  return { layoutRef, layoutCacheRef, layoutPositions, onTreeChanged };
+  const install = useCallback((nextTree, model, nextBounds) => {
+    setTree(nextTree);
+    setRenderModel(model);
+    setBounds(nextBounds);
+  }, []);
+
+  const reorderHint = useCallback(() => layoutCacheRef.current.result?.engine.constructor.reorder ?? 'none', []);
+
+  return { tree, renderModel, bounds, setBounds, layoutRef, layoutPositions, reorderHint, install, onTreeChanged };
 }

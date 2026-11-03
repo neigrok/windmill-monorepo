@@ -5,8 +5,8 @@ import './board.css';
 import { Board, BoardQuery } from './Board.js';
 import { useStepSelection } from './useStepSelection.js';
 import { boardFocusTarget } from './traversal.js';
-import { NODE_COLOR_NAMES } from '../theme.js';
-import { kindOptions, kindOptionsForHues } from '../model/Legend.js';
+import { kindOptions } from '../model/Legend.js';
+import { bulkKindChoice } from '../selection/bulkSelection.js';
 import { FilterStrip } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { useRegroup } from './ColumnCards.jsx';
@@ -81,7 +81,7 @@ function BoardView({
     root: boardRef, leaving: motion.leaving, onSelect, onRecolor, onDelete,
   });
   const selecting = selection.selection;
-  const selectionKinds = useMemo(() => kindOptionsForHues(NODE_COLOR_NAMES, legend), [legend]);
+  const selectionKinds = useMemo(() => bulkKindChoice(tree, selecting?.ids ?? [], legend), [tree, selecting, legend]);
   const selectionPins = useMemo(() => {
     if (!selection.starterId) return motion.pinned;
     return new Set([...motion.pinned, selection.starterId]);
@@ -221,8 +221,8 @@ function BoardView({
                 onComplete={selecting ? undefined : onComplete}
                 onDelete={editable && !selecting ? selection.deleteFromKey : undefined}
                 selection={selecting}
-                kinds={selectionKinds}
-                sharedKind={selecting?.sharedKind(tree) ?? null}
+                kinds={selectionKinds.kinds}
+                sharedKind={selectionKinds.shared}
                 onHold={canSelect && !selecting ? selection.start : undefined}
                 selectable={selection.selectable}
                 onKinds={selection.kinds}

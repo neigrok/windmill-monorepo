@@ -1,58 +1,80 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// The room's one toast slot. A Board or Graph toast starts its hold when it is first shown; any other holds from now.
+const LEAVE_MS = 280; // matches the CSS exit
+const HOLD_MS = 4000;
+const HOLD_WITH_ACTION_MS = 6000;
+
+// Where a toast stands. A Board toast waits out the regroup inside the Board and a Graph toast leaves with the canvas;
+// Ask AI speaks in its own pill. Any other stands over whatever is showing: the Board's slot, unless a step covers it.
+export function toastSeat(toast, { canvasView, stepOpen }) {
+  if (!toast || toast.surface === 'tend') return null;
+  if (toast.surface === 'board') return 'board';
+  if (canvasView) return 'room';
+  if (toast.surface === 'graph') return null;
+  return stepOpen ? 'room' : 'board';
+}
+
+// The room's one toast slot. A toast's hold starts when it is first shown; a newer one replaces it.
 export function useRoadmapToast() {
-  const toastTimersRef = useRef([]);
-  const toastKeyRef = useRef(0);
-  const boardToastRef = useRef(null);
-  const [toast, setToast] = useState(null); // { message, action, detail, key, leaving }
-  const [toastWhyOpen, setToastWhyOpen] = useState(false);
-  const showToast = useCallback((message, options = {}) => {
-    boardToastRef.current?.onLeave?.('replaced');
-    boardToastRef.current = null;
-    toastTimersRef.current.forEach(clearTimeout);
-    toastTimersRef.current = [];
-    if (['board', 'graph'].includes(options.surface)) {
-      const next = { ...options, message, key: (toastKeyRef.current += 1), leaving: false, started: false };
-      boardToastRef.current = next;
-      setToast(next);
-      return;
-    }
-    const action = options.action ?? null;
-    const hold = options.duration ?? (action ? 6000 : 4000);
-    const key = (toastKeyRef.current += 1);
-    setToastWhyOpen(false);
-    setToast({ message, action, detail: options.detail || null, key, leaving: false });
-    const leave = setTimeout(() => {
-      setToast((current) => (current && current.key === key ? { ...current, leaving: true } : current));
-      const drop = setTimeout(() => setToast((current) => (current && current.key === key ? null : current)), 280); // matches the CSS exit
-      toastTimersRef.current.push(drop);
-    }, hold);
-    toastTimersRef.current.push(leave);
+  const timersRef = useRef([]);
+  const keyRef = useRef(0);
+  const liveToastRef = useRef(null);
+  const [toast, setToast] = useState(null);
+
+  const clearTimers = useCallback(() => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
   }, []);
 
-  const boardToastShown = useCallback((key) => {
-    const current = boardToastRef.current;
+  const showToast = useCallback((message, options = {}) => {
+    liveToastRef.current?.onLeave?.('replaced');
+    clearTimers();
+    const next = {
+      surface: 'room', ...options,
+      holdMs: options.holdMs ?? (options.action ? HOLD_WITH_ACTION_MS : HOLD_MS),
+      message, key: (keyRef.current += 1), leaving: false, started: false,
+    };
+    liveToastRef.current = next;
+    setToast(next);
+  }, [clearTimers]);
+
+  const toastShown = useCallback((key) => {
+    const current = liveToastRef.current;
     if (!current || current.key !== key || current.started) return;
     current.started = true;
-    const leave = setTimeout(() => {
-      if (boardToastRef.current !== current) return;
+    timersRef.current.push(setTimeout(() => {
+      if (liveToastRef.current !== current) return;
       current.onLeave?.('timer');
-      boardToastRef.current = null;
-      setToast((shown) => shown?.key === key ? { ...shown, leaving: true } : shown);
-      toastTimersRef.current.push(setTimeout(() => setToast((shown) => shown?.key === key ? null : shown), 280));
-    }, current.holdMs);
-    toastTimersRef.current.push(leave);
+      liveToastRef.current = null;
+      setToast((shown) => (shown?.key === key ? { ...shown, leaving: true } : shown));
+      timersRef.current.push(setTimeout(() => setToast((shown) => (shown?.key === key ? null : shown)), LEAVE_MS));
+    }, current.holdMs));
   }, []);
 
-  const dismissToast = useCallback(() => {
-    boardToastRef.current?.onLeave?.('replaced');
-    boardToastRef.current = null;
-    toastTimersRef.current.forEach(clearTimeout);
-    toastTimersRef.current = [];
+  // The hold stops until the toast is shown again.
+  const pauseToast = useCallback(() => {
+    clearTimers();
+    if (liveToastRef.current) liveToastRef.current.started = false;
+  }, [clearTimers]);
+
+  const dismissToast = useCallback((via = 'replaced') => {
+    liveToastRef.current?.onLeave?.(via);
+    liveToastRef.current = null;
+    clearTimers();
     setToast(null);
-  }, []);
+  }, [clearTimers]);
 
-  useEffect(() => () => toastTimersRef.current.forEach(clearTimeout), []);
-  return { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast };
+  const dismissToastIf = useCallback((leaves, via) => {
+    if (liveToastRef.current && leaves(liveToastRef.current)) dismissToast(via);
+  }, [dismissToast]);
+
+  // An action may say something of its own, and what it says stands.
+  const runToastAction = useCallback((shown) => {
+    shown.action?.run();
+    const live = liveToastRef.current;
+    if (!live || live.key === shown.key) dismissToast();
+  }, [dismissToast]);
+
+  useEffect(() => clearTimers, [clearTimers]);
+  return { toast, showToast, toastShown, pauseToast, dismissToast, dismissToastIf, runToastAction };
 }

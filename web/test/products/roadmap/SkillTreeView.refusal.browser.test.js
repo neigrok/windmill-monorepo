@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { REFUSED_SYNC } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('refusal');
+startRoadmapHost();
 
 for (const width of [320, 390, 744, 1440]) {
   for (const surface of ['tree', 'board']) {

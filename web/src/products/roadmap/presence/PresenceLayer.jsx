@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 
-export function PresenceLayer({ peersRef, scene, canvasRef, collabRef, selection }) {
+export function PresenceLayer({ peersRef, scene, canvasRef, sessionRef, selection }) {
   const containerRef = useRef(null);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
@@ -44,9 +44,9 @@ export function PresenceLayer({ peersRef, scene, canvasRef, collabRef, selection
       const rect = canvas.getBoundingClientRect();
       const x = viewport.minX + ((event.clientX - rect.left) / rect.width) * (viewport.maxX - viewport.minX);
       const y = viewport.minY + ((event.clientY - rect.top) / rect.height) * (viewport.maxY - viewport.minY);
-      collabRef.current?.sendPresence({ x, y }, selectionRef.current ?? '');
+      sessionRef.current?.sendPresence({ x, y }, selectionRef.current ?? '');
     };
-    const onLeave = () => collabRef.current?.sendPresence(null, selectionRef.current ?? '');
+    const onLeave = () => sessionRef.current?.sendPresence(null, selectionRef.current ?? '');
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerleave', onLeave);
 
@@ -56,7 +56,7 @@ export function PresenceLayer({ peersRef, scene, canvasRef, collabRef, selection
       canvas.removeEventListener('pointerleave', onLeave);
       els.forEach((el) => el.remove());
     };
-  }, [scene, canvasRef, collabRef, peersRef]);
+  }, [scene, canvasRef, sessionRef, peersRef]);
 
   return <div ref={containerRef} className="st-presence-layer" style={LAYER_STYLE} />;
 }

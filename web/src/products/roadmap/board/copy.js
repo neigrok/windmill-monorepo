@@ -1,4 +1,4 @@
-// Every Board string, phone and desktop alike. Step titles arrive as plain strings; reasonLine reads them off a card.
+// Every string in the roadmap room, phone and desktop alike. Step titles arrive as plain strings; reasonLine reads them off a card.
 
 export const STATE_WORDS = { locked: 'locked', upNext: 'up next', done: 'done' };
 export const COLUMN_TITLES = { locked: 'Locked', upNext: 'Up next', done: 'Done' };
@@ -54,6 +54,7 @@ export const LOAD_ERROR = {
   body: 'It may have moved, or the server is unreachable.',
   action: 'Try again',
 };
+export const GRAPH_LOAD = { planting: 'Planting the tree…', home: 'Your trees' };
 export const SAVE_FAILURE = { body: 'Couldn’t save. Your draft is kept.', retry: 'Retry', keepEditing: 'Keep editing' };
 export const DISCARD_DRAFT = { title: 'Discard draft?', body: 'Your changes will be lost.', keepEditing: 'Keep editing', discard: 'Discard' };
 export const FILTERED_EMPTY = { title: 'No steps match', action: 'Clear filters' };
@@ -220,6 +221,19 @@ export function createdToast({ step, column, filterCleared = false }) {
   return `${step} added · ${COLUMN_TITLES[column]}`;
 }
 
+// A fresh plant's arrival ends on this line; a quest names itself.
+export function plantedToast({ quest = false, count, done = 0 }) {
+  return `${quest ? 'Quest' : 'Roadmap'} planted · ${stepCount(count)}${done > 0 ? ` · ${formatCount(done)} already done` : ''}`;
+}
+
+export function welcomeBackToast({ count }) {
+  return `Welcome back · ${stepCount(count)} done since your last visit`;
+}
+
+export function forkedToast({ count }) {
+  return `Forked — ${stepCount(count)} planted`;
+}
+
 export function deletedToast({ step }) {
   return `${step} deleted`;
 }
@@ -230,6 +244,38 @@ export function recoloredToast({ count }) {
 
 export function deletedStepsToast({ count }) {
   return `${stepCount(count)} deleted`;
+}
+
+export const GRAPH_TOAST = {
+  stepDeleted: 'Step deleted',
+  stepAdded: 'Step added',
+  renamed: 'Renamed',
+  recolored: 'Recolored',
+  linked: 'Linked',
+  linkRemoved: 'Link removed',
+  restore: 'Restore',
+  undrawnEdit: 'That edit could not be drawn — the picture is one step behind',
+};
+
+export const TEND_TOAST = { why: 'Why?', hide: 'Hide', reverted: 'AI changes reverted' };
+
+export function deletedSelectionToast({ steps, links }) {
+  const parts = [];
+  if (steps > 0) parts.push(stepCount(steps));
+  if (links > 0) parts.push(`${formatCount(links)} ${links === 1 ? 'link' : 'links'}`);
+  return `${parts.join(' and ')} deleted`;
+}
+
+export function graftedToast({ count, under = null }) {
+  return `Added ${stepCount(count)}${under ? ` under “${under}”` : ''}`;
+}
+
+export function keptStepsToast({ count }) {
+  return `${stepCount(count)} kept under a deleted node`;
+}
+
+export function cycleToast({ ring }) {
+  return `Cycle: ${ring.join(' → ')} — remove a link to fix it`;
 }
 
 export function deleteStepsAction({ count }) {

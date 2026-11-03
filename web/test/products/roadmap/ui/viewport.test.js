@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { viewportInsets, frontierTarget, graphToastPlacement } from '../../../../src/products/roadmap/ui/viewport.js';
+import { viewportInsets, frontierTarget, graphToastPlacement, opensOnFrontier } from '../../../../src/products/roadmap/ui/viewport.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 
 const MINIMAP_BLOCK = { left: 24, bottom: 24, width: 186, height: 146 };
@@ -117,4 +117,17 @@ test('Graph toast rechecks earlier obstacles when minimap clearance reaches the 
       { left: 24, right: 210, top: 730, bottom: 876 },
     ],
   }), { center: 320, bottom: 374 });
+});
+
+test('a first view opens on the frontier only for an owner with no saved place and no arrival to play', () => {
+  const camera = { x: 0, y: 0, zoom: 1 };
+  const cases = [
+    [{ savedCamera: null, owner: true, born: false, stepCount: 8 }, true],
+    [{ savedCamera: null, owner: true, born: true, stepCount: 8 }, false],
+    [{ savedCamera: null, owner: true, born: true, stepCount: 2 }, false],
+    [{ savedCamera: null, owner: true, born: true, stepCount: 1 }, true],
+    [{ savedCamera: camera, owner: true, born: false, stepCount: 8 }, false],
+    [{ savedCamera: null, owner: false, born: false, stepCount: 8 }, false],
+  ];
+  assert.deepEqual(cases.map(([facts]) => opensOnFrontier(facts)), cases.map(([, expected]) => expected));
 });

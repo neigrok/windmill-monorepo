@@ -119,8 +119,8 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Complete from the Graph's selection bar | `roadmap_board_complete` | `door: bulk`, `count: 0/1/2-5/6-20/21+` |
 | Board toast's Undo; ⌘Z and ⇧⌘Z pressed | `roadmap_board_undo` | `act: complete/create/delete/recolor/undoKey/redoKey` |
 | Tap a completion or creation toast's text | `roadmap_board_toast_reveal` | `act: complete/create`, `view?: graph` |
-| Graph toast shown or undone | `roadmap_graph_toast` | `act: complete/create/delete`, `step: shown/undo` |
-| Undo on the generic toast: a Graph edit, a paste or an Ask AI answer | `roadmap_graph_toast` | `act: edit`, `step: undo` |
+| Graph toast shown or undone | `roadmap_graph_toast` | `act: complete/create/delete/recolor/rename/add/link_add/link_remove/graft`, `step: shown/undo` |
+| Undo on an Ask AI answer | `roadmap_graph_toast` | `act: tend`, `step: undo` |
 | Reader's Share copied its link | `roadmap_graph_toast` | `act: link`, `step: shown` |
 | Reader's Share refused by the clipboard | `roadmap_graph_toast` | `act: link`, `outcome: failed` |
 | Open the composer | `roadmap_board_create` | `step: open`, `door: verbs/band/empty/complete`, `view: board/graph` |
@@ -156,7 +156,7 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Phone Graph's Fork, on the bar or the pill | `roadmap_verb` | `verb: fork`, `door: bar/pill`, `view: graph`, `band: phone` |
 | Fork from the read-only notice | `roadmap_verb` | `verb: fork`, `door: notice`, `view: board/graph`, `band: phone/tablet/desktop` |
 | Share from a milestone's ceremony | `roadmap_verb` | `verb: share`, `door: ceremony`, `view: graph`, `band: phone/tablet/desktop` |
-| Ask AI sent, undone, or its Why? opened | `roadmap_verb` | `verb: askAI`, `step: send/undo/why` |
+| Ask AI sent, or its Why? opened | `roadmap_verb` | `verb: askAI`, `step: send/why` |
 | Ask AI answered | `roadmap_verb` | `verb: askAI`, `step: answer`, `outcome: receipt/failed/rate/out/long/off` |
 | Share dialog publishes or makes private | `roadmap_verb` | `verb: share`, `step: publish/private`, `outcome: ok/failed` |
 | Share dialog's copy refused | `roadmap_verb` | `verb: share`, `step: copy`, `outcome: failed` |
@@ -218,6 +218,8 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, silently |
 | `roadmap-step-restore` | A Graph completion's Undo | The toast closes |
+| `roadmap-graph-undo` | A Graph toast's Undo reverting its receipt | The toast closes |
+| `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |
 | `roadmap-export` | Building or downloading this roadmap's export | `roadmap_export` `failed`, no file |
 | `roadmap-export-load` | Settings' Export all reading a roadmap | That roadmap's failure, by the rules of `roadmap-tree-load` |
 | `roadmap-tree-load` | The server answering 5xx or 200 with no tree, or a request lost while visible, online and still wanted | The load error |

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { LABELS, STEP_DETAIL, completedToast, deletedStepsToast } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('capabilitiesMark');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const phones = [320, 390];
@@ -144,3 +144,44 @@ for (const width of phones) {
     } finally { await page.close(); }
   });
 }
+
+hostTest('One kind rule: the desktop bar, the tablet panel and the phone Board offer the same kinds and ring the same one', async () => {
+  const fixture = { legend: true, broad: true };
+  const expected = ['Build', 'Learn', 'Sky', 'Gold', 'Brick', 'Plum'].map((label) => [label, label === 'Build']);
+
+  const desktop = await openHost({ width: 1440, ...fixture });
+  try {
+    await desktop.page.evaluate(() => window.scene.options.onSelectionToggle('knots'));
+    await desktop.page.locator('.st-detail-panel--open').waitFor();
+    await desktop.page.evaluate(() => window.scene.options.onSelectionToggle('dock'));
+    const swatches = desktop.page.locator('.st-selection-bar .st-step-swatch');
+    await swatches.first().waitFor();
+    assert.deepEqual(await swatches.evaluateAll((elements) => elements.map((element) => [element.title, element.classList.contains('st-step-swatch--current')])), expected);
+    assert.deepEqual(desktop.errors, []);
+  } finally { await desktop.page.close(); }
+
+  const tablet = await openHost({ width: 744, ...fixture });
+  try {
+    await tablet.page.evaluate(() => window.longPress('knots'));
+    const group = tablet.page.getByRole('group', { name: 'Recolor selected steps' });
+    await group.waitFor();
+    await tablet.page.evaluate(() => window.editTap(0, 0, 'dock'));
+    await tablet.page.getByRole('group', { name: '2 selected', exact: true }).waitFor();
+    assert.deepEqual(await group.getByRole('button').evaluateAll((elements) => elements.map((element) => [
+      element.getAttribute('aria-label').replace('Set kind to ', ''),
+      element.querySelector('span').style.boxShadow.includes('3px'),
+    ])), expected);
+    assert.deepEqual(tablet.errors, []);
+  } finally { await tablet.page.close(); }
+
+  const phone = await openHost({ width: 390, ...fixture, surface: 'board', touch: true });
+  try {
+    const from = await cardCenter(phone.page, 'knots');
+    await touchDrag(phone.page, from, from, { holdMs: 600 });
+    await phone.page.locator('.st-board-bulk').waitFor();
+    assert.deepEqual(await phone.page.locator('.st-board-bulk [role="radio"]').evaluateAll((elements) => elements.map((element) => [
+      element.textContent, element.getAttribute('aria-checked') === 'true',
+    ])), expected);
+    assert.deepEqual(phone.errors, []);
+  } finally { await phone.page.close(); }
+});

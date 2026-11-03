@@ -147,6 +147,13 @@ test('BoardColumns — the columns are one tab stop: the first Up next card, wit
   ]);
 });
 
+test('BoardColumns — a rail with nothing in it keeps its heading and offers no Show', () => {
+  const board = learnToSail();
+  board.done.cards = [];
+  const lines = outline({ board, band: 'tablet' });
+  assert.deepEqual(lines.slice(lines.indexOf('rail done')), ['rail done', '  heading Done, 0 steps']);
+});
+
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React, { useEffect, useMemo, useState, useRef } from 'react';
@@ -408,6 +415,28 @@ test('Chromium: on the desktop the arrow keys rove every card, Locked included, 
       await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(() => window.selected), 'parts');
       assert.equal(await page.locator('.st-board-card[aria-current="true"]').getAttribute('tabindex'), '0');
+    });
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: the arrow keys skip an empty rail, and its Show returns with the first completed step', async () => {
+  await ready;
+  const page = await openBoardPage({ viewport: { width: 900, height: 960 }, band: 'tablet', completed: [] });
+  try {
+    await withBrowserErrors(page, async () => {
+      assert.equal(await page.locator('.st-board-columns-show').count(), 0);
+      await page.locator('.st-board-card[tabindex="0"]').focus();
+      const visits = [];
+      for (const key of ['ArrowRight', 'ArrowLeft']) {
+        await page.keyboard.press(key);
+        visits.push(`${key} → ${await focused(page)}`);
+      }
+      assert.deepEqual(visits, ['ArrowRight → Choose a sailing course', 'ArrowLeft → Name the boat parts']);
+      await page.evaluate(() => window.complete('course'));
+      await page.getByRole('button', { name: 'Show Done' }).waitFor();
+      assert.equal(await page.locator('.st-board-columns-rail--done .st-board-columns-count').textContent(), '1');
     });
   } finally {
     await page.close();

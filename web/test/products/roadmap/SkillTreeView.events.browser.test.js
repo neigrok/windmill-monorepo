@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('events');
+startRoadmapHost();
 
 const events = (page, name) => page.evaluate((wanted) => window.events.filter((event) => event.name === wanted).map((event) => event.props), name);
 
@@ -102,8 +102,24 @@ hostTest('Chromium: Fork from the read-only notice names its door', async () => 
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } })));
     await page.getByRole('button', { name: /fork/i }).last().click();
     assert.deepEqual((await events(page, 'roadmap_verb')).filter((props) => props.door === 'notice'), [
-      { verb: 'fork', door: 'notice', view: 'board', band: 'desktop' },
+      { verb: 'fork', door: 'notice', view: 'graph', band: 'desktop' },
     ]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: ⌘Z and ⇧⌘Z say which they were, and a pasted plan names its door', async () => {
+  const { page, errors } = await openHost({ width: 1440, surface: 'tree' });
+  try {
+    await page.keyboard.press('Meta+z');
+    await page.keyboard.press('Meta+Shift+z');
+    assert.deepEqual(await events(page, 'roadmap_board_undo'), [{ act: 'undoKey' }, { act: 'redoKey' }]);
+    await page.evaluate(() => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', '# A plan\n- A step');
+      window.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true }));
+    });
+    assert.deepEqual(await events(page, 'roadmap_board_create'), [{ step: 'open', door: 'paste', view: 'graph' }]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

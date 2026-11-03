@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { illegalTargets, edgeFor } from './aim.js';
+import { GRAPH_TOAST } from '../../board/copy.js';
 
 // One surface at a time: bulk bar, then aim bar, then remove-link bar, then the selection editor.
 export function activeSurface({ multiMode, aim, removing, selectedNode }) {
@@ -10,10 +11,11 @@ export function activeSurface({ multiMode, aim, removing, selectedNode }) {
   return 'empty';
 }
 
-// The tablet owner's Graph: tap to connect, tap a link to remove it, hold to select several, and writes that say so in a toast.
-export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, collabRef, editorRef, selection, editing, showToast }) {
+// The tablet owner's Graph: tap to connect, tap a link to remove it, hold to select several. With no ⌘Z here, each write says
+// so in a toast whose Undo reverts it alone.
+export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing }) {
   const { multiMode, selectedIdRef, setSelectedId, enterMulti, toggleMember } = selection;
-  const { undo, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind } = editing;
+  const { announce, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind } = editing;
   const [aim, setAim] = useState(null); // { sourceId, direction: 'unlocks'|'needs' } | null
   const [removing, setRemoving] = useState(null); // { from, to } | null
 
@@ -24,35 +26,27 @@ export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selecte
 
   const removeLink = useCallback(() => {
     const { from, to } = removing;
-    handleDeleteEdge(from, to);
     setRemoving(null);
-    showToast('Link removed', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'AddEdge', from, to }) }, duration: 4000 });
-  }, [removing, handleDeleteEdge, showToast]);
+    announce(handleDeleteEdge(from, to), 'link_remove', GRAPH_TOAST.linkRemoved);
+  }, [removing, handleDeleteEdge, announce]);
 
+  // Naming a new step is part of adding it; only a real rename says so.
   const renameStep = useCallback((id, label) => {
-    const node = editorRef.current?.treeData.nodes.find((n) => n.id === id);
-    const wasNamed = node && node.label.trim() !== '' && node.label !== label;
-    handleRename(id, label);
-    if (wasNamed) showToast('Renamed', { action: { label: 'Undo', run: undo }, duration: 4000 });
-  }, [handleRename, showToast, undo]);
+    const named = projectionRef.current?.nodes.find((n) => n.id === id)?.label.trim();
+    const written = handleRename(id, label);
+    if (named) announce(written, 'rename', GRAPH_TOAST.renamed);
+  }, [handleRename, announce]);
 
   const recolorStep = useCallback((id, kind) => {
-    handleSetKind(id, kind);
-    showToast('Recolored', { action: { label: 'Undo', run: undo }, duration: 4000 });
-  }, [handleSetKind, showToast, undo]);
+    announce(handleSetKind(id, kind), 'recolor', GRAPH_TOAST.recolored);
+  }, [handleSetKind, announce]);
 
-  // The undo must delete THIS bud, not pop the stack: naming it dispatches a RenameNode on top.
   const addStepUnder = useCallback((parentId) => {
-    const newId = handleCreateChild(parentId);
-    if (!newId) return;
-    showToast('Step added', {
-      action: { label: 'Undo', run: () => {
-        collabRef.current?.dispatch({ kind: 'DeleteNode', id: newId });
-        if (selectedIdRef.current === newId) setSelectedId(null);
-      } },
-      duration: 4000,
+    const added = handleCreateChild(parentId);
+    announce(added, 'add', GRAPH_TOAST.stepAdded, () => {
+      if (selectedIdRef.current === added.id) setSelectedId(null);
     });
-  }, [handleCreateChild, showToast]);
+  }, [handleCreateChild, announce]);
 
   const enterAim = useCallback((sourceId) => {
     setRemoving(null);
@@ -75,10 +69,10 @@ export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selecte
         if (nodeId === null) { setAim(null); return; }
         if (illegalTargets(tree, aim.sourceId, aim.direction).has(nodeId)) return;
         const { from, to } = edgeFor(aim.sourceId, nodeId, aim.direction);
-        handleConnect(from, to);
+        const written = handleConnect(from, to);
         setAim(null);
         setSelectedId(aim.sourceId);
-        showToast('Linked', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'RemoveEdge', from, to }) }, duration: 4000 });
+        announce(written, 'link_add', GRAPH_TOAST.linked);
         return;
       }
       if (nodeId) { setRemoving(null); setSelectedId(nodeId); return; }
@@ -87,7 +81,7 @@ export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selecte
       setSelectedId(null);
     });
     return () => scene.setEditTap(null);
-  }, [scene, tabletEditor, multiMode, aim, tree, nodesById, handleConnect, showToast, setSelectedId, toggleMember]);
+  }, [scene, tabletEditor, multiMode, aim, tree, nodesById, handleConnect, announce, setSelectedId, toggleMember]);
 
   useEffect(() => {
     if (!scene) return undefined;

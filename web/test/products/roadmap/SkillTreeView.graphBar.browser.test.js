@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { DELETE_CONFIRM, EDIT_STEP, FORK_OFFER, OPEN_STEP, STEP_DETAIL, backTo, deletedToast } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('graphBar');
+startRoadmapHost();
 
 for (const width of [320, 390]) {
   for (const role of ['owner', 'reader', 'demo']) {

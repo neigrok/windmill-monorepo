@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { backTo, roadmapComplete } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('capabilitiesColumns');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const bothRoles = ['owner', 'reader'];

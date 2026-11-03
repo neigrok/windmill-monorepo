@@ -37,6 +37,7 @@ import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { hlcText } from '/src/products/roadmap/sync/lattice.js';
+import { GRAPH_TOAST, keptStepsToast } from '/src/products/roadmap/board/copy.js';
 import '/src/styles/global.css';
 const root = createRoot(document.getElementById('root'));
 const initialTree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
@@ -59,15 +60,15 @@ function Room() {
   });
   const [query, setQuery] = useState(() => new BoardQuery());
   const [quiet, setQuiet] = useState(0);
-  const { toast, showToast: displayToast, dismissToast, boardToastShown, boardToastRef } = useRoadmapToast();
+  const { toast, showToast: displayToast, dismissToast, dismissToastIf, toastShown } = useRoadmapToast();
   const showToast = (message, options) => {
     if (options.action?.label === 'Restore') window.restoreOffers.push(message);
     displayToast(message, options);
   };
-  const editorRef = useRef({ present: null });
-  const collabRef = { current: session };
+  const projectionRef = useRef(initialTree);
+  const sessionRef = { current: session };
   const maskedShownRef = useRef('');
-  const syncStructure = () => setTree(new SkillTree(editorRef.current.present));
+  const syncStructure = () => setTree(new SkillTree(projectionRef.current));
   const syncLegendFromTree = () => {};
   const setStranded = () => {};
   session.onTreeChanged(${treeHandlers[0]});
@@ -86,7 +87,7 @@ function Room() {
       return session.dispatch(gesture);
     } },
     showToast,
-    clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
+    clearBoardToast: () => dismissToastIf(() => true),
     emit: () => {},
     track: (name, props) => window.calls.push(['event', name, props]), report: (op) => window.calls.push(['report', op]),
     onQuiet: () => setQuiet((current) => current + 1), onReveal: () => {},
@@ -105,7 +106,7 @@ function Room() {
     React.createElement(BoardView, {
       tree: held ? held.projected(tree) : tree, ...progress, query, onQuery: setQuery, quiet,
       active, breakpoint: 'desktop', onSelect: () => {},
-      toast, onToastShown: (key) => { window.shownAt = Date.now(); boardToastShown(key); },
+      toast, onToastShown: (key) => { window.shownAt = Date.now(); toastShown(key); },
       onToastUndo: () => { toast.action.run(); dismissToast(); },
     }));
 }

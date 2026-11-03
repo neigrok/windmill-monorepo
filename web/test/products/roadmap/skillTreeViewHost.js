@@ -1,9 +1,11 @@
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { createServer } from 'vite';
+import { build } from 'vite';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { dirname, resolve } from 'node:path';
+import { createServer } from 'node:http';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, extname, join, resolve } from 'node:path';
 import { beacon } from './board/composerFixture.js';
 
 // The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
@@ -120,7 +122,8 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
-    this.suppressArrivalToast = () => { window.arrivalToastSilenced = true; };
+    this.setArrivalSummary = (summary) => { window.arrivalSummary = summary; };
+    this.suppressArrival = () => { window.arrivalSuppressed = true; };
     this.projectToScreen = () => ({ x: 20, y: 300 });
     this.zoomBy = (factor) => window.cameraCalls.push(['zoomBy', factor]);
     this.focusWorking = (id, opts) => { if (!opts?.instant) window.cameraCalls.push(['focusWorking', id]); };
@@ -147,45 +150,85 @@ export const useAuth = () => {
   return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, refresh };
 };
 `;
+const HOST_PLUGIN = { name: 'roadmap-host-contract-test', enforce: 'pre',
+  resolveId(id, importer) {
+    if (id === '/roadmap-host-entry.js') return '\0host-entry';
+    const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
+    if (file.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
+    if (file.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
+    if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
+    if (file.endsWith('/telemetry/beacon.js')) return '\0host-events';
+    if (file.endsWith('/telemetry/sentry.js')) return '\0host-issues';
+  },
+  load(id) {
+    if (id === '\0host-entry') return entry;
+    if (id === '\0host-scene') return scene;
+    if (id === '\0host-auth') return auth;
+    if (id === '\0host-signin') return 'const open = () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoor = () => open; export const useSignInDoorHost = () => () => {};';
+    if (id === '\0host-events') return beacon;
+    if (id === '\0host-issues') return 'export function captureError(product, operation, stack, route, tags) { window.issues.push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
+  },
+};
+
+// One development bundle per file, served from memory: a fresh browser context has no cache, so a dev server would answer
+// every module of the host again for every page a test opens.
+async function bundleHost() {
+  const { output } = await build({
+    configFile: false, root, logLevel: 'silent', mode: 'development', plugins: [HOST_PLUGIN],
+    build: {
+      write: false, minify: false, sourcemap: false, cssCodeSplit: false, modulePreload: false,
+      rollupOptions: { input: '/roadmap-host-entry.js', output: { entryFileNames: 'host-entry.js' } },
+    },
+  });
+  return new Map(output.map((file) => ['/' + file.fileName, file.type === 'chunk' ? file.code : file.source]));
+}
+
+const CONTENT_TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+
+function publicFile(pathname) {
+  const path = join(root, 'public', pathname);
+  return existsSync(path) && statSync(path).isFile() ? readFileSync(path) : null;
+}
+
+function hostPage(view, stylesheet) {
+  return '<!doctype html><meta name="viewport" content="width=device-width"><script>localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));</script>'
+    + `<link rel="stylesheet" href="${stylesheet}"><div id="root" style="height:100vh"></div><script type="module" src="/host-entry.js"></script>`;
+}
+
 export let origin;
 let server, browser, ready;
 let firstPage = true;
 
-export function startRoadmapHost(concern) {
+export function startRoadmapHost() {
   ready = (async () => {
-    server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-roadmap-host-${concern}-test`,
-      plugins: [{ name: 'roadmap-host-contract-test', enforce: 'pre',
-        resolveId(id, importer) {
-          if (id === '/roadmap-host-entry.js') return '\0host-entry';
-          const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
-          if (file.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
-          if (file.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
-          if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
-          if (file.endsWith('/telemetry/beacon.js')) return '\0host-events';
-          if (file.endsWith('/telemetry/sentry.js')) return '\0host-issues';
-        },
-        load(id) {
-          if (id === '\0host-entry') return entry;
-          if (id === '\0host-scene') return scene;
-          if (id === '\0host-auth') return auth;
-          if (id === '\0host-signin') return 'const open = () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoor = () => open; export const useSignInDoorHost = () => () => {};';
-          if (id === '\0host-events') return beacon;
-          if (id === '\0host-issues') return 'export function captureError(product, operation, stack, route, tags) { window.issues.push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
-        },
-        configureServer(server) {
-          server.middlewares.use('/roadmap-host-test', (request, response) => {
-            const params = new URL(request.url, 'http://localhost').searchParams;
-            const view = params.get('surface') ?? 'tree';
-            response.setHeader('Content-Type', 'text/html');
-            response.end('<!doctype html><meta name="viewport" content="width=device-width"><script>localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));</script><div id="root" style="height:100vh"></div><script type="module" src="/roadmap-host-entry.js"></script>');
-          });
-        },
-      }], optimizeDeps: { include: ['react', 'react-dom/client'] }, server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
-    await server.listen(0);
-    origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+    const files = await bundleHost();
+    const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
+    server = createServer((request, response) => {
+      const url = new URL(request.url, 'http://localhost');
+      if (url.pathname === '/roadmap-host-test') {
+        response.setHeader('Content-Type', 'text/html');
+        response.end(hostPage(url.searchParams.get('surface') ?? 'tree', stylesheet));
+        return;
+      }
+      const file = files.get(url.pathname) ?? publicFile(url.pathname);
+      if (!file) {
+        response.statusCode = 404;
+        response.end();
+        return;
+      }
+      response.setHeader('Content-Type', CONTENT_TYPES[extname(url.pathname)] ?? 'application/octet-stream');
+      response.end(file);
+    });
+    await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
+    origin = `http://127.0.0.1:${server.address().port}`;
     browser = await chromium.launch({ headless: true });
   })();
-  after(async () => { try { await ready; } finally { await browser?.close(); await server?.close(); } });
+  after(async () => {
+    try { await ready; } finally {
+      await browser?.close();
+      server?.close();
+    }
+  });
 }
 
 const runningTest = new AsyncLocalStorage();

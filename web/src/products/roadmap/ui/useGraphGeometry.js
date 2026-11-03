@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { GRAPH_CAMERA_SIZE } from './GraphChrome.jsx';
+import { FORK_PILL, GRAPH_CAMERA_SIZE } from './GraphChrome.jsx';
 import { graphToastPlacement, viewportInsets } from './viewport.js';
 
 // The space between a measured chrome row and what sits beneath it.
@@ -9,11 +9,17 @@ const FIRST_FRAME_REFRAME_MS = 1200;
 
 // Where everything over the canvas sits: what each piece of chrome measures of itself becomes the camera's insets, the
 // dock's seat, the refusal card's seat and the toast's clearance.
-export function useGraphGeometry({
-  breakpoint, phone, canvasView, boardActive, dockOpen, refusal, topbarBottom, graphChromeBottom, phoneGraphBottom,
-  scene, selectedId, renderModel, toastKey, tendOpen, legendVisible,
-  rootRef, identityRef, boardLayerRef, legendDockRef, insetsRef, firstFrameRef, graphRevealRef,
-}) {
+export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, forkPillShown, graphStepShown, scene, selectedId, renderModel, toastKey, tendOpen, legendVisible, anchors, framing }) {
+  const { rootRef, identityRef, boardLayerRef, legendDockRef } = anchors;
+  const { insetsRef, firstFrameRef, graphRevealRef } = framing;
+  const phone = breakpoint === 'phone';
+  const boardActive = !canvasView;
+  const [topbarBottom, setTopbarBottom] = useState(0);
+  const [graphChromeBottom, setGraphChromeBottom] = useState(0);
+  const [graphBarBottom, setGraphBarBottom] = useState(0);
+  let phoneGraphBottom = 0;
+  if (phone && canvasView && forkPillShown) phoneGraphBottom = FORK_PILL.bottom + FORK_PILL.height;
+  if (phone && canvasView && graphStepShown) phoneGraphBottom = graphBarBottom;
   const graphRefusalRef = useRef(null);
   const [graphRefusalHeight, setGraphRefusalHeight] = useState(0);
   const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
@@ -165,5 +171,8 @@ export function useGraphGeometry({
     };
   }, [phone, tendOpen, boardActive, topbarBottom]);
 
-  return { insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset };
+  return {
+    topbarBottom, setTopbarBottom, setGraphChromeBottom, setGraphBarBottom,
+    insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset,
+  };
 }

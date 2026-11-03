@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { ASK_AI_PLACEHOLDER, ROADMAP_SHEET, ROADMAP_VERBS, roadmapMatches, roadmapsHeading } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('capabilitiesPhone');
+startRoadmapHost();
 
 const phones = [320, 390];
 

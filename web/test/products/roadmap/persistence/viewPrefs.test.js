@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ViewPrefs, initialView, boardCanShow, viewToShow, stampBorn, peekBorn, clearBorn } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
+import { ViewPrefs, initialView, boardCanShow, viewToShow, stampBorn, peekBorn, clearBorn, notePlantedQuest, noteForked, takePlantNote } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
 
 function memoryStorage() {
   const map = new Map();
@@ -228,4 +228,26 @@ test('initialView returns the deciding door with the view in branch order', () =
     [{ saved: null, owner: false }, { view: 'tree', door: 'default' }],
   ];
   for (const [overrides, expected] of cases) assert.deepEqual(initialView({ ...base, ...overrides }), expected);
+});
+
+test('plant notes — each is read once, and a throwing storage reads as none', () => {
+  const storage = memoryStorage();
+  assert.deepEqual(takePlantNote(storage), { quest: false, forked: false });
+  notePlantedQuest(storage);
+  noteForked(storage);
+  assert.equal(storage.getItem('windmill:planted-quest'), '1');
+  assert.equal(storage.getItem('windmill:forked-from-demo'), '1');
+  assert.deepEqual(takePlantNote(storage), { quest: true, forked: true });
+  assert.deepEqual(takePlantNote(storage), { quest: false, forked: false });
+  noteForked(throwingStorage());
+  assert.deepEqual(takePlantNote(throwingStorage()), { quest: false, forked: false });
+});
+
+test('an email fork lands on its copy with the same note an instant fork leaves', async (t) => {
+  const storage = memoryStorage();
+  globalThis.sessionStorage = storage;
+  t.after(() => { delete globalThis.sessionStorage; });
+  const { roadmapRoutes } = await import('../../../../src/products/roadmap/routes.js');
+  assert.equal(roadmapRoutes.landingAfterSignIn('t_copy'), '#/app/t_copy');
+  assert.deepEqual(takePlantNote(storage), { quest: false, forked: true });
 });

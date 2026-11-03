@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { track } from '../../../telemetry/beacon.js';
 import { fetchTending, startTend, fetchRun } from './tendingClient.js';
 import { isTerminal, runFace } from './receipts.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
+import { LABELS, TEND_TOAST } from '../board/copy.js';
+import { track } from '../../../telemetry/beacon.js';
 
 const POLL_INTERVAL_MS = 1200;
 const POLL_CEILING_MS = 90000;  // ceiling before we stop watching
@@ -47,7 +49,7 @@ async function pollToRest(runId, aliveRef) {
 }
 
 // Ask AI in the room: who may use it, whether it is open, and the toast each answer leaves behind.
-export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, collabRef, sceneRef, showToast }) {
+export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, room: { sessionRef, sceneRef }, showToast }) {
   const [tendingEnabled, setTendingEnabled] = useState(false);
   const [tendOpen, setTendOpen] = useState(false);
   useEffect(() => {
@@ -59,11 +61,15 @@ export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, 
 
   const canTend = tendingEnabled && treeMine && !shared && !demo && !demotion;
 
+  // The run wrote on the server, so no local receipt names it; `created` is exactly what it planted.
   const undoTend = useCallback((planted) => {
-    if (!planted.length) return;
-    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] });
-    showToast('AI changes reverted');
-    track('roadmap_verb', { verb: 'askAI', step: 'undo' });
+    try {
+      if (!sessionRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] })) return;
+      track('roadmap_graph_toast', { act: 'tend', step: 'undo' });
+      showToast(TEND_TOAST.reverted, { surface: 'tend' });
+    } catch (error) {
+      reportRoadmapFailure('roadmap-tend-undo', error);
+    }
   }, [showToast]);
 
   const onTendFace = useCallback((face) => {
@@ -72,11 +78,12 @@ export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, 
     track('roadmap_verb', { verb: 'askAI', step: 'answer', outcome: face.kind });
     const isReceipt = face.kind === 'receipt';
     const hasUndo = isReceipt && face.created && face.created.length > 0;
-    if (hasUndo) window.setTimeout(() => sceneRef.current?.frameNodes(face.created), 600);
+    if (hasUndo) setTimeout(() => sceneRef.current?.frameNodes(face.created), 600);
     showToast(face.line, {
-      duration: isReceipt ? 6000 : 5000,
+      surface: 'tend',
+      holdMs: isReceipt ? 6000 : 5000,
       detail: isReceipt ? face.detail : undefined,
-      action: hasUndo ? { label: 'Undo', run: () => undoTend(face.created) } : undefined,
+      action: hasUndo ? { label: LABELS.undo, run: () => undoTend(face.created) } : undefined,
     });
   }, [showToast, undoTend]);
 

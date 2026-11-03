@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, origin, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('graph');
+startRoadmapHost();
 
 hostTest('Chromium: Next picks and reveals a Graph step; completion toast Undo restores its mark', async () => {
   const { page, errors } = await openHost();
@@ -93,8 +93,8 @@ for (const width of [744, 1440]) {
 }
 
 for (const width of [744, 1024, 1280, 1440]) {
-  for (const legacy of [false, true]) {
-    hostTest(`Chromium: Graph ${legacy ? 'legacy' : 'completion'} toast keeps its drawn width and clears panel, minimap and camera at ${width}px`, async () => {
+  for (const ceremony of [false, true]) {
+    hostTest(`Chromium: Graph ${ceremony ? 'ceremony' : 'completion'} toast keeps its drawn width and clears panel, minimap and camera at ${width}px`, async () => {
       const { page, errors } = await openHost({ width, height: 900, legend: true });
       try {
         await page.evaluate(() => document.fonts.ready);
@@ -104,14 +104,14 @@ for (const width of [744, 1024, 1280, 1440]) {
         await page.evaluate(() => window.scene.select('wind'));
         await page.locator('.st-detail-panel--open').waitFor();
         await page.clock.runFor(300);
-        if (legacy) {
+        if (ceremony) {
           await page.evaluate(() => window.scene.options.onCeremonyToast('Read the wind done · Leave the dock up next'));
         } else {
           await page.getByRole('button', { name: width < 1024 ? 'Mark done' : 'Complete', exact: true }).click();
           await page.locator('.st-graph-toast').waitFor();
         }
         await page.clock.runFor(300);
-        const selector = legacy ? '.st-toast' : '.st-graph-toast .st-board-toast';
+        const selector = '.st-graph-toast .st-board-toast';
         await page.locator(selector).waitFor();
         await page.waitForFunction((selector) => {
           const toast = document.querySelector(selector).getBoundingClientRect();
@@ -124,7 +124,7 @@ for (const width of [744, 1024, 1280, 1440]) {
         }, selector);
         const geometry = await page.locator(selector).evaluate((element) => {
           const box = element.getBoundingClientRect();
-          const message = element.querySelector('.st-board-toast-message, .st-toast-row > span');
+          const message = element.querySelector('.st-board-toast-message');
           const range = document.createRange();
           range.selectNodeContents(message);
           return { inCanvas: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
@@ -159,9 +159,9 @@ hostTest('Chromium: phone Graph toast clears the camera and selected-step bar fo
       await page.evaluate(() => window.scene.select('wind'));
       await page.locator('[data-graph-step-bar]').waitFor();
       await page.evaluate(() => window.scene.options.onCeremonyToast('A roadmap update'));
-      await page.locator('.st-toast').waitFor();
+      await page.locator('.st-graph-toast .st-board-toast').waitFor();
       await page.waitForFunction(() => {
-        const toast = document.querySelector('.st-toast').getBoundingClientRect();
+        const toast = document.querySelector('.st-graph-toast .st-board-toast').getBoundingClientRect();
         const camera = document.querySelector('.st-view-actions').getBoundingClientRect();
         const bar = document.querySelector('[data-graph-step-bar]').getBoundingClientRect();
         return toast.top >= camera.bottom && toast.bottom <= bar.top;

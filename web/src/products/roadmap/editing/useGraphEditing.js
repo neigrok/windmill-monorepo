@@ -1,9 +1,11 @@
-import { useCallback } from 'react';
-import { track } from '../../../telemetry/beacon.js';
-import { countBucket } from '../board/acts.js';
+import { useCallback, useEffect, useState } from 'react';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
+import { countBucket, receiptUndo } from '../board/acts.js';
+import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../board/copy.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
+import { track } from '../../../telemetry/beacon.js';
 
 const NEW_NODE_ICON = 'sparkles';
 
@@ -13,44 +15,76 @@ function trackEdit(changed) {
 }
 
 // Every write the Graph's own surfaces make: the scene's gestures, the docks and the tablet panel all come through here.
-export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legendRef, desktopEditorRef, selection, emit, showToast, setAutoFocusNameId, setComposerOpen }) {
-  const { selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
+// A write returns what `announce` needs to offer its own Undo, or null when the session took nothing.
+export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, emit, showToast }) {
+  const { sessionRef, projectionRef, sceneRef, treeRef } = room;
+  const { selectedId, selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
+  const [autoFocusNameId, setAutoFocusNameId] = useState(null);
 
-  const undo = useCallback(() => collabRef.current?.undo(), []);
-  const redo = useCallback(() => collabRef.current?.redo(), []);
+  useEffect(() => {
+    if (autoFocusNameId && selectedId !== autoFocusNameId) setAutoFocusNameId(null);
+  }, [selectedId, autoFocusNameId]);
+
+  const undo = useCallback(() => sessionRef.current?.undo(), []);
+  const redo = useCallback(() => sessionRef.current?.redo(), []);
+
+  const write = useCallback((gesture) => {
+    const session = sessionRef.current;
+    const receipt = session?.dispatch(gesture) ?? null;
+    return receipt && { session, receipt };
+  }, []);
+
+  const writeEdit = useCallback((gesture, changed) => {
+    const written = write(gesture);
+    if (written) trackEdit(changed);
+    return written;
+  }, [write]);
+
+  const announce = useCallback((written, act, message, onReverted) => {
+    if (!written) return;
+    showToast(message, {
+      surface: 'graph', act,
+      action: receiptUndo({
+        session: written.session,
+        receipt: written.receipt,
+        onReverted: () => {
+          onReverted?.();
+          track('roadmap_graph_toast', { act, step: 'undo' });
+        },
+        onFailure: (error) => reportRoadmapFailure('roadmap-graph-undo', error),
+      }),
+    });
+    track('roadmap_graph_toast', { act, step: 'shown' });
+  }, [showToast]);
 
   const handleRename = useCallback((id, label) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const node = editor.treeData.nodes.find((n) => n.id === id);
-    if (!node || node.label === label) return;
-    const wasNamed = node.label.trim() !== '';
-    collabRef.current?.dispatch({ kind: 'RenameNode', id, label });
-    if (wasNamed) emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
-    trackEdit({ name: true });
+    const node = projectionRef.current?.nodes.find((n) => n.id === id);
+    if (!node || node.label === label) return null;
+    const written = writeEdit({ kind: 'RenameNode', id, label }, { name: true });
+    if (written && node.label.trim() !== '') emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
+    return written;
   }, [emit]);
 
   const handleCreateChild = useCallback((parentId) => {
     const scene = sceneRef.current;
-    const editor = editorRef.current;
     const parent = scene?.nodesById.get(parentId);
-    if (!parent || !editor) return;
-
+    if (!parent || !projectionRef.current) return null;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId });
+    const written = write({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId });
+    if (!written) return null;
     scene.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
     emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
     track('roadmap_board_create', { step: 'saved', door: 'canvas', view: 'graph' });
-    return id;
+    return { id, ...written };
   }, [setSelectedId, emit]);
 
   const handleCreateRoot = useCallback(() => {
     if (!desktopEditorRef.current) return;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
     const color = legendRef.current[0]?.hue ?? 'terracotta';
-    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color });
+    if (!write({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color })) return;
     sceneRef.current?.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
@@ -58,31 +92,24 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     track('roadmap_board_create', { step: 'saved', door: 'empty', view: 'graph' });
   }, [emit, setSelectedId]);
 
-  const handleConnect = useCallback((sourceId, targetId) => {
-    collabRef.current?.dispatch({ kind: 'AddEdge', from: sourceId, to: targetId });
-    trackEdit({ prerequisites: true });
-  }, []);
+  const handleConnect = useCallback((sourceId, targetId) => writeEdit({ kind: 'AddEdge', from: sourceId, to: targetId }, { prerequisites: true }), []);
 
-  const handleDeleteEdge = useCallback((sourceId, targetId) => {
-    collabRef.current?.dispatch({ kind: 'RemoveEdge', from: sourceId, to: targetId });
-    trackEdit({ prerequisites: true });
-  }, []);
+  const handleDeleteEdge = useCallback((sourceId, targetId) => writeEdit({ kind: 'RemoveEdge', from: sourceId, to: targetId }, { prerequisites: true }), []);
 
   const handleReconnect = useCallback((oldFrom, oldTo, newFrom, newTo) => {
-    collabRef.current?.dispatch({ kind: 'ReconnectEdge', oldFrom, oldTo, newFrom, newTo });
-    trackEdit({ prerequisites: true });
+    writeEdit({ kind: 'ReconnectEdge', oldFrom, oldTo, newFrom, newTo }, { prerequisites: true });
   }, []);
 
   const deleteNodeAt = useCallback((id) => {
-    const editor = editorRef.current;
-    if (!editor || !id) return;
-    const node = editor.treeData.nodes.find((n) => n.id === id);
-    collabRef.current?.dispatch({ kind: 'DeleteNode', id });
+    const node = projectionRef.current?.nodes.find((n) => n.id === id);
+    if (!node) return;
+    const written = write({ kind: 'DeleteNode', id });
+    if (!written) return;
     if (selectedIdRef.current === id) setSelectedId(null);
-    showToast('Step deleted', { action: { label: 'Undo', run: undo } });
-    emit({ verb: 'removed', nodeId: id, label: node?.label, kind: node?.color });
+    announce(written, 'delete', GRAPH_TOAST.stepDeleted);
+    emit({ verb: 'removed', nodeId: id, label: node.label, kind: node.color });
     track('roadmap_board_delete', { step: 'sent', via: 'direct', view: 'graph' });
-  }, [emit, showToast, undo]);
+  }, [emit, announce]);
   const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
 
   // Labels must be snapshotted BEFORE dispatch: the projection drops the doomed nodes synchronously.
@@ -90,22 +117,19 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     const ids = [...selectedIdsRef.current];
     const edges = [...selectedEdgesRef.current].map(parseEdgeKey); // {from,to}
     if (!ids.length && !edges.length) return;
-    const nodes = editorRef.current?.treeData.nodes ?? [];
+    const nodes = projectionRef.current?.nodes ?? [];
     const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
-    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: ids, edges });
+    const written = write({ kind: 'BulkDelete', nodeIds: ids, edges });
+    if (!written) return;
     for (const node of doomed) emit({ verb: 'removed', nodeId: node.id, label: node.label, kind: node.color });
     leaveMulti();
-    const parts = [];
-    if (ids.length) parts.push(`${ids.length} step${ids.length === 1 ? '' : 's'}`);
-    if (edges.length) parts.push(`${edges.length} link${edges.length === 1 ? '' : 's'}`);
-    showToast(`${parts.join(' and ')} deleted`, { action: { label: 'Undo', run: undo } });
+    announce(written, 'delete', deletedSelectionToast({ steps: ids.length, links: edges.length }));
     track('roadmap_board_bulk', { step: 'delete', count: countBucket(ids.length), view: 'graph' });
-  }, [emit, showToast, undo, leaveMulti]);
+  }, [emit, announce, leaveMulti]);
 
   const handleSetKind = useCallback((id, kind) => {
-    if (!id) return;
-    collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
-    trackEdit({ kind: true });
+    if (!id) return null;
+    return writeEdit({ kind: 'SetNodeColor', id, color: kind }, { kind: true });
   }, []);
 
   // Same-parent siblings in sort order with their order keys; null off-tree.
@@ -120,25 +144,23 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
   }, []);
 
   const handleSetNodeOrder = useCallback((id, order) => {
-    if (!id) return;
-    collabRef.current?.dispatch({ kind: 'SetNodeOrder', id, order });
-    trackEdit({ order: true });
+    if (id) writeEdit({ kind: 'SetNodeOrder', id, order }, { order: true });
   }, []);
 
   const bulkRecolor = useCallback((color, { silent = false } = {}) => {
     const ids = [...selectedIdsRef.current];
     if (!ids.length) return;
-    collabRef.current?.dispatch({ kind: 'BulkRecolor', nodeIds: ids, color });
-    if (!silent) showToast(`${ids.length} step${ids.length === 1 ? '' : 's'} recolored`, { action: { label: 'Undo', run: undo } });
-    track('roadmap_board_bulk', { step: 'recolor', count: countBucket(ids.length), view: 'graph' });
-  }, [showToast, undo]);
+    const written = write({ kind: 'BulkRecolor', nodeIds: ids, color });
+    if (!silent) announce(written, 'recolor', recoloredToast({ count: ids.length }));
+    if (written) track('roadmap_board_bulk', { step: 'recolor', count: countBucket(ids.length), view: 'graph' });
+  }, [announce]);
 
-  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed.
+  // Whether the plan has landed, or had nothing to land. onTreeChanged re-lays out synchronously, so grafted nodes are
+  // seated before they are pulsed.
   const graftImported = useCallback((parse) => {
-    const editor = editorRef.current;
-    const collab = collabRef.current;
-    if (!editor || !collab) return;
-    const nodes = editor.treeData.nodes;
+    const nodes = projectionRef.current?.nodes;
+    const session = sessionRef.current;
+    if (!nodes || !session) return false;
     const selected = selectedIdRef.current;
     const anchored = selected && nodes.some((node) => node.id === selected);
     const targetId = (anchored ? selected : nodes.find((node) => node.prerequisites.length === 0)?.id) ?? null;
@@ -146,27 +168,26 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     const graft = graftPlan({
       parse,
       targetId,
-      reservedNodeIds: collab.knownNodeIds(), // present AND tombstoned: never resurrect a deleted node
+      reservedNodeIds: session.knownNodeIds(), // present AND tombstoned: never resurrect a deleted node
       liveKinds: legendRef.current,
     });
-    if (graft.nodes.length === 0) { setComposerOpen(false); return; }
+    if (graft.nodes.length === 0) return true;
 
-    collab.dispatch({ kind: 'ImportSubgraph', nodes: graft.nodes, edges: graft.edges, kinds: graft.kinds });
+    const written = write({ kind: 'ImportSubgraph', nodes: graft.nodes, edges: graft.edges, kinds: graft.kinds });
+    if (!written) return false;
 
     for (const grafted of graft.nodes) {
       emit({ verb: 'added', nodeId: grafted.id, label: grafted.label, kind: grafted.color }, { silent: true });
       sceneRef.current?.pulseNode(grafted.id);
     }
-    const count = graft.nodes.length;
-    const targetLabel = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
-    const where = targetLabel ? ` under “${targetLabel}”` : '';
-    showToast(`Added ${count} step${count === 1 ? '' : 's'}${where}`, { action: { label: 'Undo', run: undo } });
-    setComposerOpen(false);
-    track('roadmap_board_create', { step: 'saved', door: 'paste', view: 'graph', count: countBucket(count) });
-  }, [emit, showToast, undo]);
+    const under = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
+    announce(written, 'graft', graftedToast({ count: graft.nodes.length, under }));
+    track('roadmap_board_create', { step: 'saved', door: 'paste', view: 'graph', count: countBucket(graft.nodes.length) });
+    return true;
+  }, [emit, announce]);
 
   return {
-    undo, redo, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
+    autoFocusNameId, undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
     deleteNodeAt, deleteSelected, bulkDelete, handleSetKind, reorderContext, handleSetNodeOrder, bulkRecolor, graftImported,
   };
 }

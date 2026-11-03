@@ -36,7 +36,7 @@ test('every event the roadmap emits has its row in OBSERVABILITY.md, and every r
 });
 
 test('every Sentry operation the roadmap reports has its row in OBSERVABILITY.md, and every row still reports', () => {
-  const reported = namesIn(code, /'(roadmap-(?:board|identity|step|export|tree|load|fork|share|sync)(?:-[a-z]+)*)'/g);
+  const reported = namesIn(code, /'(roadmap-[a-z]+(?:-[a-z]+)*)'/g);
   const documented = namesIn(failuresTable, /^\| `(roadmap-[a-z-]+)` \|/gm);
   assert.deepEqual(reported, documented);
 });

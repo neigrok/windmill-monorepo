@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Icon } from '../../../../design-system';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
+import { KIND_CSS } from '../../theme.js';
 import { GraphDock } from '../GraphChrome.jsx';
 import { TabletEditor } from './TabletEditor.jsx';
 
@@ -124,10 +124,6 @@ function RemoveLinkBar({ onRemove, onCancel }) {
   );
 }
 
-function cap(hue) {
-  return hue.charAt(0).toUpperCase() + hue.slice(1);
-}
-
 const bulkShell = {
   display: 'flex',
   flexDirection: 'column',
@@ -183,8 +179,7 @@ const deleteButton = {
   cursor: 'pointer',
 };
 
-function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete, onDone }) {
-  const legendKinds = kinds.length > 0 ? kinds : Object.keys(KIND_CSS).map((h) => ({ id: h, hue: h }));
+function BulkBar({ count, choice, onRecolor, onDelete, onDone }) {
   const plural = count === 1 ? '' : 's';
   return (
     <div style={{ ...bulkShell, width: '100%' }} role="group" aria-label={`${count} selected`}>
@@ -194,11 +189,11 @@ function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="group" aria-label="Recolor selected steps">
-        {legendKinds.map((kind) => (
+        {choice.kinds.map((kind) => (
           <button
             key={kind.id}
             type="button"
-            aria-label={`Set kind to ${kind.label || cap(kind.hue)}`}
+            aria-label={`Set kind to ${kind.label}`}
             style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: 0, background: 'none', cursor: 'pointer' }}
             onClick={() => onRecolor(kind.hue)}
           >
@@ -207,8 +202,8 @@ function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete
                 width: 34,
                 height: 34,
                 borderRadius: '50%',
-                background: (KIND_CSS[kind.hue] ?? KIND_CSS[DEFAULT_NODE_COLOR]).base,
-                boxShadow: kind.hue === ringedKind ? '0 0 0 3px var(--text-primary)' : '0 0 0 1px var(--border-default)',
+                background: KIND_CSS[kind.hue].base,
+                boxShadow: kind.hue === choice.shared ? '0 0 0 3px var(--text-primary)' : '0 0 0 1px var(--border-default)',
               }}
             />
           </button>
@@ -223,12 +218,12 @@ function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete
   );
 }
 
-export function TabletPanel({ tablet, open, top, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, kinds, autoFocusName, isRoot, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, recolorKinds, ringedKind, onBulkRecolor, onBulkDelete, onBulkDone }) {
+export function TabletPanel({ tablet, open, top, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, kinds, autoFocusName, isRoot, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, bulkChoice, onBulkRecolor, onBulkDelete, onBulkDone }) {
   const { surface, aim } = tablet;
   return (
     <GraphDock open={open} top={top} tablet tenant={surface === 'editor' ? selectedNode.id : surface}>
       {surface === 'bulk' && (
-        <BulkBar count={selectedCount} kinds={recolorKinds} ringedKind={ringedKind} onRecolor={onBulkRecolor} onDelete={onBulkDelete} onDone={onBulkDone} />
+        <BulkBar count={selectedCount} choice={bulkChoice} onRecolor={onBulkRecolor} onDelete={onBulkDelete} onDone={onBulkDone} />
       )}
       {surface === 'aim' && (
         <AimBar sourceLabel={nodesById.get(aim.sourceId)?.label} direction={aim.direction} onToggleDirection={tablet.flipAimDirection} onCancel={() => tablet.setAim(null)} />

@@ -5,7 +5,7 @@ import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { EDIT_STEP, FORK_OFFER, OPEN_STEP, PICKER, STEP_DETAIL } from '../../../src/products/roadmap/board/copy.js';
 import { DEMO_COPY } from '../../../src/products/roadmap/demo/demoStage.js';
 
-startRoadmapHost('capabilitiesPhoneGraph');
+startRoadmapHost();
 
 const phones = [320, 390];
 
