@@ -41,7 +41,7 @@ jobs:
       - run: npm ci
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: node scripts/install-sync-browser.mjs
 
       - name: Walk the site
         env:

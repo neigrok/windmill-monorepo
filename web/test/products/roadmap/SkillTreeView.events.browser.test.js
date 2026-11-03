@@ -95,3 +95,15 @@ hostTest('Chromium: the roadmap switcher reports the same steps the phone sheet 
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+hostTest('Chromium: Fork from the read-only notice names its door', async () => {
+  const { page, errors } = await openHost({ width: 1440 });
+  try {
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } })));
+    await page.getByRole('button', { name: /fork/i }).last().click();
+    assert.deepEqual((await events(page, 'roadmap_verb')).filter((props) => props.door === 'notice'), [
+      { verb: 'fork', door: 'notice', view: 'board', band: 'desktop' },
+    ]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

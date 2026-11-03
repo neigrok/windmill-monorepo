@@ -147,7 +147,7 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Bulk act on the Graph | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+`, `view: graph` |
 | Workspace in the step page or modal | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskDelete/linkAdd/linkDelete/noteSave/noteDiscard/undo` |
 | Workspace in the Graph's dock | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskEdit/subtaskDelete/linkAdd/linkDelete/noteSave`, `surface: dock` |
-| A verb on the identity row | `roadmap_verb` | `verb: askAI/share/newStep/fork/find/next/more`, `door: row`, `view: board/graph`, `band: phone/tablet/desktop` |
+| A verb on the identity row | `roadmap_verb` | `verb: askAI/share/newStep/fork/find/next/more`, `door: row`, `view: board/graph`, `band: tablet/desktop` |
 | A verb in More | `roadmap_verb` | `verb: askAI/share/activity/export/settings/shortcuts`, `door: more`, `view: board/graph`, `band: tablet/desktop` |
 | A verb in the roadmap sheet | `roadmap_verb` | `verb: askAI/share/activity/export/settings`, `door: sheet`, `view: board/graph`, `band: phone` |
 | A and ⌘K | `roadmap_verb` | `verb: activity/askAI`, `door: key`, `view: board/graph`, `band: tablet/desktop` |
@@ -237,6 +237,6 @@ page. Session expiry, including the 20-second account poll, keeps device work an
 
 A render failure with no boundary of its own, an uncaught error and an unhandled rejection go through `reportError`: it
 sends `client_error` with `kind`, `route` and scrubbed `message` and `stack`, and a Sentry report of that `kind` with the
-scrubbed message. These carry the exception's own text.
+scrubbed message. These carry the exception's own text, and on `#/app/<id>` the roadmap's id in `route`.
 
 `scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer.
