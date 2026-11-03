@@ -22,7 +22,7 @@ const MINIMAP = { width: 186, height: 146 };
 const LEGEND_CORNER = { left: 24, bottom: 24 + 196 };
 const CAMERA_GUTTER = 24;
 
-export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false, sheetHeight = 0, laneInset = 0, barBottom = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
+export function viewportInsets({ breakpoint, dockOpen = false, laneInset = 0, barBottom = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
   if (breakpoint === 'desktop') {
     const right = dockOpen ? DESKTOP.dock : DESKTOP.margin;
     const blocks = [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox)];
@@ -43,7 +43,6 @@ export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false
     };
   }
   const bottom = Math.max(
-    sheetOpen ? sheetHeight + PHONE.sheetGutter : 0,
     laneInset + PHONE.laneGutter,
     barBottom > 0 ? barBottom + PHONE.sheetGutter : 0,
   );

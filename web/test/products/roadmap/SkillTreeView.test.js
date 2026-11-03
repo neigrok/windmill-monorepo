@@ -267,7 +267,7 @@ function completionHost({ gate = true, offer = null, restoreError = null } = {})
   const origin = {};
   const scope = {
     document: { activeElement: origin },
-    BOARD_OPEN: gate, identityActive: gate, canvasView: true, layerActive: false,
+    BOARD_OPEN: gate, identityActive: gate, canvasView: true, boardActive: false,
     tree, boardTree: tree, nodesById: tree.nodesById, completed, completedAt,
     advanceProgress, progressChanges, completedToast, LABELS, demo: false,
     setCompleted: (value) => calls.push(['completed', [...value]]),

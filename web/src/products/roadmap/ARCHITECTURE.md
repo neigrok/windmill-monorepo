@@ -65,8 +65,8 @@ roadmaps and the keyboard-aware search/New roadmap footer. `roadmapSearch.js` ow
 trimmed title match and highlight offsets in the original text after Unicode lowercasing.
 Identity menus share keyboard and outside-dismiss rules through `BoardControls`. More and What's next
 share a focus-leave dismissal rule that keeps focus on its destination. `TreeSwitcher`
-owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by the row, sheet,
-cards and List.
+owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by the row, sheet
+and cards.
 Export builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`,
 using the same download edge as the settings archive. Exported Markdown carries a
 `<!-- windmill:roadmap -->` marker: its title is metadata, and every step, including each root,
@@ -177,8 +177,7 @@ scroll, and moving and pending cards remain rendered through virtualization. Und
 Undo of Reset, dims in place for 280ms without a wake. User focus or pointer interaction ends a card's
 wake; programmatic reveal focus preserves it. Equivalent Board rerenders preserve the running quiet phase.
 
-`gestures.js` owns the phone card's reveal-only swipe, independent of the List gesture. Only Up next
-cards offer it. The card preserves vertical scrolling, leaves the OS edge alone, claims a horizontal
+`gestures.js` owns the phone card's reveal-only swipe. Only Up next cards offer it. The card preserves vertical scrolling, leaves the OS edge alone, claims a horizontal
 drag after 10px within 30 degrees, tracks to 96px and resists beyond it. Release settles open or closed
 and never completes. A real Complete button follows the card in DOM order; Tab reveals it, and Escape
 or leaving focus closes it. Crossing the threshold offers one 8ms haptic where supported.
@@ -186,10 +185,10 @@ or leaving focus closes it. Crossing the threshold offers one 8ms haptic where s
 On an active owner phone Board, a 500ms touch hold within 10px starts pane-scoped selection.
 Board and Graph share the pure `input/HoldGesture.js` recognizer; their adapters own timers and
 preserve their movement boundaries (Board cancels at 10px, Graph above 10px).
-The List retains its own recognizer. `HoldGesture` and `SwipeGesture` cancel each other on claim;
+`HoldGesture` and `SwipeGesture` cancel each other on claim;
 scroll and pointer cancellation stop the hold, and its release never opens a step. Holding survives
 unrelated renders; card callbacks keep their identities. `BoardView` mounts `useStepSelection`, which owns selection, history and focus
-transitions separately from the Graph/List multi-select. Its current immutable `StepSelection` reads
+transitions separately from the Graph multi-select. Its current immutable `StepSelection` reads
 the filtered pane and permanently drops choices that leave it. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion
 and the step menu.
 
@@ -241,12 +240,12 @@ the overview's status row; subtasks never complete it. The ⋯ menu copies the s
 plus its step) only while the roadmap is public or unlisted, opens the step in the Graph, and offers
 Delete to an owner unless the step is the roadmap's sole root. That rule reads the projected tree.
 Delete first confirms in an anchored desktop popover or phone sheet. Its cost line counts the step's
-children through `acts.deletionCost`, matching the Graph and List; it does not count newly spliced edges.
+children through `acts.deletionCost`, matching the Graph; it does not count newly spliced edges.
 Confirm closes the detail and creates a `HeldDelete`, with no structural write yet. For its nine-second
 Undo window, Board surfaces read the held projection: cards, counts, identity, topbar, detail
 and composer. A delete from Graph detail uses the same hold and projects it into the Graph. `SkillTree.without` and eventual `BulkDelete` share `respliceEdges`. Every structural delete
-retires the deleted steps' incident edges in that same stamped gesture, including Graph and List
-deletes, so those local edges cannot raise the masked-work Restore offer after a reload.
+retires the deleted steps' incident edges in that same stamped gesture, including Graph deletes,
+so those local edges cannot raise the masked-work Restore offer after a reload.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one
 held delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner
@@ -322,7 +321,7 @@ Board, excluding covered, hidden and leaving elements. The shared `KindChoice` l
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |
 | `persistence/` | HTTP repository, account tree registry and device preferences/ledgers. |
-| `ui/`, `ui/tree/`, `ui/mobile/`, `list/` | Canvas chrome, step details, phone editing and the outline view. |
+| `ui/`, `ui/tree/`, `ui/mobile/` | Canvas chrome, step details and tablet Graph editing. |
 | `selection/`, `shortcuts/` | Multi-selection rules and the shared keyboard map. |
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors. |
 | `paste/`, `quests/`, `demo/` | Import grammar/composition, authored starter trees and the playable demo. |

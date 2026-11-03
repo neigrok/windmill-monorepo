@@ -1918,7 +1918,7 @@
   }
 }
 
-/* ---- View layers: the phone list, and the Board while its gate is open, cross-fade over the still-mounted canvas and stay mounted once shown. The list never shows above 743px; the Board shows on every band. ---- */
+/* ---- View layer: the Board cross-fades over the still-mounted canvas and stays mounted once shown, on every band. ---- */
 .st-canvas--layer {
   transition: opacity 240ms var(--ease-standard);
 }
@@ -1927,30 +1927,10 @@
   inset: 0;
   z-index: 18; /* above the canvas, below the mobile chrome (z20) */
 }
-/* The hidden list goes visibility:hidden after the fade so nothing in it stays focusable or hit-testable; the delay holds it visible for the 240ms fade-out. */
-.st-view-layer--list {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  background: var(--surface-canvas);
-  transition: opacity 240ms var(--ease-standard), visibility 0s 240ms;
-}
-.st-view-layer--list.is-active {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition: opacity 240ms var(--ease-standard), visibility 0s 0s;
-}
-/* Re-assert the cross-fade past the global reduce rule, the visibility delay included, or the hidden layer flips focusable on the wrong beat. */
+/* Re-assert the cross-fade past the global reduce rule. */
 @media (prefers-reduced-motion: reduce) {
   .st-canvas--layer {
     transition: opacity 240ms var(--ease-standard) !important;
-  }
-  .st-view-layer--list {
-    transition: opacity 240ms var(--ease-standard), visibility 0s 240ms !important;
-  }
-  .st-view-layer--list.is-active {
-    transition: opacity 240ms var(--ease-standard), visibility 0s 0s !important;
   }
 }
 

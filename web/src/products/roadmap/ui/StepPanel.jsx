@@ -291,7 +291,7 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
 }
 
 // onJump eases the camera to that node and retargets in place.
-function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, onMarkComplete, onJump, onClose = noop, fill = false }) {
+function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, onMarkComplete, onJump, onClose = noop }) {
   if (!node) return null;
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
@@ -300,7 +300,7 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
   const showChip = state === 'complete' || state === 'locked';
 
   return (
-    <Card style={{ ...(fill ? { height: '100%' } : { maxHeight: '70vh' }), display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+    <Card style={{ maxHeight: '70vh', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       <div className="st-step-pinned">
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minHeight: 34 }}>
         <SheetStateFruit state={state} hue={hue} />
@@ -313,7 +313,7 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
             Mark it done
           </Button>
         )}
-        {!fill && <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />}
+        <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />
       </div>
       </div>
 

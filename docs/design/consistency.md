@@ -591,10 +591,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   *Link copied*. When the browser refuses the clipboard write the build shows nothing, since no drawing
   covers it; the Share dialog's inline *Could not copy the link* has no menu equivalent. Draw the
   failure.
-- **Board · swipe commit.** The shipped List commits a swipe on release past 72px
-  (`SWIPE_COMMIT_PX` in `list/editing.js`). The Board card swipe reveals Complete at 96px and never
-  commits on release or a full swipe; only a tap on Complete does (phone 17.03 378:16515, swipe spec
-  379:17279). The two must not share the commit-on-release path.
 - **Board · Shell at 200% text.** The 200%-text Board specimen (phone 18.05 380:18803) leaves out
   the Shared Shell: neither the proposal's Shell component (290:7085) nor the shipped
   `web/src/shell/chrome/chrome.css` (room-switcher pills at a fixed 30px height with
@@ -720,8 +716,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **1e · Available-node treatment.** The DOM specimen draws a card-coloured available node;
   `NodeBatch.js` paints available and complete with saturated fills, distinguishing complete with a
   halo. Choose one treatment and align shader and specimen.
-- **F20 · Unstyled classes.** Audit `.st-list-bud`, `.st-list-jump-chip` and `.st-action-lane`
-  against their stylesheet consumers; remove empty hooks that have no styling or test role.
 - **F32 · Quest roster icons.** An optional `node.icon` can leave an empty reserved glyph well.
   Give the roster a fallback or remove the unused well.
 - **F50 · Marketing silhouettes.** The app uses bubble layout; `marketing/treeScenes.js` and

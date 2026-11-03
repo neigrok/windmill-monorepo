@@ -23,10 +23,9 @@ for (const breakpoint of ['desktop', 'tablet', 'phone']) {
     assert.deepEqual({
       deviceLine: html.includes('board-device-line'),
       fork: html.includes('Fork this tree'),
-      legacyNotice: html.includes('st-list-notice'),
       complete: html.includes('st-board-swipe-complete'),
       create: html.includes('New step'),
-    }, { deviceLine: breakpoint === 'phone', fork: breakpoint === 'phone', legacyNotice: false, complete: false, create: false });
+    }, { deviceLine: breakpoint === 'phone', fork: breakpoint === 'phone', complete: false, create: false });
   });
 }
 

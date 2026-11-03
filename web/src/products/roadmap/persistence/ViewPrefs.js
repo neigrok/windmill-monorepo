@@ -3,7 +3,6 @@
 
 const LAST_VIEW_KEY = 'windmill:view:last';
 const VIEWS = ['list', 'board', 'tree'];
-const FOLDED_KEY = 'windmill:view:folded';
 
 export class ViewPrefs {
   constructor(storage = window.localStorage) {
@@ -19,17 +18,6 @@ export class ViewPrefs {
     const map = this.readMap(LAST_VIEW_KEY);
     map[treeId] = view;
     this.writeMap(LAST_VIEW_KEY, map);
-  }
-
-  foldedSections(treeId) {
-    const folded = this.readMap(FOLDED_KEY)[treeId];
-    return Array.isArray(folded) ? folded : [];
-  }
-
-  setFoldedSections(treeId, headIds) {
-    const map = this.readMap(FOLDED_KEY);
-    map[treeId] = headIds;
-    this.writeMap(FOLDED_KEY, map);
   }
 
   readMap(key) {

@@ -12,9 +12,6 @@ test('insets follow the breakpoint and the chrome that is up', () => {
   assert.deepEqual(viewportInsets({ breakpoint: 'tablet', laneInset: 64 }), { top: 156, right: 12, bottom: 80, left: 12, blocks: [] });
   assert.deepEqual(viewportInsets({ breakpoint: 'tablet', dockOpen: true }), { top: 156, right: 368, bottom: 16, left: 12, blocks: [] });
   assert.deepEqual(viewportInsets({ breakpoint: 'phone', laneInset: 64 }), { top: 156, right: 12, bottom: 80, left: 12, blocks: [] });
-  // The lifted action lane rides above an open sheet: the band clears whichever reaches higher, never just the sheet.
-  assert.deepEqual(viewportInsets({ breakpoint: 'phone', sheetOpen: true, sheetHeight: 300, laneInset: 64 }), { top: 156, right: 12, bottom: 312, left: 12, blocks: [] });
-  assert.deepEqual(viewportInsets({ breakpoint: 'phone', sheetOpen: true, sheetHeight: 60, laneInset: 200 }), { top: 156, right: 12, bottom: 216, left: 12, blocks: [] });
 });
 
 test('the corner chrome holds is a block, not an inset: the legend joins the minimap once it has a measured box', () => {
@@ -69,8 +66,8 @@ test('the identity row replaces the top inset and the camera block clears the op
     top: 104, right: 368, bottom: 16, left: 12,
     blocks: [{ right: 368, bottom: 24, width: 248, height: 50 }],
   });
-  assert.deepEqual(viewportInsets({ breakpoint: 'phone', rowBottom: 104, cameraBlock, sheetOpen: true, sheetHeight: 300 }), {
-    top: 104, right: 12, bottom: 312, left: 12, blocks: [],
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', rowBottom: 104, cameraBlock }), {
+    top: 104, right: 12, bottom: 16, left: 12, blocks: [],
   });
 });
 
@@ -80,9 +77,6 @@ test('the phone Graph clears the measured selected-step bar with its safe area a
   });
   assert.deepEqual(viewportInsets({ breakpoint: 'phone', rowBottom: 108, barBottom: 0 }), {
     top: 108, right: 12, bottom: 16, left: 12, blocks: [],
-  });
-  assert.deepEqual(viewportInsets({ breakpoint: 'phone', barBottom: 124, sheetOpen: true, sheetHeight: 300 }), {
-    top: 156, right: 12, bottom: 312, left: 12, blocks: [],
   });
 });
 

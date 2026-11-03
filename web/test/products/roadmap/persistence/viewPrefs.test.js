@@ -39,47 +39,29 @@ test('ViewPrefs — a view this device does not know reads as no choice', () => 
   assert.equal(new ViewPrefs(storage).lastView('t1'), null);
 });
 
-test('ViewPrefs — folded sections round-trip per tree and default to empty', () => {
+test('ViewPrefs — a later write keeps the earlier tree', () => {
   const prefs = new ViewPrefs(memoryStorage());
-  assert.deepEqual(prefs.foldedSections('t1'), []);
-
-  prefs.setFoldedSections('t1', ['a', 'b']);
-  prefs.setFoldedSections('t2', ['c']);
-  assert.deepEqual(prefs.foldedSections('t1'), ['a', 'b']);
-  assert.deepEqual(prefs.foldedSections('t2'), ['c']);
-  assert.deepEqual(prefs.foldedSections('t3'), []);
-});
-
-test('ViewPrefs — the two slots do not collide, and a later write keeps the earlier tree', () => {
-  const storage = memoryStorage();
-  const prefs = new ViewPrefs(storage);
 
   prefs.setLastView('t1', 'list');
-  prefs.setFoldedSections('t1', ['a']);
   prefs.setLastView('t2', 'tree');
 
   assert.equal(prefs.lastView('t1'), 'list');
   assert.equal(prefs.lastView('t2'), 'tree');
-  assert.deepEqual(prefs.foldedSections('t1'), ['a']);
 });
 
 test('ViewPrefs — a garbage slot reads as empty rather than throwing', () => {
   const storage = memoryStorage();
   storage.setItem('windmill:view:last', '{ not json');
-  storage.setItem('windmill:view:folded', '["stray-array"]');
   const prefs = new ViewPrefs(storage);
 
   assert.equal(prefs.lastView('t1'), null);
-  assert.deepEqual(prefs.foldedSections('t1'), []);
 });
 
 test('ViewPrefs — a throwing storage never throws and reads as empty', () => {
   const prefs = new ViewPrefs(throwingStorage());
 
   assert.equal(prefs.lastView('t1'), null);
-  assert.deepEqual(prefs.foldedSections('t1'), []);
   assert.doesNotThrow(() => prefs.setLastView('t1', 'list'));
-  assert.doesNotThrow(() => prefs.setFoldedSections('t1', ['a']));
   assert.equal(prefs.lastView('t1'), null);
 });
 
