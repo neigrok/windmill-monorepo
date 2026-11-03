@@ -129,6 +129,7 @@ export const roadmapRoutes = {
     // The module the boot preloads this room from (scripts/appBoot.js), checked by test/shell-boundaries.
     module: 'src/products/roadmap/index.js',
     scope: { theme: null, brand: 'roadmap' },
+    sharedShell: true,
     status: 'open',
     landingHref: '/roadmap',
     HomeCard,

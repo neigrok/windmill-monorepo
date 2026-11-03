@@ -137,18 +137,30 @@ a.wm-switch-btn:hover {
 }
 
 @media (max-width: 743px) {
+  .wm-head.wm-head--shared {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-inline: 16px;
+  }
+
   .wm-head.wm-head--status {
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
+  .wm-head--shared .wm-switch-btn[aria-current='page'] {
+    background: transparent;
+  }
+
+  .wm-head--shared .wm-head-mark,
   .wm-head--status .wm-head-mark {
     display: none;
   }
 
+  .wm-head--shared .wm-switch,
   .wm-head--status .wm-switch {
     justify-self: start;
   }
 
+  .wm-head--shared .wm-switch-btn,
   .wm-head--status .wm-switch-btn {
     padding-inline: 6px;
     font-size: 12px;
@@ -181,6 +193,10 @@ a.wm-switch-btn:hover {
 @media (max-width: 359px) {
   .wm-room-status {
     width: 44px;
+  }
+
+  .wm-head--shared .wm-room-status {
+    margin-right: 5px;
   }
 
   .wm-room-status-compact {

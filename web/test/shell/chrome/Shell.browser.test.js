@@ -20,10 +20,12 @@ window.publish = (status) => {
   window.statusLease.publish(status);
   return () => { window.statusLease.release(); window.statusLease = null; };
 };
-createRoot(document.getElementById('root')).render(React.createElement(Shell, {
-  location: { pathname: '/app', hash: '', search: '' },
-  neutral: { Component: () => React.createElement('button', { id: 'outside' }, 'Outside') },
-}));
+const outside = () => React.createElement('button', { id: 'outside' }, 'Outside');
+const sharedRoom = { id: 'roadmap', label: 'Roadmap', shell: { scope: { theme: null, brand: 'roadmap' }, sharedShell: true },
+  render: () => ({ Component: outside, props: {} }), home: () => '' };
+createRoot(document.getElementById('root')).render(React.createElement(Shell, location.search.includes('shared')
+  ? { location: { pathname: '/', hash: '#/demo', search: '' }, roomProduct: sharedRoom }
+  : { location: { pathname: '/app', hash: '', search: '' }, neutral: { Component: outside } }));
 `;
 let server, browser, origin;
 const ready = (async () => {
@@ -106,6 +108,51 @@ for (const width of [1440, 744, 390, 320]) {
     });
   });
 }
+
+for (const width of [390, 320]) {
+  test(`a Shared Shell room with no status draws no mark, the links from the edge and Sign in at the far end at ${width}`, async (t) => {
+    await visit(t, width, async (page) => {
+      assert.deepEqual(await page.evaluate(() => {
+        const nav = document.querySelector('.wm-switch').getBoundingClientRect();
+        const home = document.querySelector('.wm-switch-btn').getBoundingClientRect();
+        const signIn = document.querySelector('.wm-head-sign-in').getBoundingClientRect();
+        return {
+          mark: getComputedStyle(document.querySelector('.wm-head-mark')).display,
+          navLeft: nav.left,
+          linkPadding: getComputedStyle(document.querySelector('.wm-switch-btn')).paddingInlineStart,
+          homeHeight: home.height,
+          activeFill: getComputedStyle(document.querySelector('.wm-switch-btn[aria-current="page"]')).backgroundColor,
+          signInRight: signIn.right,
+          clear: nav.right <= signIn.left,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          slots: document.querySelectorAll('.wm-room-status').length,
+          liveRegions: document.querySelectorAll('[role="status"]').length,
+        };
+      }), { mark: 'none', navLeft: 16, linkPadding: '6px', homeHeight: 30, activeFill: 'rgba(0, 0, 0, 0)', signInRight: width - 16, clear: true, overflow: false, slots: 0, liveRegions: 0 });
+    }, '?ghost&shared');
+  });
+}
+
+for (const width of [390, 320]) {
+  test(`a Shared Shell room's status keeps its links clear and its seat inside the page at ${width}`, async (t) => {
+    await visit(t, width, async (page) => {
+      await page.evaluate((status) => window.publish(status), offline);
+      await page.locator('.wm-room-status').waitFor();
+      assert.deepEqual(await page.evaluate(() => {
+        const nav = document.querySelector('.wm-switch').getBoundingClientRect();
+        const slot = document.querySelector('.wm-room-status').getBoundingClientRect();
+        const seat = document.querySelector('.wm-head-seat').getBoundingClientRect();
+        return { navLeft: nav.left, clear: nav.right <= slot.left, seatRight: seat.right, overflow: document.documentElement.scrollWidth > innerWidth };
+      }), { navLeft: 16, clear: true, seatRight: width - 16, overflow: false });
+    }, '?shared');
+  });
+}
+
+test('from 744 a Shared Shell room keeps the mark it shares with every room', async (t) => {
+  await visit(t, 744, async (page) => {
+    assert.equal(await page.locator('.wm-head-mark').evaluate((element) => getComputedStyle(element).display), 'flex');
+  }, '?ghost&shared');
+});
 
 test('the icon tooltip closes after four seconds, a second tap, and an outside tap', async (t) => {
   await visit(t, 320, async (page) => {

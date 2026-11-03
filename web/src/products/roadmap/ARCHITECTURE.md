@@ -95,7 +95,9 @@ panel and legend. Phone Graph toasts hold the bottom slot, above the selected-st
 refusal card. Created steps reveal after the scene receives their model and the selected-step
 panel's insets.
 Share links and the demo mount inside the roadmap room's Shell (`inRoom` on the route's answer), keeping
-their URLs; the Shell is their way home and their Sign in. On the phone Graph, a single selected
+their URLs; the Shell is their way home and their Sign in. The roadmap room registers `sharedShell`, so
+on a phone every role gets the drawn Shared Shell: no mark, the room links from the 16px edge with the
+active room in bold alone, and *Sign in* in words when signed out. On the phone Graph, a single selected
 step shows a bottom bar with its title and derived state. Owners open its step page from Open step;
 readers and the demo open it from the title and keep Fork as the primary action. The detail opens
 over the Graph, and Back preserves selection. Its Edit step uses the shared composer. The bar
@@ -454,7 +456,8 @@ is visible; phones show the short form where supplied. Registered phone rooms re
 slot and keep the mark hidden throughout the visit, so status changes do not move navigation.
 Desktop rooms reserve the status width across idle and populated states. Phone device-only rooms
 keep an empty publication for the Sign in seat, with their device text below the identity row.
-Rooms without a publisher keep the existing header. Below 360px Saving and Saved are announced
+Readers and the demo publish nothing: on phones `sharedShell` alone gives them the same links and seat, with no
+slot, and the global offline notice stays theirs. Rooms without either keep the existing header. Below 360px Saving and Saved are announced
 only, and Offline uses a named icon button. Its controlled design-system Tooltip opens below the
 slot for four seconds, until another tap, an outside tap or Escape. The button has one accessible
 name; the tooltip does not repeat it as a description.

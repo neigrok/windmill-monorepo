@@ -693,23 +693,26 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   from 744px and in the tappable Device note below the identity on both phone views. The phone
   Graph camera clears the measured note.
 - **Board · single offline notice.** Approved 03.17 shows the room's Offline signal without the global
-  notice. The global notice yields only to an explicitly offline room publication; a device-only
-  line does not hide connectivity. Rooms without an Offline publication retain the global notice.
+  notice. The global notice yields to any room registered for status, idle or device-only included, so
+  a device-only room shows no Offline signal while offline. Readers, the demo and rooms without a
+  publisher retain the global notice.
 - **Board · the drawings of what the lift retired.** The List, the phone editor sheet, the phone aim, remove-link and
   bulk bars, ControlBar and the Next up shelf left the product with the Board's lift. Their Web Mobile and Web boards
   (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*, *List vocabulary*, and the Next up states
   in *05 · Progress and feedback*) still stand in Figma. Delete them and their index rows when the lift ships.
-- **Board · mobile Shell mark.** The approved mobile Shell omits the mark. A roadmap room registered for status (an
-  owner signed in or on this device) keeps that layout while idle, Saving, Saved or Offline, with space reserved for
-  the longest compact status. Readers and the demo publish no status, so their phone Shell keeps the mark, as journal
-  and gym do; the reader frames (04.02, 04.06) draw it without. Draw or rule the reader's Shell.
+- **Board · Shell from 744.** Every role's frames from 744 ([04.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12955),
+  [04.06](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12775), 04.09 · 744) draw the Shared Shell's
+  room links from the left edge, with no mark and no fill on the active room. The built head keeps the mark, fills the
+  active room and centres the links beside the mark and seat, so a room registered for status holds them further left
+  than a reader's or the demo's. Journal, gym and Home share that head. Rule whether roadmap takes the drawn head from
+  744 alone. Phones already wear it in every roadmap room; journal, gym and Home keep the mark there.
 - **Board · arrival toast.** [Motion language](guidelines/motion-language.md) §7 ends the paste arrival on "Roadmap
   planted · N steps". An owner's fresh tree opens on the frontier, which skips the arrival, so that sentence never
   plays on a plant from the paste door. Readers and owners reloading on the Graph play the arrival without it. Rule
   whether a fresh plant plays the arrival.
 - **Demo · coach card on a phone.** [P4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=64-2) draws the
   card beside its step with an arrow. At phone width neither side fits, so the card seats under its step, or over it
-  near the bottom, with no arrow. Draw the phone seat.
+  near the bottom and clear of the Fork pill and selected-step bar, with no arrow. Draw the phone seat.
 - **Design System · Dialog close target.** The shared `Dialog` close control is 28×28 with a 14px
   glyph; the approved [04.03 Fork dialog](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-29874)
   and the other dialog frames draw ✅ Close at 44×44 with a 20px glyph. Align the shared control and
