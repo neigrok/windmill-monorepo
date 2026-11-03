@@ -119,14 +119,44 @@ test('initialView — with the Board open, the owner opens on the Board and the 
   assert.equal(initialView({ saved: null, owner: false, empty: false, boardOpen: true }), 'tree');
 });
 
-test('initialView — with the Board open, a saved choice wins and a saved List becomes the Board', () => {
+test('initialView — with the Board open, an owner keeps the saved choice and a reader opens the Graph', () => {
   assert.equal(initialView({ saved: 'tree', owner: true, empty: false, boardOpen: true }), 'tree');
-  assert.equal(initialView({ saved: 'board', owner: false, empty: false, boardOpen: true }), 'board');
+  assert.equal(initialView({ saved: 'board', owner: false, empty: false, boardOpen: true }), 'tree');
   assert.equal(initialView({ saved: 'list', owner: true, empty: false, boardOpen: true }), 'board');
 });
 
 test('initialView — with the Board closed, a saved Board becomes the List', () => {
   assert.equal(initialView({ saved: 'board', owner: false, empty: false, boardOpen: false }), 'list');
+});
+
+test('initialView — readers with the Board open land on the Graph for every saved choice unless a step link opens the Board', () => {
+  for (const saved of [null, 'tree', 'list', 'board']) {
+    assert.deepEqual([
+      initialView({ saved, owner: false, empty: false, boardOpen: true }),
+      initialView({ saved, owner: false, empty: false, boardOpen: true, linkedStep: 'wind' }),
+    ], ['tree', 'board']);
+  }
+});
+
+test('initialView — gate-closed choices retain all ownership, empty, birth, link and first-step combinations', () => {
+  for (const owner of [false, true]) {
+    for (const empty of [false, true]) {
+      for (const born of [false, true]) {
+        for (const linkedStep of [null, 'wind']) {
+          for (const canAddFirstStep of [false, true]) {
+            const results = [null, 'tree', 'list', 'board'].map((saved) => initialView({
+              saved, owner, empty, born, linkedStep, canAddFirstStep, boardOpen: false,
+            }));
+            if (empty || born) {
+              assert.deepEqual(results, ['tree', 'tree', 'tree', 'tree']);
+              continue;
+            }
+            assert.deepEqual(results, [owner ? 'list' : 'tree', 'tree', 'list', 'list']);
+          }
+        }
+      }
+    }
+  }
 });
 
 test('initialView — with the Board open, an empty or just-born tree still opens on the canvas', () => {

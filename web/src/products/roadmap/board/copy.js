@@ -379,3 +379,15 @@ export function draftLine({ step }) {
 export const WORKSPACE_EMPTY = { body: 'Add something for this step.', addNote: 'Add note' };
 export const NEW_LINK = { title: 'New link' };
 export const HISTORY_EMPTY = 'No changes yet';
+
+export const REFUSED_CAPACITY = { title: 'This roadmap is at its limit.', body: 'This change can’t sync.' };
+
+export function refusedSyncBody({ count }) {
+  if (count > 1) return `Couldn’t sync ${formatCount(count)} changes.`;
+  return REFUSED_SYNC.body;
+}
+
+export function discardChanges({ count }) {
+  if (count > 1) return `Discard ${formatCount(count)} changes`;
+  return REFUSED_SYNC.discard;
+}
