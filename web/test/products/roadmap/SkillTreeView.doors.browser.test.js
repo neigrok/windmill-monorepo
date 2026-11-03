@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, origin, startRoadmapHost } from './skillTreeViewHost.js';
 import { ASK_AI_PLACEHOLDER, DEMO_BYLINE, FORK_OFFER, LINK_COPIED, ROADMAP_SHEET, ROADMAP_VERBS } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('doors');
+startRoadmapHost();
 
 for (const [role, demo] of [['owner', false], ['reader', false], ['reader', true]]) {
   hostTest(`Chromium: view-open is once per visit for ${demo ? 'demo' : role}`, async () => {

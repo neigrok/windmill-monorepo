@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { LABELS } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('undo');
+startRoadmapHost();
 
 const steps = (page) => page.evaluate(() => Object.fromEntries(window.session.lattice.toTreeData().nodes
   .map(({ id, label, color, prerequisites }) => [id, { label, color, prerequisites: [...prerequisites] }])));

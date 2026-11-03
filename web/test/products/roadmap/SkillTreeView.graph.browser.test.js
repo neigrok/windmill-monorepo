@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, origin, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('graph');
+startRoadmapHost();
 
 hostTest('Chromium: Next picks and reveals a Graph step; completion toast Undo restores its mark', async () => {
   const { page, errors } = await openHost();

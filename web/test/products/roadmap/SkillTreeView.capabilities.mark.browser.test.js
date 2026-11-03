@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { LABELS, STEP_DETAIL, completedToast, deletedStepsToast } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('capabilitiesMark');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const phones = [320, 390];

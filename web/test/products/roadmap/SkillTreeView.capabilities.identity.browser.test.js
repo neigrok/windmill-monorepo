@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('capabilitiesIdentity');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const bothRoles = ['owner', 'reader'];

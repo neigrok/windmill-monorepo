@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { COMPOSER, EDIT_STEP, LABELS, PICKER, STEP_DETAIL } from '../../../src/products/roadmap/board/copy.js';
 
-startRoadmapHost('capabilitiesEdit');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 
