@@ -1,4 +1,4 @@
-# Web sync observability
+# Web observability
 
 The browser engine injects telemetry through `syncTelemetry`. Its defaults send events through
 `src/telemetry/beacon.js` and technical failures through `src/telemetry/sentry.js`. A telemetry failure
@@ -79,149 +79,164 @@ server answers 4xx (400, 401, 404, 409, 422) and `failed` on a 5xx, a network lo
 Only `failed` reports to Sentry, under the static operation `gym-coach-routine-confirm`. No routine name, movement,
 conversation, question, identifier or server text is reported.
 
-Roadmap's Board/Graph switch emits `roadmap_view_switch` with only `view` (`board` or `graph`) when a reader
-switches. The first resolved view of each roadmap visit emits
-`roadmap_view_open` with `view` (`board` or `graph`), `band` (`phone`, `tablet` or `desktop`),
-`role` (`owner`, `reader` or `demo`) and `door` (`saved`, `default`, `link`, `empty` or `born`),
-returned by the same `initialView` branch that chose the view. Below 744px the Board's column tabs emit `roadmap_board_column`
-with only `column` (`locked`, `upNext` or `done`) when a reader picks another column; the column a Board opens on, or
-moves to because a step was selected elsewhere, emits nothing. From 744px to 1023px Show on the Board's rail emits
-`roadmap_board_rail` with only `column` (`locked` or `done`, the column the reader stands) when a reader presses it;
-a rail swapped because a selected step sat in it emits nothing. Show all on a folded Done emits `roadmap_board_done_expand`
-with only `band` (`phone`, `tablet` or `desktop`) when a reader presses it; Done unfolding to reveal a selected step emits
-nothing. A press on an action of the Board's states emits
-`roadmap_board_state_action` with only `state` and `action`: `error` with `retry` (Try again after a failed load),
-`empty` with `newStep`, and `complete` with `share` or `newStep`. A state showing emits nothing. The Board's controls
-emit only what a reader changes: `roadmap_board_sort` with only `sort` (`roadmap`, `newest` or `oldest`) when another
-order is picked from the menu or a phone's order chip is removed; `roadmap_board_filter` with only `count` (the kinds now
-on, 0–6) when a kind swatch, All or a phone's kind chip changes the kinds; `roadmap_board_search` with no properties when
-a search is committed (Enter, or leaving the field with a new search), never the text; `roadmap_board_clear` with only
-`what` (`search`, `kinds` or `both`) and `from` (`field` for × or Escape in *Find a step*, `empty` for an emptied column's
-way out, `sheet` for the filter sheet's Clear filters); `roadmap_board_branch` with only `action` (`anchor` when the
-branch scope's title returns to its step, `clear` for its ×); and `roadmap_board_menu` with only `menu` (`sort` or
-`filter`) when the sort menu or a phone sheet opens. Dismissing a menu, a sheet or a re-pick of the order in force emits
-nothing, and no kind name, step, title or search text is reported. Opening a step from the Board emits `roadmap_board_step_open` with only `surface` (`modal` or `page`), `column` (`locked`, `upNext` or `done`) and
-`door` (`card`, `graph` for the selected-step bar, `activity` for a touch Activity row, `step` for a row inside another step, or `link` for a step link the page arrived at, including Back or Forward into a roadmap whose address names a step);
-moving back to a step already open within the same visit emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
-and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
-(which also emits `roadmap_view_switch`), `viewBranch`, `delete`, `edit`, `editNote`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
-write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
-static Sentry operation `roadmap-board-step` with its stack frames and closes it.
+## Roadmap
 
-Board completion emits `roadmap_board_complete` with `door` (`swipe` or `key`), and toast Undo emits
-`roadmap_board_undo` with `act` (`complete`, `create`, `delete` or `recolor`). Tapping completion or creation toast text emits
-`roadmap_board_toast_reveal` with `act` (`complete` or `create`). Delete emits `roadmap_board_delete` with `step`
-(`confirm`, `cancel`, `held` or `sent`) and `view` (`board` or `graph`); `held` carries `door` (`menu`, `key` or `bulk`), and `sent` occurs only when release returns a dispatch receipt and also carries `via`
-(`timer`, `replaced` or `left`). The step-menu `delete` action continues to mean that its menu item was pressed.
-Opening the composer emits `roadmap_board_create` with `step: open` and `door` (`verbs`, `band`, `empty` or
-`complete`) and `view` (`board` or `graph`); the identity row's New step button uses `door: verbs`. A successful create emits
-`step: saved`, `column` (`locked` or `upNext`) and boolean `filterCleared`.
-The composer also emits `roadmap_board_create` with `step` (`failed`, `retry`, `discard` or `cancel`). The picker
-emits `roadmap_board_picker` with `mode` (`create` or `edit`) and `step` (`open`, `apply`, `cancel`, `more` or `revalidated`); only `apply` carries `count`, bucketed
-as `0`, `1`, `2-5`, `6-20` or `21+`. With zero candidates the Prerequisites row opens no picker and
-emits no event. These events carry no step ids, names, descriptions, queries or kinds.
-Phone selection emits `roadmap_board_select` with `step: start`, or `step: end` and `via`
-(`done`, `back`, `acted`, `emptied` or `left`). Revealing its kinds emits `roadmap_board_bulk` with
-`step: kinds`; an applied bulk act carries `step` (`recolor` or `delete`) and `count` in the same
-buckets as the picker. Re-picking the shared kind closes only the kinds row, retains selection,
-writes nothing and emits no bulk act, toast or selection-end event. A refused recolor also keeps
-selection open and emits no acted selection end; null receipts remain expected, not Issues.
-Edit emits `roadmap_board_edit` with `step` (`failed`, `retry`, `discard`, `cancel` or `unchanged`);
-a saved edit emits `step: saved` and booleans `name`, `description`, `kind` and `prerequisites` for
-changed fields. Opening the workspace note editor emits the step action `editNote`, including Add note.
-Workspace emits `roadmap_board_workspace` with only `action`: `subtaskAdd`, `subtaskToggle`,
-`subtaskDelete`, `linkAdd`, `linkDelete`, `noteSave` for a changed note saved through workspace actions,
-`noteDiscard` for confirming Discard draft, and `undo` for the phone checked toast. Saving an unchanged
-note writes nothing and emits no `noteSave`. System Back or remote detail closure silently drops the
-draft and emits no `noteDiscard`. These local workspace paths add no Sentry operation: render failures
-reach `roadmap-board-step`, composer render failures reach `roadmap-board-composer`, and edit-save
-exceptions reach `roadmap-board-edit`.
-Opening shortcut help emits `roadmap_shortcuts_open` with only `view`
-(`board` or `graph`). These events never carry note text, subtask labels, link URLs, ids or hues.
-A recolor or edit dispatch exception, or a missing session on an editable owner Board, reports
-`roadmap-board-recolor` or `roadmap-board-edit`, respectively. Null receipts are expected no-ops,
-not Issues. Edit has no toast; recolor Undo reverts its receipt and regroups quietly.
-A create exception or missing session on an editable owner surface reports `roadmap-board-create`; a not-ready
-session is an expected failed-create event, not an Issue. An unexpected held delete release exception
-restores the projected step silently and reports `roadmap-board-delete`. A null receipt (already absent or not ready)
-is an expected no-op and reports no Issue. A composer render crash reports
-`roadmap-board-composer`. Reports use static operation names and stack frames only. Every local structural write (dispatch, targeted revert, Undo, Redo and tree rename)
-contains post-apply notification, storage and transport exceptions under `roadmap-sync-notify`,
-`roadmap-sync-persist` and `roadmap-sync-send`, respectively. Those writes retain their receipt because their lattice
-change has already applied; persistence or transport failure marks durability at risk.
+Every event and Sentry operation below fires in production for every reader, on every band. The Board is the only path
+into a roadmap; nothing stands in front of it. Properties are allowlisted, bounded labels: no title, step or roadmap id,
+kind name, search text, email or server sentence enters them. `demo_open`'s `treeId` is the one constant the bundle ships.
 
-The identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, `newStep`, `export`,
-`settings`, `shortcuts`, `fork`, `more`, `activity`, `next` or folded-icon `find`), `door` (`row`, `more`, `offer`,
-`bar`, `key` or `sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
-sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new`, `search` or `browse`), or
-`step: close` and `via` (`close`, `escape` or `scrim`). Search emits once per opening that receives
-a typed query, never its text; the pinned New roadmap button adds `door: search` to `step: new`.
-Activity entry uses `roadmap_verb` with `verb: activity` and `door: more` or `sheet`. The phone
-sheet emits it only when its Activity page opens; a missing slot exposes no entry. What's next emits `roadmap_whats_next` with `step: open`,
-then either `pick` or `close`; focus leaving the popover emits `close`, and a pick does not also emit close. Each event's `count` uses the value captured
-on opening, in `countBucket`'s allowlisted `0`, `1`, `2-5`, `6-20` or `21+` buckets. No user content
-enters these events.
-Export emits `roadmap_export` with `outcome` (`done` or `failed`) and `door` (`more` or `sheet`).
-A missing projection or displayed tree emits `failed` without an Issue.
-A Graph search handing off to the Board emits `roadmap_graph_find` with `step: handoff`.
-Graph toast outcomes emit `roadmap_graph_toast` with `act` (`complete`, `create`, `delete` or `link`) and
-`step` (`shown` or `undo`). The Graph detail menu uses the shared nine-second held delete and
-its Undo cancels that hold; `roadmap_board_delete` distinguishes the originating view throughout
-confirmation, hold and release. Successful reader Share emits `link_copy` with no properties;
-a clipboard refusal emits `roadmap_graph_toast` with `act: link` and `outcome: failed`, without
-a share-funnel beacon or Issue. Identity render failures report `roadmap-identity`. The selected-step
-bar sits outside that boundary; a bar render failure reaches the room handler. Unexpected
-export build/download failures report `roadmap-export`; a Graph completion Undo failure reports
-`roadmap-step-restore`. All use static operation names and stack frames. Other restore and revert
-failures retain their existing operations. None of these events carries titles, ids, search text or roadmap names. State-word
-copy and focus-ring changes emit no new events.
+`test/products/roadmap/observability.test.mjs` fails when a roadmap event name or Sentry operation in the code is missing
+from these tables, or a name in the tables is missing from the code.
 
-The sync status emits `roadmap_sync_offline` with `step` (`shown` or `cleared`) once per
-offline episode and `pending` bucketed through `countBucket`. These counts exclude server-confirmed
-records being rebaselined. An online discard rebaseline emits no offline episode or Saved state.
-Saving and Saved emit nothing.
-Refusals emit `roadmap_sync_refused` with `step` (`shown`, `retry` or `discard`), `lane`
-(`structure` or `progress`) and `code` (`tree-too-large`, `bad-frame`, `no-such-tree`,
-`server-error` or `other`). Shown fires once for the refused frame, including across re-flushes.
-Discard fires only after the session confirms a successful discard.
-Refused count copy uses pending user gestures; counts remain local and are not event properties.
-The device line emits `roadmap_device_line` with `step: shown` once per visit, `line`
-(`anonymous` or `lapsed`) and `place` (`row` or `shell`); tapping its phone row emits
-`step: sign_in`. The phone reader Board's Fork offer emits `roadmap_verb` with `verb: fork`,
-`door: offer`, `view: board` and `band: phone`. The phone Graph bar's Fork emits the same event with `door: bar`, `view: graph` and `band: phone`.
-From 744px Activity's A key emits `roadmap_verb` with `verb: activity` and `door: key`; on
-phones A does nothing. Ask AI retains its
-existing verb and tending outcomes. The demo uses reader row events, while `demo_open` is
-unchanged. The existing `fork_attempt` and `fork_claim` retain their meanings.
-Session expiry, including the 20-second account poll, retains device work and reaches the lapsed
-line. It is an expected auth outcome, not an Issue. Unexpected account refresh failures report
-`auth-session` with a real stack. Explicit sign-out and account replacement retain their cleanup.
+### Events
 
-Unexpected refused codes (`bad-frame`, `server-error` and unknown codes) report
-`roadmap-sync-refused` once per code per session. Capacity and
-missing-tree refusals are expected and emit no Issue. Unexpected discard failures report
-`roadmap-sync-discard`. Refusal product events remain tied to the
-visible surfaces. Refusal Issues include the bounded refusal code as a tag, and deduplication
-keeps different codes distinct. An epoch-notification failure after the discard transaction commits
-reports `roadmap-sync-notify` without turning the successful discard into a failure. A discard
-projection callback failure also reports `roadmap-sync-notify` without stranding the discard or
-its reconnect. An IndexedDB
-epoch-check failure before a structure or progress write send reports `roadmap-sync-send` and
-retains the pending bank. Reports carry static operation names and call-site
-stacks; events never carry titles, identifiers, raw counts, server reasons or user content. The existing sync failure
-operations retain their meanings.
-The room registration keeps the Shell live region mounted while its status is idle and suppresses
-the global offline notice before paint. Anonymous and lapsed device rooms keep that registration.
-The shared controlled Tooltip and these presentation changes emit no additional product events;
-the existing offline shown/cleared events describe the connectivity episode.
+Each row is one exact shape: `key: a/b/c` allows those values, `key?:` may be absent, and — means no properties. A count
+named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 
-A render failure inside the Board reports the static Sentry operation `roadmap-board` with its stack frames (file, line, column and function name only),
-drops the Board and shows the Graph; choosing Board on the switch tries it again. Loading a roadmap reports to Sentry:
-`HttpTreeRepository` reports the static operation `roadmap-tree-load` when the server answers 5xx, answers 200
-with something that is not a tree (an app shell a proxy served, say), or the request is lost while the page is visible,
-the browser believes it is online and the roadmap is still wanted. It stays silent on a refusal (4xx), a request lost
-offline or behind a hidden page, and a load aborted because the roadmap was left. Any other failure that stops the load,
-except a tree neither the server nor this device has, reports `roadmap-load` with its stack frames (file, line, column
-and function name only). Settings' Export all reads each server roadmap through the same repository under its own static
-operation, `roadmap-export-load`, by the same rules. No tree, step, title, identifier, status text or exception message
-is reported.
+| Step | Event | Allowlisted props |
+|---|---|---|
+| Open a roadmap, first resolved view of the visit | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born` |
+| Switch Board and Graph | `roadmap_view_switch` | `view: board/graph` |
+| Phone column tab | `roadmap_board_column` | `column: locked/upNext/done` |
+| Tablet rail's Show | `roadmap_board_rail` | `column: locked/done` |
+| Done's Show all | `roadmap_board_done_expand` | `band: phone/tablet/desktop` |
+| Commit a search (Enter, or leaving the field) | `roadmap_board_search` | — |
+| Clear a search or filter | `roadmap_board_clear` | `what: search/kinds/both`, `from: field/empty/sheet` |
+| Search on the Graph hands off to the Board | `roadmap_graph_find` | `step: handoff` |
+| Change the kinds | `roadmap_board_filter` | `count: 0/1/2/3/4/5/6` |
+| Change the order | `roadmap_board_sort` | `sort: roadmap/newest/oldest` |
+| Open the sort menu or a phone sheet | `roadmap_board_menu` | `menu: sort/filter` |
+| Branch scope's title or × | `roadmap_board_branch` | `action: anchor/clear` |
+| A state's action | `roadmap_board_state_action` | `state: error`, `action: retry` |
+| A state's action | `roadmap_board_state_action` | `state: empty`, `action: newStep` |
+| A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
+| Open a step | `roadmap_board_step_open` | `surface: modal/page`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
+| Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote` |
+| Step section | `roadmap_board_step_action` | `surface: modal/page`, `action: section`, `section: overview/workspace/history` |
+| Copy a step's link | `roadmap_board_step_action` | `surface: modal/page`, `action: copyLink`, `outcome: ok/failed` |
+| Reset from the Graph's dock or tablet panel | `roadmap_board_step_action` | `surface: dock/panel`, `action: reset` |
+| Complete by swipe, C, the dock, the tablet panel or the demo's coach | `roadmap_board_complete` | `door: swipe/key/dock/panel/coach` |
+| Complete from the Graph's selection bar | `roadmap_board_complete` | `door: bulk`, `count: 0/1/2-5/6-20/21+` |
+| Board toast's Undo; ⌘Z and ⇧⌘Z pressed | `roadmap_board_undo` | `act: complete/create/delete/recolor/undoKey/redoKey` |
+| Tap a completion or creation toast's text | `roadmap_board_toast_reveal` | `act: complete/create`, `view?: graph` |
+| Graph toast shown or undone | `roadmap_graph_toast` | `act: complete/create/delete`, `step: shown/undo` |
+| Undo on the generic toast: a Graph edit, a paste or an Ask AI answer | `roadmap_graph_toast` | `act: edit`, `step: undo` |
+| Reader's Share copied its link | `roadmap_graph_toast` | `act: link`, `step: shown` |
+| Reader's Share refused by the clipboard | `roadmap_graph_toast` | `act: link`, `outcome: failed` |
+| Open the composer | `roadmap_board_create` | `step: open`, `door: verbs/band/empty/complete`, `view: board/graph` |
+| Pasted plan opens its composer | `roadmap_board_create` | `step: open`, `door: paste`, `view: graph` |
+| Create saved | `roadmap_board_create` | `step: saved`, `column: locked/upNext`, `filterCleared: true/false` |
+| Create on the canvas, the tablet panel or the empty Graph | `roadmap_board_create` | `step: saved`, `door: canvas/empty`, `view: graph` |
+| Plant a pasted plan | `roadmap_board_create` | `step: saved`, `door: paste`, `view: graph`, `count: 0/1/2-5/6-20/21+` |
+| Composer's other outcomes | `roadmap_board_create` | `step: failed/retry/discard/cancel` |
+| Edit saved in the composer | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
+| Edit composer's other outcomes | `roadmap_board_edit` | `step: failed/retry/discard/cancel/unchanged` |
+| Rename, recolor, link, unlink, reconnect or reorder on the Graph | `roadmap_board_edit` | `step: saved`, `view: graph`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false`, `order: true/false` |
+| Change a kind in the Graph's legend | `roadmap_board_edit` | `step: saved`, `view: graph`, `legend: rename/describe/add/remove/recolor` |
+| Prerequisite picker | `roadmap_board_picker` | `step: open/cancel/more/revalidated`, `mode: create/edit` |
+| Picker applied | `roadmap_board_picker` | `step: apply`, `mode: create/edit`, `count: 0/1/2-5/6-20/21+` |
+| Delete's confirmation | `roadmap_board_delete` | `step: confirm/cancel`, `view: board/graph` |
+| Delete held for nine seconds | `roadmap_board_delete` | `step: held`, `door: menu/key/bulk`, `view: board/graph` |
+| Held delete released | `roadmap_board_delete` | `step: sent`, `via: timer/replaced/left`, `view: board/graph` |
+| Delete from the dock, the tablet panel or the canvas | `roadmap_board_delete` | `step: sent`, `via: direct`, `view: graph` |
+| Phone selection starts | `roadmap_board_select` | `step: start` |
+| Phone selection ends | `roadmap_board_select` | `step: end`, `via: done/back/acted/emptied/left` |
+| Graph multi-select starts or ends | `roadmap_board_select` | `step: start/end`, `view: graph` |
+| Reveal the bulk bar's kinds | `roadmap_board_bulk` | `step: kinds` |
+| Bulk act on the Board | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+` |
+| Bulk act on the Graph | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+`, `view: graph` |
+| Workspace in the step page or modal | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskDelete/linkAdd/linkDelete/noteSave/noteDiscard/undo` |
+| Workspace in the Graph's dock | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskEdit/subtaskDelete/linkAdd/linkDelete/noteSave`, `surface: dock` |
+| A verb on the identity row | `roadmap_verb` | `verb: askAI/share/newStep/fork/find/next/more`, `door: row`, `view: board/graph`, `band: phone/tablet/desktop` |
+| A verb in More | `roadmap_verb` | `verb: askAI/share/activity/export/settings/shortcuts`, `door: more`, `view: board/graph`, `band: tablet/desktop` |
+| A verb in the roadmap sheet | `roadmap_verb` | `verb: askAI/share/activity/export/settings`, `door: sheet`, `view: board/graph`, `band: phone` |
+| A and ⌘K | `roadmap_verb` | `verb: activity/askAI`, `door: key`, `view: board/graph`, `band: tablet/desktop` |
+| A row in the desktop Activity feed | `roadmap_verb` | `verb: activity`, `door: feed`, `view: graph`, `band: desktop` |
+| Phone reader Board's Fork offer | `roadmap_verb` | `verb: fork`, `door: offer`, `view: board`, `band: phone` |
+| Phone Graph's Fork, on the bar or the pill | `roadmap_verb` | `verb: fork`, `door: bar/pill`, `view: graph`, `band: phone` |
+| Fork from the read-only notice | `roadmap_verb` | `verb: fork`, `door: notice`, `view: board/graph`, `band: phone/tablet/desktop` |
+| Share from a milestone's ceremony | `roadmap_verb` | `verb: share`, `door: ceremony`, `view: graph`, `band: phone/tablet/desktop` |
+| Ask AI sent, undone, or its Why? opened | `roadmap_verb` | `verb: askAI`, `step: send/undo/why` |
+| Ask AI answered | `roadmap_verb` | `verb: askAI`, `step: answer`, `outcome: receipt/failed/rate/out/long/off` |
+| Share dialog publishes or makes private | `roadmap_verb` | `verb: share`, `step: publish/private`, `outcome: ok/failed` |
+| Share dialog's copy refused | `roadmap_verb` | `verb: share`, `step: copy`, `outcome: failed` |
+| A link copied | `link_copy` | — |
+| Roadmap sheet | `roadmap_sheet` | `step: open/switch/search/browse` |
+| Roadmap sheet's New roadmap | `roadmap_sheet` | `step: new`, `door?: search` |
+| Roadmap sheet closed | `roadmap_sheet` | `step: close`, `via: close/escape/scrim` |
+| Tablet and desktop roadmap switcher | `roadmap_sheet` | `step: open/switch/new/browse/rename/delete`, `door: switcher` |
+| What's next | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
+| Export this roadmap | `roadmap_export` | `outcome: done/failed`, `door: more/sheet` |
+| Shortcut help | `roadmap_shortcuts_open` | `view: board/graph` |
+| Fork submitted | `fork_attempt` | `mode: email/instant/browse` |
+| Fork's email answered with a refusal or a failure | `fork_attempt` | `mode: email`, `outcome: invalid/rate_limited/failed` |
+| Instant Fork failed | `fork_attempt` | `mode: instant`, `outcome: unauthenticated/failed` |
+| Fork landed | `fork_claim` | `mode: email/instant/browse` |
+| Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
+| Refusal shown, retried or discarded | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
+| Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
+| Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
+| The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
+| WebGL2 unavailable | `webgl_init_fail` | — |
+| A roadmap planted from a quest | `birth` | `quest: <authored quest id>`, `steps: <count>`, `local?: true` |
+| A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: <count>`, `local?: true` |
+| Device roadmaps claimed at sign-in | `claim` | `treeCount: <count>` |
+| Roadmap landing opened | `land` | `signedIn: true/false` |
+
+`demo_open` fires alongside `roadmap_view_open`. `fork_claim` with `mode: email` comes from `shell/auth/AuthLanding.jsx`, once
+the magic link lands.
+
+### When an event stays silent
+
+A step is a thing a reader did or was told. These emit nothing:
+
+- The column a Board opens on, or moves to because a step was selected elsewhere; a rail swapped or Done unfolded to reveal a
+  selected step; a state showing.
+- Dismissing a menu, a sheet, Fork or Ask AI; re-picking the order or the shared kind in force; a recolor the session refused;
+  a clean Save, which writes nothing and emits `unchanged` from the edit composer alone.
+- Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
+- The Prerequisites row with no candidates.
+- A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
+- The camera, the minimap, the legend's highlight and folding, selecting one step, hovering and focus moves.
+
+`roadmap_sync_refused` `shown` fires once for the refused frame, across re-flushes, and `discard` only after the session
+confirms it. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
+
+### Technical failures
+
+Every operation is a static name, reported through `telemetry/sentry.js` with stack frames only: file, line, column and
+function. A report's `route` is a family (`#/app`, `#/settings`), never an address.
+
+| Operation | What failed | What the reader gets |
+|---|---|---|
+| `roadmap-board` | The Board's render | The Graph, focus on the switch; choosing Board tries again |
+| `roadmap-identity` | The identity row's render | `ViewSwitch` at the row's position |
+| `roadmap-board-step` | The step page or modal's render | The step closes |
+| `roadmap-board-composer` | The composer's render | The composer closes |
+| `roadmap-board-create` | A create exception, or no session on an editable surface | The draft and its Retry stay |
+| `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
+| `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
+| `roadmap-board-delete` | An unexpected held-delete release | The step returns, silently |
+| `roadmap-step-restore` | A Graph completion's Undo | The toast closes |
+| `roadmap-export` | Building or downloading this roadmap's export | `roadmap_export` `failed`, no file |
+| `roadmap-export-load` | Settings' Export all reading a roadmap | That roadmap's failure, by the rules of `roadmap-tree-load` |
+| `roadmap-tree-load` | The server answering 5xx or 200 with no tree, or a request lost while visible, online and still wanted | The load error |
+| `roadmap-load` | Anything else stopping a load, except a tree neither the server nor this device has | The load error |
+| `roadmap-fork` | Fork: a server failure, or a request lost online | Fork's own error |
+| `roadmap-share` | Publishing or making private: a server failure, or a request lost online | The dialog's own error |
+| `roadmap-sync-notify` | Notifying after a local write, an epoch change or a discard projection | The write's receipt stays |
+| `roadmap-sync-persist` | Storing a local write | The receipt stays; durability is at risk |
+| `roadmap-sync-send` | Sending a local write, including the IndexedDB epoch check | The pending bank stays; durability is at risk |
+| `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
+| `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
+| `auth-session` | An unexpected account refresh failure | The session's existing path |
+
+Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
+refusal, a refused clipboard, a 4xx, a load aborted because the roadmap was left, a request lost offline or behind a hidden
+page. Session expiry, including the 20-second account poll, keeps device work and reaches the lapsed line.
+
+A render failure with no boundary of its own, an uncaught error and an unhandled rejection go through `reportError`: it
+sends `client_error` with `kind`, `route` and scrubbed `message` and `stack`, and a Sentry report of that `kind` with the
+scrubbed message. These carry the exception's own text.
+
+`scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer.

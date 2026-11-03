@@ -2,6 +2,7 @@
 // re-derive from the projection. Only the open flag is a local preference (LegendStore).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { track } from '../../../../telemetry/beacon.js';
 import { LegendStore } from '../../persistence/LegendStore.js';
 import { deriveLegend, withCounts, freeHue, addKind, recolorKind } from '../../model/Legend.js';
 
@@ -54,15 +55,18 @@ export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
 
   const onRenameKind = useCallback((id, label) => {
     collabRef.current?.dispatch({ kind: 'RenameKind', id, label });
+    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'rename' });
   }, [collabRef]);
   const onDescribeKind = useCallback((id, description) => {
     collabRef.current?.dispatch({ kind: 'DescribeKind', id, description });
+    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'describe' });
   }, [collabRef]);
   const onAddKind = useCallback((hue) => {
     const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
     if (next === legendRef.current) return; // hue taken or palette full — nothing added
     const added = next[next.length - 1];
     collabRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
+    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'add' });
   }, [collabRef]);
 
   // Remove is offered only for a kind no node wears; read the editor's live nodes against a stale click.
@@ -71,6 +75,7 @@ export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
     const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
     if (!target || target.count > 0) return;
     collabRef.current?.dispatch({ kind: 'RemoveKind', id });
+    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'remove' });
   }, [collabRef, editorRef]);
 
   // Recolor swaps the kind's hue AND repaints every node of the old hue, as one atomic gesture.
@@ -78,6 +83,7 @@ export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
     const { newHue } = recolorKind(legendRef.current, id, targetHue);
     if (!newHue) return;
     collabRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
+    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'recolor' });
   }, [collabRef]);
 
   // State tracks the kind id, but the scene is handed the HUE, null to clear.

@@ -87,6 +87,7 @@ function host({ coveringPage = false, modal = false, pasteComposer = false, typi
     setDraftKinds: (kinds) => calls.push(['kinds', kinds]),
     setDraft: (text) => calls.push(['draft', text]),
     setComposerOpen: (open) => calls.push(['composer', open]),
+    track: (name, props) => calls.push([name, { ...props }]),
   };
   const key = runInNewContext(`(${handlers.get('onEditorKey')})`, scope);
   const paste = runInNewContext(`(${handlers.get('onPaste')})`, scope);
@@ -116,8 +117,11 @@ test('uncovered Board keeps undo, redo, shortcuts and paste, while typing keeps 
   boundary.key({ key: '?' });
   boundary.paste();
   assert.deepEqual(boundary.calls, [
-    'preventDefault', 'undo', 'preventDefault', 'redo', 'preventDefault', 'shortcuts',
+    'preventDefault', ['roadmap_board_undo', { act: 'undoKey' }], 'undo',
+    'preventDefault', ['roadmap_board_undo', { act: 'redoKey' }], 'redo',
+    'preventDefault', 'shortcuts',
     'preventDefault', ['kinds', []], ['draft', 'A sailing plan'], ['composer', true],
+    ['roadmap_board_create', { step: 'open', door: 'paste', view: 'graph' }],
   ]);
   const typing = host({ typing: true });
   typing.key({ key: '?' });
@@ -568,7 +572,7 @@ test('Activity hands desktop Board to Graph, preserves the tablet Board, and nev
     const open = runInNewContext(`(${identityHandlers.get('openRowActivity')})`, scope);
     open('key');
     assert.deepEqual(calls, breakpoint === 'phone' ? [] : [
-      ['roadmap_verb', { verb: 'activity', door: 'key' }],
+      ['roadmap_verb', { verb: 'activity', door: 'key', view: 'board', band: breakpoint }],
       ...(breakpoint === 'desktop' ? [['view', 'tree']] : []), ['select', null], 'open',
     ]);
     calls.length = 0;
@@ -635,9 +639,11 @@ test('Graph bulk completion is one progress gesture', () => {
     setCompleted() {}, setCompletedAt() {}, witnessProgress() {},
     pushProgress: (ids, status) => calls.push([ids, status]),
     emit() {}, progressChanges: () => ({ unlocked: [] }), milestoneOffer: () => null,
+    countBucket: () => '2-5',
+    track: (name, props) => calls.push([name, { ...props }]),
   });
   bulk();
-  assert.deepEqual(calls, [[targets, 'complete']]);
+  assert.deepEqual(calls, [[targets, 'complete'], ['roadmap_board_complete', { door: 'bulk', count: '2-5' }]]);
 });
 
 test('a real pending progress gesture still shows Saving during a structure rebaseline', (t) => {

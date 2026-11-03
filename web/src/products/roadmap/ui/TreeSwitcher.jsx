@@ -3,6 +3,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
+import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { dismissOverlayOutside } from '../board/BoardControls.jsx';
 
@@ -127,7 +128,9 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   const go = (id) => {
     setOpen(false);
-    if (id && id !== current?.id) window.location.hash = `#/app/${id}`;
+    if (!id || id === current?.id) return;
+    track('roadmap_sheet', { step: 'switch', door: 'switcher' });
+    window.location.hash = `#/app/${id}`;
   };
 
   const startEdit = (t) => {
@@ -150,6 +153,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       return;
     }
     if (next === before.trim()) return void onPreviewTitle?.(id, before);
+    track('roadmap_sheet', { step: 'rename', door: 'switcher' });
     setTrees((prev) => (Array.isArray(prev) ? prev.map((r) => (r.id === id ? { ...r, title: next } : r)) : prev));
     // Local rows route to the local seams by tag — they never PATCH the server.
     const seam = seamOf(rows.find((r) => r.id === id) ?? {});
@@ -171,6 +175,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   const confirmDelete = async (t) => {
     setConfirmId(null);
     try { await onDelete?.(t.id, { local: seamOf(t) === 'local' }); } catch { return; } // a refusal leaves the row standing
+    track('roadmap_sheet', { step: 'delete', door: 'switcher' });
     const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== t.id);
     setTrees(remaining);
     if (t.id !== current?.id) return;
@@ -188,7 +193,10 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (!open) track('roadmap_sheet', { step: 'open', door: 'switcher' });
+          setOpen((v) => !v);
+        }}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         style={{
@@ -303,7 +311,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
           <div style={divider} />
 
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onNew(); }}
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); track('roadmap_sheet', { step: 'new', door: 'switcher' }); onNew(); }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             style={{ ...row, fontWeight: 800 }}>
@@ -312,7 +320,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
           </button>
 
           <button type="button" role="menuitem" aria-label="Browse trees planted in public"
-            onClick={() => { setOpen(false); window.location.hash = '#/browse'; }}
+            onClick={() => { setOpen(false); track('roadmap_sheet', { step: 'browse', door: 'switcher' }); window.location.hash = '#/browse'; }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             style={row}>

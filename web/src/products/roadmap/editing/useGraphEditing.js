@@ -1,9 +1,16 @@
 import { useCallback } from 'react';
+import { track } from '../../../telemetry/beacon.js';
+import { countBucket } from '../board/acts.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
 
 const NEW_NODE_ICON = 'sparkles';
+
+// The canvas, the dock and the tablet panel have no form to report from, so each write names what it changed.
+function trackEdit(changed) {
+  track('roadmap_board_edit', { step: 'saved', view: 'graph', name: false, description: false, kind: false, prerequisites: false, order: false, ...changed });
+}
 
 // Every write the Graph's own surfaces make: the scene's gestures, the docks and the tablet panel all come through here.
 export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legendRef, desktopEditorRef, selection, emit, showToast, setAutoFocusNameId, setComposerOpen }) {
@@ -20,6 +27,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     const wasNamed = node.label.trim() !== '';
     collabRef.current?.dispatch({ kind: 'RenameNode', id, label });
     if (wasNamed) emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
+    trackEdit({ name: true });
   }, [emit]);
 
   const handleCreateChild = useCallback((parentId) => {
@@ -34,6 +42,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     setSelectedId(id);
     setAutoFocusNameId(id);
     emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
+    track('roadmap_board_create', { step: 'saved', door: 'canvas', view: 'graph' });
     return id;
   }, [setSelectedId, emit]);
 
@@ -46,18 +55,22 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     setSelectedId(id);
     setAutoFocusNameId(id);
     emit({ verb: 'added', nodeId: id, label: '', kind: color });
+    track('roadmap_board_create', { step: 'saved', door: 'empty', view: 'graph' });
   }, [emit, setSelectedId]);
 
   const handleConnect = useCallback((sourceId, targetId) => {
     collabRef.current?.dispatch({ kind: 'AddEdge', from: sourceId, to: targetId });
+    trackEdit({ prerequisites: true });
   }, []);
 
   const handleDeleteEdge = useCallback((sourceId, targetId) => {
     collabRef.current?.dispatch({ kind: 'RemoveEdge', from: sourceId, to: targetId });
+    trackEdit({ prerequisites: true });
   }, []);
 
   const handleReconnect = useCallback((oldFrom, oldTo, newFrom, newTo) => {
     collabRef.current?.dispatch({ kind: 'ReconnectEdge', oldFrom, oldTo, newFrom, newTo });
+    trackEdit({ prerequisites: true });
   }, []);
 
   const deleteNodeAt = useCallback((id) => {
@@ -68,6 +81,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     if (selectedIdRef.current === id) setSelectedId(null);
     showToast('Step deleted', { action: { label: 'Undo', run: undo } });
     emit({ verb: 'removed', nodeId: id, label: node?.label, kind: node?.color });
+    track('roadmap_board_delete', { step: 'sent', via: 'direct', view: 'graph' });
   }, [emit, showToast, undo]);
   const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
 
@@ -85,11 +99,13 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     if (ids.length) parts.push(`${ids.length} step${ids.length === 1 ? '' : 's'}`);
     if (edges.length) parts.push(`${edges.length} link${edges.length === 1 ? '' : 's'}`);
     showToast(`${parts.join(' and ')} deleted`, { action: { label: 'Undo', run: undo } });
+    track('roadmap_board_bulk', { step: 'delete', count: countBucket(ids.length), view: 'graph' });
   }, [emit, showToast, undo, leaveMulti]);
 
   const handleSetKind = useCallback((id, kind) => {
     if (!id) return;
     collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
+    trackEdit({ kind: true });
   }, []);
 
   // Same-parent siblings in sort order with their order keys; null off-tree.
@@ -106,6 +122,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
   const handleSetNodeOrder = useCallback((id, order) => {
     if (!id) return;
     collabRef.current?.dispatch({ kind: 'SetNodeOrder', id, order });
+    trackEdit({ order: true });
   }, []);
 
   const bulkRecolor = useCallback((color, { silent = false } = {}) => {
@@ -113,6 +130,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     if (!ids.length) return;
     collabRef.current?.dispatch({ kind: 'BulkRecolor', nodeIds: ids, color });
     if (!silent) showToast(`${ids.length} step${ids.length === 1 ? '' : 's'} recolored`, { action: { label: 'Undo', run: undo } });
+    track('roadmap_board_bulk', { step: 'recolor', count: countBucket(ids.length), view: 'graph' });
   }, [showToast, undo]);
 
   // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed.
@@ -144,6 +162,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     const where = targetLabel ? ` under “${targetLabel}”` : '';
     showToast(`Added ${count} step${count === 1 ? '' : 's'}${where}`, { action: { label: 'Undo', run: undo } });
     setComposerOpen(false);
+    track('roadmap_board_create', { step: 'saved', door: 'paste', view: 'graph', count: countBucket(count) });
   }, [emit, showToast, undo]);
 
   return {

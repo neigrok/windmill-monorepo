@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { track } from '../../../telemetry/beacon.js';
 import { boardKey, graphOnlyKey } from './shortcutMap.js';
 
 // The room's window-level keys: Ask AI, the editor's chords, the Board's letters and pasted plans.
@@ -16,6 +17,10 @@ export function useRoadmapKeys({
       if (keyboardCovered()) return;
       if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
+        if (!tendOpen) {
+          const { breakpoint, boardActive } = activityActsRef.current;
+          track('roadmap_verb', { verb: 'askAI', door: 'key', view: boardActive ? 'board' : 'graph', band: breakpoint });
+        }
         setTendOpen((open) => !open);
       }
     };
@@ -42,6 +47,7 @@ export function useRoadmapKeys({
       if (desktopEditorRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         if (covered) return;
         event.preventDefault();
+        track('roadmap_board_undo', { act: event.shiftKey ? 'redoKey' : 'undoKey' });
         if (event.shiftKey) redo();
         else undo();
         return;
@@ -126,6 +132,7 @@ export function useRoadmapKeys({
       setDraftKinds(legendRef.current);
       setDraft(pasted);
       setComposerOpen(true);
+      track('roadmap_board_create', { step: 'open', door: 'paste', view: 'graph' });
     };
     window.addEventListener('paste', onPaste, true);
     return () => window.removeEventListener('paste', onPaste, true);

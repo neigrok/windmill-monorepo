@@ -10,7 +10,7 @@ export class HttpTreeRepository {
     baseUrl = API_BASE,
     treeId,
     operation = 'roadmap-tree-load',
-    reportFailure = (failed) => captureError('roadmap', failed, '', '#/app'),
+    reportFailure = (failed) => captureError('roadmap', failed, new Error(failed).stack, '#/app'),
   } = {}) {
     if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;

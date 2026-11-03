@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { track } from '../../../telemetry/beacon.js';
 import { fetchTending, startTend, fetchRun } from './tendingClient.js';
 import { isTerminal, runFace } from './receipts.js';
 
@@ -15,6 +16,7 @@ export function useTend({ treeId, onFace }) {
   const submit = useCallback(async (prompt) => {
     if (working || !prompt.trim()) return;
     setWorking(true);
+    track('roadmap_verb', { verb: 'askAI', step: 'send' });
 
     const started = await startTend(treeId, prompt);
     // A refusal comes back on the POST itself (200, no runId); a started run gives a runId to poll.
@@ -61,11 +63,13 @@ export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, 
     if (!planted.length) return;
     collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] });
     showToast('AI changes reverted');
+    track('roadmap_verb', { verb: 'askAI', step: 'undo' });
   }, [showToast]);
 
   const onTendFace = useCallback((face) => {
     setTendOpen(false);
     if (face.kind === 'empty') return;
+    track('roadmap_verb', { verb: 'askAI', step: 'answer', outcome: face.kind });
     const isReceipt = face.kind === 'receipt';
     const hasUndo = isReceipt && face.created && face.created.length > 0;
     if (hasUndo) window.setTimeout(() => sceneRef.current?.frameNodes(face.created), 600);

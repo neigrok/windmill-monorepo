@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
+import { track } from '../../../../telemetry/beacon.js';
 import { Checklist } from './Checklist.jsx';
 
 // Note dialect: **bold**, *italic*, [text](url), "- " lists. Link hrefs are kept to safe schemes
@@ -149,6 +150,8 @@ const ADD_CHOICES = [
   { kind: 'link', label: 'Link', icon: 'external-link' },
 ];
 
+const workspaceEvent = (action) => track('roadmap_board_workspace', { action, surface: 'dock' });
+
 export function NodeWorkspace({ nodeId, workspace, hue, checklistLabels, onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }) {
   const subtasks = workspace?.subtasks ?? [];
   const note = workspace?.note ?? '';
@@ -189,18 +192,21 @@ export function NodeWorkspace({ nodeId, workspace, hue, checklistLabels, onAddSu
   const commitNote = () => {
     const markdown = noteDraft.trim();
     setNoteEditing(false);
-    if (markdown !== note) onSetNote(nodeId, markdown);
+    if (markdown === note) return;
+    workspaceEvent('noteSave');
+    onSetNote(nodeId, markdown);
   };
 
   const commitLink = () => {
     const raw = linkDraft.trim();
-    if (raw !== '') onAddLink(nodeId, raw);
+    if (raw !== '') {
+      workspaceEvent('linkAdd');
+      onAddLink(nodeId, raw);
+    }
     setLinkDraft('');
   };
   const blurLink = () => {
-    const raw = linkDraft.trim();
-    if (raw !== '') onAddLink(nodeId, raw);
-    setLinkDraft('');
+    commitLink();
     setLinkAdding(false);
   };
 
@@ -212,10 +218,10 @@ export function NodeWorkspace({ nodeId, workspace, hue, checklistLabels, onAddSu
           hue={hue}
           labels={checklistLabels}
           autoStartAdd={checklistBootstrap}
-          onToggle={(id) => onToggleSubtask(nodeId, id)}
-          onEdit={(id, label) => onEditSubtask(nodeId, id, label)}
-          onDelete={(id) => onDeleteSubtask(nodeId, id)}
-          onAdd={(label) => onAddSubtask(nodeId, label)}
+          onToggle={(id) => { workspaceEvent('subtaskToggle'); onToggleSubtask(nodeId, id); }}
+          onEdit={(id, label) => { workspaceEvent('subtaskEdit'); onEditSubtask(nodeId, id, label); }}
+          onDelete={(id) => { workspaceEvent('subtaskDelete'); onDeleteSubtask(nodeId, id); }}
+          onAdd={(label) => { workspaceEvent('subtaskAdd'); onAddSubtask(nodeId, label); }}
           onClose={() => setChecklistBootstrap(false)}
         />
       )}
@@ -250,7 +256,7 @@ export function NodeWorkspace({ nodeId, workspace, hue, checklistLabels, onAddSu
           <div className="st-step-heading">Links</div>
           <div className="st-links">
             {links.map((link) => (
-              <LinkRow key={link.id} url={link.url} title={link.title} domain={link.domain} onDelete={() => onDeleteLink(nodeId, link.id)} />
+              <LinkRow key={link.id} url={link.url} title={link.title} domain={link.domain} onDelete={() => { workspaceEvent('linkDelete'); onDeleteLink(nodeId, link.id); }} />
             ))}
             <div className="st-link-add">
               <input

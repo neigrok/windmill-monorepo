@@ -257,7 +257,10 @@ export function StepDetail({
   } : null;
   const menu = noteEditing ? null : <StepMenu items={menuItems} confirm={surface === 'modal' ? confirm : null} />;
   const sheet = surface === 'page' && confirm ? <DeleteConfirmation confirm={confirm} phone /> : null;
-  const sections = editable && !noteEditing ? <StepSections idPrefix={sectionsId} section={section} onSection={setSection} /> : null;
+  const sections = editable && !noteEditing ? <StepSections idPrefix={sectionsId} section={section} onSection={(next) => {
+    act('section', { section: next });
+    setSection(next);
+  }} /> : null;
   const edit = editable && onEdit ? () => {
     act('edit');
     onEdit(id);

@@ -68,7 +68,7 @@ async function loadServerTree(treeId) {
   const repository = new HttpTreeRepository({
     treeId,
     operation: 'roadmap-export-load',
-    reportFailure: (operation) => captureError('roadmap', operation, '', '#/settings'),
+    reportFailure: (operation) => captureError('roadmap', operation, new Error(operation).stack, '#/settings'),
   });
   const treeData = await repository.loadTree().catch(() => null);
   if (!treeData) return null;

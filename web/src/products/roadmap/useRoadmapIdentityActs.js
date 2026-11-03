@@ -81,7 +81,7 @@ export function useRoadmapIdentityActs({
   const openRowActivity = useCallback((door) => {
     const current = activityActsRef.current;
     if (!current.enabled) return;
-    if (door === 'key') track('roadmap_verb', { verb: 'activity', door: 'key' });
+    if (door === 'key') track('roadmap_verb', { verb: 'activity', door: 'key', view: current.boardActive ? 'board' : 'graph', band: current.breakpoint });
     if (current.feedVisible) {
       closeRowActivity();
       return;

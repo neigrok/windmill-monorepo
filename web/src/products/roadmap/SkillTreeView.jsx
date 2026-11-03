@@ -26,7 +26,7 @@ import { StepDetail } from './board/StepDetail.jsx';
 import { titleOf } from './board/StepFacts.js';
 import { StepComposer } from './board/StepComposer.jsx';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
-import { deletable } from './board/acts.js';
+import { countBucket, deletable } from './board/acts.js';
 import { RefusedSync } from './board/SyncNotices.jsx';
 import { useRoomSyncNotices } from './sync/useRoomSyncNotices.js';
 import { useStepAddress, hashWithStep, stepIsStale } from './board/stepAddress.js';
@@ -641,6 +641,14 @@ export function SkillTreeView({ treeId, demo = false }) {
   const canvasView = !boardActive;
   graphViewRef.current = canvasView;
 
+  const graphMulti = canvasView && (multiMode || selectedIds.size + selectedEdges.size > 1);
+  const graphMultiRef = useRef(false);
+  useEffect(() => {
+    if (graphMulti === graphMultiRef.current) return;
+    graphMultiRef.current = graphMulti;
+    track('roadmap_board_select', { step: graphMulti ? 'start' : 'end', view: 'graph' });
+  }, [graphMulti]);
+
   const switchView = useCallback((next) => {
     if (next !== shownView) {
       graphRevealRef.current = null;
@@ -784,7 +792,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   if (phoneGraph && graphStep) phoneGraphBottom = graphBarBottom;
 
   const openGraphFork = useCallback(() => {
-    if (graphStep) track('roadmap_verb', { verb: 'fork', door: 'bar', view: 'graph', band: 'phone' });
+    track('roadmap_verb', { verb: 'fork', door: graphStep ? 'bar' : 'pill', view: 'graph', band: 'phone' });
     setForkOpen(true);
   }, [graphStep?.id]);
   const graphBarRef = useRef(null);
@@ -822,7 +830,10 @@ export function SkillTreeView({ treeId, demo = false }) {
     for (const milestone of fresh) milestoneLedger.markOffered(treeId, milestone.id);
     return {
       summary: announcement.summary,
-      action: { label: announcement.label, run: () => setShareOpen(true) },
+      action: { label: announcement.label, run: () => {
+        track('roadmap_verb', { verb: 'share', door: 'ceremony', view: 'graph', band: breakpoint });
+        setShareOpen(true);
+      } },
     };
   }
 
@@ -876,6 +887,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setCompletedAt(next.completedAt);
     witnessProgress(next);
     pushProgress(targets, 'complete');
+    track('roadmap_board_complete', { door: 'bulk', count: countBucket(targets.length) });
     for (const id of targets) {
       const node = nodesById.get(id);
       emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
@@ -890,7 +902,14 @@ export function SkillTreeView({ treeId, demo = false }) {
   }
 
   function handleMarkComplete() {
-    if (selectedId) completeStep(selectedId);
+    if (!selectedId) return;
+    track('roadmap_board_complete', { door: 'dock' });
+    completeStep(selectedId);
+  }
+
+  function resetFromGraph(id, surface) {
+    if (id) track('roadmap_board_step_action', { surface, action: 'reset' });
+    resetStep(id);
   }
 
   function resetStep(id) {
@@ -1048,8 +1067,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const dockOpen = !phone && (composerOpen || (canvasView && (!!selectedNode || activityOpen)));
 
   const revealGraphToast = useCallback(() => {
-    if (toast?.reveal) handleSheetJump(toast.reveal);
-  }, [toast?.reveal, handleSheetJump]);
+    if (!toast?.reveal) return;
+    track('roadmap_board_toast_reveal', { act: toast.act, view: 'graph' });
+    handleSheetJump(toast.reveal);
+  }, [toast?.reveal, toast?.act, handleSheetJump]);
   const undoGraphToast = useCallback(() => {
     const origin = toast?.focusTarget;
     toast?.action?.run();
@@ -1286,7 +1307,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onSetKind={handleSetKind}
               onOpenLegend={openLegendFromPicker}
               onMarkComplete={handleMarkComplete}
-              onReset={resetStep}
+              onReset={(id) => resetFromGraph(id, 'dock')}
               onDelete={deleteNodeAt}
               onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
               onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
@@ -1302,7 +1323,10 @@ export function SkillTreeView({ treeId, demo = false }) {
               onClose={closeRowActivity}
               onHoverNode={handleRowHover}
               onLeaveNode={handleRowLeave}
-              onRevealNode={handleRevealNode}
+              onRevealNode={(id) => {
+                track('roadmap_verb', { verb: 'activity', door: 'feed', view: 'graph', band: breakpoint });
+                handleRevealNode(id);
+              }}
             />
           ) : null}
         </GraphDock>
@@ -1332,8 +1356,11 @@ export function SkillTreeView({ treeId, demo = false }) {
           kinds={legend}
           autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
           isRoot={selectedId !== null && selectedId === singleRootId}
-          onMarkDone={(id) => completeStep(id)}
-          onUnmarkDone={resetStep}
+          onMarkDone={(id) => {
+            track('roadmap_board_complete', { door: 'panel' });
+            completeStep(id);
+          }}
+          onUnmarkDone={(id) => resetFromGraph(id, 'panel')}
           onDelete={deleteNodeAt}
           onJump={handleSheetJump}
           selectedCount={selectedIds.size}
@@ -1373,7 +1400,11 @@ export function SkillTreeView({ treeId, demo = false }) {
         <VisitorNotice
           edits={demotion.edits}
           author={tree?.author}
-          onFork={() => { setDemotion((d) => d && { ...d, cardOpen: false }); setForkOpen(true); }}
+          onFork={() => {
+            track('roadmap_verb', { verb: 'fork', door: 'notice', view: canvasView ? 'graph' : 'board', band: breakpoint });
+            setDemotion((d) => d && { ...d, cardOpen: false });
+            setForkOpen(true);
+          }}
           onDismiss={() => setDemotion((d) => d && { ...d, cardOpen: false })}
           onSignIn={openSignInDoor}
         />
@@ -1387,7 +1418,10 @@ export function SkillTreeView({ treeId, demo = false }) {
         <CoachChip
           scene={scene}
           nodeId={COACHED_NODE_ID}
-          onMarkDone={() => completeStep(COACHED_NODE_ID)}
+          onMarkDone={() => {
+            track('roadmap_board_complete', { door: 'coach' });
+            completeStep(COACHED_NODE_ID);
+          }}
           completionCount={demoCompletions}
         />
       )}
@@ -1425,6 +1459,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                 onClick={() => {
                   toastTimersRef.current.forEach(clearTimeout);
                   toastTimersRef.current = [];
+                  if (!toastWhyOpen) track('roadmap_verb', { verb: 'askAI', step: 'why' });
                   setToastWhyOpen((open) => !open);
                 }}
               >
@@ -1432,7 +1467,11 @@ export function SkillTreeView({ treeId, demo = false }) {
               </button>
             )}
             {toast.action && (
-              <button className="st-toast-undo" onClick={() => { toast.action.run(); dismissToast(); }}>
+              <button className="st-toast-undo" onClick={() => {
+                track('roadmap_graph_toast', { act: 'edit', step: 'undo' });
+                toast.action.run();
+                dismissToast();
+              }}>
                 {toast.action.label}
               </button>
             )}
