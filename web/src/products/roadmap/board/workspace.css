@@ -156,6 +156,9 @@
   gap: 12px;
 }
 .st-board-workspace-missing .st-board-step-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 46px;
   font-size: 16px;
 }
@@ -365,9 +368,6 @@
 .st-board-note-editor--phone .st-board-note-link-editor {
   padding: 8px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   background: var(--surface-card);
-}
-.st-board-note-editor .st-board-discard-layer {
-  position: fixed;
 }
 .st-board-step-checked {
   display: flex;

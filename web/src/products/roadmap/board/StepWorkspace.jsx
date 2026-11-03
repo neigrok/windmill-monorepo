@@ -1,4 +1,5 @@
 import React, { forwardRef, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bold, Italic, Link, List } from 'lucide-react';
 import { Icon } from '../../../design-system/Icon.jsx';
 import { track } from '../../../telemetry/beacon.js';
@@ -7,7 +8,7 @@ import { renderMarkdown, SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { ActivityLog } from '../activity/ActivityLog.js';
 import { ActorAvatar, EventSentence, relativeTime } from '../activity/grammar.jsx';
 import { DiscardDraft } from './DiscardDraft.jsx';
-import { DetailFocusContext, useComposerFocus, useComposerViewport } from './composerFocus.js';
+import { coverBeneath, DetailFocusContext, useComposerFocus, useComposerViewport } from './composerFocus.js';
 import { WORKSPACE, WORKSPACE_EMPTY, NEW_LINK, HISTORY_EMPTY, NOTE_EDITOR, STEP_DETAIL, subtaskTally } from './copy.js';
 import './workspace.css';
 
@@ -274,6 +275,7 @@ const NoteEditor = forwardRef(function NoteEditor({ note, title, phone, layerBou
   const [selection, setSelection] = useState({ start: note.length, end: note.length });
   const writing = useRef(null);
   const box = useRef(null);
+  const discardLayer = useRef(null);
   const selectionRef = useRef(selection);
   const beforeInput = useRef(null);
   const composing = useRef(false);
@@ -281,6 +283,9 @@ const NoteEditor = forwardRef(function NoteEditor({ note, title, phone, layerBou
   const focusContext = useContext(DetailFocusContext);
   const focus = useComposerFocus(box, !discarding, { restore: false });
   const viewport = useComposerViewport(phone);
+  useLayoutEffect(() => {
+    if (discarding) return coverBeneath(discardLayer.current);
+  }, [discarding]);
   const bounds = box.current?.closest('.st-board-step-layer')?.getBoundingClientRect() ?? layerBounds;
   const visible = viewport.style;
   const viewportStyle = phone && visible && bounds ? {
@@ -467,7 +472,7 @@ const NoteEditor = forwardRef(function NoteEditor({ note, title, phone, layerBou
         {phone && !link && <button type="button" onClick={cancel}>{NOTE_EDITOR.cancel}</button>}
         <div><h3>{NOTE_EDITOR.title}</h3>{phone && <p>{title}</p>}</div>
       </div>
-      <div className="st-board-note-box" inert={discarding ? '' : undefined}>
+      <div className="st-board-note-box">
         {!phone && toolbar}
         <div
           key={rendered.revision}
@@ -519,20 +524,23 @@ const NoteEditor = forwardRef(function NoteEditor({ note, title, phone, layerBou
         ) : phone && toolbar}
       </div>
       {!phone && (
-        <div className="st-board-note-actions" inert={discarding ? '' : undefined}>
+        <div className="st-board-note-actions">
           <button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={cancel}>{NOTE_EDITOR.cancel}</button>
           <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={save}>{NOTE_EDITOR.save}</button>
         </div>
       )}
-      {discarding && (
-        <DiscardDraft
-          phone={phone}
-          onKeep={() => setDiscarding(false)}
-          onDiscard={() => {
-            workspaceEvent('noteDiscard');
-            onCancel();
-          }}
-        />
+      {discarding && createPortal(
+        <div ref={discardLayer} style={viewport.style} className={`st-board-composer-layer ${phone ? 'is-phone' : 'is-wide'}`}>
+          <DiscardDraft
+            phone={phone}
+            onKeep={() => setDiscarding(false)}
+            onDiscard={() => {
+              workspaceEvent('noteDiscard');
+              onCancel();
+            }}
+          />
+        </div>,
+        document.body,
       )}
     </div>
   );

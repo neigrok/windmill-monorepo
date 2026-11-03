@@ -28,12 +28,11 @@ export const StepCard = React.memo(function StepCard({ card, selected = false, a
       </span>
     </button>
   );
-  if (!onHold && !selecting && (!swipe || card.column !== 'upNext')) return cardButton;
-  return <InteractiveCard card={card} onSelect={onSelect} onHold={onHold} selecting={selecting}
+  return <InteractiveCard card={card} onHold={onHold} selecting={selecting}
     swipe={swipe && card.column === 'upNext'} open={open} onSwipe={onSwipe} onComplete={onComplete} tabIndex={tabIndex}>{cardButton}</InteractiveCard>;
 });
 
-function InteractiveCard({ card, onSelect, onHold, selecting, swipe, open, onSwipe, onComplete, tabIndex, children }) {
+function InteractiveCard({ card, onHold, selecting, swipe, open, onSwipe, onComplete, tabIndex, children }) {
   const hold = useRef(null);
   const timer = useRef(null);
   const scroller = useRef(null);
@@ -53,7 +52,7 @@ function InteractiveCard({ card, onSelect, onHold, selecting, swipe, open, onSwi
     cancelHold();
     hold.current = null;
     swallowed.current = false;
-    if (!onHold || event.pointerType !== 'touch' || event.isPrimary === false) return;
+    if (event.pointerType !== 'touch' || event.isPrimary === false) return;
     const gesture = new HoldGesture({ x: event.clientX, y: event.clientY, at: performance.now() });
     hold.current = gesture;
     const deadline = gesture.at + HOLD_MS;
@@ -81,7 +80,7 @@ function InteractiveCard({ card, onSelect, onHold, selecting, swipe, open, onSwi
         event.preventDefault();
         return;
       }
-      onSelect(card.id);
+      children.props.onClick(event);
     },
   });
   if (!swipe) return button;
