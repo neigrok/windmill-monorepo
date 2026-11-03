@@ -341,7 +341,9 @@ frames 08.1, 08.4, 08.5, 08.11 and 08.61; iOS 01.17 reads 🚀 though iOS delete
 
 ## 6. Decisions for the owner
 
-Defaults are what the plan assumes. Only O2, O3 and O4 change what users see beyond iOS parity.
+**Ruled 2026-11-03.** The owner approved the board set in §5, which draws O2 to O7 as their defaults below, and
+asked for the plan to be implemented, which stands for O1. O8 is still open, because 08.31's redraw was flagged and
+not part of the approved set.
 
 | # | Question | Default | Cost of the default |
 |---|---|---|---|
