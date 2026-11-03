@@ -3,12 +3,12 @@
 **Status:** Not started. Conformance where a board draws the large-text state; undrawn states go to the designer (design brief QW4 and QW12) and wait.
 
 **Context:** the native wave fixed large text where a board drew it: navigation labels (00.7), the rack (03.35) and the receipt (03.36). No sweep has covered every screen. Known gaps:
-- the routine editor's Target summary overlaps at 320 dp / 200 %, postponed by the owner on 2026-10-29;
+- the routine editor's Target summary overlaps at 320 dp / 200 %; 02.26 (✅ 2026-11-03) stacks it;
 - a two-digit set count widens its column on the workout page (ledger 11u).
 
 **Current implementation**
 - Rig recipes set `"fontScale": 2` for some states: `compact-rack.json` (03.35), `finish.json` (03.36), `room-chrome.json` (00.7), and the Coach, edit-movement and native-parts recipes. These recipes set none: bodyweight, coach-history, coach-messages, colour-roles, connected-log, deletion-lifecycle, equipment-units, fix-set, hide-workout, log, notes, notification-clock, number-entry, on-this-phone, onboarding-gym, predictive-back, record, routine-targets, sign-in-fields, workout-detail and workout-tile.
-- `android-routine-target-summary-responsive-design` keeps the Target summary layout unchanged by the owner's ruling.
+- The routine editor's Target row follows 02.26.
 
 **Change**
 - Run every rig recipe at 320 dp width and 200 % font scale, in Dark and Daylight.

@@ -1066,11 +1066,55 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   - *Dynamic colour (decided).* Android paints the fixed brand palette in both modes; Material You
     dynamic colour stays off.
 - **11y · Sets held back by an update the server requires (designer, task 75).** While the server
-  needs a newer app, Android's workout draws no band and its save note reads *on this device*
-  (`store/EngineTraining.kt` `deliveryBlocker`); only the *Update required* dialog says why. iOS
-  says it at Finish: *Finish needs the update — keep logging, or hide the workout.* (PARITY row 51).
-  No Android board draws an update-required band or save state; a 4xx refusal other than 401 and
-  426 likewise names no blocker.
+  needs a newer app, Android's workout draws no band (`store/EngineTraining.kt` `deliveryBlocker`
+  names no blocker); only the app-wide *Update required* dialog says why
+  (`app/MainActivity.kt` `EngineAccountDecision`). `store/WriteOutcomes.kt` `SaveState.line` words
+  each state, but no screen draws it. iOS says it at Finish: *Finish needs the update — keep
+  logging, or hide the workout.* (PARITY row 51). A 4xx refusal other than 401 and 426 likewise
+  names no blocker. Under the owner's 2026-11-03 ruling (11z, D1) the update state belongs to the
+  You row and the screen it opens, never to the workout.
+- **11z · Review wave D1–D7 (owner rulings 2026-11-03).** The 2026-11-02 external review of the
+  Android app raised seven visible items. Boards, links and the open questions are in
+  `androidgym_tasks/design-brief-review-wave.md`.
+  - *Row labels lose "set" (owner ruling).* A row is labelled by its number alone: *Set 1* reads
+    *1*. Counts (*5 sets*), the routine editor's *Sets* field and *Vary by set* keep the word. The
+    boards follow: the logger rows on 00.6, 03.1, 03.3, 03.4, 03.10–03.13, 03.33–03.35, 03.38–03.44,
+    03.46 and 03.52; Coach's diff rows on Android 08.22, 08.23, 08.27, 08.54, 08.55 and 08.65; iOS
+    02.15, 03.32, 08.22, 08.23 and 08.27. Android's logger still draws *Set N* on its rows
+    (`ui/LoggerScreen.kt:859`). Spoken row labels keep *Set N* for TalkBack. Open: whether the Fix set sheet's subtitle (*Bench Press · Set 1*; Android 03.3,
+    03.33; iOS 03.24, 03.25) is a row label, and the notification's *set 3 of 3* (04.1–04.3).
+  - *D1 · Delivery and connection problems (owner ruling).* A workout says nothing about sync: a
+    set it saved is expected to sync. Sync state lives in one static place, the You row (Shell 16f)
+    and the screen it opens (16g, 16h). The account seat on root screens carries a dot only while
+    the lifter can act. Android differs: the logger draws the stranded band under the clock row
+    (`ui/LoggerScreen.kt` `StrandedBand`), a cloud-off glyph on each unsent ledger row, and refusal
+    rows beside the ledger (`ui/RefusalBanner.kt`); Update required is a modal (11y); the log's
+    foot reads **Retry** · *That read failed.* where 05.22 reads *Older workouts didn’t load.* ·
+    Try again (11u).
+  - *D2 · Lock-screen notification (owner ruling).* A routine name is not sensitive: the public
+    version may show it, as `notification/WorkoutNotifications.kt` and 04.4 do. The Quick Settings
+    tile is unchanged.
+  - *D3 · Links in Coach answers.* Android draws 08.66–08.67 (task 116), with three differences:
+    the link draws in the primary role (Daylight `#137A6C`) where the boards draw `text/link`
+    (`#106B5F`); an answer with several links offers Copy answer only, where 08.67 offers one
+    Copy link per link, up to three; the menu opens below the bubble over the composer, where
+    08.67 flips it above.
+  - *D4 · Faint ink.* Android Dark `inkFaint` is `#898E88` (`ui/GymSkin.kt`, task 115), and the
+    Design System library's `dark/text/tertiary` Gym value is `#898E88`, published. The Gym file has
+    not accepted that library update, so its boards still resolve `text/tertiary` Dark to
+    `#727771`. iOS `dark/ios/gym/ink-faint` and web gym-night `--neutral-500` are still `#727771`.
+  - *D5 · Window sizes.* Every modal sheet is bounded to 560 dp and centred
+    (`platform/design/WindmillSheet.kt`, 02.27). The navigation rail and bounded column (00.9,
+    00.10) and the two logger layouts (03.52, 03.53) are not built: `app/AndroidManifest.xml`
+    requests portrait, and no screen reads the window size.
+  - *D6 · Share sheet.* Android draws 05.23–05.24 (task 117). The system chooser heads itself
+    *Sharing link* and ignores the app's title. At 320 dp and 200 % *Copied* breaks mid-word
+    (*Copie / d*) inside the equal-width row. Around the row, the sheet keeps 05.13b's build
+    values where 05.23 draws others: Revoke 15 SemiBold at 48 dp against Bold 16 at 56 dp, body
+    16/21 against 15/22, block gaps 12 against 14, link padding 12 against 16 × 10, bottom inset 20
+    against 40, Daylight link ink primary `#137A6C` against `text/link` `#106B5F`.
+  - *D7 · Target row at 200 % text.* `ui/MovementForm.kt` `RoutineTargets` still collapses the
+    Target label at 320 dp and 200 %; 02.26's caption states the stacking rule and spacing.
 
 ### Parity rulings (owner, 2026-10-22)
 
