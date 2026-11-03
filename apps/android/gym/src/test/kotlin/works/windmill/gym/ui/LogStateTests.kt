@@ -8,7 +8,21 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.test.*
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.filter
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import java.time.LocalDate
@@ -18,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -34,7 +49,10 @@ import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SessionStart
 import works.windmill.gym.presentation.SetWrite
-import works.windmill.gym.store.*
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.HistoryReads
+import works.windmill.gym.store.Older
+import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Pulls
 
@@ -290,7 +308,10 @@ class LogStateTests {
             }
             compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
-            compose.runOnIdle { runBlocking { room.store.history.loadOlder() } }
+            compose.runOnIdle { room.scope.launch { room.store.history.loadOlder() } }
+            compose.waitUntil(5_000) { compose.runOnIdle {
+                room.store.history.older != Older.Loading && room.store.history.logged.size == HistoryReads.logPage + 2
+            } }
             compose.runOnIdle {
                 assertEquals(HistoryReads.logPage + 2, room.store.history.logged.size)
                 assertEquals(Older.Reading, room.store.history.older)
@@ -326,7 +347,10 @@ class LogStateTests {
             }
             compose.setContent { GymMaterial { LogBinding(room.store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } } }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.More } }
-            compose.runOnIdle { runBlocking { room.store.history.loadOlder() } }
+            compose.runOnIdle { room.scope.launch { room.store.history.loadOlder() } }
+            compose.waitUntil(5_000) { compose.runOnIdle {
+                room.store.history.older != Older.Loading && room.store.history.logged.size == HistoryReads.logPage + 1
+            } }
             compose.runOnIdle { assertEquals(2, room.store.history.logged.single { it.id == oldest }.setCount) }
             runBlocking { room.training.deleteSet(oldest, "set-0") }
             compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.logged.single { it.id == oldest }.setCount == 1 } }

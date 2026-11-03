@@ -23,8 +23,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -51,13 +51,36 @@ class WindmillSheetTests {
             val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             if (open) WindmillSheet(onDismissRequest = { dismissed++; open = false }, sheetState = state, onBack = onBack) {
                 BackHandler(enabled = busy) {}
-                Text("Sheet body")
+                Text("Sheet body", Modifier.fillMaxWidth().testTag("sheet-body"))
             }
         }
         compose.onNodeWithText("Sheet body").assertExists()
     }
 
     private val back get() = (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher
+
+    @Test
+    @Config(qualifiers = "w840dp-h900dp-xhdpi")
+    fun aSheetOnAWideWindowIsBoundedTo560AndCentred() {
+        sheet()
+        val bounds = compose.onNodeWithTag("sheet-body").fetchSemanticsNode().boundsInWindow
+        with(compose.density) {
+            assertEquals(560.dp.toPx(), bounds.width, 0.5f)
+            assertEquals(140.dp.toPx(), bounds.left, 0.5f)
+            assertEquals(700.dp.toPx(), bounds.right, 0.5f)
+        }
+    }
+
+    @Test
+    fun aPhoneSheetStillFillsTheWidth() {
+        sheet()
+        val bounds = compose.onNodeWithTag("sheet-body").fetchSemanticsNode().boundsInWindow
+        with(compose.density) {
+            assertEquals(412.dp.toPx(), bounds.width, 0.5f)
+            assertEquals(0f, bounds.left, 0.5f)
+            assertEquals(412.dp.toPx(), bounds.right, 0.5f)
+        }
+    }
 
     @Test
     fun withTheKeyboardUpATallSheetStopsBelowTheStatusBar() {

@@ -17,6 +17,7 @@ import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.LastSet
 import works.windmill.gym.presentation.MovementProgress
 import works.windmill.gym.presentation.PersonalRecord
+import works.windmill.gym.presentation.MovementRead
 import works.windmill.gym.presentation.MovementRecord
 import works.windmill.gym.presentation.Record
 import works.windmill.gym.presentation.Review
@@ -88,7 +89,7 @@ class SharedReadParityTests {
         assertFalse(movement.hasChart(java.time.ZoneOffset.UTC))
         assertEquals(2, movement.estimates.size)
         val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
-        val page = Record.page(MovementRecord.of(bench, training.details(), 1_800_000_000_000), 1_800_000_000_000, movement)
+        val page = Record.page(MovementRead(MovementRecord.of(bench, training.details(), 1_800_000_000_000), movement, 1_800_000_000_000), 1_800_000_000_000)
         assertEquals(Record.Page("Bench Press", "Barbell", emptyList(), emptyList(),
             listOf(Record.Day("10 Jan", "110 × 5 · 110 × 5 · 110 × 5 · 110 × 5"), Record.Day("4 Jan", "100 × 5 · 100 × 5 · 100 × 5 · 100 × 5")),
             null, null, false), page)

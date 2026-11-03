@@ -108,11 +108,11 @@ Figma: Gym file, page [Android](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJR
 Code: `apps/android/gym/src/main/kotlin/works/windmill/gym/`. Components: Design System library,
 Android page. Journeys follow the iOS page and no number names two different screens across
 the phone pages; the page is the
-target ([consistency.md](design/consistency.md) 11a–11v, 12a–12r); build tasks: `androidgym_tasks/`.
+target ([consistency.md](design/consistency.md) 11a–11z, 12a–12s); build tasks: `androidgym_tasks/`.
 
 | Flow | Section | Entry → exit |
 |---|---|---|
-| 00 · The room — read me, map, anatomy | [`1224:13091`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13091) | Three tabs (Routines · The log · Coach) under one top app bar; colour roles, transient band, native parts, navigation motion and predictive back; the workout bar above the tabs while a workout runs |
+| 00 · The room — read me, map, anatomy | [`1224:13091`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13091) | Three tabs (Routines · The log · Coach) under one top app bar; colour roles, transient band, native parts, navigation motion and predictive back; the workout bar above the tabs while a workout runs; the rail from 600 dp (00.9–00.10) |
 | 01 · First open — Coach-led setup | [`1224:13095`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13095) | Empty Gym → Coach greeting → screenshot or talk → drafts applied or rejected on their card → Start (03); Build my own → 02 |
 | 02 · Routines | [`1224:13099`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13099) | Routines tab → summary → Start (03); FAB → editor → picker → targets |
 | 03 · Workout | [`1224:13103`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13103) | Start a routine (or the workout bar) → rack (steppers) → Fix set → Hide or Finish → receipt → workout detail (05) or Coach (08) |

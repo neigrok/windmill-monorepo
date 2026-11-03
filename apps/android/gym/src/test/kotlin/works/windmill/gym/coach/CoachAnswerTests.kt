@@ -1,47 +1,120 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.ui.*
+import android.app.Application
+import android.content.Intent
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHasClickAction
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.longClick
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.presentation.*
+import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.RoutineEntry
+import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.ui.GymMaterial
+import works.windmill.platform.design.LocalWindmillDark
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class CoachAnswerTests {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun linksKeepOnlyTheirLabelAndUseTheCurrentThemesPrimaryUnderline() {
+        val dark = mutableStateOf(true)
+        var primary = Color.Unspecified
+        val url = "https://example.org/top-sets"
+        compose.setContent {
+            CompositionLocalProvider(LocalWindmillDark provides dark.value) { GymMaterial {
+                primary = MaterialTheme.colorScheme.primary
+                CoachAnswer("Read [more]($url).", null, emptyList(), 0)
+            } }
+        }
+        val primaries = mutableListOf<Color>()
+        for (mode in listOf(true, false)) {
+            compose.runOnIdle { dark.value = mode }
+            val text = compose.onNodeWithText("Read more.", useUnmergedTree = true)
+                .fetchSemanticsNode().config[SemanticsProperties.Text].single()
+            assertEquals("Read more.", text.text)
+            assertEquals(listOf(AnnotatedString.Range(LinkAnnotation.Url(url, TextLinkStyles(
+                SpanStyle(color = primary, textDecoration = TextDecoration.Underline),
+            )), 5, 9)), text.getLinkAnnotations(0, text.length))
+            primaries += primary
+        }
+        assertNotEquals(primaries[0], primaries[1])
+    }
+
+    @Test
+    fun tappingTheRenderedLinkUsesTheAnswersCustomTabHandler() {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                throw AssertionError(operation)
+            }
+        }
+        compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
+            CoachAnswer("Read [more](https://example.org/top-sets).", null, emptyList(), 0)
+        } } }
+        val node = compose.onNodeWithText("Read more.", useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        val position = layouts.single().getBoundingBox(6).center
+        node.performTouchInput { click(position) }
+        compose.runOnIdle {
+            val application: Application = RuntimeEnvironment.getApplication()
+            val intent = shadowOf(application).nextStartedActivity
+            assertEquals(Intent.ACTION_VIEW, intent.action)
+            assertEquals("https://example.org/top-sets", intent.data.toString())
+            assertTrue(intent.hasExtra(CustomTabsIntent.EXTRA_SESSION))
+            assertEquals(listOf("gym_action" to mapOf("screen" to "coach", "action" to "open_link", "outcome" to "ok")), events)
+        }
+    }
 
     @Test
     fun ordinaryMarkdownUsesSixteenDpGuttersAndTheReadTallyKeepsItsThirtyTwoDpStart() {
@@ -83,7 +156,7 @@ class CoachAnswerTests {
         lateinit var clipboard: Clipboard
         val initial = "First paragraph.\n\nCafé\n東京"
         val final = "Café\n東京 — 🏋🏽‍♀️ é\nFinal words."
-        val text = androidx.compose.runtime.mutableStateOf(initial)
+        val text = mutableStateOf(initial)
         val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes"), AskStep("save_note")))
         compose.setContent { GymMaterial {
             clipboard = LocalClipboard.current

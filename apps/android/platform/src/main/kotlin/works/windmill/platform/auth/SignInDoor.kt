@@ -70,7 +70,7 @@ fun SignInDoor(
         } catch (interrupted: CancellationException) { throw interrupted }
         catch (refused: WindmillApiException) {
             if (active && currentIdentity === identity && auth.handoffRevision == revision)
-                refusal = MagicLink.refusal(refused, ofCode = typed.trim().let { it.length == 6 && it.all(Char::isDigit) })
+                refusal = MagicLink.refusal(refused)
         } catch (failed: AuthHandoffFailure) {
             if (active && currentIdentity === identity && auth.handoffRevision == revision)
                 refusal = "Sign-in could not be completed. Try again."
@@ -106,14 +106,21 @@ fun SignInDoor(
         busyCallback(true)
         refusal = null
         val entry = typed.trim()
-        val code = entry.takeIf { it.length == 6 && it.all(Char::isDigit) }
         scope.launch {
             try {
                 val beforeCommit: (User) -> Unit = {
                     if (!active || currentIdentity !== identity) throw CancellationException("The sign-in form changed.")
                 }
                 if (!auth.resumePendingSignIn(address)) {
-                    if (code != null) auth.completeCode(address, code, beforeCommit) else auth.completeLink(entry, beforeCommit)
+                    if (MagicLink.looksLikeLink(entry)) {
+                        auth.completeLink(entry, beforeCommit)
+                    } else {
+                        if (entry.length != 6 || !entry.all(Char::isDigit)) {
+                            auth.telemetry.event("auth_sign_in_started", mapOf("method" to "code"))
+                            throw MagicLink.unreadable
+                        }
+                        auth.completeCode(address, entry, beforeCommit)
+                    }
                 }
                 if (auth.handoffRevision == 0L && active && currentIdentity === identity && !completed) {
                     completed = true
@@ -124,7 +131,7 @@ fun SignInDoor(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refused: WindmillApiException) {
-                if (active && currentIdentity === identity) refusal = MagicLink.refusal(refused, ofCode = code != null)
+                if (active && currentIdentity === identity) refusal = MagicLink.refusal(refused)
             } catch (failed: Exception) {
                 if (failed !is AuthHandoffFailure) auth.telemetry.failure("auth_sign_in", failed)
                 if (active && currentIdentity === identity) refusal = "Sign-in could not be completed. Try again."

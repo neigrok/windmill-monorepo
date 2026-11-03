@@ -78,6 +78,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
@@ -513,7 +514,7 @@ private fun BuildStep(
             }
             Column {
                 Text("Movements", style = GymType.headingCompact, color = colors.onSurface,
-                    modifier = Modifier.padding(bottom = 8.dp))
+                    modifier = Modifier.semantics { heading() }.padding(bottom = 8.dp))
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
                         val movement = draft.movement(entry.exerciseId, state.catalog)?.current
@@ -568,7 +569,8 @@ private fun BuildStep(
             }
             if (history.isNotEmpty()) Column(Modifier.fillMaxWidth().testTag("routine-history"),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("History", style = GymType.historyTitle, color = colors.onSurface)
+                Text("History", style = GymType.historyTitle, color = colors.onSurface,
+                    modifier = Modifier.semantics { heading() })
                 Column(Modifier.fillMaxWidth()) {
                     val dates = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.getDefault())
                     history.forEachIndexed { index, workout ->

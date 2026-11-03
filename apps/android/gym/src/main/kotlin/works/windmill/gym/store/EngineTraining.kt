@@ -1,65 +1,76 @@
 package works.windmill.gym.store
 
-import kotlinx.coroutines.CancellationException
-import works.windmill.platform.net.WindmillApiException
-import works.windmill.platform.telemetry.Telemetry
+import java.time.Instant as JavaInstant
 import java.time.ZoneId
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CopyableThreadContextElement
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import works.windmill.domain.kit.*
-import works.windmill.gym.presentation.*
+import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.domain.sync.*
-import works.windmill.platform.net.WindmillJson
-import works.windmill.sync.api.ViewMode
-import works.windmill.sync.api.CommitReceipt
-import works.windmill.sync.core.*
-import works.windmill.sync.engine.Engine
-import works.windmill.sync.schema.Gym
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
-import works.windmill.gym.domain.sync.Routine as EngineRoutine
-import works.windmill.gym.domain.sync.Session as EngineSession
-import works.windmill.gym.domain.sync.TrainingSet as EngineSet
+import works.windmill.gym.domain.sync.LastSet as EngineLastSet
 import works.windmill.gym.domain.sync.Note as EngineNote
-import works.windmill.gym.domain.sync.WeighIn as EngineWeighIn
 import works.windmill.gym.domain.sync.Proposal as EngineProposal
 import works.windmill.gym.domain.sync.ProposalState as EngineProposalState
+import works.windmill.gym.domain.sync.Routine as EngineRoutine
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
+import works.windmill.gym.domain.sync.Session as EngineSession
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
+import works.windmill.gym.domain.sync.TrainingSet as EngineSet
+import works.windmill.gym.domain.sync.WeighIn as EngineWeighIn
+import works.windmill.gym.presentation.*
+import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.LastSet
+import works.windmill.gym.presentation.Note
+import works.windmill.gym.presentation.PersonalRecord
+import works.windmill.gym.presentation.PlanSnapshot
+import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.Session
-import works.windmill.gym.presentation.TrainingSet
-import works.windmill.gym.presentation.Note
-import works.windmill.gym.presentation.WeighIn
-import works.windmill.gym.presentation.Proposal
-import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.SetTarget
-import works.windmill.gym.presentation.ProposalState
-import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.presentation.StatsProgress
-import works.windmill.gym.presentation.PersonalRecord
-import works.windmill.gym.presentation.LastSet
-import works.windmill.gym.domain.sync.LastSet as EngineLastSet
+import works.windmill.gym.presentation.TargetEntry
+import works.windmill.gym.presentation.TrainingSet
+import works.windmill.gym.presentation.WeighIn
+import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.net.WindmillJson
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.api.CommitContext
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.CommitReceipt
+import works.windmill.sync.api.DeviceWrite
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.IntentResultDeviceWrites
+import works.windmill.sync.api.Replica
+import works.windmill.sync.api.ViewMode
+import works.windmill.sync.core.*
+import works.windmill.sync.engine.DeviceValueRewrite
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.schema.Gym
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
 class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> Boolean = engine::release,
     private val writeAuthority: () -> Boolean = { true }) {
     companion object {
-        val rewriteDeviceValue: works.windmill.sync.engine.DeviceValueRewrite = { product, key, value, type, from, to ->
+        val rewriteDeviceValue: DeviceValueRewrite = { product, key, value, type, from, to ->
             CoachRoutineImports.rewriteDeviceValue(product, key,
                 WorkoutImports.rewriteDeviceValue(product, key, value, type, from, to), type, from, to)
         }
-        val intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { intent, result, epoch, gestureId, values ->
+        val intentResultWrites: IntentResultDeviceWrites = { intent, result, epoch, gestureId, values ->
             WorkoutImports.intentResultWrites(intent, result, epoch, gestureId, values) +
                 RemovalReceipts.intentResultWrites(intent, result, epoch, gestureId, values)
         }
@@ -73,9 +84,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     fun removalProposals(): Map<String, Proposal> = removalReceipts.proposals()
     fun removalPending(id: String): Boolean = removalReceipts.pending(id)
     fun removalReceiptShown(proposal: Proposal, replica: String) = removalReceipts.shown(proposal, replica)
-    // What keeps the selected replica's gym work from the log, as the engine observes it: a paused session; no network, or
-    // a last push that got no answer the engine could read; or a last push the log answered with a 5xx. An upgrade the
-    // server requires, or another failure it answered, names no blocker here.
+    // What keeps the selected replica's gym work from the log, as the engine observes it: a paused session; no network, or a last push that got no answer the engine could read; or a last push the log answered with a 5xx. An upgrade the server requires, or another failure it answered, names no blocker here.
     val deliveryBlocker: Blocker? get() {
         val status = engine.status.state.value
         val gym = ScopeRef.product("gym")
@@ -88,13 +97,13 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
     }
     private val zone = Zone { at ->
-        ZoneId.systemDefault().rules.getOffset(java.time.Instant.ofEpochMilli(at.ms)).totalSeconds
+        ZoneId.systemDefault().rules.getOffset(JavaInstant.ofEpochMilli(at.ms)).totalSeconds
     }
     private fun requireWriteAuthority() {
         if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
     }
-    private val writable = object : works.windmill.sync.api.Replica by engine {
-        override fun <T> commit(scope: ScopeRef, body: (works.windmill.sync.api.CommitContext) -> Pair<works.windmill.sync.api.Gesture?, T>): Pair<works.windmill.sync.api.CommitOutcome?, T> =
+    private val writable = object : Replica by engine {
+        override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
             engine.commit(scope) { context -> requireWriteAuthority(); body(context) }
         override fun undo(gestureId: String): Boolean {
             requireWriteAuthority()
@@ -102,8 +111,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
     }
     // A held removal lasts the window the room asked for; every other gesture keeps the engine's own.
-    private fun holding(holdMs: Long) = object : works.windmill.sync.api.Replica by writable {
-        override fun <T> commit(scope: ScopeRef, body: (works.windmill.sync.api.CommitContext) -> Pair<works.windmill.sync.api.Gesture?, T>): Pair<works.windmill.sync.api.CommitOutcome?, T> =
+    private fun holding(holdMs: Long) = object : Replica by writable {
+        override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
             writable.commit(scope) { context -> body(context).also { (gesture, _) -> gesture?.holdMs = holdMs } }
     }
     private val reader = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
@@ -119,7 +128,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 
     private fun <T> read(body: (Reader) -> T): T = reader.read(EngineSession.scope, body)
-    private suspend fun <T> writing(replica: works.windmill.sync.api.Replica = writable, body: (ActionRunner) -> T): T = withGymActionContext { context ->
+    private suspend fun <T> writing(replica: Replica = writable, body: (ActionRunner) -> T): T = withGymActionContext { context ->
         check(!context.insideRun) { "a run cannot enter inside a run" }
         body(ActionRunner(replica, engine.registry, zone, context))
     }
@@ -301,8 +310,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         apply(FinishSession(Id(sessionId, EngineSession), finishedAtMs?.let(::Instant)))
         return writtenSession(sessionId) ?: throw missing("That workout is no longer on the log.")
     }
-    // The workout a write just recorded, read by its id and its own sets; the history is read only
-    // when the log draws no such workout and a retained import may answer for it.
+    // The workout a write just recorded, read by its id and its own sets; the history is read only when the log draws no such workout and a retained import may answer for it.
     private fun writtenSession(id: String): Session? = read { reader ->
         val identity = Id(id, EngineSession)
         reader.repository(EngineSession).find(identity, ViewMode.drawn)?.let { session ->
@@ -313,13 +321,21 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         expectedAnonymous: Boolean = anonymous) {
         remove(DiscardSession(Id(sessionId, EngineSession)), expectedReplica, expectedAnonymous)
     }
-    // Before a sign-in, every signed-out workout is retained in the import journal for the account.
-    fun prepareAdoption() {
-        if (!anonymous) return
-        for (detail in details()) {
-            val deleted = read { reader -> reader.devices("rack:deletedSet").values.filter { it["sessionId"] == Json.of(detail.session.id) }
-                .map { it.member("setId").str() } }
-            imports.prepare(SavedWorkout(detail.session, detail.sets, deleted))
+    // Failed items remain local while other workouts adopt; an outer failure retains the anonymous replica.
+    fun prepareAdoption(telemetry: Telemetry = Telemetry.None): Boolean {
+        try {
+            if (!anonymous) return true
+            for (detail in details()) {
+                val deleted = read { reader -> reader.devices("rack:deletedSet").values.filter { it["sessionId"] == Json.of(detail.session.id) }
+                    .map { it.member("setId").str() } }
+                imports.prepareForAdoption(SavedWorkout(detail.session, detail.sets, deleted))?.let { failure ->
+                    telemetry.failure("gym.prepareAdoption", failure)
+                }
+            }
+            return true
+        } catch (failure: Exception) {
+            telemetry.failure("gym.prepareAdoption", failure)
+            return false
         }
     }
     fun openWorkout(): SessionDetail? = read {
@@ -337,9 +353,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         val heldStarts = if (reader.isAnonymous || reader.firstPullComplete()) emptyList() else imports.startSources()
         val drawn = log.drawnSessions.map { session ->
             val sets = log.sets(session.id).map { it.ui() }
-            val held = heldStarts.firstOrNull { it["session"]?.get("id") == session.id.json }?.get("entries")?.obj().orEmpty().values.mapNotNull { entry ->
-                runCatching { WindmillJson.decodeFromString<OwedSet>(entry.jcs) }.getOrNull()?.takeIf { it.write != Owed.Delete }?.set
-            }.filter { reader.repository(EngineSet).record(Id(it.id, EngineSet), ViewMode.stored) == null }
+            val held = heldStarts.firstOrNull { it.session.id == session.id.text }?.sets.orEmpty()
+                .filter { reader.repository(EngineSet).record(Id(it.id, EngineSet), ViewMode.stored) == null }
             SessionDetail(session.ui(), (sets + held).distinctBy { it.id }.sortedWith(compareBy({ it.completedAtMs }, { it.id })))
         }
         val retained = imports.retainedWorkouts()
@@ -372,8 +387,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }.mapTo(sessions) { it.member("sessionId").str() }
         sessions
     } + imports.operations().map { it.sessionId } + imports.retainedWorkouts().map { it.session.id }
-    // The log newest first below the cursor: `limit` rows, or as many as reach down to `through`, the deepest row the
-    // reader holds, so a re-read covers every row it has walked.
+    // The log newest first below the cursor: `limit` rows, or as many as reach down to `through`, the deepest row the reader holds, so a re-read covers every row it has walked.
     fun sessions(limit: Int, before: Long?, beforeId: String?, through: SessionSummary? = null): List<SessionSummary> = read {
         val history = details()
         if (!anonymous && !firstPullComplete && history.isEmpty()) throw TrainingUnanswered
@@ -407,8 +421,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         if (!reader.isAnonymous && !reader.firstPullComplete() && record?.life?.isAlive != false) throw TrainingUnanswered
         null
     }
-    // The shared review over the replica. A workout this phone holds that the replica does not draw yet has nothing
-    // to say: its record and comparison need the account's history.
+    // The shared review over the replica. A workout this phone holds that the replica does not draw yet has nothing to say: its record and comparison need the account's history.
     fun review(sessionId: String): Review = read { reader ->
         val review = SessionReview.of(Id(sessionId, EngineSession), TrainingLog(reader))
         if (review == null && session(sessionId) == null) throw missing("That workout is no longer on the log.")
@@ -678,7 +691,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     suspend fun putBodyweight(dateLocal: String, weightKg: Double,
         expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): WeighIn {
-        val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", works.windmill.gym.presentation.Bodyweight.notAForecast)
+        val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", Bodyweight.notAForecast)
         val saved = writing { runner ->
             val blank = EngineWeighIn(day)
             val draft = runner.open(EngineWeighIn, blank.id, blank).edit { it.copy(kg = weightKg) }
@@ -750,10 +763,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
     }
 
-    // Signed-out training prepared for this account: confirmed starts settle, then the sets an
-    // unfinished workout still owes follow it under their own ids, replayed as they were recorded.
+    // Signed-out training prepared for this account: confirmed starts settle, then the sets an unfinished workout still owes follow it under their own ids, replayed as they were recorded.
     suspend fun reconcileImports() {
-        imports.reconcileConfirmed()
+        val deferredFailure = imports.reconcileConfirmed()
         if (anonymous || firstPullComplete) for (deletion in imports.deletedSets()) {
             deleteSet(deletion.sessionId, deletion.setId)
             imports.resolveDeletion(deletion.token)
@@ -769,10 +781,12 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             try {
                 reconcileOperation(operation)
             } catch (refused: TrainingRefused) {
+                if (!currentCoroutineContext().isActive) throw refused
                 if (refused.code == Gym.Codes.sessionFinished && imports.recoverFinishedOperation(operation)) continue
                 imports.refuseOperation(operation, refused.code)
             }
         }
+        deferredFailure?.let { throw it }
     }
 
     internal suspend fun reconcileOperation(operation: ImportOperation) {
@@ -810,7 +824,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 gesture.local += checkNotNull(imports.operationSubmission(operation, context, submission))
                 gesture to Unit
             }.first
-            if (outcome is works.windmill.sync.api.CommitOutcome.Refused)
+            if (outcome is CommitOutcome.Refused)
                 throw refusal(GymRefusal.of(Refused(outcome.code, subject = null, detail = outcome.detail, path = Refused.Path.predicted)))
         }
     }
@@ -873,10 +887,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
         for (set in missing) controls.store(commitAccepted(controls, set, session.id), session.id)
     }
-    private fun controls(controls: WorkoutControls): List<works.windmill.sync.api.DeviceWrite> = controls.session?.let { session -> listOf(
-        works.windmill.sync.api.DeviceWrite("movementOrder:${session.id}", Json.Arr(controls.order.map(Json::of))),
-        works.windmill.sync.api.DeviceWrite("movement:${session.id}", controls.chosenMovement?.let(Json::of)),
-        works.windmill.sync.api.DeviceWrite("rack:${session.id}", Json.parse(WindmillJson.encodeToString(WorkoutState.serializer(), controls.workout))),
+    private fun controls(controls: WorkoutControls): List<DeviceWrite> = controls.session?.let { session -> listOf(
+        DeviceWrite("movementOrder:${session.id}", Json.Arr(controls.order.map(Json::of))),
+        DeviceWrite("movement:${session.id}", controls.chosenMovement?.let(Json::of)),
+        DeviceWrite("rack:${session.id}", Json.parse(WindmillJson.encodeToString(WorkoutState.serializer(), controls.workout))),
     ) }.orEmpty()
     fun persistControls(controls: WorkoutControls) {
         if (controls.engineReplica != engine.activeReplica()) return
@@ -885,7 +899,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         engine.commit(EngineSession.scope) { reader ->
             requireWriteAuthority()
             val changed = wanted.filter { reader.device(it.key) != it.value }
-            if (changed.isEmpty()) null to Unit else works.windmill.sync.api.Gesture(emptyList(), local = changed) to Unit
+            if (changed.isEmpty()) null to Unit else Gesture(emptyList(), local = changed) to Unit
         }
     }
     fun restoreControls(controls: WorkoutControls) {
@@ -930,14 +944,14 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 refusal.violation.rule == NoteRules.title.path && refusal.violation.reason is Violation.Reason.TooLong -> "a title runs to 60 characters"
                 refusal.violation.rule == NoteRules.body.path && refusal.violation.reason is Violation.Reason.TooLong -> "a note runs to 500 bytes"
                 refusal.violation.rule == SetRules.loadFloor || refusal.violation.rule == RoutineRules.loadFloor ->
-                    works.windmill.gym.presentation.TargetEntry.belowFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
+                    TargetEntry.belowFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
                 else -> "Check ${refusal.violation.path.text.substringAfterLast('.')}."
             }
             is GymRefusal.Stale -> "stale" to "That changed. Open it again."
             is GymRefusal.Gone -> "unknown-record" to "That is no longer on the log."
             is GymRefusal.Taken -> "id-taken" to "That identity is already on the log."
             is GymRefusal.Full -> "cap" to "The log has reached its limit. Remove an entry first."
-            is GymRefusal.Future -> "bad-instant" to works.windmill.gym.presentation.Bodyweight.notAForecast
+            is GymRefusal.Future -> "bad-instant" to Bodyweight.notAForecast
             is GymRefusal.SessionFinished -> refusal.refused.code.text to "That workout has finished."
             is GymRefusal.SessionOpen -> refusal.refused.code.text to "Finish the workout first."
             is GymRefusal.SessionOverlap -> refusal.refused.code.text to "This workout overlaps another workout. Correct its times and retry."
@@ -953,19 +967,16 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 }
 
-// A write the log's rules refuse, in the words a person reads: an expected answer, never a failure
-// to report.
+// A write the log's rules refuse, in the words a person reads: an expected answer, never a failure to report.
 class TrainingRefused(val code: String, val line: String) : Exception()
 class TrainingDeleteUnconfirmed(cause: Exception) : Exception(cause)
 
-// What the replica cannot answer yet: the account's first pull, or the log's receipt for a decision,
-// has not arrived.
+// What the replica cannot answer yet: the account's first pull, or the log's receipt for a decision, has not arrived.
 data object TrainingUnanswered : Exception()
 
-// A refusal, an unanswered read, a transport answer or a cancellation is expected and its caller says so; only
-// the rest reaches Sentry, under the operation's static name.
+// Refusals and transport answers are expected; each suspending boundary checks cancellation before reporting.
 internal fun Telemetry.unexpected(operation: String, error: Exception) {
-    if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException) return
+    if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered) return
     failure(operation, error)
 }
 

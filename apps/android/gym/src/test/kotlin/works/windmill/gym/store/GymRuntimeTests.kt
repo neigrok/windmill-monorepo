@@ -2,29 +2,31 @@ package works.windmill.gym.store
 
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import works.windmill.platform.auth.AuthStore
-import works.windmill.platform.auth.AuthStatus
-import works.windmill.platform.auth.LocalSession
-import works.windmill.platform.auth.MemorySessions
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.presentation.*
+import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.platform.Account
 import works.windmill.platform.User
+import works.windmill.platform.auth.AuthStatus
+import works.windmill.platform.auth.AuthStore
+import works.windmill.platform.auth.LocalSession
+import works.windmill.platform.auth.MemorySessions
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.signIn
 
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class GymRuntimeTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -265,7 +267,7 @@ class GymRuntimeTests {
                 assertEquals(FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first.")), room.store.workout.finish())
                 room.store.workout.choose("overhead-press")
                 room.store.workout.reorder(0, 1)
-                assertFalse(room.store.workout.drop("overhead-press"))
+                assertEquals(WorkoutChange.Unavailable("The workout is not ready."), room.store.workout.drop("overhead-press"))
                 assertEquals(FixOutcome.Failed(WriteFailure.Refused("the account changed while fixing")),
                     room.store.workout.fixSet(live.id, accepted.id, SetFix(weightKg = 40.0)))
                 assertEquals(WriteFailure.Refused("the account changed while deleting"), room.store.workout.deleteSet(live.id, accepted.id))

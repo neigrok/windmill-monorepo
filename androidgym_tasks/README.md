@@ -1,6 +1,6 @@
 # Android gym tasks
 
-These 105 tasks describe the Android implementation backlog; the quality wave's design work is in [the design brief](design-brief-quality-wave.md). Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
+These tasks describe the Android implementation backlog; the quality wave's design work is in [the design brief](design-brief-quality-wave.md), and the review wave's (D1–D7) in [its brief](design-brief-review-wave.md). Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
 
 The six revised Gym flows were approved on **2026-10-25**. Each task records its current implementation and design status. Approval covers the linked revisions, including the headerless Workout and retained weigh-in Undo; it does not approve every other Gym or Shell board in this backlog.
 
@@ -35,7 +35,7 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 |---|---|---|
 | `android-gym-signed-load-input-design` · resolved | [07](07-number-stepper.md), [10](10-fix-set.md), [18](18-targets.md) | Use the approved native-keyboard minus interaction and original sizing; verify negative decimal entry on the target emulator |
 | `android-regular-stepper-overflow-design` · resolved for unit-below layout | [18](18-targets.md), [19](19-create-movement.md) | [02.25 Load unit below](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960) is 🚀 In production, human-approved 2026-10-28. Preserve text size, native keyboard and pinned action; the older full-width/buttons-below fallback remains unapproved. |
-| `android-routine-target-summary-responsive-design` · postponed by human 2026-10-29 | [18](18-targets.md) | The [Target summary proposal](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1675-10931) stays unapproved on Proposals. Keep the current summary layout; its known overlap at 320 dp / 200% text is excluded from this release. The approved Load-field fix continues. |
+| `android-routine-target-summary-responsive-design` · resolved 2026-11-03 | [18](18-targets.md), [87](87-large-text-everywhere.md) | [02.26 Target stacks at 320 dp · 200 %](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1850-30891) is ✅ Ready for dev, human-approved 2026-11-03: Target and its summary stack when they do not fit on one line. The approved Load-field fix continues. |
 | `android-gym-equipment-variants-design` · resolved | [08](08-units-by-equipment.md), [19](19-create-movement.md), [20](20-edit-exercise.md), [21](21-record.md) | [Canonical plain Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), 🚀 In production; no Name/Equipment hints. Preserve legacy values/history. New iOS/web pickers require separate design approval. |
 | `android-gym-empty-finish-design` · resolved | [14](14-finish-receipt.md) | [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production with task 14, human-approved 2026-10-25 |
 | `android-gym-no-routine-picker-design` | [13](13-free-workout-start.md) | Changing the existing picker for an externally started workout without a routine |
@@ -247,5 +247,14 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [103](103-proposal-still-arriving.md) — Coach shows that its proposal is still arriving
 - [104](104-record-before-the-first-pull.md) — The record page's Recent sets before the first pull
 - [105](105-quiet-set-count-follow-ups.md) — The quiet set count: the owner's open questions
+- [106](106-notes-and-navigation-state.md) — Notes keep separate visits, handle swipes scroll, and failed reads can retry
+- [107](107-history-reads.md) — History paging belongs to its job, and opened records follow their replica
+- [108](108-workout-writes-and-recovery.md) — Workout writes and recovery retain the whole saved source
+- [109](109-auth-and-rest.md) — Auth failures say what happened, and REST keeps its boundaries
+- [110](110-telemetry-queue.md) — Telemetry saves off the caller and dormant accounts yield capacity
+- [111](111-release-mapping-headings.md) — Release mappings and accessible headings
+- [115](115-faint-ink-and-sheet-width.md) — Dark faint ink clears small-text contrast; every modal sheet is bounded to 560 dp
+- [116](116-coach-links.md) — Coach answer links open and keep their destinations when copied
+- [117](117-workout-link-sharesheet.md) — Share a workout link through the Android Sharesheet beside Copy link
 
 The [handoff record](../docs/engineering/android-task-handoff.md) maps the 16 review corrections to their owning tasks and records the current delivery boundaries.

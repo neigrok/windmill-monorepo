@@ -5,17 +5,21 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import kotlinx.coroutines.CompletableDeferred
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthLifecycle
 import works.windmill.platform.auth.AuthSignOutChoice
 import works.windmill.platform.auth.AuthSignOutSession
-import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.Refusal
+import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.*
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineError
 import works.windmill.sync.engine.LineageAnswer
@@ -24,7 +28,6 @@ import works.windmill.sync.engine.SignOutChoice
 import works.windmill.sync.engine.SignOutSession
 import works.windmill.sync.engine.SyncRuntime
 import works.windmill.sync.engine.discardDormant
-import works.windmill.sync.core.*
 
 class GymEngineSession(
     val engine: Engine,
@@ -37,7 +40,7 @@ class GymEngineSession(
 ) : AuthLifecycle, AutoCloseable {
     var decision: SignInSession? by mutableStateOf(null)
         private set
-    private val decisionIdentity = java.util.UUID.randomUUID().toString()
+    private val decisionIdentity = UUID.randomUUID().toString()
     val decisionKey: String get() = "$decisionIdentity:$decisionRevision"
     var decisionRevision: Long by mutableLongStateOf(0L)
         private set
@@ -56,8 +59,8 @@ class GymEngineSession(
         }
         try {
             beforeAccountChange()
-            EngineTraining(engine).prepareAdoption()
-            var session = runtime.signIn(user.id, token)
+            val prepared = EngineTraining(engine).prepareAdoption(telemetry)
+            var session = runtime.signIn(user.id, token, retainAnonymous = !prepared)
             while (!session.isComplete) {
                 val completion = CompletableDeferred<Unit>()
                 decisionRevision += 1
@@ -68,11 +71,16 @@ class GymEngineSession(
                 completion.await()
                 if (!session.isComplete) session = runtime.resumeSignIn() ?: throw EngineError(EngineError.Code.signInEnded)
             }
-        } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) { runtime.abandonSignIn(user.id, token) }
-            throw cancelled
-        }
-        catch (failure: EngineError) {
+        } catch (failure: Exception) {
+            if (!currentCoroutineContext().isActive) {
+                withContext(NonCancellable) { runtime.abandonSignIn(user.id, token) }
+                throw failure
+            }
+            if (answer?.isCancelled == true) {
+                withContext(NonCancellable) { runtime.abandonSignIn(user.id, token) }
+                throw failure
+            }
+            if (failure !is EngineError) throw failure
             telemetry.event("gym_sign_in_decision", mapOf("outcome" to failure.code.name))
             if (failure.code == EngineError.Code.unreachable) throw WindmillApiException.Offline
             if (failure.code == EngineError.Code.upgradeRequired)
@@ -106,12 +114,13 @@ class GymEngineSession(
             telemetry.event("gym_sign_in_decision", mapOf("action" to choice.name, "outcome" to "completed"))
             answer?.complete(Unit)
         } catch (changed: EngineError) {
+            if (!currentCoroutineContext().isActive) throw changed
             if (changed.code == EngineError.Code.signInChanged) {
                 telemetry.event("gym_sign_in_decision", mapOf("outcome" to "changed"))
                 answer?.complete(Unit)
             } else decisionFailure = "The account could not be selected. Try again."
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) {
+        } catch (failure: Exception) {
+            if (!currentCoroutineContext().isActive) throw failure
             telemetry.failure("gym_sign_in_decision", failure)
             decisionFailure = "The account could not be selected. Your work is still on this phone. Try again."
         } finally { decisionBusy = false }
@@ -162,8 +171,8 @@ class GymEngineSession(
         try {
             body()
             tell("gym_sign_out", mapOf("action" to action, "outcome" to "completed"))
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) {
+        } catch (failure: Exception) {
+            if (!currentCoroutineContext().isActive) throw failure
             tell("gym_sign_out", mapOf("action" to action, "outcome" to "failed"))
             throw failure
         }

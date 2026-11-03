@@ -24,11 +24,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -37,12 +40,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -108,23 +113,11 @@ internal sealed interface Away {
     data class InspectWorkout(val id: String) : Away
 }
 
-// What an entry says about itself, whatever it carries: which screen it is (a session whose detail arrives later is
-// still the same screen), the `gym_screen_viewed` label, and the way-back line a screen above it shows. Names are read
-// off the catalogue, so a rename moves the way back too.
-internal val Away.key: String
-    get() = when (this) {
-        is Away.Session -> "session:${summary.id}"
-        is Away.Movement -> "movement:$exerciseId"
-        is Away.Coach -> "coach"
-        Away.Threads -> "threads"
-        is Away.Thread -> "thread:$threadId"
-        Away.Connections -> "connections"
-        Away.Notes -> "notes"
-        is Away.NoteEditor -> "note:${note?.id.orEmpty()}"
-        Away.Bodyweight -> "bodyweight"
-        Away.OnThisPhone -> "on-this-phone"
-        is Away.InspectWorkout -> "inspect:$id"
-    }
+@Serializable
+internal data class Entry(val id: String, val away: Away) {
+    constructor(away: Away) : this(UUID.randomUUID().toString(), away)
+    val stateKey: String get() = "away:$id"
+}
 
 internal val Away.screen: String
     get() = when (this) {
@@ -154,16 +147,40 @@ internal fun Away.wayBack(catalog: List<Exercise>): String = when (this) {
     Away.OnThisPhone, is Away.InspectWorkout -> "On this phone"
 }
 
-internal fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
-    save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
+internal fun awaySaver(telemetry: Telemetry) = Saver<List<Entry>, String>(
+    save = { WindmillJson.encodeToString(ListSerializer(Entry.serializer()), it) },
     restore = { raw -> runCatching {
-        val retained = WindmillJson.parseToJsonElement(raw).jsonArray.filterNot {
-            it.jsonObject["type"]?.jsonPrimitive?.content == "works.windmill.gym.Away.Settings"
+        val entries = WindmillJson.parseToJsonElement(raw).jsonArray.mapNotNull { saved ->
+            val value = saved.jsonObject
+            val route = value["away"] ?: saved
+            if (route.jsonObject["type"]?.jsonPrimitive?.content == "works.windmill.gym.Away.Settings") return@mapNotNull null
+            if ("away" in value) WindmillJson.decodeFromJsonElement(Entry.serializer(), saved)
+            else Entry(WindmillJson.decodeFromJsonElement(Away.serializer(), saved))
         }
-        WindmillJson.decodeFromJsonElement(ListSerializer(Away.serializer()), JsonArray(retained))
+        require(entries.all { it.id.isNotBlank() } && entries.map { it.id }.distinct().size == entries.size)
+        entries
     }
         .onFailure { telemetry.failure("gym.restoreNavigation", it) }.getOrDefault(emptyList()) },
 )
+
+internal class FrameStates(val holder: SaveableStateHolder) {
+    private var owned = emptySet<String>()
+
+    fun keep(keys: Set<String>) {
+        (owned - keys).forEach(holder::removeState)
+        owned = keys
+    }
+}
+
+@Composable
+internal fun rememberFrameStates(seat: String, owned: Set<String>): FrameStates {
+    val states = key(seat) {
+        val holder = rememberSaveableStateHolder()
+        remember(holder) { FrameStates(holder) }
+    }
+    SideEffect { states.keep(owned) }
+    return states
+}
 
 // Back has five meanings on this surface and only one of them is a pop. The finish receipt is not
 // among them: it is a sheet, and a sheet answers back by coming down.
@@ -206,8 +223,9 @@ internal sealed interface Frame {
     }
 
     // `under` is the entry the way back leads to; null is the tab, or the logger, beneath the stack.
-    data class Pushed(override val tab: Tab, val away: Away, val position: Int, val under: Away?) : Frame {
-        override val key get() = "away:$position:${away.key}"
+    data class Pushed(override val tab: Tab, val entry: Entry, val position: Int, val under: Away?) : Frame {
+        val away get() = entry.away
+        override val key get() = entry.stateKey
         override val depth get() = 1 + position
         override val hostsTransient get() = false
     }
@@ -219,14 +237,17 @@ internal sealed interface Frame {
     }
 }
 
+internal fun Frame.stateKey(sessionId: String? = null): String? =
+    if (this is Frame.Workout) sessionId?.let { "$key:$it" } else key
+
 // Where the room stands: the navigator's tab and stack, and the two things above them that the
 // room owns — a routine draft and the visible logger.
-internal data class Standing(val tab: Tab, val away: List<Away>, val building: Boolean, val logger: Boolean) {
+internal data class Standing(val tab: Tab, val entries: List<Entry>, val building: Boolean, val logger: Boolean) {
     val means: BackMeans
         get() = when {
-            logger && !building && away.isEmpty() -> BackMeans.HideTheWorkout
+            logger && !building && entries.isEmpty() -> BackMeans.HideTheWorkout
             building -> BackMeans.LeaveTheDraft
-            away.isNotEmpty() -> BackMeans.PopOnePushedScreen
+            entries.isNotEmpty() -> BackMeans.PopOnePushedScreen
             tab != Tab.Routines -> BackMeans.ReturnToTheRoutinesTab
             else -> BackMeans.LeaveTheApp
         }
@@ -236,7 +257,7 @@ internal data class Standing(val tab: Tab, val away: List<Away>, val building: B
         get() = when (means) {
             BackMeans.HideTheWorkout -> Frame.Workout(tab)
             BackMeans.LeaveTheDraft -> Frame.Draft(tab)
-            BackMeans.PopOnePushedScreen -> Frame.Pushed(tab, away.last(), away.size, away.getOrNull(away.size - 2))
+            BackMeans.PopOnePushedScreen -> Frame.Pushed(tab, entries.last(), entries.size, entries.getOrNull(entries.size - 2)?.away)
             BackMeans.ReturnToTheRoutinesTab, BackMeans.LeaveTheApp -> Frame.Root(tab)
         }
 
@@ -244,7 +265,7 @@ internal data class Standing(val tab: Tab, val away: List<Away>, val building: B
     fun afterBack(): Standing? = when (means) {
         BackMeans.HideTheWorkout -> copy(logger = false)
         BackMeans.LeaveTheDraft -> copy(building = false)
-        BackMeans.PopOnePushedScreen -> copy(away = away.dropLast(1))
+        BackMeans.PopOnePushedScreen -> copy(entries = entries.dropLast(1))
         BackMeans.ReturnToTheRoutinesTab -> copy(tab = Tab.Routines)
         BackMeans.LeaveTheApp -> null
     }
@@ -305,24 +326,27 @@ internal fun BackGuard(enabled: Boolean, ask: () -> Unit) {
 // The room's navigation: which tab is open and the screens pushed over it. What a back means is a
 // rule of `Standing`, read off this and the room's own draft and logger.
 @Stable
-internal class GymNavigator(tab: Tab = Tab.Routines, away: List<Away> = emptyList()) {
+internal class GymNavigator(tab: Tab = Tab.Routines, entries: List<Entry> = emptyList()) {
     var tab by mutableStateOf(tab)
         private set
-    var away by mutableStateOf(away)
+    var entries by mutableStateOf(entries)
         private set
+    val away: List<Away> get() = entries.map { it.away }
     val guards = BackGuards()
 
-    fun push(at: Away) { away = away + at }
-    fun pop() { away = away.dropLast(1) }
-    fun reset(to: List<Away> = emptyList()) { away = to }
+    fun push(at: Away) { entries = entries + Entry(at) }
+    fun pop() { entries = entries.dropLast(1) }
+    fun reset(to: List<Away> = emptyList()) { entries = to.map(::Entry) }
     fun choose(next: Tab) { tab = next }
-    fun standing(building: Boolean, logger: Boolean) = Standing(tab, away, building, logger)
+    fun ownedStateKeys(building: Boolean): Set<String> =
+        entries.map { it.stateKey }.toSet() + if (building) setOf(Frame.Draft(tab).key) else emptySet()
+    fun standing(building: Boolean, logger: Boolean) = Standing(tab, entries, building, logger)
 
     companion object {
         fun saver(telemetry: Telemetry): Saver<GymNavigator, Any> {
             val stack = awaySaver(telemetry)
             return listSaver(
-                save = { listOf(with(tabSaver) { save(it.tab) }, with(stack) { save(it.away) }) },
+                save = { listOf(with(tabSaver) { save(it.tab) }, with(stack) { save(it.entries) }) },
                 restore = { GymNavigator(restoredTab(it[0]), (it[1] as? String)?.let(stack::restore).orEmpty()) },
             )
         }
@@ -426,12 +450,14 @@ internal fun GymStage(
                 }
                 gesture.progress.snapTo(NavigationMotion.backProgress(event.progress))
             }
-        } catch (cancelled: CancellationException) {
+        } catch (failure: Exception) {
             held?.let { turn -> scope.launch {
                 try { gesture.progress.animateTo(0f, tween(NavigationMotion.durationMs / 2, easing = NavigationMotion.emphasized)) }
                 finally { gesture.settle(turn) }
             } }
-            throw cancelled
+            if (!currentCoroutineContext().isActive) throw failure
+            if (failure !is CancellationException) throw failure
+            return@PredictiveBackHandler
         }
         if (guard != null) {
             guard.ask()

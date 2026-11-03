@@ -126,6 +126,7 @@ jobs:
         run: |
           umask 077
           python3 tools/release.py stage \
+            --mapping app/build/outputs/mapping/release/mapping.txt \
             --apk-dir app/build/outputs/apk/release --out signing-input \
             --build-tools "$ANDROID_HOME/build-tools/36.0.0"
 

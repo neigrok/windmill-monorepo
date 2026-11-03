@@ -1,5 +1,21 @@
 package works.windmill.gym.store
 
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -10,26 +26,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.sync.engine.signIn
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Instant
 import works.windmill.domain.kit.Outcome
+import works.windmill.gym.domain.sync.Exercise as EngineExercise
+import works.windmill.gym.domain.sync.ImportSession
+import works.windmill.gym.domain.sync.ImportedSet
+import works.windmill.gym.domain.sync.Session as EngineSession
+import works.windmill.gym.domain.sync.TrainingSet as EngineSet
+import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.SessionStart
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.SetWrite
-import works.windmill.gym.domain.sync.ImportSession
-import works.windmill.gym.domain.sync.ImportedSet
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.api.DeviceWrite
+import works.windmill.sync.api.Gesture
 import works.windmill.sync.core.Json
-import works.windmill.sync.engine.*
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
+import works.windmill.sync.engine.Pulls
+import works.windmill.sync.engine.signIn
+import works.windmill.sync.engine.signOut
+import works.windmill.sync.engine.start
 import works.windmill.sync.modelserver.ModelServer
-import works.windmill.gym.domain.sync.Exercise as EngineExercise
-import works.windmill.gym.domain.sync.Session as EngineSession
-import works.windmill.gym.domain.sync.TrainingSet as EngineSet
+import works.windmill.sync.schema.SyncSchema
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class HistoryReadsTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -51,7 +78,339 @@ class HistoryReadsTests {
             ?: intent.member("d").arr().joinToString { "${it.member("t").str()} ${it.member("id").str()}" }
     }
 
-    @Test fun anOpenMovementEditorCannotWriteIntoAnotherAccountBeforeOrAfterConnect() = runTest {
+    private class HeldReads : CoroutineDispatcher() {
+        var hold = false
+        val waiting = ArrayDeque<Runnable>()
+        override fun isDispatchNeeded(context: CoroutineContext) = hold
+        override fun dispatch(context: CoroutineContext, block: Runnable) { waiting.add(block) }
+        fun release() {
+            hold = false
+            while (waiting.isNotEmpty()) waiting.removeFirst().run()
+        }
+    }
+
+    @Test fun cancellingThePageCallerStillPublishesTheWholePage() = runTest(timeout = 30.seconds) {
+        val reads = HeldReads()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, readDispatcher = reads).use { room ->
+            try {
+                repeat(60) { index ->
+                    val id = "session${index.toString().padStart(3, '0')}"
+                    room.training.startSession(SessionStart(id, room.now - 100_000 + index * 1_000L))
+                    room.training.finishSession(id, room.now - 99_500 + index * 1_000L)
+                }
+                room.select(null)
+                runCurrent()
+                reads.hold = true
+                val caller = async(start = CoroutineStart.UNDISPATCHED) { withTimeout(5_000) { room.store.history.loadOlder() } }
+                runCurrent()
+                assertEquals(Older.Loading, room.store.history.older)
+                assertEquals(1, reads.waiting.size)
+                caller.cancel()
+                reads.release()
+                withTimeout(5_000) { caller.join() }
+                runCurrent()
+                assertEquals((59 downTo 0).map { "session${it.toString().padStart(3, '0')}" }, room.store.history.logged.map { it.id })
+                assertEquals(Older.End, room.store.history.older)
+            } finally {
+                reads.release()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test fun concurrentPageCallersWaitForTheSameRead() = runTest(timeout = 30.seconds) {
+        val reads = HeldReads()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, readDispatcher = reads).use { room ->
+            try {
+                repeat(120) { index ->
+                    val id = "session${index.toString().padStart(3, '0')}"
+                    room.training.startSession(SessionStart(id, room.now - 200_000 + index * 1_000L))
+                    room.training.finishSession(id, room.now - 199_500 + index * 1_000L)
+                }
+                room.select(null)
+                runCurrent()
+                reads.hold = true
+                val first = async(start = CoroutineStart.UNDISPATCHED) { withTimeout(5_000) { room.store.history.loadOlder() } }
+                val second = async(start = CoroutineStart.UNDISPATCHED) { withTimeout(5_000) { room.store.history.loadOlder() } }
+                assertFalse(first.isCompleted)
+                assertFalse(second.isCompleted)
+                runCurrent()
+                assertEquals(1, reads.waiting.size)
+                reads.release()
+                withTimeout(5_000) { first.await(); second.await() }
+                assertEquals((119 downTo 20).map { "session${it.toString().padStart(3, '0')}" }, room.store.history.logged.map { it.id })
+                assertEquals(Older.More, room.store.history.older)
+            } finally {
+                reads.release()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test fun changingAccountClearsPagingAndLetsItsCallerReturnNormally() = runTest(timeout = 30.seconds) {
+        val reads = HeldReads()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, readDispatcher = reads).use { room ->
+            try {
+                room.select("alice")
+                room.pull(EngineRoomFixture.server())
+                repeat(60) { index ->
+                    val id = "session${index.toString().padStart(3, '0')}"
+                    room.training.startSession(SessionStart(id, room.now - 100_000 + index * 1_000L))
+                    room.training.finishSession(id, room.now - 99_500 + index * 1_000L)
+                }
+                room.store.connect(room.account())
+                runCurrent()
+                reads.hold = true
+                val caller = async(start = CoroutineStart.UNDISPATCHED) {
+                    withTimeout(5_000) { room.store.history.loadOlder() }
+                    "returned"
+                }
+                runCurrent()
+                assertEquals(Older.Loading, room.store.history.older)
+                assertEquals(1, reads.waiting.size)
+                reads.hold = false
+                val switching = async(start = CoroutineStart.UNDISPATCHED) { room.select("bob") }
+                runCurrent()
+                assertEquals(emptyList<String>(), room.store.history.logged.map { it.id })
+                assertFalse(room.store.history.older == Older.Loading)
+                reads.release()
+                withTimeout(5_000) { switching.await() }
+                assertEquals("returned", withTimeout(5_000) { caller.await() })
+                assertEquals(emptyList<String>(), room.store.history.logged.map { it.id })
+                assertEquals(Older.Reading, room.store.history.older)
+            } finally {
+                reads.release()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test fun aPageRequestedAfterStoreTeardownNeverLeavesLoading() = runTest(timeout = 30.seconds) {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            room.scope.cancel()
+            withTimeout(5_000) { room.store.history.loadOlder() }
+            assertEquals(Older.End, room.store.history.older)
+            assertTrue(currentCoroutineContext().isActive)
+        }
+    }
+
+    @Test fun pullObservationCanBeStoppedAndStartedAgain() = runTest(timeout = 30.seconds) {
+        val pulls = MutableStateFlow(Pulls())
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, pulls = pulls).use { room ->
+            val history = room.store.history
+            val first = history.observePulls()
+            assertTrue(first === history.observePulls())
+            pulls.value = Pulls(sent = 1)
+            runCurrent()
+            assertEquals(Pulls(sent = 1), history.pulled)
+            first.cancel()
+            withTimeout(5_000) { first.join() }
+            assertTrue(first.children.none())
+            pulls.value = Pulls(sent = 2)
+            runCurrent()
+            assertEquals(Pulls(sent = 1), history.pulled)
+            val second = history.observePulls()
+            assertFalse(first === second)
+            assertTrue(second.isActive)
+            pulls.value = Pulls(sent = 3)
+            runCurrent()
+            assertEquals(Pulls(sent = 3), history.pulled)
+        }
+    }
+
+    @Test fun aMovementReadRunsOnTheReadDispatcherAndCarriesMatchingProgress() = runTest(timeout = 30.seconds) {
+        val reads = HeldReads()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, readDispatcher = reads).use { room ->
+            try {
+                room.select(null)
+                val ended = room.workout(load = 82.5)
+                runCurrent()
+                reads.hold = true
+                val pending = async(start = CoroutineStart.UNDISPATCHED) { room.store.history.record("bench-press") }
+                assertFalse(pending.isCompleted)
+                assertEquals(1, reads.waiting.size)
+                reads.release()
+                val read = (withTimeout(5_000) { pending.await() } as RecordRead.Ready).value
+                assertEquals(room.training.record("bench-press"), read.record)
+                assertEquals(listOf(ended.id), read.record.recentDays.map { it.sessionId })
+                assertEquals(listOf(ended.id), read.progress.sessions.map { it.id })
+                val progress = room.training.progress()
+                val movement = progress.movement("bench-press")
+                assertEquals(movement.exerciseId, read.progress.exerciseId)
+                assertEquals(movement.sessions, read.progress.sessions)
+                assertEquals(movement.earlierRecords, read.progress.earlierRecords)
+                assertEquals(movement.isComplete, read.progress.isComplete)
+                assertEquals(movement.estimatesComplete, read.progress.estimatesComplete)
+                assertEquals(movement.estimates, read.progress.estimates)
+                assertEquals(movement.best, read.progress.best)
+                assertEquals(movement.heaviest, read.progress.heaviest)
+                assertEquals(movement.bodyweightReps, read.progress.bodyweightReps)
+                assertEquals(progress.asOf, read.asOf)
+            } finally {
+                reads.release()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test fun aMovementReadCannotCrossAnAccountChange() = runTest(timeout = 30.seconds) {
+        val reads = HeldReads()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, readDispatcher = reads, telemetry = telemetry).use { room ->
+            try {
+                room.select("alice")
+                runCurrent()
+                reads.hold = true
+                val pending = async(start = CoroutineStart.UNDISPATCHED) { room.store.history.record("bench-press") }
+                assertEquals(1, reads.waiting.size)
+                assertTrue(room.engine.signOut("keep").member("complete").bool())
+                assertTrue(room.engine.signIn("bob", mapOf("gym" to false)).member("complete").bool())
+                reads.release()
+                assertEquals(RecordRead.Failed(WriteFailure.Refused(TrainingSeat.accountChanged)), withTimeout(5_000) { pending.await() })
+                assertEquals(emptyList<String>(), failures)
+            } finally {
+                reads.release()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test fun threeSameSeatRevisionChangesSupersedeTheMovementRead() = runTest(timeout = 30.seconds) {
+        val delegate = StandardTestDispatcher(testScheduler)
+        var churn = false
+        var changes = 0
+        lateinit var engine: Engine
+        val reads = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) = delegate.dispatch(context, Runnable {
+                block.run()
+                if (churn) engine.commit(ScopeRef.product("gym")) {
+                    Gesture(emptyList(), local = listOf(DeviceWrite("rack:capturerevision", Json.of(++changes)))) to Unit
+                }
+            })
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, readDispatcher = reads).use { room ->
+            engine = room.engine
+            room.select(null)
+            runCurrent()
+            churn = true
+            try {
+                assertEquals(RecordRead.Superseded, withTimeout(5_000) { room.store.history.record("bench-press") })
+                assertEquals(3, changes)
+            } finally {
+                churn = false
+            }
+            assertTrue(withTimeout(5_000) { room.store.history.record("bench-press") } is RecordRead.Ready)
+            room.store.seat.isLoading = true
+            assertEquals(RecordRead.Superseded, withTimeout(5_000) { room.store.history.record("bench-press") })
+        }
+    }
+
+    @Test fun aStrayCancellationFailsTheMovementReadWithoutCancellingItsCaller() = runTest(timeout = 30.seconds) {
+        var failing = false
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, createEngine = { snapshot, clock ->
+            Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock {
+                override fun now(): Long {
+                    if (failing) throw CancellationException("unavailable")
+                    return clock.now()
+                }
+            })
+        }).use { room ->
+            room.select(null)
+            runCurrent()
+            failing = true
+            try {
+                assertEquals(RecordRead.Failed(WriteFailure.NoAnswer), withTimeout(5_000) { room.store.history.record("bench-press") })
+                assertTrue(currentCoroutineContext().isActive)
+            } finally {
+                failing = false
+            }
+        }
+    }
+
+    @Test fun anUnexpectedMovementReadFailureReportsOnlyItsStaticBoundary() = runTest(timeout = 30.seconds) {
+        var failing = false
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                failures += operation to properties
+            }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, createEngine = { snapshot, clock ->
+            Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock {
+                override fun now(): Long {
+                    if (failing) throw IOException("unavailable")
+                    return clock.now()
+                }
+            })
+        }).use { room ->
+            room.select(null)
+            runCurrent()
+            failing = true
+            try {
+                assertEquals(RecordRead.Failed(WriteFailure.NoAnswer), withTimeout(5_000) { room.store.history.record("bench-press") })
+                assertEquals(listOf("gym.record" to emptyMap<String, String>()), failures)
+            } finally {
+                failing = false
+            }
+        }
+    }
+
+    @Test fun aRefusedImportRetainsItsDeviceDetailAfterRefresh() = runTest(timeout = 30.seconds) {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val ended = room.workout()
+            room.training.prepareAdoption()
+            room.select("alice")
+            assertEquals(listOf("gym.importSession"), owed(room))
+            server.refuse(code = "session-overlap")
+            room.sync(server)
+            assertEquals(listOf(ended.id), room.training.imports.refusals().map { it.id })
+            val retained = (room.store.history.finishedSession(ended.id) as GymResult.Ok).value!!
+            room.store.refreshEngine()
+            assertFalse(room.store.history.isGone(ended.id))
+            assertEquals(retained, room.store.history.retainedSession(retained.copy(sets = emptyList())))
+        }
+    }
+
+    @Test fun aRemoteDiscardMarksTheRetainedDetailGone() = runTest(timeout = 30.seconds) {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice"); room.pull(server)
+            val ended = room.workout()
+            room.sync(server)
+            val retained = (room.store.history.sessionDetail(ended.id) as GymResult.Ok).value
+            anotherPhone(server, room.now) { phone ->
+                assertNull(phone.store.workout.discardWorkout(ended.id))
+                phone.sync(server)
+            }
+            room.pull(server); room.store.refreshEngine()
+            assertTrue(room.store.history.isGone(ended.id))
+            val seed = retained.copy(sets = emptyList())
+            assertEquals(seed, room.store.history.retainedSession(seed))
+        }
+    }
+
+    @Test fun aLocalDiscardRemovesRetentionWithoutMarkingThePageGone() = runTest(timeout = 30.seconds) {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val ended = room.workout()
+            val retained = (room.store.history.sessionDetail(ended.id) as GymResult.Ok).value
+            assertNull(room.store.workout.discardWorkout(ended.id))
+            room.store.refreshEngine()
+            assertFalse(room.store.history.isGone(ended.id))
+            val seed = retained.copy(sets = emptyList())
+            assertEquals(seed, room.store.history.retainedSession(seed))
+        }
+    }
+
+    @Test fun anOpenMovementEditorCannotWriteIntoAnotherAccountBeforeOrAfterConnect() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
             val opened = room.store.routines.catalog.first { it.id == "bench-press" }
@@ -73,7 +432,7 @@ class HistoryReadsTests {
         }
     }
 
-    @Test fun anonymousAdoptionCannotReuseAnOpenMovementEditorEvenWhenTheReplicaIdStaysTheSame() = runTest {
+    @Test fun anonymousAdoptionCannotReuseAnOpenMovementEditorEvenWhenTheReplicaIdStaysTheSame() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
             room.store.routines.create("ANONYMOUS_PRIVATE_MOVEMENT", "barbell")
@@ -90,20 +449,20 @@ class HistoryReadsTests {
         }
     }
 
-    @Test fun aCommittedEditKeepsItsSuccessWhenTheNextLockOwnerChangesAccount() = runTest {
-        val armed = java.util.concurrent.atomic.AtomicBoolean(false)
-        val lifecycle = java.util.concurrent.atomic.AtomicReference<Thread>()
-        val lifecycleFailure = java.util.concurrent.atomic.AtomicReference<Throwable>()
-        lateinit var engine: works.windmill.sync.engine.Engine
+    @Test fun aCommittedEditKeepsItsSuccessWhenTheNextLockOwnerChangesAccount() = runTest(timeout = 30.seconds) {
+        val armed = AtomicBoolean(false)
+        val lifecycle = AtomicReference<Thread>()
+        val lifecycleFailure = AtomicReference<Throwable>()
+        lateinit var engine: Engine
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val failures = mutableListOf<String>()
-        val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+        val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, createEngine = { snapshot, clock ->
-            works.windmill.sync.engine.Engine.memory(works.windmill.sync.schema.SyncSchema.registry, snapshot,
-                clock = object : works.windmill.sync.engine.EngineClock {
+            Engine.memory(SyncSchema.registry, snapshot,
+                clock = object : EngineClock {
                     override fun now(): Long {
                         if (armed.compareAndSet(true, false)) {
                             val thread = Thread {
@@ -142,10 +501,10 @@ class HistoryReadsTests {
         }
     }
 
-    @Test fun editReportsBoundedOutcomesAndUnexpectedFailureWithoutMovementContent() = runTest {
+    @Test fun editReportsBoundedOutcomesAndUnexpectedFailureWithoutMovementContent() = runTest(timeout = 30.seconds) {
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val failures = mutableListOf<Pair<String, Map<String, String>>>()
-        val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+        val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
                 failures += operation to properties
@@ -169,7 +528,7 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testSignedOutTheRecordAndTheReviewAreComputedOnThePhone() = runTest {
+    fun testSignedOutTheRecordAndTheReviewAreComputedOnThePhone() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
             val movement = (room.store.routines.create("Bench Press", "barbell") as GymResult.Ok).value
@@ -182,7 +541,7 @@ class HistoryReadsTests {
             val ended = (room.store.workout.finish() as FinishOutcome.Closed).session
             runCurrent()
 
-            val record = (room.store.history.record(movement.id) as GymResult.Ok).value
+            val record = (room.store.history.record(movement.id) as RecordRead.Ready).value.record
             assertEquals("Bench Press", record.exercise.name)
             assertEquals(listOf(ended.id), record.recentDays.map { it.sessionId })
             assertEquals("every set counts, with all recorded loads",
@@ -198,11 +557,11 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testARenameMovesTheNameAndNeverTheIdAndTheReplicaKeepsIt() = runTest {
+    fun testARenameMovesTheNameAndNeverTheIdAndTheReplicaKeepsIt() = runTest(timeout = 30.seconds) {
         val folder = tmp.newFolder()
         val snapshot: Json
         val clock: Long
-        val movement: works.windmill.gym.presentation.Exercise
+        val movement: Exercise
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select(null)
             movement = (room.store.routines.create("Bench Pres", "barbell") as GymResult.Ok).value
@@ -220,7 +579,7 @@ class HistoryReadsTests {
             room.store.refreshEngine()
             assertEquals("Bench Press", room.store.routines.catalog.single { it.id == movement.id }.name)
 
-            val record = (room.store.history.record(movement.id) as GymResult.Ok).value
+            val record = (room.store.history.record(movement.id) as RecordRead.Ready).value.record
             assertEquals("Bench Press", record.exercise.name)
             assertEquals("the history is whole — the id never moved", 1, record.recentDays.size)
 
@@ -241,7 +600,7 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testSignedInARenameGoesToTheLogAndTheCatalogFollowsIt() = runTest {
+    fun testSignedInARenameGoesToTheLogAndTheCatalogFollowsIt() = runTest(timeout = 30.seconds) {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
@@ -262,18 +621,18 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testARecordOfAMovementTheLogDoesNotHoldSaysWhyRatherThanDrawingNothing() = runTest {
+    fun testARecordOfAMovementTheLogDoesNotHoldSaysWhyRatherThanDrawingNothing() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(EngineRoomFixture.server())
 
-            assertEquals(GymResult.Failed(WriteFailure.Refused("that movement is no longer on the log")),
+            assertEquals(RecordRead.Failed(WriteFailure.Refused("that movement is no longer on the log")),
                 room.store.history.record("ex_gone"))
             runCurrent()
         }
     }
 
     @Test
-    fun testTheLogPagesOlderOnAskAndKnowsWhenItHasReachedTheBottom() = runTest {
+    fun testTheLogPagesOlderOnAskAndKnowsWhenItHasReachedTheBottom() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(EngineRoomFixture.server())
             repeat(60) { index ->
@@ -287,14 +646,14 @@ class HistoryReadsTests {
             assertEquals(50, room.store.history.logged.size)
             assertEquals("newest first", "session059", room.store.history.logged.first().id)
 
-            room.store.history.loadOlder()
+            withTimeout(5_000) { room.store.history.loadOlder() }
 
             assertEquals("sixty sessions, no row twice", 60, room.store.history.logged.size)
             assertEquals(60, room.store.history.logged.map { it.id }.toSet().size)
             assertEquals("a short page is the bottom", Older.End, room.store.history.older)
             assertEquals("session000", room.store.history.logged.last().id)
 
-            room.store.history.loadOlder()
+            withTimeout(5_000) { room.store.history.loadOlder() }
             assertEquals("the bottom stays the bottom", Older.End, room.store.history.older)
             assertEquals(60, room.store.history.logged.size)
             runCurrent()
@@ -302,14 +661,14 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testTheEngineReReadKeepsThePagesTheLifterWalked() = runTest {
+    fun testTheEngineReReadKeepsThePagesTheLifterWalked() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             repeat(60) { index ->
                 val id = "session${index.toString().padStart(3, '0')}"
                 room.training.startSession(SessionStart(id, room.now - 100000 + index * 1000L))
                 room.training.finishSession(id, room.now - 99500 + index * 1000L)
             }
-            room.select(null); room.store.history.loadOlder()
+            room.select(null); withTimeout(5_000) { room.store.history.loadOlder() }
             assertEquals(60, room.store.history.logged.size)
             assertEquals(Older.End, room.store.history.older)
             room.training.startSession(SessionStart("sessionShelf", room.now - 1000))
@@ -325,7 +684,7 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testSignedOutThePhoneIsTheWholeLogAndThereIsNothingOlder() = runTest {
+    fun testSignedOutThePhoneIsTheWholeLogAndThereIsNothingOlder() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
             val ended = room.workout(load = 100.0)
@@ -343,7 +702,7 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testARowWalkedDownToWithLoadOlderFollowsItsOwnCorrection() = runTest {
+    fun testARowWalkedDownToWithLoadOlderFollowsItsOwnCorrection() = runTest(timeout = 30.seconds) {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(EngineRoomFixture.server())
             val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
@@ -355,7 +714,7 @@ class HistoryReadsTests {
                 assertTrue(runner.run(ImportSession(Id(id, EngineSession), Instant(startedAt), Instant(startedAt + 500), listOf(set))) is Outcome.Committed)
             }
             room.store.connect(room.account())
-            room.store.history.loadOlder()
+            withTimeout(5_000) { room.store.history.loadOlder() }
             assertEquals("the deepest row is a page and a half down", "session000", room.store.history.logged.last().id)
             assertEquals(listOf(500.0, 1), listOf(room.store.history.logged.last().tonnageKg, room.store.history.logged.last().workingSetCount))
 
@@ -369,7 +728,7 @@ class HistoryReadsTests {
     }
 
     @Test
-    fun testAnUnreadLogReadsAtTheFootAndLoadsFromWhereItStoppedOnceThePullLands() = runTest {
+    fun testAnUnreadLogReadsAtTheFootAndLoadsFromWhereItStoppedOnceThePullLands() = runTest(timeout = 30.seconds) {
         val server = EngineRoomFixture.server()
         val held = anotherPhone(server, 1_800_000_000_000L) { phone ->
             phone.workout().also { phone.sync(server) }
@@ -382,7 +741,7 @@ class HistoryReadsTests {
             assertTrue(room.store.history.logged.isEmpty())
 
             room.pull(server)
-            room.store.history.loadOlder()
+            withTimeout(5_000) { room.store.history.loadOlder() }
 
             assertEquals(listOf(held.id), room.store.history.logged.map { it.id })
             assertEquals(Older.End, room.store.history.older)

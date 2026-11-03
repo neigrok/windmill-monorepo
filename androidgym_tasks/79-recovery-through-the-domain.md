@@ -4,6 +4,8 @@
 
 **Context:** the 35 recovery vectors pass on `:gym:domain` code that Android users never run. The store still drives its own path over the `rack:legacyMigration` journal, so a rule fixed in the domain never reaches the phone.
 
+Codex review, package 108 F4: recovery-action tests exercise `rack:adoption`, while the shipping recovery path uses `rack:legacyMigration`.
+
 **Current implementation**
 - `WorkoutImports` journals under `journalPrefix = "rack:legacyMigration"` (`apps/android/gym/src/main/kotlin/works/windmill/gym/store/WorkoutImports.kt:908`).
 - The domain's `AdoptWorkout`, `RecoverStrandedSets`, `DiscardSignedOutWorkout` and `ReconcileAdoptedWorkouts` actions and its `rack:adoption` key (`apps/android/gym/domain/…/WorkoutAdoption.kt:80`) have no production caller; only tests use them.
