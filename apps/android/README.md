@@ -16,7 +16,7 @@ account and backend. There is no subscription surface.
 | `:sync-engine` | Android memory/SQLite engine, writer slices, observations, HTTP/live transport, recovery, subscriptions and lifecycle sessions; bounded injected telemetry. |
 | `:sync-model-server` | JVM reference model with probe, gym and journal bindings, admission, replay and live events. |
 | `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
-| `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering and refusal subjects. |
+| `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering, refusal subjects, and what an ability is: catalog, seats and schema check. |
 | `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
 | `:gym:domain` | JVM gym actions (`works.windmill.gym.domain.sync`), training reads, progress, units and rules, including signed-out workout recovery (saved-copy checks, stranded-set placement, separate-restore steps); every shared gym domain vector. `gym/store/WorkoutImports.kt` keeps the saved-workout journal's I/O and state machine. |
 

@@ -326,7 +326,7 @@ That is CI's command (`.github/workflows/ios.yml`). A second checkout or worktre
 
 | Module | Where | What |
 |---|---|---|
-| `:domain-kit` | `domain-kit/src/main/kotlin/works/windmill/domain/kit/` | the kit (`Entities`, `Values`, `Rules`, `Reading`, `Plans`, `Actions`, `Drafts`, `Refusals`, `Time`, `Nfc`) |
+| `:domain-kit` | `domain-kit/src/main/kotlin/works/windmill/domain/kit/` | the kit (`Entities`, `Values`, `Rules`, `Reading`, `Plans`, `Actions`, `Drafts`, `Refusals`, `Time`, `Nfc`, `Collation`, `Abilities`) |
 | `:domain-kit-testing` | `domain-kit-testing/src/main/kotlin/works/windmill/domain/testing/` | `Contract`, `ProductCorpus`, `KitCorpus`, the checks, `withActionContext`; its tests hold `KitLayeringTests` |
 | `:gym:domain` | `gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/` | the gym domain, one file per feature plus `GymRules.kt`; tests beside it under `src/test/…/gym/domain/sync/` |
 
@@ -343,7 +343,7 @@ cd apps/android
 ./gradlew :domain-kit-testing:test :domain-kit-testing:corpus :domain-kit-testing:layering :sync-testing:layering   # the kit corpus and both layering tasks
 ```
 
-The first prints `Gym corpus: 12/12 files, 494 cases, no unclaimed file`; the second `kit corpus: 12/12 files, 475/475
+The first prints `Gym corpus: 18/51 files, 1048 cases, 33 explicitly not applicable …, no unclaimed file`; the second `kit corpus: 12/12 files, 490/490
 vectors` and `layering: 5 deterministic modules, … compiled classes, 0 findings`. `./gradlew build` (CI,
 `.github/workflows/android.yml`) runs all of it, with `ANDROID_SENTRY_DSN` set.
 

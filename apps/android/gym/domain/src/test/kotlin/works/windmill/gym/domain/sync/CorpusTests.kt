@@ -23,14 +23,15 @@ class CorpusTests {
         "gym/domain/bodyweight-actions.json", "gym/domain/routines-actions.json", "gym/domain/catalogue-actions.json",
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
         "gym/domain/recovery-actions.json", "gym/domain/coach-onboarding-actions.json", "gym/domain/training-reads.json", "gym/domain/units.json",
-        "gym/rules/bodyweight.json", "gym/domain/workout-plan-actions.json", "gym/domain/workout-proposals-actions.json")
+        "gym/rules/bodyweight.json", "gym/rules/collation.json", "gym/domain/workout-plan-actions.json", "gym/domain/workout-proposals-actions.json")
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
         val notApplicable = files.filter { path ->
-            path == "gym/catalog.json" || path.startsWith("gym/abilities/") || path.startsWith("gym/turns/")
+            path.startsWith("gym/abilities/") || path.startsWith("gym/turns/")
         }.associateWith { "Android runs no replica executor" }
-        assertEquals((paths + notApplicable.keys).sorted(), files)
+        val readByCatalogTests = "gym/catalog.json"
+        assertEquals((paths + readByCatalogTests + notApplicable.keys).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
@@ -45,7 +46,7 @@ class CorpusTests {
         }
         failures.forEach(::println)
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
-        println("Gym corpus: ${paths.size}/${files.size} files, $cases cases, ${notApplicable.size} explicitly not applicable (Android runs no replica executor), no pending case, no unclaimed file")
+        println("Gym corpus: ${paths.size + 1}/${files.size} files, $cases cases, ${notApplicable.size} explicitly not applicable (Android runs no replica executor), no pending case, no unclaimed file")
     }
 
     @Test fun everySharedLocalRuleAndCodeIsCovered() {
@@ -89,6 +90,8 @@ class CorpusTests {
                 else -> error("unclaimed bodyweight action")
             }
             "gym/rules/bodyweight.json" -> corpus.read(vector, WeighIn.scope) { bodyweightForm(Bodyweight(it), input) }
+            "gym/rules/collation.json" -> Json.objectOf("result" to Json.objectOf("order" to Json.Arr(
+                vector.input.member("names").arr().map { it.str() }.sortedWith(Collation.order).map(Json::of))))
             "gym/domain/routines-actions.json" -> routines(vector, input!!)
             "gym/domain/catalogue-actions.json" -> catalogue(vector, input!!)
             "gym/domain/preferences-actions.json" -> preferences(vector, input!!)
