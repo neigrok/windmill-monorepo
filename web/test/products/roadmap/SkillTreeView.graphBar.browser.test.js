@@ -134,3 +134,45 @@ hostTest('Chromium: unnamed Graph steps share the detail title rule for owner an
     } finally { await page.close(); }
   }
 });
+
+for (const [role, surface, items] of [
+  ['owner', 'tree', ['Copy link', 'Delete step']],
+  ['reader', 'tree', ['Copy link']],
+  ['reader', 'board', ['Copy link', 'Open in Graph']],
+  ['owner', 'board', ['Copy link', 'Open in Graph', 'Delete step']],
+]) {
+  hostTest(`Chromium: the ${role}'s step page over the ${surface === 'tree' ? 'Graph' : 'Board'} offers ${items.join(', ')}`, async () => {
+    const { page, errors } = await openHost({ width: 390, role, surface });
+    try {
+      if (surface === 'tree') {
+        await page.evaluate(() => window.scene.select('wind'));
+        await page.getByRole('button', { name: role === 'owner' ? OPEN_STEP : 'Read the wind', exact: true }).click();
+      } else {
+        await page.locator('.st-board-card[data-step-id="wind"]').click();
+      }
+      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+      assert.deepEqual(await page.getByRole('menuitem').allTextContents(), items);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+hostTest('Chromium: the demo\'s step page over the Graph has no menu to open, and its menu returns over the Board', async () => {
+  const { page, errors } = await openHost({ width: 390, role: 'reader', demo: true });
+  try {
+    await page.evaluate(() => window.scene.select('wind'));
+    await page.getByRole('button', { name: 'Read the wind', exact: true }).click();
+    const step = page.getByRole('dialog', { name: 'Read the wind', exact: true });
+    await step.waitFor();
+    assert.equal(await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).count(), 0);
+    await page.getByRole('button', { name: backTo({ screen: 'Learn to sail' }), exact: true }).click();
+    await step.waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Board', exact: true }).click();
+    await page.locator('.st-board-card[data-step-id="wind"]').click();
+    await step.waitFor();
+    await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Open in Graph']);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

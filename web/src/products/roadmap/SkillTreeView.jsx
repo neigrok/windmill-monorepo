@@ -1213,7 +1213,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               setBoardQuiet((current) => current + 1);
               restoreStep(id, snapshot);
             }}
-            onOpenInGraph={openStepInGraph}
+            onOpenInGraph={boardActive ? openStepInGraph : null}
             onViewBranch={viewBranchFromDetail}
             onDelete={deleteStepFromDetail}
             onDeletePrompt={(step) => boardActs.deletePrompt(step)}

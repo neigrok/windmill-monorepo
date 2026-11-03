@@ -270,7 +270,8 @@ unlock; Create reveals the new step. Reveal clears only query dimensions that hi
 preserves sort. Delete toast text is not tappable. Board completion keeps activity emits and skips
 the Graph ceremony and milestone offer.
 The owner's up next and done steps offer View branch, which closes the step and scopes the Board to its branch. A
-visitor gets the overview and the menu without Delete. Owners get Edit step beside Complete or Reset, or alone while
+visitor gets the overview and the menu without Delete. The menu offers Open in Graph only over the Board and
+hides when it has nothing to offer. Owners get Edit step beside Complete or Reset, or alone while
 locked; the phone Workspace action is Add note or Edit note. The host opens Edit step only from an owner's
 open detail and keeps the composer mounted only while that detail still names an existing step.
 `BoardComposer` in `useBoardActs.js` shares the host’s open, display and save guards.

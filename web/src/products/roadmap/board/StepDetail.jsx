@@ -223,7 +223,7 @@ export function StepDetail({
 
   const menuItems = [
     stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, run: copyLink },
-    { label: STEP_DETAIL.openInGraph, icon: StepIcons.graph, run: () => { act('openInGraph'); onOpenInGraph(id); } },
+    onOpenInGraph && { label: STEP_DETAIL.openInGraph, icon: StepIcons.graph, run: () => { act('openInGraph'); onOpenInGraph(id); } },
     editable && deletable && {
       label: STEP_DETAIL.deleteStep, icon: StepIcons.trash, danger: true,
       run: () => {
@@ -255,7 +255,7 @@ export function StepDetail({
       onDelete(id);
     },
   } : null;
-  const menu = noteEditing ? null : <StepMenu items={menuItems} confirm={surface === 'modal' ? confirm : null} />;
+  const menu = noteEditing || menuItems.length === 0 ? null : <StepMenu items={menuItems} confirm={surface === 'modal' ? confirm : null} />;
   const sheet = surface === 'page' && confirm ? <DeleteConfirmation confirm={confirm} phone /> : null;
   const sections = editable && !noteEditing ? <StepSections idPrefix={sectionsId} section={section} onSection={setSection} /> : null;
   const edit = editable && onEdit ? () => {
