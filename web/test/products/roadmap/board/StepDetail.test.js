@@ -551,7 +551,34 @@ test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops th
     assert.equal(await page.getByRole('dialog').count(), 1);
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
+    try {
+      await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
+    } catch (error) {
+      const state = await page.evaluate(() => {
+        const describe = (element) => element && ({
+          tag: element.tagName,
+          classes: element.className,
+          step: element.closest('[data-step-id]')?.dataset.stepId ?? null,
+          column: element.closest('[data-column]')?.dataset.column ?? null,
+          role: element.getAttribute('role'),
+          tabIndex: element.tabIndex,
+          inert: Boolean(element.closest('[inert]')),
+          coveredBy: element.closest('[inert]')?.className ?? null,
+          visible: getComputedStyle(element).visibility,
+          rendered: element.getClientRects().length > 0,
+        });
+        return {
+          hash: location.hash,
+          active: describe(document.activeElement),
+          board: describe(document.querySelector('.st-view-layer--board')),
+          layers: [...document.querySelectorAll('.st-board-step-layer, .st-board-composer-layer')].map(describe),
+          panes: [...document.querySelectorAll('[data-column]')].map(describe),
+          stops: [...document.querySelectorAll('.st-board-card, .st-board [tabindex="0"], .st-board-find-input')].map(describe),
+        };
+      });
+      error.message += `\nDelete focus timeout DOM: ${JSON.stringify(state)}`;
+      throw error;
+    }
     assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex), await hash(page)],
       ['Leave the dock', 0, '#/app/sail']);
     await page.evaluate(() => restoreSteps());

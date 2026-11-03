@@ -21,7 +21,7 @@ window.paint = (props) => flushSync(() => root.render(React.createElement(Fixtur
 let server, browser, origin;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-shortcuts-test`,
-    plugins: [{ name: 'shortcuts-test',
+    plugins: [{ name: 'shortcuts-test', enforce: 'pre',
       resolveId(id) {
         if (id === '/shortcuts-entry.js') return '\0shortcuts-entry';
         if (id.endsWith('/telemetry/beacon.js')) return '\0shortcut-events';

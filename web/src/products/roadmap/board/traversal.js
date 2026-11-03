@@ -24,7 +24,7 @@ export function boardFocusTarget(root, { preferredId = null, excludeId = null, c
       !element.disabled && !element.closest('[inert], .is-leaving, .st-board-phone-pane:not(.is-shown)')
       && element.getClientRects().length > 0
       && getComputedStyle(element).visibility === 'visible'
-      && (excludeId === null || element.dataset.stepId !== excludeId)
+      && (excludeId === null || element.closest('[data-step-id]')?.dataset.stepId !== excludeId)
     ));
     if (target) return target;
   }

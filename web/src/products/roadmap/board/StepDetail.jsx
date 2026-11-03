@@ -149,7 +149,7 @@ export function StepDetail({
         });
         if (!target) return;
         target.focus();
-        if (deletedRef.current === null || !target.matches('.st-board-phone-segment')) return;
+        if (deletedRef.current === null || target.matches('.st-board-card')) return;
         const fallback = target;
         const waiting = new MutationObserver(() => {
           if (!board.isConnected || document.activeElement !== fallback) {
@@ -157,12 +157,12 @@ export function StepDetail({
             return;
           }
           const stop = returningStop();
-          if (!stop) return;
+          if (!stop || stop === fallback) return;
           waiting.disconnect();
           stop.focus();
         });
         fallback.addEventListener('blur', () => waiting.disconnect(), { once: true });
-        waiting.observe(board, { childList: true, subtree: true, attributes: true, attributeFilter: ['tabindex'] });
+        waiting.observe(board, { childList: true, subtree: true, attributes: true, attributeFilter: ['tabindex', 'class'] });
       });
     };
   }, [restoreDetailFocus]);

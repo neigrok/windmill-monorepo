@@ -998,14 +998,68 @@ test('Chromium: Back and Escape close kinds before selection, and finished selec
 test('Chromium: pruning uses the live pane, recolor preserves the kind filter, and Done restores an offscreen starter', async () => {
   const extra = Array.from({ length: 80 }, (_, index) => ({ id: `locked-${index}`, label: `Locked ${index}`, color: 'olive', prerequisites: ['wind'] }));
   const page = await openSelectionPage(390, [...learnToSailNodes, ...extra]);
+  const waitForFocus = async (predicate) => {
+    try {
+      await page.waitForFunction(predicate);
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => {
+        const describe = (element) => element ? {
+          tag: element.tagName,
+          class: element.className,
+          role: element.getAttribute('role'),
+          step: element.closest('[data-step-id]')?.dataset.stepId ?? null,
+          column: element.closest('[data-column]')?.dataset.column ?? null,
+          selected: element.getAttribute('aria-selected'),
+          tabIndex: element.tabIndex,
+          inert: Boolean(element.closest('[inert]')),
+          visibility: getComputedStyle(element).visibility,
+          rects: element.getClientRects().length,
+        } : null;
+        const board = document.querySelector('.st-board');
+        const pane = board?.querySelector('.st-board-phone-pane.is-shown');
+        return {
+          active: describe(document.activeElement),
+          fallback: describe(window.boardFocusTarget(board, { cards: false })),
+          board: describe(board),
+          pane: describe(pane),
+          tabs: [...board?.querySelectorAll('[role="tab"]') ?? []].map(describe),
+          cards: [...pane?.querySelectorAll('.st-board-card') ?? []].map(describe),
+          layers: [...document.querySelectorAll('[inert], [aria-modal="true"]')].map(describe),
+          bulk: board?.querySelector('.st-board-bulk')?.className ?? null,
+          href: location.href,
+          history: history.state,
+          query: window.selectionQuery,
+          writes: window.writes,
+          events: window.events,
+          focus: window.selectionFocus,
+        };
+      });
+      error.message += `\nSelection focus diagnostic: ${JSON.stringify(diagnostic, null, 2)}`;
+      throw error;
+    }
+  };
   try {
+    await page.evaluate(() => {
+      window.selectionFocus = [];
+      document.addEventListener('focusin', (event) => {
+        const element = event.target;
+        window.selectionFocus.push({
+          class: element.className,
+          role: element.getAttribute('role'),
+          step: element.closest('[data-step-id]')?.dataset.stepId ?? null,
+          column: element.closest('[data-column]')?.dataset.column ?? null,
+          inert: Boolean(element.closest('[inert]')),
+          history: history.state,
+        });
+      });
+    });
     await page.getByRole('tab', { name: 'Locked, 83 steps' }).click();
     await holdStep(page, 'dock');
     await page.locator('.st-board-phone-pane.is-shown').evaluate((pane) => { pane.scrollTop = pane.scrollHeight; });
     await page.clock.runFor(400);
     await page.getByRole('button', { name: 'Done', exact: true }).click();
     await page.getByRole('tablist').waitFor();
-    await page.waitForFunction(() => document.activeElement.dataset.stepId === 'dock');
+    await waitForFocus(() => document.activeElement.dataset.stepId === 'dock');
     assert.equal(await page.locator('.st-board-phone-pane.is-shown').evaluate((pane) => pane.scrollTop < 200), true);
     await page.waitForFunction(() => !history.state?.boardSelection);
     await holdStep(page, 'dock');
@@ -1020,7 +1074,7 @@ test('Chromium: pruning uses the live pane, recolor preserves the kind filter, a
     assert.deepEqual(await page.evaluate(() => window.selectionQuery), ['terracotta']);
     await page.clock.runFor(1000);
     await page.waitForFunction(() => !document.querySelector('.st-board-phone-pane.is-shown .st-board-card[data-step-id="dock"]'));
-    await page.waitForFunction(() => document.activeElement.getAttribute('role') === 'tab');
+    await waitForFocus(() => document.activeElement.getAttribute('role') === 'tab');
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute('role')), 'tab');
     assert.equal(await page.evaluate(() => document.activeElement === document.body), false);
     assert.deepEqual(await page.evaluate(() => window.writes), [{ kind: 'BulkRecolor', nodeIds: ['dock'], color: 'olive' }]);
