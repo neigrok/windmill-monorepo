@@ -1368,6 +1368,13 @@ iOS. It and the product differ in these places.
   lines with the pasted draft where the board draws one; 08.44's reset day needs
   `budgetResetsAtMs` on the turn route's refusal, which the backend does not send yet, so the line
   ends at *this month* until it does, and the day follows the phone's locale (*Nov 1* in en_US).
+- **6x · The sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
+  they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). The decision does
+  not say so: iOS `AdoptionQuestion.named` and Android `PhoneSignInCopy` list workouts, routines, weigh-ins, movements
+  and notes. A phone holding only conversations reads *N changes* on iOS and *training* on Android, and Discard deletes
+  them unnamed. For the designer: a conversation noun in the sign-in question and the discard confirmation on both
+  phones. Android reaches this state when its signed-out Coach moves to phone turns
+  ([plan](../engineering/android-phone-coach-plan.md) §5); iOS holds it now.
 
 ### Native and web differences
 
