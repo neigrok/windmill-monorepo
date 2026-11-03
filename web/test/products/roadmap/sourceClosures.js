@@ -3,8 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { parse } from 'acorn';
 import { transformWithEsbuild } from 'vite';
 
-// A hook's event boundaries read many live handles, so these tests lift the closure itself out of the source and run it with
-// the collaborators they inject: the real code, with no React and no WebGL.
+// Lifts a closure out of a module's source to run with injected collaborators: the real code, with no React and no WebGL.
 export async function closuresIn(relativeToRoadmap) {
   const path = new URL(`../../../src/products/roadmap/${relativeToRoadmap}`, import.meta.url);
   const { code } = await transformWithEsbuild(await readFile(path, 'utf8'), relativeToRoadmap, { loader: 'jsx' });

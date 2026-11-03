@@ -11,8 +11,7 @@ export function activeSurface({ multiMode, aim, removing, selectedNode }) {
   return 'empty';
 }
 
-// The tablet owner's Graph: tap to connect, tap a link to remove it, hold to select several. With no ⌘Z here, each write says
-// so in a toast whose Undo reverts it alone.
+// The tablet owner's Graph: tap to connect, tap a link to remove it, hold to select several; each write offers its own Undo.
 export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing }) {
   const { multiMode, selectedIdRef, setSelectedId, enterMulti, toggleMember } = selection;
   const { announce, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind } = editing;

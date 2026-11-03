@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
+import { parsePlan } from '../paste/planGrammar.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
 import { receiptUndo } from '../board/acts.js';
 import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
@@ -9,12 +10,22 @@ import { track } from '../../../telemetry/beacon.js';
 
 const NEW_NODE_ICON = 'sparkles';
 
-// Every write the Graph's own surfaces make: the scene's gestures, the docks and the tablet panel all come through here.
-// A write returns what `announce` needs to offer its own Undo, or null when the session took nothing.
+// Every write the Graph's own surfaces make; a write returns what `announce` needs for its own Undo, or null when nothing took.
 export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, emit, showToast }) {
   const { sessionRef, projectionRef, sceneRef, treeRef } = room;
   const { selectedId, selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
   const [autoFocusNameId, setAutoFocusNameId] = useState(null);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [draftKinds, setDraftKinds] = useState([]);
+  // bindOnly: an unmatched heading mints a fresh hue rather than renaming an existing kind.
+  const draftParse = useMemo(() => (composerOpen ? parsePlan(draft, draftKinds, { bindOnly: true }) : null), [composerOpen, draft, draftKinds]);
+  const closeComposer = useCallback(() => setComposerOpen(false), []);
+  const openComposer = useCallback((text) => {
+    setDraftKinds(legendRef.current);
+    setDraft(text);
+    setComposerOpen(true);
+  }, []);
 
   useEffect(() => {
     if (autoFocusNameId && selectedId !== autoFocusNameId) setAutoFocusNameId(null);
@@ -139,12 +150,11 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (!silent) announce(written, 'recolor', recoloredToast({ count: ids.length }));
   }, [announce]);
 
-  // Whether the plan has landed, or had nothing to land. onTreeChanged re-lays out synchronously, so grafted nodes are
-  // seated before they are pulsed.
+  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed.
   const graftImported = useCallback((parse) => {
     const nodes = projectionRef.current?.nodes;
     const session = sessionRef.current;
-    if (!nodes || !session) return false;
+    if (!nodes || !session) return;
     const selected = selectedIdRef.current;
     const anchored = selected && nodes.some((node) => node.id === selected);
     const targetId = (anchored ? selected : nodes.find((node) => node.prerequisites.length === 0)?.id) ?? null;
@@ -155,10 +165,13 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
       reservedNodeIds: session.knownNodeIds(), // present AND tombstoned: never resurrect a deleted node
       liveKinds: legendRef.current,
     });
-    if (graft.nodes.length === 0) return true;
+    if (graft.nodes.length === 0) {
+      setComposerOpen(false);
+      return;
+    }
 
     const written = write({ kind: 'ImportSubgraph', nodes: graft.nodes, edges: graft.edges, kinds: graft.kinds });
-    if (!written) return false;
+    if (!written) return;
 
     for (const grafted of graft.nodes) {
       emit({ verb: 'added', nodeId: grafted.id, label: grafted.label, kind: grafted.color }, { silent: true });
@@ -166,11 +179,12 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     }
     const under = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
     announce(written, 'graft', graftedToast({ count: graft.nodes.length, under }));
-    return true;
+    setComposerOpen(false);
   }, [emit, announce]);
 
   return {
-    autoFocusNameId, undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
+    autoFocusNameId, composerOpen, draft, setDraft, draftKinds, setDraftKinds, draftParse, closeComposer, openComposer,
+    undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
     deleteNodeAt, deleteSelected, bulkDelete, handleSetKind, reorderContext, handleSetNodeOrder, bulkRecolor, graftImported,
   };
 }

@@ -1,5 +1,4 @@
-// The roadmap room: repository -> domain -> layout -> scene, with the Board and the chrome around the GPU canvas. Each seam
-// in room/ owns one concern of it; this file composes them and lays out what they say.
+// The roadmap room: repository -> domain -> layout -> scene, with the Board and chrome around the canvas; room/ owns each concern.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
@@ -20,7 +19,6 @@ import { deletable } from './board/acts.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, LOAD_ERROR, forkedToast } from './copy.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
-import { toastSeat, useRoadmapToast } from './board/useRoadmapToast.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { COACHED_NODE_ID } from './demo/demoStage.js';
 import { useDemoCoach } from './demo/useDemoCoach.js';
@@ -30,9 +28,9 @@ import { inUseCount, withCounts } from './model/Legend.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { PasteComposer } from './paste/PasteComposer.jsx';
-import { useGraftComposer } from './paste/useGraftComposer.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { reportRoadmapFailure } from './reportFailure.js';
+import { toastSeat, useRoadmapToast } from './room/useRoadmapToast.js';
 import { useRoomAuthority } from './room/useRoomAuthority.js';
 import { useRoomLoad } from './room/useRoomLoad.js';
 import { useRoomProgress } from './room/useRoomProgress.js';
@@ -66,8 +64,7 @@ import { useViewMode } from './room/useViewMode.js';
 import { frontierTarget } from './graph/viewport.js';
 
 const handle = () => ({ current: null });
-// What this room's seams reach for after the render that made them: the live objects, the chrome's DOM, and what the camera
-// has been asked to frame.
+// What the seams reach for after render: the live objects, the chrome's DOM, and what the camera has been asked to frame.
 const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
 const chromeAnchors = () => ({ canvasRef: handle(), rootRef: handle(), identityRef: handle(), boardLayerRef: handle(), legendDockRef: handle() });
 const cameraFraming = () => ({ insetsRef: handle(), firstFrameRef: handle(), graphRevealRef: handle() });
@@ -113,9 +110,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const structure = useGraphStructure({ room, progressActs, showToast, syncLegendFromTree: legendKit.syncLegendFromTree });
   const { tree, renderModel, bounds, setBounds } = structure;
   const editing = useGraphEditing({ room, legendRef, desktopEditorRef, selection, emit, showToast });
-  const { undo, redo, bulkDelete, deleteSelected, handleDeleteEdge, handleCreateRoot, graftImported, bulkRecolor } = editing;
-  const grafting = useGraftComposer();
-  const { composerOpen, closeComposer, openComposer } = grafting;
+  const { undo, redo, bulkDelete, deleteSelected, handleDeleteEdge, handleCreateRoot, graftImported, bulkRecolor, composerOpen, closeComposer, openComposer } = editing;
 
   // The canvas, then the tree it draws.
   const { scene, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, showToast });
@@ -239,7 +234,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { graphStep, forkPillShown, openGraphFork, rememberGraphFocus } = useGraphStepBar({ phoneGraph, selection, selectedNode, selectedState, covered: stepCovering, forkPresent, forkOpen, setForkOpen, rootRef, focusGraph });
   const verbs = useRowVerbs({
     treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, address: stepAddress,
-    graphStepReturnRef: stepPage.graphStepReturnRef, identityRef, sessionRef, projectionRef, revealOnGraph, setSelectedId, setShareOpen, showToast,
+    graphStepReturnRef: stepPage.graphStepReturnRef, anchors, room, revealOnGraph, setSelectedId, setShareOpen, showToast,
   });
   const legendWithCounts = useMemo(() => withCounts(legend, tree?.nodes ?? []), [legend, tree]);
   const legendVisible = useMemo(() => inUseCount(legend, tree?.nodes ?? []) >= 2, [legend, tree]) || legendKit.legendForceOpen;
@@ -287,7 +282,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     // G follows the switch from 744px, for either role.
     switchViews: !phone && onSwitchView ? () => switchView(boardActive ? 'tree' : 'board') : null,
     toggleShortcuts: () => setShortcutsOpen((visible) => !visible),
-    openComposer: (text) => openComposer(text, legendRef.current),
+    openComposer,
     selectEveryStep: () => selectAll(projectionRef.current?.nodes.map((node) => node.id) ?? []),
     focusFind: () => {
       const find = identityRef.current?.querySelector('.st-board-find-input');
@@ -522,19 +517,19 @@ export function SkillTreeView({ treeId, demo = false }) {
         progressActs={progressActs}
         tablet={tablet}
         bulkChoice={bulkChoice}
-        composer={composerOpen && grafting.parse && (
+        composer={composerOpen && editing.draftParse ? (
           <PasteComposer
             append
-            text={grafting.draft}
-            onTextChange={grafting.setDraft}
-            kinds={grafting.draftKinds}
-            onKindsChange={grafting.setDraftKinds}
-            parse={grafting.parse}
+            text={editing.draft}
+            onTextChange={editing.setDraft}
+            kinds={editing.draftKinds}
+            onKindsChange={editing.setDraftKinds}
+            parse={editing.draftParse}
             planting={false}
             onClose={closeComposer}
-            onPlant={(parse) => { if (graftImported(parse)) closeComposer(); }}
+            onPlant={graftImported}
           />
-        ) || null}
+        ) : null}
         activity={activity}
         activityOpen={activityOpen}
         onCloseActivity={verbs.closeRowActivity}

@@ -1,4 +1,4 @@
-// §2.5 of the wave-8 architecture: every way the List found a step has its Board home.
+// §2.5 of the wave-8 architecture: every way to find a step has its Board home.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';

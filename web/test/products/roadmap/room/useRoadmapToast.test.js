@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toastSeat, useRoadmapToast } from '../../../../src/products/roadmap/board/useRoadmapToast.js';
+import { toastSeat, useRoadmapToast } from '../../../../src/products/roadmap/room/useRoadmapToast.js';
 import { renderHook } from '../../gym/harness.mjs';
 
 function slot(t) {

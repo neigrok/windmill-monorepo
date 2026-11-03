@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { stepIsStale } from '../step/stepAddress.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 
-// A step opens over either view: the modal from 744px, the pushed page below. It rides the URL, so a link lands on it and
-// Back leaves it; selection follows the open step and, on close, returns to the card the visit began on.
+// A step opens over either view and rides the URL: a link lands on it, Back leaves it, and selection follows it.
 export function useStepPage({ treeId, tree, loading, address, setSelectedId, view, anchors, sceneRef, boardActs, viewBranch, onGraphStepOpen }) {
   const { rootRef, identityRef, boardLayerRef } = anchors;
   const { canvasView, switchView } = view;
@@ -16,8 +15,7 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
     (primary ?? pressed)?.focus({ preventScroll: true });
   }, []);
 
-  // A step the loaded roadmap no longer holds (deleted here or elsewhere, or a stale link) leaves the URL, so restoring
-  // it later never reopens it.
+  // A step the loaded roadmap no longer holds leaves the URL, so restoring it later never reopens it.
   const staleStep = stepIsStale({ loading, tree, treeId, stepId: address.id });
   useEffect(() => {
     if (staleStep) address.drop();
