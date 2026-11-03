@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, origin, startRoadmapHost } from './skillTreeViewHost.js';
+import { LINK_COPIED, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 
@@ -169,4 +170,22 @@ hostTest('Chromium: phone Graph toast clears the camera and selected-step bar fo
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   }
+});
+
+hostTest('Chromium: a room toast over the phone step page stands above its tabs and its action', async () => {
+  const { page, errors } = await openHost({ width: 390, surface: 'board' });
+  try {
+    await page.locator('.st-board-phone-pane.is-shown .st-board-card[data-step-id="wind"]').click();
+    await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+    await page.locator('.st-board-step-layer').getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+    await page.getByRole('menuitem', { name: STEP_DETAIL.copyLink, exact: true }).click();
+    const toast = page.locator('.st-graph-toast .st-board-toast');
+    await toast.waitFor();
+    assert.equal(await toast.locator('.st-board-toast-message').textContent(), LINK_COPIED);
+    assert.deepEqual(await page.evaluate(() => {
+      const box = document.querySelector('.st-graph-toast .st-board-toast').getBoundingClientRect();
+      return [...document.querySelectorAll('.st-board-step-layer [role="tablist"]')].map((tabs) => box.bottom <= tabs.getBoundingClientRect().top);
+    }), [true]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
 });

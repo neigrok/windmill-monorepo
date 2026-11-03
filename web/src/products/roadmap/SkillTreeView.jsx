@@ -596,7 +596,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {seat === 'room' && (
-        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}`} style={geometry.graphToastStyle}>
+        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}`} style={shownDetailId === null ? geometry.graphToastStyle : undefined}>
           <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={toastShown} onToastReveal={revealGraphToast}
             onToastUndo={undoGraphToast} />
         </div>
