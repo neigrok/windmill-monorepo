@@ -92,7 +92,7 @@ switched-to state.
   hold window; a secondary line names the outcome. No toast from a page or a modal. Reset is always
   secondary and quiet.
 - The `…` menu holds the same three verbs on both pages: *Copy link · Open in Graph · Delete step*.
-- **Delete step:** a confirm with the cost line from `ui/mobile/editorSheet.js`
+- **Delete step:** a confirm with the cost line from `board/copy.js`
   (*Removes this step · 1 branch resplices*), then a delete held for nine seconds with Undo, as
   `guidelines/system-architecture.md` §3 requires on the web, then the regrouped Board.
 - A step pushed from a step names the previous screen in its back label.
@@ -115,7 +115,7 @@ real button after the card link in DOM order; Tab focus reveals it. Reduced moti
 tracking and turns removal and entrance into 150ms cross-fades. Spec: 379:17279.
 
 **Select several (phone).** Long-press a card to enter selection. The bottom bar carries the shipped
-`ui/mobile/BulkBar.jsx` verbs: the count with Done beside it, then **Recolor** and *Delete N steps*
+tablet panel's bulk verbs: the count with Done beside it, then **Recolor** and *Delete N steps*
 at equal width, so the destructive action is never the widest target. Recolor reveals the kind
 swatches.
 

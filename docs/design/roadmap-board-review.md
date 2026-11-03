@@ -39,7 +39,7 @@ prerequisites and ledger drift below are build work.
 4. **Locked distance is steps left:** the unfinished steps in the transitive prerequisite closure,
    written *N to go*. The page and modal use the same number.
 5. **Phone multi-select carries over:** long-press enters selection; the bottom bar recolours and
-   deletes, as the shipped `ui/mobile/BulkBar.jsx` does.
+   deletes, as the tablet panel's bulk bar does.
 
 ## Orchestrator decisions
 

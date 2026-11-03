@@ -1,4 +1,4 @@
-// Skill-tree view: repository -> domain -> layout -> scene, plus the overlay UI around the GPU canvas.
+// The roadmap room: repository -> domain -> layout -> scene, with the Board and the chrome around the GPU canvas.
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
@@ -110,6 +110,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { breakpoint, desktopEditor: desktopView, shared } = useViewMode();
   const { status, refresh, account, lapsed: sessionLapsed } = useAuth();
 
+  // Who is looking, and what this room holds for them.
   const identityRef = useRef(null);
   const activityActsRef = useRef(null);
   const graphStepReturnRef = useRef(false);
@@ -140,7 +141,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const legendDockRef = useRef(null);
   const completedRef = useRef(new Set());
   const seedRef = useRef(null);
-  const repoRef = useRef(null);
   const collabRef = useRef(null);
   const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, collabRef, sceneRef });
   const desktopEditor = desktopView && !demotion;
@@ -216,6 +216,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const switchOptionRef = useRef(null);
   const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
 
+  // The tree and its picture.
   const states = useMemo(() => {
     if (!tree) return new Map();
     return UnlockRules.derive(tree, { completed });
@@ -384,7 +385,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(null);
     setTreeVisibility(null);
     setTreeMine(false);
-    repoRef.current = null;
     firstFrameRef.current = null;
 
     async function loadTree() {
@@ -407,12 +407,11 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       const treeData = seed;
       const nextTree = new SkillTree(treeData);
-      const progress = demo
+      const overlay = demo
         ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
         : await repo.loadProgress(treeData, { signal });
       const serverActivity = await repo.loadActivity({ limit: 200, signal });
       if (cancelled) return;
-      const overlay = progress;
       const states = UnlockRules.derive(nextTree, overlay);
       const positions = layoutPositions(nextTree);
       const model = nextTree.toRenderModel(positions, states);
@@ -449,7 +448,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       editorRef.current = new TreeEditor(treeData);
       treeRef.current = nextTree;
       seedRef.current = seed;
-      repoRef.current = repo;
       completedRef.current = new Set(overlay.completed);
       seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity });
       setTree(nextTree);
@@ -509,7 +507,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => {
       cancelled = true;
       wanted.abort();
-        if (boardToastRef.current) {
+      if (boardToastRef.current) {
         boardToastRef.current.onLeave?.('left');
         dismissToast();
       }
@@ -587,7 +585,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(id);
   }, [setSelectedId]);
 
-  // The initial view is decided ONCE, the moment the tree is ready.
+  // The view: Board or Graph, decided once the moment the tree is ready.
   const phone = breakpoint === 'phone';
   const owner = treeMine && !shared && !demo && !demotion;
   const tabletEditor = owner && breakpoint === 'tablet';
@@ -807,6 +805,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet,
   });
 
+  // Progress: every mark, whichever surface made it.
   function pushProgress(nodeId, wireStatus) {
     if (demoRef.current) return;
     collabRef.current?.markProgress(nodeId, wireStatus);
@@ -912,6 +911,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     pushProgress(id, next.completed.has(id) ? 'complete' : 'none');
   }
 
+  // The Board's acts and what a held delete projects.
   const { held: boardHeld, acts: boardActs } = useBoardActs({
     active: boardActive, graphActive: canvasView, owner, treeId, tree,
     progress: { completed, completedAt }, query: boardQuery, session: collabRef.current,
@@ -997,6 +997,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     sceneRef.current?.panTo(x, y);
   }
 
+  // The chrome around both views.
   // bindOnly: an unmatched heading mints a fresh hue rather than renaming an existing kind.
   const composerParse = useMemo(
     () => (composerOpen ? parsePlan(draft, draftKinds, { bindOnly: true }) : null),
@@ -1028,8 +1029,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     onClose: () => setSelectedId(null),
   };
 
-  // While the Board stands in for a roadmap that has not loaded, the topbar names nothing and offers no Share; a failed
-  // load offers no Graph either, whose load error would cover the topbar with no way back.
+  // While the Board stands in for a roadmap that has not loaded, the row names nothing and offers no Share; a failed
+  // load offers no Graph either, whose load error would cover the row with no way back.
   const boardAwaitsRoadmap = boardActive && !boardFacts.loaded;
   const onSwitchView = boardCanShow({ ...boardFacts, crashed: false }) && !(boardActive && loadError) ? switchView : null;
   // G follows the switch from 744px, for either role.
@@ -1044,6 +1045,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const readOnlyDock = !desktopEditor && !phone && !tabletEditor;
   const activityOpen = owner && feedVisible;
   const dockOpen = !phone && (composerOpen || (canvasView && (!!selectedNode || activityOpen)));
+
   const revealGraphToast = useCallback(() => {
     if (toast?.reveal) handleSheetJump(toast.reveal);
   }, [toast?.reveal, handleSheetJump]);
@@ -1059,6 +1061,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       identityRef.current?.querySelector('.st-board-switch-option[aria-pressed="true"]')?.focus({ preventScroll: true });
     });
   }, [toast, dismissToast]);
+  useEffect(() => {
+    if (toast?.surface === 'graph' && !canvasView) dismissToast();
+  }, [toast?.surface, canvasView, dismissToast]);
+
   const {
     openRowTend, openRowFork, openRowShortcuts, openRowSettings, openRowCreate, identityFind, graphNext,
     identityNext, shareFromRow, exportFromRow, newRoadmap, currentRoadmap, identitySheet,
@@ -1070,9 +1076,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     shareRequestRef, currentTreeIdRef, graphViewRef, identityRef, graphStepReturnRef, activityActsRef,
     breakpoint, canvasView, feedVisible, activityGroups, nodesById, setSelectedId, openActivity, closeActivity, addressOpen: stepAddress.open,
   });
-  useEffect(() => {
-    if (toast?.surface === 'graph' && !canvasView) dismissToast();
-  }, [toast?.surface, canvasView, dismissToast]);
 
   const { insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset } = useGraphGeometry({
     breakpoint, phone, canvasView, boardActive, dockOpen, refusal, topbarBottom, graphChromeBottom, phoneGraphBottom,
@@ -1375,7 +1378,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {(shared || !!demotion) && (
+      {(reader || demo) && (
         <ForkDoor open={forkOpen} presentation={phone ? 'sheet' : 'dialog'} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 

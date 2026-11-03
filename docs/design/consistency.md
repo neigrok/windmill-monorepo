@@ -691,6 +691,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · single offline notice.** Approved 03.17 shows the room's Offline signal without the global
   notice. The global notice yields only to an explicitly offline room publication; a device-only
   line does not hide connectivity. Rooms without an Offline publication retain the global notice.
+- **Board · the drawings of what the lift retired.** The List, the phone editor sheet, the phone aim, remove-link and
+  bulk bars, ControlBar and the Next up shelf left the product with the Board's lift. Their Web Mobile and Web boards
+  (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*, *List vocabulary*, and the Next up states
+  in *05 · Progress and feedback*) still stand in Figma. Delete them and their index rows when the lift ships.
 - **Board · mobile Shell mark.** The approved mobile Shell omits the mark. A roadmap room registered for status (an
   owner signed in or on this device) keeps that layout while idle, Saving, Saved or Offline, with space reserved for
   the longest compact status. Readers and the demo publish no status, so their phone Shell keeps the mark, as journal
@@ -701,7 +705,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   title clearance in a Design System change, with screenshots of Fork, Shortcuts, Share, SignIn,
   Feedback and SyncDecisions. Keep this correction in `Dialog`, without a Fork-specific override.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
-  `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
+  `web/src/products/roadmap/share/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.
 - **1e · Available-node treatment.** The DOM specimen draws a card-coloured available node;
   `NodeBatch.js` paints available and complete with saturated fills, distinguishing complete with a

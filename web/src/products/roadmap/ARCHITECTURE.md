@@ -315,11 +315,11 @@ Board, excluding covered, hidden and leaving elements. The shared `KindChoice` l
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |
 | `persistence/` | HTTP repository, account tree registry and device preferences/ledgers. |
-| `ui/`, `ui/tree/`, `ui/mobile/` | Canvas chrome, step details and tablet Graph editing. |
-| `selection/`, `shortcuts/` | Multi-selection rules and the shared keyboard map. |
+| `ui/`, `ui/tree/`, `ui/tablet/` | Canvas chrome, step details and the tablet's Graph panel. |
+| `selection/`, `shortcuts/` | The Graph's selection and the room's keys. |
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors. |
 | `paste/`, `quests/`, `demo/` | Import grammar/composition, authored starter trees and the playable demo. |
-| `share/`, `browse/` | Publishing, portraits and the public gallery. |
+| `share/`, `browse/` | Publishing, Fork, portraits and the public gallery. |
 | `tending/`, `reminders/`, `settings/` | AI assistance, reminder preferences and account data export. |
 | `marketing/` | Product landing, metadata and self-playing scenes. |
 
@@ -458,7 +458,7 @@ The host passes refusal code, refused-lane gesture count and stable
 Retry/Discard actions to the shared `RefusedSync` component on both Board and Graph. The notice
 owns capacity-specific Retry suppression and uses the refused-lane count for its message and
 Discard label. The Graph measures its notice into the camera's usable viewport and clears the
-selected-step dock from 744px. On the phone Graph, `MobileChrome` reports the selected-step
+selected-step dock from 744px. On the phone Graph, `GraphChrome` reports the selected-step
 bar footprint through `onBarBottom`; the refusal card clears that bar or the reader Fork pill. Retry clears the refusal and reconnects through the existing graft/flush
 path. A successful discard invalidates session Undo/Redo and captured receipts; only toast actions
 backed by those receipts are dismissed. Phone toasts are hidden while a refusal stands so Retry

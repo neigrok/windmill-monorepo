@@ -288,8 +288,7 @@ async function waitForScene(cdp, label) {
         busy: scene && scene.director ? scene.director.busy() : null,
         gliding: scene ? !!scene.camera.glide : null,
         camera: scene ? [scene.camera.x, scene.camera.y, scene.camera.zoom] : null,
-        settling: scene && scene.settle ? !!(scene.settle.moves && scene.settle.moves.length) : false,
-        listView: !!document.querySelector('.st-list, .lv-root, [data-view="list"]') };
+        settling: scene && scene.settle ? !!(scene.settle.moves && scene.settle.moves.length) : false };
     }`);
     if (s.error) { fs.writeFileSync(path.join(outDir, 'error.txt'), s.error); log.push({ t: Date.now() - t0, ...s }); return { ok: false, error: s.error, log }; }
     const ready = s.hasCanvas && s.nodes > 0 && s.busy === false && !s.gliding && !s.settling;

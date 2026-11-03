@@ -97,6 +97,15 @@ for (const width of phones) {
 }
 
 for (const width of wide) {
+  hostTest(`§2.5 Reader Fork: the door opens for a reader on an app URL at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, role: 'reader', appUrl: true });
+    try {
+      await page.locator('.st-roadmap-identity').getByRole('button', { name: ROADMAP_VERBS.fork, exact: true }).click();
+      await page.getByRole('heading', { name: 'Make it yours', exact: true }).waitFor();
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
   hostTest(`§2.5 Reader Fork: the row's Fork at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, role: 'reader' });
     try {

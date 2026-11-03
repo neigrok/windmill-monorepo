@@ -141,10 +141,6 @@ export function upNextCount({ count }) {
   return `${formatCount(count)} up next`;
 }
 
-export function upNextIn({ lens }) {
-  return `Up next in ${lens}`;
-}
-
 export function unlocksWhen({ step }) {
   return `Unlocks when ‘${step}’ is done.`;
 }
@@ -153,18 +149,10 @@ export function selectedCount({ count }) {
   return `${formatCount(count)} selected`;
 }
 
-export function needsLine({ need, extra, toGo }) {
-  return `Needs ${need}${extra > 0 ? ` +${formatCount(extra)}` : ''} · ${formatCount(toGo)} to go`;
-}
-
-export function unlocksLine({ first, extra }) {
-  return `Unlocks ${first}${extra > 0 ? ` +${formatCount(extra)}` : ''}`;
-}
-
 // A Locked card names what it needs, an Up next card what it opens; Done and a card that opens nothing say neither.
 export function reasonLine({ needs, unlocks }) {
-  if (needs) return needsLine({ need: needs.need.label, extra: needs.extra, toGo: needs.toGo });
-  if (unlocks) return unlocksLine({ first: unlocks.first.label, extra: unlocks.extra });
+  if (needs) return `Needs ${needs.need.label}${needs.extra > 0 ? ` +${formatCount(needs.extra)}` : ''} · ${formatCount(needs.toGo)} to go`;
+  if (unlocks) return `Unlocks ${unlocks.first.label}${unlocks.extra > 0 ? ` +${formatCount(unlocks.extra)}` : ''}`;
   return null;
 }
 
@@ -265,7 +253,7 @@ export function completeStepAction({ step }) {
 export function placementPreview({ prerequisites, unmet }) {
   if (prerequisites.length === 0) return { column: 'upNext', body: 'No prerequisites: lands in Up next.' };
   if (unmet.length === 0) return { column: 'upNext', body: 'Prerequisites done: lands in Up next.' };
-  if (unmet.length === 1) return { column: 'locked', body: notDone({ step: unmet[0] }) };
+  if (unmet.length === 1) return { column: 'locked', body: `${unmet[0]} isn’t done` };
   if (unmet.length === 2) return { column: 'locked', body: `${unmet[0]} and ${unmet[1]} aren’t done` };
   return { column: 'locked', body: `${unmet[0]} and ${formatCount(unmet.length - 1)} more aren’t done` };
 }
@@ -308,10 +296,6 @@ export function checkedToast({ item }) {
   return `${item} checked`;
 }
 
-export function notDone({ step }) {
-  return `${step} isn’t done`;
-}
-
 export function roadmapComplete({ total }) {
   return {
     title: total === 1 ? '1 step done' : `All ${stepCount(total)} done`,
@@ -320,16 +304,10 @@ export function roadmapComplete({ total }) {
   };
 }
 
-export function searchEmpty({ query }) {
-  const asked = query.trim();
-  return { title: `No steps match “${asked}”`, clear: LABELS.clearSearch, create: `New step “${asked}”` };
-}
-
 // What an emptied column says, by the way out it names: the search, the kinds or both.
 export function emptyColumn({ recovery, search }) {
   if (recovery === 'kinds') return { title: FILTERED_EMPTY.title, action: FILTERED_EMPTY.action };
-  const { title, clear } = searchEmpty({ query: search });
-  return { title, action: recovery === 'both' ? CLEAR_BOTH : clear };
+  return { title: noStepsMatch({ query: search }), action: recovery === 'both' ? CLEAR_BOTH : LABELS.clearSearch };
 }
 
 export function removeChip({ label }) {

@@ -264,11 +264,6 @@
   background: var(--surface-card);
 }
 
-.st-board-step-history {
-  display: flex;
-  flex-direction: column;
-}
-
 /* ---- Actions: Complete is the primary, Reset the secondary; the preview names what Reset would return. ---- */
 .st-board-step-buttons {
   display: flex;

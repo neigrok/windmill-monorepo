@@ -12,7 +12,6 @@ import {
   ROADMAP_SHEET,
   nextChip,
   upNextCount,
-  upNextIn,
   unlocksWhen,
   completedStepsToast,
   exactProgress,
@@ -30,8 +29,6 @@ import {
   FORK_OFFER,
   formatCount,
   stepCount,
-  needsLine,
-  unlocksLine,
   lockedStatus,
   columnHeadingLabel,
   progressFigure,
@@ -50,10 +47,9 @@ import {
   deleteStepsAction,
   checkedToast,
   deleteCostLine,
-  notDone,
   roadmapComplete,
-  searchEmpty,
   emptyColumn,
+  reasonLine,
   removeChip,
   sortButtonLabel,
   DELETE_CONFIRM,
@@ -122,10 +118,10 @@ test('copy — counts are full with separators, and compact from 1,000 only when
 });
 
 test('copy — card reasons and the locked status read the structured reasons', () => {
-  assert.equal(needsLine({ need: 'Read the wind', extra: 0, toGo: 1 }), 'Needs Read the wind · 1 to go');
-  assert.equal(needsLine({ need: 'Sail a triangle', extra: 1, toGo: 4 }), 'Needs Sail a triangle +1 · 4 to go');
-  assert.equal(unlocksLine({ first: 'Leave the dock', extra: 0 }), 'Unlocks Leave the dock');
-  assert.equal(unlocksLine({ first: 'Tie a bowline', extra: 1 }), 'Unlocks Tie a bowline +1');
+  assert.equal(reasonLine({ needs: { need: { label: 'Read the wind' }, extra: 0, toGo: 1 } }), 'Needs Read the wind · 1 to go');
+  assert.equal(reasonLine({ needs: { need: { label: 'Sail a triangle' }, extra: 1, toGo: 4 } }), 'Needs Sail a triangle +1 · 4 to go');
+  assert.equal(reasonLine({ unlocks: { first: { label: 'Leave the dock' }, extra: 0 } }), 'Unlocks Leave the dock');
+  assert.equal(reasonLine({ unlocks: { first: { label: 'Tie a bowline' }, extra: 1 } }), 'Unlocks Tie a bowline +1');
   assert.equal(lockedStatus({ toGo: 1 }), 'Locked · 1 to go');
 });
 
@@ -173,7 +169,6 @@ test('copy — create, delete, bulk and checklist toasts', () => {
   assert.equal(deleteStepsAction({ count: 1 }), 'Delete 1 step');
   assert.equal(checkedToast({ item: 'Try a small turn' }), 'Try a small turn checked');
   assert.equal(LINK_COPIED, 'Link copied');
-  assert.equal(notDone({ step: 'Read the wind' }), 'Read the wind isn’t done');
 });
 
 test('copy — empty, complete, failure and recovery states', () => {
@@ -192,9 +187,7 @@ test('copy — empty, complete, failure and recovery states', () => {
     title: 'Discard draft?', body: 'Your changes will be lost.', keepEditing: 'Keep editing', discard: 'Discard',
   });
   assert.deepEqual(FILTERED_EMPTY, { title: 'No steps match', action: 'Clear filters' });
-  assert.deepEqual(searchEmpty({ query: ' astronomy ' }), {
-    title: 'No steps match “astronomy”', clear: 'Clear search', create: 'New step “astronomy”',
-  });
+  assert.deepEqual(emptyColumn({ recovery: 'search', search: ' astronomy ' }), { title: 'No steps match “astronomy”', action: 'Clear search' });
 });
 
 test('copy — sync and session lines', () => {
@@ -420,7 +413,6 @@ test('copy — roadmap next counts use full numbers and the pinned state words',
   assert.deepEqual([0, 1, 2, 1200].map((count) => upNextCount({ count })), [
     '0 up next', '1 up next', '2 up next', '1,200 up next',
   ]);
-  assert.equal(upNextIn({ lens: 'Sailing' }), 'Up next in Sailing');
   assert.equal(unlocksWhen({ step: 'Read the wind' }), 'Unlocks when ‘Read the wind’ is done.');
 });
 
