@@ -29,7 +29,7 @@ export function boardFocusTarget(root, { preferredId = null, excludeId = null, c
     if (target) return target;
   }
   if (root.closest('[inert]') || root.getClientRects().length === 0 || getComputedStyle(root).visibility !== 'visible') return null;
-  root.tabIndex = -1;
+  if (root.getAttribute('tabindex') !== '-1') root.tabIndex = -1;
   return root;
 }
 
@@ -121,8 +121,9 @@ function focusInView(element) {
 }
 
 // Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
-// a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
-export function useRovingFocus(layout, { onComplete, onDelete, existingIds, revision, recoveryLayout = layout } = {}) {
+// a focused stop that unmounts (a sync moved its step) hands focus to the stop, else to `fallback`, instead of dropping it
+// to the page.
+export function useRovingFocus(layout, { onComplete, onDelete, existingIds, revision, recoveryLayout = layout, fallback = () => null } = {}) {
   const ref = useRef(null);
   const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
@@ -143,8 +144,8 @@ export function useRovingFocus(layout, { onComplete, onDelete, existingIds, revi
     const lost = focused.current;
     if (pending !== null || lost === null || lost.isConnected) return;
     focused.current = null;
-    const fallen = document.activeElement === null || document.activeElement === document.body;
-    const element = fallen && stop !== null ? elementOfStop(ref.current, stop) : null;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    const element = (stop === null ? null : elementOfStop(ref.current, stop)) ?? fallback();
     if (element) focusInView(element);
   });
 

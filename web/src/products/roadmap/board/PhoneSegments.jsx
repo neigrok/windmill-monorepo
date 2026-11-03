@@ -69,7 +69,7 @@ export function PhoneSegments({
     if (focusBoard === board) return layout;
     return [{ name: shown, stops: columnStops(focusBoard.shownCards(shown, { doneExpanded })) }];
   }, [focusBoard, board, layout, shown, doneExpanded]);
-  const roving = useRovingFocus(layout, { revision: board, existingIds: focusBoard.states, recoveryLayout, onDelete, onComplete: onComplete && ((id, door) => {
+  const roving = useRovingFocus(layout, { revision: board, existingIds: focusBoard.states, recoveryLayout, onDelete, fallback: () => tabs.current[shown], onComplete: onComplete && ((id, door) => {
     if (!onComplete(id, door)) return false;
     onShow('done');
     return true;
