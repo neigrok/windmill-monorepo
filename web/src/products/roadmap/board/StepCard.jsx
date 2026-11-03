@@ -1,7 +1,8 @@
 // One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card opens its step.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { HoldGesture, HOLD_MS, SwipeGesture, SWIPE_REVEAL } from './gestures.js';
+import { SwipeGesture, SWIPE_REVEAL } from './gestures.js';
+import { HoldGesture, HOLD_MS } from '../input/HoldGesture.js';
 import { hueOf } from '../theme.js';
 import { completeStepAction, STEP_DETAIL, reasonLine } from './copy.js';
 

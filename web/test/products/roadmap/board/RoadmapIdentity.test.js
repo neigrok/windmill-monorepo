@@ -5,6 +5,8 @@ import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { beacon, withBrowserErrors, learnToSailNodes, boardEvents as events, focusedBoardStep as focused, boardColumns as columnsOf } from './composerFixture.js';
 
+import { DEMO_BYLINE, LABELS, ROADMAP_VERBS } from '../../../../src/products/roadmap/board/copy.js';
+
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React, { useCallback, useState } from 'react';
@@ -51,6 +53,7 @@ function Room({ initial }) {
     sheet, next: options.view === 'tree' ? { count: cards.length, cards, onOpen: (id) => { window.picked = id; record('next')(); } } : null,
     onBottom: reportBottom, ...options };
   if (options.switcher) props.switcher = React.createElement(TreeSwitcher, { current: { ...sheet.current, title: props.title }, listTrees });
+  if (options.activity) props.onActivity = record('Activity');
   if (options.noFind) props.find = null;
   if (options.noNext) props.next = null;
   if (options.noVerbs) for (const key of Object.keys(callbacks)) props[key] = null;
@@ -474,3 +477,58 @@ test('Chromium: / focuses Find a step; a search narrows every column and emits o
     await page.close();
   }
 });
+
+for (const [width, band] of [[1440, 'desktop'], [1024, 'desktop'], [744, 'tablet'], [390, 'phone']]) {
+  test(`Chromium: demo ${width} has one sample byline and reader controls`, async () => {
+    const title = 'Coastal navigation handbook for every harbor and anchorage';
+    const page = await openRow(width, { band, role: 'demo', view: 'tree', title, activity: true });
+    try {
+      await withBrowserErrors(page, async () => {
+        const row = page.locator('.st-roadmap-identity');
+        const byline = width < 744 ? DEMO_BYLINE.phone : DEMO_BYLINE.wide;
+        assert.deepEqual(await row.locator('.st-roadmap-sample').allTextContents(), [byline]);
+        assert.equal(await row.getByRole('heading', { name: title, exact: true }).count(), 1);
+        assert.deepEqual(await row.evaluate((element) => [...element.children].slice(0, 2).map((child) => child.className)),
+          width < 744 ? ['st-roadmap-sample', 'st-roadmap-context'] : ['st-roadmap-context', 'st-roadmap-sample']);
+        assert.equal(await row.locator('[aria-haspopup]').count(), 0);
+        assert.equal(await row.locator('.st-roadmap-chip').filter({ hasText: 'Next' }).count(), 0);
+        assert.equal(await row.getByRole('button', { name: ROADMAP_VERBS.share, exact: true }).count(), width < 744 ? 0 : 1);
+        assert.equal(await row.getByRole('button', { name: ROADMAP_VERBS.fork, exact: true }).count(), width < 744 ? 0 : 1);
+        assert.equal(await row.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+        if (width === 744 || width === 1024) {
+          await row.getByRole('button', { name: LABELS.findStep, exact: true }).click();
+          assert.equal(await row.getByRole('searchbox', { name: LABELS.findStep, exact: true }).count(), 1);
+          assert.equal(await row.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+        }
+      });
+    } finally { await page.close(); }
+  });
+}
+
+for (const [width, band] of [[1440, 'desktop'], [1024, 'desktop'], [744, 'tablet']]) {
+  test(`Chromium: Activity ${width} has its drawn More order and closes before calling`, async () => {
+    const page = await openRow(width, { band, activity: true });
+    try {
+      await withBrowserErrors(page, async () => {
+        const more = page.getByRole('button', { name: ROADMAP_VERBS.more, exact: true });
+        await more.click();
+        const menu = page.getByRole('menu');
+        const names = await menu.getByRole('menuitem').evaluateAll((items) => items.map((item) => item.querySelector('span:not([aria-hidden])').textContent));
+        assert.deepEqual(names, [
+          ...(band === 'tablet' ? [ROADMAP_VERBS.askAI, ROADMAP_VERBS.shareRoadmap] : []),
+          ROADMAP_VERBS.activity, ROADMAP_VERBS.export, ROADMAP_VERBS.settings, ROADMAP_VERBS.keyboardShortcuts,
+        ]);
+        const activity = menu.getByRole('menuitem', { name: ROADMAP_VERBS.activity, exact: true });
+        assert.equal(await activity.locator('kbd').textContent(), 'A');
+        await activity.click();
+        assert.deepEqual(await page.evaluate(() => window.calls), [{ verb: 'Activity', menu: 0, popover: 0, focused: ROADMAP_VERBS.more }]);
+        assert.deepEqual(await page.evaluate(() => window.events.filter((event) => event.props?.verb === 'activity')), [
+          { name: 'roadmap_verb', props: { verb: 'activity', door: 'more', view: 'board', band } },
+        ]);
+        await page.evaluate(() => window.patch({ activity: false, onActivity: null }));
+        await more.click();
+        assert.equal(await page.getByRole('menuitem', { name: ROADMAP_VERBS.activity, exact: true }).count(), 0);
+      });
+    } finally { await page.close(); }
+  });
+}

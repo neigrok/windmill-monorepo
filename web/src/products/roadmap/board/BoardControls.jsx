@@ -9,6 +9,7 @@ import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { KIND_CSS, hueOf } from '../theme.js';
+import { focusableElements, wrapTab } from './composerFocus.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
 } from './copy.js';
@@ -18,7 +19,6 @@ const RECOLOR_PULSE_MS = 120;
 const RECOLOR_FADE_MS = 150;
 const RECOLOR_PULSE_SCALE = 1.04;
 const RECOLOR_FADE_OPACITY = 0.6;
-const SHEET_FOCUSABLE = 'button, input, [tabindex="0"]';
 
 export function dismissOverlayOutside(event, root, onClose) {
   if (root?.contains(event.target)) return;
@@ -595,33 +595,29 @@ export function PhoneTools({ worn, query, onQuery, onNewStep }) {
 }
 
 // The sheet covers its host surface; scrim, × and Escape dismiss it, while Tab stays inside.
-export function Sheet({ host, variant, title, onClose, children }) {
+export function Sheet({ host, variant, title, onClose, children, style, className = '' }) {
   const sheet = useRef(null);
   const titleId = useId();
 
   useEffect(() => {
-    sheet.current.querySelector(`[aria-checked="true"], ${SHEET_FOCUSABLE}`)?.focus();
+    focusableElements(sheet.current)[0]?.focus();
   }, []);
 
   const onKeyDown = (event) => {
+    if (event.defaultPrevented) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
       onClose('escape');
       return;
     }
-    if (event.key !== 'Tab') return;
-    const stops = [...sheet.current.querySelectorAll(SHEET_FOCUSABLE)];
-    const edge = event.shiftKey ? stops[0] : stops[stops.length - 1];
-    if (document.activeElement !== edge) return;
-    event.preventDefault();
-    (event.shiftKey ? stops[stops.length - 1] : stops[0]).focus();
+    wrapTab(event, sheet.current);
   };
 
   return createPortal(
-    <div className="st-board-sheet-layer" onKeyDown={onKeyDown}>
+    <div className="st-board-sheet-layer" style={style} onKeyDown={onKeyDown}>
       <div className="st-board-sheet-scrim" aria-hidden onClick={() => onClose('scrim')} />
-      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}`} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}${className ? ` ${className}` : ''}`} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <span className="st-board-sheet-grabber" aria-hidden />
         <div className="st-board-sheet-heading">
           <h2 id={titleId} className="st-board-sheet-title">{title}</h2>
