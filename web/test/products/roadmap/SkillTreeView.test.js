@@ -30,7 +30,7 @@ function collectHandlers(code) {
       const callback = node.init.arguments[0];
       handlers.set(node.id.name, code.slice(callback.start, callback.end));
     }
-    if (node.type === 'FunctionDeclaration' && ['completeStep', 'useRoadmapSyncStatus'].includes(node.id.name)) {
+    if (node.type === 'FunctionDeclaration' && ['completeStep', 'bulkMarkDone', 'useRoadmapSyncStatus'].includes(node.id.name)) {
       identityHandlers.set(node.id.name, code.slice(node.start, node.end));
     }
     if (node.type === 'VariableDeclarator' && ['onIdentityQuery', 'shareFromRow', 'exportFromRow', 'undoGraphToast', 'handleSheetJump', 'discardSync'].includes(node.id.name)) {
@@ -570,13 +570,16 @@ test('closed identity gate keeps selection and model changes out of initial came
 test('host reports discard only after the session confirms success', async () => {
   for (const result of [false, true]) {
     const events = [];
+    const quiet = [];
     let finish;
     const discard = runInNewContext(`(${identityHandlers.get('discardSync')})`, {
       refused: { lane: 'structure' }, refusalCode: 'server-error',
-      syncSession: { discard: () => new Promise((resolve) => { finish = resolve; }) },
+      syncSession: { discardPending: true, discard: () => new Promise((resolve) => { finish = resolve; }) },
+      setBoardQuiet: (update) => quiet.push(update(0)),
       track: (name, props) => events.push([name, { ...props }]),
     });
     const pending = discard();
+    assert.deepEqual(quiet, [1]);
     assert.deepEqual(events, []);
     finish(result);
     await pending;
@@ -593,4 +596,60 @@ test('host invalidates only receipt-backed Undo, preserving progress and held-de
     dismiss();
     assert.deepEqual(calls, receipt ? ['dismiss'] : []);
   }
+});
+
+
+test('discard rebaselines never announce Saving or Saved, including a slow online resubscribe', (t) => {
+  const clock = syncClock();
+  const session = statusSession({ structurePending: 2, refused: { lane: 'structure', code: 'bad-frame' } });
+  const hook = renderHook(t, () => syncHook(session, true, clock));
+  clock.advance(SAVING_DELAY_MS);
+  session.change({ rebaselining: true, structurePending: 0, refused: null, phase: 'syncing' });
+  assert.equal(hook.tree.state, null);
+  clock.advance(OFFLINE_GRACE_MS * 2);
+  assert.equal(hook.tree.state, null);
+  session.change({ rebaselining: false, phase: 'live' });
+  assert.equal(hook.tree.state, null);
+  clock.advance(SAVED_HOLD_MS);
+  assert.equal(hook.tree.state, null);
+  session.change({ structurePending: 1 });
+  clock.advance(SAVING_DELAY_MS);
+  assert.equal(hook.tree.state, 'saving');
+  session.change({ structurePending: 0 });
+  assert.equal(hook.tree.state, 'saved');
+});
+
+
+test('Graph bulk completion is one progress gesture with the gate open and preserves legacy writes when closed', () => {
+  for (const gate of [true, false]) {
+    const calls = [];
+    const targets = ['wind', 'dock'];
+    const bulk = runInNewContext(`(${identityHandlers.get('bulkMarkDone')})`, {
+      BOARD_OPEN: gate, selectedIdsRef: { current: new Set(targets) },
+      completed: new Set(), completedAt: {}, tree: {}, nodesById: new Map(),
+      markDoneTargets: () => targets,
+      advanceProgress,
+      setCompleted() {}, setCompletedAt() {}, witnessProgress() {},
+      pushProgress: (ids, status) => calls.push([ids, status]),
+      emit() {}, progressChanges: () => ({ unlocked: [] }), milestoneOffer: () => null,
+    });
+    bulk();
+    assert.deepEqual(calls, gate ? [[targets, 'complete']] : [['wind', 'complete'], ['dock', 'complete']]);
+  }
+});
+
+
+test('a real pending progress gesture still shows Saving during a structure rebaseline', (t) => {
+  const clock = syncClock();
+  const session = statusSession({ structurePending: 2, progressPending: 1, refused: { lane: 'structure', code: 'bad-frame' } });
+  const hook = renderHook(t, () => syncHook(session, true, clock));
+  session.change({ rebaselining: true, structurePending: 0, refused: null, phase: 'syncing' });
+  clock.advance(SAVING_DELAY_MS);
+  assert.equal(hook.tree.state, 'saving');
+  clock.advance(OFFLINE_GRACE_MS * 2);
+  assert.equal(hook.tree.state, 'saving');
+  session.change({ progressPending: 0 });
+  assert.equal(hook.tree.state, null);
+  session.change({ rebaselining: false, phase: 'live' });
+  assert.equal(hook.tree.state, null);
 });

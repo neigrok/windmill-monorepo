@@ -56,10 +56,11 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     discard them from this phone.* Android signs out at once and always keeps (`plat/you/YouSheet.kt`,
     `store/GymEngineSession.kt:122`); iOS asks in these words (`AppModel.signOutMessage`).
   - The web asks for journal and gym with the count, Keep and Discard (`SyncDecisions.jsx`), but on
-    sign-out or any change of account it wipes the account's roadmap trees from the browser,
+    explicit sign-out or a different account it wipes the account's roadmap trees from the browser,
     unsynced edits included, with no warning: `accountChange.js` calls each product's
     `forgetDevice`, and the roadmap's (`routes.js`) runs `forgetDeviceTrees` (`localTrees.js`),
-    which deletes every account-stamped registry row, sync blob and per-tree store.
+    which deletes every account-stamped registry row, sync blob and per-tree store. Session expiry
+    keeps the device copy and resumes syncing when the same account signs in.
   - Figma: Shell iOS 16c `2:2031` and 16e `45:3936`, Shell Android 16c `52:1053` and 16e `52:1127`;
     16d's signed-out line is *Signed out.* The first-run READ ME (`2:984`) still lists sign-out with
     unsent changes as open question 6. The web's confirmation is not drawn.

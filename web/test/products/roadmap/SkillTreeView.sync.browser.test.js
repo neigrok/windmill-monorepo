@@ -47,7 +47,10 @@ for (const width of [320, 390]) {
         const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]').getBoundingClientRect();
         return camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left;
       }), true);
-      assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => element.getBoundingClientRect().left), 16);
+      assert.deepEqual(await nudge.evaluate((element) => ({
+        textLeft: element.firstElementChild.getBoundingClientRect().left,
+        underIdentity: element.getBoundingClientRect().top === document.querySelector('.st-roadmap-identity').getBoundingClientRect().bottom,
+      })), { textLeft: 16, underIdentity: true });
       await nudge.click();
       assert.equal(await page.evaluate(() => window.signInOpened), 1);
       assert.deepEqual(errors, []);
@@ -70,8 +73,11 @@ for (const width of [320, 390, 744, 1440]) {
       await page.clock.runFor(1);
       await page.getByRole('status').filter({ hasText: SYNC_STATUS.saving }).waitFor();
       await page.evaluate(() => {
-        window.session.ackedServerVector = window.session.lattice.frontier();
-        window.session.emitStatus();
+        const session = window.session;
+        const writes = session.lattice.toFrame();
+        session.inFlight.set('fixture-ack', session.lattice.frontier());
+        session.structureWrites.set('fixture-ack', writes);
+        session.receiveAck({ frameId: 'fixture-ack' });
       });
       await page.getByRole('status').filter({ hasText: SYNC_STATUS.saved }).waitFor();
       await page.clock.runFor(1999);
@@ -99,7 +105,7 @@ for (const width of [320, 390, 744, 1440]) {
   });
 }
 
-for (const options of [{ role: 'reader' }, { role: 'ghost' }, { demo: true }, { gate: 'closed' }]) {
+for (const options of [{ role: 'reader' }, { demo: true }, { gate: 'closed' }]) {
   hostTest(`Chromium: sync publication is absent outside signed-in owner chrome ${JSON.stringify(options)}`, async () => {
     const { page, errors } = await openHost({ ...options, shell: true, width: 390 });
     try {
@@ -125,7 +131,13 @@ for (const width of [320, 390, 744, 1440]) {
           assert.equal(await button.count(), 1);
           await button.click();
           assert.equal(await page.evaluate(() => window.signInOpened), 1);
-          assert.equal(await page.locator('.wm-room-status').count(), 0);
+          assert.equal(await page.locator('.wm-room-status--device').count(), 1);
+          await page.locator('.wm-head-sign-in').click();
+          assert.equal(await page.evaluate(() => window.signInOpened), 2);
+          assert.equal(await page.locator('.wm-room-status').textContent(), '');
+          assert.equal(await button.evaluate((element) => element.firstElementChild.getBoundingClientRect().left), 16);
+          assert.equal(await button.evaluate((element) => element.getBoundingClientRect().top),
+            await page.locator('.st-roadmap-identity').evaluate((element) => element.getBoundingClientRect().bottom));
         } else {
           await page.getByRole('status').filter({ hasText: line }).waitFor();
           assert.equal(await page.getByRole('button', { name: line, exact: true }).count(), 0);

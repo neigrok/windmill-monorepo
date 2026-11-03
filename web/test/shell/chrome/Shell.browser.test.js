@@ -223,3 +223,29 @@ for (const status of [offline, { line: ANONYMOUS_OWNER }]) {
     });
   });
 }
+
+
+for (const width of [744, 1440]) {
+  for (const query of ['', '?ghost']) {
+    test(`registered desktop room links stay fixed through every status at ${width} ${query}`, async (t) => {
+      await visit(t, width, async (page) => {
+        await page.evaluate(() => window.publish(null));
+        await page.locator('.wm-room-status').waitFor({ state: 'attached' });
+        const navigation = await page.locator('.wm-switch').boundingBox();
+        for (const status of [{ line: SYNC_STATUS.saving }, { line: SYNC_STATUS.saved }, offline, { line: ANONYMOUS_OWNER }, null]) {
+          await page.evaluate((status) => window.publish(status), status);
+          await page.waitForFunction((line) => document.querySelector('.wm-room-status-full')?.textContent === line, status?.line ?? '');
+          assert.deepEqual(await page.locator('.wm-switch').boundingBox(), navigation);
+          assert.deepEqual(await page.evaluate(() => {
+            const nav = document.querySelector('.wm-switch').getBoundingClientRect();
+            const slot = document.querySelector('.wm-room-status').getBoundingClientRect();
+            const seat = document.querySelector('.wm-head-seat').getBoundingClientRect();
+            const line = document.querySelector('.wm-room-status-full').getBoundingClientRect();
+            return { navClear: nav.right <= slot.left, seatClear: slot.right <= seat.left,
+              lineFits: line.width <= slot.width, seatFits: seat.right <= innerWidth };
+          }), { navClear: true, seatClear: true, lineFits: true, seatFits: true });
+        }
+      }, query);
+    });
+  }
+}

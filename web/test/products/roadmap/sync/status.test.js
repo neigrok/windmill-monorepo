@@ -49,3 +49,18 @@ test('refusal suppresses saving and saved but keeps offline honest', () => {
   assert.equal(deriveSyncStatus(refused, 11000, { ...facts, drainedAt: 10000 }), null);
   assert.equal(deriveSyncStatus({ ...refused, phase: 'offline' }, 10000 + OFFLINE_GRACE_MS, facts), 'offline');
 });
+
+test('an online discard rebaseline is neither saving, saved nor offline, even after the grace period', () => {
+  const discarding = { ...live, phase: 'syncing', rebaselining: true };
+  const oldWork = { ...facts, pendingSince: 10000, drainedAt: 10000 };
+  assert.equal(deriveSyncStatus(discarding, 10500, oldWork), null);
+  assert.equal(deriveSyncStatus(discarding, 25000, oldWork), null);
+  assert.equal(deriveSyncStatus({ ...discarding, online: false }, 25000, oldWork), 'offline');
+});
+
+test('a rebaseline still reports real user writes in the preserved lane as saving', () => {
+  const snapshot = { ...live, phase: 'syncing', rebaselining: true, progressPending: 1, progressInFlight: 1 };
+  assert.equal(deriveSyncStatus(snapshot, 10000, { ...facts, pendingSince: 10000 }), null);
+  assert.equal(deriveSyncStatus(snapshot, 10000 + SAVING_DELAY_MS, { ...facts, pendingSince: 10000 }), 'saving');
+  assert.equal(deriveSyncStatus(snapshot, 25000, { ...facts, pendingSince: 10000 }), 'saving');
+});

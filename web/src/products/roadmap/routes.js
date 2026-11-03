@@ -65,7 +65,7 @@ function render({ hash, pathname, search }) {
   return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo } };
 }
 
-// Wipes everything on this device stamped for an account; anonymous work stays for the claim.
+// Explicit sign-out and account replacement wipe stamped work; a session lapse never calls this hook.
 async function forgetDevice({ next }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.
   const { forgetDeviceTrees } = await import('./sync/localTrees.js');

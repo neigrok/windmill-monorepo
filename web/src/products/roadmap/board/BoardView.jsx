@@ -278,6 +278,7 @@ function BoardView({
         toast={toast}
         phone={phone}
         ready={motion.phase === 'settled'}
+        blocked={phone && Boolean(refusal)}
         onToastShown={onToastShown}
         onToastReveal={onToastReveal}
         onToastUndo={onToastUndo}

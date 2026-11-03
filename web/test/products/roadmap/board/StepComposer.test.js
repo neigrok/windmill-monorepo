@@ -6,7 +6,9 @@ import { parse } from 'acorn';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { beacon, fixtureNodes, formReturned } from './composerFixture.js';
+import { beacon, fixtureNodes, formReturned, withBrowserErrors } from './composerFixture.js';
+
+import { COMPOSER, SAVE_FAILURE } from '../../../../src/products/roadmap/board/copy.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 
@@ -28,6 +30,8 @@ const fixtureNodes = ${fixtureNodes.toString()};
 window.mount = ({ empty = false, total = 1, shell = false, editing = null, unnamed = false } = {}) => {
   function App() {
     const [open, setOpen] = useState(false);
+    const [savingBlocked, setSavingBlocked] = useState(false);
+    window.setSavingBlocked = setSavingBlocked;
     const [width, setWidth] = useState(innerWidth);
     const [nodes, setNodes] = useState(empty ? [] : fixtureNodes(total).map((node) => unnamed && node.id === editing ? { ...node, label: '' } : node));
     const tree = useMemo(() => new SkillTree({ id: 'sail', title: 'Learn to sail', nodes }), [nodes]);
@@ -41,7 +45,7 @@ window.mount = ({ empty = false, total = 1, shell = false, editing = null, unnam
     return React.createElement('div', null,
       React.createElement('button', { onClick: () => setOpen(true) }, 'Open composer'),
       open && React.createElement(StepComposer, {
-        tree, completed, legend, editing,
+        tree, completed, legend, editing, savingBlocked,
         band: width < 744 ? 'phone' : width < 1024 ? 'tablet' : 'desktop',
         onClose: () => setOpen(false),
         onEdit: (request) => {
@@ -113,11 +117,13 @@ async function open(width, { height = 960, ...options } = {}) {
   page.on('pageerror', (error) => errors.push(error.message));
   page.setDefaultTimeout(5000);
   try {
-    await page.goto(`${origin}/composer-test`);
-    await page.waitForFunction(() => window.entryReady);
-    await page.evaluate((options) => window.mount(options), options);
-    await page.getByRole('button', { name: 'Open composer' }).click();
-    await page.getByRole('dialog', { name: options.editing ? 'Edit step' : 'New step', exact: true }).waitFor();
+    await withBrowserErrors(page, async () => {
+      await page.goto(`${origin}/composer-test`);
+      await page.waitForFunction(() => window.entryReady);
+      await page.evaluate((options) => window.mount(options), options);
+      await page.getByRole('button', { name: 'Open composer' }).click();
+      await page.getByRole('dialog', { name: options.editing ? 'Edit step' : 'New step', exact: true }).waitFor();
+    });
     return { page, errors };
   } catch (error) {
     await page.close();
@@ -550,3 +556,39 @@ test('Chromium: removing the edited step closes the composer without a write or 
     await page.close();
   }
 });
+
+for (const width of [390, 1440]) {
+  test(`Chromium ${width}: discard rebaseline keeps the draft and waits without a save failure`, async () => {
+    const { page, errors } = await open(width);
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.getByLabel('Name', { exact: true }).fill('Kept draft');
+        await page.evaluate(() => window.setSavingBlocked(true));
+        await page.waitForFunction(() => document.querySelector('button[type="submit"]').disabled);
+        assert.equal(await page.getByRole('button', { name: COMPOSER.create, exact: true }).isDisabled(), true);
+        await page.locator('form').evaluate((form) => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+        assert.deepEqual(await page.evaluate(() => ({ requests: window.requests ?? [], events: window.events ?? [] })), { requests: [], events: [] });
+        assert.equal(await page.getByRole('alert').count(), 0);
+        assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Kept draft');
+        await page.evaluate(() => window.setSavingBlocked(false));
+        await page.waitForFunction(() => !document.querySelector('button[type="submit"]').disabled);
+        await page.getByRole('button', { name: COMPOSER.create, exact: true }).click();
+        await page.getByRole('alert').waitFor();
+        assert.equal(await page.getByRole('alert').textContent(), SAVE_FAILURE.body);
+        await page.evaluate(() => window.setSavingBlocked(true));
+        await page.getByRole('alert').waitFor({ state: 'detached' });
+        assert.equal(await page.getByRole('button', { name: COMPOSER.create, exact: true }).isDisabled(), true);
+        await page.evaluate(() => { window.succeed = true; window.setSavingBlocked(false); });
+        await page.getByRole('button', { name: SAVE_FAILURE.retry, exact: true }).click();
+        await closed(page);
+        assert.deepEqual(await page.evaluate(() => window.events), [
+          { name: 'roadmap_board_create', props: { step: 'failed' } },
+          { name: 'roadmap_board_create', props: { step: 'retry' } },
+        ]);
+      });
+    } finally {
+      await page.close();
+      assert.deepEqual(errors, []);
+    }
+  });
+}

@@ -29,6 +29,7 @@ export function confirmDeviceOwner(userId) {
 export async function resolveDeviceOwner() {
   const me = await fetchMe();
   if (me === undefined) return deviceOwner(); // a blip is not an account change, in either direction
+  if (me === null && deviceOwner()) return deviceOwner();
   return confirmDeviceOwner(me?.id ?? null);
 }
 

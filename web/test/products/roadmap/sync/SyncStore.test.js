@@ -63,7 +63,7 @@ function environment(t) {
   return {
     store() { const store = new SyncStore(); stores.push(store); return store; },
     async session(store) {
-      const session = new SyncSession({ treeId: 'tree', store, registry: null, reportFailure: (operation, error) => {
+      const session = new SyncSession({ trackGestures: true, treeId: 'tree', store, registry: null, reportFailure: (operation, error) => {
         throw new Error(`${operation}: ${error.stack}`);
       } });
       sessions.push(session);
@@ -157,7 +157,7 @@ test('a real session discards to its exact server baseline and reloads offline b
   session.online = false;
   session.ws.close();
   assert.equal(await session.discard(), true);
-  assert.deepEqual(projections, [['Refused']]);
+  assert.deepEqual(projections, [['Refused'], ['Root'], ['Root']]);
   const persisted = await store.load('tree');
   assert.deepEqual(persisted.frame, baseline);
   assert.deepEqual(persisted.progress, preservedProgress);
@@ -168,7 +168,7 @@ test('a real session discards to its exact server baseline and reloads offline b
   session.connect();
   session.ws.open();
   session.receiveState({ ...baseline, seq: 1 });
-  assert.deepEqual(projections, [['Refused'], ['Root']]);
+  assert.deepEqual(projections, [['Refused'], ['Root'], ['Root'], ['Root']]);
 });
 
 for (const lane of ['structure', 'progress']) {
@@ -354,7 +354,7 @@ test('BroadcastChannel construction failure reports once and falls back to trans
   const failure = new Error('channel unavailable');
   globalThis.BroadcastChannel = class { constructor() { throw failure; } };
   const reports = [];
-  const session = new SyncSession({ treeId: 'tree', store, registry: null,
+  const session = new SyncSession({ trackGestures: true, treeId: 'tree', store, registry: null,
     reportFailure: (operation, error) => reports.push({ operation, error }) });
   t.after(() => session.close());
   await session.start();
@@ -372,4 +372,31 @@ test('BroadcastChannel construction failure reports once and falls back to trans
   assert.deepEqual(socket.frames, []);
   assert.equal(session.epochs.structure, 1);
   assert.deepEqual(reports, [{ operation: 'roadmap-sync-notify', error: failure }]);
+});
+
+test('pending gestures survive reload and repeated edits to one register, then acknowledgements and discard remove only their lane', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receiveState({ ...baseline, seq: 1 });
+  session.receiveProgressGraft(progress);
+  session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', prerequisites: ['root'] });
+  session.dispatch({ kind: 'RenameNode', id: 'child', label: 'First' });
+  session.dispatch({ kind: 'RenameNode', id: 'child', label: 'Second' });
+  session.markProgress('root', 'complete');
+  await settle([store]);
+  const saved = await store.load('tree');
+  assert.deepEqual(saved.gestures, session.gestures);
+  assert.equal(Object.keys(saved.gestures.structure).length, 3);
+  const reloaded = await env.session(env.store());
+  assert.equal(reloaded.statusSnapshot().structureGestures, 3);
+  assert.equal(reloaded.statusSnapshot().progressGestures, 1);
+  const first = [...session.inFlight.keys()][0];
+  session.receiveAck({ frameId: first });
+  await settle([store]);
+  assert.deepEqual((await store.load('tree')).gestures, { structure: Object.fromEntries(Object.entries(saved.gestures.structure).slice(1)), progress: saved.gestures.progress });
+  session.receiveReject({ frameId: [...session.inFlight.keys()].at(-1), code: 'bad-frame' });
+  assert.equal(await session.discard(), true);
+  assert.deepEqual((await store.load('tree')).gestures, { structure: {}, progress: saved.gestures.progress });
 });

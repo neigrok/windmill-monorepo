@@ -54,7 +54,7 @@ export function MobileChrome({
   const canvasView = view === 'tree';
   const wideCamera = identity && band !== 'phone';
   const identityNudge = identity && canvasView && band === 'phone' && Boolean(deviceLine);
-  const phoneCameraTop = rowBottom + (identityNudge ? nudgeHeight + 16 : 8);
+  const phoneCameraTop = rowBottom + 8 + (identityNudge ? nudgeHeight : 0);
 
   useLayoutEffect(() => {
     if (!onTopBottom && !identityNudge) return undefined;
@@ -286,7 +286,7 @@ export function MobileChrome({
       )}
 
       {identityNudge && (
-        <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom + 8 }}>
+        <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom }}>
           <DeviceLine {...deviceLine} />
         </div>
       )}

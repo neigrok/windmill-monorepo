@@ -168,29 +168,37 @@ failures retain their existing operations. None of these events carries titles, 
 copy and focus-ring changes emit no new events.
 
 The gated sync status emits `roadmap_sync_offline` with `step` (`shown` or `cleared`) once per
-offline episode and `pending` bucketed through `countBucket`. Saving and Saved emit nothing.
+offline episode and `pending` bucketed through `countBucket`. These counts exclude server-confirmed
+records being rebaselined. An online discard rebaseline emits no offline episode or Saved state.
+Saving and Saved emit nothing.
 Refusals emit `roadmap_sync_refused` with `step` (`shown`, `retry` or `discard`), `lane`
 (`structure` or `progress`) and `code` (`tree-too-large`, `bad-frame`, `no-such-tree`,
 `server-error` or `other`). Shown fires once for the refused frame, including across re-flushes.
 Discard fires only after the session confirms a successful discard.
+Refused count copy uses pending user gestures; counts remain local and are not event properties.
 The device line emits `roadmap_device_line` with `step: shown` once per visit, `line`
 (`anonymous` or `lapsed`) and `place` (`row` or `shell`); tapping its phone row emits
 `step: sign_in`. The phone reader Board's Fork offer emits `roadmap_verb` with `verb: fork`,
 `door: offer`, `view: board` and `band: phone`. The existing `fork_attempt` and `fork_claim`
 retain their meanings.
+Session expiry, including the 20-second account poll, retains device work and reaches the lapsed
+line. It is an expected auth outcome, not an Issue. Unexpected account refresh failures report
+`auth-session` with a real stack. Explicit sign-out and account replacement retain their cleanup.
 
 Unexpected refused codes (`bad-frame`, `server-error` and unknown codes) report
 `roadmap-sync-refused` once per code per session while the Board gate is open. Capacity and
 missing-tree refusals are expected and emit no Issue. Unexpected discard failures report
 `roadmap-sync-discard`. Refusal Issues include the bounded refusal code as a tag, and deduplication
 keeps different codes distinct. An epoch-notification failure after the discard transaction commits
-reports `roadmap-sync-notify` without turning the successful discard into a failure. An IndexedDB
+reports `roadmap-sync-notify` without turning the successful discard into a failure. A discard
+projection callback failure also reports `roadmap-sync-notify` without stranding the discard or
+its reconnect. An IndexedDB
 epoch-check failure before a structure or progress write send reports `roadmap-sync-send` and
 retains the pending bank in both gate states. Reports carry static operation names and call-site
 stacks; events never carry titles, identifiers, raw counts, server reasons or user content. The existing sync failure
 operations retain their meanings. Gate-closed Fork presentation changes emit no new event.
-The room registration keeps the Shell live region mounted while its status is idle. A published
-Offline state suppresses the global offline notice; anonymous and lapsed device lines do not.
+The room registration keeps the Shell live region mounted while its status is idle and suppresses
+the global offline notice before paint. Anonymous and lapsed device rooms keep that registration.
 The shared controlled Tooltip and these presentation changes emit no additional product events;
 the existing offline shown/cleared events describe the connectivity episode.
 

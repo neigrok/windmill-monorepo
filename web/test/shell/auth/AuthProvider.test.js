@@ -1,0 +1,123 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { loadScreen, renderHook } from '../../products/gym/harness.mjs';
+import { environment, until } from '../../platform/sync/fakes.js';
+import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { syncSession } from '../../../src/platform/sync/session.js';
+import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
+
+async function account(t) {
+  let view;
+  t.after(() => view?.unmount());
+  const env = environment();
+  const storage = new Map();
+  const listeners = new Map();
+  const broadcasts = [];
+  const globals = {
+    window: { location: { hash: '#/app/t_pending' },
+      addEventListener: (event, listener) => listeners.set(event, listener),
+      removeEventListener: (event) => listeners.delete(event) },
+    localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+    navigator: env.options.navigator,
+    BroadcastChannel: class { constructor() { broadcasts.push(this); } postMessage() {} close() {} },
+  };
+  for (const [key, value] of Object.entries(globals)) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    t.after(() => {
+      if (previous) Object.defineProperty(globalThis, key, previous);
+      else delete globalThis[key];
+    });
+  }
+  window.localStorage = localStorage;
+  const engine = await BrowserSyncEngine.open(env.options);
+  t.after(() => engine.close());
+  env.transport.account = 'A';
+  let me = { id: 'A', name: 'Ada' };
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) }));
+  const forgotten = [];
+  t.mock.method(roadmapRoutes, 'forgetDevice', (change) => forgotten.push(change));
+  t.mock.method(syncSession, 'open', () => Promise.resolve(engine));
+  t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, online: true, error: false }));
+  const prior = { engine: syncSession.engine, opening: syncSession.opening };
+  syncSession.engine = engine;
+  syncSession.opening = Promise.resolve(engine);
+  t.after(() => Object.assign(syncSession, prior));
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const { default: AuthProvider } = await loadScreen('shell/auth/AuthProvider.jsx');
+  view = renderHook(t, () => AuthProvider({ children: null }));
+  const auth = () => view.tree.props.value;
+  await until(() => auth().status === 'signed-in');
+  assert.equal(auth().status, 'signed-in');
+  await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'pending' } }]);
+  const replica = engine.device.activeReplica.id;
+  const entries = structuredClone(engine.device.activeReplica.outbox);
+  return { env, engine, auth, forgotten, replica, entries, broadcasts, setMe(value) {
+    me = value;
+    env.transport.account = value?.id ?? null;
+  } };
+}
+
+for (const trigger of ['refresh', 'poll']) {
+  test(`${trigger}: a 401 retains pending work; the same account resumes its original replica`, async (t) => {
+    const state = await account(t);
+    const { engine, auth, forgotten, replica, entries } = state;
+    state.setMe(null);
+    if (trigger === 'refresh') await auth().refresh();
+    else {
+      t.mock.timers.tick(20000);
+      await until(() => auth().status === 'ghost');
+    }
+    assert.deepEqual({ status: auth().status, account: auth().account, user: auth().user, lapsed: auth().lapsed },
+      { status: 'ghost', account: null, user: null, lapsed: true });
+    assert.deepEqual({ id: engine.device.activeReplica.id, state: engine.device.activeReplica.meta.state,
+      account: engine.device.activeReplica.meta.account, authPaused: engine.device.activeReplica.meta.authPaused,
+      outbox: engine.device.activeReplica.outbox }, { id: replica, state: 'bound', account: 'A', authPaused: true, outbox: entries });
+    assert.deepEqual(forgotten, []);
+    assert.equal(window.location.hash, '#/app/t_pending');
+    await auth().refresh();
+    assert.deepEqual(forgotten, []);
+    state.setMe({ id: 'A', name: 'Ada' });
+    await auth().signIn({ id: 'A', name: 'Ada' });
+    assert.deepEqual({ status: auth().status, lapsed: auth().lapsed, id: engine.device.activeReplica.id,
+      authPaused: engine.device.activeReplica.meta.authPaused, outbox: engine.device.activeReplica.outbox },
+    { status: 'signed-in', lapsed: false, id: replica, authPaused: false, outbox: entries });
+    assert.deepEqual(forgotten, []);
+    assert.deepEqual(state.env.failures, []);
+  });
+}
+
+test('a different account after a lapse keeps its own replica and invokes roadmap account cleanup once', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  await state.auth().refresh();
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.auth().signIn({ id: 'B', name: 'Bea' });
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: 'B' }]);
+  assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed,
+    account: state.engine.device.activeReplica.meta.account, outbox: state.engine.device.activeReplica.outbox },
+  { status: 'signed-in', lapsed: false, account: 'B', outbox: [] });
+  const retained = state.engine.device.replicas.find((replica) => replica.id === state.replica);
+  assert.equal(retained.meta.state, 'dormant');
+  assert.deepEqual(retained.outbox, state.entries);
+});
+
+test('an explicit sign-out broadcast still clears roadmap work instead of becoming a lapse', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  state.broadcasts[0].onmessage({ data: { type: 'signed-out' } });
+  await until(() => state.auth().status === 'ghost');
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.equal(state.auth().lapsed, false);
+  assert.equal(state.engine.device.activeReplica.meta.state, 'anon');
+});
+
+test('a tab that missed sign-out broadcast recognizes the completed replica transition on refresh', async (t) => {
+  const state = await account(t);
+  await state.engine.finishSignOut({ choice: 'keep' });
+  await state.engine.write(null, (device) => { delete device.meta.clearCredential; });
+  state.setMe(null);
+  await state.auth().refresh();
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed }, { status: 'ghost', lapsed: false });
+});

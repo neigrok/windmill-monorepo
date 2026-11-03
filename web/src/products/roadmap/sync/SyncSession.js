@@ -6,15 +6,16 @@
 //    for one of our own frames; live third-party frames never touch it.
 //  - dense seq gates the live plane: a frame joins only when seq === lastSeq + 1, and a gap or a
 //    malformed frame forces a resubscribe.
-//  - sends fire only in the `live` phase, so the server acquires each actor's stamps as a prefix.
+//  - live sends fire only in the `live` phase; graft replies may also flush the outbox.
 
 import { captureError } from '../../../telemetry/sentry.js';
 import { socketUrl } from '../../../shell/apiBase.js';
-import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
+import { HlcClock, TreeLattice, VersionVector, hlcText } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
+import { pendingGestures, pendingRecordCount, unconfirmedStamps, writeStamps } from './pendingWrites.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
@@ -38,7 +39,7 @@ function frameFrontier(writes) {
 }
 
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
+  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(), trackGestures = false,
     reportFailure = (operation, error) => captureError('roadmap', operation,
       typeof error?.stack === 'string' && error.stack ? error.stack : new Error(operation).stack, '#/app') } = {}) {
     this.url = url;
@@ -52,6 +53,8 @@ export class SyncSession {
     this.confirmedStructure = new TreeLattice(treeId, title);
     this.confirmedProgress = new ProgressLattice();
     this.confirmedKnown = { structure: false, progress: false };
+    this.trackGestures = trackGestures;
+    this.gestures = { structure: {}, progress: {} };
     this.epochs = { structure: 0, progress: 0 };
     this.structureWrites = new Map();
     this.progressWrites = new Map();
@@ -114,15 +117,21 @@ export class SyncSession {
   }
 
   statusSnapshot() {
-    const structurePending = this.pendingEditCount();
-    const progressPending = this.progress.deltaSince(this.ackedProgressVector).marks.length;
+    const confirmed = { structure: writeStamps(this.confirmedStructure.toFrame()), progress: writeStamps(this.confirmedProgress.toFrame()) };
+    const pending = (lane, frame) => pendingRecordCount(unconfirmedStamps(writeStamps(frame), confirmed[lane]));
+    const structurePending = this.rebaselining?.has('structure') ? 0 : pending('structure', this.lattice.toFrame());
+    const progressPending = this.rebaselining?.has('progress') ? 0 : pending('progress', this.progress.toFrame());
+    const inFlightCount = (lane, frames) => [...frames.values()].filter((frame) => pending(lane, frame) > 0).length;
     const snapshot = {
       phase: this.phase,
       online: this.online,
       structurePending,
       progressPending,
-      structureInFlight: this.inFlight.size,
-      progressInFlight: this.progressInFlight.size,
+      structureInFlight: this.rebaselining?.has('structure') ? 0 : inFlightCount('structure', this.structureWrites),
+      progressInFlight: this.rebaselining?.has('progress') ? 0 : inFlightCount('progress', this.progressWrites),
+      structureGestures: this.rebaselining?.has('structure') ? 0 : Object.keys(this.gestures.structure).length,
+      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(this.gestures.progress).length,
+      rebaselining: this.rebaselining != null,
       refused: this.refusals.values().next().value ?? null,
       receiptVersion: this.receiptVersion,
     };
@@ -159,8 +168,9 @@ export class SyncSession {
     this.forceReconnect();
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
-    this.phase = 'offline';
+    this.phase = this.online ? 'syncing' : 'offline';
     this.refusals.delete(lane);
+    this.emitProjection(lane);
     this.emitStatus();
     let result;
     try {
@@ -170,6 +180,7 @@ export class SyncSession {
       this.rebaselining = null;
       this.discardPending = false;
       this.refusals.set(lane, refused);
+      this.emitProjection(lane);
       this.emitStatus();
       this.reportFailure('roadmap-sync-discard', error);
       await this.persistDeferred();
@@ -181,6 +192,7 @@ export class SyncSession {
     if (result.status === 'unavailable') {
       this.ready = previousReady;
       this.refusals.set(lane, refused);
+      this.emitProjection(lane);
       this.emitStatus();
       await this.persistDeferred();
       if (!this.closed) this.scheduleReconnect();
@@ -203,6 +215,7 @@ export class SyncSession {
       this.refusals.delete(lane);
       this.refusalEpisodes.delete(lane);
       this.confirmedKnown[lane] = value.confirmed[lane] != null;
+      this.gestures[lane] = {};
       if (lane === 'structure') {
         const title = this.confirmedStructure.title;
         this.lattice = new TreeLattice(this.treeId, title);
@@ -228,6 +241,8 @@ export class SyncSession {
     this.redoStack = [];
     this.receipts = new WeakMap();
     this.receiptVersion += 1;
+    for (const lane of changed) this.emitProjection(lane);
+    this.phase = this.online ? 'syncing' : 'offline';
     this.emitStatus();
     this.forceReconnect();
     if (!this.closed) this.scheduleReconnect();
@@ -301,8 +316,12 @@ export class SyncSession {
       try { this.progress.join(saved.progress); }
       catch { this.progress = new ProgressLattice(); }
     }
+    if (this.trackGestures) {
+      this.gestures.structure = pendingGestures(saved?.gestures?.structure ? {} : saved?.frame, saved?.confirmed?.structure, saved?.gestures?.structure);
+    }
     // localStorage residue folds in uncovered, so the first graft flushes it.
     if (this.registry) new ProgressStore().drainInto(this.treeId, this.progress);
+    if (this.trackGestures) this.gestures.progress = pendingGestures(this.progress.toFrame(), saved?.confirmed?.progress, saved?.gestures?.progress);
     if (this.progress.marks.size) {
       this.progress.seedClock(this.clock);
       this.progressHandler?.(this.progress.overlay());
@@ -355,7 +374,7 @@ export class SyncSession {
     socket.addEventListener('close', () => {
       if (this.ws !== socket) return;
       this.stopHeartbeat();
-      this.phase = 'offline';
+      this.phase = this.rebaselining && this.online ? 'syncing' : 'offline';
       this.inFlight.clear();  // unacked frontiers die with the connection — never persisted
       this.progressInFlight.clear();
       this.structureWrites.clear();
@@ -423,6 +442,7 @@ export class SyncSession {
     try {
       frontier = this.lattice.join(frame);
       this.confirmedStructure.join(frame);
+      this.confirm('structure');
     } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     if (typeof frame.seq === 'number') this.lastSeq = frame.seq;
@@ -450,6 +470,7 @@ export class SyncSession {
     try {
       frontier = this.lattice.join(frame);
       this.confirmedStructure.join(frame);
+      this.confirm('structure');
     } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     this.lastSeq = frame.seq;  // advance only after a successful join
@@ -465,7 +486,10 @@ export class SyncSession {
     if (!vector) return;
     this.ackedServerVector.join(vector);
     const writes = this.structureWrites.get(frame.frameId);
-    if (writes) this.confirmedStructure.join(writes);
+    if (writes) {
+      this.confirmedStructure.join(writes);
+      this.confirm('structure');
+    }
     this.structureWrites.delete(frame.frameId);
     this.inFlight.delete(frame.frameId);
     this.persistNow();
@@ -476,11 +500,11 @@ export class SyncSession {
   // Fires whenever the wire goes idle with full coverage: live, nothing pending, nothing in flight.
   noteDrained() {
     if (this.refusals.has('structure') && this.pendingEditCount() === 0) this.refusals.delete('structure');
-    if (this.refusals.has('progress') && this.progress.deltaSince(this.ackedProgressVector).marks.length === 0) this.refusals.delete('progress');
+    if (this.refusals.has('progress') && this.pendingProgressCount() === 0) this.refusals.delete('progress');
     if (!this.drainedHandler) return;
     if (this.phase !== 'live' || this.inFlight.size > 0 || this.progressInFlight.size > 0) return;
     if (this.pendingEditCount() > 0) return;
-    if (this.progress.deltaSince(this.ackedProgressVector).marks.length > 0) return;
+    if (this.pendingProgressCount() > 0) return;
     this.drainedHandler?.();
   }
 
@@ -491,6 +515,7 @@ export class SyncSession {
     try {
       frontier = this.progress.join(frame);
       this.confirmedProgress.join(frame);
+      this.confirm('progress');
     } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     this.ackedProgressVector = frontier;
@@ -515,6 +540,7 @@ export class SyncSession {
     try {
       frontier = this.progress.join(frame);
       this.confirmedProgress.join(frame);
+      this.confirm('progress');
     } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     this.persistNow();
@@ -527,7 +553,10 @@ export class SyncSession {
     if (!vector) return;
     this.ackedProgressVector.join(vector);
     const writes = this.progressWrites.get(frame.frameId);
-    if (writes) this.confirmedProgress.join(writes);
+    if (writes) {
+      this.confirmedProgress.join(writes);
+      this.confirm('progress');
+    }
     this.progressWrites.delete(frame.frameId);
     this.progressInFlight.delete(frame.frameId);
     this.persistNow();
@@ -536,10 +565,17 @@ export class SyncSession {
   }
 
   // Queue the local snapshot before sending; an unacknowledged mark remains in the derived outbox.
-  markProgress(nodeId, status) {
+  markProgress(nodeIds, status) {
     if (this.rebaselining?.has('progress')) return this.progress.overlay();
     const now = Date.now();
-    if (!this.progress.mark(nodeId, status, this.clock.tick(now), now)) return this.progress.overlay();
+    const at = this.clock.tick(now);
+    const targets = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
+    let changed = false;
+    for (const nodeId of targets) {
+      if (this.progress.mark(nodeId, status, at, now)) changed = true;
+    }
+    if (!changed) return this.progress.overlay();
+    if (this.trackGestures) this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.gestures.progress);
     this.persistNow();
     this.flushProgress();
     this.emitStatus();
@@ -602,12 +638,42 @@ export class SyncSession {
     window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame }));
   }
 
-  emitTree() { this.treeHandler?.(this.lattice.toTreeData()); }
+  confirm(lane) {
+    if (!this.trackGestures) return;
+    const confirmed = lane === 'structure' ? this.confirmedStructure.toFrame() : this.confirmedProgress.toFrame();
+    this.gestures[lane] = pendingGestures({}, confirmed, this.gestures[lane]);
+  }
+
+  emitProjection(lane) {
+    try {
+      if (lane === 'structure') {
+        this.emitTree();
+        return;
+      }
+      const progress = this.rebaselining?.has('progress') ? this.confirmedProgress : this.progress;
+      this.progressHandler?.(progress.overlay());
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
+    }
+  }
+
+  emitTree() {
+    const lattice = this.rebaselining?.has('structure') ? this.confirmedStructure : this.lattice;
+    this.treeHandler?.(lattice.toTreeData());
+  }
 
   // How much of the bank the server does not hold.
   pendingEditCount() {
-    const pending = this.lattice.deltaSince(this.ackedServerVector);
-    return pending.nodes.length + pending.edges.length + pending.kinds.length + (pending.title ? 1 : 0);
+    if (!this.trackGestures) {
+      const pending = this.lattice.deltaSince(this.ackedServerVector);
+      return pending.nodes.length + pending.edges.length + pending.kinds.length + (pending.title ? 1 : 0);
+    }
+    return pendingRecordCount(unconfirmedStamps(writeStamps(this.lattice.toFrame()), writeStamps(this.confirmedStructure.toFrame())));
+  }
+
+  pendingProgressCount() {
+    if (!this.trackGestures) return this.progress.deltaSince(this.ackedProgressVector).marks.length;
+    return pendingRecordCount(unconfirmedStamps(writeStamps(this.progress.toFrame()), writeStamps(this.confirmedProgress.toFrame())));
   }
 
   // Everything the server does not yet cover — the outbox, derived not queued.
@@ -679,6 +745,7 @@ export class SyncSession {
 
   apply(writes, { captureFailures = false } = {}) {
     this.lattice.join(writes);
+    if (this.trackGestures) this.gestures.structure = pendingGestures(writes, this.confirmedStructure.toFrame(), this.gestures.structure);
     this.emitStatus();
     if (!captureFailures) {
       this.emitTree();
@@ -754,6 +821,7 @@ export class SyncSession {
     const value = {
       frame: this.lattice.toFrame(), progress: this.progress.toFrame(), lastSeq: this.lastSeq,
       epochs: { ...this.epochs },
+      ...(this.trackGestures ? { gestures: structuredClone(this.gestures) } : {}),
       confirmed: {
         structure: this.confirmedKnown.structure ? this.confirmedStructure.toFrame() : null,
         progress: this.confirmedKnown.progress ? this.confirmedProgress.toFrame() : null,
@@ -910,3 +978,4 @@ function* chunkDelta(delta) {
     yield chunk;
   }
 }
+
