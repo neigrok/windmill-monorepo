@@ -2,8 +2,8 @@
 // the columns, on the phone the band's rows, its sheets and the chips over the panes; and what an emptied column says.
 // Measures from 07.01–07.06 and 11.01 on the desktop page and 03.02, 03.06, 05.01–05.05, 09.03 and 14.01 on the phone page.
 
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
@@ -165,10 +165,23 @@ function clear(onQuery, what, from) {
 
 // Find a step: from 744px a pill with the / keycap, on the phone the band's field. Escape clears first, then leaves.
 // A search emits once it is committed (Enter, or leaving the field) and never says what was asked.
-export function FindStep({ query, onQuery, phone = false }) {
+export function FindStep({ query, onQuery, phone = false, folded = false, onExpand }) {
   const input = useRef(null);
+  const toggle = useRef(null);
+  const focusExpanded = useRef(false);
+  const setToggle = useCallback((node) => {
+    if (!node && toggle.current === document.activeElement) focusExpanded.current = true;
+    toggle.current = node;
+  }, []);
+  const [expanded, setExpanded] = useState(false);
   const committed = useRef('');
   const typed = query.search !== '';
+
+  useLayoutEffect(() => {
+    if (!input.current || !focusExpanded.current) return;
+    focusExpanded.current = false;
+    input.current.focus();
+  }, [folded, expanded, typed]);
 
   const commit = () => {
     const asked = query.search.trim();
@@ -178,6 +191,7 @@ export function FindStep({ query, onQuery, phone = false }) {
   };
 
   const clearSearch = () => {
+    if (folded) setExpanded(true);
     committed.current = '';
     clear(onQuery, 'search', 'field');
   };
@@ -187,9 +201,37 @@ export function FindStep({ query, onQuery, phone = false }) {
     if (event.key !== 'Escape') return;
     event.preventDefault();
     event.stopPropagation();
-    if (typed) clearSearch();
-    else input.current.blur();
+    if (typed) {
+      clearSearch();
+      return;
+    }
+    if (folded) {
+      flushSync(() => setExpanded(false));
+      toggle.current?.focus();
+      return;
+    }
+    input.current.blur();
   };
+
+  if (folded && !expanded && !typed) {
+    return (
+      <button
+        ref={setToggle}
+        type="button"
+        className="st-board-find-toggle"
+        aria-label={LABELS.findStep}
+        aria-keyshortcuts="/"
+        title={LABELS.findStep}
+        onClick={() => {
+          flushSync(() => setExpanded(true));
+          input.current?.focus();
+          onExpand?.();
+        }}
+      >
+        <SearchGlyph />
+      </button>
+    );
+  }
 
   return (
     <div className={`st-board-find ${phone ? 'st-board-find--phone' : 'st-board-find--wide'} ${typed ? 'is-typed' : ''}`}>
@@ -207,7 +249,11 @@ export function FindStep({ query, onQuery, phone = false }) {
         spellCheck={false}
         onChange={(event) => onQuery((current) => current.searchingFor(event.target.value))}
         onKeyDown={onKeyDown}
-        onBlur={commit}
+        onFocus={() => setExpanded(true)}
+        onBlur={() => {
+          commit();
+          if (!typed) setExpanded(false);
+        }}
       />
       {typed && (
         <button
@@ -534,7 +580,7 @@ export function PhoneTools({ worn, query, onQuery, onNewStep }) {
 }
 
 // A bottom sheet over the whole Board: the scrim and × dismiss it, Escape too, and Tab stays inside while it is open.
-function Sheet({ host, variant, title, onClose, children }) {
+export function Sheet({ host, variant, title, onClose, children }) {
   const sheet = useRef(null);
   const titleId = useId();
 
@@ -546,7 +592,7 @@ function Sheet({ host, variant, title, onClose, children }) {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      onClose('escape');
       return;
     }
     if (event.key !== 'Tab') return;
@@ -559,12 +605,12 @@ function Sheet({ host, variant, title, onClose, children }) {
 
   return createPortal(
     <div className="st-board-sheet-layer" onKeyDown={onKeyDown}>
-      <div className="st-board-sheet-scrim" aria-hidden onClick={onClose} />
-      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="st-board-sheet-scrim" aria-hidden onClick={() => onClose('scrim')} />
+      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}`} tabIndex={variant === 'roadmap' ? -1 : undefined} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <span className="st-board-sheet-grabber" aria-hidden />
         <div className="st-board-sheet-heading">
           <h2 id={titleId} className="st-board-sheet-title">{title}</h2>
-          <button type="button" className="st-board-sheet-close" aria-label={LABELS.close} onClick={onClose}><CloseGlyph /></button>
+          <button type="button" className="st-board-sheet-close" aria-label={LABELS.close} onClick={() => onClose('close')}><CloseGlyph /></button>
         </div>
         {children}
       </div>

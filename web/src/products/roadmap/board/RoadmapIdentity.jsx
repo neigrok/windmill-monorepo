@@ -1,24 +1,311 @@
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
+import { Tooltip } from '../../../design-system';
+import { track } from '../../../telemetry/beacon.js';
+import { DEFAULT_NODE_COLOR, KIND_CSS } from '../theme.js';
+import { FindStep, NewStep } from './BoardControls.jsx';
+import { RoadmapSheet } from './RoadmapSheet.jsx';
+import { ViewSwitch } from './ViewSwitch.jsx';
+import { countBucket } from './acts.js';
+import { LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from './copy.js';
 import './identity.css';
 
 export function RoadmapIdentity({
-  band,
-  view,
-  role,
-  title,
-  switcher,
-  progress,
-  onSwitchView,
-  find,
-  next,
-  onAskAI,
-  onShare,
-  onNewStep,
-  onExport,
-  onSettings,
-  onShortcuts,
-  onFork,
-  sheet,
-  onBottom,
+  band, view, role, title, switcher, progress, onSwitchView, find, next,
+  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom,
 }) {
-  return null;
+  const bar = useRef(null);
+  const titleButton = useRef(null);
+  const moreButton = useRef(null);
+  const nextButton = useRef(null);
+  const moreBox = useRef(null);
+  const nextBox = useRef(null);
+  const [fullDesktop, setFullDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches);
+  const [overlay, setOverlay] = useState(null);
+  const phone = band === 'phone';
+  const owner = role === 'owner';
+  const tablet = band === 'tablet';
+  const context = `${band}:${view}:${role}`;
+  const nextAvailable = !phone && owner && view === 'tree' && next?.count > 0;
+  const sheetAvailable = phone && owner && sheet !== null && sheet !== undefined && title !== undefined;
+  const menuItems = [
+    ...(tablet ? [
+      { verb: 'askAI', label: ROADMAP_VERBS.askAI, icon: Sparkles, key: '⌘K', act: onAskAI },
+      { verb: 'share', label: ROADMAP_VERBS.shareRoadmap, icon: Share, act: onShare },
+    ] : []),
+    { verb: 'export', label: ROADMAP_VERBS.export, icon: Download, act: onExport },
+    { verb: 'settings', label: ROADMAP_VERBS.settings, icon: Settings, act: onSettings },
+    { verb: 'shortcuts', label: ROADMAP_VERBS.keyboardShortcuts, icon: Keyboard, key: '?', act: onShortcuts },
+  ].filter((item) => item.act);
+  const moreAvailable = !phone && owner && menuItems.length > 0;
+  const available = overlay?.kind === 'more' ? moreAvailable : overlay?.kind === 'next' ? nextAvailable : sheetAvailable;
+  const open = overlay?.context === context && available ? overlay.kind : null;
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1280px)');
+    const change = () => setFullDesktop(media.matches);
+    change();
+    media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!onBottom) return undefined;
+    const report = () => onBottom(bar.current.offsetTop + bar.current.offsetHeight);
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(bar.current);
+    window.addEventListener('resize', report);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', report);
+    };
+  }, [onBottom]);
+
+  useLayoutEffect(() => {
+    if (!overlay || open) return;
+    if (overlay.kind === 'next') track('roadmap_whats_next', { step: 'close', count: countBucket(overlay.count) });
+    setOverlay(null);
+    if (document.activeElement === document.body) {
+      (titleButton.current ?? bar.current.querySelector('[aria-pressed="true"], button, input') ?? bar.current)?.focus();
+    }
+  }, [overlay, open]);
+
+  const verb = (name, door = 'row') => track('roadmap_verb', {
+    verb: name, door, view: view === 'tree' ? 'graph' : 'board', band,
+  });
+  const close = useCallback(() => {
+    if (overlay?.kind === 'next') track('roadmap_whats_next', { step: 'close', count: countBucket(next?.count ?? overlay.count) });
+    flushSync(() => setOverlay(null));
+    const button = overlay?.kind === 'sheet' ? titleButton.current : overlay?.kind === 'more' ? moreButton.current : nextButton.current;
+    button?.focus();
+  }, [overlay, next?.count]);
+
+  useEffect(() => {
+    if (open !== 'more' && open !== 'next') return undefined;
+    const box = open === 'more' ? moreBox : nextBox;
+    const away = (event) => {
+      if (box.current?.contains(event.target)) return;
+      if (open === 'next') event.preventDefault();
+      close();
+    };
+    const escape = (event) => {
+      if (open !== 'next' || event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    };
+    document.addEventListener('pointerdown', away, true);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open, close]);
+
+  useLayoutEffect(() => {
+    if (open === 'more') moreBox.current.querySelector('[role="menuitem"]')?.focus();
+    if (open === 'next') nextBox.current.querySelector('.st-roadmap-next-card')?.focus();
+  }, [open]);
+
+  const toggle = (kind) => {
+    if (open === kind) {
+      close();
+      return;
+    }
+    if (kind === 'sheet') track('roadmap_sheet', { step: 'open' });
+    else verb(kind);
+    if (kind === 'next') track('roadmap_whats_next', { step: 'open', count: countBucket(next.count) });
+    setOverlay({ kind, context, ...(kind === 'next' ? { count: next.count } : {}) });
+  };
+
+  const menuKeys = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (event.key === 'Tab') {
+      close();
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const options = [...moreBox.current.querySelectorAll('[role="menuitem"]')];
+    const direction = event.key === 'ArrowDown' ? 1 : -1;
+    const index = options.indexOf(document.activeElement);
+    options[(index + direction + options.length) % options.length]?.focus();
+  };
+
+  return (
+    <div
+      ref={bar}
+      tabIndex={-1}
+      className={`st-roadmap-identity st-roadmap-identity--${band}${!phone && !fullDesktop ? ' st-roadmap-identity--folded' : ''}`}
+      data-role={role}
+      data-view={view}
+    >
+      <div className="st-roadmap-context">
+        {title !== undefined && (sheetAvailable ? (
+          <button
+            ref={titleButton}
+            className="st-roadmap-title st-roadmap-title-button"
+            type="button"
+            aria-label={title}
+            aria-haspopup="dialog"
+            aria-expanded={open === 'sheet'}
+            onClick={() => toggle('sheet')}
+          >
+            {title}
+          </button>
+        ) : !phone && owner && switcher ? (
+          <div className="st-roadmap-switcher">{switcher}</div>
+        ) : <h1 ref={titleButton} tabIndex={-1} className="st-roadmap-title" title={title}>{title}</h1>)}
+      </div>
+      {title !== undefined && progress && (
+        <span className="st-roadmap-progress" aria-label={progressLabel(progress)}>
+          {progressFigure({ ...progress, compact: phone })}
+        </span>
+      )}
+      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} />}
+      {!phone && <>
+        <div className="st-roadmap-space" />
+        {find && <FindStep {...find} folded={!fullDesktop} onExpand={() => verb('find')} />}
+        {owner && !tablet && onAskAI && (
+          <RowButton
+            label={ROADMAP_VERBS.askAI}
+            icon={Sparkles}
+            expanded={fullDesktop}
+            keycap={fullDesktop ? '⌘K' : null}
+            brand
+            onClick={() => {
+              verb('askAI');
+              onAskAI();
+            }}
+          />
+        )}
+        {nextAvailable && <div ref={nextBox} className="st-roadmap-popover-anchor">
+          <Tooltip label={nextChip(next)} side="bottom">
+            <button
+              ref={nextButton}
+              type="button"
+              className="st-roadmap-chip"
+              aria-label={nextChip(next)}
+              aria-expanded={open === 'next'}
+              aria-haspopup="dialog"
+              onClick={() => toggle('next')}
+            >
+              <Compass size={20} aria-hidden />
+              <span>{tablet ? formatCount(next.count) : nextChip(next)}</span>
+            </button>
+          </Tooltip>
+          {open === 'next' && <div className="st-roadmap-next" role="dialog" aria-label={upNextCount(next)}>
+            <h2>{upNextCount(next)}</h2>
+            <div className="st-roadmap-next-list" tabIndex={-1}>
+              {next.cards.map((card) => {
+                const reason = reasonLine(card);
+                const kind = KIND_CSS[card.step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+                return (
+                  <button
+                    key={card.id}
+                    className="st-roadmap-next-card"
+                    type="button"
+                    style={{ '--roadmap-kind': kind.base }}
+                    onClick={() => {
+                      track('roadmap_whats_next', { step: 'pick', count: countBucket(next.count) });
+                      close();
+                      next.onOpen(card.id);
+                    }}
+                  >
+                    <span className="st-roadmap-next-rail" aria-hidden />
+                    <span className="st-roadmap-next-content">
+                      <span className="st-roadmap-next-title">{card.step.label}</span>
+                      {reason && <span className="st-roadmap-next-reason">{reason}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>}
+        </div>}
+        {(!owner || !tablet) && onShare && (
+          <RowButton label={ROADMAP_VERBS.share} icon={Share} onClick={() => {
+            verb('share');
+            onShare();
+          }} />
+        )}
+        {owner && onNewStep && (
+          <Tooltip label={LABELS.newStep} side="bottom">
+            <NewStep compact={tablet} onClick={() => {
+              verb('newStep');
+              onNewStep();
+            }} />
+          </Tooltip>
+        )}
+        {!owner && onFork && (
+          <RowButton label={ROADMAP_VERBS.fork} icon={GitFork} expanded primary onClick={() => {
+            verb('fork');
+            onFork();
+          }} />
+        )}
+        {moreAvailable && <div ref={moreBox} className="st-roadmap-popover-anchor">
+          <Tooltip label={ROADMAP_VERBS.more} side="bottom">
+            <button
+              ref={moreButton}
+              type="button"
+              className="st-roadmap-icon"
+              aria-label={ROADMAP_VERBS.more}
+              aria-haspopup="menu"
+              aria-expanded={open === 'more'}
+              onClick={() => toggle('more')}
+            >
+              <MoreHorizontal size={20} aria-hidden />
+            </button>
+          </Tooltip>
+          {open === 'more' && <div className="st-roadmap-menu" role="menu" aria-label={ROADMAP_VERBS.more} onKeyDown={menuKeys}>
+            {menuItems.map((item) => (
+              <button key={item.verb} type="button" role="menuitem" onClick={() => {
+                verb(item.verb, 'more');
+                close();
+                item.act();
+              }}>
+                <item.icon size={20} aria-hidden />
+                <span>{item.label}</span>
+                {item.key && <kbd className="st-board-keycap" aria-hidden>{item.key}</kbd>}
+              </button>
+            ))}
+          </div>}
+        </div>}
+      </>}
+      {open === 'sheet' && (
+        <RoadmapSheet
+          sheet={sheet}
+          view={view}
+          band={band}
+          onAskAI={onAskAI}
+          onShare={onShare}
+          onExport={onExport}
+          onSettings={onSettings}
+          onClose={close}
+        />
+      )}
+    </div>
+  );
+}
+
+function RowButton({ label, icon: Icon, expanded = false, primary = false, brand = false, keycap, onClick }) {
+  const classes = [expanded ? 'st-roadmap-chip' : 'st-roadmap-icon'];
+  if (primary) classes.push('st-roadmap-fork');
+  if (brand) classes.push('st-roadmap-ask');
+  return (
+    <Tooltip label={label} side="bottom">
+      <button type="button" className={classes.join(' ')} aria-label={label} onClick={onClick}>
+        <Icon size={20} aria-hidden />
+        {expanded && <span>{label}</span>}
+        {keycap && <kbd className="st-board-keycap" aria-hidden>{keycap}</kbd>}
+      </button>
+    </Tooltip>
+  );
 }

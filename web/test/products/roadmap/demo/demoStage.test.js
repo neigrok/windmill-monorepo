@@ -23,9 +23,9 @@ test('staged set — six done, coached node ready, both children asleep', () => 
 });
 
 test('copy — the canon strings the demo speaks verbatim', () => {
-  assert.equal(DEMO_COPY.coachSentence, 'This step is ready — mark it done.');
+  assert.equal(DEMO_COPY.coachSentence, 'This step is up next — mark it done.');
   assert.equal(DEMO_COPY.coachButton, 'Mark it done');
-  assert.equal(DEMO_COPY.unlockToast, 'Step unlocked: Rig the boat yourself · 2 steps opened');
+  assert.equal(DEMO_COPY.unlockToast, 'Rig the boat yourself done · 2 up next');
   assert.equal(DEMO_COPY.forkToast, 'Forked — 17 steps planted');
   assert.equal(DEMO_COPY.plaqueByline, 'Windmill demo');
 });

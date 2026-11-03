@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Icon } from '../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { moreUpNext, NOTHING_UP_NEXT } from '../board/copy.js';
 
 const RETURN_GAP_MS = 12 * 60 * 60 * 1000;
 const AUTO_OPEN_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -45,7 +46,7 @@ export function NextUp({ plan, nodesById, states, onHoverNode, onLeaveNode, onOp
   if (plan.mode === 'blocked') {
     return (
       <div className="st-nextup st-nextup--empty">
-        <p className="st-nextup-line">Nothing’s unlocked yet.</p>
+        <p className="st-nextup-line">{NOTHING_UP_NEXT}</p>
       </div>
     );
   }
@@ -62,7 +63,7 @@ export function NextUp({ plan, nodesById, states, onHoverNode, onLeaveNode, onOp
       </div>
       {plan.overflow.length > 0 && !expanded && (
         <button type="button" className="st-nextup-more" onClick={() => setExpanded(true)}>
-          + {plan.overflow.length} more ready
+          {moreUpNext({ count: plan.overflow.length })}
         </button>
       )}
     </div>

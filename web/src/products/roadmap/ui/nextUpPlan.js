@@ -3,6 +3,7 @@
 
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { unlocksOf } from '../model/UnlockRules.js';
+import { upNextCount } from '../board/copy.js';
 
 const FEATURED_CAP = 3;
 const KIND_CAP = 2;
@@ -24,7 +25,7 @@ export function planNextUp(tree, states) {
     return { mount: true, mode: 'allDone', pill: `${doneCount}/${totalCount}`, doneCount, totalCount, readyCount: 0, featured: [], overflow: [] };
   }
   if (ready.length === 0) {
-    return { mount: true, mode: 'blocked', pill: '0 ready', doneCount, totalCount, readyCount: 0, featured: [], overflow: [] };
+    return { mount: true, mode: 'blocked', pill: upNextCount({ count: 0 }), doneCount, totalCount, readyCount: 0, featured: [], overflow: [] };
   }
 
   const featured = [];
@@ -37,5 +38,5 @@ export function planNextUp(tree, states) {
     featured.push(candidate);
   }
   const overflow = ready.filter((candidate) => !featured.includes(candidate));
-  return { mount: true, mode: 'featured', pill: `${ready.length} ready`, doneCount, totalCount, readyCount: ready.length, featured, overflow };
+  return { mount: true, mode: 'featured', pill: upNextCount({ count: ready.length }), doneCount, totalCount, readyCount: ready.length, featured, overflow };
 }

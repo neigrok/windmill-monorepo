@@ -3,6 +3,7 @@ import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { COLUMN_TITLES, unlocksWhen } from '../board/copy.js';
 
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
 const noop = () => {};
@@ -162,14 +163,14 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
               Locked
             </span>
             {lockedBy && (
-              <div className="st-state-lockedline">Unlocks when ‘{lockedBy}’ is complete.</div>
+              <div className="st-state-lockedline">{unlocksWhen({ step: lockedBy })}</div>
             )}
           </>
         ) : (
           <>
             <span className="st-state-chip" style={{ '--chip-base': hue.base }}>
               <span className={`st-state-dot st-state-dot--${state}`} />
-              {state === 'complete' ? 'Complete' : 'Not started'}
+              {state === 'complete' ? COLUMN_TITLES.done : COLUMN_TITLES.upNext}
             </span>
             <Button
               variant={state === 'complete' ? 'ghost' : 'primary'}
@@ -354,7 +355,7 @@ export function ReadOnlyStateChip({ state, hue, completedAt }) {
   return (
     <span style={{ ...base, background: 'transparent', border: `1.5px solid ${hue.ring}`, color: hue.ring }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', boxShadow: `inset 0 0 0 2px ${hue.ring}`, flexShrink: 0 }} aria-hidden />
-      Ready
+      {COLUMN_TITLES.upNext}
     </span>
   );
 }

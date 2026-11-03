@@ -563,12 +563,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
   that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
   Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
-- **Board · light focus ring on cream.** `--focus-ring` in `tokens/shadows.css` is a 4px
-  `--accent-terracotta-100` (#F3DFD2) shadow: 1.18:1 against `--surface-canvas` (#F9F5EB), under the
-  3:1 non-text minimum. The [Board proposal](roadmap-board-proposal.md) draws a 2px brand-colour
-  `:focus-visible` ring with a 2px offset (card state sheets 353:5571, 353:5686). The token is shared
-  by the design-system Button, IconButton, Input, Select and SegmentedControl; the library owner
-  retokens it before the Board ships.
+- **Design system · Figma library focus effect.** The library's `shadow/focus-ring` effect still uses
+  terracotta-100. The design-system owner must align it with the approved light focus ring:
+  2px `surface/canvas` gap plus a 2px terracotta-500 ring
+  ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
+  Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
+  their own values.
 - **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
   legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
   384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six

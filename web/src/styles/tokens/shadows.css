@@ -12,7 +12,7 @@
   --glow-soft: 0 0 8px 0 color-mix(in srgb, var(--nd-glow, var(--kind-olive-glow)) 44%, transparent), 0 0 15px 2px color-mix(in srgb, var(--nd-glow, var(--kind-olive-glow)) 20%, transparent);
   --glow-gold: 0 0 0 4px var(--kind-gold-glow), 0 0 28px var(--kind-gold-glow);
   --glow-terracotta: 0 0 0 5px var(--kind-terracotta-glow), 0 0 36px var(--kind-terracotta-glow);
-  --focus-ring: 0 0 0 4px var(--accent-terracotta-100);
+  --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--accent-terracotta-500);
 }
 
 /* Dark: ambient shadows go near-black and deeper; the glows intensify via the node-glow tokens. */
