@@ -82,7 +82,9 @@ projection.
 
 A saved camera is scoped to its layout engine and format. Without one, an owner opens at working zoom over the
 frontier and a visitor receives the whole-tree fit and arrival ceremony. The owner's first view reframes as
-chrome measurements arrive until the reader moves the camera.
+chrome measurements arrive until the reader moves the camera. A plant from paste or a quest fits the whole tree,
+cascades and ends on its one line. A fork opens on its Board and says what happened, counting its own steps. The
+scene stays silent unless it is told what to say.
 
 ## The identity row
 
@@ -173,7 +175,7 @@ query took away hands focus to the columns' tab stop.
 
 From 1024px Locked, Up next and Done stand side by side, each scrolling under its sticky heading and starting
 under the identity row, whose measured bottom feeds the Board's top inset on every band. From 744px to 1023px
-one side column folds to a rail, Done first; Show swaps which one, and Up next never folds (`columnStage` in
+one side column folds to a rail, Done first; Show swaps which one, a rail offers Show only while its column holds a card, and Up next never folds (`columnStage` in
 `BoardColumns.jsx`). Phones show one column at a time behind Locked · Up next · Done tabs
 (`PhoneSegments.jsx`). Shown with a step selected, the Board opens that step's column (its tab, past the Done
 fold, or out of the rail) and scrolls its card into view.
