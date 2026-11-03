@@ -4,22 +4,37 @@ package works.windmill.agent
 
 import java.io.File
 import java.io.IOException
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -69,7 +84,7 @@ class EchoHost(private val open: TurnOpen = TurnOpen("tn_1", "catalog/2", "Hi", 
 }
 
 class RecordingTelemetry : TurnTelemetry {
-    val lines = mutableListOf<String>()
+    val lines: MutableList<String> = Collections.synchronizedList(mutableListOf())
     override fun ability(name: TurnLabel, outcome: TurnLabel) { lines += "ability ${name.value} ${outcome.value}" }
     override fun ended(state: TurnState, seat: SeatKind, code: TurnLabel?, tally: TurnTally, durationMs: Long) {
         lines += "ended $state $seat ${code?.value ?: "-"} calls=${tally.calls} refusals=${tally.refusals} bytes=${tally.answerBytes} ms=$durationMs"
@@ -131,14 +146,13 @@ class ScriptedServer(private val events: List<Json>) : TurnTransport {
         advance()
     }
 
-    override suspend fun stop(turnId: String, seat: TurnSeat): TurnState {
+    override suspend fun stop(turnId: String, seat: TurnSeat) {
         seats += seat
         stops += 1
         if (pending == "stop") {
             pending = null
             advance()
         }
-        return TurnState.stopped
     }
 
     private fun advance() {
@@ -252,7 +266,7 @@ class TurnExchangeTests(private val name: String) {
 class ManualServer(private val now: () -> Long) : TurnTransport {
     val streams = ArrayDeque<Flow<TurnEvent>>()
     val answers = ArrayDeque<suspend () -> Unit>()
-    var stopAnswer: suspend () -> TurnState = { TurnState.stopped }
+    var stopAnswer: suspend () -> Unit = {}
     val opened = mutableListOf<TurnOpen>()
     val resumedAt = mutableListOf<Long>()
     val postedAt = mutableListOf<Long>()
@@ -275,9 +289,9 @@ class ManualServer(private val now: () -> Long) : TurnTransport {
         answers.removeFirstOrNull()?.invoke()
     }
 
-    override suspend fun stop(turnId: String, seat: TurnSeat): TurnState {
+    override suspend fun stop(turnId: String, seat: TurnSeat) {
         stops += 1
-        return stopAnswer()
+        stopAnswer()
     }
 }
 
@@ -596,6 +610,250 @@ class TurnDriverTests {
         assertEquals(listOf(TurnEnd(TurnState.completed, "", false, null, null)), written)
     }
 
+    @Test fun aStopWhileABatchRunsLeavesTheRestUnrunAndUnpostedAndEndsStoppedByTheStream() = runTest {
+        val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+        lateinit var driver: TurnDriver
+        val server = server().apply {
+            streams += frames.receiveAsFlow()
+            stopAnswer = { frames.trySend(TurnEvent.Done(TurnState.stopped, false)) }
+        }
+        val telemetry = RecordingTelemetry()
+        val echo = EchoHost()
+        val host = object : TurnHost by echo {
+            override suspend fun execute(call: ToolCall): ToolOutcome {
+                driver.requestStop()
+                delay(10)
+                return echo.execute(call)
+            }
+        }
+        driver = driver(server, telemetry)
+        val run = async { driver.run("tn_1", seat, host) }
+        runCurrent()
+        frames.trySend(calls(1, call("a"), call("b")))
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(call("a")), echo.executed)
+        assertEquals(emptyList<Json>(), server.posted)
+        assertEquals(listOf(TurnEnd(TurnState.stopped, "", false, null, null)), echo.ends)
+        assertEquals(listOf("ability list_things ok", "ended stopped bound - calls=1 refusals=0 bytes=0 ms=10"), telemetry.lines)
+    }
+
+    @Test fun resultsTheServerTurnsAwayAfterAStopAreNoFailure() = runTest {
+        val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+        lateinit var driver: TurnDriver
+        val server = server().apply {
+            streams += frames.receiveAsFlow()
+            answers.addLast {
+                driver.requestStop()
+                frames.trySend(TurnEvent.Done(TurnState.stopped, false))
+                throw TurnRefusal(409, TurnRefusal.turnOrder, null)
+            }
+        }
+        val host = EchoHost()
+        val telemetry = RecordingTelemetry()
+        driver = driver(server, telemetry)
+        val run = async { driver.run("tn_1", seat, host) }
+        runCurrent()
+        frames.trySend(calls(1, call("a")))
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(TurnEnd(TurnState.stopped, "", false, null, null)), host.ends)
+        assertEquals(listOf("ability list_things ok", "ended stopped bound - calls=1 refusals=0 bytes=0 ms=0"), telemetry.lines)
+    }
+
+    @Test fun resultsLostAfterAStopAreNotAskedAgain() = runTest {
+        val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+        lateinit var driver: TurnDriver
+        val server = server().apply {
+            streams += frames.receiveAsFlow()
+            answers.addLast {
+                driver.requestStop()
+                frames.trySend(TurnEvent.Done(TurnState.stopped, false))
+                throw TurnConnectionLost(null)
+            }
+        }
+        val host = EchoHost()
+        driver = driver(server, RecordingTelemetry())
+        val run = async { driver.run("tn_1", seat, host) }
+        runCurrent()
+        frames.trySend(calls(1, call("a")))
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(1, server.posted.size)
+        assertEquals(listOf(TurnEnd(TurnState.stopped, "", false, null, null)), host.ends)
+    }
+
+    @Test fun aBatchArrivingAfterAStopWritesNothing() = runTest {
+        val batch = TurnBatch(1, listOf(call("create")))
+        for (late in listOf(TurnEvent.Calls(batch), TurnEvent.Snapshot("So far", TurnState.running, batch))) {
+            val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+            val server = server().apply { streams += frames.receiveAsFlow() }
+            val host = EchoHost()
+            val driver = driver(server, RecordingTelemetry())
+            val run = async { driver.run("tn_1", seat, host) }
+            runCurrent()
+            driver.requestStop()
+            runCurrent()
+            frames.trySend(late)
+            frames.trySend(TurnEvent.Done(TurnState.stopped, false))
+            advanceUntilIdle()
+            assertEquals(TurnExit.ended, run.await())
+            assertEquals(emptyList<ToolCall>(), host.executed)
+            assertEquals(emptyList<Json>(), server.posted)
+            assertEquals(TurnState.stopped, host.ends.single().state)
+        }
+    }
+
+    @Test fun aStopThatFailsIsReportedUnlessTheNetworkOrAClientRefusalSaysWhy() = runTest {
+        val cases = listOf<Triple<Exception, TurnExit, List<String>>>(
+            Triple(TurnConnectionLost(null), TurnExit.stoppedOffline, emptyList()),
+            Triple(TurnRefusal(404, TurnRefusal.turnUnknown, null), TurnExit.stopUnheard, emptyList()),
+            Triple(TurnRefusal(503, "coach-busy", null), TurnExit.stopUnheard, listOf("failure http 503")),
+            Triple(IOException("Certificate pinning failure"), TurnExit.stopUnheard, listOf("failure transport -")),
+            Triple(TurnWireFault(TurnWireFault.badAddress), TurnExit.stopUnheard, listOf("failure decode -")),
+        )
+        for ((failure, exit, reports) in cases) {
+            val server = server().apply { streams += silent; stopAnswer = { throw failure } }
+            val telemetry = RecordingTelemetry()
+            val driver = driver(server, telemetry)
+            val run = async { driver.run("tn_1", seat, EchoHost()) }
+            runCurrent()
+            driver.requestStop()
+            advanceUntilIdle()
+            assertEquals(exit, run.await())
+            assertEquals(reports + "ended stopped bound - calls=0 refusals=0 bytes=0 ms=0", telemetry.lines)
+        }
+    }
+
+    @Test fun aStopLostBeforeTheFollowingStartsStillEndsTheTurn() = runTest {
+        val server = server().apply { streams += silent; stopAnswer = { throw TurnConnectionLost(null) } }
+        val host = EchoHost()
+        val driver = TurnDriver(server, RecordingTelemetry(), CoroutineScope(Dispatchers.Unconfined), elapsedMs = { testScheduler.currentTime })
+        val run = async { driver.run("tn_1", seat, host) }
+        launch { driver.requestStop() }
+        advanceUntilIdle()
+        assertEquals(TurnExit.stoppedOffline, run.await())
+        assertEquals(listOf(TurnEnd(TurnState.stopped, "", false, null, null)), host.ends)
+    }
+
+    @Test fun abandoningWhileAPortWaitsReportsNothingAndEndsNothing() = runTest {
+        val waiting = listOf("open", "execute", "write", "coalesced write", "end", "withdraw", "post", "last post", "stream", "last stream")
+        for (port in waiting) {
+            val echo = EchoHost()
+            val host = object : TurnHost by echo {
+                override suspend fun open(): TurnOpen {
+                    if (port == "open") awaitCancellation()
+                    return echo.open()
+                }
+                override suspend fun execute(call: ToolCall): ToolOutcome {
+                    if (port == "execute") awaitCancellation()
+                    return echo.execute(call)
+                }
+                override suspend fun writeText(text: String) {
+                    if (port == "write" || port == "coalesced write") awaitCancellation()
+                    echo.writeText(text)
+                }
+                override suspend fun end(end: TurnEnd) {
+                    if (port == "end") awaitCancellation()
+                    echo.end(end)
+                }
+                override suspend fun withdraw(refusal: TurnRefusal) {
+                    if (port == "withdraw") awaitCancellation()
+                    echo.withdraw(refusal)
+                }
+            }
+            val server = server().apply {
+                if (port == "last stream") repeat(4) { streams += lost }
+                if (port == "last post") repeat(3) { answers.addLast { throw TurnConnectionLost(null) } }
+                streams += when (port) {
+                    "end" -> flowOf(done)
+                    "withdraw" -> flow<TurnEvent> { throw TurnRefusal(429, "subject_exhausted", null) }
+                    "stream", "last stream", "open" -> silent
+                    "coalesced write" -> flow { emit(TurnEvent.Text("A")); awaitCancellation() }
+                    else -> flow { emit(TurnEvent.Text("A")); emit(calls(1, call("a"))); awaitCancellation() }
+                }
+                answers.addLast { awaitCancellation() }
+            }
+            val telemetry = RecordingTelemetry()
+            val driver = driver(server, telemetry)
+            val run = async { driver.run("tn_1", seat, host) }
+            advanceTimeBy(20_000)
+            driver.abandon()
+            advanceUntilIdle()
+            assertEquals(port, TurnExit.abandoned, run.await())
+            assertEquals(port, emptyList<TurnEnd>(), echo.ends)
+            assertEquals(port, emptyList<TurnRefusal>(), echo.withdrawals)
+            assertEquals(port, emptyList<String>(), telemetry.lines.filterNot { it.startsWith("ability") })
+            assertEquals(port, 1, server.stops)
+        }
+    }
+
+    @Test fun theDriversOwnScopeEndingUnderAStopIsNoFailure() = runTest {
+        val server = server().apply { streams += silent; stopAnswer = { awaitCancellation() } }
+        val stops = CoroutineScope(coroutineContext + Job())
+        val host = EchoHost()
+        val telemetry = RecordingTelemetry()
+        val driver = TurnDriver(server, telemetry, stops, elapsedMs = { testScheduler.currentTime })
+        val run = async { driver.run("tn_1", seat, host) }
+        runCurrent()
+        driver.requestStop()
+        runCurrent()
+        stops.cancel()
+        runCurrent()
+        assertEquals(TurnActivity("tn_1", stopping = true, reconnecting = false), driver.activity.value)
+        assertEquals(emptyList<String>(), telemetry.lines)
+        driver.abandon()
+        advanceUntilIdle()
+        assertEquals(TurnExit.abandoned, run.await())
+        assertEquals(emptyList<TurnEnd>(), host.ends)
+    }
+
+    @Test fun abandoningDuringThePhoneOnlyStopWritesNothingMore() = runTest {
+        val written = mutableListOf<TurnEnd>()
+        val release = Channel<Unit>()
+        val host = object : TurnHost by EchoHost() {
+            override suspend fun end(end: TurnEnd) {
+                release.receive()
+                written += end
+            }
+        }
+        val server = server().apply { streams += silent; stopAnswer = { throw TurnConnectionLost(null) } }
+        val driver = driver(server, RecordingTelemetry())
+        val run = async { driver.run("tn_1", seat, host) }
+        runCurrent()
+        driver.requestStop()
+        runCurrent()
+        driver.abandon()
+        runCurrent()
+        release.trySend(Unit)
+        advanceUntilIdle()
+        assertEquals(TurnExit.abandoned, run.await())
+        assertEquals(emptyList<TurnEnd>(), written)
+    }
+
+    @Test fun aCommitThatOutlivesAnAbandonIsTheCallersToReRead() = runTest {
+        val written = mutableListOf<TurnEnd>()
+        val host = object : TurnHost by EchoHost() {
+            override suspend fun end(end: TurnEnd) {
+                withContext(NonCancellable) {
+                    delay(10)
+                    written += end
+                }
+                delay(1)
+            }
+        }
+        val server = server().apply { streams += flowOf(done) }
+        val telemetry = RecordingTelemetry()
+        val driver = driver(server, telemetry)
+        val run = async { driver.run("tn_1", seat, host) }
+        runCurrent()
+        driver.abandon()
+        advanceUntilIdle()
+        assertEquals(TurnExit.abandoned, run.await())
+        assertEquals(listOf(TurnEnd(TurnState.completed, "", false, null, null)), written)
+        assertEquals(emptyList<String>(), telemetry.lines)
+    }
+
     @Test fun abandoningWritesNothingAndTellsTheServerOnce() = runTest {
         val server = server().apply { streams += flow { emit(TurnEvent.Text("Unsaid")); awaitCancellation() } }
         val host = EchoHost()
@@ -672,26 +930,184 @@ class TurnDriverTests {
         assertNull(driver.activity.value)
     }
 
-    @Test fun cancellationThrownInsideAPortIsNeverAFailure() = runTest {
+    @Test fun aForeignCancellationFromAPortIsThatPortsFailure() = runTest {
         val cancelled = CancellationException("the scope went away")
-        val faults = listOf<Pair<ManualServer.() -> Unit, EchoHost.() -> Unit>>(
-            Pair({ streams += flow<TurnEvent> { throw cancelled } }, {}),
-            Pair({ streams += flowOf(calls(1, call("a"))) }, { executeFault = cancelled }),
-            Pair({ streams += flowOf(calls(1, call("a"))); answers.addLast { throw cancelled } }, {}),
-            Pair({ streams += flowOf(TurnEvent.Snapshot("A", TurnState.running, null)) }, { writeFault = cancelled }),
-            Pair({ streams += silent }, { openFault = cancelled }),
+        val cases = listOf<Triple<ManualServer.() -> Unit, EchoHost.() -> Unit, List<String>>>(
+            Triple({ repeat(5) { streams += flow<TurnEvent> { throw cancelled } } }, {},
+                listOf("failure transport -", "ended interrupted bound transport calls=0 refusals=0 bytes=0 ms=15000")),
+            Triple({ streams += flowOf(calls(1, call("a"))); repeat(4) { answers.addLast { throw cancelled } } }, {},
+                listOf("ability list_things ok", "failure transport -", "ended interrupted bound transport calls=1 refusals=0 bytes=0 ms=7000")),
+            Triple({ streams += flowOf(calls(1, call("a"))) }, { executeFault = cancelled },
+                listOf("failure storage -", "ended interrupted bound storage calls=0 refusals=0 bytes=0 ms=0")),
+            Triple({ streams += flowOf(TurnEvent.Snapshot("A", TurnState.running, null)) }, { writeFault = cancelled },
+                listOf("failure storage -", "ended interrupted bound storage calls=0 refusals=0 bytes=1 ms=0")),
+            Triple({}, { openFault = cancelled },
+                listOf("failure storage -", "ended interrupted bound storage calls=0 refusals=0 bytes=0 ms=0")),
+            Triple({ streams += flowOf(done) }, { endFault = cancelled },
+                listOf("failure storage -", "ended completed bound - calls=0 refusals=0 bytes=0 ms=0")),
         )
-        for ((serve, host) in faults) {
+        for ((serve, broken, lines) in cases) {
             val server = server().apply(serve)
-            val echo = EchoHost().apply(host)
             val telemetry = RecordingTelemetry()
             val driver = driver(server, telemetry)
-            val run = async { driver.run("tn_1", seat, echo) }
+            val run = async { driver.run("tn_1", seat, EchoHost().apply(broken)) }
             advanceUntilIdle()
-            assertEquals(TurnExit.abandoned, run.await())
-            assertEquals(emptyList<TurnEnd>(), echo.ends)
-            assertEquals(listOf<String>(), telemetry.lines.filterNot { it.startsWith("ability") })
+            assertEquals(TurnExit.ended, run.await())
+            assertEquals(lines, telemetry.lines)
             assertNull(driver.activity.value)
+        }
+    }
+
+    @Test fun aForeignCancellationFromAWithdrawalOrAStopIsThatPortsFailure() = runTest {
+        val cancelled = CancellationException("the scope went away")
+        val refused = server().apply { streams += flow<TurnEvent> { throw TurnRefusal(429, "subject_exhausted", null) } }
+        val refusedTelemetry = RecordingTelemetry()
+        val refusedRun = async { driver(refused, refusedTelemetry).run("tn_1", seat, EchoHost().apply { withdrawFault = cancelled }) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.withdrawn, refusedRun.await())
+        assertEquals(listOf("failure storage -", "withdrawn 429 subject_exhausted ms=0"), refusedTelemetry.lines)
+
+        val stopped = server().apply { streams += silent; stopAnswer = { throw cancelled } }
+        val stoppedTelemetry = RecordingTelemetry()
+        val stoppedDriver = driver(stopped, stoppedTelemetry)
+        val stoppedRun = async { stoppedDriver.run("tn_1", seat, EchoHost()) }
+        runCurrent()
+        stoppedDriver.requestStop()
+        advanceUntilIdle()
+        assertEquals(TurnExit.stopUnheard, stoppedRun.await())
+        assertEquals(listOf("failure transport -", "ended stopped bound - calls=0 refusals=0 bytes=0 ms=0"), stoppedTelemetry.lines)
+    }
+
+    @Test fun aHostsOwnTimeoutOrCancelledWorkStillEndsAndReportsTheTurn() = runTest {
+        val faults = listOf<suspend () -> Unit>({ withTimeout(5) { awaitCancellation() } }, { CompletableDeferred<Unit>().apply { cancel() }.await() })
+        for (fault in faults) {
+            val server = server().apply { streams += flowOf(TurnEvent.Text("A"), calls(1, call("a")), done) }
+            val echo = EchoHost()
+            val host = object : TurnHost by echo {
+                override suspend fun execute(call: ToolCall): ToolOutcome { fault(); error("unreachable") }
+            }
+            val telemetry = RecordingTelemetry()
+            val start = testScheduler.currentTime
+            val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+            advanceUntilIdle()
+            assertEquals(TurnExit.ended, run.await())
+            assertEquals(listOf(TurnEnd(TurnState.interrupted, "A", false, "storage", null)), echo.ends)
+            assertEquals(listOf("failure storage -", "ended interrupted bound storage calls=0 refusals=0 bytes=1 ms=${testScheduler.currentTime - start}"), telemetry.lines)
+        }
+    }
+
+    @Test fun aHostsOwnCancellationOnACoalescedCommitDoesNotSilenceLaterCommits() = runTest {
+        val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+        val server = server().apply { streams += frames.receiveAsFlow() }
+        val writes = mutableListOf<String>()
+        var failNext = true
+        val host = object : TurnHost by EchoHost() {
+            override suspend fun writeText(text: String) {
+                if (failNext) {
+                    failNext = false
+                    withTimeout(1) { awaitCancellation() }
+                }
+                writes += text
+            }
+        }
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+        runCurrent()
+        frames.trySend(TurnEvent.Text("A"))
+        advanceTimeBy(300)
+        frames.trySend(TurnEvent.Text("B"))
+        advanceTimeBy(300)
+        assertEquals(listOf("AB"), writes)
+        frames.trySend(done)
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf("failure storage -", "ended completed bound - calls=0 refusals=0 bytes=2 ms=600"), telemetry.lines)
+    }
+
+    @Test fun aCommitThatKeepsFailingIsReportedOnce() = runTest {
+        val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+        val server = server().apply { streams += frames.receiveAsFlow() }
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, EchoHost().apply { writeFault = IllegalStateException("disk") }) }
+        runCurrent()
+        repeat(40) {
+            frames.trySend(TurnEvent.Text("x"))
+            advanceTimeBy(251)
+        }
+        frames.trySend(done)
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf("failure storage -", "ended completed bound - calls=0 refusals=0 bytes=40 ms=10040"), telemetry.lines)
+    }
+
+    @Test fun aRecordRefusingACoalescedCommitEndsTheTurn() = runTest {
+        val server = server().apply { streams += flow { emit(TurnEvent.Text("x")); awaitCancellation() } }
+        val host = EchoHost().apply { writeFault = TurnRecordRefused() }
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(TurnEnd(TurnState.interrupted, "x", false, "refusal", null)), host.ends)
+        assertEquals(listOf("failure refusal -", "ended interrupted bound refusal calls=0 refusals=0 bytes=1 ms=250"), telemetry.lines)
+    }
+
+    @Test fun aRefusedEndIsReportedAsARefusal() = runTest {
+        val server = server().apply { streams += flowOf(done) }
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, EchoHost().apply { endFault = TurnRecordRefused() }) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf("failure refusal -", "ended completed bound - calls=0 refusals=0 bytes=0 ms=0"), telemetry.lines)
+    }
+
+    @Test fun aWireFaultOnAPostIsDecodeAndIsNotRetried() = runTest {
+        val server = server().apply {
+            streams += flow { emit(calls(1, call("a"))); awaitCancellation() }
+            repeat(4) { answers.addLast { throw TurnWireFault(TurnWireFault.badAddress) } }
+        }
+        val host = EchoHost()
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(0L), server.postedAt)
+        assertEquals(listOf(TurnEnd(TurnState.interrupted, "", false, "decode", null)), host.ends)
+        assertEquals(listOf("ability list_things ok", "failure decode -", "ended interrupted bound decode calls=1 refusals=0 bytes=0 ms=0"), telemetry.lines)
+    }
+
+    @Test fun aTurnThisPhoneEndsTellsTheServerOnce() = runTest {
+        val cases = listOf<Pair<ManualServer.() -> Unit, EchoHost.() -> Unit>>(
+            Pair({ streams += flow { emit(TurnEvent.Text("A")); throw TurnWireFault(TurnWireFault.unknownEvent) } }, {}),
+            Pair({ streams += flowOf(calls(1, call("a"))) }, { executeFault = IllegalStateException("disk") }),
+            Pair({ streams += flow { emit(calls(1, call("a"))); awaitCancellation() }; answers.addLast { throw TurnRefusal(400, "coach-bad-request", null) } }, {}),
+            Pair({ streams += flow { emit(calls(1, call("a"))); awaitCancellation() }; repeat(4) { answers.addLast { throw TurnConnectionLost(null) } } }, {}),
+            Pair({ repeat(5) { streams += lost }; stopAnswer = { throw TurnConnectionLost(null) } }, {}),
+            Pair({}, { openFault = IllegalStateException("disk") }),
+            Pair({ streams += flow { emit(TurnEvent.Text("A")); awaitCancellation() } }, { writeFault = TurnRecordRefused() }),
+        )
+        for ((serve, broken) in cases) {
+            val server = server().apply(serve)
+            val run = async { driver(server, RecordingTelemetry()).run("tn_1", seat, EchoHost().apply(broken)) }
+            advanceUntilIdle()
+            assertEquals(TurnExit.ended, run.await())
+            assertEquals(1, server.stops)
+        }
+    }
+
+    @Test fun aTurnTheServerRefusedAsOutOfOrderOrUnknownOrClosedItselfIsNotTold() = runTest {
+        val cases = listOf<ManualServer.() -> Unit>(
+            { streams += flow { emit(calls(1, call("a"))); awaitCancellation() }; answers.addLast { throw TurnRefusal(409, TurnRefusal.turnOrder, null) } },
+            { streams += lost; streams += flow<TurnEvent> { throw TurnRefusal(404, TurnRefusal.turnUnknown, null) } },
+            { streams += flowOf(done) },
+            { streams += flowOf(TurnEvent.Error("coach-vendor-error", null)) },
+            { streams += flow<TurnEvent> { throw TurnRefusal(429, "subject_exhausted", null) } },
+        )
+        for (serve in cases) {
+            val server = server().apply(serve)
+            val run = async { driver(server, RecordingTelemetry()).run("tn_1", seat, EchoHost()) }
+            advanceUntilIdle()
+            run.await()
+            assertEquals(0, server.stops)
         }
     }
 
@@ -747,10 +1163,10 @@ class TurnDriverTests {
         assertEquals("All of it", host.ends.single().text)
     }
 
-    @Test fun aSnapshotReplacesTheTextAndATerminalOneEndsTheTurn() = runTest {
+    @Test fun aSnapshotReplacesTheTextAndTheFrameAfterATerminalOneEndsTheTurn() = runTest {
         val server = server().apply {
             streams += flow { emit(TurnEvent.Text("Par")); throw TurnConnectionLost(null) }
-            streams += flowOf(TurnEvent.Snapshot("Partial and whole", TurnState.declined, null))
+            streams += flowOf(TurnEvent.Snapshot("Partial and whole", TurnState.declined, null), TurnEvent.Done(TurnState.declined, false))
         }
         val host = EchoHost()
         val run = async { driver(server, RecordingTelemetry()).run("tn_1", seat, host) }
@@ -758,6 +1174,89 @@ class TurnDriverTests {
         assertEquals(TurnExit.ended, run.await())
         assertEquals(listOf("Par", "Partial and whole"), host.writes)
         assertEquals(listOf(TurnEnd(TurnState.declined, "Partial and whole", false, null, null)), host.ends)
+    }
+
+    private fun resumeOf(bytes: String): Flow<TurnEvent> = flow {
+        for (event in TurnSse().consume(bytes.encodeToByteArray())) {
+            emit(event)
+            if (event.closing) return@flow
+        }
+        throw TurnConnectionLost(null)
+    }
+
+    @Test fun aResumedFailedTurnKeepsItsCodeAndMoment() = runTest {
+        val wire = "event: snapshot\ndata: {\"state\":\"failed\",\"text\":\"\"}\n\nevent: error\ndata: {\"budgetResetsAtMs\":1701388800000,\"code\":\"free_month_exhausted\"}\n\n"
+        val server = server().apply { streams += lost; streams += resumeOf(wire) }
+        val host = EchoHost()
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(TurnEnd(TurnState.failed, "", false, "free_month_exhausted", 1_701_388_800_000)), host.ends)
+        assertEquals(listOf("ended failed bound free_month_exhausted calls=0 refusals=0 bytes=0 ms=1000"), telemetry.lines)
+    }
+
+    @Test fun aResumedTruncatedTurnStaysTruncated() = runTest {
+        val wire = "event: snapshot\ndata: {\"state\":\"completed\",\"text\":\"Cut\"}\n\nevent: done\ndata: {\"state\":\"completed\",\"truncated\":true}\n\n"
+        val server = server().apply { streams += lost; streams += resumeOf(wire) }
+        val host = EchoHost()
+        val run = async { driver(server, RecordingTelemetry()).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(TurnEnd(TurnState.completed, "Cut", true, null, null)), host.ends)
+    }
+
+    @Test fun aTerminalSnapshotRunsNoBatch() = runTest {
+        val server = server().apply {
+            streams += lost
+            streams += flowOf(TurnEvent.Snapshot("Over", TurnState.completed, TurnBatch(1, listOf(call("a")))), done)
+        }
+        val host = EchoHost()
+        val run = async { driver(server, RecordingTelemetry()).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(emptyList<ToolCall>(), host.executed)
+        assertEquals(emptyList<Json>(), server.posted)
+    }
+
+    @Test fun aTerminalSnapshotCutOffFromItsClosingFrameIsADrop() = runTest {
+        val cut = TurnEvent.Snapshot("Cut", TurnState.completed, null)
+        val server = server().apply { streams += lost; streams += flowOf(cut); streams += flowOf(cut, TurnEvent.Done(TurnState.completed, true)) }
+        val host = EchoHost()
+        val run = async { driver(server, RecordingTelemetry()).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(1000L, 3000L), server.resumedAt)
+        assertEquals(listOf(TurnEnd(TurnState.completed, "Cut", true, null, null)), host.ends)
+    }
+
+    @Test fun textAroundAResumeIsCountedOnce() = runTest {
+        val server = server().apply {
+            streams += flow { emit(TurnEvent.Text("Жим ")); emit(TurnEvent.Text("")); throw TurnConnectionLost(null) }
+            streams += flowOf(TurnEvent.Snapshot("Жим 100", TurnState.running, null), TurnEvent.Text(" кг 💪"), done)
+        }
+        val host = EchoHost()
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        run.await()
+        assertEquals("Жим 100 кг 💪", host.ends.single().text)
+        assertEquals(listOf("ended completed bound - calls=0 refusals=0 bytes=${"Жим 100 кг 💪".encodeToByteArray().size} ms=1000"), telemetry.lines)
+    }
+
+    @Test fun aPostLostOnADroppedStreamIsAskedAgainAndTheBatchRunsOnce() = runTest {
+        val server = server().apply {
+            streams += flow { emit(calls(1, call("a"))); throw TurnConnectionLost(null) }
+            streams += flowOf(TurnEvent.Snapshot("", TurnState.running, null), done)
+            answers.addLast { throw TurnConnectionLost(null) }
+        }
+        val host = EchoHost()
+        val run = async { driver(server, RecordingTelemetry()).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf(call("a")), host.executed)
+        assertEquals(2, server.posted.size)
+        assertEquals(listOf(TurnEnd(TurnState.completed, "", false, null, null)), host.ends)
     }
 
     @Test fun aHostFaultEndsTheTurnInterruptedWithStorage() = runTest {
@@ -877,6 +1376,40 @@ class TurnDriverTests {
         advanceUntilIdle()
         run.await()
         assertEquals(listOf("ability other other", "ended failed bound other calls=1 refusals=1 bytes=${secrets[1].length} ms=0"), telemetry.lines)
+    }
+
+    @Test fun racesOnRealThreadsKeepEveryInvariant() {
+        val pool = Executors.newFixedThreadPool(4).asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + pool)
+        val iterations = System.getenv("TURN_STRESS_ITERATIONS")?.toInt() ?: 2000
+        val broken = Collections.synchronizedList(mutableListOf<String>())
+        runBlocking(pool) {
+            repeat(iterations) { index ->
+                val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+                val server = ManualServer { 0L }.apply {
+                    streams += frames.receiveAsFlow()
+                    stopAnswer = { if (index % 2 == 0) throw TurnConnectionLost(null) }
+                }
+                val driver = TurnDriver(server, RecordingTelemetry(), scope, elapsedMs = { 0L })
+                val host = EchoHost()
+                val gate = CountDownLatch(1)
+                val runner = async { gate.await(); driver.run("tn_$index", seat, host) }
+                val abandoner = launch { gate.await(); if (index % 3 != 2) driver.abandon() }
+                val stopper = launch { gate.await(); if (index % 3 != 1) driver.requestStop() }
+                val ender = launch { gate.await(); frames.trySend(TurnEvent.Done(TurnState.completed, false)) }
+                gate.countDown()
+                val late = launch { delay(1); driver.abandon() }
+                val exit = withTimeout(5000) { runner.await() }
+                abandoner.join(); stopper.join(); ender.join(); late.join()
+                if (driver.activity.value != null) broken += "$index left its activity"
+                if (host.ends.size > 1) broken += "$index ended twice"
+                if (exit == TurnExit.abandoned && host.ends.isNotEmpty()) broken += "$index abandoned wrote"
+                if (exit != TurnExit.abandoned && host.ends.isEmpty()) broken += "$index $exit wrote nothing"
+            }
+        }
+        scope.cancel()
+        pool.close()
+        assertEquals(emptyList<String>(), broken)
     }
 
     @Test fun aDriverRunsOneTurnAtATime() = runTest {

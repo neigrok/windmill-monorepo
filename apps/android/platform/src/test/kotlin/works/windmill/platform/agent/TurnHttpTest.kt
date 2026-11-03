@@ -1,12 +1,23 @@
 package works.windmill.platform.agent
 
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Call
@@ -25,11 +36,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import works.windmill.agent.ContextRead
+import works.windmill.agent.SeatKind
 import works.windmill.agent.ToolOutcome
 import works.windmill.agent.ToolCall
 import works.windmill.agent.TurnBatch
 import works.windmill.agent.TurnConnectionLost
+import works.windmill.agent.TurnDriver
+import works.windmill.agent.TurnEnd
 import works.windmill.agent.TurnEvent
+import works.windmill.agent.TurnExit
+import works.windmill.agent.TurnFailure
+import works.windmill.agent.TurnHost
+import works.windmill.agent.TurnLabel
 import works.windmill.agent.TurnLine
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnPicture
@@ -37,6 +55,8 @@ import works.windmill.agent.TurnRefusal
 import works.windmill.agent.TurnSeat
 import works.windmill.agent.TurnSse
 import works.windmill.agent.TurnState
+import works.windmill.agent.TurnTally
+import works.windmill.agent.TurnTelemetry
 import works.windmill.agent.TurnWireFault
 import works.windmill.sync.core.Json
 
@@ -47,10 +67,34 @@ class TurnHttpTest {
     private val open = TurnOpen("tn_1", "catalog/2", "Hi", listOf(TurnPicture("p1", "image/jpeg", byteArrayOf(1, 2, 3))), listOf(TurnLine("lifter", "Before")),
         listOf(ContextRead("list_things", Json.objectOf(), Json.objectOf("things" to Json.Arr(emptyList())))), emptyList())
 
-    @Before fun start() = server.start()
-    @After fun stop() = server.shutdown()
+    private val shared = OkHttpClient()
 
-    private fun http(client: OkHttpClient = OkHttpClient()) = TurnHttp(server.url("/"), "/v1/agent/turns", 13, client)
+    @Before fun start() = server.start()
+    @After fun stop() {
+        shared.dispatcher.cancelAll()
+        runCatching { server.shutdown() }
+    }
+
+    private fun http(client: OkHttpClient = shared) = TurnHttp(server.url("/"), "/v1/agent/turns", 13, client)
+    private fun settled(): String {
+        repeat(100) { if (shared.dispatcher.runningCallsCount() != 0) Thread.sleep(50) }
+        shared.connectionPool.evictAll()
+        return "running=${shared.dispatcher.runningCallsCount()} connections=${shared.connectionPool.connectionCount()}"
+    }
+    private fun frames(count: Int) = (1..count).joinToString("") { "event: text\ndata: {\"delta\":\"$it\"}\n\n" }
+    private fun quietTelemetry(lines: MutableList<String> = mutableListOf()) = object : TurnTelemetry {
+        override fun ability(name: TurnLabel, outcome: TurnLabel) { lines += "ability" }
+        override fun ended(state: TurnState, seat: SeatKind, code: TurnLabel?, tally: TurnTally, durationMs: Long) { lines += "ended $state ${code?.value}" }
+        override fun withdrawn(status: Int, code: TurnLabel, durationMs: Long) { lines += "withdrawn" }
+        override fun failure(kind: TurnFailure, status: Int?) { lines += "failure $kind $status" }
+    }
+    private fun echo(ends: MutableList<TurnEnd> = mutableListOf()) = object : TurnHost {
+        override suspend fun open() = this@TurnHttpTest.open
+        override suspend fun execute(call: ToolCall): ToolOutcome = ToolOutcome.Ok(call.callId, call.name, call.input)
+        override suspend fun writeText(text: String) {}
+        override suspend fun end(end: TurnEnd) { ends += end }
+        override suspend fun withdraw(refusal: TurnRefusal) {}
+    }
     private fun sse(body: String) = MockResponse().setHeader("Content-Type", "text/event-stream; charset=utf-8").setBody(body)
     private fun json(status: Int, body: String) = MockResponse().setResponseCode(status).setHeader("Content-Type", "application/json").setBody(body)
     private fun request(): RecordedRequest = server.takeRequest(5, TimeUnit.SECONDS)!!
@@ -72,9 +116,9 @@ class TurnHttpTest {
             request().seen())
     }
 
-    @Test fun theResumeReadsTheTurnsStreamUnderAnAnonSeat() {
-        server.enqueue(sse("event: snapshot\ndata: {\"text\":\"So far\",\"state\":\"completed\"}\n\n"))
-        assertEquals(listOf(TurnEvent.Snapshot("So far", TurnState.completed, null)), within { http().resume("tn_1", anon).toList() })
+    @Test fun theResumeReadsTheTurnsStreamUnderAnAnonSeatPastATerminalSnapshotToItsClosingFrame() {
+        server.enqueue(sse("event: snapshot\ndata: {\"text\":\"So far\",\"state\":\"failed\"}\n\nevent: error\ndata: {\"code\":\"free_month_exhausted\",\"budgetResetsAtMs\":1793491200000}\n\nevent: text\ndata: {\"delta\":\"after the end\"}\n\n"))
+        assertEquals(listOf(TurnEvent.Snapshot("So far", TurnState.failed, null), TurnEvent.Error("free_month_exhausted", 1_793_491_200_000)), within { http().resume("tn_1", anon).toList() })
         assertEquals(listOf("GET", "/v1/agent/turns/tn_1", "13", null, "installation-credential", "text/event-stream", null, null, ""), request().seen())
     }
 
@@ -94,15 +138,22 @@ class TurnHttpTest {
         assertEquals(TurnRefusal(409, "coach-turn-order", null), thrown { http().answer("tn_1", 1, emptyList(), bound) })
     }
 
-    @Test fun theStopPostsAnEmptyObjectAndReadsTheState() {
+    @Test fun theStopPostsAnEmptyObject() {
         server.enqueue(json(202, """{"state":"stopped"}"""))
-        assertEquals(TurnState.stopped, within { http().stop("tn_1", anon) })
+        within { http().stop("tn_1", anon) }
         assertEquals(listOf("POST", "/v1/agent/turns/tn_1/stop", "13", null, "installation-credential", null, "application/json", null, "{}"), request().seen())
     }
 
-    @Test fun aStopAnswerThatCannotBeReadIsAFault() {
+    @Test fun aStopAnswerIsNotRead() {
         server.enqueue(json(202, "<html>"))
-        assertEquals(TurnWireFault.unreadable, (thrown { http().stop("tn_1", bound) } as TurnWireFault).kind)
+        within { http().stop("tn_1", bound) }
+        server.enqueue(MockResponse().setResponseCode(202))
+        within { http().stop("tn_1", bound) }
+    }
+
+    @Test fun aRefusedStopNamesItsCode() {
+        server.enqueue(json(404, """{"error":"Gone","code":"coach-turn-unknown"}"""))
+        assertEquals(TurnRefusal(404, TurnRefusal.turnUnknown, null), thrown { http().stop("tn_1", bound) })
     }
 
     @Test fun aRefusalBeforeTheStreamNamesItsCodeAndReset() {
@@ -151,8 +202,22 @@ class TurnHttpTest {
 
     @Test fun silencePastTheIdleTimeoutIsALostConnection() {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
-        val http = TurnHttp(server.url("/"), "/v1/agent/turns", 13, OkHttpClient(), idleTimeout = 200.milliseconds)
+        val http = TurnHttp(server.url("/"), "/v1/agent/turns", 13, shared, idleTimeout = 200.milliseconds)
         assertTrue(failure(http.open(open, bound)) is TurnConnectionLost)
+    }
+
+    @Test fun theIdleTimeoutIsIdleNotTotal() {
+        val beat = ": heartbeat\n\n"
+        server.enqueue(sse(beat.repeat(10) + "event: done\ndata: {\"state\":\"completed\"}\n\n").throttleBody(beat.length.toLong(), 100, TimeUnit.MILLISECONDS))
+        val http = TurnHttp(server.url("/"), "/v1/agent/turns", 13, shared, idleTimeout = 500.milliseconds)
+        assertEquals(listOf(TurnEvent.Done(TurnState.completed, false)), within { http.resume("tn_1", bound).toList() })
+    }
+
+    @Test fun aStreamThatKeepsTalkingEndsAtTheTotalTimeoutAsALostConnection() {
+        val beat = ": heartbeat\n\n"
+        server.enqueue(sse(beat.repeat(1000)).throttleBody(beat.length.toLong(), 50, TimeUnit.MILLISECONDS))
+        val http = TurnHttp(server.url("/"), "/v1/agent/turns", 13, shared, idleTimeout = 200.milliseconds, totalTimeout = 500.milliseconds)
+        assertTrue(failure(http.resume("tn_1", bound)) is TurnConnectionLost)
     }
 
     @Test fun aStreamOutlivesACallTimeoutTheClientCarries() {
@@ -229,6 +294,119 @@ class TurnHttpTest {
         within { http.stop("tn_1", bound) }
         assertEquals(listOf(null, null), listOf(request().headers["Cookie"], request().headers["Cookie"]))
         assertEquals(emptyList<Cookie>(), saved)
+    }
+
+    @Test fun everyPathReturnsItsConnection() {
+        val paths = listOf<suspend () -> Unit>(
+            { server.enqueue(MockResponse().setResponseCode(429).setBody("""{"code":"subject_exhausted"}""")); runCatching { http().open(open, bound).toList() } },
+            { server.enqueue(MockResponse().setHeader("Content-Type", "text/html").setBody("<html>")); runCatching { http().open(open, bound).toList() } },
+            { server.enqueue(MockResponse().setBody("x")); runCatching { http().resume("tn_1", bound).toList() } },
+            { server.enqueue(MockResponse().setResponseCode(500).setBody("x".repeat(3_000_000))); runCatching { http().open(open, bound).toList() } },
+            { server.enqueue(MockResponse().setResponseCode(409).setBody("""{"code":"coach-turn-order"}""")); runCatching { http().answer("tn_1", 1, emptyList(), bound) } },
+            { server.enqueue(MockResponse().setResponseCode(202).setBody("<html>")); http().stop("tn_1", bound) },
+            { server.enqueue(sse("event: done\ndata: {\"state\":\"completed\"}\n\nevent: text\ndata: {\"delta\":\"x\"}\n\n: more\n\n")); http().open(open, bound).toList() },
+            { server.enqueue(sse("event: text\ndata: {\"delta\":\"x\"}\n\n")); runCatching { http().open(open, bound).toList() } },
+            { server.enqueue(sse("event: gift\ndata: {}\n\n: more\n\n")); runCatching { http().open(open, bound).toList() } },
+        )
+        for ((index, path) in paths.withIndex()) {
+            within { path() }
+            assertEquals("path $index", "running=0 connections=0", settled())
+        }
+    }
+
+    @Test fun chunkedCrlfSplitAndMultiByteFramesArrive() {
+        val body = "event: text\r\ndata: {\"delta\":\"Жим 100 кг 💪\"}\r\n\r\n: heartbeat\r\n\r\nevent: done\r\ndata: {\"state\":\"completed\"}\r\n\r\n"
+        for (size in listOf(1, 2, 3, 5, 7)) {
+            server.enqueue(MockResponse().setHeader("Content-Type", "TEXT/Event-Stream;Charset=UTF-8").setChunkedBody(body, size))
+            assertEquals(listOf(TurnEvent.Text("Жим 100 кг 💪"), TurnEvent.Done(TurnState.completed, false)), within { http().open(open, bound).toList() })
+        }
+    }
+
+    @Test fun aCallCancelledFromOutsideIsNoCoroutineCancellation() {
+        server.enqueue(sse("event: text\ndata: {\"delta\":\"x\"}\n\n: more\n\n").throttleBody(40, 20, TimeUnit.SECONDS))
+        val failure = thrown {
+            coroutineScope {
+                launch(Dispatchers.IO) {
+                    delay(300)
+                    shared.dispatcher.cancelAll()
+                }
+                http().open(open, bound).collect { }
+            }
+        }
+        assertTrue("$failure", failure !is CancellationException)
+    }
+
+    @Test fun cancellingASlowCollectorFreesTheReaderThread() {
+        val many = frames(2000)
+        server.enqueue(sse(many + ": more\n\n").throttleBody(many.length.toLong(), 30, TimeUnit.SECONDS))
+        within {
+            coroutineScope {
+                val job = launch(Dispatchers.Default) { http().open(open, bound).collect { delay(10_000) } }
+                delay(700)
+                job.cancelAndJoin()
+            }
+        }
+        assertEquals("running=0 connections=0", settled())
+    }
+
+    @Test fun aCollectorThatThrowsLeavesNoThreadBehind() {
+        server.enqueue(sse(frames(500) + ": more\n\n").throttleBody(40_000, 60, TimeUnit.SECONDS))
+        runCatching { within { http().open(open, bound).collect { delay(700); throw IllegalStateException("from the collector") } } }
+        assertEquals("running=0 connections=0", settled())
+    }
+
+    @Test fun cancellingAPostCancelsItsCall() {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        within {
+            coroutineScope {
+                val job = launch(Dispatchers.Default) { http().answer("tn_1", 1, emptyList(), bound) }
+                delay(300)
+                job.cancelAndJoin()
+            }
+        }
+        assertEquals("running=0 connections=0", settled())
+    }
+
+    // The driver on the real transport: a post hangs while the next round's text piles up behind it, and the seat changes. Five such turns, then the next request.
+    @Test fun abandoningWhileFramesPileUpLeavesNoThreadBehind() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val calls = "event: calls\ndata: {\"batch\":1,\"calls\":[{\"callId\":\"a\",\"name\":\"list_things\",\"input\":{}}]}\n\n"
+        repeat(5) {
+            server.enqueue(sse(calls + frames(200) + ": more\n\n").throttleBody(40_000, 60, TimeUnit.SECONDS))
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            server.enqueue(MockResponse().setResponseCode(202).setBody("""{"state":"running"}"""))
+            val driver = TurnDriver(http(), quietTelemetry(), scope, elapsedMs = { 0L })
+            within {
+                coroutineScope {
+                    val run = async(Dispatchers.Default) { driver.run("tn_1", bound, echo()) }
+                    delay(500)
+                    driver.abandon()
+                    assertEquals(TurnExit.abandoned, run.await())
+                }
+            }
+        }
+        val running = settled()
+        server.enqueue(MockResponse().setResponseCode(202).setBody("""{"state":"running"}"""))
+        within { http().stop("tn_next", bound) }
+        scope.cancel()
+        assertTrue(running, running.startsWith("running=0 "))
+    }
+
+    // The whole driver on the real transport: a post retried on the backoff while the stream delivers far past any buffer a reader would wait on.
+    @Test fun thePostRetriesWhileTheStreamRunsOn() {
+        val calls = "event: calls\ndata: {\"batch\":1,\"calls\":[{\"callId\":\"a\",\"name\":\"list_things\",\"input\":{}}]}\n\n"
+        val text = (1..500).joinToString("") { "event: text\ndata: {\"delta\":\"x\"}\n\n" }
+        server.enqueue(sse(calls + text + "event: done\ndata: {\"state\":\"completed\"}\n\n"))
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"batch":1}"""))
+        val ends = mutableListOf<TurnEnd>()
+        val lines = Collections.synchronizedList(mutableListOf<String>())
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val driver = TurnDriver(http(), quietTelemetry(lines), scope, beat = 200.milliseconds, elapsedMs = { 0L })
+        assertEquals(TurnExit.ended, within { driver.run("tn_1", bound, echo(ends)) })
+        scope.cancel()
+        assertEquals(listOf(TurnEnd(TurnState.completed, "x".repeat(500), false, null, null)), ends)
+        assertEquals(listOf("ability", "ended completed null"), lines.toList())
     }
 
     @Test fun leavingAStreamEarlyCancelsItsCall() {

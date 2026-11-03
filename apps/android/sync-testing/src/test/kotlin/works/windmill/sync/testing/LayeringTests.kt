@@ -195,18 +195,23 @@ class LayeringTests {
         assertFalse(gym.containsMatchIn("gymnast"))
     }
 
-    // The turn is product-neutral: its sources name no product, in code or in comment. Only a frozen `coach-…` wire code may say the word.
+    // The turn is product-neutral: its sources name no product, in code or in comment. Only a frozen wire code, quoted whole, may say coach; `turn` is the neutral word and stays legal.
     @Test fun agentSourcesNameNoProduct() {
-        val nouns = setOf("gym", "routine", "note", "proposal", "lifter", "exercise", "workout", "coach")
-        val frozenCode = Regex(""""coach-[a-z-]+"""")
+        val nouns = setOf("gym", "routine", "note", "proposal", "lifter", "exercise", "workout", "journal", "roadmap", "training", "session", "movement", "coach", "coaches")
+        val frozenCodes = setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume",
+            "coach-rate-limited", "coach-replica-syncing", "coach-busy", "coach-vendor-error", "coach-stream-replaced")
         val word = Regex("""[A-Z]+(?![a-z])|[A-Z]?[a-z]+""")
-        fun named(source: String): Set<String> = word.findAll(source.replace(frozenCode, "")).map { it.value.lowercase().removeSuffix("s") }.filter { it in nouns }.toSet()
+        fun named(source: String): Set<String> = word.findAll(frozenCodes.fold(source) { text, code -> text.replace("\"$code\"", "") })
+            .map { it.value.lowercase() }.map { if (it in nouns) it else it.removeSuffix("s") }.filter { it in nouns }.toSet()
         val sources = File(android, "agent/src/main/kotlin").walk().filter { it.extension == "kt" }.toList()
         assertEquals(listOf("Turn.kt", "TurnDriver.kt", "TurnWire.kt"), sources.map { it.name }.sorted())
         assertEquals(emptyList<String>(), sources.flatMap { file -> named(file.readText()).map { "${file.name}: $it" } })
-        assertEquals(nouns - "exercise" - "workout", named("""class RoutineNotes(val lifter: String, val gymProposal: Int) // coach"""))
+        assertEquals(frozenCodes, works.windmill.agent.TurnRefusal.codes.filter { "coach" in it }.toSet())
+        assertEquals(nouns - "exercise" - "workout" - "coaches", named("""class RoutineNotes(val lifter: String, val gymProposal: Int) { val journal = "roadmap"; val trainingSessions = "movements" } // coach"""))
+        assertEquals(setOf("coach", "coaches"), named("""val lead = "Coaches"; val code = "coach-turn-order-now""""))
+        assertEquals(setOf("coach", "routine", "note"), named(""""coach-routine-note""""))
         assertEquals(setOf("coach"), named(""""coach-turn-order" + "coach_turn""""))
-        assertEquals(emptySet<String>(), named("""denote "coach-stream-replaced" gymnast"""))
+        assertEquals(emptySet<String>(), named("""the turn denotes "coach-stream-replaced" for a gymnast in an obsession"""))
     }
 
     fun validateModel(model: List<List<String>>): List<String> {

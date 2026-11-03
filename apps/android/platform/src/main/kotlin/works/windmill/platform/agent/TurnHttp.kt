@@ -6,9 +6,10 @@ import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -28,7 +29,6 @@ import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
 import works.windmill.agent.TurnSeat
 import works.windmill.agent.TurnSse
-import works.windmill.agent.TurnState
 import works.windmill.agent.TurnTransport
 import works.windmill.agent.TurnWireFault
 import works.windmill.agent.json
@@ -36,19 +36,20 @@ import works.windmill.agent.turnAnswer
 import works.windmill.platform.telemetry.TelemetryPolicy
 import works.windmill.sync.core.Json
 
-// The four routes of a turn over OkHttp. A stream lives as long as frames or heartbeats keep arriving, so `idleTimeout` bounds silence and nothing bounds the call; a credential stays on the configured host, so no redirect is followed and no cookie is kept.
+// The four routes of a turn over OkHttp. `idleTimeout` bounds silence, so frames and heartbeats keep a stream open, and `totalTimeout` bounds any one call, a stream included; either ending is a lost connection, which the driver resumes. A credential stays on the configured host, so no redirect is followed and no cookie is kept.
 class TurnHttp(
     private val baseUrl: HttpUrl,
     private val route: String,
     private val schemaVersion: Int,
     client: OkHttpClient,
     idleTimeout: Duration = 60.seconds,
+    totalTimeout: Duration = 3600.seconds,
 ) : TurnTransport {
     private val client = client.newBuilder()
         .connectTimeout(idleTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         .readTimeout(idleTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         .writeTimeout(idleTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
-        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .callTimeout(totalTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         .followRedirects(false)
         .followSslRedirects(false)
         .cookieJar(CookieJar.NO_COOKIES)
@@ -62,8 +63,9 @@ class TurnHttp(
         exchange(request("$route/$turnId/results", seat, turnAnswer(batch, results)))
     }
 
-    override suspend fun stop(turnId: String, seat: TurnSeat): TurnState =
-        TurnEvent.state(exchange(request("$route/$turnId/stop", seat, Json.objectOf())))
+    override suspend fun stop(turnId: String, seat: TurnSeat) {
+        exchange(request("$route/$turnId/stop", seat, Json.objectOf()))
+    }
 
     // A turn route under the configured host, and its seat's credential alone.
     private fun request(path: String, seat: TurnSeat, body: Json?): Request {
@@ -80,22 +82,25 @@ class TurnHttp(
         return builder.build()
     }
 
-    private suspend fun exchange(request: Request): ByteArray = try {
-        suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(request)
-            continuation.invokeOnCancellation { call.cancel() }
-            call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) = continuation.resumeWithException(e)
-                override fun onResponse(call: Call, response: Response) {
-                    continuation.resumeWith(runCatching { response.use { accepted(it).peekBody(boundBytes).bytes() } })
-                }
-            })
+    // A one-shot post: accepted, or the refusal its body names. Its answer holds nothing a phone reads.
+    private suspend fun exchange(request: Request) {
+        try {
+            suspendCancellableCoroutine<Unit> { continuation ->
+                val call = client.newCall(request)
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) = continuation.resumeWithException(e)
+                    override fun onResponse(call: Call, response: Response) {
+                        continuation.resumeWith(runCatching { response.use { accepted(it) }; Unit })
+                    }
+                })
+            }
+        } catch (failure: IOException) {
+            throw connectionFailure(failure)
         }
-    } catch (failure: IOException) {
-        throw connectionFailure(failure)
     }
 
-    // The frames of one stream until its closing frame; a stream that ends before one is a lost connection.
+    // The frames of one stream until its closing frame; a stream that ends before one is a lost connection. The reader never waits on its collector, so a cancel frees its thread at once. What it queues while a batch runs is bounded per frame by TurnSse, and in number by what the server sends: one turn's bounded answer, within `totalTimeout`.
     private fun stream(request: () -> Request): Flow<TurnEvent> = callbackFlow {
         val call = client.newCall(request().newBuilder().header("Accept", "text/event-stream").build())
         call.enqueue(object : Callback {
@@ -105,7 +110,7 @@ class TurnHttp(
 
             override fun onResponse(call: Call, response: Response) {
                 try {
-                    response.use { read(it) { event -> trySendBlocking(event).isSuccess } }
+                    response.use { read(it) { event -> trySend(event).isSuccess } }
                     close()
                 } catch (failure: IOException) {
                     close(connectionFailure(failure))
@@ -115,7 +120,7 @@ class TurnHttp(
             }
         })
         awaitClose { call.cancel() }
-    }.flowOn(Dispatchers.IO)
+    }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     private fun read(response: Response, emit: (TurnEvent) -> Boolean) {
         val body = accepted(response).body
