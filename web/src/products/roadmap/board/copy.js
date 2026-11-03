@@ -28,6 +28,23 @@ export const LABELS = {
 };
 
 export const VIEW_SWITCH = { group: 'View', board: 'Board', graph: 'Graph' };
+export const ROADMAP_VERBS = {
+  askAI: 'Ask AI',
+  share: 'Share',
+  shareRoadmap: 'Share roadmap',
+  more: 'More',
+  export: 'Export',
+  settings: 'Settings',
+  keyboardShortcuts: 'Keyboard shortcuts',
+  fork: 'Fork',
+};
+export const ROADMAP_SHEET = {
+  title: 'Roadmap',
+  yourRoadmaps: 'Your roadmaps',
+  newRoadmap: 'New roadmap',
+  plantedInPublic: 'Planted in public',
+};
+export const NOTHING_UP_NEXT = 'Nothing up next yet';
 
 export const LINK_COPIED = 'Link copied';
 export const EMPTY_ROADMAP = { title: 'Your first step', body: 'Give your roadmap a place to start.', action: 'New step' };
@@ -109,6 +126,26 @@ export function stepCount(count) {
   return `${formatCount(count)} ${count === 1 ? 'step' : 'steps'}`;
 }
 
+export function nextChip({ count }) {
+  return `Next · ${formatCount(count)}`;
+}
+
+export function upNextCount({ count }) {
+  return `${formatCount(count)} up next`;
+}
+
+export function moreUpNext({ count }) {
+  return `+ ${formatCount(count)} more up next`;
+}
+
+export function upNextIn({ lens }) {
+  return `Up next in ${lens}`;
+}
+
+export function unlocksWhen({ step }) {
+  return `Unlocks when ‘${step}’ is done.`;
+}
+
 export function selectedCount({ count }) {
   return `${formatCount(count)} selected`;
 }
@@ -144,6 +181,10 @@ export function progressLabel({ done, total }) {
   return `${formatCount(done)} of ${stepCount(total)} done`;
 }
 
+export function exactProgress({ done, upNext, locked }) {
+  return `${formatCount(done)} done · ${formatCount(upNext)} up next · ${formatCount(locked)} locked`;
+}
+
 export function showColumn({ column }) {
   return `${LABELS.show} ${COLUMN_TITLES[column]}`;
 }
@@ -160,6 +201,11 @@ export function completedToast({ step, unlocked }) {
   if (unlocked.length === 0) return `${step} done`;
   if (unlocked.length === 1) return `${step} done · ${unlocked[0]} up next`;
   return `${step} done · ${formatCount(unlocked.length)} up next`;
+}
+
+export function completedStepsToast({ count, unlocked }) {
+  if (unlocked > 0) return `${stepCount(count)} done · ${formatCount(unlocked)} up next`;
+  return `${stepCount(count)} done`;
 }
 
 export function completedOutcome({ unlocked }) {

@@ -8,6 +8,16 @@ import {
   SHORTCUTS_TITLE,
   SORT_MENU,
   LABELS,
+  ROADMAP_VERBS,
+  ROADMAP_SHEET,
+  NOTHING_UP_NEXT,
+  nextChip,
+  upNextCount,
+  moreUpNext,
+  upNextIn,
+  unlocksWhen,
+  completedStepsToast,
+  exactProgress,
   LINK_COPIED,
   EMPTY_ROADMAP,
   LOAD_ERROR,
@@ -371,4 +381,53 @@ test('approved workspace gaps have one pinned string each', async () => {
   assert.deepEqual(WORKSPACE_EMPTY, { body: 'Add something for this step.', addNote: 'Add note' });
   assert.deepEqual(NEW_LINK, { title: 'New link' });
   assert.equal(HISTORY_EMPTY, 'No changes yet');
+});
+
+test('copy — roadmap verbs and sheet labels match the wave 6 contract', () => {
+  assert.deepEqual(ROADMAP_VERBS, {
+    askAI: 'Ask AI',
+    share: 'Share',
+    shareRoadmap: 'Share roadmap',
+    more: 'More',
+    export: 'Export',
+    settings: 'Settings',
+    keyboardShortcuts: 'Keyboard shortcuts',
+    fork: 'Fork',
+  });
+  assert.deepEqual(ROADMAP_SHEET, {
+    title: 'Roadmap',
+    yourRoadmaps: 'Your roadmaps',
+    newRoadmap: 'New roadmap',
+    plantedInPublic: 'Planted in public',
+  });
+});
+
+test('copy — roadmap next counts use full numbers and the pinned state words', () => {
+  assert.deepEqual([0, 1, 2, 1200].map((count) => nextChip({ count })), [
+    'Next · 0', 'Next · 1', 'Next · 2', 'Next · 1,200',
+  ]);
+  assert.deepEqual([0, 1, 2, 1200].map((count) => upNextCount({ count })), [
+    '0 up next', '1 up next', '2 up next', '1,200 up next',
+  ]);
+  assert.deepEqual([0, 1, 2, 1200].map((count) => moreUpNext({ count })), [
+    '+ 0 more up next', '+ 1 more up next', '+ 2 more up next', '+ 1,200 more up next',
+  ]);
+  assert.equal(NOTHING_UP_NEXT, 'Nothing up next yet');
+  assert.equal(upNextIn({ lens: 'Sailing' }), 'Up next in Sailing');
+  assert.equal(unlocksWhen({ step: 'Read the wind' }), 'Unlocks when ‘Read the wind’ is done.');
+});
+
+test('copy — completed step totals include up next only when positive', () => {
+  assert.equal(completedStepsToast({ count: 0, unlocked: 0 }), '0 steps done');
+  assert.equal(completedStepsToast({ count: 1, unlocked: 0 }), '1 step done');
+  assert.equal(completedStepsToast({ count: 2, unlocked: 0 }), '2 steps done');
+  assert.equal(completedStepsToast({ count: 1, unlocked: 1 }), '1 step done · 1 up next');
+  assert.equal(completedStepsToast({ count: 2, unlocked: 3 }), '2 steps done · 3 up next');
+  assert.equal(completedStepsToast({ count: 1200, unlocked: 3400 }), '1,200 steps done · 3,400 up next');
+});
+
+test('copy — the roadmap sheet gives exact progress in state order', () => {
+  assert.equal(exactProgress({ done: 0, upNext: 0, locked: 0 }), '0 done · 0 up next · 0 locked');
+  assert.equal(exactProgress({ done: 1, upNext: 2, locked: 3 }), '1 done · 2 up next · 3 locked');
+  assert.equal(exactProgress({ done: 1200, upNext: 3400, locked: 5600 }), '1,200 done · 3,400 up next · 5,600 locked');
 });
