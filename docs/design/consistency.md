@@ -1098,7 +1098,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     08.23, 08.27, 08.54, 08.55 and 08.65; iOS 02.15, 03.32, 08.22, 08.23 and 08.27. Android's logger
     still draws *Set N* on its rows (`ui/LoggerScreen.kt:859`); iOS titles its sheets *Set N*
     (`Gym/Workout/WorkoutScreen.swift:99`, `Gym/Components/SetEditor.swift:246`) and labels per-set
-    rows *Set N* (`Gym/Routines/RoutineMovementEditor.swift:184`). Spoken labels keep *Set N*.
+    rows *Set N* (`Gym/Routines/RoutineMovementEditor.swift:184`). Spoken labels keep *Set N*. The
+    onboarding glimpse's current row reads *3* too: Shell Android's glimpse frames (`66:5725`,
+    `66:5754`) and the Design System library's iOS `Onboarding / Glimpse / Gym` (`210:56`, *3 · target
+    100 × 5*; it reaches Shell iOS once the library is published and accepted). Its *set 3 of 5* and
+    its *Set 3 logged* confirmation keep the word. Android's glimpse still draws *Set 3*
+    (`ui/onboarding/OnboardingGlimpses.kt:349`).
   - *D1 · Delivery and connection problems (owner ruling).* A workout says nothing about sync: a
     set it saved is expected to sync. Sync state lives in one static place, reached from You:
     Android Shell 16f–16n and the seat dot 00.11 (✅). The row and 16g count the things 16g lists;
