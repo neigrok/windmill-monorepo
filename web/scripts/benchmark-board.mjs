@@ -98,15 +98,22 @@ async function plant(site) {
   return planted;
 }
 
-// Runs in the page before anything else: long tasks, Event Timing and the two opening marks.
+// Runs in the page before anything else: long tasks, input to next paint and the two opening marks. Headless Chromium
+// counts events but reports no Event Timing entries, so an input is timed to the task after its next frame.
 function installProbes() {
-  window.__probe = { longTasks: [], events: [], marks: {} };
+  window.__probe = { longTasks: [], inputs: [], marks: {} };
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) window.__probe.longTasks.push({ start: entry.startTime, duration: entry.duration });
   }).observe({ type: 'longtask', buffered: true });
-  new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) window.__probe.events.push({ name: entry.name, start: entry.startTime, duration: entry.duration });
-  }).observe({ type: 'event', durationThreshold: 16, buffered: true });
+  for (const type of ['click', 'keydown']) {
+    window.addEventListener(type, (event) => {
+      requestAnimationFrame(() => {
+        const after = new MessageChannel();
+        after.port1.onmessage = () => window.__probe.inputs.push({ type, start: event.timeStamp, duration: performance.now() - event.timeStamp });
+        after.port2.postMessage(0);
+      });
+    }, true);
+  }
   const mark = (name) => { window.__probe.marks[name] ??= performance.now(); };
   const watch = new MutationObserver(() => {
     if (!window.__probe.marks.card && [...document.querySelectorAll('.st-view-layer--board.is-active .st-board-card')].some((card) => card.getClientRects().length > 0)) {
@@ -169,12 +176,12 @@ async function scrollLocked(page, phone) {
   }, { pixels: SCROLL_PX_PER_FRAME, frames: SCROLL_FRAMES });
 }
 
-async function interaction(page, act, names) {
+async function inputToPaint(page, act, type) {
   const before = await page.evaluate(() => performance.now());
   await act();
   await page.waitForTimeout(1200);
-  const events = await page.evaluate(({ since, wanted }) => window.__probe.events.filter((entry) => entry.start >= since && wanted.includes(entry.name)), { since: before, wanted: names });
-  return round(Math.max(0, ...events.map((entry) => entry.duration)));
+  const inputs = await page.evaluate(({ since, wanted }) => window.__probe.inputs.filter((input) => input.start >= since && input.type === wanted), { since: before, wanted: type });
+  return round(Math.max(0, ...inputs.map((input) => input.duration)));
 }
 
 async function measureOne({ browser, site, fixture, viewport, rate }) {
@@ -209,20 +216,18 @@ async function measureOne({ browser, site, fixture, viewport, rate }) {
   if (viewport.phone) await page.getByRole('tab', { name: /^Up next,/ }).click();
   await page.waitForTimeout(400);
   const upNext = viewport.phone ? page.locator('.st-board-phone-pane.is-shown .st-board-card').first() : page.locator('[data-column="upNext"] .st-board-card').first();
-  const openCard = await interaction(page, () => upNext.click(), ['click', 'pointerup', 'pointerdown']);
+  const openCard = await inputToPaint(page, () => upNext.click(), 'click');
   if (viewport.phone) await page.goBack();
   else await page.keyboard.press('Escape');
   await page.waitForTimeout(600);
 
   let completeCard = null;
   if (viewport.phone) {
-    completeCard = await interaction(page, async () => {
-      await page.locator('.st-board-phone-pane.is-shown .st-board-swipe-complete').first().focus();
-      await page.keyboard.press('Enter');
-    }, ['keydown', 'keyup', 'click']);
+    await page.locator('.st-board-phone-pane.is-shown .st-board-swipe-complete').first().focus();
+    completeCard = await inputToPaint(page, () => page.keyboard.press('Enter'), 'click');
   } else {
     await upNext.focus();
-    completeCard = await interaction(page, () => page.keyboard.press('c'), ['keydown', 'keyup']);
+    completeCard = await inputToPaint(page, () => page.keyboard.press('c'), 'keydown');
   }
   await page.locator('.st-board-toast-undo').click({ timeout: 8000 }).catch(() => {});
   await cdp.detach();
@@ -238,18 +243,18 @@ async function measureOne({ browser, site, fixture, viewport, rate }) {
       frameP50: round(quantile(scroll.intervals, 0.5)), frameP95: round(quantile(scroll.intervals, 0.95)),
       longTasks: longTaskSummary(scrollTasks), maxCardsInDom: scroll.maxCards,
     },
-    eventTimingMs: { openCard, completeCard },
+    inputToPaintMs: { openCard, completeCard },
     layoutOfOpen: layoutShare(profile),
   };
 }
 
 function line(result) {
-  const { openMs, openLongTasks, heapMb, scroll, eventTimingMs, layoutOfOpen } = result;
+  const { openMs, openLongTasks, heapMb, scroll, inputToPaintMs, layoutOfOpen } = result;
   const layout = layoutOfOpen ? `${layoutOfOpen.layoutMs}ms of ${layoutOfOpen.busyMs}ms busy, ${Math.round(layoutOfOpen.share * 100)}%` : 'n/a (minified)';
   return `${result.roadmap} · ${result.viewport} · ${result.cpuThrottle}× · machine load ${result.machineLoad}
   open: first card ${openMs.firstCard}ms, row interactive ${openMs.rowInteractive}ms; long tasks ${openLongTasks.count}, p95 ${openLongTasks.p95}ms, max ${openLongTasks.max}ms; heap ${heapMb}MB
   scroll: ${scroll.frames} frames over ${scroll.scrolledPx}px of ${scroll.columnPx}px; rAF p50 ${scroll.frameP50}ms, p95 ${scroll.frameP95}ms; long tasks ${scroll.longTasks.count}, p95 ${scroll.longTasks.p95}ms, max ${scroll.longTasks.max}ms; at most ${scroll.maxCardsInDom} cards in the DOM
-  Event Timing: open a card ${eventTimingMs.openCard}ms, complete a card ${eventTimingMs.completeCard}ms
+  input to next paint: open a card ${inputToPaintMs.openCard}ms, complete a card ${inputToPaintMs.completeCard}ms
   layout of the open: ${layout}`;
 }
 

@@ -11,16 +11,18 @@ point for the component showcase.
 | Area | Responsibility |
 |---|---|
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
-| `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs and who holds the roadmap |
+| `copy.js`, `reportFailure.js` | Every state word, and the static-name Sentry report |
+| `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. Independent of React and WebGL |
-| `board/` | The identity row and the Board: query and columns, regroup, held actions, the shared toast, card gestures, step detail, composer and picker, view switch and copy |
+| `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
+| `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
+| `step/` | The step page and modal, workspace, composer and picker, and the step's address |
+| `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
 | `layout/` | Deterministic layout engines behind `index.js` |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB |
 | `persistence/` | HTTP repository, account tree registry and device preferences and ledgers |
-| `editing/` | The Graph's writes and what a changed lattice does to the picture |
-| `selection/`, `shortcuts/`, `input/` | The Graph's selection, the room's keys, the pure hold recognizer |
-| `ui/`, `ui/tree/`, `ui/tablet/` | Canvas chrome, the Graph's docks, the desktop step panel and the tablet's Graph panel |
+| `shortcuts/`, `input/` | The room's keys and the pure hold recognizer |
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, authored starter roadmaps and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
@@ -75,7 +77,7 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 engines, labels.
 
 After load, `SyncSession` owns the durable lattice. Local gestures and remote frames both produce a projection
-through `editing/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
+through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
 projection.
 
 A saved camera is scoped to its layout engine and format. Without one, an owner opens at working zoom over the
@@ -404,7 +406,7 @@ Node bodies, root and selection scale, zoom floors and caption dimensions must a
 and layout. `model/footprint.js` estimates disc-plus-caption bounds from label length, without DOM
 measurement.
 
-`board/copy.js` holds every state word, and ceremony structure and timing read none of it.
+`copy.js` holds every state word, and ceremony structure and timing read none of it.
 
 ## Layout
 
@@ -439,7 +441,7 @@ collision-free space runs out. Distant glyphs use `IconAtlas`; close glyphs use 
 `edgeCurve.js` supplies connector and caption-collision geometry.
 
 Picking accepts the drawn disc; pointer and touch hit floors stop halfway to the nearest neighbour. A crowded
-hit zooms into the group. `ui/viewport.js` supplies the camera and captions with both edge insets and corner
+hit zooms into the group. `graph/viewport.js` supplies the camera and captions with both edge insets and corner
 obstacles; content-sized chrome measures itself.
 
 Keep these rules when changing the renderer:
