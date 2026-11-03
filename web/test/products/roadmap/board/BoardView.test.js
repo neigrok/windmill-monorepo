@@ -9,7 +9,6 @@ register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: BoardView } = await import('../../../../src/products/roadmap/board/BoardView.jsx');
-const { NewStep } = await import('../../../../src/products/roadmap/board/BoardControls.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
 
 function render(props, { knots = 0 } = {}) {
@@ -25,7 +24,6 @@ function render(props, { knots = 0 } = {}) {
     completedAt: { course: 100, ...Object.fromEntries(extra.map((knot, index) => [knot.id, 200 + index])) },
     selectedId: null,
     onSelect: () => {},
-    onSwitchView: () => {},
     ...props,
   }));
   return {
@@ -80,21 +78,6 @@ test('BoardView — shown with a step selected past the Done fold, Done unfolds 
   assert.deepEqual([revealed.showAll, revealed.selected], [[], ['Choose a sailing course']]);
 });
 
-test('BoardView — only the tablet owner identity adds the existing compact creation verb', () => {
-  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
-    { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
-  ] });
-  const markup = (props) => renderToStaticMarkup(React.createElement(BoardView, {
-    tree, completed: new Set(), completedAt: {}, identity: true, title: tree.title,
-    breakpoint: 'tablet', active: true, onSelect: () => {}, ...props,
-  }));
-  const action = renderToStaticMarkup(React.createElement(NewStep, { compact: true, onClick: () => {} }));
-  const reader = markup({});
-  assert.equal(markup({ onNewStep: () => {} }), reader.replace('</header>', `${action}</header>`));
-  assert.equal(markup({ breakpoint: 'desktop', onNewStep: () => {} }), markup({ breakpoint: 'desktop' }));
-  assert.equal(markup({ identity: false, onNewStep: () => {} }), markup({ identity: false }));
-});
-
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React, { useEffect, useMemo, useState } from 'react';
@@ -107,10 +90,7 @@ import { coverBeneath } from '/src/products/roadmap/board/composerFocus.js';
 import { boardFocusTarget } from '/src/products/roadmap/board/traversal.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
-import { StepComposer } from '/src/products/roadmap/board/StepComposer.jsx';
 import { StepCard } from '/src/products/roadmap/board/StepCard.jsx';
-import { boardOpen } from '/src/products/roadmap/board/gate.js';
-import { useViewMode } from '/src/products/roadmap/ui/useViewMode.js';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
 import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
 import { useRoadmapToast } from '/src/products/roadmap/SkillTreeView.jsx';
@@ -137,8 +117,7 @@ window.openBoard = (nodes, completed, breakpoint) => {
       edge('Before the Board', 'top'),
       React.createElement('div', { className: 'st-view-layer--board' + (active ? ' is-active' : ''), style: { height: '100vh' } },
         React.createElement(BoardView, { tree, completed: new Set(completed), completedAt, selectedId, onSelect: setSelectedId, onAnchor: setSelectedId,
-          breakpoint, active, onSwitchView: () => {}, query, onQuery: setQuery, legend, identity: true,
-          title: 'Learn to sail' })),
+          breakpoint, active, query, onQuery: setQuery, legend })),
       edge('After the Board', 'bottom'));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
@@ -149,7 +128,7 @@ window.openState = ({ nodes, completed = [], breakpoint, loading = false, failed
   createRoot(document.getElementById('root')).render(
     React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
       React.createElement(BoardView, { tree, completed: new Set(completed), completedAt: {}, loading, failed, selectedId: null,
-        onSelect: () => {}, breakpoint, active: true, identity: true, title: 'Learn to sail', onSwitchView: () => {},
+        onSelect: () => {}, breakpoint, active: true,
         onRetry: call('retry'), onShare: owner ? call('share') : undefined, onNewStep: owner ? call('newStep') : undefined })));
 };
 window.openReload = (nodes, completed) => {
@@ -158,7 +137,7 @@ window.openReload = (nodes, completed) => {
     window.finishLoad = (succeeded) => setLoad({ tree: succeeded ? new SkillTree({ id: 'sail', title: 'Learn to sail', nodes }) : null, loading: false, failed: !succeeded });
     return React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
       React.createElement(BoardView, { ...load, completed: new Set(completed), completedAt: {}, selectedId: null, onSelect: () => {},
-        breakpoint: 'desktop', active: true, onSwitchView: () => {}, onRetry: () => setLoad({ tree: null, loading: true, failed: false }) }));
+        breakpoint: 'desktop', active: true, onRetry: () => setLoad({ tree: null, loading: true, failed: false }) }));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
@@ -197,27 +176,6 @@ window.openActBoard = (nodes, initiallyCompleted, breakpoint, showToast) => {
       React.createElement(BoardView, { tree, completed, completedAt, breakpoint, active: true,
         onSelect: () => {}, onComplete: window.completeRemote, query, onQuery: setQuery, reveal, quiet,
         toast, onToastShown: (key) => window.shownToasts.push(key), onToastUndo: () => {} }));
-  }
-  createRoot(document.getElementById('root')).render(React.createElement(Room));
-};
-window.openIdentityComposer = ({ nodes, owner = true, active = true, gate = true }) => {
-  if (gate) localStorage.setItem('windmill:board:dev', '1');
-  else localStorage.removeItem('windmill:board:dev');
-  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
-  const completed = new Set(['course', 'parts', 'rig']);
-  function Room() {
-    const { breakpoint } = useViewMode();
-    const [query, setQuery] = useState(() => new BoardQuery());
-    const [composer, setComposer] = useState(false);
-    useEffect(() => { window.identityRendered = true; }, []);
-    if (!boardOpen()) return null;
-    return React.createElement('div', { className: 'st-view-layer--board' + (active ? ' is-active' : ''), style: { height: '100vh' } },
-      React.createElement(BoardView, { tree, completed, completedAt: {}, selectedId: null,
-        breakpoint, active, identity: true, title: tree.title, query, onQuery: setQuery,
-        onSelect: () => {}, onSwitchView: () => {}, legend,
-        onNewStep: owner ? (door) => { window.creationDoor = door; setComposer(true); } : undefined }),
-      composer && React.createElement(StepComposer, { tree, completed, legend, band: breakpoint,
-        onCreate: () => ({ ok: true }), onClose: () => setComposer(false) }));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
@@ -681,64 +639,6 @@ test('Chromium: phone C follows the completed card into Done without expanding i
     assert.equal(await page.getByRole('button', { name: 'Show all 14', exact: true }).count(), 1);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
-});
-
-for (const width of [744, 900, 1023]) {
-  test(`Chromium: tablet identity New step opens the composer through verbs at ${width}px`, async () => {
-    await ready;
-    const errors = [];
-    const page = await browser.newPage({ viewport: { width, height: 960 } });
-    page.on('pageerror', (error) => errors.push(error.message));
-    try {
-      await page.goto(`${origin}/board-view-test`);
-      await page.waitForFunction(() => window.entryReady);
-      await page.evaluate((nodes) => openIdentityComposer({ nodes }), learnToSailNodes);
-      const identity = page.locator('.st-board-identity');
-      const action = identity.getByRole('button', { name: 'New step', exact: true });
-      await action.waitFor();
-      assert.equal(await action.getAttribute('class'), 'st-board-new-step st-board-new-step--secondary st-board-new-step--compact');
-      assert.deepEqual(await action.evaluate((button) => {
-        const box = button.getBoundingClientRect();
-        const find = button.previousElementSibling.getBoundingClientRect();
-        const header = button.parentElement.getBoundingClientRect();
-        return { width: box.width, height: box.height, afterFind: box.left >= find.right, withinHeader: box.right <= header.right };
-      }), { width: 44, height: 44, afterFind: true, withinHeader: true });
-      await identity.getByRole('searchbox', { name: 'Find a step' }).fill('wind');
-      assert.equal(await identity.getByRole('searchbox', { name: 'Find a step' }).inputValue(), 'wind');
-      await action.click();
-      const composer = page.getByRole('dialog', { name: 'New step', exact: true });
-      await composer.waitFor();
-      await composer.getByRole('textbox', { name: 'Name', exact: true }).fill('Reefing basics');
-      assert.equal(await composer.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Reefing basics');
-      assert.equal(await page.evaluate(() => window.creationDoor), 'verbs');
-      assert.deepEqual(errors, []);
-    } finally {
-      await page.close();
-    }
-  });
-}
-
-test('Chromium: the tablet identity creation verb stays out of other widths, readers, Graph and the closed gate', async () => {
-  await ready;
-  const errors = [];
-  for (const state of [
-    { width: 743 }, { width: 1024 }, { width: 900, owner: false },
-    { width: 900, active: false }, { width: 900, gate: false },
-  ]) {
-    const page = await browser.newPage({ viewport: { width: state.width, height: 960 } });
-    page.on('pageerror', (error) => errors.push(error.message));
-    try {
-      await page.goto(`${origin}/board-view-test`);
-      await page.waitForFunction(() => window.entryReady);
-      await page.evaluate(({ nodes, state }) => openIdentityComposer({ nodes, ...state }), { nodes: learnToSailNodes, state });
-      await page.waitForFunction(() => window.identityRendered);
-      assert.equal(await page.locator('.st-board-identity .st-board-new-step:visible').count(), 0);
-      assert.equal(await page.getByRole('dialog', { name: 'New step', exact: true }).count(), 0);
-    } finally {
-      await page.close();
-    }
-  }
-  assert.deepEqual(errors, []);
 });
 
 for (const breakpoint of ['desktop', 'phone']) {

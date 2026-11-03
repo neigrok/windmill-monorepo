@@ -49,6 +49,18 @@ export const SHORTCUT_GROUPS = [
   },
 ];
 
+const GRAPH_SHORTCUT_GROUPS = SHORTCUT_GROUPS.map((group) => {
+  if (group.title === 'Navigate') {
+    return { ...group, rows: [...group.rows, { label: 'Find a step', chords: [[key('/')]] }] };
+  }
+  if (group.title === 'Edit') {
+    return { ...group, rows: group.rows.map((row) => row.label === 'Ask AI'
+      ? { ...row, chords: [[key('⌘'), key('K')]] }
+      : row) };
+  }
+  return group;
+});
+
 export const BOARD_SHORTCUT_GROUPS = [
   {
     title: 'Board',
@@ -92,15 +104,16 @@ export function detectPlatform() {
   return 'mac';
 }
 
-export function visibleGroups(readOnly, view = 'graph') {
+export function visibleGroups(readOnly, view = 'graph', boardOpen = false) {
   if (view === 'board') {
     if (!readOnly) return BOARD_SHORTCUT_GROUPS;
     return BOARD_SHORTCUT_GROUPS
       .filter((group) => group.title === 'Board' || group.title === 'View')
       .map((group) => ({ ...group, rows: group.rows.filter((row) => !row.owner) }));
   }
-  if (!readOnly) return SHORTCUT_GROUPS;
-  return SHORTCUT_GROUPS.filter((group) => group.title === 'Navigate' || group.title === 'View');
+  const groups = boardOpen ? GRAPH_SHORTCUT_GROUPS : SHORTCUT_GROUPS;
+  if (!readOnly) return groups;
+  return groups.filter((group) => group.title === 'Navigate' || group.title === 'View');
 }
 
 export function keyHint(rowLabel) {

@@ -73,7 +73,7 @@ Two intensities, by the tier the node *lands on*:
 - Enter: `wm-fade-in-up` (fade + rise 8px), 280ms `--ease-soft`. Hold **4000ms** (6000ms with
   an action like Undo). Exit: fade, 280ms `--ease-standard`.
 - **Last beat**: enters **+120ms** after the final structural beat settles. One toast per
-  ceremony — it summarizes ("Step unlocked: Add plants · 2 more steps opened").
+  ceremony — it summarizes ("Add plants done · 2 up next").
 - One at a time; a newer toast **replaces** (150ms cross-fade), never stacks.
 
 ### crown / pulse — the breath

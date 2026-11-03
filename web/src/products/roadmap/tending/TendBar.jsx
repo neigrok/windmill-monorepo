@@ -1,10 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../../../design-system';
+import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
 
-export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what to change…', examples = [], working, onSubmit, onDismiss }) {
+export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what to change…', examples = [], working, onSubmit, onDismiss, preserveOutsideFocus = false, portalTarget = null }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const desktop = variant === 'desktop';
+  const formRef = useRef(null);
+  useDialogFocus({ open: desktop && preserveOutsideFocus, cardRef: formRef, onClose: onDismiss, preserveOutsideFocus });
 
   // Desktop takes focus on open; the phone bar must not raise the keyboard until tapped.
   useEffect(() => {
@@ -32,6 +36,8 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
 
   const bar = (
     <form
+      ref={formRef}
+      tabIndex={preserveOutsideFocus ? -1 : undefined}
       onSubmit={submit}
       onKeyDown={(event) => { if (event.key === 'Escape') onDismiss?.(); }}
       style={desktop ? deskForm : phoneForm}
@@ -63,11 +69,12 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
   );
 
   if (!desktop) return bar;
-  return (
-    <div style={scrim} onMouseDown={(event) => { if (event.target === event.currentTarget) onDismiss?.(); }}>
+  const overlay = (
+    <div className="st-tend-overlay" style={portalTarget ? { ...scrim, position: 'fixed' } : scrim} onMouseDown={(event) => { if (event.target === event.currentTarget) onDismiss?.(); }}>
       {bar}
     </div>
   );
+  return portalTarget ? createPortal(overlay, portalTarget) : overlay;
 }
 
 export default TendBar;

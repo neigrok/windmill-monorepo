@@ -28,7 +28,7 @@ test('planNextUp — the featured offer is ranked by unlocks then id, with count
   assert.deepEqual(planNextUp(t, states), {
     mount: true,
     mode: 'featured',
-    pill: '2 ready',
+    pill: '2 up next',
     doneCount: 1,
     totalCount: 4,
     readyCount: 2,
@@ -58,7 +58,7 @@ test('planNextUp — nothing ready reports the blocked mode without unavailable 
   assert.deepEqual(planNextUp(t, new Map([['r', 'locked'], ['a', 'locked']])), {
     mount: true,
     mode: 'blocked',
-    pill: '0 ready',
+    pill: '0 up next',
     doneCount: 0,
     totalCount: 2,
     readyCount: 0,

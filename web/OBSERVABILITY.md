@@ -111,7 +111,7 @@ Board completion emits `roadmap_board_complete` with `door` (`swipe` or `key`), 
 (`confirm`, `cancel`, `held` or `sent`); `held` carries `door` (`menu`, `key` or `bulk`), and `sent` occurs only when release returns a dispatch receipt and also carries `via`
 (`timer`, `replaced` or `left`). The step-menu `delete` action continues to mean that its menu item was pressed.
 Opening the composer emits `roadmap_board_create` with `step: open` and `door` (`verbs`, `band`, `empty` or
-`complete`); the tablet identity row's New step button uses `door: verbs`. A successful create emits
+`complete`) and `view` (`board` or `graph`); the identity row's New step button uses `door: verbs`. A successful create emits
 `step: saved`, `column` (`locked` or `upNext`) and boolean `filterCleared`.
 The composer also emits `roadmap_board_create` with `step` (`failed`, `retry`, `discard` or `cancel`). The picker
 emits `roadmap_board_picker` with `mode` (`create` or `edit`) and `step` (`open`, `apply`, `cancel`, `more` or `revalidated`); only `apply` carries `count`, bucketed
@@ -146,6 +146,26 @@ is an expected no-op and reports no Issue. A composer render crash reports
 contain post-apply notification, storage and transport exceptions under `roadmap-sync-notify`,
 `roadmap-sync-persist` and `roadmap-sync-send`, respectively. Those writes retain their receipt because their lattice
 change has already applied; persistence or transport failure marks durability at risk.
+
+The gated identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, `newStep`, `export`,
+`settings`, `shortcuts`, `fork`, `more`, `next` or folded-icon `find`), `door` (`row`, `more` or
+`sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
+sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new` or `browse`), or `step: close`
+and `via` (`close`, `escape` or `scrim`). What's next emits `roadmap_whats_next` with `step: open`,
+then either `pick` or `close`; focus leaving the popover emits `close`, and a pick does not also emit close. Each event's `count` uses the value captured
+on opening, in `countBucket`'s allowlisted `0`, `1`, `2-5`, `6-20` or `21+` buckets. No user content
+enters these events.
+Export emits `roadmap_export` with `outcome` (`done` or `failed`) and `door` (`more` or `sheet`).
+A missing projection or displayed tree emits `failed` without an Issue.
+A Graph search handing off to the Board emits `roadmap_graph_find` with `step: handoff`.
+Graph toast outcomes emit `roadmap_graph_toast` with `act` (`complete`, `create` or `link`) and
+`step` (`shown` or `undo`). Successful gated reader Share emits `link_copy` with no properties;
+a clipboard refusal emits `roadmap_graph_toast` with `act: link` and `outcome: failed`, without
+a share-funnel beacon or Issue. Identity render failures report `roadmap-identity`; unexpected
+export build/download failures report `roadmap-export`; a Graph completion Undo failure reports
+`roadmap-step-restore`. All use static operation names and stack frames. Other restore and revert
+failures retain their existing operations. None of these events carries titles, ids, search text or roadmap names. State-word
+copy and focus-ring changes emit no new events.
 
 The switch, the tabs, the rail, Show all, the controls, the states, the step’s page and modal, and the
 composer and picker exist only while the Board’s development gate

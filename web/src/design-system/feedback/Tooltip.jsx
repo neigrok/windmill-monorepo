@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function Tooltip({ children, label, side = 'top' }) {
+export function Tooltip({ children, label, side = 'top', disabled = false }) {
   const [show, setShow] = React.useState(false);
   const pos = {
     top: { bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8 },
@@ -13,7 +13,7 @@ export function Tooltip({ children, label, side = 'top' }) {
       onMouseLeave={() => setShow(false)}
     >
       {children}
-      {show && (
+      {show && !disabled && (
         <span
           style={{
             position: 'absolute',

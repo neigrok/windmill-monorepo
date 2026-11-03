@@ -1,3 +1,5 @@
+import { STATE_WORDS, completedToast } from '../board/copy.js';
+
 export const DEMO_TREE_ID = 't_9e407a96b5330ebe';
 
 // This set leaves "Rig the boat yourself" the single ready step.
@@ -18,9 +20,9 @@ export const FORKED_FROM_DEMO_KEY = 'windmill:forked-from-demo'; // one-shot not
 
 export const DEMO_COPY = {
   plaqueByline: 'Windmill demo',
-  coachSentence: 'This step is ready — mark it done.',
+  coachSentence: `This step is ${STATE_WORDS.upNext} — mark it done.`,
   coachButton: 'Mark it done',
-  unlockToast: 'Step unlocked: Rig the boat yourself · 2 steps opened',
+  unlockToast: completedToast({ step: 'Rig the boat yourself', unlockedCount: COACHED_CHILDREN.length }),
   forkToast: 'Forked — 17 steps planted',
 };
 

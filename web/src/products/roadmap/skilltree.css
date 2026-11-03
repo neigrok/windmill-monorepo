@@ -2490,3 +2490,189 @@
     animation: none;
   }
 }
+
+.st-roadmap-identity-host {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 24;
+}
+
+.st-roadmap-identity-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  pointer-events: none;
+}
+
+.st-roadmap-fallback-switch {
+  position: absolute;
+  left: var(--space-6);
+  pointer-events: auto;
+}
+
+.st-graph-camera {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 248px;
+  height: 50px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-md);
+}
+
+.st-graph-camera button {
+  height: 44px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  cursor: pointer;
+}
+
+.st-graph-camera .st-graph-camera-zoom {
+  width: 44px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.st-graph-camera .st-graph-camera-action {
+  flex: 1;
+  padding: 0 14px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.st-graph-camera button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.st-graph-toast {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.st-graph-toast .st-board-toast {
+  pointer-events: auto;
+}
+
+.st-graph-toast:not(.st-graph-toast--phone) .st-board-toast {
+  left: var(--graph-toast-center, 50%);
+  width: max-content;
+  max-width: calc(100% - 48px);
+  bottom: var(--graph-toast-bottom, 24px);
+}
+
+.st-toast.st-toast--graph {
+  left: var(--graph-toast-center, 50%);
+  width: max-content;
+  bottom: var(--graph-toast-bottom);
+  max-width: calc(100% - 48px);
+}
+
+.st-roadmap-identity-fallback--board .st-zoom-group,
+.st-roadmap-identity-fallback--board .st-activity-chip {
+  display: none;
+}
+
+@media (max-width: 743px) {
+  .st-graph-toast.st-graph-toast--phone {
+    right: 0;
+    left: 0;
+  }
+
+  .st-toast.st-toast--graph {
+    left: 50%;
+    width: auto;
+    max-width: calc(100% - 56px);
+  }
+
+  .st-toast.st-toast--graph,
+  .st-graph-toast--phone.st-graph-toast--sheet .st-board-toast {
+    top: var(--graph-toast-top);
+    bottom: auto;
+  }
+}
+
+.st-demo-board-identity {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 64px;
+  padding: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 8px) var(--space-6) 8px;
+}
+
+.st-demo-board-identity-title {
+  min-width: 0;
+  max-width: 480px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--text-primary);
+}
+
+.st-demo-board-identity-progress {
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+.st-demo-board-identity.st-demo-board-identity--phone {
+  min-height: 60px;
+  padding-right: var(--space-4);
+  padding-left: var(--space-4);
+}
+
+.st-demo-board-identity--phone .st-demo-board-identity-title {
+  flex: 1;
+  max-width: none;
+  font-size: 20px;
+}
+
+.st-demo-board-identity--phone .st-demo-board-identity-progress {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.st-roadmap-device-nudge {
+  position: absolute;
+  left: calc(env(safe-area-inset-left, 0px) + 16px);
+  right: calc(env(safe-area-inset-right, 0px) + 16px);
+  pointer-events: auto;
+}
+
+@media (min-width: 744px) {
+  .st-mobile-chrome .st-roadmap-device-nudge {
+    left: calc(env(safe-area-inset-left, 0px) + 24px);
+  }
+}
+
+.st-root--board-enabled .st-detail-panel--tablet button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}

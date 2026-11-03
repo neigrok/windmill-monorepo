@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
-import { BoardActs } from '../../../../src/products/roadmap/board/useBoardActs.js';
+import { BoardActs, BoardComposer } from '../../../../src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
@@ -122,6 +122,88 @@ test('complete ignores locked, done, inactive and reader steps', () => {
 });
 
 const request = Object.freeze({ id: 'reef', label: 'Reefing basics', description: '', color: 'blue', prerequisites: ['wind'] });
+
+test('Graph create preserves Board filters, reveals on the Graph and Undo reverts its own receipt', () => {
+  const { acts, c, calls, receipt } = fixture({
+    active: false, graphActive: true,
+    query: new BoardQuery({ search: 'invisible', sort: 'oldest' }),
+  });
+  c.onGraphReveal = (id) => calls.push(['graph reveal', id]);
+  assert.deepEqual(acts.create(request), { ok: true });
+  assert.deepEqual({
+    message: c.toast.message, surface: c.toast.surface, act: c.toast.act,
+    reveal: c.toast.reveal, holdMs: c.toast.holdMs, action: c.toast.action.label,
+  }, {
+    message: 'Reefing basics added · Locked', surface: 'graph', act: 'create',
+    reveal: 'reef', holdMs: 6000, action: 'Undo',
+  });
+  c.toast.action.run();
+  assert.deepEqual(calls, [
+    ['dispatch', { kind: 'CreateNode', ...request }], ['graph reveal', request.id],
+    ['event', 'roadmap_graph_toast', { act: 'create', step: 'shown' }],
+    ['event', 'roadmap_board_create', { step: 'saved', column: 'locked', filterCleared: false }],
+    ['revert', receipt], ['quiet'], ['event', 'roadmap_graph_toast', { act: 'create', step: 'undo' }],
+  ]);
+});
+
+test('Graph availability permits owner create only, without enabling Board mutation doors', () => {
+  for (const owner of [false, true]) {
+    const { acts, c, calls } = fixture({ active: false, graphActive: true, owner });
+    c.onGraphReveal = () => {};
+    assert.equal(acts.complete('wind', 'key'), false);
+    assert.equal(acts.delete(['wind']), false);
+    assert.deepEqual(acts.edit({ ...request, id: 'wind' }), { ok: false });
+    assert.deepEqual(acts.recolor(['wind'], 'gold'), { ok: false });
+    assert.deepEqual(calls, []);
+    assert.deepEqual(acts.create(request), { ok: owner });
+    if (!owner) assert.deepEqual(calls, []);
+  }
+});
+
+test('Graph create Undo refuses expired receipts quietly and reports thrown reverts with their stack', () => {
+  for (const throws of [false, true]) {
+    const failure = new Error('private content');
+    const { acts, c, calls } = fixture({ active: false, graphActive: true, onGraphReveal: () => {},
+      session: { dispatch: () => ({}), revert: () => { if (throws) throw failure; return false; } },
+    });
+    acts.create(request);
+    calls.length = 0;
+    c.toast.action.run();
+    assert.deepEqual(calls, throws ? [['report', 'roadmap-board-create']] : []);
+    assert.deepEqual(c.errors, throws ? [failure] : []);
+  }
+});
+
+test('Graph composers expose create for owners behind the gate and reject every edit door', () => {
+  for (const gate of [false, true]) {
+    for (const owner of [false, true]) {
+      const draft = { door: 'verbs', view: 'tree' };
+      const composer = new BoardComposer({ gate, active: false, owner, view: 'tree',
+        detailId: 'wind', composer: draft,
+        acts: { edit: () => assert.fail('Graph must not dispatch Board edits') },
+        onOpen: () => assert.fail('Graph must not open Board edits'),
+      });
+      assert.equal(composer.shown, gate && owner ? draft : null);
+      composer.openEdit('wind');
+      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+      composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
+      assert.equal(composer.shown, null);
+      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+    }
+  }
+});
+
+test('a composer is hidden immediately after switching away from its originating view', () => {
+  for (const origin of ['board', 'tree']) {
+    for (const view of ['board', 'tree']) {
+      const draft = { door: 'verbs', view: origin };
+      const composer = new BoardComposer({ gate: true, active: view === 'board', owner: true,
+        view, detailId: null, composer: draft,
+      });
+      assert.equal(composer.shown, origin === view ? draft : null);
+    }
+  }
+});
 
 test('create dispatches one pinned request and Undo reverts its receipt', () => {
   const { acts, c, calls, receipt } = fixture({ query: new BoardQuery({ search: 'invisible', sort: 'oldest' }) });

@@ -3,12 +3,13 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { hueOf } from '../theme.js';
 import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from './acts.js';
 import { deleteCostLine } from '../ui/mobile/editorSheet.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
+import { handleMenuKey } from './BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
 import { coverBeneath, DetailFocusContext } from './composerFocus.js';
 import { boardFocusTarget } from './traversal.js';
@@ -279,7 +280,8 @@ export function StepDetail({
     onEdit(id);
   } : null;
   const noteAction = surface === 'page' && section === 'workspace';
-  const editLabel = noteAction ? (workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote) : STEP_DETAIL.editStep;
+  const noteLabel = workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote;
+  const editLabel = noteAction ? noteLabel : STEP_DETAIL.editStep;
   const actions = editable && !noteEditing && (facts.column !== 'locked' || noteAction || edit)
     ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset}
         editLabel={editLabel} editRef={pinnedNoteRef} onEdit={noteAction ? () => workspaceRef.current?.openNote(pinnedNoteRef) : edit} />
@@ -389,7 +391,7 @@ export function StepDetail({
 }
 
 function StepIdentity({ step, titleId, compact = false }) {
-  const kind = KIND_CSS[step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+  const kind = hueOf(step.color);
   return (
     <div className={`st-board-step-identity${compact ? ' st-board-step-identity--compact' : ''}`} style={{ '--st-board-step-rail': kind.base }}>
       {!compact && <span className="st-board-step-identity-rail" aria-hidden />}
@@ -592,24 +594,14 @@ function StepMenu({ items, confirm }) {
     return () => window.removeEventListener('pointerdown', away);
   }, [open]);
 
-  const onKeyDown = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
+  const onKeyDown = (event) => handleMenuKey(event, {
+    root: box.current,
+    onEscape: () => {
       setOpen(false);
       opener.current.focus();
-      return;
-    }
-    if (event.key === 'Tab') {
-      setOpen(false);
-      return;
-    }
-    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-    if (!step) return;
-    event.preventDefault();
-    const choices = [...box.current.querySelectorAll('[role="menuitem"]')];
-    choices[(choices.indexOf(document.activeElement) + step + choices.length) % choices.length].focus();
-  };
+    },
+    onTab: () => setOpen(false),
+  });
 
   return (
     <div className="st-board-step-menu" ref={box}>

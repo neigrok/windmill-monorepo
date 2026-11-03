@@ -20,29 +20,53 @@ const PHONE = { top: 156, margin: 12, sheetGutter: 12, laneGutter: 16 };
 const MINIMAP = { width: 186, height: 146 };
 // .st-legend-dock: --space-6 from the left on every breakpoint, clear of the minimap's seat below it.
 const LEGEND_CORNER = { left: 24, bottom: 24 + 196 };
+const CAMERA_GUTTER = 24;
 
-export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false, sheetHeight = 0, laneInset = 0, legendBox = null }) {
+export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false, sheetHeight = 0, laneInset = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
   if (breakpoint === 'desktop') {
+    const right = dockOpen ? DESKTOP.dock : DESKTOP.margin;
+    const blocks = [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox)];
+    if (cameraBlock) blocks.push({ right, bottom: DESKTOP.margin, ...cameraBlock });
     return {
-      top: DESKTOP.top, right: dockOpen ? DESKTOP.dock : DESKTOP.margin, bottom: DESKTOP.margin, left: DESKTOP.margin,
-      blocks: [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox)],
+      top: rowBottom ?? DESKTOP.top, right, bottom: DESKTOP.margin, left: DESKTOP.margin,
+      blocks,
     };
   }
   if (breakpoint === 'tablet') {
+    const right = dockOpen ? TABLET.panel : TABLET.margin;
+    const bottom = laneInset + TABLET.laneGutter;
+    const blocks = legendBlocks(legendBox);
+    if (cameraBlock) blocks.push({ right: Math.max(CAMERA_GUTTER, right), bottom: Math.max(CAMERA_GUTTER, bottom), ...cameraBlock });
     return {
-      top: TABLET.top, right: dockOpen ? TABLET.panel : TABLET.margin, bottom: laneInset + TABLET.laneGutter, left: TABLET.margin,
-      blocks: legendBlocks(legendBox),
+      top: rowBottom ?? TABLET.top, right, bottom, left: TABLET.margin,
+      blocks,
     };
   }
   // The lane rides above an open sheet, so the phone's bottom band clears whichever of the two reaches higher.
   const bottom = Math.max(sheetOpen ? sheetHeight + PHONE.sheetGutter : 0, laneInset + PHONE.laneGutter);
-  return { top: PHONE.top, right: PHONE.margin, bottom, left: PHONE.margin, blocks: [] };
+  return { top: rowBottom ?? PHONE.top, right: PHONE.margin, bottom, left: PHONE.margin, blocks: [] };
 }
 
 // The legend dock publishes its own measured box, since its height is its rows'; the phone hides it altogether.
 function legendBlocks(legendBox) {
   if (!legendBox || legendBox.width <= 0 || legendBox.height <= 0) return [];
   return [{ ...LEGEND_CORNER, width: legendBox.width, height: legendBox.height }];
+}
+
+export function graphToastPlacement({ width, height, toastWidth, toastHeight, leftInset, rightInset, obstacles, gap = 8 }) {
+  const freeWidth = width - leftInset - rightInset;
+  const center = toastWidth <= freeWidth ? leftInset + freeWidth / 2 : width / 2;
+  const left = center - toastWidth / 2;
+  const right = center + toastWidth / 2;
+  let bottom = 24;
+  for (let pass = 0; pass < obstacles.length; pass += 1) {
+    for (const obstacle of obstacles) {
+      const overlaps = left < obstacle.right + gap && right > obstacle.left - gap
+        && height - bottom > obstacle.top - gap && height - bottom - toastHeight < obstacle.bottom + gap;
+      if (overlaps) bottom = height - obstacle.top + gap;
+    }
+  }
+  return { center, bottom };
 }
 
 // The frontier: the selection the device remembers, else the top Next-up row, else the most recent completion this

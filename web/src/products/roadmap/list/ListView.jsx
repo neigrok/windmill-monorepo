@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { hueOf, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { deleteCostLine, progressVerb } from '../ui/mobile/editorSheet.js';
 import { buildOutline, nextUp, treatmentOf, indentPx, progressOf } from './outline.js';
 import { filterOutline } from './explore.js';
@@ -10,6 +10,7 @@ import { kindOptions } from '../model/Legend.js';
 import { gateOf } from '../model/UnlockRules.js';
 import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, scrollerClearance, stillEditing, holdCancelledByMove, HOLD_MS } from './editing.js';
 import { NeedPicker } from './NeedPicker.jsx';
+import { COLUMN_TITLES, STATE_WORDS, upNextCount, upNextIn } from '../board/copy.js';
 import './list.css';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -36,11 +37,9 @@ const CLOSE_GLYPH = (
 const FLASH_MS = 1300;
 const JUMP_OFFSET = 84;
 const BLUR_COMMIT_MS = 140;
-const STATE_WORDS = { done: 'done', ready: 'not started', locked: 'locked' };
+const TREATMENT_WORDS = { done: STATE_WORDS.done, ready: STATE_WORDS.upNext, locked: STATE_WORDS.locked };
 
-export function hueOf(color) {
-  return KIND_CSS[color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
-}
+export { hueOf } from '../theme.js';
 
 export function hueVars(hue) {
   return { '--k-base': hue.base, '--k-ring': hue.ring, '--k-soft': hue.soft, '--k-glow': hue.glow };
@@ -177,7 +176,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     setLookup(null);
     setBack(selectedId && selectedId !== id
       ? { id: selectedId, label: nodesById.get(selectedId)?.label || 'Untitled step' }
-      : { id: null, label: 'Next up' });
+      : { id: null, label: COLUMN_TITLES.upNext });
     showRow(id, true);
     onSelect(id);
   }, [nodesById, selectedId, showRow, onSelect]);
@@ -583,8 +582,8 @@ function NextUpShelf({ entries, readyCount, lensLabel, nodesById, states, onJump
   return (
     <div className="st-list-nextup">
       <div className="st-list-nextup-label">
-        <span>{lensLabel ? `Next up in ${lensLabel}` : 'Next up'}</span>
-        <span className="st-list-nextup-ready">{readyCount} ready</span>
+        <span>{lensLabel ? upNextIn({ lens: lensLabel }) : COLUMN_TITLES.upNext}</span>
+        <span className="st-list-nextup-ready">{upNextCount({ count: readyCount })}</span>
       </div>
       {entries.map(({ id, unlocks }) => {
         const node = nodesById.get(id);
@@ -837,7 +836,7 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, sn
   } else {
     // The fruit is aria-hidden, so without the state in the label a locked row and a ready one read alike.
     body = (
-      <button type="button" className="st-list-row-open" aria-expanded={expanded} aria-label={`${label}, ${STATE_WORDS[treatment]}`} onClick={multiMode ? () => onToggleMember?.(node.id) : onToggle}>
+      <button type="button" className="st-list-row-open" aria-expanded={expanded} aria-label={`${label}, ${TREATMENT_WORDS[treatment]}`} onClick={multiMode ? () => onToggleMember?.(node.id) : onToggle}>
         {nameGroup}
         {meta}
         {count}

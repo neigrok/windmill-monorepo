@@ -5,34 +5,60 @@ import { runInNewContext } from 'node:vm';
 import { parse } from 'acorn';
 import { transformWithEsbuild } from 'vite';
 import { BoardComposer } from '../../../src/products/roadmap/board/useBoardActs.js';
+import { SkillTree } from '../../../src/products/roadmap/model/SkillTree.js';
+import { BoardQuery } from '../../../src/products/roadmap/board/Board.js';
+import { advanceProgress, progressChanges } from '../../../src/products/roadmap/model/progress.js';
+import { completedToast, LABELS, LINK_COPIED } from '../../../src/products/roadmap/board/copy.js';
 import { boardKey, graphOnlyKey } from '../../../src/products/roadmap/shortcuts/shortcutMap.js';
 
 // Run the host's actual event boundaries with injected collaborators, without starting its WebGL scene.
 const source = await readFile(new URL('../../../src/products/roadmap/SkillTreeView.jsx', import.meta.url), 'utf8');
 const { code } = await transformWithEsbuild(source, 'SkillTreeView.jsx', { loader: 'jsx' });
 const handlers = new Map();
-const visit = (node) => {
-  if (!node || typeof node !== 'object') return;
-  if (node.type === 'VariableDeclarator' && ['onEditorKey', 'onPaste'].includes(node.id.name)) {
-    assert.equal(handlers.has(node.id.name), false);
-    handlers.set(node.id.name, code.slice(node.init.start, node.init.end));
-  }
-  if (node.type === 'VariableDeclarator' && node.id.name === 'newStepFromBoard') {
-    const callback = node.init.arguments[0];
-    handlers.set(node.id.name, code.slice(callback.start, callback.end));
-  }
-  for (const child of Object.values(node)) {
-    if (Array.isArray(child)) child.forEach(visit);
-    else if (child && typeof child === 'object') visit(child);
-  }
-};
-visit(parse(code, { ecmaVersion: 'latest', sourceType: 'module' }));
+const identityHandlers = new Map();
+function collectHandlers(code) {
+  const visit = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'VariableDeclarator' && ['onEditorKey', 'onPaste'].includes(node.id.name)) {
+      assert.equal(handlers.has(node.id.name), false);
+      handlers.set(node.id.name, code.slice(node.init.start, node.init.end));
+    }
+    if (node.type === 'VariableDeclarator' && node.id.name === 'newStepFromBoard') {
+      const callback = node.init.arguments[0];
+      handlers.set(node.id.name, code.slice(callback.start, callback.end));
+    }
+    if (node.type === 'FunctionDeclaration' && node.id.name === 'completeStep') {
+      identityHandlers.set(node.id.name, code.slice(node.start, node.end));
+    }
+    if (node.type === 'VariableDeclarator' && ['onIdentityQuery', 'shareFromRow', 'exportFromRow', 'undoGraphToast', 'handleSheetJump'].includes(node.id.name)) {
+      const callback = node.init.arguments[0];
+      identityHandlers.set(node.id.name, code.slice(callback.start, callback.end));
+    }
+    if (node.type === 'CallExpression' && node.callee.name === 'useEffect') {
+      const callback = node.arguments[0];
+      const body = code.slice(callback.start, callback.end);
+      if (body.includes('insetsRef.current = insets;')) {
+        identityHandlers.set('publishInsets', body);
+        identityHandlers.set('insetDependencies', code.slice(node.arguments[1].start, node.arguments[1].end));
+      }
+    }
+    for (const child of Object.values(node)) {
+      if (Array.isArray(child)) child.forEach(visit);
+      else if (child && typeof child === 'object') visit(child);
+    }
+  };
+  visit(parse(code, { ecmaVersion: 'latest', sourceType: 'module' }));
+}
+collectHandlers(code);
+const identitySource = await readFile(new URL('../../../src/products/roadmap/useRoadmapIdentityActs.js', import.meta.url), 'utf8');
+collectHandlers(identitySource);
 assert.deepEqual([...handlers.keys()].sort(), ['newStepFromBoard', 'onEditorKey', 'onPaste']);
 
 function host({ gate = true, coveringPage = false, modal = false, pasteComposer = false, typing = false } = {}) {
   const calls = [];
   const scope = {
     BOARD_OPEN: gate,
+    keyboardCovered: () => coveringPage || modal || pasteComposer,
     boardKey,
     graphOnlyKey,
     boardActiveRef: { current: gate },
@@ -109,7 +135,9 @@ test('the Board creation verb opens its composer only for the active owner behin
     const calls = [];
     const open = runInNewContext(`(${handlers.get('newStepFromBoard')})`, {
       BOARD_OPEN: gate,
+      document: { activeElement: null },
       boardActive: active,
+      identityActive: false,
       owner,
       setBoardComposer: ({ door }) => calls.push(['composer', door]),
       track: (name, { step, door }) => calls.push(['event', name, step, door]),
@@ -174,4 +202,275 @@ test('create composers remain visible without a detail but cannot write through 
   assert.equal(composer.shown, draft);
   composer.openEdit(null);
   assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+});
+
+
+test('the Graph create verb stamps its view and is unavailable outside the owner identity', () => {
+  for (const owner of [false, true]) {
+    const calls = [];
+    const open = runInNewContext(`(${handlers.get('newStepFromBoard')})`, {
+      BOARD_OPEN: true, boardActive: false, identityActive: true, owner,
+      document: { activeElement: null },
+      setBoardComposer: (draft) => calls.push(['composer', { ...draft }]),
+      track: (name, props) => calls.push(['event', name, { ...props }]),
+    });
+    open('verbs');
+    assert.deepEqual(calls, owner ? [
+      ['composer', { door: 'verbs', view: 'tree', opener: null }],
+      ['event', 'roadmap_board_create', { step: 'open', door: 'verbs', view: 'graph' }],
+    ] : []);
+  }
+});
+
+test('Graph Find hands the same query to the Board and retains field focus', () => {
+  for (const [boardActive, search] of [[false, 'wind'], [false, ''], [true, 'wind']]) {
+    const calls = [];
+    const query = new BoardQuery({ search });
+    const switchFocusRef = { current: true };
+    const onQuery = runInNewContext(`(${identityHandlers.get('onIdentityQuery')})`, {
+      boardActive, switchFocusRef, boardQueryRef: { current: new BoardQuery() },
+      setBoardQuery: (next) => calls.push(['query', next]),
+      switchView: (view) => calls.push(['switch', view]),
+      track: (name, props) => calls.push(['event', name, { ...props }]),
+    });
+    onQuery(() => query);
+    const handoff = !boardActive && query.searching;
+    assert.deepEqual(calls, [
+      ['query', query],
+      ...(handoff ? [['switch', 'board'], ['event', 'roadmap_graph_find', { step: 'handoff' }]] : []),
+    ]);
+    assert.equal(switchFocusRef.current, !handoff);
+  }
+});
+
+function completionHost({ gate = true, offer = null, restoreError = null } = {}) {
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
+    { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
+    { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'], color: 'terracotta' },
+  ] });
+  const completed = new Set();
+  const completedAt = {};
+  const calls = [];
+  const origin = {};
+  const scope = {
+    document: { activeElement: origin },
+    BOARD_OPEN: gate, identityActive: gate, canvasView: true, layerActive: false,
+    tree, boardTree: tree, nodesById: tree.nodesById, completed, completedAt,
+    advanceProgress, progressChanges, completedToast, LABELS, demo: false,
+    setCompleted: (value) => calls.push(['completed', [...value]]),
+    setCompletedAt: (value) => calls.push(['completedAt', { ...value }]),
+    witnessProgress: () => {}, pushProgress: (id, status) => calls.push(['write', id, status]), emit: () => {},
+    milestoneOffer: () => offer,
+    showToast: (message, options) => calls.push(['toast', message, options]),
+    sceneRef: { current: { announceCeremony: (message, options) => calls.push(['ceremony', message, options]) } },
+    boardActs: { collaborators: { restoreStep: (id, snapshot) => {
+      if (restoreError) throw restoreError;
+      calls.push(['restore', id, snapshot]);
+    } } },
+    track: (name, props) => calls.push(['event', name, { ...props }]),
+    reportBoardFailure: (operation, error) => calls.push(['failure', operation, error]),
+  };
+  return { calls, completed, completedAt, origin, complete: runInNewContext(`(${identityHandlers.get('completeStep')})`, scope) };
+}
+
+test('Graph completion shows the pinned toast for six seconds and Undo restores only its captured step', () => {
+  const host = completionHost();
+  host.complete('wind', { at: 100 });
+  const toast = host.calls.find(([kind]) => kind === 'toast');
+  assert.equal(toast[1], 'Read the wind done · Leave the dock up next');
+  const { action, ...options } = toast[2];
+  assert.deepEqual(options, { surface: 'graph', act: 'complete', holdMs: 6000, focusTarget: host.origin });
+  assert.equal(action.label, 'Undo');
+  action.run();
+  assert.deepEqual(host.calls.filter(([kind]) => kind === 'event'), [
+    ['event', 'roadmap_graph_toast', { act: 'complete', step: 'shown' }],
+    ['event', 'roadmap_graph_toast', { act: 'complete', step: 'undo' }],
+  ]);
+  const restored = host.calls.find(([kind]) => kind === 'restore');
+  assert.equal(restored[1], 'wind');
+  assert.equal(restored[2].completed, host.completed);
+  assert.equal(restored[2].completedAt, host.completedAt);
+  assert.equal(host.calls.some(([kind]) => kind === 'ceremony'), false);
+});
+
+test('a Graph milestone keeps its canvas ceremony and closed gate keeps ceremony presentation with P2 copy', () => {
+  const action = { label: 'Share', run: () => {} };
+  for (const [gate, offer, expected] of [
+    [true, { summary: 'A milestone', action }, ['A milestone', { action }]],
+    [false, null, ['Read the wind done · Leave the dock up next', {}]],
+  ]) {
+    const host = completionHost({ gate, offer });
+    host.complete('wind', { at: 100 });
+    const ceremony = host.calls.find(([kind]) => kind === 'ceremony');
+    assert.equal(ceremony[1], expected[0]);
+    assert.deepEqual({ ...ceremony[2] }, expected[1]);
+    assert.equal(host.calls.some(([kind]) => kind === 'toast' || kind === 'event'), false);
+  }
+});
+
+test('reader link copy treats a clipboard refusal as an outcome and discards stale async successes', async () => {
+  for (const outcome of ['done', 'failed', 'left']) {
+    const calls = [];
+    const shareRequestRef = { current: 0 };
+    const copy = runInNewContext(`(${identityHandlers.get('shareFromRow')})`, {
+      owner: false, treeId: 'sail', LINK_COPIED, shareRequestRef, currentTreeIdRef: { current: 'sail' },
+      graphViewRef: { current: true }, identityActiveRef: { current: true },
+      treeShareUrl: (id) => `https://windmill.test/t/${id}`,
+      navigator: { clipboard: { writeText: async (url) => {
+        calls.push(['copy', url]);
+        if (outcome === 'failed') throw new Error('denied');
+        if (outcome === 'left') shareRequestRef.current += 1;
+      } } },
+      showToast: (message, props) => calls.push(['toast', message, { ...props }]),
+      track: (name, props) => calls.push(['event', name, { ...props }]),
+    });
+    await copy();
+    assert.deepEqual(calls, [
+      ['copy', 'https://windmill.test/t/sail'],
+      outcome === 'failed'
+        ? ['event', 'roadmap_graph_toast', { act: 'link', outcome: 'failed' }]
+        : ['event', 'link_copy', {}],
+      ...(outcome === 'done' ? [
+        ['toast', 'Link copied', { surface: 'graph', act: 'link', holdMs: 6000 }],
+        ['event', 'roadmap_graph_toast', { act: 'link', step: 'shown' }],
+      ] : []),
+    ]);
+  }
+});
+
+test('Export uses displayed nodes through a held deletion and reports unexpected download failure', () => {
+  const original = { id: 'sail', title: 'Learn to sail', kinds: [{ id: 'sky', label: 'Learn' }], nodes: [{ id: 'wind' }, { id: 'dock' }] };
+  const displayed = [{ id: 'dock' }];
+  const completed = new Set(['dock']);
+  for (const failed of [false, true]) {
+    const calls = [];
+    const error = new Error('download failed');
+    const exportRoadmap = runInNewContext(`(${identityHandlers.get('exportFromRow')})`, {
+      phone: true, editorRef: { current: { treeData: original } }, boardTree: { nodes: displayed }, completed,
+      buildRoadmapExport: (tree, progress) => {
+        assert.deepEqual({ ...tree }, { ...original, nodes: displayed });
+        assert.equal(progress.completed, completed);
+        return { name: 'sail.md', text: 'plan' };
+      },
+      downloadExport: (file) => {
+        calls.push(['download', file]);
+        if (failed) throw error;
+      },
+      reportBoardFailure: (operation, failure) => calls.push(['failure', operation, failure]),
+      track: (name, props) => calls.push(['event', name, { ...props }]),
+    });
+    exportRoadmap();
+    assert.deepEqual(calls, [
+      ['download', { name: 'sail.md', text: 'plan' }],
+      ...(failed ? [['failure', 'roadmap-export', error]] : []),
+      ['event', 'roadmap_export', { outcome: failed ? 'failed' : 'done', door: 'sheet' }],
+    ]);
+  }
+});
+
+
+test('Graph completion Undo reports a restore failure under its own operation', () => {
+  const error = new Error('restore failed');
+  const host = completionHost({ restoreError: error });
+  host.complete('wind', { at: 100 });
+  host.calls.find(([kind]) => kind === 'toast')[2].action.run();
+  assert.deepEqual(host.calls.filter(([kind]) => kind === 'failure' || kind === 'restore'), [
+    ['failure', 'roadmap-step-restore', error],
+  ]);
+  assert.deepEqual(host.calls.filter(([kind]) => kind === 'event'), [
+    ['event', 'roadmap_graph_toast', { act: 'complete', step: 'shown' }],
+  ]);
+});
+
+test('Export without a projection or displayed tree reports a failed outcome without an Issue', () => {
+  for (const [projection, boardTree] of [[null, { nodes: [] }], [{ id: 'sail' }, null]]) {
+    const calls = [];
+    const exportRoadmap = runInNewContext(`(${identityHandlers.get('exportFromRow')})`, {
+      phone: false, editorRef: { current: { treeData: projection } }, boardTree,
+      buildRoadmapExport: () => assert.fail('unavailable exports must not build'),
+      downloadExport: () => assert.fail('unavailable exports must not download'),
+      reportBoardFailure: () => assert.fail('unavailable projections are expected'),
+      track: (name, props) => calls.push([name, { ...props }]),
+    });
+    exportRoadmap();
+    assert.deepEqual(calls, [['roadmap_export', { outcome: 'failed', door: 'more' }]]);
+  }
+});
+
+
+test('Graph-toast Undo uses its captured visible origin, otherwise the pressed view switch', () => {
+  for (const kind of ['connected', 'removed', 'covered', 'body', 'nonfocusable']) {
+    const calls = [];
+    const body = { isConnected: true, closest: () => null, focus: () => calls.push('body') };
+    const document = { body, activeElement: body };
+    const origin = kind === 'body' ? body : {
+      isConnected: kind !== 'removed',
+      closest: () => kind === 'covered' ? {} : null,
+      focus: () => {
+        calls.push('origin');
+        if (kind !== 'nonfocusable') document.activeElement = origin;
+      },
+    };
+    const undo = runInNewContext(`(${identityHandlers.get('undoGraphToast')})`, {
+      document,
+      toast: { focusTarget: origin, action: { run: () => calls.push('undo') } },
+      dismissToast: () => calls.push('dismiss'),
+      requestAnimationFrame: (callback) => callback(),
+      identityRef: { current: { querySelector: (selector) => {
+        assert.equal(selector, '.st-board-switch-option[aria-pressed="true"]');
+        return { focus: () => calls.push('pressed') };
+      } } },
+    });
+    undo();
+    const focus = { connected: ['origin'], nonfocusable: ['origin', 'pressed'] }[kind] ?? ['pressed'];
+    assert.deepEqual(calls, ['undo', 'dismiss', ...focus]);
+  }
+});
+
+test('Graph reveal waits for the selected step model and panel insets, while a repeated selection reveals immediately', () => {
+  for (const [active, selected] of [[false, 'wind'], [true, 'course'], [true, 'wind']]) {
+    const calls = [];
+    const graphRevealRef = { current: null };
+    const jump = runInNewContext(`(${identityHandlers.get('handleSheetJump')})`, {
+      identityActiveRef: { current: active }, selectedIdRef: { current: selected }, graphRevealRef,
+      sceneRef: { current: { revealNode: (id) => calls.push(['reveal', id]) } },
+      setSelectedId: (id) => calls.push(['select', id]),
+    });
+    jump('wind');
+    assert.deepEqual(calls, active && selected !== 'wind' ? [['select', 'wind']] : [['reveal', 'wind'], ['select', 'wind']]);
+    assert.equal(graphRevealRef.current, active && selected !== 'wind' ? 'wind' : null);
+  }
+  const calls = [];
+  const graphRevealRef = { current: 'wind' };
+  const firstFrameRef = { current: null };
+  const insets = { top: 112, right: 408, bottom: 24, left: 24, blocks: [] };
+  const scene = {
+    nodesById: new Map(),
+    setViewportInsets: (value) => calls.push(['insets', value]),
+    revealNode: (id) => calls.push(['reveal', id]),
+  };
+  const publish = runInNewContext(`(${identityHandlers.get('publishInsets')})`, {
+    insetsRef: { current: null }, insets, scene, graphRevealRef, firstFrameRef,
+  });
+  publish();
+  assert.equal(graphRevealRef.current, 'wind');
+  scene.nodesById.set('wind', {});
+  firstFrameRef.current = { id: 'course' };
+  publish();
+  assert.deepEqual(calls, [['insets', insets], ['insets', insets], ['reveal', 'wind']]);
+  assert.equal(graphRevealRef.current, null);
+  assert.equal(firstFrameRef.current, null);
+});
+
+
+test('closed identity gate keeps selection and model changes out of initial camera framing dependencies', () => {
+  const scene = {};
+  const insets = {};
+  const dependencies = (identityActive, selectedId, renderModel) => [...runInNewContext(identityHandlers.get('insetDependencies'), {
+    scene, insets, identityActive, selectedId, renderModel,
+  })];
+  assert.deepEqual(dependencies(false, 'wind', {}), [scene, insets, null, null]);
+  assert.deepEqual(dependencies(false, 'dock', {}), [scene, insets, null, null]);
+  const model = {};
+  assert.deepEqual(dependencies(true, 'wind', model), [scene, insets, 'wind', model]);
 });

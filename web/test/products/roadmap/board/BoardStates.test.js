@@ -23,7 +23,6 @@ function frame(props) {
     completedAt: {},
     selectedId: null,
     onSelect: () => {},
-    onSwitchView: () => {},
     breakpoint: 'desktop',
     ...props,
   }));
@@ -65,11 +64,7 @@ test('BoardStates — the phone skeleton holds Up next over the band, whose tabs
   const card = (size) => `<span class="st-board-skeleton-card st-board-skeleton-card--${size}" aria-hidden="true"><span class="st-board-skeleton-rail"></span>`
     + `<span class="st-board-skeleton-lines"><span class="st-board-skeleton-line"></span><span class="st-board-skeleton-line"></span>${size === 'reason' ? '<span class="st-board-skeleton-line"></span>' : ''}</span></span>`;
   const tab = (title, selected) => `<span class="st-board-phone-segment" aria-selected="${selected}"><span class="st-board-phone-segment-surface"><span class="st-board-phone-segment-label">${title}</span></span></span>`;
-  assert.equal(frame({ loading: true, breakpoint: 'phone', identity: true, title: 'Learn to sail' }), [
-    '<header class="st-board-identity"><h1 class="st-board-identity-title" title="Learn to sail">Learn to sail</h1>',
-    '<div class="st-board-switch st-board-switch--phone" role="group" aria-label="View">',
-    '<button type="button" class="st-board-switch-option" aria-label="Board" aria-pressed="true"><svg/></button>',
-    '<button type="button" class="st-board-switch-option" aria-label="Graph" aria-pressed="false"><svg/></button></div></header>',
+  assert.equal(frame({ loading: true, breakpoint: 'phone' }), [
     '<div class="st-board-phone" aria-busy="true" tabindex="-1"><div class="st-board-phone-panes"><div class="st-board-phone-pane is-shown">',
     `<h2 class="st-board-phone-heading">Up next</h2>${card('reason')}${card('plain')}${card('reason')}</div></div>`,
     `<div class="st-board-phone-band st-board-quiet-band" aria-hidden="true"><div class="st-board-phone-segments">${tab('Locked', false)}${tab('Up next', true)}${tab('Done', false)}</div></div>`,
@@ -90,8 +85,7 @@ test('BoardStates — a load error says so in the frame and offers Try again; on
 });
 
 test('BoardStates — an empty roadmap pins New step as its one primary, with no progress', () => {
-  assert.equal(frame({ tree: sail([]), onNewStep: () => {}, identity: true, title: 'Learn to sail' }).replace(/<div class="st-board-switch[^]*?<\/div>/, '<switch/>'), [
-    '<header class="st-board-identity"><h1 class="st-board-identity-title" title="Learn to sail">Learn to sail</h1><switch/></header>',
+  assert.equal(frame({ tree: sail([]), onNewStep: () => {} }), [
     '<div class="st-board-state st-board-state--empty"><div class="st-board-state-message st-board-state-message--empty">',
     '<h2 class="st-board-state-title">Your first step</h2><p class="st-board-state-body">Give your roadmap a place to start.</p></div>',
     '<button type="button" class="st-board-new-step st-board-new-step--primary" aria-label="New step"><svg/><span>New step</span></button></div>',

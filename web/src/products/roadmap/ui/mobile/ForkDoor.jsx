@@ -3,6 +3,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Dialog } from '../../../../design-system';
+import { useDialogFocus } from '../../../../design-system/feedback/Dialog.jsx';
 import { requestMagicLink } from '../../../../shell/auth/AuthClient.js';
 import { forkTree } from '../../persistence/TreeRegistry.js';
 import { FORKED_FROM_DEMO_KEY } from '../../demo/demoStage.js';
@@ -13,7 +14,7 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null }) {
+export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null, preserveOutsideFocus = false }) {
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | rate_limited | unreachable
   const [typo, setTypo] = useState(false);
@@ -21,6 +22,7 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
   const [busy, setBusy] = useState(false); // the signed-in fork in flight — navigation is coming
   const [forkError, setForkError] = useState(null); // 'unauthenticated' | 'failed'
   const inflight = useRef(false);
+  const sheetRef = useRef(null);
 
   const reduced = prefersReducedMotion();
 
@@ -44,14 +46,16 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
     if (!busy) onClose?.();
   };
 
+  useDialogFocus({ open: open && !tablet && preserveOutsideFocus, cardRef: sheetRef, onClose: close, preserveOutsideFocus });
+
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || preserveOutsideFocus) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') close();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, busy]);
+  }, [open, onClose, busy, preserveOutsideFocus]);
 
   if (!open) return null;
 
@@ -220,7 +224,7 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
 
   if (tablet) {
     return (
-      <Dialog open={open} onClose={close} width={420}>
+      <Dialog open={open} onClose={close} width={420} preserveOutsideFocus={preserveOutsideFocus}>
         {content}
       </Dialog>
     );
@@ -241,6 +245,8 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
       }}
     >
       <div
+        ref={sheetRef}
+        tabIndex={preserveOutsideFocus ? -1 : undefined}
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',

@@ -44,11 +44,10 @@ export function PhoneSegments({
   const order = board.columns.map((column) => column.name);
   const handleKeyDown = (event) => {
     const index = order.indexOf(shown);
-    const next = event.key === 'Home' ? order[0]
-      : event.key === 'End' ? order[order.length - 1]
-        : event.key in ARROW_STEPS ? order[(index + ARROW_STEPS[event.key] + order.length) % order.length]
-          : null;
-    if (next === null) return;
+    const direction = ARROW_STEPS[event.key];
+    if (!direction && event.key !== 'Home' && event.key !== 'End') return;
+    const edge = event.key === 'Home' ? order[0] : order[order.length - 1];
+    const next = direction ? order[(index + direction + order.length) % order.length] : edge;
     event.preventDefault();
     choose(next);
     tabs.current[next].focus();
@@ -98,8 +97,10 @@ export function PhoneSegments({
           settle?.(event.target.dataset.stepId);
         }}
         onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
-        {board.columns.map((column) => (
-          <div
+        {board.columns.map((column) => {
+          const resting = column.name === 'upNext' && upNextRest !== null;
+          const empty = column.count === 0 && query.recovery !== null;
+          return <div
             key={column.name}
             id={panelId(column.name)}
             role="tabpanel"
@@ -111,7 +112,9 @@ export function PhoneSegments({
             onScroll={(event) => handleScroll(column.name, event)}
           >
             <h2 className="st-board-phone-heading">{COLUMN_TITLES[column.name]}</h2>
-            {column.name === 'upNext' && upNextRest !== null ? upNextRest : column.count === 0 && query.recovery !== null ? <PaneEmpty query={query} onQuery={onQuery} /> : (
+            {resting && upNextRest}
+            {!resting && empty && <PaneEmpty query={query} onQuery={onQuery} />}
+            {!resting && !empty && (
               <ColumnCards
                 shown={shownCards[column.name]}
                 swipe={!selection && Boolean(onComplete) && column.name === shown}
@@ -130,8 +133,8 @@ export function PhoneSegments({
                 onExpandDone={expandDone}
               />
             )}
-          </div>
-        ))}
+          </div>;
+        })}
       </div>
       {selection ? (
         <BulkBar count={selection.count} kinds={kinds} sharedKind={sharedKind} onKinds={onKinds}

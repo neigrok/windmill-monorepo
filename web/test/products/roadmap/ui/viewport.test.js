@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { viewportInsets, frontierTarget } from '../../../../src/products/roadmap/ui/viewport.js';
+import { viewportInsets, frontierTarget, graphToastPlacement } from '../../../../src/products/roadmap/ui/viewport.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { UnlockRules } from '../../../../src/products/roadmap/model/UnlockRules.js';
 
@@ -49,4 +49,67 @@ test('the frontier is the remembered selection, else the top Next-up row, else t
   assert.equal(frontierTarget(blocked, UnlockRules.derive(blocked, { completed: new Set() }), {}), 'r', 'the available root is the frontier');
   const empty = new SkillTree({ id: 'e', title: 'E', nodes: [] });
   assert.equal(frontierTarget(empty, new Map(), {}), null);
+});
+
+test('the identity row replaces the top inset and the camera block clears the open dock or panel', () => {
+  const cameraBlock = { width: 248, height: 50 };
+  assert.deepEqual(viewportInsets({ breakpoint: 'desktop', rowBottom: 112, cameraBlock }), {
+    top: 112, right: 24, bottom: 24, left: 24,
+    blocks: [MINIMAP_BLOCK, { right: 24, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'desktop', rowBottom: 112, cameraBlock, dockOpen: true }), {
+    top: 112, right: 408, bottom: 24, left: 24,
+    blocks: [MINIMAP_BLOCK, { right: 408, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', rowBottom: 104, cameraBlock }), {
+    top: 104, right: 12, bottom: 16, left: 12,
+    blocks: [{ right: 24, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', rowBottom: 104, cameraBlock, dockOpen: true }), {
+    top: 104, right: 368, bottom: 16, left: 12,
+    blocks: [{ right: 368, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', rowBottom: 104, cameraBlock, sheetOpen: true, sheetHeight: 300 }), {
+    top: 104, right: 12, bottom: 312, left: 12, blocks: [],
+  });
+});
+
+
+test('Graph toast keeps intrinsic width in the tablet canvas and clears the camera below the panel', () => {
+  assert.deepEqual(graphToastPlacement({
+    width: 744, height: 900, toastWidth: 390, toastHeight: 54, leftInset: 12, rightInset: 368,
+    obstacles: [
+      { left: 128, right: 376, top: 826, bottom: 876 },
+      { left: 408, right: 728, top: 156, bottom: 642 },
+    ],
+  }), { center: 372, bottom: 82 });
+});
+
+test('Graph toast clearance handles camera and minimap together regardless of their order', () => {
+  const camera = { left: 368, right: 616, top: 926, bottom: 976 };
+  const minimap = { left: 24, right: 210, top: 830, bottom: 976 };
+  for (const obstacles of [[camera, minimap], [minimap, camera]]) {
+    assert.deepEqual(graphToastPlacement({
+      width: 1024, height: 1000, toastWidth: 390, toastHeight: 54, leftInset: 24, rightInset: 408, obstacles,
+    }), { center: 320, bottom: 178 });
+  }
+});
+
+test('Graph toast stays at the edge without collisions and clears a panel that reaches its seat', () => {
+  const frame = { width: 744, height: 900, toastWidth: 390, toastHeight: 54, leftInset: 12, rightInset: 368 };
+  assert.deepEqual(graphToastPlacement({ ...frame, obstacles: [] }), { center: 372, bottom: 24 });
+  assert.deepEqual(graphToastPlacement({ ...frame, obstacles: [{ left: 408, right: 728, top: 156, bottom: 876 }] }),
+    { center: 372, bottom: 752 });
+});
+
+
+test('Graph toast rechecks earlier obstacles when minimap clearance reaches the legend', () => {
+  assert.deepEqual(graphToastPlacement({
+    width: 1024, height: 900, toastWidth: 390, toastHeight: 54, leftInset: 24, rightInset: 408,
+    obstacles: [
+      { left: 24, right: 210, top: 534, bottom: 680 },
+      { left: 368, right: 616, top: 826, bottom: 876 },
+      { left: 24, right: 210, top: 730, bottom: 876 },
+    ],
+  }), { center: 320, bottom: 374 });
 });

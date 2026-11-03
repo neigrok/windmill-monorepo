@@ -145,3 +145,21 @@ test('boardKey — Share open over the Board is a modal layer, so / and G stand 
     globalThis.document = heldDocument;
   }
 });
+
+test('gated Graph groups move slash to Find without changing the legacy or Board groups', () => {
+  const groups = visibleGroups(false, 'graph', true);
+  const expected = SHORTCUT_GROUPS.map((group) => {
+    if (group.title === 'Navigate') return { ...group, rows: [...group.rows,
+      { label: 'Find a step', chords: [[{ kind: 'key', label: '/' }]] },
+    ] };
+    if (group.title === 'Edit') return { ...group, rows: group.rows.map((row) => row.label === 'Ask AI'
+      ? { label: 'Ask AI', chords: [[{ kind: 'key', label: '⌘' }, { kind: 'key', label: 'K' }]] }
+      : row) };
+    return group;
+  });
+  assert.deepEqual(groups, expected);
+  assert.deepEqual(visibleGroups(true, 'graph', true), expected.filter(({ title }) => title === 'Navigate' || title === 'View'));
+  assert.equal(visibleGroups(false, 'graph', false), SHORTCUT_GROUPS);
+  assert.equal(visibleGroups(false, 'board', true), BOARD_SHORTCUT_GROUPS);
+  assert.deepEqual(visibleGroups(true, 'board', true), visibleGroups(true, 'board', false));
+});

@@ -1,5 +1,4 @@
-// The Board view layer: the identity row where no chrome carries one, the device notice, then the frame — the strip and
-// the columns for the band, or the skeleton, the load error or the empty roadmap in their place. The host owns the query.
+// The Board owns its frame and regrouping; the host owns identity, query and the toast slot.
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './board.css';
@@ -8,13 +7,12 @@ import { useStepSelection } from './useStepSelection.js';
 import { boardFocusTarget } from './traversal.js';
 import { NODE_COLOR_NAMES } from '../theme.js';
 import { kindOptions, kindOptionsForHues } from '../model/Legend.js';
-import { FilterStrip, FindStep, NewStep } from './BoardControls.jsx';
+import { FilterStrip } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
-import { ViewSwitch } from './ViewSwitch.jsx';
-import { progressFigure, progressLabel } from './copy.js';
+import { BoardToast } from './BoardToast.jsx';
 
 const EVERY_STEP = new BoardQuery();
 
@@ -27,12 +25,9 @@ function BoardView({
   selectedId,
   onSelect,
   onAnchor = () => {},
-  title,
   notice = null,
-  identity = false,
   breakpoint,
   active = false,
-  onSwitchView,
   onRetry,
   onShare,
   onNewStep,
@@ -74,7 +69,6 @@ function BoardView({
   const phone = breakpoint === 'phone';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
-  const [visibleToast, setVisibleToast] = useState(null);
   const canSelect = editable && active && phone && nextBoard !== null;
   const selection = useStepSelection({
     tree, board: nextBoard, shown, doneExpanded, active, enabled: canSelect,
@@ -144,15 +138,6 @@ function BoardView({
     anchor(reveal.id, reveal.key);
   }, [reveal, board]);
 
-  useEffect(() => {
-    if (!toast || visibleToast === toast.key || motion.phase !== 'settled') return undefined;
-    const timer = setTimeout(() => {
-      setVisibleToast(toast.key);
-      onToastShown?.(toast.key);
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [toast?.key, visibleToast, motion.phase]);
-
   // After Try again, focus follows the Board through its frames: the skeleton while it loads, then the columns' tab stop,
   // or Try again or New step if the roadmap failed again or came back empty.
   useEffect(() => {
@@ -188,22 +173,6 @@ function BoardView({
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
       style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + var(--space-3))` : undefined, paddingBottom: bottomInset }}
     >
-      {identity && (
-        <header className="st-board-identity">
-          <h1 className="st-board-identity-title" title={title}>{title}</h1>
-          {frame === 'columns' && board && (
-            <span className="st-board-identity-progress">
-              <span aria-hidden>{progressFigure({ ...motion.counts.overall, compact: phone })}</span>
-              <span className="st-board-spoken">{progressLabel(motion.counts.overall)}</span>
-            </span>
-          )}
-          <ViewSwitch view="board" onSwitch={onSwitchView} phone={phone} />
-          {frame === 'columns' && board && !phone && <FindStep query={query} onQuery={onQuery} />}
-          {frame === 'columns' && breakpoint === 'tablet' && onNewStep && (
-            <NewStep compact onClick={() => onNewStep('verbs')} />
-          )}
-        </header>
-      )}
       {notice}
       {frame === 'loading' && <BoardSkeleton phone={phone} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}
@@ -276,16 +245,14 @@ function BoardView({
             )}
         </UpNextRest.Provider>
       )}
-      {toast && <div className="st-board-spoken" role="status" aria-live="polite" aria-atomic="true">{visibleToast === toast.key ? toast.message : ''}</div>}
-      {toast && visibleToast === toast.key && (
-        <div className={`st-board-toast${toast.leaving ? ' is-leaving' : ''}${toast.act ? ` st-board-toast--${toast.act}` : ''}`}>
-          {phone && toast.act === 'complete' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m5 12 4 4 10-10" /></svg>}
-          {toast.reveal
-            ? <button type="button" className="st-board-toast-message" onClick={onToastReveal}>{toast.message}</button>
-            : <span className="st-board-toast-message">{toast.message}</span>}
-          {toast.action && <button type="button" className="st-board-toast-undo" onClick={onToastUndo}>{toast.action.label}</button>}
-        </div>
-      )}
+      <BoardToast
+        toast={toast}
+        phone={phone}
+        ready={motion.phase === 'settled'}
+        onToastShown={onToastShown}
+        onToastReveal={onToastReveal}
+        onToastUndo={onToastUndo}
+      />
     </div>
   );
 }

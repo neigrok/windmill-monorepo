@@ -2,19 +2,48 @@
 // the columns, on the phone the band's rows, its sheets and the chips over the panes; and what an emptied column says.
 // Measures from 07.01–07.06 and 11.01 on the desktop page and 03.02, 03.06, 05.01–05.05, 09.03 and 14.01 on the phone page.
 
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, hueOf } from '../theme.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
 } from './copy.js';
 
-const SORT_STEPS = { ArrowDown: 1, ArrowUp: -1 };
+const MENU_STEPS = { ArrowDown: 1, ArrowUp: -1 };
+const RECOLOR_PULSE_MS = 120;
+const RECOLOR_FADE_MS = 150;
+const RECOLOR_PULSE_SCALE = 1.04;
+const RECOLOR_FADE_OPACITY = 0.6;
 const SHEET_FOCUSABLE = 'button, input, [tabindex="0"]';
+
+export function dismissOverlayOutside(event, root, onClose) {
+  if (root?.contains(event.target)) return;
+  event.preventDefault();
+  onClose();
+}
+
+export function handleMenuKey(event, { root, selector = '[role="menuitem"]', onEscape, onTab }) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    onEscape();
+    return;
+  }
+  if (event.key === 'Tab') {
+    onTab?.();
+    return;
+  }
+  const direction = MENU_STEPS[event.key];
+  if (!direction) return;
+  event.preventDefault();
+  const options = [...root.querySelectorAll(selector)];
+  const current = options.indexOf(root.ownerDocument.activeElement);
+  options[(current + direction + options.length) % options.length]?.focus();
+}
 
 export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
   return (
@@ -88,10 +117,10 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
     if (applying.current !== null) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const chip = bar.current.querySelectorAll('[role="radio"]')[kinds.findIndex((kind) => kind.hue === hue)];
-    const duration = reduced ? 150 : 120;
+    const duration = reduced ? RECOLOR_FADE_MS : RECOLOR_PULSE_MS;
     chip.animate(reduced
-      ? [{ opacity: 1 }, { opacity: 0.6 }, { opacity: 1 }]
-      : [{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration });
+      ? [{ opacity: 1 }, { opacity: RECOLOR_FADE_OPACITY }, { opacity: 1 }]
+      : [{ transform: 'scale(1)' }, { transform: `scale(${RECOLOR_PULSE_SCALE})` }, { transform: 'scale(1)' }], { duration });
     applying.current = setTimeout(() => {
       applying.current = null;
       latestRecolor.current(hue);
@@ -150,25 +179,31 @@ function toggleKind(query, onQuery, hue) {
   onQuery((current) => current.toggledKind(hue));
 }
 
-// All also drops kinds no swatch offers any more (among() set them aside), so they never come back on their own; only a
-// change the reader can see emits.
-function clearKinds(query, onQuery) {
-  if (query.kinds.length > 0) track('roadmap_board_filter', { count: 0 });
-  onQuery((current) => (current.kinds.length === 0 ? current : current.without('kinds')));
-}
-
 // `what` is 'search', 'kinds' or 'both'; `from` is the door: 'field', 'empty' or 'sheet'.
 function clear(onQuery, what, from) {
   track('roadmap_board_clear', { what, from });
   onQuery((current) => current.without(what));
 }
 
-// Find a step: from 744px a pill with the / keycap, on the phone the band's field. Escape clears first, then leaves.
-// A search emits once it is committed (Enter, or leaving the field) and never says what was asked.
-export function FindStep({ query, onQuery, phone = false }) {
+// Find uses the full field from 1280px, a folded icon at 744–1279px, and the phone band's field.
+// Escape clears before leaving; Enter or blur commits one content-free search event.
+export function FindStep({ query, onQuery, phone = false, folded = false, tooltip = true, onExpand }) {
   const input = useRef(null);
+  const toggle = useRef(null);
+  const focusExpanded = useRef(false);
+  const setToggle = useCallback((node) => {
+    if (!node && toggle.current === document.activeElement) focusExpanded.current = true;
+    toggle.current = node;
+  }, []);
+  const [expanded, setExpanded] = useState(false);
   const committed = useRef('');
   const typed = query.search !== '';
+
+  useLayoutEffect(() => {
+    if (!input.current || !focusExpanded.current) return;
+    focusExpanded.current = false;
+    input.current.focus();
+  }, [folded, expanded, typed]);
 
   const commit = () => {
     const asked = query.search.trim();
@@ -178,6 +213,7 @@ export function FindStep({ query, onQuery, phone = false }) {
   };
 
   const clearSearch = () => {
+    if (folded) setExpanded(true);
     committed.current = '';
     clear(onQuery, 'search', 'field');
   };
@@ -187,9 +223,37 @@ export function FindStep({ query, onQuery, phone = false }) {
     if (event.key !== 'Escape') return;
     event.preventDefault();
     event.stopPropagation();
-    if (typed) clearSearch();
-    else input.current.blur();
+    if (typed) {
+      clearSearch();
+      return;
+    }
+    if (folded) {
+      flushSync(() => setExpanded(false));
+      toggle.current?.focus();
+      return;
+    }
+    input.current.blur();
   };
+
+  if (folded && !expanded && !typed) {
+    return (
+      <button
+        ref={setToggle}
+        type="button"
+        className="st-board-find-toggle"
+        aria-label={LABELS.findStep}
+        aria-keyshortcuts="/"
+        title={tooltip ? LABELS.findStep : undefined}
+        onClick={() => {
+          flushSync(() => setExpanded(true));
+          input.current?.focus();
+          onExpand?.();
+        }}
+      >
+        <SearchGlyph />
+      </button>
+    );
+  }
 
   return (
     <div className={`st-board-find ${phone ? 'st-board-find--phone' : 'st-board-find--wide'} ${typed ? 'is-typed' : ''}`}>
@@ -207,7 +271,11 @@ export function FindStep({ query, onQuery, phone = false }) {
         spellCheck={false}
         onChange={(event) => onQuery((current) => current.searchingFor(event.target.value))}
         onKeyDown={onKeyDown}
-        onBlur={commit}
+        onFocus={() => setExpanded(true)}
+        onBlur={() => {
+          commit();
+          setExpanded(false);
+        }}
       />
       {typed && (
         <button
@@ -268,7 +336,10 @@ function BranchScope({ step, onQuery, onAnchor }) {
 function KindSwatches({ worn, query, onQuery, withAll = false }) {
   return (
     <div className="st-board-swatches" role="group" aria-label={LABELS.filterByKind}>
-      {withAll && <KindSwatch label={LABELS.allKinds} on={query.kinds.length === 0} onToggle={() => clearKinds(query, onQuery)} />}
+      {withAll && <KindSwatch label={LABELS.allKinds} on={query.kinds.length === 0} onToggle={() => {
+        if (query.kinds.length > 0) track('roadmap_board_filter', { count: 0 });
+        onQuery((current) => (current.kinds.length === 0 ? current : current.without('kinds')));
+      }} />}
       {worn.map((kind) => (
         <KindSwatch
           key={kind.hue}
@@ -283,7 +354,7 @@ function KindSwatches({ worn, query, onQuery, withAll = false }) {
 }
 
 function KindSwatch({ hue = null, label, on, onToggle }) {
-  const kind = hue === null ? null : KIND_CSS[hue] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+  const kind = hue === null ? null : hueOf(hue);
   return (
     <button
       type="button"
@@ -360,19 +431,9 @@ function SortOptions({ sort, onPick, onDismiss }) {
     list.current.querySelector('[aria-checked="true"]')?.focus();
   }, []);
 
-  const onKeyDown = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      onDismiss();
-      return;
-    }
-    if (!(event.key in SORT_STEPS)) return;
-    event.preventDefault();
-    const options = [...list.current.querySelectorAll('[role="menuitemradio"]')];
-    const at = options.indexOf(document.activeElement);
-    options[(at + SORT_STEPS[event.key] + options.length) % options.length].focus();
-  };
+  const onKeyDown = (event) => handleMenuKey(event, {
+    root: list.current, selector: '[role="menuitemradio"]', onEscape: onDismiss,
+  });
 
   const option = (value) => (
     <button
@@ -533,8 +594,8 @@ export function PhoneTools({ worn, query, onQuery, onNewStep }) {
   );
 }
 
-// A bottom sheet over the whole Board: the scrim and × dismiss it, Escape too, and Tab stays inside while it is open.
-function Sheet({ host, variant, title, onClose, children }) {
+// The sheet covers its host surface; scrim, × and Escape dismiss it, while Tab stays inside.
+export function Sheet({ host, variant, title, onClose, children }) {
   const sheet = useRef(null);
   const titleId = useId();
 
@@ -546,7 +607,7 @@ function Sheet({ host, variant, title, onClose, children }) {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      onClose('escape');
       return;
     }
     if (event.key !== 'Tab') return;
@@ -559,12 +620,12 @@ function Sheet({ host, variant, title, onClose, children }) {
 
   return createPortal(
     <div className="st-board-sheet-layer" onKeyDown={onKeyDown}>
-      <div className="st-board-sheet-scrim" aria-hidden onClick={onClose} />
-      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="st-board-sheet-scrim" aria-hidden onClick={() => onClose('scrim')} />
+      <div ref={sheet} className={`st-board-sheet st-board-sheet--${variant}`} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <span className="st-board-sheet-grabber" aria-hidden />
         <div className="st-board-sheet-heading">
           <h2 id={titleId} className="st-board-sheet-title">{title}</h2>
-          <button type="button" className="st-board-sheet-close" aria-label={LABELS.close} onClick={onClose}><CloseGlyph /></button>
+          <button type="button" className="st-board-sheet-close" aria-label={LABELS.close} onClick={() => onClose('close')}><CloseGlyph /></button>
         </div>
         {children}
       </div>

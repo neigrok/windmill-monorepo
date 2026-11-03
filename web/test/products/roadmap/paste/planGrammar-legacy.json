@@ -1,0 +1,1023 @@
+[
+  {
+    "name": "legacy ship-v1 export",
+    "text": "# Ship v1\nName who this is for and what it does for them, in one sentence you could say out loud without flinching. Done when a stranger hears it and knows whether they would want it.\n- Cut scope to one core flow\n  List everything v1 could be, then cut until a single flow delivers the promise. Done when the spec fits on one page and the cuts are written down too.\n  - Sketch the core flow on paper\n    Wireframe every screen of the one flow, from arrival to the moment of value. Done when you can walk someone through the paper version and they never get lost.\n- Pick a boring stack and deploy it\n  Choose tools you already know, wire up the repository, and deploy a hello-world skeleton to production on day one. Done when a URL serves your empty app.\n  - Build the walking skeleton\n    The thinnest end-to-end slice of the real flow, deployed: real navigation, real screens, hard-coded edges. Done when you can click from start to value, even if the value is fake.\n    needs also: Sketch the core flow on paper\n    - Make the core feature real\n      Replace the fake middle with the real thing the promise depends on. Done when the product does the job for real data, start to finish.\n## Polish\n- Dogfood it for a week\n  Use your product for its real purpose every day and keep a list of what made you wince. Done after seven honest days and a prioritized fix list.\n  needs also: Make the core feature real\n  - Smooth the first-run experience\n    Empty states, sign-up friction, and the path to first value for someone with zero context. Done when a friend reaches the payoff without you saying a word.\n  - Handle failure gracefully\n    Bad input, slow networks, and broken sessions — decide what each failure looks like on purpose. Done when nothing dead-ends without an explanation and a way back.\n- Wire up analytics and feedback\n  Track the handful of events that trace your core flow, and give users one obvious way to reach you. Done when you can see the funnel and hear the complaints.\n  needs also: Make the core feature real\n## Launch\n- Make the landing page\n  One page: the promise, a real screenshot, and one obvious call to action. Done when it loads fast and someone can sign up from their phone.\n  needs also: Make the core feature real\n- Run a friendly beta\n  Put it in the hands of five people who fit the promise and watch them use it. Done when the top three stumbles are found and fixed.\n  needs also: Smooth the first-run experience, Handle failure gracefully\n  - Launch it where your people are\n    Post to the communities your promise serves — Show HN, Product Hunt, a subreddit — and answer everyone all day. Done when the posts are up and every comment has an answer before you go to bed.\n    needs also: Make the landing page, Wire up analytics and feedback\n    - Ship the first fix release\n      Sort the launch feedback, fix the sharpest edges, and ship within the week — v1 is a conversation, not a monument. Done when changes born from real users are live.",
+    "kinds": [
+      {
+        "id": "build",
+        "hue": "terracotta",
+        "label": "Build",
+        "description": "Scoping and building the product itself"
+      },
+      {
+        "id": "polish",
+        "hue": "sky",
+        "label": "Polish",
+        "description": "The pass that makes it feel finished"
+      },
+      {
+        "id": "launch",
+        "hue": "gold",
+        "label": "Launch",
+        "description": "Getting it in front of real people"
+      }
+    ],
+    "parsed": {
+      "title": "Ship v1",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "ship-v1",
+          "label": "Ship v1",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "Name who this is for and what it does for them, in one sentence you could say out loud without flinching. Done when a stranger hears it and knows whether they would want it."
+        },
+        {
+          "id": "cut-scope-to-one-core-flow",
+          "label": "Cut scope to one core flow",
+          "color": "terracotta",
+          "prerequisites": [
+            "ship-v1"
+          ],
+          "description": "List everything v1 could be, then cut until a single flow delivers the promise. Done when the spec fits on one page and the cuts are written down too."
+        },
+        {
+          "id": "sketch-the-core-flow-on-paper",
+          "label": "Sketch the core flow on paper",
+          "color": "terracotta",
+          "prerequisites": [
+            "cut-scope-to-one-core-flow"
+          ],
+          "description": "Wireframe every screen of the one flow, from arrival to the moment of value. Done when you can walk someone through the paper version and they never get lost."
+        },
+        {
+          "id": "pick-a-boring-stack-and-deploy-it",
+          "label": "Pick a boring stack and deploy it",
+          "color": "terracotta",
+          "prerequisites": [
+            "ship-v1"
+          ],
+          "description": "Choose tools you already know, wire up the repository, and deploy a hello-world skeleton to production on day one. Done when a URL serves your empty app."
+        },
+        {
+          "id": "build-the-walking-skeleton",
+          "label": "Build the walking skeleton",
+          "color": "terracotta",
+          "prerequisites": [
+            "pick-a-boring-stack-and-deploy-it"
+          ],
+          "description": "The thinnest end-to-end slice of the real flow, deployed: real navigation, real screens, hard-coded edges. Done when you can click from start to value, even if the value is fake.\nneeds also: Sketch the core flow on paper"
+        },
+        {
+          "id": "make-the-core-feature-real",
+          "label": "Make the core feature real",
+          "color": "terracotta",
+          "prerequisites": [
+            "build-the-walking-skeleton"
+          ],
+          "description": "Replace the fake middle with the real thing the promise depends on. Done when the product does the job for real data, start to finish."
+        },
+        {
+          "id": "polish",
+          "label": "Polish",
+          "color": "sky",
+          "prerequisites": [
+            "ship-v1"
+          ]
+        },
+        {
+          "id": "dogfood-it-for-a-week",
+          "label": "Dogfood it for a week",
+          "color": "sky",
+          "prerequisites": [
+            "polish"
+          ],
+          "description": "Use your product for its real purpose every day and keep a list of what made you wince. Done after seven honest days and a prioritized fix list.\nneeds also: Make the core feature real"
+        },
+        {
+          "id": "smooth-the-first-run-experience",
+          "label": "Smooth the first-run experience",
+          "color": "sky",
+          "prerequisites": [
+            "dogfood-it-for-a-week"
+          ],
+          "description": "Empty states, sign-up friction, and the path to first value for someone with zero context. Done when a friend reaches the payoff without you saying a word."
+        },
+        {
+          "id": "handle-failure-gracefully",
+          "label": "Handle failure gracefully",
+          "color": "sky",
+          "prerequisites": [
+            "dogfood-it-for-a-week"
+          ],
+          "description": "Bad input, slow networks, and broken sessions — decide what each failure looks like on purpose. Done when nothing dead-ends without an explanation and a way back."
+        },
+        {
+          "id": "wire-up-analytics-and-feedback",
+          "label": "Wire up analytics and feedback",
+          "color": "sky",
+          "prerequisites": [
+            "polish"
+          ],
+          "description": "Track the handful of events that trace your core flow, and give users one obvious way to reach you. Done when you can see the funnel and hear the complaints.\nneeds also: Make the core feature real"
+        },
+        {
+          "id": "launch",
+          "label": "Launch",
+          "color": "gold",
+          "prerequisites": [
+            "ship-v1"
+          ]
+        },
+        {
+          "id": "make-the-landing-page",
+          "label": "Make the landing page",
+          "color": "gold",
+          "prerequisites": [
+            "launch"
+          ],
+          "description": "One page: the promise, a real screenshot, and one obvious call to action. Done when it loads fast and someone can sign up from their phone.\nneeds also: Make the core feature real"
+        },
+        {
+          "id": "run-a-friendly-beta",
+          "label": "Run a friendly beta",
+          "color": "gold",
+          "prerequisites": [
+            "launch"
+          ],
+          "description": "Put it in the hands of five people who fit the promise and watch them use it. Done when the top three stumbles are found and fixed.\nneeds also: Smooth the first-run experience, Handle failure gracefully"
+        },
+        {
+          "id": "launch-it-where-your-people-are",
+          "label": "Launch it where your people are",
+          "color": "gold",
+          "prerequisites": [
+            "run-a-friendly-beta"
+          ],
+          "description": "Post to the communities your promise serves — Show HN, Product Hunt, a subreddit — and answer everyone all day. Done when the posts are up and every comment has an answer before you go to bed.\nneeds also: Make the landing page, Wire up analytics and feedback"
+        },
+        {
+          "id": "ship-the-first-fix-release",
+          "label": "Ship the first fix release",
+          "color": "gold",
+          "prerequisites": [
+            "launch-it-where-your-people-are"
+          ],
+          "description": "Sort the launch feedback, fix the sharpest edges, and ship within the week — v1 is a conversation, not a monument. Done when changes born from real users are live."
+        }
+      ],
+      "kinds": [
+        {
+          "id": "build",
+          "hue": "terracotta",
+          "label": "Build",
+          "description": "Scoping and building the product itself",
+          "source": "existing"
+        },
+        {
+          "id": "polish",
+          "hue": "sky",
+          "label": "Polish",
+          "description": "The pass that makes it feel finished",
+          "source": "existing"
+        },
+        {
+          "id": "launch",
+          "hue": "gold",
+          "label": "Launch",
+          "description": "Getting it in front of real people",
+          "source": "existing"
+        }
+      ],
+      "gutter": [
+        {
+          "glyph": "◉",
+          "nodeId": "ship-v1",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "ship-v1",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "cut-scope-to-one-core-flow",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "cut-scope-to-one-core-flow",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "sketch-the-core-flow-on-paper",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "sketch-the-core-flow-on-paper",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "pick-a-boring-stack-and-deploy-it",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "pick-a-boring-stack-and-deploy-it",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "build-the-walking-skeleton",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "build-the-walking-skeleton",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "build-the-walking-skeleton",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "make-the-core-feature-real",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "make-the-core-feature-real",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "├",
+          "nodeId": "polish",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "dogfood-it-for-a-week",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "dogfood-it-for-a-week",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "dogfood-it-for-a-week",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "smooth-the-first-run-experience",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "smooth-the-first-run-experience",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "handle-failure-gracefully",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "handle-failure-gracefully",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "wire-up-analytics-and-feedback",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "wire-up-analytics-and-feedback",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "wire-up-analytics-and-feedback",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "├",
+          "nodeId": "launch",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "make-the-landing-page",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "make-the-landing-page",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "make-the-landing-page",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "run-a-friendly-beta",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "run-a-friendly-beta",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "run-a-friendly-beta",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "launch-it-where-your-people-are",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "launch-it-where-your-people-are",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "launch-it-where-your-people-are",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "ship-the-first-fix-release",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "ship-the-first-fix-release",
+          "liberty": "kept as a note"
+        }
+      ],
+      "readout": {
+        "steps": 16,
+        "branches": 2,
+        "done": 0
+      },
+      "imperfections": [
+        {
+          "line": 1,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 3,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 5,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 7,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 9,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 10,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 12,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 15,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 16,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 18,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 20,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 22,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 23,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 26,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 27,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 29,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 30,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 32,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 33,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 35,
+          "type": "note",
+          "detail": "kept as a note"
+        }
+      ]
+    }
+  },
+  {
+    "name": "plain mixed grammar",
+    "text": "# A plan\n## Build\n- [x] a\n  - b\n1. c\n2. d\n## New kind\n- a\n    - jump\nA note\nhttps://example.com",
+    "kinds": [
+      {
+        "id": "build",
+        "hue": "terracotta",
+        "label": "Build",
+        "description": "Things you make"
+      },
+      {
+        "id": "learn",
+        "hue": "olive",
+        "label": "Learn",
+        "description": "Things you figure out"
+      }
+    ],
+    "parsed": {
+      "title": "A plan",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "a-plan",
+          "label": "A plan",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles"
+        },
+        {
+          "id": "build",
+          "label": "Build",
+          "color": "terracotta",
+          "prerequisites": [
+            "a-plan"
+          ]
+        },
+        {
+          "id": "a",
+          "label": "a",
+          "color": "terracotta",
+          "prerequisites": [
+            "build"
+          ],
+          "status": "complete"
+        },
+        {
+          "id": "b",
+          "label": "b",
+          "color": "terracotta",
+          "prerequisites": [
+            "a"
+          ]
+        },
+        {
+          "id": "c",
+          "label": "c",
+          "color": "terracotta",
+          "prerequisites": [
+            "build"
+          ]
+        },
+        {
+          "id": "d",
+          "label": "d",
+          "color": "terracotta",
+          "prerequisites": [
+            "c"
+          ]
+        },
+        {
+          "id": "new-kind",
+          "label": "New kind",
+          "color": "olive",
+          "prerequisites": [
+            "a-plan"
+          ]
+        },
+        {
+          "id": "a-2",
+          "label": "a (2)",
+          "color": "olive",
+          "prerequisites": [
+            "new-kind"
+          ]
+        },
+        {
+          "id": "jump",
+          "label": "jump",
+          "color": "olive",
+          "prerequisites": [
+            "a-2"
+          ],
+          "description": "A note",
+          "links": [
+            "https://example.com"
+          ]
+        }
+      ],
+      "kinds": [
+        {
+          "id": "build",
+          "hue": "terracotta",
+          "label": "Build",
+          "description": "Things you make",
+          "source": "existing"
+        },
+        {
+          "id": "learn",
+          "hue": "olive",
+          "label": "New kind",
+          "description": "",
+          "source": "relabeled"
+        }
+      ],
+      "gutter": [
+        {
+          "glyph": "◉",
+          "nodeId": "a-plan",
+          "liberty": null
+        },
+        {
+          "glyph": "├",
+          "nodeId": "build",
+          "liberty": null
+        },
+        {
+          "glyph": "✓",
+          "nodeId": "a",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "b",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "c",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "d",
+          "liberty": null
+        },
+        {
+          "glyph": "├",
+          "nodeId": "new-kind",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "a-2",
+          "liberty": "renamed to \"a (2)\""
+        },
+        {
+          "glyph": "·",
+          "nodeId": "jump",
+          "liberty": "indent clamped"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "jump",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "jump",
+          "liberty": "kept as a note"
+        }
+      ],
+      "readout": {
+        "steps": 9,
+        "branches": 2,
+        "done": 1
+      },
+      "imperfections": [
+        {
+          "line": 7,
+          "type": "rename",
+          "detail": "renamed to \"a (2)\""
+        },
+        {
+          "line": 8,
+          "type": "clamp",
+          "detail": "indent clamped"
+        },
+        {
+          "line": 9,
+          "type": "note",
+          "detail": "kept as a note"
+        },
+        {
+          "line": 10,
+          "type": "note",
+          "detail": "kept as a note"
+        }
+      ]
+    }
+  },
+  {
+    "name": "ordinary comments remain content",
+    "text": "# Plan\n<!-- a comment -->\n- A <!-- windmill:kind sky Learning -->\n## B <!-- windmill:kind sky -->",
+    "kinds": [
+      {
+        "id": "build",
+        "hue": "terracotta",
+        "label": "Build",
+        "description": "Things you make"
+      },
+      {
+        "id": "learn",
+        "hue": "olive",
+        "label": "Learn",
+        "description": "Things you figure out"
+      }
+    ],
+    "parsed": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "plan",
+          "label": "Plan",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "<!-- a comment -->"
+        },
+        {
+          "id": "a-windmill-kind-sky-learning",
+          "label": "A <!-- windmill:kind sky Learning -->",
+          "color": "terracotta",
+          "prerequisites": [
+            "plan"
+          ]
+        },
+        {
+          "id": "b-windmill-kind-sky",
+          "label": "B <!-- windmill:kind sky -->",
+          "color": "terracotta",
+          "prerequisites": [
+            "plan"
+          ]
+        }
+      ],
+      "kinds": [
+        {
+          "id": "build",
+          "hue": "terracotta",
+          "label": "B <!-- windmill:kind sky",
+          "description": "",
+          "source": "relabeled"
+        },
+        {
+          "id": "learn",
+          "hue": "olive",
+          "label": "Learn",
+          "description": "Things you figure out",
+          "source": "existing"
+        }
+      ],
+      "gutter": [
+        {
+          "glyph": "◉",
+          "nodeId": "plan",
+          "liberty": null
+        },
+        {
+          "glyph": "¶",
+          "nodeId": "plan",
+          "liberty": "kept as a note"
+        },
+        {
+          "glyph": "·",
+          "nodeId": "a-windmill-kind-sky-learning",
+          "liberty": null
+        },
+        {
+          "glyph": "├",
+          "nodeId": "b-windmill-kind-sky",
+          "liberty": null
+        }
+      ],
+      "readout": {
+        "steps": 3,
+        "branches": 1,
+        "done": 0
+      },
+      "imperfections": [
+        {
+          "line": 1,
+          "type": "note",
+          "detail": "kept as a note"
+        }
+      ]
+    }
+  },
+  {
+    "name": "bind-only paste",
+    "text": "Plan\n## Brand new\n- a\n## Build\n- b",
+    "kinds": [
+      {
+        "id": "build",
+        "hue": "terracotta",
+        "label": "Build",
+        "description": "Things you make"
+      },
+      {
+        "id": "learn",
+        "hue": "olive",
+        "label": "Learn",
+        "description": "Things you figure out"
+      }
+    ],
+    "options": {
+      "bindOnly": true
+    },
+    "parsed": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "plan",
+          "label": "Plan",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles"
+        },
+        {
+          "id": "brand-new",
+          "label": "Brand new",
+          "color": "gold",
+          "prerequisites": [
+            "plan"
+          ]
+        },
+        {
+          "id": "a",
+          "label": "a",
+          "color": "gold",
+          "prerequisites": [
+            "brand-new"
+          ]
+        },
+        {
+          "id": "build",
+          "label": "Build",
+          "color": "terracotta",
+          "prerequisites": [
+            "plan"
+          ]
+        },
+        {
+          "id": "b",
+          "label": "b",
+          "color": "terracotta",
+          "prerequisites": [
+            "build"
+          ]
+        }
+      ],
+      "kinds": [
+        {
+          "id": "build",
+          "hue": "terracotta",
+          "label": "Build",
+          "description": "Things you make",
+          "source": "existing"
+        },
+        {
+          "id": "learn",
+          "hue": "olive",
+          "label": "Learn",
+          "description": "Things you figure out",
+          "source": "existing"
+        },
+        {
+          "id": "brand-new",
+          "hue": "gold",
+          "label": "Brand new",
+          "description": "",
+          "source": "added"
+        }
+      ],
+      "gutter": [
+        {
+          "glyph": "◉",
+          "nodeId": "plan",
+          "liberty": null
+        },
+        {
+          "glyph": "├",
+          "nodeId": "brand-new",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "a",
+          "liberty": null
+        },
+        {
+          "glyph": "├",
+          "nodeId": "build",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "b",
+          "liberty": null
+        }
+      ],
+      "readout": {
+        "steps": 5,
+        "branches": 2,
+        "done": 0
+      },
+      "imperfections": []
+    }
+  },
+  {
+    "name": "missing root",
+    "text": "- a\n\t- [X] b\n    - c\n- a",
+    "kinds": [],
+    "parsed": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {
+          "id": "root",
+          "label": "",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles"
+        },
+        {
+          "id": "a",
+          "label": "a",
+          "color": "terracotta",
+          "prerequisites": [
+            "root"
+          ]
+        },
+        {
+          "id": "b",
+          "label": "b",
+          "color": "terracotta",
+          "prerequisites": [
+            "a"
+          ],
+          "status": "complete"
+        },
+        {
+          "id": "c",
+          "label": "c",
+          "color": "terracotta",
+          "prerequisites": [
+            "b"
+          ]
+        },
+        {
+          "id": "a-2",
+          "label": "a (2)",
+          "color": "terracotta",
+          "prerequisites": [
+            "root"
+          ]
+        }
+      ],
+      "kinds": [],
+      "gutter": [
+        {
+          "glyph": "·",
+          "nodeId": "a",
+          "liberty": null
+        },
+        {
+          "glyph": "✓",
+          "nodeId": "b",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "c",
+          "liberty": null
+        },
+        {
+          "glyph": "·",
+          "nodeId": "a-2",
+          "liberty": "renamed to \"a (2)\""
+        }
+      ],
+      "readout": {
+        "steps": 5,
+        "branches": 0,
+        "done": 1
+      },
+      "imperfections": [
+        {
+          "line": 3,
+          "type": "rename",
+          "detail": "renamed to \"a (2)\""
+        }
+      ]
+    }
+  },
+  {
+    "name": "empty paste",
+    "text": "",
+    "kinds": [],
+    "parsed": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {
+          "id": "root",
+          "label": "",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles"
+        }
+      ],
+      "kinds": [],
+      "gutter": [
+        {
+          "glyph": null,
+          "nodeId": null,
+          "liberty": null
+        }
+      ],
+      "readout": {
+        "steps": 1,
+        "branches": 0,
+        "done": 0
+      },
+      "imperfections": []
+    }
+  }
+]

@@ -4,7 +4,7 @@
 import React, { useContext, useId, useEffect, useMemo, useRef, useState } from 'react';
 import './columns.css';
 import { track } from '../../../telemetry/beacon.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { hueOf } from '../theme.js';
 import { Chevron, ColumnCards } from './ColumnCards.jsx';
 import { UpNextRest } from './BoardStates.jsx';
 import { ColumnEmpty } from './BoardControls.jsx';
@@ -58,7 +58,6 @@ export function BoardColumns({
     return true;
   }) });
   const everyEmpty = board.columns.every((column) => column.count === 0);
-  const emptied = (column) => column.count === 0 && query.recovery !== null && (column.name === 'upNext' || !everyEmpty);
 
   // The rail that was pressed has stood up and a new rail took its place, so focus moves to that rail's Show.
   useEffect(() => {
@@ -85,18 +84,22 @@ export function BoardColumns({
         settle?.(event.target.dataset.stepId);
       }}
       onBlur={roving.onBlur} onKeyDown={roving.onKeyDown}>
-      {board.columns.map((column) => (stage[column.name] === 'rail'
-        ? (
+      {board.columns.map((column) => {
+        if (stage[column.name] === 'rail') return (
           <ColumnRail
             key={`${column.name}-rail`}
             column={counts[column.name]}
             tabIndex={roving.stopIn(column.name) === RAIL ? 0 : -1}
             onShow={() => show(column.name)}
           />
-        )
-        : (
+        );
+        const resting = column.name === 'upNext' && upNextRest !== null;
+        const empty = column.count === 0 && query.recovery !== null && (column.name === 'upNext' || !everyEmpty);
+        return (
           <FullColumn key={column.name} column={counts[column.name]}>
-            {column.name === 'upNext' && upNextRest !== null ? upNextRest : emptied(column) ? <ColumnEmpty query={query} onQuery={onQuery} /> : (
+            {resting && upNextRest}
+            {!resting && empty && <ColumnEmpty query={query} onQuery={onQuery} />}
+            {!resting && !empty && (
               <ColumnCards
                 shown={shown[column.name]}
                 stopId={roving.stopIn(column.name)}
@@ -111,7 +114,8 @@ export function BoardColumns({
               />
             )}
           </FullColumn>
-        )))}
+        );
+      })}
     </div>
   );
 }
@@ -159,7 +163,7 @@ function ColumnRail({ column, tabIndex, onShow }) {
         <div className="st-board-columns-deck" aria-hidden>
           {deck.map((card, index) => {
             const behind = deck.length - 1 - index;
-            const kind = KIND_CSS[card.step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+            const kind = hueOf(card.step.color);
             return (
               <span key={card.id} className={`st-board-columns-deck-layer st-board-columns-deck-layer--behind-${behind}`}>
                 <span className="st-board-columns-deck-card" style={{ '--st-board-rail': kind.base }}>

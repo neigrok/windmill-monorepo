@@ -37,16 +37,29 @@ export async function buildExportArchive() {
   }
 
   const bytes = storeZip(files);
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = 'windmill-export.zip';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-
+  downloadExport({ name: 'windmill-export.zip', bytes, type: 'application/zip' });
   return { count: files.length };
+}
+
+export function buildRoadmapExport(treeData, progress) {
+  return {
+    name: fileNameFor(treeData, treeData.id),
+    text: serializePlan(treeData, treeData.kinds, progress),
+  };
+}
+
+export function downloadExport({ name, text, bytes, type = 'text/markdown;charset=utf-8' }) {
+  const anchor = document.createElement('a');
+  const url = URL.createObjectURL(new Blob([bytes ?? text], { type }));
+  try {
+    anchor.href = url;
+    anchor.download = name;
+    document.body.appendChild(anchor);
+    anchor.click();
+  } finally {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
 }
 
 // The progress overlay already falls back to the document's seed statuses. Its reads report as the export's, so a failed

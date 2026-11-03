@@ -1,3 +1,4 @@
+import { COLUMN_TITLES } from '../board/copy.js';
 import React from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { EventRow } from './EventRow.jsx';
@@ -6,7 +7,7 @@ export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds,
   return (
     <div className="st-activity">
       <div className="st-activity-head">
-        <span>{nextUp ? 'Next up' : 'Activity'}</span>
+        <span>{nextUp ? COLUMN_TITLES.upNext : 'Activity'}</span>
         <span className="st-activity-count">{nextUp ? readyPill : count}</span>
         <span className="st-activity-live" title="Live" />
         <IconButton icon={<Icon name="x" size={14} />} label="Close activity" size="sm" onClick={onClose} />

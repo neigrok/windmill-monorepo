@@ -43,3 +43,88 @@ test('the gate re-arms when the body grows past what was seen, and never when th
   // The footer stays outside the scrolling body, pinned.
   assert.ok(source.indexOf('overflowY: \'auto\'') < source.indexOf("typeof footer === 'function' ? footer({ seen }) : footer"));
 });
+
+function focusSurface() {
+  browserWith();
+  const focused = [];
+  const element = (id, parent = null) => ({
+    id, parent, isConnected: true, inert: false,
+    closest() { return this.inert ? this : null; },
+    contains(other) { return other === this || other?.parent === this; },
+    focus() { document.activeElement = this; focused.push(id); },
+  });
+  const body = element('body');
+  const opener = element('opener');
+  const card = element('dialog');
+  const input = element('input', card);
+  const outside = element('outside');
+  document.body = body;
+  document.activeElement = opener;
+  return { focused, body, opener, card, input, outside };
+}
+
+test('useDialogFocus captures the exact opener before autofocus and restores it on close', async (t) => {
+  const surface = focusSurface();
+  const { useDialogFocus } = await loadScreen('design-system/feedback/Dialog.jsx');
+  const cardRef = { current: surface.card };
+  let open = true;
+  const hook = renderHook(t, () => {
+    useDialogFocus({ open, cardRef, preserveOutsideFocus: true });
+    if (open) document.activeElement = surface.input;
+  });
+  assert.deepEqual(surface.focused, []);
+  open = false;
+  hook.redraw();
+  assert.deepEqual({ focused: surface.focused, active: document.activeElement.id }, { focused: ['opener'], active: 'opener' });
+});
+
+for (const preserveOutsideFocus of [false, true]) {
+  test(`useDialogFocus preserves a connected external destination only when opted in: ${preserveOutsideFocus}`, async (t) => {
+    const surface = focusSurface();
+    const { useDialogFocus } = await loadScreen('design-system/feedback/Dialog.jsx');
+    const cardRef = { current: surface.card };
+    let open = true;
+    const hook = renderHook(t, () => useDialogFocus({ open, cardRef, preserveOutsideFocus }));
+    assert.deepEqual(surface.focused, ['dialog']);
+    document.activeElement = surface.outside;
+    open = false;
+    hook.redraw();
+    assert.deepEqual({ focused: surface.focused, active: document.activeElement.id }, preserveOutsideFocus
+      ? { focused: ['dialog'], active: 'outside' }
+      : { focused: ['dialog', 'opener'], active: 'opener' });
+  });
+}
+
+for (const unavailable of ['disconnected', 'inert']) {
+  test(`useDialogFocus does not restore a ${unavailable} opener when preserving the active surface`, async (t) => {
+    const surface = focusSurface();
+    const { useDialogFocus } = await loadScreen('design-system/feedback/Dialog.jsx');
+    const cardRef = { current: surface.card };
+    let open = true;
+    const hook = renderHook(t, () => useDialogFocus({ open, cardRef, preserveOutsideFocus: true }));
+    if (unavailable === 'disconnected') surface.opener.isConnected = false;
+    else surface.opener.inert = true;
+    document.activeElement = surface.body;
+    open = false;
+    hook.redraw();
+    assert.deepEqual({ focused: surface.focused, active: document.activeElement.id }, { focused: ['dialog'], active: 'body' });
+  });
+}
+
+test('useDialogFocus clears the previous opener and captures the next opening independently', async (t) => {
+  const surface = focusSurface();
+  const { useDialogFocus } = await loadScreen('design-system/feedback/Dialog.jsx');
+  const cardRef = { current: surface.card };
+  let open = true;
+  const hook = renderHook(t, () => useDialogFocus({ open, cardRef, preserveOutsideFocus: true }));
+  open = false;
+  hook.redraw();
+  document.activeElement = surface.outside;
+  open = true;
+  hook.redraw();
+  open = false;
+  hook.redraw();
+  assert.deepEqual({ focused: surface.focused, active: document.activeElement.id }, {
+    focused: ['dialog', 'opener', 'dialog', 'outside'], active: 'outside',
+  });
+});

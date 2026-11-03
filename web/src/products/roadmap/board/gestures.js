@@ -2,6 +2,8 @@ export const SWIPE_REVEAL = 96;
 export const HOLD_MS = 500;
 const SLOP = 10;
 const EDGE = 24;
+const SWIPE_ANGLE_LIMIT = Math.PI / 6;
+const SWIPE_RESISTANCE = 0.35;
 
 export class HoldGesture {
   constructor({ x, y, at = 0 }) {
@@ -46,14 +48,14 @@ export class SwipeGesture {
     const dx = x - this.x;
     const dy = y - this.y;
     if (!this.claimed && Math.hypot(dx, dy) >= SLOP) {
-      this.rejected = Math.abs(dy) > Math.abs(dx) * Math.tan(Math.PI / 6) || (!this.open && dx < 0);
+      this.rejected = Math.abs(dy) > Math.abs(dx) * Math.tan(SWIPE_ANGLE_LIMIT) || (!this.open && dx < 0);
       this.claimed = !this.rejected;
     }
     if (!this.claimed) return { claimed: false, offset: this.offset, tick: false };
     const distance = Math.max(0, dx + (this.open ? SWIPE_REVEAL : 0));
     const tick = distance >= SWIPE_REVEAL && !this.threshold;
     this.threshold ||= tick;
-    this.offset = distance <= SWIPE_REVEAL ? distance : SWIPE_REVEAL + (distance - SWIPE_REVEAL) * 0.35;
+    this.offset = distance <= SWIPE_REVEAL ? distance : SWIPE_REVEAL + (distance - SWIPE_REVEAL) * SWIPE_RESISTANCE;
     return { claimed: true, offset: this.offset, tick };
   }
 

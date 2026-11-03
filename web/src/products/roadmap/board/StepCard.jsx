@@ -2,13 +2,16 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { HoldGesture, HOLD_MS, SwipeGesture, SWIPE_REVEAL } from './gestures.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { hueOf } from '../theme.js';
 import { completeStepAction, STEP_DETAIL, reasonLine } from './copy.js';
+
+const SWIPE_ACTION_GAP = 8;
+const SWIPE_HAPTIC_MS = 8;
 
 export const StepCard = React.memo(function StepCard({ card, selected = false, arrived = false, tabIndex = 0, onSelect, swipe = false, open = false, onSwipe, onComplete, leaving = false, dimmed = false, selecting = false, checked = false, onHold }) {
   const reason = reasonLine(card);
   const description = card.step.description?.trim() ?? '';
-  const kind = KIND_CSS[card.step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+  const kind = hueOf(card.step.color);
   const cardButton = (
     <button
       type="button"
@@ -105,7 +108,7 @@ function SwipeCard({ hold, card, open, onSwipe, onComplete, tabIndex, children }
     dragged.current = true;
     onSwipe(card.id);
     setOffset(next.offset);
-    if (next.tick) navigator.vibrate?.(8);
+    if (next.tick) navigator.vibrate?.(SWIPE_HAPTIC_MS);
   };
   const end = (cancelled) => {
     if (!gesture.current) return;
@@ -115,7 +118,7 @@ function SwipeCard({ hold, card, open, onSwipe, onComplete, tabIndex, children }
   };
   return (
     <div className={`st-board-swipe${open ? ' is-open' : ''}${offset !== null ? ' is-dragging' : ''}`} data-step-id={card.id}
-      style={{ '--swipe-offset': `${offset ?? (open ? SWIPE_REVEAL + 8 : 0)}px` }}
+      style={{ '--swipe-offset': `${offset ?? (open ? SWIPE_REVEAL + SWIPE_ACTION_GAP : 0)}px` }}
       onPointerDown={down} onPointerMove={move} onPointerUp={() => end(false)} onPointerCancel={() => end(true)}
       onClickCapture={(event) => {
         if (!dragged.current || event.target.closest('.st-board-swipe-complete')) return;

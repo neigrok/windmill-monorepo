@@ -558,12 +558,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
   that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
   Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
-- **Board · light focus ring on cream.** `--focus-ring` in `tokens/shadows.css` is a 4px
-  `--accent-terracotta-100` (#F3DFD2) shadow: 1.18:1 against `--surface-canvas` (#F9F5EB), under the
-  3:1 non-text minimum. The [Board proposal](roadmap-board-proposal.md) draws a 2px brand-colour
-  `:focus-visible` ring with a 2px offset (card state sheets 353:5571, 353:5686). The token is shared
-  by the design-system Button, IconButton, Input, Select and SegmentedControl; the library owner
-  retokens it before the Board ships.
+- **Design system · Figma library focus effect.** The library's `shadow/focus-ring` effect still uses
+  terracotta-100. The design-system owner must align it with the approved light focus ring:
+  2px `surface/canvas` gap plus a 2px terracotta-500 ring
+  ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
+  Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
+  their own values.
 - **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
   legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
   384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six
@@ -677,6 +677,24 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the switch while loading, but not after a failed load: the Graph's load error veils the topbar, so the switch would
   lead where a pointer cannot come back from. Draw what the topbar names before the name is known, and say whether
   the switch belongs on 02.10 once the Graph's load error leaves the topbar reachable.
+- **Board · Activity, demo identity and sheet search.** With the development gate open, Activity
+  has only the A shortcut, the demo retains its existing chrome and honest byline, and the phone
+  roadmap sheet has no switcher search. G1, G11 and G17 need approved wave-8 frames before the
+  gate lifts; the orchestrator owns their design follow-ups.
+- **Board · Graph and compact-row interims.** G2 hands a Graph search to the Board while keeping
+  the query and field focus. G-F expands the drawn wide Find field into the compact row. G3 uses
+  the existing TendBar overlay from More or the phone sheet, and G4 retains the phone Graph
+  camera group under the row. These approved interims still need their dedicated drawings.
+- **Board · desktop dock beneath the row.** With the gate open, the desktop step dock starts 8px
+  below the measured identity row, so an open step never covers Share, Next, New step or More.
+  ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
+- **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file
+  in the paste format, with the browser download as feedback; Settings retains the all-roadmaps
+  zip. G24 copies the reader's roadmap link and uses the existing *Link copied* toast. Draw these
+  outcomes before replacing the approved interims.
+- **Board · device-only Graph nudge.** The phone and tablet Graph keep *Saved on this device —
+  sign in to keep it →* beneath the gated identity row. The phone camera clears this measured
+  nudge; wave 7's status slot must retain its honesty line.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

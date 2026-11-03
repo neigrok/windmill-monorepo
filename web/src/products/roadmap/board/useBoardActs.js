@@ -3,10 +3,13 @@ import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBuc
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { LABELS } from './copy.js';
+import { BoardQuery } from './Board.js';
 
 export class BoardComposer {
-  constructor({ gate, active, owner, detailId, composer, acts, onOpen }) {
-    this.available = gate && active && owner;
+  constructor({ gate, active, owner, view = 'board', detailId, composer, acts, onOpen }) {
+    this.available = gate && owner && (active || view === 'tree');
+    this.editable = gate && active && owner && view === 'board';
+    this.view = view;
     this.detailId = detailId;
     this.composer = composer;
     this.acts = acts;
@@ -15,12 +18,14 @@ export class BoardComposer {
 
   get shown() {
     if (!this.available) return null;
+    if (this.composer?.view && this.composer.view !== this.view) return null;
+    if (this.composer?.editing && !this.editable) return null;
     if (this.composer?.editing && this.composer.editing !== this.detailId) return null;
     return this.composer;
   }
 
   openEdit(id) {
-    if (!this.available || id === null || id !== this.detailId) return;
+    if (!this.editable || id === null || id !== this.detailId) return;
     this.onOpen({ door: 'detail', editing: id });
   }
 
@@ -138,7 +143,8 @@ export class BoardActs {
 
   create(request) {
     const c = this.collaborators;
-    if (!c.active || !c.owner || !c.tree) return { ok: false };
+    if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
+    const graph = !c.active && c.graphActive;
     if (!c.session) {
       c.report('roadmap-board-create', new Error('Missing Board session'));
       return { ok: false };
@@ -149,7 +155,7 @@ export class BoardActs {
       const tree = this.held ? this.held.projected(c.tree) : c.tree;
       const nextTree = new SkillTree({ id: tree.id, title: tree.title, author: tree.author,
         nodes: [...tree.nodes, { ...request, prerequisites: [...request.prerequisites] }] });
-      outcome = creationOutcome(nextTree, c.progress, c.query, request.id);
+      outcome = creationOutcome(nextTree, c.progress, graph ? new BoardQuery() : c.query, request.id);
       receipt = c.session.dispatch({ kind: 'CreateNode', ...request }, { captureFailures: true });
     } catch (error) {
       c.report('roadmap-board-create', error);
@@ -157,16 +163,27 @@ export class BoardActs {
     }
     if (!receipt) return { ok: false };
     if (outcome.filterCleared) c.setQuery(outcome.query);
-    c.onReveal(outcome.reveal);
+    const reveal = graph ? c.onGraphReveal : c.onReveal;
+    reveal(outcome.reveal);
     c.showToast(outcome.message, {
-      surface: 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
+      surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
+      ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
       action: { label: LABELS.undo, run: () => {
         const current = this.collaborators;
-        if (!c.session.revert(receipt)) return;
-        current.onQuiet();
-        current.track('roadmap_board_undo', { act: 'create' });
+        try {
+          if (!c.session.revert(receipt)) return;
+          current.onQuiet();
+          if (graph) {
+            current.track('roadmap_graph_toast', { act: 'create', step: 'undo' });
+            return;
+          }
+          current.track('roadmap_board_undo', { act: 'create' });
+        } catch (error) {
+          current.report('roadmap-board-create', error);
+        }
       } },
     });
+    if (graph) c.track('roadmap_graph_toast', { act: 'create', step: 'shown' });
     c.track('roadmap_board_create', { step: 'saved', column: outcome.column, filterCleared: outcome.filterCleared });
     return { ok: true };
   }
