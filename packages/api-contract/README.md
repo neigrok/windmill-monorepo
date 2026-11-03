@@ -70,8 +70,8 @@ Coach is offered (`agent` other than `withheld`), each an array of
 - An input's text may arrive decomposed. A field `gym/domain/rules.json` marks `nfc` is stored and
   answered in NFC (gym_coach.md §3.3), and a replay or duplicate is matched on that composed form,
   as the decomposed cases in `create_routine` and `save_note` pin.
-- A refusal's code is the server tool's outcome code: `refused` for a rule's refusal,
-  `invalid-arguments` for a malformed input.
+- A refusal's code is the server tool's outcome code: `refused` for a rule's refusal, `load-floor`
+  for a target below its movement's load floor, `invalid-arguments` for a malformed input.
 - The server runs every case as Coach does, for the account, with proposals stamped `door: ask` and
   no thread.
 

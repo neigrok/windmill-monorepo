@@ -142,10 +142,12 @@ class TrainingHistory(private val read: Reader) {
         if (finished.isNotEmpty()) {
             var start = week(finished.last().startedAt)
             val end = week(finished.first().startedAt)
-            while (start <= end) { val held = finished.filter { week(it.startedAt) == start }; weeks += Json.objectOf("startedAt" to Json.of(start), "sessions" to Json.of(held.size), "workingSets" to Json.of(held.sumOf { log.sets(it.id).size })); start += 604_800_000 }
+            val byWeek = finished.groupBy { week(it.startedAt) }
+            while (start <= end) { val held = byWeek[start].orEmpty(); weeks += Json.objectOf("startedAt" to Json.of(start), "sessions" to Json.of(held.size), "workingSets" to Json.of(held.sumOf { log.sets(it.id).size })); start += 604_800_000 }
         }
-        val movements = log.progress.sessions.flatMap { it.movements }.map { it.exerciseId }.distinct().map { id ->
-            val series = log.progress.movement(id)
+        val progress = log.progress
+        val movements = progress.sessions.flatMap { it.movements }.map { it.exerciseId }.distinct().map { id ->
+            val series = progress.movement(id)
             Json.Obj(buildList { add("exerciseId" to id.json); add("lastTrainedAt" to Json.of(series.sessions.last().startedAt.ms)); add("points" to Json.Arr(series.sessions.map { point(it, false) })); series.best?.let { add("bestE1rm" to point(it, true)) }; series.heaviest?.let { add("heaviest" to point(it, false)) } })
         }.sortedWith { a, b -> b.member("lastTrainedAt").num().compareTo(a.member("lastTrainedAt").num()).takeIf { it != 0 } ?: compareBytes(a.member("exerciseId").str(), b.member("exerciseId").str()) }
         return Json.objectOf("weeks" to Json.Arr(weeks), "movements" to Json.Arr(movements))

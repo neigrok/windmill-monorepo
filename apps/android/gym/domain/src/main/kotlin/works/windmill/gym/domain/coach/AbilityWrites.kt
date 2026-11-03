@@ -14,6 +14,7 @@ import works.windmill.gym.domain.sync.ProposeWorkout
 import works.windmill.gym.domain.sync.Proposed
 import works.windmill.gym.domain.sync.Routine
 import works.windmill.gym.domain.sync.RoutineCreation
+import works.windmill.gym.domain.sync.RoutineRules
 import works.windmill.gym.domain.sync.SaveNoteCall
 import works.windmill.gym.domain.sync.TrainingHistory
 import works.windmill.gym.domain.sync.TrainingLog
@@ -64,6 +65,7 @@ class CreateRoutineCall(val routine: Routine) : Decider<CreateRoutineCall.Loaded
             return Decision.Unchanged(AbilityAnswer(CoachDocuments.routine(loaded.stored)))
         }
         if (valid.value.entries.any { loaded.catalogue.find(it.exerciseId) == null }) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.unknownExercise, routine.id.ref))
+        RoutineRules.floored(valid.value.entries, emptyList(), emptyList(), loaded.catalogue, Path("entries"))
         val plan = Plan()
         plan.create(valid)
         return Decision.Write(plan, AbilityAnswer(CoachDocuments.routine(valid.value), created = listOf(routine.id.ref)))

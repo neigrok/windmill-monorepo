@@ -57,7 +57,7 @@ class AbilityRun<L>(private val decider: Decider<L, AbilityAnswer, GymRefusal>) 
 }
 
 class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, seat: Seat, catalog: Catalog, appBaseUrl: String) : Action<RunAbility.Loaded, AbilityOutcome, GymRefusal> {
-    data class Loaded(val message: CoachMessage?, val deciding: ((IDSource) -> Decision<AbilityAnswer, GymRefusal>)?, val moment: Moment)
+    data class Loaded(val message: CoachMessage?, val deciding: ((IDSource) -> Decision<AbilityAnswer, GymRefusal>)?, val moment: Moment, val replica: String)
 
     private sealed interface Gate {
         data class Run(val ability: AbilityRun<*>) : Gate
@@ -71,20 +71,20 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
 
     override fun load(read: Reader): Loaded {
         val coach = read.repository(CoachMessage).find(message, ViewMode.drawn)
-        val running = coach?.role == CoachMessage.Role.coach && coach.state == MessageState.running
-        return Loaded(coach, if (running && gate is Gate.Run) gate.ability.load(read) else null, read.moment)
+        val running = coach?.role == CoachMessage.Role.coach && coach.state == MessageState.running && coach.replica == read.replica
+        return Loaded(coach, if (running && gate is Gate.Run) gate.ability.load(read) else null, read.moment, read.replica)
     }
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<AbilityOutcome, GymRefusal> {
         val coach = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
             ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, message.ref, path = Refused.Path.predicted)))
-        if (coach.state != MessageState.running) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
+        if (coach.state != MessageState.running || coach.replica != loaded.replica) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
         return when (gate) {
             is Gate.Refuse -> refusing(gate.code, null, coach, loaded.moment)
             is Gate.Run -> {
                 val deciding = checkNotNull(loaded.deciding) { "an admitted call loaded nothing" }
                 when (val decided = deciding(ids)) {
-                    is Decision.Refuse -> refusing(AbilityRefusal.refused, request.input, coach, loaded.moment)
+                    is Decision.Refuse -> refusing(AbilityRefusal.of(decided.refusal), request.input, coach, loaded.moment)
                     is Decision.Unchanged -> answering(decided.result, Plan(), coach, loaded.moment)
                     is Decision.Write -> answering(decided.result, decided.plan, coach, loaded.moment)
                 }
@@ -106,28 +106,34 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
     }
 
     // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the message's calls hold (`CoachMessage.recorded`): refused `coach-turn-volume`, writes dropped, when only a bare record fits the bound; and refused unrecorded, as the message's own bound, when not even that fits. Calls hold no U+0000, so an input that does records without itself.
-    // A call re-run under a `callId` the message already holds keeps one record: a first record that answered stands, whatever this run still writes landing under it, and a refused one gives way to this one in its place.
+    // A call re-run under a `callId` the message already holds keeps one record, in its place: this run's, which is what the model will read, holding every id either run created. A first record that answered stands only when this run was refused.
     private fun recording(call: AbilityCall, outcome: AbilityOutcome, plan: Plan, coach: CoachMessage, moment: Moment): Decision<AbilityOutcome, GymRefusal> {
         val first = coach.calls.indexOfFirst { it.callId == call.callId }
-        if (coach.calls.getOrNull(first)?.outcome == AbilityCall.Outcome.Ok) return if (plan.operations.isEmpty()) Decision.Unchanged(outcome) else Decision.Write(plan, outcome)
+        val prior = coach.calls.getOrNull(first)
+        val answered = prior?.outcome == AbilityCall.Outcome.Ok
+        if (answered && call.outcome != AbilityCall.Outcome.Ok) return Decision.Unchanged(outcome)
         val others = coach.calls.filterIndexed { index, _ -> index != first }
-        val storable = if (call.input?.firstNul(Path("input")) == null) call else call.copy(input = null)
+        val whole = call.copy(created = (prior?.created.orEmpty() + call.created).distinct())
+        val storable = if (whole.input?.firstNul(Path("input")) == null) whole else whole.copy(input = null)
         val recorded = coach.copy(calls = others).recorded(storable)
             ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.tooLarge, coach.id.ref, path = Refused.Path.predicted)))
         val fits = recorded.outcome == storable.outcome
-        val written = if (fits) plan else Plan()
+        if (answered && !fits) return Decision.Unchanged(AbilityOutcome.Refused(AbilityRefusal.volume))
         val calls = if (first < 0) others + recorded else others.take(first) + recorded + others.drop(first)
+        if (calls == coach.calls && plan.operations.isEmpty()) return Decision.Unchanged(outcome)
+        val written = if (fits) plan else Plan()
         written.update(Valid(coach.copy(calls = calls), CoachMessage, listOf("calls"), moment), listOf("calls"))
         return Decision.Write(written, if (fits) outcome else AbilityOutcome.Refused(AbilityRefusal.volume))
     }
 
     private companion object {
-        // Coach §5 on the phone: G-1 offered, G-2 the seat, the server's own abilities, G-3 the shape at every depth, then the ability's decider from its input. Three codes for a call its input sinks, the server's own: the gate's G-3 shape check refuses `invalid-input`; an input past a bound the schema does not state, which the server's tool refuses as malformed, is `invalid-arguments`; what a rule refuses in deciding is `refused`.
+        // Coach §5 on the phone: G-1 offered, G-2 the seat, the server's own abilities, G-3 the shape at every depth, then the ability's decider from its input. The server's own codes for a call its input sinks: the gate's G-3 shape check refuses `invalid-input`; an input past a bound the schema does not state, which the server's tool refuses as malformed, is `invalid-arguments`; what a rule refuses in deciding is `refused`, or `load-floor` for a target below its movement's floor. An input nested past `maxInputDepth` never reaches a record: past what the store reads back, it would stop the app opening.
         fun gate(request: AbilityRequest, seat: Seat, catalog: Catalog, appBaseUrl: String): Gate {
             val ability = catalog.ability(request.name)
             if (ability == null || ability.agent == AgentRule.withheld || !ability.declared || request.name in AbilityExecutor.serverRun) return Gate.Refuse(AbilityRefusal.notOffered)
             if (!ability.admits(seat)) return Gate.Refuse(AbilityRefusal.seatRequired)
             if (JsonSchema(ability.input).fault(request.input) != null) return Gate.Refuse(AbilityRefusal.invalidInput)
+            if (request.input.depth > CoachRules.maxInputDepth) return Gate.Refuse(AbilityRefusal.invalidArguments)
             return try { Gate.Run(decider(request, appBaseUrl)) }
             catch (_: DecodeError) { Gate.Refuse(AbilityRefusal.invalidArguments) }
             catch (_: JsonError) { Gate.Refuse(AbilityRefusal.invalidArguments) }

@@ -170,7 +170,8 @@ vectors protect the protocol in the meantime, with no shared code.
 | `StreamTurnText`, `WithdrawTurn`, `KeepPicture`, `DeleteConversation` in the domain | app target | they are domain actions; the iOS log already names this as a follow-up |
 | Catalog read from the contract at build time into assets, parsed once, injected | generated Swift (2,475 lines) | no generated code and no drift to pin. Domain code may not load resources (`java/lang/Class` is banned), so `:gym` loads it and passes a `Catalog` to the executor |
 | `picture:<id>` rows hold metadata; the bytes live in app files | the row holds both as base64 | Android reads every device row through a cursor at engine open (`AndroidSqlite.kt:94`) and holds them on the heap. At the §9.3 bounds a row reaches about 8 MiB; the default cursor window is 2 MiB, so one picture could stop the engine opening |
-| A call re-run under the same `callId` keeps one record: the append is skipped, and a refused first record is replaced | `RunAbility` appends unconditionally, and `CoachTurnTests.swift:119-127` pins the double record | the server re-delivers only unanswered batches (`Turn.cpp:314`), so this is a defensive rule, not a live defect. The call re-runs either way, because `AbilityCall` stores no result. iOS is unchanged in this programme, so the rule stays out of the shared vectors |
+| A call re-run under the same `callId` keeps one record, in its place: this run's, holding every id either run created. A first record that answered stands only when this run was refused | `RunAbility` appends unconditionally, and `CoachTurnTests.swift:119-127` pins the double record | the server re-delivers only unanswered batches (`Turn.cpp:314`), so this is a defensive rule, not a live defect. The call re-runs either way, because `AbilityCall` stores no result. iOS is unchanged in this programme, so the rule stays out of the shared vectors |
+| An input nested past 32 levels is `invalid-arguments` at the gate; the engine's commit refuses a value too deep to read back; a call whose input holds U+0000, in a key or a value, records without its input | no depth bound, and a U+0000 in an input ends the turn `interrupted` | a value past what `AndroidSqlite.open` parses would stop the app opening. iOS is unchanged in this programme |
 
 ## 4. Waves
 
@@ -227,8 +228,8 @@ W0 to W4 add no visible change and need no board. **W6 cannot start until the de
 - A corpus runner in `:domain-kit-testing` for `{given: {records}, call, expect}`: `Contract.vectors` only
   knows `{name, input, expect}` today. `CorpusTests.kt` then claims `abilities/`.
 
-**Exit:** 63 ability cases byte-equal (SHA-256 of the JCS bytes) and the 5 share cases refused on the phone
-(`share_session` 3, `revoke_share` 2).
+**Exit:** every ability case: results byte-equal (SHA-256 of the JCS bytes), refusals alike, writes compared, and
+the 5 share cases refused on the phone (`share_session` 3, `revoke_share` 2).
 
 ### W3 · The turn (`:agent`, `:platform`, backend) · ~700
 
@@ -368,7 +369,7 @@ These were real defects on iOS. Each becomes a test here, not a review finding.
 2. The receipt counts only what the model received; an over-bound result counts nothing.
 3. A calls bound overflow degrades to counts with `readTruncated`, never a refusal the server would not give.
 4. `get_last_times`, `list_sessions` and `list_exercises` use the server's tie and collation rules.
-5. Three refusal codes: `invalid-input`, `invalid-arguments`, `refused`. A 501-byte note is `invalid-arguments`.
+5. The server's refusal codes: `invalid-input`, `invalid-arguments`, `refused`, `load-floor`. A 501-byte note is `invalid-arguments`.
 6. `WithdrawTurn` drops the `picture:` rows too.
 7. An interrupted turn carries its code on `coach_turn`.
 8. A seat change tells the server to Stop, so its slot is not held for `CALL_RESULT_TIMEOUT`.

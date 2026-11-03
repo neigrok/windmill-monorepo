@@ -343,7 +343,7 @@ cd apps/android
 ./gradlew :domain-kit-testing:test :domain-kit-testing:corpus :domain-kit-testing:layering :sync-testing:layering   # the kit corpus and both layering tasks
 ```
 
-The first prints `Gym corpus: 37/52 files, 1116 cases, 68 ability cases (47 results byte-equal, 16 refused alike, 5 shares refused on the phone), 15 explicitly not applicable …, no unclaimed file`; the second `kit corpus: 12/12 files, 490/490
+The first prints `Gym corpus: 37/52 files, 1116 cases, 71 ability cases (47 results byte-equal, 19 refused alike, 5 shares refused on the phone), 15 explicitly not applicable …, no unclaimed file`; the second `kit corpus: 12/12 files, 490/490
 vectors` and `layering: 5 deterministic modules, … compiled classes, 0 findings`. `./gradlew build` (CI,
 `.github/workflows/android.yml`) runs all of it, with `ANDROID_SENTRY_DSN` set.
 
