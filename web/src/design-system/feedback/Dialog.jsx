@@ -6,28 +6,51 @@ export function scrolledToEnd({ scrollTop, scrollHeight, clientHeight }, slack =
   return scrollHeight - scrollTop - clientHeight <= slack;
 }
 
-// `footer` is a node, or a function of `{ seen }` for a footer that must know whether the body has
-// been read to its end. With `gate="scrolled"` `seen` starts false, turns true once the body is
-// scrolled to its end or fits without scrolling, and drops back to false only if the body grows past
-// the height that was seen — scrolling back up never re-locks it. Without the gate `seen` is true.
-export function Dialog({ open, onClose, title, children, footer, width = 420, gate = null, padding = 'var(--space-8)' }) {
-  const cardRef = useRef(null);
-  const bodyRef = useRef(null);
-  const contentRef = useRef(null);
+export function useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus = false }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const openerRef = useRef(null);
   const wasOpen = useRef(false);
+  if (open && !wasOpen.current) openerRef.current = document.activeElement;
+  wasOpen.current = open;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const card = cardRef.current;
+    if (card && !card.contains(document.activeElement)) card.focus();
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      onCloseRef.current?.();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      const opener = openerRef.current;
+      if (!wasOpen.current) openerRef.current = null;
+      if (preserveOutsideFocus) {
+        const active = document.activeElement;
+        if (active !== document.body && active?.isConnected && !card?.contains(active) && !active.closest('[inert]')) return;
+        if (!opener?.isConnected || opener.closest('[inert]')) return;
+      }
+      opener?.focus?.();
+    };
+  }, [open, cardRef, preserveOutsideFocus]);
+}
+
+// `footer` is a node, or a function of `{ seen }` for a footer that must know whether the body has
+// been read to its end. With `gate="scrolled"` `seen` starts false, turns true once the body is
+// scrolled to its end or fits without scrolling, and drops back to false only if the body grows past
+// the height that was seen — scrolling back up never re-locks it. Without the gate `seen` is true.
+export function Dialog({ open, onClose, title, children, footer, width = 420, gate = null, padding = 'var(--space-8)', preserveOutsideFocus = false }) {
+  const cardRef = useRef(null);
+  const bodyRef = useRef(null);
+  const contentRef = useRef(null);
   const [closeHover, setCloseHover] = useState(false);
   const gated = gate === 'scrolled';
   const [seen, setSeen] = useState(!gated);
-  // The body height at which the end was last seen; null until it has been.
   const seenHeight = useRef(null);
-
-  // Capture the opener during render, before React commits the dialog's autoFocus (commitMount
-  // runs before any effect), so this sees the trigger and not a field inside the card.
-  if (open && !wasOpen.current) openerRef.current = document.activeElement;
-  wasOpen.current = open;
+  useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus });
 
   const measure = useCallback(() => {
     const body = bodyRef.current;
@@ -39,28 +62,6 @@ export function Dialog({ open, onClose, title, children, footer, width = 420, ga
     }
     if (seenHeight.current != null && body.scrollHeight > seenHeight.current + 2) setSeen(false);
   }, []);
-
-  // While open: move focus into the dialog unless a field inside already claimed it, and restore
-  // it to the opener on close. Escape closes, and the event is stopped so a host's own global Esc
-  // handler does not fire behind it.
-  useEffect(() => {
-    if (!open) return undefined;
-    const card = cardRef.current;
-    const focusInside = card && card.contains(document.activeElement);
-    if (card && !focusInside) card.focus();
-    const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      onCloseRef.current?.();
-    };
-    // Capture phase: a host's global Esc handler is a bubble listener on window, so only stopping
-    // the event before the bubble phase keeps it from firing too.
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-      openerRef.current?.focus?.();
-    };
-  }, [open]);
 
   // The gate watches the body's box and its content: a body that fits is seen at once, one that
   // fills in later (a read answering) is measured again when it grows.

@@ -88,3 +88,39 @@ test('one roadmap exports its current marks as a paste-format Markdown file with
     name: 'roadmap-abcdefgh.md', text: '# 🌱',
   });
 });
+
+test('the paste format uses the roadmap title as its root and does not preserve a distinct root label or completion', async () => {
+  const { buildRoadmapExport } = await import('../../../../src/products/roadmap/settings/exportArchive.js');
+  const { parsePlan, serializePlan } = await import('../../../../src/products/roadmap/paste/planGrammar.js');
+  const tree = {
+    id: 't_1234567890', title: 'Learn to sail', kinds: [], nodes: [
+      { id: 'root', label: 'Choose a course', color: 'terracotta', prerequisites: [] },
+      { id: 'wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['root'] },
+      { id: 'dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['wind'] },
+    ],
+  };
+  const file = buildRoadmapExport(tree, { completed: new Set(['root', 'wind']) });
+  assert.deepEqual(file, {
+    name: 'learn-to-sail-12345678.md',
+    text: '# Learn to sail\n- [x] Read the wind\n  - Leave the dock',
+  });
+  const replanted = parsePlan(file.text);
+  assert.deepEqual(replanted, {
+    title: 'Learn to sail',
+    missingRoot: false,
+    nodes: [
+      { id: 'learn-to-sail', label: 'Learn to sail', color: 'terracotta', prerequisites: [], icon: 'sparkles' },
+      { id: 'read-the-wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['learn-to-sail'], status: 'complete' },
+      { id: 'leave-the-dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['read-the-wind'] },
+    ],
+    kinds: [],
+    gutter: [
+      { glyph: '◉', nodeId: 'learn-to-sail', liberty: null },
+      { glyph: '✓', nodeId: 'read-the-wind', liberty: null },
+      { glyph: '·', nodeId: 'leave-the-dock', liberty: null },
+    ],
+    readout: { steps: 3, branches: 0, done: 1 },
+    imperfections: [],
+  });
+  assert.equal(serializePlan(replanted, replanted.kinds), file.text);
+});

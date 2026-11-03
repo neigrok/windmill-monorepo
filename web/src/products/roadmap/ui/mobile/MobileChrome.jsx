@@ -1,6 +1,6 @@
 // The layer is inert to pointer input so pans reach the canvas; only Fork and the Focus · All steps group opt back in.
 
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { TABLET_PANEL_WIDTH } from '../viewport.js';
@@ -32,8 +32,13 @@ export function MobileChrome({
   onZoomOut,
   cameraRight = 24,
   cameraBottom = 24,
+  onTopBottom,
 }) {
   const [pressed, setPressed] = useState(false);
+  const [nudgeHeight, setNudgeHeight] = useState(0);
+  const plaqueRef = useRef(null);
+  const cameraRef = useRef(null);
+  const nudgeRef = useRef(null);
 
   const hue = KIND_CSS[dominantKind] ? dominantKind : DEFAULT_NODE_COLOR;
   const c = KIND_CSS[hue];
@@ -45,6 +50,28 @@ export function MobileChrome({
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
   const canvasView = view === 'tree';
   const wideCamera = identity && band !== 'phone';
+  const identityNudge = identity && canvasView && band !== 'desktop' && Boolean(onSignInToKeep);
+  const phoneCameraTop = rowBottom + (identityNudge ? nudgeHeight + 16 : 8);
+
+  useLayoutEffect(() => {
+    if (!onTopBottom && !identityNudge) return undefined;
+    const measure = () => {
+      setNudgeHeight(nudgeRef.current?.offsetHeight ?? 0);
+      const topChrome = [plaqueRef.current, cameraRef.current, nudgeRef.current].filter(Boolean);
+      const bottom = Math.max(identity ? rowBottom : 0, ...topChrome.map((element) => element.offsetTop + element.offsetHeight));
+      onTopBottom?.(bottom);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    for (const element of [plaqueRef.current, cameraRef.current, nudgeRef.current]) {
+      if (element) observer.observe(element);
+    }
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [onTopBottom, identityNudge, identity, canvasView, rowBottom, phoneCameraTop, tablet, panelOpen]);
 
   // The list and the Board never render this: each carries the device notice under its header.
   const signInNudge = onSignInToKeep ? (
@@ -90,6 +117,7 @@ export function MobileChrome({
       <>
       {/* Plaque — a label, never a menu; sits below the status-bar-safe area */}
       <div
+        ref={plaqueRef}
         style={{
           position: 'absolute',
           top: `calc(${SAFE_TOP} + 8px)`,
@@ -254,15 +282,22 @@ export function MobileChrome({
       </button>
       )}
 
-      {/* The phone camera sits below the identity row; legacy readers keep it under the wordmark. */}
+      {identityNudge && (
+        <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom + 8 }}>
+          {signInNudge}
+        </div>
+      )}
+
+      {/* The phone camera clears the row and its device notice; legacy readers keep it under the wordmark. */}
       {canvasView && !wideCamera && (
         <div
           className="st-view-actions"
+          ref={cameraRef}
           role="group"
           aria-label="Camera"
           style={{
             position: 'absolute',
-            top: identity ? rowBottom + 8 : `calc(${SAFE_TOP} + 48px)`,
+            top: identity ? phoneCameraTop : `calc(${SAFE_TOP} + 48px)`,
             right: `calc(env(safe-area-inset-right, 0px) + ${cameraGroupRight}px)`,
             pointerEvents: 'auto',
             display: 'inline-flex',

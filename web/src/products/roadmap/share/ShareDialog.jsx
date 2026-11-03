@@ -8,7 +8,7 @@ export function treeShareUrl(treeId) {
   return treeId && treeId !== 'new' ? `${window.location.origin}/t/${treeId}` : null;
 }
 
-export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange }) {
+export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange, preserveOutsideFocus = false }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -84,7 +84,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} title="Share roadmap" width={640} footer={null}>
+    <Dialog open={open} onClose={busy ? undefined : onClose} title="Share roadmap" width={640} footer={null} preserveOutsideFocus={preserveOutsideFocus}>
       {!shareUrl ? <p>This roadmap has no shareable link yet.</p> : (
         <div>
           <p>

@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { beacon } from './board/composerFixture.js';
 
-// The row stand-in exercises the pinned host contract; the scene and HTTP boundaries are deterministic fakes.
+// The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const treeData = {
   id: 't_sail', title: 'Learn to sail', kinds: [], nodes: [
@@ -24,6 +26,8 @@ const params = new URLSearchParams(location.search);
 window.fixture = ${JSON.stringify(treeData)};
 if (params.has('milestone')) window.fixture.nodes[1].status = 'complete';
 if (params.has('single')) window.fixture.nodes = [{ ...window.fixture.nodes[0], status: 'none' }];
+if (params.has('large')) window.fixture.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
+if (params.has('empty')) window.fixture.nodes = [];
 SyncSession.prototype.start = function () {
   this.store = { save: () => Promise.resolve() };
   this.registry = null;
@@ -37,42 +41,21 @@ window.ceremonies = [];
 window.revealed = [];
 window.copied = [];
 Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
-  writeText: async (text) => { window.copied.push(text); },
+  writeText: async (text) => {
+    if (params.has('clipboardRefused')) throw new DOMException('Fixture clipboard refusal', 'NotAllowedError');
+    window.copied.push(text);
+  },
 } });
-createRoot(document.getElementById('root')).render(React.createElement(SkillTreeView, { treeId: 't_sail' }));
-`;
-const identity = `
-import React, { useLayoutEffect, useEffect, useRef, useState } from 'react';
-import { ViewSwitch } from '/src/products/roadmap/board/ViewSwitch.jsx';
-import { FindStep } from '/src/products/roadmap/board/BoardControls.jsx';
-export function RoadmapIdentity(props) {
-  if (new URLSearchParams(location.search).has('crash')) throw new Error('Fixture row failure');
-  const [menu, setMenu] = useState(false);
-  const [nextOpen, setNextOpen] = useState(false);
-  const nextRef = useRef(null);
-  useEffect(() => { window.rowMounts = (window.rowMounts ?? 0) + 1; }, []);
-  useLayoutEffect(() => props.onBottom(112), [props.onBottom]);
-  window.sheetContract = props.sheet;
-  window.identity = { band: props.band, role: props.role, view: props.view, title: props.title,
-    progress: props.progress, next: props.next && { count: props.next.count, cards: props.next.cards.map(({ id }) => id) },
-    sheet: props.sheet && props.sheet.current, find: !!props.find };
-  const actions = [['Ask AI', props.onAskAI], ['Share', props.onShare], ['New step', props.onNewStep], ['Fork', props.onFork]];
-  const more = [['Export', props.onExport], ['Settings', props.onSettings], ['Keyboard shortcuts', props.onShortcuts]];
-  return React.createElement('header', { 'data-testid': 'identity-contract', style: { position: 'relative', zIndex: 40, display: 'flex', gap: 8, background: 'var(--surface-card)' } },
-    React.createElement('h1', null, props.title),
-    props.onSwitchView && React.createElement(ViewSwitch, { view: props.view, onSwitch: props.onSwitchView }),
-    props.find && React.createElement(FindStep, props.find),
-    ...actions.filter(([, callback]) => callback).map(([label, callback]) => React.createElement('button', { key: label, onClick: callback }, label)),
-    props.next && React.createElement('button', { ref: nextRef, onClick: () => setNextOpen(!nextOpen) }, 'Next · ' + props.next.count),
-    nextOpen && props.next && React.createElement('div', { role: 'dialog', 'aria-label': 'What is next' },
-      ...props.next.cards.map((card) => React.createElement('button', { key: card.id, onClick: () => {
-        props.next.onOpen(card.id); setNextOpen(false); nextRef.current.focus();
-      } }, card.step.label))),
-    props.onExport && React.createElement('button', { 'aria-haspopup': 'menu', onClick: () => setMenu(!menu) }, 'More'),
-    menu && React.createElement('div', { role: 'menu' }, ...more.filter(([, callback]) => callback).map(([label, callback]) =>
-      React.createElement('button', { key: label, role: 'menuitem', onClick: () => { setMenu(false); callback(); } }, label))),
-  );
+if (params.has('crash')) {
+  const Observer = window.ResizeObserver;
+  window.ResizeObserver = class extends Observer {
+    observe(element, options) {
+      if (element.classList.contains('st-roadmap-identity')) throw new Error('Fixture identity measurement failure');
+      super.observe(element, options);
+    }
+  };
 }
+createRoot(document.getElementById('root')).render(React.createElement(SkillTreeView, { treeId: 't_sail', demo: params.has('demo') }));
 `;
 const scene = `
 export class SkillTreeScene {
@@ -97,7 +80,7 @@ export class SkillTreeScene {
 }
 `;
 const auth = `
-const owner = new URLSearchParams(location.search).get('role') !== 'reader';
+const owner = new URLSearchParams(location.search).get('role') === 'owner';
 const account = owner ? { id: 'u_fixture' } : null;
 const refresh = async () => {};
 export const useAuth = () => ({ status: owner ? 'signed-in' : 'ghost', account, refresh });
@@ -108,7 +91,6 @@ const ready = (async () => {
     plugins: [{ name: 'roadmap-host-contract-test', enforce: 'pre',
       resolveId(id) {
         if (id === '/roadmap-host-entry.js') return '\0host-entry';
-        if (id.endsWith('/board/RoadmapIdentity.jsx')) return '\0host-identity';
         if (id.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
         if (id.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
         if (id.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
@@ -117,11 +99,10 @@ const ready = (async () => {
       },
       load(id) {
         if (id === '\0host-entry') return entry;
-        if (id === '\0host-identity') return identity;
         if (id === '\0host-scene') return scene;
         if (id === '\0host-auth') return auth;
-        if (id === '\0host-signin') return 'export const useSignInDoor = () => () => {};';
-        if (id === '\0host-events') return 'export function track(name, props) { window.events.push({ name, props }); } export function reportError(error) { window.issues.push({ operation: "reportError" }); }';
+        if (id === '\0host-signin') return 'export const useSignInDoor = () => () => { window.signInOpened = (window.signInOpened ?? 0) + 1; };';
+        if (id === '\0host-events') return beacon;
         if (id === '\0host-issues') return 'export function captureError(product, operation, stack) { window.issues.push({ operation, stack: !!stack }); }';
       },
       configureServer(server) {
@@ -140,11 +121,29 @@ const ready = (async () => {
 })();
 after(async () => { try { await ready; } finally { await browser?.close(); await server?.close(); } });
 
-async function openHost({ width = 1440, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false } = {}) {
+const runningTest = new AsyncLocalStorage();
+function hostTest(name, run) {
+  test(name, async () => {
+    let fail;
+    const failure = new Promise((_resolve, reject) => { fail = reject; });
+    await runningTest.run({ fail }, () => Promise.race([run(), failure]));
+  });
+}
+
+async function openHost({ width = 1440, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false } = {}) {
   await ready;
   const page = await browser.newPage({ viewport: { width, height: 1000 }, reducedMotion: 'reduce' });
+  page.setDefaultTimeout(5000);
   const errors = [];
-  page.on('pageerror', (error) => errors.push(error.message));
+  const { fail } = runningTest.getStore();
+  const report = (message) => {
+    if (crash && (message.includes('Fixture identity measurement failure') || message.includes('The above error occurred in the <RoadmapIdentity> component'))) return;
+    errors.push(message);
+    fail(new Error(message));
+    void page.close();
+  };
+  page.on('pageerror', (error) => report(error.stack ?? error.message));
+  page.on('console', (message) => { if (message.type() === 'error') report(message.text()); });
   await page.route('**/v1/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     let body = {};
@@ -154,40 +153,45 @@ async function openHost({ width = 1440, role = 'owner', gate = 'open', surface =
       const data = structuredClone(treeData);
       if (milestone) data.nodes[1].status = 'complete';
       if (single) data.nodes = [{ ...data.nodes[0], status: 'none' }];
-      body = { data, mine: role === 'owner', visibility: 'public' };
+      if (large) data.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
+      if (empty) data.nodes = [];
+      body = { data, mine: role !== 'reader', visibility: 'public' };
     }
-    if (path === '/v1/trees') body = { trees: [] };
+    if (path === '/v1/trees') body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }] };
     if (path.endsWith('/activity')) body = { events: [] };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   const params = new URLSearchParams({ role, gate, surface });
   if (role === 'reader') params.set('view', '1');
-  if (milestone) params.set('milestone', '1');
-  if (single) params.set('single', '1');
-  if (crash) params.set('crash', '1');
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty })) {
+    if (enabled) params.set(name, '1');
+  }
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
   await page.waitForFunction(() => !!window.session?.ready);
-  if (gate === 'open' && !crash) await page.waitForFunction(() => window.identity?.title === 'Learn to sail');
+  if (gate === 'open' && !crash && !demo) await page.locator('.st-roadmap-progress').waitFor();
   return { page, errors };
 }
 
 for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1024, 'desktop'], [1440, 'desktop']]) {
   for (const role of ['owner', 'reader']) {
     for (const surface of ['tree', 'board']) {
-      test(`Chromium: host identity contract ${width}px ${role} ${surface}`, async () => {
+      hostTest(`Chromium: host identity contract ${width}px ${role} ${surface}`, async () => {
         const { page, errors } = await openHost({ width, role, surface });
         try {
-          await page.waitForFunction((surface) => window.identity?.view === surface, surface);
-          assert.deepEqual(await page.evaluate(() => ({
-            band: window.identity.band, role: window.identity.role, view: window.identity.view,
-            title: window.identity.title, progress: window.identity.progress,
-            next: window.identity.next, sheet: !!window.identity.sheet,
+          await page.waitForFunction((surface) => document.querySelector('.st-roadmap-identity')?.dataset.view === surface, surface);
+          assert.deepEqual(await page.locator('.st-roadmap-identity').evaluate((row) => ({
+            band: ['phone', 'tablet', 'desktop'].find((value) => row.classList.contains('st-roadmap-identity--' + value)),
+            role: row.dataset.role, view: row.dataset.view,
+            title: row.querySelector('.st-roadmap-context').textContent,
+            progress: row.querySelector('.st-roadmap-progress').getAttribute('aria-label'),
+            next: row.querySelector('[aria-label="Next · 1"]') !== null,
+            sheet: row.querySelector('.st-roadmap-title-button') !== null,
           })), {
-            band, role, view: surface, title: 'Learn to sail', progress: { done: 1, total: 3 },
-            next: surface === 'tree' && role === 'owner' && band !== 'phone' ? { count: 1, cards: ['wind'] } : null,
+            band, role, view: surface, title: 'Learn to sail', progress: '1 of 3 steps done',
+            next: surface === 'tree' && role === 'owner' && band !== 'phone',
             sheet: band === 'phone' && role === 'owner',
           });
-          assert.equal(await page.locator('[data-testid="identity-contract"]').count(), 1);
+          assert.equal(await page.locator('.st-roadmap-identity').count(), 1);
           assert.equal(await page.locator('.st-action-lane').count(), 0);
           assert.deepEqual(errors, []);
         } finally { await page.close(); }
@@ -198,7 +202,7 @@ for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1024, 'desktop'],
 
 for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1440, 'desktop']]) {
   for (const role of ['owner', 'reader']) {
-    test(`Chromium: gate-closed host keeps legacy ${band} ${role} chrome`, async () => {
+    hostTest(`Chromium: gate-closed host keeps legacy ${band} ${role} chrome`, async () => {
       const { page, errors } = await openHost({ width, role, gate: 'closed' });
       try {
         assert.deepEqual(await page.evaluate(() => ({
@@ -216,48 +220,50 @@ for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1440, 'desktop']]
   }
 }
 
-test('Chromium: Graph Find hands off without replacing the row or losing input focus; G keeps switch focus', async () => {
+hostTest('Chromium: Graph Find hands off without replacing the row or losing input focus; G keeps switch focus', async () => {
   const { page, errors } = await openHost();
   try {
+    await page.evaluate(() => { window.originalRow = document.querySelector('.st-roadmap-identity'); });
     await page.keyboard.press('/');
     const find = page.getByRole('searchbox');
     await find.fill('wind');
-    await page.waitForFunction(() => window.identity.view === 'board');
-    assert.deepEqual(await find.evaluate((input) => [input.value, document.activeElement === input, window.rowMounts]), ['wind', true, 1]);
+    await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'board');
+    assert.deepEqual(await find.evaluate((input) => [input.value, document.activeElement === input, window.originalRow === document.querySelector('.st-roadmap-identity')]), ['wind', true, true]);
     await find.press('Escape');
     await find.press('Escape');
     await page.locator('.st-board-switch-option[aria-pressed="true"]').focus();
     await page.keyboard.press('g');
-    await page.waitForFunction(() => window.identity.view === 'tree');
+    await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'tree');
     assert.equal(await page.locator('.st-board-switch-option[aria-pressed="true"]').evaluate((button) => document.activeElement === button), true);
     assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_graph_find')), [{ name: 'roadmap_graph_find', props: { step: 'handoff' } }]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 
-test('Chromium: row Share, Ask AI and More shortcuts return focus; Export downloads and Settings navigates', async () => {
+hostTest('Chromium: row Share, Ask AI and More shortcuts return focus; Export downloads and Settings navigates', async () => {
   const { page, errors } = await openHost();
   try {
-    const row = page.getByTestId('identity-contract');
+    const row = page.locator('.st-roadmap-identity');
+    assert.equal(await row.locator('.st-roadmap-switcher [aria-haspopup="menu"]').count(), 1);
     await row.getByRole('button', { name: 'Share', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Share roadmap' }).waitFor();
+    await page.getByRole('dialog').filter({ hasText: 'Share roadmap' }).waitFor();
     await page.keyboard.press('Escape');
-    await page.waitForFunction(() => document.activeElement?.textContent === 'Share');
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Share');
     await row.getByRole('button', { name: 'Ask AI', exact: true }).click();
     const prompt = page.getByRole('textbox', { name: 'Tell the tree what to change' });
     await prompt.waitFor();
     await prompt.press('Escape');
-    await page.waitForFunction(() => document.activeElement?.textContent === 'Ask AI');
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Ask AI');
     await row.getByRole('button', { name: 'More', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click();
-    await page.getByRole('dialog', { name: 'Keyboard shortcuts' }).waitFor();
+    await page.getByRole('dialog').filter({ hasText: 'Keyboard shortcuts' }).waitFor();
     await page.keyboard.press('Escape');
-    await page.waitForFunction(() => document.activeElement?.textContent === 'More');
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'More');
     await row.getByRole('button', { name: 'More', exact: true }).click();
     const download = page.waitForEvent('download');
     await page.getByRole('menuitem', { name: 'Export' }).click();
     assert.equal((await download).suggestedFilename(), 'learn-to-sail-sail.md');
-    await page.waitForFunction(() => document.activeElement?.textContent === 'More');
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'More');
     assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_export')), [{ name: 'roadmap_export', props: { outcome: 'done', door: 'more' } }]);
     await row.getByRole('button', { name: 'More', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Settings' }).click();
@@ -266,17 +272,17 @@ test('Chromium: row Share, Ask AI and More shortcuts return focus; Export downlo
   } finally { await page.close(); }
 });
 
-test('Chromium: Next picks and reveals a Graph step; completion toast Undo restores its mark', async () => {
+hostTest('Chromium: Next picks and reveals a Graph step; completion toast Undo restores its mark', async () => {
   const { page, errors } = await openHost();
   try {
     await page.getByRole('button', { name: 'Next · 1', exact: true }).click();
-    await page.getByRole('dialog', { name: 'What is next' }).getByRole('button', { name: 'Read the wind', exact: true }).click();
+    await page.getByRole('dialog', { name: '1 up next' }).locator('.st-roadmap-next-card').filter({ hasText: 'Read the wind' }).click();
     assert.deepEqual(await page.evaluate(() => [window.revealed.at(-1), document.activeElement?.textContent]), ['wind', 'Next · 1']);
-    await page.getByRole('button', { name: 'Complete step', exact: true }).click();
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
     await page.locator('.st-graph-toast').waitFor();
     assert.equal(await page.locator('.st-board-toast-message').textContent(), 'Read the wind done · Leave the dock up next');
     await page.locator('.st-board-toast-undo').click();
-    await page.waitForFunction(() => window.identity.progress.done === 1);
+    await page.waitForFunction(() => document.querySelector('.st-roadmap-progress')?.getAttribute('aria-label') === '1 of 3 steps done');
     assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_graph_toast')), [
       { name: 'roadmap_graph_toast', props: { act: 'complete', step: 'shown' } },
       { name: 'roadmap_graph_toast', props: { act: 'complete', step: 'undo' } },
@@ -285,28 +291,31 @@ test('Chromium: Next picks and reveals a Graph step; completion toast Undo resto
   } finally { await page.close(); }
 });
 
-test('Chromium: Graph create reveals the step and Undo removes only that create', async () => {
+hostTest('Chromium: Graph create reveals the step and Undo removes only that create', async () => {
   const { page, errors } = await openHost();
   try {
-    await page.getByTestId('identity-contract').getByRole('button', { name: 'New step', exact: true }).click();
+    const create = page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true });
+    await create.click();
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Practice knots');
     await page.getByRole('button', { name: 'Create step', exact: true }).click();
     await page.locator('.st-graph-toast').waitFor();
-    assert.equal(await page.evaluate(() => window.identity.progress.total), 4);
+    assert.equal(await page.locator('.st-roadmap-progress').getAttribute('aria-label'), '1 of 4 steps done');
     const created = await page.evaluate(() => window.session.lattice.toTreeData().nodes.find(({ label }) => label === 'Practice knots').id);
     assert.equal(await page.evaluate(() => window.revealed.at(-1)), created);
     await page.locator('.st-board-toast-undo').click();
-    await page.waitForFunction(() => window.identity.progress.total === 3);
+    await page.waitForFunction(() => document.querySelector('.st-roadmap-progress')?.getAttribute('aria-label') === '1 of 3 steps done');
     assert.deepEqual(await page.evaluate(() => window.session.lattice.toTreeData().nodes.map(({ id }) => id).sort()), ['course', 'dock', 'wind']);
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'New step');
+    assert.equal(await create.evaluate((element) => document.activeElement === element), true);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 
-test('Chromium: a Graph milestone keeps the canvas ceremony and reader Share/Fork reach their doors', async () => {
+hostTest('Chromium: a Graph milestone keeps the canvas ceremony and reader Share/Fork reach their doors', async () => {
   const owner = await openHost({ milestone: true });
   try {
     await owner.page.evaluate(() => window.scene.select('dock'));
-    await owner.page.getByRole('button', { name: 'Complete step', exact: true }).click();
+    await owner.page.getByRole('button', { name: 'Complete', exact: true }).click();
     await owner.page.waitForFunction(() => window.ceremonies.length > 0);
     assert.deepEqual(await owner.page.evaluate(() => window.ceremonies), [{ message: 'Tree complete — 3/3 steps.', action: 'Share it' }]);
     assert.equal(await owner.page.locator('.st-graph-toast').count(), 0);
@@ -321,13 +330,13 @@ test('Chromium: a Graph milestone keeps the canvas ceremony and reader Share/For
     await reader.page.getByRole('button', { name: 'Fork', exact: true }).click();
     await reader.page.getByRole('heading', { name: 'Make it yours' }).waitFor();
     await reader.page.keyboard.press('Escape');
-    await reader.page.waitForFunction(() => document.activeElement?.textContent === 'Fork');
+    await reader.page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Fork');
     assert.deepEqual(reader.errors, []);
   } finally { await reader.page.close(); }
 });
 
 for (const width of [744, 1440]) {
-  test(`Chromium: the Graph camera clears the selected-step dock at ${width}px`, async () => {
+  hostTest(`Chromium: the Graph camera clears the selected-step dock at ${width}px`, async () => {
     const { page, errors } = await openHost({ width });
     try {
       await page.evaluate(() => window.scene.select('wind'));
@@ -344,35 +353,39 @@ for (const width of [744, 1440]) {
   });
 }
 
-test('Chromium: one unfinished step has Next · 1 and a completed roadmap has no Next chip', async () => {
+hostTest('Chromium: one unfinished step has Next · 1 and a completed roadmap has no Next chip', async () => {
   const { page, errors } = await openHost({ single: true });
   try {
-    assert.deepEqual(await page.evaluate(() => window.identity.next), { count: 1, cards: ['course'] });
+    assert.equal(await page.getByRole('button', { name: 'Next · 1', exact: true }).count(), 1);
     await page.evaluate(() => window.scene.select('course'));
-    await page.getByRole('button', { name: 'Complete step', exact: true }).click();
-    await page.waitForFunction(() => window.identity.progress.done === 1);
-    assert.equal(await page.evaluate(() => window.identity.next), null);
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('.st-roadmap-progress')?.getAttribute('aria-label') === '1 of 1 step done');
+    assert.equal(await page.getByRole('button', { name: 'Next · 1', exact: true }).count(), 0);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 
-test('Chromium: phone sheet receives current roadmap data and navigation callbacks', async () => {
-  const { page, errors } = await openHost({ width: 390 });
-  try {
-    assert.deepEqual(await page.evaluate(() => window.sheetContract.current), {
-      id: 't_sail', title: 'Learn to sail', done: 1, total: 3, dominantKind: 'terracotta',
-    });
-    assert.deepEqual(await page.evaluate(() => window.sheetContract.listTrees()), []);
-    for (const [action, expected] of [['onPickTree', '#/app/t_other'], ['onNewRoadmap', '#/app/new'], ['onBrowse', '#/browse']]) {
-      await page.evaluate((action) => window.sheetContract[action]('t_other'), action);
+for (const [label, expected] of [['Spanish basics', '#/app/t_other'], ['New roadmap', '#/app/new'], ['Planted in public', '#/browse']]) {
+  hostTest(`Chromium: real phone sheet navigates via ${label}`, async () => {
+    const { page, errors } = await openHost({ width: 390 });
+    try {
+      await page.locator('.st-roadmap-title-button').click();
+      const sheet = page.getByRole('dialog', { name: 'Roadmap', exact: true });
+      await sheet.waitFor();
+      assert.deepEqual(await sheet.locator('[aria-current="true"]').evaluate((row) => ({
+        title: row.querySelector('.st-roadmap-sheet-tree-name').textContent,
+        count: row.querySelector('.st-roadmap-sheet-count').textContent,
+      })), { title: 'Learn to sail', count: '1/3' });
+      await sheet.getByRole('button', { name: label, exact: label !== 'Spanish basics' }).click();
       await page.waitForFunction((hash) => location.hash === hash, expected);
-    }
-    assert.deepEqual(errors, []);
-  } finally { await page.close(); }
-});
+      assert.equal(await page.getByRole('dialog', { name: 'Roadmap', exact: true }).count(), 0);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
 
 for (const [width, role] of [[390, 'owner'], [744, 'reader'], [1440, 'owner']]) {
-  test(`Chromium: identity crash restores legacy home and a switch at ${width}px for ${role}`, async () => {
+  hostTest(`Chromium: identity crash restores legacy home and a switch at ${width}px for ${role}`, async () => {
     const { page } = await openHost({ width, role, crash: true });
     try {
       await page.locator('.st-roadmap-identity-fallback').waitFor();
@@ -383,3 +396,178 @@ for (const [width, role] of [[390, 'owner'], [744, 'reader'], [1440, 'owner']]) 
     } finally { await page.close(); }
   });
 }
+
+for (const key of ['?', 'Meta+k']) {
+  hostTest(`Chromium: ${key} opened from a Board card restores that card rather than a stale row trigger`, async () => {
+    const { page, errors } = await openHost({ surface: 'board' });
+    try {
+      const more = page.locator('.st-roadmap-identity').getByRole('button', { name: 'More', exact: true });
+      await more.click();
+      await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click();
+      await page.getByRole('dialog').filter({ hasText: 'Keyboard shortcuts' }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'More');
+      const card = page.locator('.st-board-card[data-step-id="wind"]');
+      await card.focus();
+      await page.keyboard.press(key);
+      if (key === '?') await page.getByRole('dialog').filter({ hasText: 'Keyboard shortcuts' }).waitFor();
+      else await page.getByRole('textbox', { name: 'Tell the tree what to change' }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.activeElement?.matches('.st-board-card[data-step-id="wind"]'));
+      assert.equal(await card.evaluate((element) => document.activeElement === element), true);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+hostTest('Chromium: Graph completion Undo returns to its Complete action after unrelated row activity', async () => {
+  const { page, errors } = await openHost();
+  try {
+    await page.evaluate(() => window.scene.select('wind'));
+    const complete = page.getByRole('button', { name: 'Complete', exact: true });
+    await complete.click();
+    await page.locator('.st-graph-toast').waitFor();
+    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'More', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await page.locator('.st-board-toast-undo').click();
+    await complete.waitFor();
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Complete');
+    assert.equal(await complete.evaluate((element) => document.activeElement === element), true);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: clipboard refusal emits no successful share beacon or link toast', async () => {
+  const { page, errors } = await openHost({ role: 'reader', clipboardRefused: true });
+  try {
+    const share = page.locator('.st-roadmap-identity').getByRole('button', { name: 'Share', exact: true });
+    await share.click();
+    await page.waitForFunction(() => window.events.some(({ name, props }) => name === 'roadmap_graph_toast' && props.act === 'link' && props.outcome === 'failed'));
+    assert.deepEqual(await page.evaluate(() => ({
+      copies: window.copied,
+      shares: window.events.filter(({ name }) => name === 'link_copy'),
+      issues: window.issues,
+      toasts: window.events.filter(({ name }) => name === 'roadmap_graph_toast'),
+    })), { copies: [], shares: [], issues: [], toasts: [{ name: 'roadmap_graph_toast', props: { act: 'link', outcome: 'failed' } }] });
+    assert.equal(await share.evaluate((element) => document.activeElement === element), true);
+    assert.equal(await page.locator('.st-graph-toast').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: the demo Board slash shortcut focuses the displayed demo Find field', async () => {
+  const { page, errors } = await openHost({ surface: 'board', demo: true });
+  try {
+    const find = page.locator('.st-demo-board-identity .st-board-find-input');
+    await find.waitFor();
+    await page.locator('.st-board-card').first().focus();
+    await page.keyboard.press('/');
+    assert.equal(await find.evaluate((element) => document.activeElement === element), true);
+    await find.fill('wind');
+    assert.equal(await find.inputValue(), 'wind');
+    assert.equal(await page.locator('.st-roadmap-identity').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 390, 744]) {
+  hostTest(`Chromium: the device-only Graph keeps its honesty nudge reachable at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, role: 'ghost' });
+    try {
+      const nudge = page.getByRole('button', { name: 'Saved on this device — sign in to keep it →', exact: true });
+      await nudge.waitFor();
+      assert.equal(await nudge.count(), 1);
+      assert.equal(await nudge.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && box.top >= 0 && box.bottom <= window.innerHeight;
+      }), true);
+      await page.waitForFunction(() => {
+        const notice = document.querySelector('.st-roadmap-device-nudge')?.getBoundingClientRect();
+        const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]')?.getBoundingClientRect();
+        return notice && camera && (camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left);
+      });
+      assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => {
+        const notice = element.getBoundingClientRect();
+        const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]').getBoundingClientRect();
+        return camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left;
+      }), true);
+      await nudge.click();
+      assert.equal(await page.evaluate(() => window.signInOpened), 1);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+hostTest('Chromium: the phone Fork pill restores focus to the pill after dismissal', async () => {
+  const { page, errors } = await openHost({ width: 390, role: 'reader' });
+  try {
+    const fork = page.getByRole('button', { name: 'Fork this tree', exact: true });
+    await fork.click();
+    await page.getByRole('heading', { name: 'Make it yours' }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Fork this tree');
+    assert.equal(await fork.evaluate((element) => document.activeElement === element), true);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: phone roadmap sheet receives exact unfiltered state counts from the host', async () => {
+  const { page, errors } = await openHost({ width: 390, large: true });
+  try {
+    await page.locator('.st-roadmap-title-button').click();
+    const sheet = page.getByRole('dialog', { name: 'Roadmap', exact: true });
+    await sheet.waitFor();
+    assert.equal(await sheet.locator('.st-roadmap-sheet-progress').textContent(), '1 done · 1 up next · 998 locked');
+    assert.equal(await sheet.locator('[aria-current="true"] .st-roadmap-sheet-count').textContent(), '1/1k');
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: empty Board creation cancel returns to the empty-state New step trigger', async () => {
+  const { page, errors } = await openHost({ surface: 'board', empty: true });
+  try {
+    const create = page.locator('.st-view-layer--board').getByRole('button', { name: 'New step', exact: true });
+    await create.click();
+    await page.getByRole('textbox', { name: 'Name', exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).waitFor({ state: 'detached' });
+    assert.equal(await create.evaluate((element) => document.activeElement === element), true);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: crash fallback switch and Board inset follow the measured legacy chrome', async () => {
+  const { page, errors } = await openHost({ crash: true, surface: 'board' });
+  try {
+    const fallback = page.locator('.st-roadmap-identity-fallback');
+    await fallback.waitFor();
+    await page.waitForFunction(() => document.activeElement?.matches('.st-roadmap-fallback-switch [aria-pressed="true"]'));
+    const geometry = () => page.evaluate(() => {
+      const chrome = document.querySelector('.st-roadmap-identity-fallback .st-topbar');
+      const control = document.querySelector('.st-roadmap-fallback-switch');
+      const board = document.querySelector('.st-board');
+      return {
+        chromeBottom: chrome.offsetTop + chrome.offsetHeight,
+        switchTop: control.offsetTop,
+        switchBottom: control.offsetTop + control.offsetHeight,
+        boardPadding: Number.parseFloat(getComputedStyle(board).paddingTop),
+      };
+    });
+    const before = await geometry();
+    assert.equal(before.switchTop >= before.chromeBottom, true);
+    assert.equal(before.boardPadding > before.switchBottom, true);
+    await page.locator('.st-roadmap-identity-fallback .st-topbar').evaluate((element) => {
+      element.style.paddingBottom = `${Number.parseFloat(getComputedStyle(element).paddingBottom) + 40}px`;
+    });
+    await page.waitForFunction((before) => {
+      const control = document.querySelector('.st-roadmap-fallback-switch');
+      const board = document.querySelector('.st-board');
+      return control.offsetTop > before.switchTop && Number.parseFloat(getComputedStyle(board).paddingTop) > before.boardPadding;
+    }, before);
+    const after = await geometry();
+    const growth = after.chromeBottom - before.chromeBottom;
+    assert.equal(growth > 0, true);
+    assert.deepEqual({ switch: after.switchTop - before.switchTop, board: after.boardPadding - before.boardPadding }, { switch: growth, board: growth });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
