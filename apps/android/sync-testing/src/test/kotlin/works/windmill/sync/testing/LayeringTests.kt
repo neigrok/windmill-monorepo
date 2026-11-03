@@ -174,9 +174,13 @@ class LayeringTests {
             model.map { if (it[0] == "classpath" && it[1] == ":domain-kit") it.toMutableList().apply { this[3] += ",module:vendor:foreign:1" } else it },
             model.map { if (it[0] == "classpath" && it[1] == ":domain-kit") it.toMutableList().apply { this[4] = "/vendor/classes" } else it },
             model.map { if (it[0] == "project" && it[1] == ":platform") it.toMutableList().apply { this[3] += ",implementation::gym" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[3] += ",api::gym:domain" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[3] += ",api::domain-kit" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":gym:domain") it.toMutableList().apply { this[3] += ",api::agent" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[4] += ",org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper" } else it },
         )
         for ((index, mutation) in mutations.withIndex()) assertTrue("model attack $index", validateModel(mutation).isNotEmpty())
-        println("layering model: 12 projects, 8 JVM modules, 8 rejected model attacks")
+        println("layering model: 13 projects, 9 JVM modules, 12 rejected model attacks")
     }
 
     // Platform is product-neutral: no label it holds names gym (`gym`, `gym_…`, `gym.…`). Copy, which has spaces, may.
@@ -191,18 +195,32 @@ class LayeringTests {
         assertFalse(gym.containsMatchIn("gymnast"))
     }
 
+    // The turn is product-neutral: its sources name no product, in code or in comment. Only a frozen `coach-…` wire code may say the word.
+    @Test fun agentSourcesNameNoProduct() {
+        val nouns = setOf("gym", "routine", "note", "proposal", "lifter", "exercise", "workout", "coach")
+        val frozenCode = Regex(""""coach-[a-z-]+"""")
+        val word = Regex("""[A-Z]+(?![a-z])|[A-Z]?[a-z]+""")
+        fun named(source: String): Set<String> = word.findAll(source.replace(frozenCode, "")).map { it.value.lowercase().removeSuffix("s") }.filter { it in nouns }.toSet()
+        val sources = File(android, "agent/src/main/kotlin").walk().filter { it.extension == "kt" }.toList()
+        assertEquals(listOf("Turn.kt", "TurnDriver.kt", "TurnWire.kt"), sources.map { it.name }.sorted())
+        assertEquals(emptyList<String>(), sources.flatMap { file -> named(file.readText()).map { "${file.name}: $it" } })
+        assertEquals(nouns - "exercise" - "workout", named("""class RoutineNotes(val lifter: String, val gymProposal: Int) // coach"""))
+        assertEquals(setOf("coach"), named(""""coach-turn-order" + "coach_turn""""))
+        assertEquals(emptySet<String>(), named("""denote "coach-stream-replaced" gymnast"""))
+    }
+
     fun validateModel(model: List<List<String>>): List<String> {
         val findings = mutableListOf<String>()
-        val jvm = setOf(":sync-model-server", ":sync-core", ":sync-api", ":sync-schema", ":sync-testing", ":domain-kit", ":domain-kit-testing", ":gym:domain")
+        val jvm = setOf(":sync-model-server", ":sync-core", ":sync-api", ":sync-schema", ":sync-testing", ":domain-kit", ":domain-kit-testing", ":gym:domain", ":agent")
         val projects = jvm + setOf(":app", ":platform", ":gym", ":sync-engine")
         val allowed = mapOf(
             ":sync-core" to emptySet(), ":sync-api" to setOf(":sync-core"), ":sync-schema" to setOf(":sync-core"), ":sync-testing" to setOf(":sync-core", ":sync-api", ":sync-engine", ":sync-model-server"), ":sync-model-server" to setOf(":sync-core"),
             ":sync-engine" to setOf(":sync-core", ":sync-api", ":sync-schema"),
             ":domain-kit" to setOf(":sync-core", ":sync-api"), ":domain-kit-testing" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-testing", ":sync-engine"),
             ":gym:domain" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
-
-            ":platform" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
-            ":gym" to setOf(":gym:domain", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":platform"), ":app" to projects,
+            ":agent" to setOf(":sync-core"),
+            ":platform" to setOf(":agent", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
+            ":gym" to setOf(":gym:domain", ":agent", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":platform"), ":app" to projects,
         )
         val jvmPlugins = setOf(
             "org.gradle.api.plugins.BasePlugin", "org.gradle.api.plugins.HelpTasksPlugin", "org.gradle.api.plugins.JavaBasePlugin", "org.gradle.api.plugins.JavaPlugin",

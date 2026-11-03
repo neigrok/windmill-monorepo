@@ -171,22 +171,27 @@ class KitLayeringTests {
             model.map { if (it[0] == "classpath" && it[1] == ":domain-kit") it.toMutableList().apply { this[3] += ",module:vendor:foreign:1" } else it },
             model.map { if (it[0] == "classpath" && it[1] == ":domain-kit") it.toMutableList().apply { this[4] = "/vendor/classes" } else it },
             model.map { if (it[0] == "project" && it[1] == ":platform") it.toMutableList().apply { this[3] += ",implementation::gym" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[3] += ",api::gym:domain" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[3] += ",api::domain-kit" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":gym:domain") it.toMutableList().apply { this[3] += ",api::agent" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[4] += ",org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper" } else it },
         )
         for ((index, mutation) in mutations.withIndex()) assertTrue("model attack $index adds a finding", (validateModel(mutation).toSet() - baseline).isNotEmpty())
-        println("layering model: 12 required projects, 8 JVM modules, 8 rejected model attacks")
+        println("layering model: 13 required projects, 9 JVM modules, 12 rejected model attacks")
     }
 
     fun validateModel(model: List<List<String>>): List<String> {
         val findings = mutableListOf<String>()
-        val jvm = setOf(":sync-core", ":sync-api", ":sync-schema", ":sync-model-server", ":sync-testing", ":domain-kit", ":domain-kit-testing", ":gym:domain")
+        val jvm = setOf(":sync-core", ":sync-api", ":sync-schema", ":sync-model-server", ":sync-testing", ":domain-kit", ":domain-kit-testing", ":gym:domain", ":agent")
         val projects = jvm + setOf(":app", ":platform", ":gym", ":sync-engine")
         val allowed = mapOf(
             ":sync-core" to emptySet(), ":sync-api" to setOf(":sync-core"), ":sync-schema" to setOf(":sync-core"), ":sync-model-server" to setOf(":sync-core"), ":sync-testing" to setOf(":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":sync-model-server"),
+            ":agent" to setOf(":sync-core"),
             ":domain-kit" to setOf(":sync-core", ":sync-api"), ":domain-kit-testing" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-testing", ":sync-engine"),
             ":sync-engine" to setOf(":sync-core", ":sync-api", ":sync-schema"),
             ":gym:domain" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
-            ":platform" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine"),
-            ":gym" to setOf(":gym:domain", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":platform"), ":app" to projects,
+            ":platform" to setOf(":agent", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine"),
+            ":gym" to setOf(":gym:domain", ":agent", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":platform"), ":app" to projects,
         )
         val jvmPlugins = setOf(
             "org.gradle.api.plugins.BasePlugin", "org.gradle.api.plugins.HelpTasksPlugin", "org.gradle.api.plugins.JavaBasePlugin", "org.gradle.api.plugins.JavaPlugin",

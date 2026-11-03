@@ -32,6 +32,9 @@ kotlin {
 }
 
 dependencies {
+    // api: TurnHttp implements the turn's port.
+    api(project(":agent"))
+    implementation(project(":sync-core"))
     api(platform(libs.compose.bom))
     api(libs.compose.ui)
     api(libs.compose.foundation)

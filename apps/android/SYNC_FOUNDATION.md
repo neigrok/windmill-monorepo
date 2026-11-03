@@ -8,8 +8,8 @@ sign-in and uses engine account decisions. See
 
 ## A1 module baseline
 
-There are 12 Gradle projects: eight JVM modules, Android `:sync-engine`, and `:app`, `:platform`,
-`:gym`. Kotlin source lines below include comments and blanks, exclude build output, and include
+There are 13 Gradle projects: nine JVM modules, Android `:sync-engine`, and `:app`, `:platform`,
+`:gym`; `:agent` holds no sync code and the table leaves it out. Kotlin source lines below include comments and blanks, exclude build output, and include
 generated schema. The schema generator and its tests contain 356 Python lines.
 
 | Module | Main lines | Test lines |
@@ -120,7 +120,7 @@ python3 tools/schema_gen.py --check
 | Properties | P1/P3/P4/P5/P6/P7/P8: 128 distinct seeds each. P1: 147456 law assertions; P3: compares drawn after each result and pull; P4: 32768 admissions; P5: 32768 order assertions; P6: 32768 digest assertions; P7: 16384 merges / 43582 token-occurrence checks; P8: frozen-server-clock recovery under holds, undo, retire, keyed carriers, orphans, later writes, epochs and 409. |
 | Network replay | 128 seeds × 128 steps / 130425 entries checked; all 56 events produced. Five seeds × 128 steps × 2 runs pass deterministic equality. Thirty 60×60 coverage surveys (first seeds 1,1001,…,29001) pass with 0 misses; minimum mean producing seeds: 22.533333333333335 (floor 10). |
 | Journal replay | 60 seeds × 160 steps: 9600 steps, 4829 replica / 4771 server origins; 7 journal paths plus 4 failure events. 118 rollbacks, 136 committed crashes, 109 unauthorized replies, 624 lost replies. Thirty 60×160 coverage surveys pass with 0 misses; minimum mean producing seeds: 51.56666666666667. Deterministic replay passes. |
-| Layering | Each suite 4/4; 5 deterministic modules / 376 compiled classes / 0 findings. 12 projects / 8 JVM modules; 8 rejected model attacks each. Root owner attacks: 55 denied / 5 allowed; kit: 56 denied / 5 allowed. JVM engine artifact: 194 classes / 0 Android references. |
+| Layering | Root suite 6/6, kit suite 4/4; 5 deterministic modules / 555 compiled classes / 0 findings. 13 projects / 9 JVM modules; 12 rejected model attacks each. Root owner attacks: 55 denied / 5 allowed; kit: 56 denied / 5 allowed. JVM engine artifact: 221 classes / 0 Android references. |
 | Schema | `--check`: 3 files / 0 stale; generator tests 9/9. |
 | Independent oracle | JCS: 4096 random finite IEEE-754 patterns + 24 integer/format boundaries / 0 differences; patterns: 13 accepted / 31 rejected / 6 whole values. Six subprocess tests cover stalled I/O, bounded draining, limits, exit, crash and startup failure. |
 
