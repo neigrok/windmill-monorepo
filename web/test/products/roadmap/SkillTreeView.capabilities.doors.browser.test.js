@@ -1,4 +1,4 @@
-// The device line, the demo and every Fork and Activity door have their homes: §2.5 of the wave-8 architecture. One test per row, band and role, each named for its row.
+// §2.5 of the wave-8 architecture: the device line, the demo and every Fork and Activity door have their homes.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';

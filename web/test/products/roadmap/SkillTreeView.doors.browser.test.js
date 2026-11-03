@@ -18,6 +18,18 @@ for (const [role, demo] of [['owner', false], ['reader', false], ['reader', true
   });
 }
 
+hostTest('Chromium: the demo with no saved choice lands on the Graph through its default door', async () => {
+  const { page, errors } = await openHost({ role: 'reader', demo: true, surface: 'none' });
+  try {
+    await page.locator('.st-roadmap-identity[data-role="demo"][data-view="tree"]').waitFor();
+    await page.waitForFunction(() => window.events.some(({ name }) => name === 'roadmap_view_open'));
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_view_open')), [
+      { name: 'roadmap_view_open', props: { view: 'graph', band: 'desktop', role: 'demo', door: 'default' } },
+    ]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
 for (const width of [1440, 744, 390]) {
   hostTest(`Chromium: demo identity at ${width}px keeps ${width >= 744 ? 'Share and Fork in the Board row' : 'its phone Board offer without a roadmap sheet'}`, async () => {
     const { page, errors } = await openHost({ width, role: 'reader', demo: true });

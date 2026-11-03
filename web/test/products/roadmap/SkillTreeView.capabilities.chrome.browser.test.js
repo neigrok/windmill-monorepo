@@ -1,4 +1,4 @@
-// What ControlBar, the lane and the plaque carried has its home in the row and the Graph's camera: §2.5 of the wave-8 architecture. One test per row, band and role, each named for its row.
+// §2.5 of the wave-8 architecture: what ControlBar, the lane and the plaque carried has its home in the row and camera.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';

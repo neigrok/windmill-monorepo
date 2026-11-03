@@ -47,7 +47,7 @@ export const GRAPH_SHORTCUT_GROUPS = [
     title: 'View',
     rows: [
       { label: 'Keyboard shortcuts', chords: [[key('?')]] },
-      { label: 'Activity feed', chords: [[key('A')]] },
+      { label: 'Activity feed', chords: [[key('A')]], owner: true },
     ],
   },
 ];
@@ -95,15 +95,14 @@ export function detectPlatform() {
   return 'mac';
 }
 
-export function visibleGroups(readOnly, view = 'graph') {
-  if (view === 'board') {
-    if (!readOnly) return BOARD_SHORTCUT_GROUPS;
-    return BOARD_SHORTCUT_GROUPS
-      .filter((group) => group.title === 'Board' || group.title === 'View')
-      .map((group) => ({ ...group, rows: group.rows.filter((row) => !row.owner) }));
-  }
-  if (!readOnly) return GRAPH_SHORTCUT_GROUPS;
-  return GRAPH_SHORTCUT_GROUPS.filter((group) => group.title === 'Navigate' || group.title === 'View');
+// Without the desktop editor only navigation and help remain, and a row marked for owners shows to owners alone.
+export function visibleGroups(readOnly, view = 'graph', owner = !readOnly) {
+  const groups = view === 'board' ? BOARD_SHORTCUT_GROUPS : GRAPH_SHORTCUT_GROUPS;
+  if (!readOnly) return groups;
+  const reading = view === 'board' ? 'Board' : 'Navigate';
+  return groups
+    .filter((group) => group.title === reading || group.title === 'View')
+    .map((group) => ({ ...group, rows: group.rows.filter((row) => owner || !row.owner) }));
 }
 
 // The Graph's own keys, which the Board ignores once the shared Activity key is resolved.

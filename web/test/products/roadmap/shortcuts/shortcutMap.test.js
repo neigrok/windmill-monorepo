@@ -69,6 +69,17 @@ test('visibleGroups drops editing groups when read-only', () => {
   assert.deepEqual(visibleGroups(true).map((group) => group.title), ['Navigate', 'View']);
 });
 
+test('a row marked for owners shows only to owners, with or without the desktop editor', () => {
+  const labels = (...args) => visibleGroups(...args).flatMap(({ rows }) => rows.map(({ label }) => label));
+  assert.deepEqual([
+    labels(true, 'graph', false).includes('Activity feed'),
+    labels(true, 'graph', true).includes('Activity feed'),
+    labels(true, 'board', false).includes('Complete step'),
+    labels(true, 'board', true).includes('Complete step'),
+    labels(true, 'board', true).includes('Paste a plan'),
+  ], [false, true, false, true, false]);
+});
+
 test('detectPlatform defaults to Mac when no Windows platform is present', () => {
   assert.equal(detectPlatform(), 'mac');
 });

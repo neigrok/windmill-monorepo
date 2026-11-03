@@ -14,7 +14,7 @@ import { flushSync } from 'react-dom';
 import { Dialog } from '/src/design-system/feedback/Dialog.jsx';
 import { ShortcutsDialog } from '/src/products/roadmap/shortcuts/ShortcutsDialog.jsx';
 import { ShareDialog } from '/src/products/roadmap/share/ShareDialog.jsx';
-import { ForkDoor } from '/src/products/roadmap/ui/mobile/ForkDoor.jsx';
+import { ForkDoor } from '/src/products/roadmap/share/ForkDoor.jsx';
 import { SignInDialog } from '/src/shell/auth/SignInDialog.jsx';
 import { FeedbackDialog } from '/src/shell/feedback/FeedbackDialog.jsx';
 import { SyncDecisions } from '/src/shell/auth/SyncDecisions.jsx';
@@ -28,7 +28,7 @@ function Fixture(props) {
   let dialog;
   if (props.kind === 'shortcuts') dialog = e(ShortcutsDialog, common);
   else if (props.kind === 'share') dialog = e(ShareDialog, { ...common, treeId: 'tree', visibility: 'public', mine: true });
-  else if (props.kind === 'fork') dialog = e(ForkDoor, { ...common, presentation: 'dialog', signedIn: true, drawn: false, treeId: 'tree' });
+  else if (props.kind === 'fork') dialog = e(ForkDoor, { ...common, presentation: 'dialog', signedIn: true, treeId: 'tree' });
   else if (props.kind === 'signin') dialog = e(SignInDialog, { ...common, onSend: async () => {
     if (window.sendError) throw { code: window.sendError };
   } });

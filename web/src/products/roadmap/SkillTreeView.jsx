@@ -1451,7 +1451,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={!desktopEditor} view={boardActive ? 'board' : 'graph'} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={!desktopEditor} owner={owner} view={boardActive ? 'board' : 'graph'} />
 
       <ShareDialog
         key={treeId}

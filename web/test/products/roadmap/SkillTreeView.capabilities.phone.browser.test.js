@@ -1,5 +1,4 @@
-// Every capability the phone's List, lane and legacy Graph sheet carried has its home in the roadmap sheet or the Graph's
-// bar: §2.5 of the wave-8 architecture. One test per row, band and role, each named for its row.
+// §2.5 of the wave-8 architecture: the phone's List, lane and Graph sheet have their homes in the roadmap sheet and bar.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
