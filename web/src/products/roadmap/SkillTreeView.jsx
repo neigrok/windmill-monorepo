@@ -1682,9 +1682,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const closeRowActivity = useCallback(() => {
     activityActsRef.current.closeActivity();
     requestAnimationFrame(() => {
-      const row = identityRef.current;
-      const more = row?.querySelector('[data-roadmap-more]')
-        ?? row?.querySelector('button.st-roadmap-icon[aria-haspopup="menu"]');
+      const more = identityRef.current?.querySelector('[data-roadmap-more]');
       more?.focus({ preventScroll: true });
     });
   }, []);

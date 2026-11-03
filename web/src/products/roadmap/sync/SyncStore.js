@@ -137,8 +137,11 @@ export class SyncStore {
         };
         txn.oncomplete = () => {
           if (result.status === 'replaced') {
-            try { this.publishEpoch(treeId, lane, result.value.epochs[lane]); }
-            catch (error) { result.notificationError = error; }
+            try {
+              this.publishEpoch(treeId, lane, result.value.epochs[lane]);
+            } catch (error) {
+              result.notificationError = error;
+            }
           }
           resolve(result);
         };
@@ -203,8 +206,11 @@ export class SyncStore {
     for (const listener of this.listeners.get(treeId) ?? []) listener(event);
     if (typeof BroadcastChannel !== 'function') return;
     const channel = this.channel ?? new BroadcastChannel(CHANNEL);
-    try { channel.postMessage(event); }
-    finally { if (channel !== this.channel) channel.close(); }
+    try {
+      channel.postMessage(event);
+    } finally {
+      if (channel !== this.channel) channel.close();
+    }
   }
 }
 

@@ -1,7 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { beacon, withBrowserErrors } from './composerFixture.js';
@@ -9,8 +8,6 @@ import { beacon, withBrowserErrors } from './composerFixture.js';
 import { ACTIVITY, LABELS, ROADMAP_SHEET, ROADMAP_VERBS, STEP_DETAIL, roadmapMatches, roadmapsHeading } from '../../../../src/products/roadmap/board/copy.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const activityRowsModule = `${root}/src/products/roadmap/activity/ActivityRows.jsx`;
-const activityRowsFixture = fileURLToPath(new URL('./ActivityRows.fixture.jsx', import.meta.url));
 const entry = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -61,7 +58,6 @@ function start() {
     server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-roadmap-sheet-test`,
       plugins: [{ name: 'roadmap-sheet-test', enforce: 'pre',
         resolveId(id) {
-          if (id.endsWith('/activity/ActivityRows.jsx') && !existsSync(activityRowsModule)) return activityRowsFixture;
           if (id === '/roadmap-sheet-entry.js') return '\0roadmap-sheet-entry';
           if (id.endsWith('/telemetry/beacon.js')) return '\0roadmap-sheet-beacon';
         },

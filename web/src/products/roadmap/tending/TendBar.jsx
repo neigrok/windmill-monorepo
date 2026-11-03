@@ -5,7 +5,18 @@ import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
 import { coverBeneath, useComposerViewport } from '../board/composerFocus.js';
 import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../board/copy.js';
 
-export function TendBar({ variant = 'phone', presentation = null, topInset = 0, placeholder = ASK_AI_PLACEHOLDER.wide, examples = [], working, onSubmit, onDismiss, preserveOutsideFocus = false, portalTarget = null }) {
+export function TendBar({
+  variant = 'phone',
+  presentation = null,
+  topInset = 0,
+  placeholder = ASK_AI_PLACEHOLDER.wide,
+  examples = [],
+  working,
+  onSubmit,
+  onDismiss,
+  preserveOutsideFocus = false,
+  portalTarget = null,
+}) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const desktop = variant === 'desktop';
@@ -40,7 +51,10 @@ export function TendBar({ variant = 'phone', presentation = null, topInset = 0, 
     <div style={exampleRow}>
       {examples.map((example) => (
         <button key={example} type="button" style={exampleChip}
-          onClick={() => { setValue(example); inputRef.current?.focus(); }}>
+          onClick={() => {
+            setValue(example);
+            inputRef.current?.focus();
+          }}>
           {example}
         </button>
       ))}
@@ -123,8 +137,6 @@ function DockedLayer({ layerRef, style, ...props }) {
   return <div ref={layerRef} {...props} style={{ ...style, ...viewport.style }} />;
 }
 
-export default TendBar;
-
 const shell = {
   display: 'flex', alignItems: 'center', gap: 8, width: '100%',
   height: 52, padding: '0 8px 0 14px', boxSizing: 'border-box',
@@ -149,14 +161,17 @@ const send = {
   border: 'none', borderRadius: 'var(--radius-full)', background: 'var(--color-brand)', color: 'var(--text-on-accent)',
   cursor: 'pointer', transition: 'opacity var(--duration-fast) var(--ease-standard)',
 };
-const phoneForm = { width: '100%' }; // the lane places it
 const scrim = {
   position: 'absolute', inset: 0, zIndex: 30, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
   paddingTop: '18vh', background: 'rgba(33,27,19,.14)', pointerEvents: 'auto',
 };
 const deskForm = { width: 'min(560px, calc(100vw - 48px))' };
-const dockedForm = { width: 'calc(100% - 24px)' };
-const formStyles = { phone: phoneForm, desktop: deskForm, overlay: deskForm, docked: dockedForm };
+const formStyles = {
+  phone: { width: '100%' },
+  desktop: deskForm,
+  overlay: deskForm,
+  docked: { width: 'calc(100% - 24px)' },
+};
 const exampleRow = { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 };
 const exampleChip = {
   display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px',

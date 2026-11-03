@@ -254,6 +254,7 @@ export function RoadmapIdentity({
           <Tooltip label={ROADMAP_VERBS.more} side="bottom" disabled={!desktop || open === 'more'}>
             <button
               ref={moreButton}
+              data-roadmap-more
               type="button"
               className="st-roadmap-icon"
               aria-label={ROADMAP_VERBS.more}

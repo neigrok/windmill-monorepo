@@ -165,16 +165,20 @@ export function Shell({ location, neutral = null }) {
         {roomStatus && <RoomStatus status={roomStatus.status} />}
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
-          {roomStatus && status === 'ghost' ? <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button> : <AccountSeat
-            user={user}
-            status={status}
-            size={30}
-            display="avatar"
-            onSignIn={openSignInDoor}
-            onSettings={() => navigate('/app/settings')}
-            onConnect={() => navigate('/app/connect')}
-            onSignOut={signOut}
-          />}
+          {roomStatus && status === 'ghost' ? (
+            <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button>
+          ) : (
+            <AccountSeat
+              user={user}
+              status={status}
+              size={30}
+              display="avatar"
+              onSignIn={openSignInDoor}
+              onSettings={() => navigate('/app/settings')}
+              onConnect={() => navigate('/app/connect')}
+              onSignOut={signOut}
+            />
+          )}
         </div>
       </header>
       <main className="wm-room">

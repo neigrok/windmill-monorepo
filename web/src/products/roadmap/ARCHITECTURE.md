@@ -61,7 +61,8 @@ both state counts are supplied; otherwise it uses the truthful done/total `progr
 The remaining roadmaps come from `listAllTrees`; navigation
 uses the existing roadmap, new-roadmap and browse routes. Readers never receive the owner sheet.
 The demo uses the reader verbs and sample badge. `RoadmapSheet` owns title search above eight
-roadmaps, the query highlight and the keyboard-aware search/New roadmap footer.
+roadmaps and the keyboard-aware search/New roadmap footer. `roadmapSearch.js` owns the threshold,
+trimmed title match and highlight offsets in the original text after Unicode lowercasing.
 Identity menus share keyboard and outside-dismiss rules through `BoardControls`. More and What's next
 share a focus-leave dismissal rule that keeps focus on its destination. `TreeSwitcher`
 owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by the row, sheet,
@@ -81,9 +82,11 @@ view; the feed never opens itself while identity is mounted. On desktop, opening
 Graph dock. At 744–1023px a separate Activity panel keeps the current view usable; its rows open
 step details, and X, Escape or the Activity callback closes it and returns focus to More.
 Phone owners open Activity as a page inside the roadmap sheet through `sheet.activity`; A does
-nothing on phones. Back or the first Escape returns to the roadmap page, and a row closes the
-sheet before opening its step over the current view. `activity/ActivityRows.jsx` owns the shared
-tablet and phone rows, removed-step treatment and empty state. More reads `activityOpen` to
+nothing on phones. With at most eight roadmaps, the entry and Activity page share the 611px
+footprint, capped by the viewport; the search sheet keeps its taller layout. Back or the first
+Escape returns to the roadmap page, and a row closes the sheet before opening its step over the
+current view. `activity/ActivityRows.jsx` owns the shared tablet and phone rows, removed-step
+treatment and empty state. More reads `activityOpen` to
 retain its pressed state while the tablet panel is visible.
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
@@ -181,10 +184,11 @@ and never completes. A real Complete button follows the card in DOM order; Tab r
 or leaving focus closes it. Crossing the threshold offers one 8ms haptic where supported.
 
 On an active owner phone Board, a 500ms touch hold within 10px starts pane-scoped selection.
-Board and Graph share the pure `input/HoldGesture.js` recognizer; their adapters own timers.
-The List retains its own recognizer. `HoldGesture` and `SwipeGesture` cancel each other on claim; scroll and pointer cancellation stop
-the hold, and its release never opens a step. Holding survives unrelated renders; card callbacks
-keep their identities. `BoardView` mounts `useStepSelection`, which owns selection, history and focus
+Board and Graph share the pure `input/HoldGesture.js` recognizer; their adapters own timers and
+preserve their movement boundaries (Board cancels at 10px, Graph above 10px).
+The List retains its own recognizer. `HoldGesture` and `SwipeGesture` cancel each other on claim;
+scroll and pointer cancellation stop the hold, and its release never opens a step. Holding survives
+unrelated renders; card callbacks keep their identities. `BoardView` mounts `useStepSelection`, which owns selection, history and focus
 transitions separately from the Graph/List multi-select. Its current immutable `StepSelection` reads
 the filtered pane and permanently drops choices that leave it. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion
 and the step menu.

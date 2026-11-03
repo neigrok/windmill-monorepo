@@ -91,7 +91,8 @@ export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, on
     : roadmapsHeading({ count: rows.length });
   const listHeading = searchable ? heading : ROADMAP_SHEET.yourRoadmaps;
   const searchClass = searchable ? 'st-roadmap-sheet--search' : '';
-  const sheetClass = activityPage ? 'st-roadmap-sheet--activity' : searchClass;
+  const entryClass = activity && !searchable ? 'st-roadmap-sheet--activity-entry' : searchClass;
+  const sheetClass = activityPage ? 'st-roadmap-sheet--activity' : entryClass;
   const verbs = [
     { verb: 'askAI', label: ROADMAP_VERBS.askAI, Icon: Sparkles, callback: onAskAI },
     { verb: 'share', label: ROADMAP_VERBS.share, Icon: Share, callback: onShare },

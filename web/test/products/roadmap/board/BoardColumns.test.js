@@ -767,7 +767,7 @@ for (const key of ['Backspace', 'Delete']) {
       assert.deepEqual(await page.evaluate(() => window.inspectDeleteBoard()), {
         held: ['wind'],
         nodes: [{ id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] }],
-        calls: [['event', 'roadmap_board_delete', { step: 'held', door: 'key' }]],
+        calls: [['event', 'roadmap_board_delete', { step: 'held', door: 'key', view: 'board' }]],
         toast: { message: 'Read the wind deleted', holdMs: 9000 },
       });
       assert.deepEqual(await page.locator('[data-column]').evaluateAll((columns) => columns.map((column) => ({
@@ -780,7 +780,7 @@ for (const key of ['Backspace', 'Delete']) {
         id: 'dock', tabIndex: 0,
       });
       await page.clock.runFor(8849);
-      assert.deepEqual(await page.evaluate(() => window.deleteCalls), [['event', 'roadmap_board_delete', { step: 'held', door: 'key' }]]);
+      assert.deepEqual(await page.evaluate(() => window.deleteCalls), [['event', 'roadmap_board_delete', { step: 'held', door: 'key', view: 'board' }]]);
       await page.getByRole('button', { name: 'Undo', exact: true }).evaluate((button) => button.click());
       await page.locator('output[data-held="no"]').waitFor({ state: 'attached' });
       await page.clock.runFor(10000);
@@ -791,7 +791,7 @@ for (const key of ['Backspace', 'Delete']) {
           { id: 'course', prerequisites: [] }, { id: 'wind', prerequisites: ['course'] }, { id: 'dock', prerequisites: ['wind'] },
         ],
         calls: [
-          ['event', 'roadmap_board_delete', { step: 'held', door: 'key' }],
+          ['event', 'roadmap_board_delete', { step: 'held', door: 'key', view: 'board' }],
           ['event', 'roadmap_board_undo', { act: 'delete' }],
         ],
         toast: null,

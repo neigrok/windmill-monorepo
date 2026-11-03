@@ -382,8 +382,12 @@
   padding-bottom: 12px;
 }
 
+.st-board-sheet.st-roadmap-sheet--activity-entry,
 .st-board-sheet.st-roadmap-sheet--activity {
   height: 611px;
+}
+
+.st-board-sheet.st-roadmap-sheet--activity {
   overflow: hidden;
 }
 
