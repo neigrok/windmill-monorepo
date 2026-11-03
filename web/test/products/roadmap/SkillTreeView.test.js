@@ -59,8 +59,9 @@ function collectHandlers(code) {
   visit(parse(code, { ecmaVersion: 'latest', sourceType: 'module' }));
 }
 collectHandlers(code);
-const identitySource = await readFile(new URL('../../../src/products/roadmap/useRoadmapIdentityActs.js', import.meta.url), 'utf8');
-collectHandlers(identitySource);
+for (const moved of ['useRoadmapIdentityActs.js', 'sync/useRoomSyncNotices.js', 'shortcuts/useRoadmapKeys.js']) {
+  collectHandlers(await readFile(new URL(`../../../src/products/roadmap/${moved}`, import.meta.url), 'utf8'));
+}
 assert.deepEqual([...handlers.keys()].sort(), ['newStepFromBoard', 'onEditorKey', 'onPaste']);
 
 function host({ coveringPage = false, modal = false, pasteComposer = false, typing = false, activityEnabled = true } = {}) {

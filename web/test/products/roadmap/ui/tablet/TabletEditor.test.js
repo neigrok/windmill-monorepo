@@ -9,20 +9,20 @@ const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const entry = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MobileEditorSheet } from '/src/products/roadmap/ui/mobile/MobileEditorSheet.jsx';
+import { TabletEditor } from '/src/products/roadmap/ui/tablet/TabletEditor.jsx';
 const noop = () => {};
-function Room({ panel }) {
+function Room() {
   const [state, setState] = useState('available');
-  return React.createElement(MobileEditorSheet, {
-    node: { id: 'wind', label: 'Read the wind', color: 'sky' }, state, panel,
+  return React.createElement(TabletEditor, {
+    node: { id: 'wind', label: 'Read the wind', color: 'sky' }, state,
     onMarkDone: (id) => { window.calls.push(['complete', id]); setState('complete'); },
     onUnmarkDone: (id) => { window.calls.push(['reset', id]); setState('available'); },
     onRename: noop, onAddStep: noop, onConnect: noop, onSetKind: noop, onDelete: noop,
   });
 }
-window.openSheet = (panel) => {
+window.openSheet = () => {
   window.calls = [];
-  createRoot(document.getElementById('root')).render(React.createElement(Room, { panel }));
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
 window.entryReady = true;
 `;
@@ -62,15 +62,14 @@ after(async () => {
   await server?.close();
 });
 
-for (const width of [390, 744]) {
-  test(`Chromium ${width}: completion and reset preserve the focused editor action node`, async () => {
+test('Chromium: completion and reset preserve the focused editor action node', async () => {
     await start();
-    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    const page = await browser.newPage({ viewport: { width: 744, height: 900 } });
     try {
       await withBrowserErrors(page, async () => {
         await page.goto(`${origin}/mobile-editor-test`);
         await page.waitForFunction(() => window.entryReady);
-        await page.evaluate((panel) => window.openSheet(panel), width >= 744);
+        await page.evaluate(() => window.openSheet());
         const complete = page.getByRole('button', { name: 'Mark done', exact: true });
         await complete.waitFor();
         await complete.focus();
@@ -93,5 +92,13 @@ for (const width of [390, 744]) {
     } finally {
       await page.close();
     }
+});
+
+for (const [state, verb] of [['available', 'complete'], ['complete', 'uncomplete'], ['locked', null]]) {
+  test(`progressVerb — ${state} offers ${verb}`, async () => {
+    const { register } = await import('node:module');
+    register('../../../../jsxLoader.mjs', import.meta.url);
+    const { progressVerb } = await import('../../../../../src/products/roadmap/ui/tablet/TabletEditor.jsx');
+    assert.equal(progressVerb(state), verb);
   });
 }

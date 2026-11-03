@@ -2,12 +2,12 @@
 // backend completes it when the link is claimed.
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Button, Input, Dialog } from '../../../../design-system';
-import { useDialogFocus } from '../../../../design-system/feedback/Dialog.jsx';
-import { requestMagicLink } from '../../../../shell/auth/AuthClient.js';
-import { forkTree } from '../../persistence/TreeRegistry.js';
-import { FORKED_FROM_DEMO_KEY } from '../../demo/demoStage.js';
-import { track } from '../../../../telemetry/beacon.js';
+import { Button, Input, Dialog } from '../../../design-system';
+import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
+import { requestMagicLink } from '../../../shell/auth/AuthClient.js';
+import { forkTree } from '../persistence/TreeRegistry.js';
+import { FORKED_FROM_DEMO_KEY } from '../demo/demoStage.js';
+import { track } from '../../../telemetry/beacon.js';
 import './fork-door.css';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

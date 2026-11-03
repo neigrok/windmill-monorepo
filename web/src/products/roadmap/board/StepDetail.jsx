@@ -7,7 +7,6 @@ import { hueOf } from '../theme.js';
 import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from './acts.js';
-import { deleteCostLine } from '../ui/mobile/editorSheet.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion, titleOf } from './StepFacts.js';
 import { handleMenuKey } from './BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
@@ -17,7 +16,7 @@ import { boardFocusTarget } from './traversal.js';
 import './modal.css';
 import './page.css';
 import {
-  COLUMN_TITLES, LABELS, LINK_COPIED, STATE_WORDS, STEP_DETAIL, WORKSPACE_EMPTY, checkedToast,
+  COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, WORKSPACE_EMPTY, checkedToast,
   DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
 } from './copy.js';
 

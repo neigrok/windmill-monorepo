@@ -269,6 +269,7 @@ test('Chromium: Undo lasts the hold window, then goes; the outcome line and Rese
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, clock: true }, errors);
   try {
     await card(page, 'Read the wind').click();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
     await page.getByRole('button', { name: 'Complete', exact: true }).click();
     await page.clock.runFor(5900);
     assert.deepEqual(await status(page), ['Done', 'Undo', 'Leave the dock is up next']);

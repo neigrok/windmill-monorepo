@@ -49,6 +49,7 @@ import {
   deletedStepsToast,
   deleteStepsAction,
   checkedToast,
+  deleteCostLine,
   notDone,
   roadmapComplete,
   searchEmpty,
@@ -496,4 +497,18 @@ test('copy — Activity has its approved heading and shipped empty sentence', as
     heading: 'Activity',
     empty: 'No activity yet — changes you make will appear here.',
   });
+});
+
+test('deleteCostLine — a leaf states only the removal, no branches resplice', () => {
+  assert.equal(deleteCostLine(0), 'Removes this step');
+  assert.equal(deleteCostLine(-1), 'Removes this step');
+});
+
+test('deleteCostLine — one child reads in the singular', () => {
+  assert.equal(deleteCostLine(1), 'Removes this step · 1 branch resplices');
+});
+
+test('deleteCostLine — many children read in the plural', () => {
+  assert.equal(deleteCostLine(2), 'Removes this step · 2 branches resplice');
+  assert.equal(deleteCostLine(7), 'Removes this step · 7 branches resplice');
 });

@@ -248,6 +248,12 @@ export function deleteStepsAction({ count }) {
   return `Delete ${stepCount(count)}`;
 }
 
+export function deleteCostLine(childCount) {
+  if (childCount <= 0) return 'Removes this step';
+  if (childCount === 1) return 'Removes this step · 1 branch resplices';
+  return `Removes this step · ${childCount} branches resplice`;
+}
+
 export function deleteConfirm({ step }) {
   return `Delete ${step}?`;
 }

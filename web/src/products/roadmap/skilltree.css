@@ -120,7 +120,7 @@
   outline: 2px solid currentColor;
   outline-offset: -2px;
 }
-.st-mobile-chrome .st-view-action {
+.st-graph-chrome .st-view-action {
   min-height: 44px;
   padding: 0 14px;
 }
@@ -1568,11 +1568,11 @@
 /* ---- The Graph's chrome self-positions in screen space. ---- */
 
 /* Chrome yields while panning: it fades to a whisper, then eases back ~200ms after the pan. */
-.st-mobile-chrome {
+.st-graph-chrome {
   transition: opacity 200ms var(--ease-soft);
 }
 
-.st-root.panning .st-mobile-chrome {
+.st-root.panning .st-graph-chrome {
   opacity: 0.35;
 }
 
@@ -1599,7 +1599,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .st-mobile-chrome {
+  .st-graph-chrome {
     transition: none;
   }
 }
@@ -1611,7 +1611,7 @@
 .st-view-layer {
   position: absolute;
   inset: 0;
-  z-index: 18; /* above the canvas, below the mobile chrome (z20) */
+  z-index: 18; /* above the canvas, below the Graph chrome (z20) */
 }
 /* Re-assert the cross-fade past the global reduce rule. */
 @media (prefers-reduced-motion: reduce) {
@@ -2277,7 +2277,7 @@
 }
 
 @media (min-width: 744px) {
-  .st-mobile-chrome .st-roadmap-device-nudge {
+  .st-graph-chrome .st-roadmap-device-nudge {
     left: calc(env(safe-area-inset-left, 0px) + 24px);
   }
 }

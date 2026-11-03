@@ -13,7 +13,7 @@ hostTest('Chromium: the device-only Graph keeps its Shell honesty line and sign-
     assert.equal(await page.locator('.st-roadmap-device-nudge').count(), 0);
     await page.waitForFunction(() => {
       const notice = document.querySelector('.wm-room-status-full')?.getBoundingClientRect();
-      const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]')?.getBoundingClientRect();
+      const camera = document.querySelector('.st-graph-chrome [aria-label="Camera"]')?.getBoundingClientRect();
       return notice && camera && (camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left);
     });
     assert.equal(await line.evaluate((element) => {
@@ -39,12 +39,12 @@ for (const width of [320, 390]) {
       }), true);
       await page.waitForFunction(() => {
         const notice = document.querySelector('.st-roadmap-device-nudge')?.getBoundingClientRect();
-        const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]')?.getBoundingClientRect();
+        const camera = document.querySelector('.st-graph-chrome [aria-label="Camera"]')?.getBoundingClientRect();
         return notice && camera && (camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left);
       });
       assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => {
         const notice = element.getBoundingClientRect();
-        const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]').getBoundingClientRect();
+        const camera = document.querySelector('.st-graph-chrome [aria-label="Camera"]').getBoundingClientRect();
         return camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left;
       }), true);
       assert.deepEqual(await nudge.evaluate((element) => ({

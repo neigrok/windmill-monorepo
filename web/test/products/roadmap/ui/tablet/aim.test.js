@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../../src/products/roadmap/model/SkillTree.js';
-import { illegalTargets, edgeFor } from '../../../../../src/products/roadmap/ui/mobile/aim.js';
+import { illegalTargets, edgeFor } from '../../../../../src/products/roadmap/ui/tablet/aim.js';
 
 // root → a → b → c → c2, plus a → x (x is a sibling of b under a), plus a detached m.
 // Source is b throughout: it has ancestors {a, root}, a child c, deeper descendants {c, c2},

@@ -1,16 +1,16 @@
 // Pointer input reaches the canvas outside the selected-step bar, Fork and the camera controls.
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Icon } from '../../../../design-system';
-import { DeviceLine } from '../../board/SyncNotices.jsx';
-import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } from '../../board/copy.js';
+import { Icon } from '../../../design-system';
+import { DeviceLine } from '../board/SyncNotices.jsx';
+import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } from '../board/copy.js';
 
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 // The reader's Fork this tree pill, above the bottom safe area; whatever must clear it reads its geometry here.
 export const FORK_PILL = { bottom: 18, height: 50 };
 export const GRAPH_CAMERA_SIZE = { width: 248, height: 50 };
 
-export function MobileChrome({
+export function GraphChrome({
   onFork,
   deviceLine = null,
   ctaEcho = false,
@@ -81,7 +81,7 @@ export function MobileChrome({
 
   return (
     <div
-      className="st-mobile-chrome"
+      className="st-graph-chrome"
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20 }}
     >
       {/* Fork CTA — the share page's one verb; absent on your own trees */}

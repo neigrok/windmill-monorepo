@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { parse } from 'acorn';
-import { beacon, withBrowserErrors } from '../../board/composerFixture.js';
+import { beacon, withBrowserErrors } from '../board/composerFixture.js';
 
-const root = fileURLToPath(new URL('../../../../../', import.meta.url));
+const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React, { useCallback, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ForkDoor } from '/src/products/roadmap/ui/mobile/ForkDoor.jsx';
+import { ForkDoor } from '/src/products/roadmap/share/ForkDoor.jsx';
 import '/src/styles/global.css';
 const root = createRoot(document.getElementById('root'));
 window.events = [];

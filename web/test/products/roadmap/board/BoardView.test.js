@@ -93,7 +93,7 @@ import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { StepCard } from '/src/products/roadmap/board/StepCard.jsx';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
 import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
-import { useRoadmapToast } from '/src/products/roadmap/SkillTreeView.jsx';
+import { useRoadmapToast } from '/src/products/roadmap/board/useRoadmapToast.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 
 const legend = [

@@ -8,34 +8,32 @@ import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { useViewMode } from './ui/useViewMode.js';
 import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
-import { MobileChrome, FORK_PILL, GRAPH_CAMERA_SIZE } from './ui/mobile/MobileChrome.jsx';
+import { GraphChrome, FORK_PILL, GRAPH_CAMERA_SIZE } from './ui/GraphChrome.jsx';
 import { TendBar } from './tending/TendBar.jsx';
 import { useTend } from './tending/useTend.js';
 import { fetchTending } from './tending/tendingClient.js';
-import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
-import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
-import { BulkBar } from './ui/mobile/BulkBar.jsx';
+import { TabletPanel } from './ui/tablet/TabletPanel.jsx';
 import BoardView from './board/BoardView.jsx';
 import { coverBeneath } from './board/composerFocus.js';
 import { BoardQuery, COLUMN_OF_STATE } from './board/Board.js';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './board/RoadmapIdentity.jsx';
 import { BoardToast } from './board/BoardToast.jsx';
-import { completedToast, completedStepsToast, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS, SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER, LAPSED_SESSION } from './board/copy.js';
+import { useRoadmapToast } from './board/useRoadmapToast.js';
+import { completedToast, completedStepsToast, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS } from './board/copy.js';
 import { useRoadmapIdentityActs } from './useRoadmapIdentityActs.js';
+import { useRoomAuthority } from './useRoomAuthority.js';
 import { StepDetail } from './board/StepDetail.jsx';
 import { titleOf } from './board/StepFacts.js';
 import { StepComposer } from './board/StepComposer.jsx';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
-import { countBucket, deletable } from './board/acts.js';
+import { deletable } from './board/acts.js';
 import { RefusedSync } from './board/SyncNotices.jsx';
-import { registerRoomStatus } from '../../shell/roomStatus.js';
-import { deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from './sync/status.js';
+import { useRoomSyncNotices } from './sync/useRoomSyncNotices.js';
 import { useStepAddress, hashWithStep, stepIsStale } from './board/stepAddress.js';
-import { activeSurface } from './ui/mobile/editorSheet.js';
-import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
-import { sharedKind } from './ui/mobile/bulk.js';
-import { markDoneTargets } from './selection/bulkSelection.js';
-import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
+import { useTabletEditing } from './ui/tablet/useTabletEditing.js';
+import { markDoneTargets, sharedKind } from './selection/bulkSelection.js';
+import { useGraphSelection } from './selection/useGraphSelection.js';
+import { ForkDoor } from './share/ForkDoor.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
 import { ShareDialog, treeShareUrl } from './share/ShareDialog.jsx';
@@ -45,7 +43,6 @@ import { ActivityRows } from './activity/ActivityRows.jsx';
 import { useActivity } from './activity/useActivity.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
-import { cmpOrder } from './model/TrunkTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { layoutNameFrom, loadLayoutEngine, layoutTree } from './layout/index.js';
@@ -53,11 +50,10 @@ import { frontierTarget, viewportInsets, graphToastPlacement, DOCK_WIDTH, TABLET
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
-import { isOwnershipRefusal, isSessionRefusal, refusalEventCode, isExpectedRefusal } from './sync/refusals.js';
-import { claimLocalTrees } from './sync/claimLocalTrees.js';
+import { refusalEventCode, isExpectedRefusal } from './sync/refusals.js';
 import { renameLocalTree, deleteLocalTree, loadDeviceTree } from './sync/localTrees.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
-import { LocalTreeRegistry, resolveDeviceOwner, confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
+import { LocalTreeRegistry, resolveDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { ViewPrefs, initialView, boardCanShow, viewToShow, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
@@ -72,14 +68,13 @@ import { useWorkspace } from './ui/tree/useWorkspace.js';
 import { Button, ErrorBoundary, Icon, IconButton } from '../../design-system';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { parsePlan } from './paste/planGrammar.js';
-import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
-import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
+import { useGraphEditing } from './editing/useGraphEditing.js';
 import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR, WORKING_ZOOM, PHONE_WORKING_ZOOM } from './theme.js';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
-import { boardKey, graphOnlyKey } from './shortcuts/shortcutMap.js';
+import { useRoadmapKeys } from './shortcuts/useRoadmapKeys.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
@@ -90,7 +85,6 @@ const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-const NEW_NODE_ICON = 'sparkles';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest';
 const CTA_ECHO_DELAY = 1500;
 // The space between a measured chrome row and what sits beneath it.
@@ -115,123 +109,11 @@ function reportBoardFailure(operation, error) {
   captureError('roadmap', operation, stack, '#/app');
 }
 
-export function useRoadmapToast() {
-  const toastTimersRef = useRef([]);
-  const toastKeyRef = useRef(0);
-  const boardToastRef = useRef(null);
-  const [toast, setToast] = useState(null); // { message, action, detail, key, leaving }
-  const [toastWhyOpen, setToastWhyOpen] = useState(false);
-  const showToast = useCallback((message, options = {}) => {
-    boardToastRef.current?.onLeave?.('replaced');
-    boardToastRef.current = null;
-    toastTimersRef.current.forEach(clearTimeout);
-    toastTimersRef.current = [];
-    if (['board', 'graph'].includes(options.surface)) {
-      const next = { ...options, message, key: (toastKeyRef.current += 1), leaving: false, started: false };
-      boardToastRef.current = next;
-      setToast(next);
-      return;
-    }
-    const action = options.action ?? null;
-    const hold = options.duration ?? (action ? 6000 : 4000);
-    const key = (toastKeyRef.current += 1);
-    setToastWhyOpen(false);
-    setToast({ message, action, detail: options.detail || null, key, leaving: false });
-    const leave = setTimeout(() => {
-      setToast((current) => (current && current.key === key ? { ...current, leaving: true } : current));
-      const drop = setTimeout(() => setToast((current) => (current && current.key === key ? null : current)), 280); // matches the CSS exit
-      toastTimersRef.current.push(drop);
-    }, hold);
-    toastTimersRef.current.push(leave);
-  }, []);
-
-  const boardToastShown = useCallback((key) => {
-    const current = boardToastRef.current;
-    if (!current || current.key !== key || current.started) return;
-    current.started = true;
-    const leave = setTimeout(() => {
-      if (boardToastRef.current !== current) return;
-      current.onLeave?.('timer');
-      boardToastRef.current = null;
-      setToast((shown) => shown?.key === key ? { ...shown, leaving: true } : shown);
-      toastTimersRef.current.push(setTimeout(() => setToast((shown) => shown?.key === key ? null : shown), 280));
-    }, current.holdMs);
-    toastTimersRef.current.push(leave);
-  }, []);
-
-  const dismissToast = useCallback(() => {
-    boardToastRef.current?.onLeave?.('replaced');
-    boardToastRef.current = null;
-    toastTimersRef.current.forEach(clearTimeout);
-    toastTimersRef.current = [];
-    setToast(null);
-  }, []);
-
-  useEffect(() => () => toastTimersRef.current.forEach(clearTimeout), []);
-  return { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast };
-}
-
-const SYNC_CLOCK = {
-  now: () => Date.now(),
-  setTimeout: (...args) => setTimeout(...args),
-  clearTimeout: (id) => clearTimeout(id),
-};
-
-function useRoadmapSyncStatus(session, clock = SYNC_CLOCK) {
-  const [reading, setReading] = useState(null);
-  useEffect(() => {
-    if (!session) return undefined;
-    let timer;
-    let previous = null;
-    const facts = { lastLiveAt: clock.now(), pendingSince: null, drainedAt: null };
-    const update = (snapshot) => {
-      clock.clearTimeout(timer);
-      const now = clock.now();
-      const pending = snapshot.structurePending + snapshot.progressPending
-        + snapshot.structureInFlight + snapshot.progressInFlight;
-      if (snapshot.phase === 'live' || previous?.phase === 'live') facts.lastLiveAt = now;
-      if (Boolean(snapshot.rebaselining) !== Boolean(previous?.rebaselining)) {
-        facts.pendingSince = null;
-        facts.drainedAt = null;
-      }
-      if (pending > 0 && facts.pendingSince === null) facts.pendingSince = now;
-      if (pending === 0) {
-        if (previous && facts.pendingSince !== null && snapshot.phase === 'live') facts.drainedAt = now;
-        facts.pendingSince = null;
-      }
-      previous = snapshot;
-      setReading({ session, snapshot, state: deriveSyncStatus(snapshot, now, facts) });
-      const deadlines = [
-        snapshot.phase !== 'live' ? facts.lastLiveAt + OFFLINE_GRACE_MS : null,
-        facts.pendingSince === null ? null : facts.pendingSince + SAVING_DELAY_MS,
-        facts.drainedAt === null ? null : facts.drainedAt + SAVED_HOLD_MS,
-      ].filter((deadline) => deadline !== null && deadline > now);
-      if (deadlines.length) {
-        const nextDeadline = Math.min(...deadlines);
-        timer = clock.setTimeout(() => update(session.statusSnapshot()), nextDeadline - now);
-      }
-    };
-    const unsubscribe = session.subscribeStatus(update);
-    return () => {
-      unsubscribe();
-      clock.clearTimeout(timer);
-    };
-  }, [session, clock]);
-  if (reading?.session !== session) return { snapshot: null, state: null };
-  return reading;
-}
-
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
   const { status, refresh, account, lapsed: sessionLapsed } = useAuth();
 
-  // Account authority comes from the shell; a lapse retains this document's device owner.
-  useEffect(() => { if (account) confirmDeviceOwner(account.id); }, [account]);
-
-  const [lapsed, setLapsed] = useState(false);
-  const [demotion, setDemotion] = useState(null); // { edits, cardOpen } | null
-  const readOnly = viewReadOnly || !!demotion;
   const identityRef = useRef(null);
   const activityActsRef = useRef(null);
   const graphStepReturnRef = useRef(false);
@@ -253,7 +135,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     (primary ?? pressed)?.focus({ preventScroll: true });
   }, []);
   const sceneRef = useRef(null);
-  const readOnlyRef = useRef(readOnly);
   const editorRef = useRef(null);
   const treeRef = useRef(null);
   const layoutRef = useRef(null); // the requested engine, and the name of the engine that produced the current picture
@@ -267,109 +148,26 @@ export function SkillTreeView({ treeId, demo = false }) {
   const seedRef = useRef(null);
   const repoRef = useRef(null);
   const collabRef = useRef(null);
+  const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, collabRef, sceneRef });
+  const readOnly = viewReadOnly || !!demotion;
+  const readOnlyRef = useRef(readOnly);
   const [syncSession, setSyncSession] = useState(null);
   const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection }
   const onTreeChangedRef = useRef(null);
   const maskedShownRef = useRef('');
   const applyRemoteProgressRef = useRef(null);
-  const prevAuthRef = useRef(status);
-  const suspectRef = useRef(false);
-  const demotedRef = useRef(false);
-  const claimRunRef = useRef(false);
 
-  const kickClaim = useCallback(() => {
-    if (claimRunRef.current) return;
-    claimRunRef.current = true;
-    claimLocalTrees({ openTreeId: treeId, openSession: () => collabRef.current })
-      .finally(() => { claimRunRef.current = false; });
-  }, [treeId]);
-
-  useEffect(() => {
-    if (prevAuthRef.current === 'signed-in') kickClaim();
-  }, [kickClaim]);
-
-  // A sign-in or sign-out must reconnect: the socket’s principal is fixed at connect.
-  useEffect(() => {
-    const prev = prevAuthRef.current;
-    prevAuthRef.current = status;
-    if (prev === status) return;
-    if (status === 'signed-in') {
-      if (demotedRef.current) { window.location.reload(); return; }
-      setLapsed(false);
-    }
-    if (prev === 'loading' && status === 'signed-in') {
-      kickClaim();
-      return;
-    }
-    if (prev === 'ghost' && status === 'signed-in') {
-      collabRef.current?.forceReconnect();
-      kickClaim();
-      return;
-    }
-    if (prev === 'signed-in') {
-      if (suspectRef.current) { suspectRef.current = false; setLapsed(true); }
-      collabRef.current?.forceReconnect();
-    }
-  }, [status, kickClaim]);
-
-  useEffect(() => {
-    let idleTimer = null;
-    let waiting = false;
-    let lastActivityAt = 0;
-    const noteActivity = () => { lastActivityAt = Date.now(); };
-    const stopWaiting = () => {
-      window.removeEventListener('keydown', noteActivity, true);
-      window.removeEventListener('pointerdown', noteActivity, true);
-    };
-    const demote = () => {
-      waiting = false;
-      if (demotedRef.current) { stopWaiting(); return; }
-      const el = document.activeElement;
-      const handsBusy = (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'))
-        || (sceneRef.current?.isPointerActive?.() ?? false);
-      const idle = Date.now() - lastActivityAt >= 400;
-      if (handsBusy && !idle) {
-        waiting = true;
-        window.addEventListener('keydown', noteActivity, true);
-        window.addEventListener('pointerdown', noteActivity, true);
-        idleTimer = setTimeout(demote, 400);
-        return;
-      }
-      stopWaiting();
-      demotedRef.current = true;
-      sceneRef.current?.setReadOnly?.();
-      setDemotion({ edits: collabRef.current?.pendingEditCount?.() ?? 0, cardOpen: true });
-    };
-    const onForbidden = (event) => {
-      if (isOwnershipRefusal(event.detail)) {
-        if (demotedRef.current || waiting) return;
-        lastActivityAt = Date.now();
-        demote();
-        return;
-      }
-      if (!isSessionRefusal(event.detail)) return;
-      if (suspectRef.current) return;
-      suspectRef.current = true;
-      refresh().then((me) => {
-        const stillSignedIn = me !== undefined ? !!me : prevAuthRef.current === 'signed-in';
-        if (stillSignedIn) suspectRef.current = false;
-      });
-    };
-    window.addEventListener('wm-edit-forbidden', onForbidden);
-    return () => {
-      window.removeEventListener('wm-edit-forbidden', onForbidden);
-      stopWaiting();
-      clearTimeout(idleTimer);
-    };
-  }, [refresh]);
   const invalidRef = useRef(false);
   const plantedQuestRef = useRef(null); // null until consumed; survives StrictMode’s double effect
   const forkedFromDemoRef = useRef(null);
   const demoRef = useRef(demo);
   useEffect(() => { demoRef.current = demo; }, [demo]);
-  const selectedIdRef = useRef(null);
-  const selectedIdsRef = useRef(new Set());
-  const selectedEdgesRef = useRef(new Set());
+  const {
+    selectedId, selectedIds, selectedEdges, multiMode,
+    selectedIdRef, selectedIdsRef, selectedEdgesRef,
+    setSelectedId, selectAll, clearEdges, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick,
+    enterMulti, leaveMulti, toggleMember, collapse,
+  } = useGraphSelection(sceneRef);
   const { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast } = useRoadmapToast();
   const composerOpenRef = useRef(false);
 
@@ -394,57 +192,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [draftKinds, setDraftKinds] = useState([]);
-  const [selectedId, commitSelectedId] = useState(null);
-  // Two sets: nodes and edge keys. selectedId / scene.selectedEdge are their size<=1 projections, null once the total exceeds one.
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
-  const [selectedEdges, setSelectedEdges] = useState(() => new Set());
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
   const [autoFocusNameId, setAutoFocusNameId] = useState(null);
-
-  // Must use projectEdge, not selectEdge: selectEdge's node-clear cascade reads lagging scene.selectedIds and would wipe a still-selected edge.
-  const reconcileProjections = useCallback((nodeSet, edgeSet) => {
-    const total = nodeSet.size + edgeSet.size;
-    commitSelectedId(total === 1 && nodeSet.size === 1 ? [...nodeSet][0] : null);
-    sceneRef.current?.projectEdge(total === 1 && edgeSet.size === 1 ? parseEdgeKey([...edgeSet][0]) : null);
-  }, []);
-
-  const setSelectedId = useCallback((id) => {
-    const nodes = id ? new Set([id]) : new Set();
-    setSelectedIds(nodes);
-    setSelectedEdges(new Set());
-    reconcileProjections(nodes, new Set());
-  }, [reconcileProjections]);
-
-  const onSelectionToggle = useCallback((id) => {
-    const next = new Set(selectedIdsRef.current);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setSelectedIds(next);
-    reconcileProjections(next, selectedEdgesRef.current);
-  }, [reconcileProjections]);
-  const onMarqueeSelect = useCallback((ids, additive) => {
-    const next = additive ? new Set(selectedIdsRef.current) : new Set();
-    for (const id of ids) next.add(id);
-    const nextEdges = additive ? selectedEdgesRef.current : new Set();
-    setSelectedIds(next);
-    if (!additive) setSelectedEdges(new Set());
-    reconcileProjections(next, nextEdges);
-  }, [reconcileProjections]);
-
-  const onEdgeToggle = useCallback((edge) => {
-    const key = edgeKey(edge.from, edge.to);
-    const next = new Set(selectedEdgesRef.current);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    setSelectedEdges(next);
-    reconcileProjections(selectedIdsRef.current, next);
-  }, [reconcileProjections]);
-
-  const onEdgePick = useCallback(() => {
-    setSelectedIds(new Set());
-    setSelectedEdges(new Set());
-    commitSelectedId(null);
-  }, []);
 
   const [reloadKey, setReloadKey] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
@@ -459,9 +210,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [treeMine, setTreeMine] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
   const [panning, setPanning] = useState(false);
-  const [aim, setAim] = useState(null); // { sourceId, direction: 'unlocks'|'needs' } | null
-  const [removing, setRemoving] = useState(null); // { from, to } | null
-  const [multiMode, setMultiMode] = useState(false);
   const [view, setView] = useState(null); // 'tree' | 'board' | null when undecided
   const [boardCrashed, setBoardCrashed] = useState(false);
   const [boardComposer, setBoardComposer] = useState(null);
@@ -552,20 +300,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [showToast, undoTend]);
 
   const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
-
-  useEffect(() => {
-    if (!canTend) return undefined;
-    const onKey = (event) => {
-      if (event.key === 'Escape' && tendOpen) { event.preventDefault(); setTendOpen(false); return; }
-      if (keyboardCovered()) return;
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        setTendOpen((open) => !open);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [canTend, tendOpen, keyboardCovered]);
 
   const handlePanStateChange = useCallback((isPanning) => setPanning(isPanning), []);
 
@@ -665,177 +399,14 @@ export function SkillTreeView({ treeId, demo = false }) {
     await deleteLocalTree(id);
   }, [treeId]);
 
-  const undo = useCallback(() => collabRef.current?.undo(), []);
-  const redo = useCallback(() => collabRef.current?.redo(), []);
-
-  const handleRename = useCallback((id, label) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const node = editor.treeData.nodes.find((n) => n.id === id);
-    if (!node || node.label === label) return;
-    const wasNamed = node.label.trim() !== '';
-    collabRef.current?.dispatch({ kind: 'RenameNode', id, label });
-    if (wasNamed) emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
-  }, [emit]);
-
-  const handleCreateChild = useCallback((parentId) => {
-    const scene = sceneRef.current;
-    const editor = editorRef.current;
-    const parent = scene?.nodesById.get(parentId);
-    if (!parent || !editor) return;
-
-    const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId });
-    scene.select(id);
-    setSelectedId(id);
-    setAutoFocusNameId(id);
-    emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
-    return id;
-  }, [syncStructure, emit]);
-
-  const handleCreateRoot = useCallback(() => {
-    if (readOnlyRef.current) return;
-    const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-    const color = legendRef.current[0]?.hue ?? 'terracotta';
-    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color });
-    sceneRef.current?.select(id);
-    setSelectedId(id);
-    setAutoFocusNameId(id);
-    emit({ verb: 'added', nodeId: id, label: '', kind: color });
-  }, [emit, setSelectedId]);
-
-  const handleConnect = useCallback((sourceId, targetId) => {
-    collabRef.current?.dispatch({ kind: 'AddEdge', from: sourceId, to: targetId });
-  }, []);
-
-  const handleDeleteEdge = useCallback((sourceId, targetId) => {
-    collabRef.current?.dispatch({ kind: 'RemoveEdge', from: sourceId, to: targetId });
-  }, []);
-
-  const handleReconnect = useCallback((oldFrom, oldTo, newFrom, newTo) => {
-    collabRef.current?.dispatch({ kind: 'ReconnectEdge', oldFrom, oldTo, newFrom, newTo });
-  }, []);
-
-  const deleteNodeAt = useCallback((id) => {
-    const editor = editorRef.current;
-    if (!editor || !id) return;
-    const node = editor.treeData.nodes.find((n) => n.id === id);
-    collabRef.current?.dispatch({ kind: 'DeleteNode', id });
-    if (selectedIdRef.current === id) setSelectedId(null);
-    showToast('Step deleted', { action: { label: 'Undo', run: undo } });
-    emit({ verb: 'removed', nodeId: id, label: node?.label, kind: node?.color });
-  }, [emit, showToast, undo]);
-  const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
-
-  // Labels must be snapshotted BEFORE dispatch: the projection drops the doomed nodes synchronously.
-  const bulkDelete = useCallback(() => {
-    const ids = [...selectedIdsRef.current];
-    const edges = [...selectedEdgesRef.current].map(parseEdgeKey); // {from,to}
-    if (!ids.length && !edges.length) return;
-    const nodes = editorRef.current?.treeData.nodes ?? [];
-    const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
-    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: ids, edges });
-    for (const node of doomed) emit({ verb: 'removed', nodeId: node.id, label: node.label, kind: node.color });
-    setMultiMode(false);
-    setSelectedId(null);
-    const parts = [];
-    if (ids.length) parts.push(`${ids.length} step${ids.length === 1 ? '' : 's'}`);
-    if (edges.length) parts.push(`${edges.length} link${edges.length === 1 ? '' : 's'}`);
-    showToast(`${parts.join(' and ')} deleted`, { action: { label: 'Undo', run: undo } });
-  }, [emit, showToast, undo, setSelectedId]);
-
-  const handleSetKind = useCallback((id, kind) => {
-    if (!id) return;
-    collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
-  }, []);
-
-  // Same-parent siblings in sort order with their order keys; null off-tree.
-  const reorderContext = useCallback((nodeId) => {
-    const tree = treeRef.current;
-    if (!tree || !tree.nodesById.has(nodeId)) return null;
-    const parentId = tree.trunk.primaryParentOf(nodeId);
-    const siblingIds = parentId === null
-      ? [...tree.roots()].sort(cmpOrder).map((root) => root.id)
-      : tree.trunk.trunkChildrenOf(parentId);
-    return { siblings: siblingIds.map((id) => ({ id, order: tree.nodesById.get(id)?.order ?? '' })) };
-  }, []);
-
-  const handleSetNodeOrder = useCallback((id, order) => {
-    if (!id) return;
-    collabRef.current?.dispatch({ kind: 'SetNodeOrder', id, order });
-  }, []);
-
-  const mobileRename = useCallback((id, label) => {
-    const node = editorRef.current?.treeData.nodes.find((n) => n.id === id);
-    const wasNamed = node && node.label.trim() !== '' && node.label !== label;
-    handleRename(id, label);
-    if (wasNamed) showToast('Renamed', { action: { label: 'Undo', run: undo }, duration: 4000 });
-  }, [handleRename, showToast, undo]);
-
-  const mobileRecolor = useCallback((id, kind) => {
-    handleSetKind(id, kind);
-    showToast('Recolored', { action: { label: 'Undo', run: undo }, duration: 4000 });
-  }, [handleSetKind, showToast, undo]);
-
-  // The undo must delete THIS bud, not pop the stack: naming it dispatches a RenameNode on top.
-  const mobileAddStep = useCallback((parentId) => {
-    const newId = handleCreateChild(parentId);
-    if (!newId) return;
-    showToast('Step added', {
-      action: { label: 'Undo', run: () => {
-        collabRef.current?.dispatch({ kind: 'DeleteNode', id: newId });
-        if (selectedIdRef.current === newId) setSelectedId(null);
-      } },
-      duration: 4000,
-    });
-  }, [handleCreateChild, showToast]);
-
-  const enterAim = useCallback((sourceId) => {
-    setRemoving(null);
-    setAim({ sourceId, direction: 'unlocks' });
-  }, []);
-
-  const flipAimDirection = useCallback(() => {
-    setAim((current) => (current ? { ...current, direction: current.direction === 'unlocks' ? 'needs' : 'unlocks' } : current));
-  }, []);
-
-  const bulkRecolor = useCallback((color, { silent = false } = {}) => {
-    const ids = [...selectedIdsRef.current];
-    if (!ids.length) return;
-    collabRef.current?.dispatch({ kind: 'BulkRecolor', nodeIds: ids, color });
-    if (!silent) showToast(`${ids.length} step${ids.length === 1 ? '' : 's'} recolored`, { action: { label: 'Undo', run: undo } });
-  }, [showToast, undo]);
-
-  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed.
-  const graftImported = useCallback((parse) => {
-    const editor = editorRef.current;
-    const collab = collabRef.current;
-    if (!editor || !collab) return;
-    const nodes = editor.treeData.nodes;
-    const selected = selectedIdRef.current;
-    const anchored = selected && nodes.some((node) => node.id === selected);
-    const targetId = (anchored ? selected : nodes.find((node) => node.prerequisites.length === 0)?.id) ?? null;
-
-    const graft = graftPlan({
-      parse,
-      targetId,
-      reservedNodeIds: collab.knownNodeIds(), // present AND tombstoned: never resurrect a deleted node
-      liveKinds: legendRef.current,
-    });
-    if (graft.nodes.length === 0) { setComposerOpen(false); return; }
-
-    collab.dispatch({ kind: 'ImportSubgraph', nodes: graft.nodes, edges: graft.edges, kinds: graft.kinds });
-
-    for (const grafted of graft.nodes) {
-      emit({ verb: 'added', nodeId: grafted.id, label: grafted.label, kind: grafted.color }, { silent: true });
-      sceneRef.current?.pulseNode(grafted.id);
-    }
-    const count = graft.nodes.length;
-    const targetLabel = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
-    const where = targetLabel ? ` under “${targetLabel}”` : '';
-    showToast(`Added ${count} step${count === 1 ? '' : 's'}${where}`, { action: { label: 'Undo', run: undo } });
-    setComposerOpen(false);
-  }, [emit, showToast, undo]);
+  const {
+    undo, redo, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
+    deleteNodeAt, deleteSelected, bulkDelete, handleSetKind, reorderContext, handleSetNodeOrder, bulkRecolor, graftImported,
+  } = useGraphEditing({
+    collabRef, editorRef, sceneRef, treeRef, legendRef, readOnlyRef,
+    selection: { selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti },
+    emit, showToast, setAutoFocusNameId, setComposerOpen,
+  });
 
   // The scene is constructed once; React drives it through the methods below.
   useEffect(() => {
@@ -903,129 +474,13 @@ export function SkillTreeView({ treeId, demo = false }) {
     setBounds(scene.getBounds());
   }, []);
 
-  useEffect(() => {
-    const onEditorKey = (event) => {
-      if (event.defaultPrevented) return;
-      const covered = keyboardCovered();
-      const activeElement = document.activeElement;
-      const typing = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.isContentEditable);
-      if (boardKey(event, { typing, covered }) === 'activity') {
-        if (!activityActsRef.current?.enabled) return;
-        event.preventDefault();
-        activityActsRef.current.open('key');
-        return;
-      }
-      if (boardActiveRef.current && graphOnlyKey(event)) {
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !typing) event.preventDefault();
-        return;
-      }
-      if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
-        if (covered) return;
-        event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
-        return;
-      }
-      if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
-        const el = document.activeElement;
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-        event.preventDefault();
-            const ids = editorRef.current?.treeData.nodes.map((n) => n.id) ?? [];
-        const set = new Set(ids);
-        setSelectedIds(set);
-        setSelectedEdges(new Set());
-        reconcileProjections(set, new Set());
-        return;
-      }
-      if (event.key === 'Escape') {
-        if (covered) return;
-        if (highlightedKindIdRef.current) { clearHighlightedKind(); return; }
-        if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) { setSelectedId(null); return; }
-        if (sceneRef.current?.selectedEdge) { sceneRef.current.selectEdge(null); return; }
-        if (feedSummonedRef.current) activityActsRef.current?.close();
-        return;
-      }
-      const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
-      const boardAction = boardKey(event, { typing, covered });
-      if (boardAction === 'find') {
-        const chrome = identityRef.current;
-        const find = chrome?.querySelector('.st-board-find-input');
-        const folded = chrome?.querySelector('.st-board-find-toggle');
-        if (!find && !folded) return;
-        event.preventDefault();
-        if (find) find.focus();
-        else folded.click();
-        return;
-      }
-      if (boardAction === 'switch' && boardSwitchRef.current) {
-        event.preventDefault();
-        boardSwitchRef.current();
-        return;
-      }
-      if (event.key.toLowerCase() === 'f' && plainKey) {
-        event.preventDefault();
-        handleFocus();
-        return;
-      }
-      if (event.key === '0' && plainKey) {
-        event.preventDefault();
-        handleShowAll();
-        return;
-      }
-      if (event.key === '?' && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        if (covered) return;
-        const el = document.activeElement;
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-        event.preventDefault();
-        setShortcutsOpen((visible) => !visible);
-        return;
-      }
-      if (!readOnlyRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
-        const el = document.activeElement;
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
-        if (selectedIdsRef.current.size + selectedEdgesRef.current.size > 1) { event.preventDefault(); bulkDelete(); return; }
-        if (selectedIdRef.current) { event.preventDefault(); deleteSelected(); return; }
-        const edge = sceneRef.current?.selectedEdge;
-        if (edge) {
-          event.preventDefault();
-          handleDeleteEdge(edge.from, edge.to);
-          setSelectedEdges(new Set());
-          sceneRef.current?.projectEdge(null);
-        }
-      }
-    };
-    window.addEventListener('keydown', onEditorKey);
-    return () => window.removeEventListener('keydown', onEditorKey);
-  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind, handleFocus, handleShowAll, keyboardCovered]);
-
-  useEffect(() => {
-    const onPaste = (event) => {
-      if (readOnlyRef.current) return;
-      const covered = keyboardCovered();
-      if (composerOpenRef.current || covered) return;
-      const el = document.activeElement;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-      const pasted = event.clipboardData?.getData('text/plain') ?? '';
-      if (pasted.trim() === '') return;
-      event.preventDefault();
-      setDraftKinds(legendRef.current);
-      setDraft(pasted);
-      setComposerOpen(true);
-    };
-    window.addEventListener('paste', onPaste, true);
-    return () => window.removeEventListener('paste', onPaste, true);
-  }, [keyboardCovered]);
-
-  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
-  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
-  useEffect(() => { selectedEdgesRef.current = selectedEdges; }, [selectedEdges]);
-
-  // setSelectedSet sweeps the whole array: it is the authority for the GPU highlight.
-  useEffect(() => {
-    sceneRef.current?.setSelection(selectedId);
-    sceneRef.current?.setSelectedSet(selectedIds);
-    sceneRef.current?.setSelectedEdges(selectedEdges);
-  }, [selectedId, selectedIds, selectedEdges]);
+  useRoadmapKeys({
+    canTend, tendOpen, setTendOpen, keyboardCovered, activityActsRef, boardActiveRef, boardSwitchRef, readOnlyRef, composerOpenRef,
+    identityRef, sceneRef, editorRef, legendRef, feedSummonedRef, highlightedKindIdRef, clearHighlightedKind,
+    selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, selectAll, clearEdges,
+    undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, handleFocus, handleShowAll,
+    setShortcutsOpen, setDraftKinds, setDraft, setComposerOpen,
+  });
 
   useEffect(() => {
     if (!scene || viewReadOnly) return undefined;
@@ -1280,6 +735,13 @@ export function SkillTreeView({ treeId, demo = false }) {
   const tabletEditor = owner && breakpoint === 'tablet';
   const reader = Boolean(tree) && !demo && (!treeMine || Boolean(demotion));
   const role = demo ? 'demo' : owner ? 'owner' : 'reader';
+  const tablet = useTabletEditing({
+    tabletEditor, scene, tree, nodesById, selectedNode, collabRef, editorRef,
+    selection: { multiMode, selectedIdRef, setSelectedId, enterMulti, toggleMember },
+    editing: { undo, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind },
+    showToast,
+  });
+  const { stopEditing } = tablet;
   const stepAddress = useStepAddress();
   const initialDecisionRef = useRef(null);
   const viewOpenedRef = useRef(null);
@@ -1337,19 +799,12 @@ export function SkillTreeView({ treeId, demo = false }) {
     setView(next);
     viewPrefs.setLastView(treeId, next);
     track('roadmap_view_switch', { view: next === 'board' ? 'board' : 'graph' });
-    setAim(null);
-    setRemoving(null);
-    if (multiMode) {
-      setMultiMode(false);
-      setSelectedIds(new Set());
-      reconcileProjections(new Set(), new Set());
-    } else if (selectedIdsRef.current.size + selectedEdgesRef.current.size > 1) {
-      setSelectedId(selectedIdRef.current);
-    }
+    stopEditing();
+    collapse();
     switchFocusRef.current = true;
     const active = document.activeElement;
     switchOptionRef.current = active?.classList.contains('st-board-switch-option') ? active : null;
-  }, [treeId, multiMode, reconcileProjections, setSelectedId, dismissToast, shownView]);
+  }, [treeId, stopEditing, collapse, dismissToast, shownView]);
 
   // A switch keeps focus on the option it pressed; a key or a crash lands on the pressed option the row now shows.
   useEffect(() => {
@@ -1448,9 +903,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   const stepShareUrl = !demo && (treeVisibility === 'public' || treeVisibility === 'unlisted') ? treeShareUrl(treeId) : null;
 
   useEffect(() => {
-    if (!phone || !canvasView || !selectedId || multiMode || aim || removing) return;
+    if (!phone || !canvasView || !selectedId) return;
     sceneRef.current?.revealNode(selectedId);
-  }, [phone, canvasView, selectedId, multiMode, aim, removing]);
+  }, [phone, canvasView, selectedId]);
 
   // stop() only cancels the RAF; applyModel runs fine while stopped and renders on the first frame after start().
   useEffect(() => {
@@ -1461,7 +916,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const forkPresent = (reader || demo) && !demotion?.cardOpen;
   const phoneGraph = phone && canvasView;
-  const singleGraphStep = phoneGraph && selectedNode && !multiMode && selectedIds.size === 1 && selectedEdges.size === 0;
+  const singleGraphStep = phoneGraph && selectedNode && selectedIds.size === 1 && selectedEdges.size === 0;
   const graphStepVisible = singleGraphStep && detailId === null && boardComposer === null;
   const graphStep = graphStepVisible
     ? { id: selectedNode.id, title: titleOf(selectedNode), state: COLUMN_OF_STATE[selectedState] ?? 'locked' }
@@ -1527,158 +982,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     }
   }, [graphStep?.id, detailId, boardComposer, forkOpen, focusGraph]);
 
-  const deviceOnly = status === 'ghost' && treeMine && !demo;
-  const { snapshot: syncSnapshot, state: syncState } = useRoadmapSyncStatus(syncSession?.treeId === treeId ? syncSession : null);
-  const deviceEligible = deviceOnly && owner && syncSession?.treeId === treeId;
-  const deviceKind = deviceEligible ? (sessionLapsed || lapsed ? 'lapsed' : 'anonymous') : null;
-  const deviceText = deviceKind === 'lapsed' ? LAPSED_SESSION : ANONYMOUS_OWNER;
-  const signInFromDevice = useCallback(() => {
-    if (!deviceKind) return;
-    track('roadmap_device_line', { step: 'sign_in', line: deviceKind, place: 'row' });
-    openSignInDoor();
-  }, [deviceKind, openSignInDoor]);
-  const deviceLine = useMemo(() => deviceKind ? { text: deviceText, onSignIn: signInFromDevice } : null,
-    [deviceKind, deviceText, signInFromDevice]);
-  const syncEligible = owner && status === 'signed-in' && !deviceLine;
-  const refused = owner ? syncSnapshot?.refused : null;
-  const refusalCode = refusalEventCode(refused);
-  const refusedCount = refused?.lane === 'structure' ? syncSnapshot?.structureGestures : syncSnapshot?.progressGestures;
-  const retrySync = useCallback(() => {
-    if (!refused) return;
-    track('roadmap_sync_refused', { step: 'retry', lane: refused.lane, code: refusalCode });
-    syncSession.retry();
-  }, [syncSession, refused, refusalCode]);
-  const discardSync = useCallback(async () => {
-    if (!refused) return;
-    const discarded = syncSession.discard();
-    if (syncSession.discardPending) setBoardQuiet((current) => current + 1);
-    if (!await discarded) return;
-    track('roadmap_sync_refused', { step: 'discard', lane: refused.lane, code: refusalCode });
-  }, [syncSession, refused, refusalCode]);
-  const refusal = useMemo(() => refused ? {
-    code: refused.code,
-    count: refusedCount,
-    onRetry: retrySync,
-    onDiscard: discardSync,
-  } : null, [refused, refusedCount, retrySync, discardSync]);
-  const syncReportsRef = useRef(null);
-  useEffect(() => {
-    if (!syncSession) return;
-    if (syncReportsRef.current?.session !== syncSession) {
-      syncReportsRef.current = { session: syncSession, shown: new Set() };
-    }
-    if (!refused) return;
-    const reports = syncReportsRef.current;
-    if (!reports.shown.has(refused.episode)) {
-      reports.shown.add(refused.episode);
-      track('roadmap_sync_refused', { step: 'shown', lane: refused.lane, code: refusalCode });
-    }
-  }, [syncSession, refused, refusalCode]);
-  const deviceShownRef = useRef({ treeId, lines: new Set() });
-  useEffect(() => {
-    if (deviceShownRef.current.treeId !== treeId) deviceShownRef.current = { treeId, lines: new Set() };
-    if (!deviceKind || deviceShownRef.current.lines.has(deviceKind)) return;
-    deviceShownRef.current.lines.add(deviceKind);
-    track('roadmap_device_line', { step: 'shown', line: deviceKind, place: phone ? 'row' : 'shell' });
-  }, [treeId, deviceKind, phone]);
-  const offlineRef = useRef({ shown: false, pending: '0' });
-  useEffect(() => () => {
-    if (offlineRef.current.shown) track('roadmap_sync_offline', { step: 'cleared', pending: offlineRef.current.pending });
-    offlineRef.current = { shown: false, pending: '0' };
-  }, [treeId, syncSession]);
-  useEffect(() => {
-    const offline = syncEligible && syncState === 'offline';
-    const pending = countBucket((syncSnapshot?.structurePending ?? 0) + (syncSnapshot?.progressPending ?? 0));
-    const changed = offlineRef.current.shown !== offline;
-    offlineRef.current = { shown: offline, pending };
-    if (changed) track('roadmap_sync_offline', { step: offline ? 'shown' : 'cleared', pending });
-  }, [treeId, syncSession, syncEligible, syncState, syncSnapshot]);
-  const roomStatusLease = useRef(null);
-  const roomStatusEnabled = syncEligible || Boolean(deviceLine);
-  useLayoutEffect(() => {
-    if (!roomStatusEnabled) return undefined;
-    const lease = registerRoomStatus();
-    roomStatusLease.current = lease;
-    return () => {
-      roomStatusLease.current = null;
-      lease.release();
-    };
-  }, [treeId, roomStatusEnabled]);
-  useLayoutEffect(() => {
-    const lease = roomStatusLease.current;
-    if (!lease) return;
-    if (deviceLine) {
-      lease.publish(phone ? { narrow: 'device' } : { line: deviceLine.text });
-      return;
-    }
-    if (!syncEligible || !syncState) {
-      lease.publish(null);
-      return;
-    }
-    const roomStatus = syncState === 'offline'
-      ? { line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline' }
-      : { line: SYNC_STATUS[syncState], narrow: 'announce' };
-    lease.publish(roomStatus);
-  }, [treeId, roomStatusEnabled, deviceLine, phone, syncEligible, syncState]);
-
-  useEffect(() => {
-    if (!scene) return undefined;
-    if (!tabletEditor) { scene.setEditTap(null); return undefined; }
-    scene.setEditTap((x, y, nodeId) => {
-      if (multiMode) {
-        if (nodeId === null) { setSelectedIds(new Set()); reconcileProjections(new Set(), new Set()); return; }
-        const next = new Set(selectedIdsRef.current);
-        if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
-        if (next.size === 0) setMultiMode(false);
-        setSelectedIds(next);
-        reconcileProjections(next, selectedEdgesRef.current);
-        return;
-      }
-      if (aim && tree && nodesById.has(aim.sourceId)) {
-        if (nodeId === null) { setAim(null); return; }
-        if (illegalTargets(tree, aim.sourceId, aim.direction).has(nodeId)) return;
-        const { from, to } = edgeFor(aim.sourceId, nodeId, aim.direction);
-        handleConnect(from, to);
-        setAim(null);
-        setSelectedId(aim.sourceId);
-        showToast('Linked', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'RemoveEdge', from, to }) }, duration: 4000 });
-        return;
-      }
-      if (nodeId) { setRemoving(null); setSelectedId(nodeId); return; }
-      const edge = scene.pickEdge(x, y);
-      if (edge) { setAim(null); setSelectedId(null); setRemoving({ from: edge.from, to: edge.to }); return; }
-      setSelectedId(null);
-    });
-    return () => scene.setEditTap(null);
-  }, [scene, tabletEditor, multiMode, aim, tree, nodesById, handleConnect, showToast, setSelectedId, reconcileProjections]);
-
-  useEffect(() => {
-    if (!scene) return undefined;
-    if (!tabletEditor) { scene.setLongPress(null); return undefined; }
-    scene.setLongPress((id) => {
-      if (!id) return;
-      setAim(null);
-      setRemoving(null);
-      setMultiMode(true);
-      const next = new Set([id]);
-      setSelectedIds(next);
-      setSelectedEdges(new Set());
-      reconcileProjections(next, new Set());
-    });
-    return () => scene.setLongPress(null);
-  }, [scene, tabletEditor, reconcileProjections]);
-
-  useEffect(() => {
-    if (aim && tree && !nodesById.has(aim.sourceId)) setAim(null);
-  }, [aim, tree, nodesById]);
-
-  useEffect(() => {
-    if (!scene || !aim || !tree || !nodesById.has(aim.sourceId)) return undefined;
-    const illegal = illegalTargets(tree, aim.sourceId, aim.direction);
-    illegal.delete(aim.sourceId); // never dim the anchor
-    scene.setFaded(illegal);
-    return () => scene.clearFaded();
-  }, [scene, aim, tree, nodesById]);
+  const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({
+    treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet,
+  });
 
   function pushProgress(nodeId, wireStatus) {
     if (demoRef.current) return;
@@ -1913,8 +1219,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       onClose={() => setSelectedId(null)}
     />
   );
-
-  const mobileSurface = activeSurface({ multiMode, aim, removing, selectedNode });
 
   // While the Board stands in for a roadmap that has not loaded, the topbar names nothing and offers no Share; a failed
   // load offers no Graph either, whose load error would cover the topbar with no way back.
@@ -2254,7 +1558,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      <MobileChrome band={breakpoint} view={canvasView ? 'tree' : 'board'} rowBottom={topbarBottom}
+      <GraphChrome band={breakpoint} view={canvasView ? 'tree' : 'board'} rowBottom={topbarBottom}
         onTopBottom={setGraphChromeBottom}
         step={graphStep}
         ctaEcho={demo && ctaEcho}
@@ -2368,61 +1672,31 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {tabletEditor && (
-        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' && !boardActive ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH, top: dockTop }}>
-          <div className="st-dock-tenant" key={mobileSurface === 'editor' ? selectedNode.id : mobileSurface}>
-            {mobileSurface === 'bulk' ? (
-              <BulkBar
-                inPanel
-                count={selectedIds.size}
-                kinds={recolorKinds}
-                ringedKind={ringedKind}
-                onRecolor={bulkRecolor}
-                onDelete={bulkDelete}
-                onDone={() => { setMultiMode(false); setSelectedId(null); }}
-              />
-            ) : mobileSurface === 'aim' ? (
-              <AimBar
-                inPanel
-                sourceLabel={nodesById.get(aim.sourceId)?.label}
-                direction={aim.direction}
-                onToggleDirection={flipAimDirection}
-                onCancel={() => setAim(null)}
-              />
-            ) : mobileSurface === 'remove' ? (
-              <RemoveLinkBar
-                inPanel
-                onRemove={() => {
-                  const { from, to } = removing;
-                  handleDeleteEdge(from, to);
-                  setRemoving(null);
-                  showToast('Link removed', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'AddEdge', from, to }) }, duration: 4000 });
-                }}
-                onCancel={() => setRemoving(null)}
-              />
-            ) : mobileSurface === 'editor' ? (
-              <MobileEditorSheet
-                panel
-                key={selectedNode.id}
-                node={selectedNode}
-                state={selectedState}
-                prerequisites={prerequisites}
-                unlocks={unlocks}
-                completedAt={completedAt[selectedId]}
-                kinds={legend}
-                autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
-                onRename={mobileRename}
-                onAddStep={mobileAddStep}
-                onConnect={enterAim}
-                onSetKind={mobileRecolor}
-                onMarkDone={(id) => completeStep(id)}
-                onUnmarkDone={resetStep}
-                onDelete={deleteNodeAt}
-                onJump={handleSheetJump}
-                isRoot={selectedId !== null && selectedId === singleRootId}
-              />
-            ) : null}
-          </div>
-        </aside>
+        <TabletPanel
+          tablet={tablet}
+          open={tablet.surface !== 'empty' && !boardActive}
+          top={dockTop}
+          width={TABLET_PANEL_WIDTH}
+          selectedNode={selectedNode}
+          selectedState={selectedState}
+          nodesById={nodesById}
+          prerequisites={prerequisites}
+          unlocks={unlocks}
+          completedAt={completedAt[selectedId]}
+          kinds={legend}
+          autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
+          isRoot={selectedId !== null && selectedId === singleRootId}
+          onMarkDone={(id) => completeStep(id)}
+          onUnmarkDone={resetStep}
+          onDelete={deleteNodeAt}
+          onJump={handleSheetJump}
+          selectedCount={selectedIds.size}
+          recolorKinds={recolorKinds}
+          ringedKind={ringedKind}
+          onBulkRecolor={bulkRecolor}
+          onBulkDelete={bulkDelete}
+          onBulkDone={leaveMulti}
+        />
       )}
 
       {readOnlyDock && (

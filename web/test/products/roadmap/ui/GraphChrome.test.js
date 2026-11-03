@@ -3,23 +3,23 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { register } from 'node:module';
 
-register('../../../../jsxLoader.mjs', import.meta.url);
+register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { MobileChrome } = await import('../../../../../src/products/roadmap/ui/mobile/MobileChrome.jsx');
-const { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } = await import('../../../../../src/products/roadmap/board/copy.js');
+const { GraphChrome } = await import('../../../../src/products/roadmap/ui/GraphChrome.jsx');
+const { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } = await import('../../../../src/products/roadmap/board/copy.js');
 
-const render = (props = {}) => renderToStaticMarkup(React.createElement(MobileChrome, { onFork() {}, ...props }));
+const render = (props = {}) => renderToStaticMarkup(React.createElement(GraphChrome, { onFork() {}, ...props }));
 
 test('the wide chrome renders only the drawn camera controls and never the reader fork pill', async () => {
-  const expected = (await readFile(new URL('MobileChrome.wide.html', import.meta.url), 'utf8')).trimEnd();
+  const expected = (await readFile(new URL('GraphChrome.wide.html', import.meta.url), 'utf8')).trimEnd();
   for (const band of ['tablet', 'desktop']) {
     assert.equal(render({ band, cameraRight: 408, cameraBottom: 24 }), expected);
   }
 });
 
 test('the phone chrome keeps the shipped camera below the row and the reader fork pill', async () => {
-  const expected = (await readFile(new URL('MobileChrome.phone.html', import.meta.url), 'utf8')).trimEnd();
+  const expected = (await readFile(new URL('GraphChrome.phone.html', import.meta.url), 'utf8')).trimEnd();
   assert.equal(render({ band: 'phone', rowBottom: 108 }), expected);
 });
 
@@ -30,7 +30,7 @@ test('the selected-step bar has the owner action and reader title action with ex
         ? '<button type="button" class="st-graph-step-title">Read the wind</button>'
         : '<span class="st-graph-step-title">Read the wind</span>';
       const camera = render({ band: 'phone', onFork: null, rowBottom: 108 }).match(/<div class="st-view-actions".*<\/div>/)[0];
-      const expected = '<div class="st-mobile-chrome" style="position:absolute;inset:0;pointer-events:none;z-index:20">'
+      const expected = '<div class="st-graph-chrome" style="position:absolute;inset:0;pointer-events:none;z-index:20">'
         + '<div class="st-graph-step-bar" data-graph-step-bar=""><div class="st-graph-step-heading">'
         + title + `<span class="st-graph-step-state">${COLUMN_TITLES[state]}</span></div>`
         + '<button type="button" class="st-graph-step-primary" data-graph-step-primary="">'

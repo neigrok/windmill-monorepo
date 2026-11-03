@@ -1,10 +1,8 @@
-// The phone seats this inside the BottomSheet; `panel` wraps it in its own card and inner scroll for the tablet.
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
-import { deleteCostLine, progressVerb } from './editorSheet.js';
+import { deleteCostLine } from '../../board/copy.js';
 
 function cap(hue) {
   return hue.charAt(0).toUpperCase() + hue.slice(1);
@@ -32,7 +30,15 @@ const barkVerb = {
   color: 'var(--color-bark)',
 };
 
-export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, panel = false, isRoot = false, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete, onJump }) {
+// A locked step offers nothing; a completed one offers the reversal; everything else marks done.
+// The root is included: blocking root completion would freeze all progress.
+export function progressVerb(state) {
+  if (state === 'complete') return 'uncomplete';
+  if (state === 'locked') return null;
+  return 'complete';
+}
+
+export function TabletEditor({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, isRoot = false, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete, onJump }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -65,7 +71,8 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
     if (label !== node.label.trim()) onRename(node.id, label);
   };
 
-  const body = (
+  return (
+    <Card style={{ maxHeight: '70vh', overflowY: 'auto' }}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minHeight: 34 }}>
         <SheetStateFruit state={state} hue={hue} />
@@ -170,10 +177,6 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
       <SheetRelations title="Needs" items={prerequisites} onJump={onJump} />
       <SheetRelations title="Unlocks" items={unlocks} onJump={onJump} />
     </div>
+    </Card>
   );
-
-  if (!panel) return body;
-  return <Card style={{ maxHeight: '70vh', overflowY: 'auto' }}>{body}</Card>;
 }
-
-export default MobileEditorSheet;

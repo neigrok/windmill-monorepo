@@ -6,7 +6,7 @@ import { DEFAULT_KINDS } from '../model/Legend.js';
 import { parsePlan } from '../paste/planGrammar.js';
 import { PasteComposer } from '../paste/PasteComposer.jsx';
 import { GhostSkeleton } from '../paste/GhostSkeleton.jsx';
-import { BottomSheet } from './mobile/BottomSheet.jsx';
+import { BottomSheet } from './BottomSheet.jsx';
 import { useViewMode } from './useViewMode.js';
 import { DOCK_WIDTH } from './viewport.js';
 import { stampBorn } from '../persistence/ViewPrefs.js';

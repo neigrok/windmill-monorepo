@@ -30,7 +30,7 @@ const entry = `
 import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
-import { useRoadmapToast } from '/src/products/roadmap/SkillTreeView.jsx';
+import { useRoadmapToast } from '/src/products/roadmap/board/useRoadmapToast.js';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';

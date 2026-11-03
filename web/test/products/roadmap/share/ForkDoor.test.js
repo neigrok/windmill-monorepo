@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { register } from 'node:module';
 
-register('../../../../jsxLoader.mjs', import.meta.url);
+register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { ForkDoor } = await import('../../../../../src/products/roadmap/ui/mobile/ForkDoor.jsx');
+const { ForkDoor } = await import('../../../../src/products/roadmap/share/ForkDoor.jsx');
 
 const render = (props = {}) => renderToStaticMarkup(React.createElement(ForkDoor, {
   open: true, treeId: 'sail', stepCount: 8, onClose() {}, ...props,

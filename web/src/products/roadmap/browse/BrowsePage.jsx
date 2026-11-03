@@ -3,7 +3,7 @@ import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { useViewMode } from '../ui/useViewMode.js';
 import { forkTree } from '../persistence/TreeRegistry.js';
 import { GalleryCard, GALLERY_CARD_CSS } from '../share/GalleryCard.jsx';
-import { ForkDoor } from '../ui/mobile/ForkDoor.jsx';
+import { ForkDoor } from '../share/ForkDoor.jsx';
 import { track } from '../../../telemetry/beacon.js';
 import { GalleryIndex, galleryHeader } from './galleryIndex.js';
 import { fetchGallery } from './GalleryClient.js';
@@ -160,7 +160,6 @@ export function BrowsePage() {
       <ForkDoor
         open={Boolean(doorFor)}
         presentation={breakpoint !== 'phone' ? 'dialog' : 'sheet'}
-        drawn={false}
         treeId={doorFor}
         signedIn={false}
         onClose={() => setDoorFor('')}
