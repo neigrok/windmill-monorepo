@@ -65,6 +65,16 @@ std::string tally(const std::map<std::string, int>& counts) {
   return out.empty() ? "-" : out;
 }
 
+// §6.3: the moment the budget a refusal names returns, never another budget's. A shared free pool
+// returns at the end of its UTC day or month and the seat's own allowance at the end of its period;
+// a lifetime allowance, and every other code, name no moment.
+std::optional<long long> budgetResetOf(const std::string& code, const std::optional<AiBudgetView>& seat, long long nowMs) {
+  if (code == aiBudgetCodeName(AiBudgetCode::FreeDayExhausted)) return AiBudgetPeriod::dayAt(nowMs)->endMs;
+  if (code == aiBudgetCodeName(AiBudgetCode::FreeMonthExhausted)) return AiBudgetPeriod::at(nowMs)->endMs;
+  if (code == aiBudgetCodeName(AiBudgetCode::SubjectExhausted) && seat) return seat->resetsAtMs;
+  return std::nullopt;
+}
+
 }  // namespace
 
 TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server,
@@ -97,38 +107,34 @@ void TurnService::sweep(std::uint64_t nowMs) {
   }
 }
 
-std::string TurnService::allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const {
+TurnAdmission TurnService::allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const {
   if (principal.seat == Seat::anon) {
-    if (!installations_ || !principal.installation) return "anonymous_ai_unavailable";
+    if (!installations_ || !principal.installation) return {nullptr, false, "anonymous_ai_unavailable"};
     switch (installations_->admitGeneration(*principal.installation, turnId, principal.address)) {
       case AiInstallationCode::Ok:
       case AiInstallationCode::Replay: break;
-      case AiInstallationCode::RateLimited: return "coach-rate-limited";
-      case AiInstallationCode::DeviceBound: return "device_bound";
-      case AiInstallationCode::Unavailable: return "anonymous_ai_unavailable";
-      case AiInstallationCode::Invalid: return "coach-bad-request";
+      case AiInstallationCode::RateLimited: return {nullptr, false, "coach-rate-limited"};
+      case AiInstallationCode::DeviceBound: return {nullptr, false, "device_bound"};
+      case AiInstallationCode::Unavailable: return {nullptr, false, "anonymous_ai_unavailable"};
+      case AiInstallationCode::Invalid: return {nullptr, false, "coach-bad-request"};
     }
-    const AiBudgetView view = installations_->allowance(*principal.installation);
-    if (view.code != AiBudgetCode::Ok) return std::string(aiBudgetCodeName(view.code));
-    return {};
+  }
+  if (const std::optional<AiBudgetView> view = seatAllowance(principal)) {
+    if (view->code == AiBudgetCode::Ok) return {};
+    return {nullptr, false, std::string(aiBudgetCodeName(view->code)), aiAllowanceJson(*view)};
   }
   const User& account = *principal.account;
-  if (entitlements_.aiAllowancesEnabled()) {
-    const AiBudgetView view = entitlements_.aiAllowanceView(account.id, account.email.value);
-    if (view.code != AiBudgetCode::Ok) return std::string(aiBudgetCodeName(view.code));
-    return {};
-  }
-  if (!entitlements_.aiAllowanceFor(account.id, account.email.value).allows()) return "subject_exhausted";
+  if (!entitlements_.aiAllowanceFor(account.id, account.email.value).allows()) return {nullptr, false, "subject_exhausted"};
   return {};
 }
 
-Json::Value TurnService::allowance(const TurnPrincipal& principal) const {
+std::optional<AiBudgetView> TurnService::seatAllowance(const TurnPrincipal& principal) const {
   if (principal.seat == Seat::anon) {
-    if (!installations_ || !principal.installation) return Json::Value();
-    return aiAllowanceJson(installations_->allowance(*principal.installation));
+    if (!installations_ || !principal.installation) return std::nullopt;
+    return installations_->allowance(*principal.installation);
   }
-  if (!entitlements_.aiAllowancesEnabled()) return Json::Value();
-  return aiAllowanceJson(entitlements_.aiAllowanceView(principal.account->id, principal.account->email.value));
+  if (!entitlements_.aiAllowancesEnabled()) return std::nullopt;
+  return entitlements_.aiAllowanceView(principal.account->id, principal.account->email.value);
 }
 
 TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
@@ -144,14 +150,14 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
     }
   }
   if (!configured()) return {nullptr, false, "coach-busy"};
-  std::string refusal;
+  TurnAdmission refused;
   try {
-    refusal = allowanceRefusal(principal, open.turnId);
+    refused = allowanceRefusal(principal, open.turnId);
   } catch (const std::exception&) {
     if (failures_) failures_->report("gym", "coach_turn.open", "allowance unavailable");
-    refusal = "ai_accounting_unavailable";
+    refused.code = "ai_accounting_unavailable";
   }
-  if (!refusal.empty()) return {nullptr, false, refusal};
+  if (!refused.code.empty()) return refused;
 
   // The open takes the first round's vendor slot; `run` releases it when that round ends.
   if (live_.fetch_add(1) >= kMaxLiveTurns) {
@@ -282,14 +288,16 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
   }
 
   if (slotHeld) vendorRounds_.release();  // a turn stopped before its first call still holds the open's slot
-  Json::Value allowed;
+  std::optional<AiBudgetView> seat;
   try {
-    allowed = allowance(principal);
+    seat = seatAllowance(principal);
   } catch (const std::exception&) {
     if (failures_) failures_->report("gym", "coach_turn.loop", "allowance unavailable after the turn");
   }
   --live_;  // the turn leaves the count before the stream hears the end, so a waiting open finds room
-  turn->end(state, truncated, allowed, errorCode, clock_.nowMs());
+  const std::uint64_t endedAt = clock_.nowMs();
+  if (state == TurnState::failed) turn->fail(errorCode, budgetResetOf(errorCode, seat, endedAt), endedAt);
+  else turn->end(state, truncated, seat ? aiAllowanceJson(*seat) : Json::Value(), endedAt);
 
   const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
   LOG_INFO << "coach_turn turn=" << turn->id() << " seat=" << std::string(nameOf(principal.seat)) << " state=" << std::string(nameOf(state))

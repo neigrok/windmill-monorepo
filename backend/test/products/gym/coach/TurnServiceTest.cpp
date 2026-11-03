@@ -226,6 +226,30 @@ struct Replay {
   }
 };
 
+// Every `coach_*` line the service logs while it lives, each up to its duration.
+struct LogLines {
+  std::mutex mutex;
+  std::vector<std::string> lines;
+  trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+  LogLines() {
+    trantor::Logger::setLogLevel(trantor::Logger::kInfo);
+    trantor::Logger::setOutputFunction(
+        [this](const char* message, std::uint64_t length) {
+          const std::string line(message, length);
+          const std::size_t start = line.find("coach_");
+          if (start == std::string::npos) return;
+          std::lock_guard lock(mutex);
+          lines.push_back(line.substr(start, line.find(" duration_ms=") - start));
+        },
+        [] {});
+  }
+  ~LogLines() {
+    trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                       [] { fflush(stdout); });
+    trantor::Logger::setLogLevel(level);
+  }
+};
+
 struct Registered {
   Registered() {
     for (const std::filesystem::path& path : scripts()) {
@@ -233,6 +257,7 @@ struct Registered {
       ::testing::registry().push_back({name, [path] {
         const Json::Value script = readScript(path);
         Harness h;
+        if (script.isMember("clockMs")) h.clock.now = script["clockMs"].asUInt64();
         Replay replay(h, script);
         replay.run();
         for (const std::string& problem : replay.problems) ::testing::fail(problem.c_str(), path.c_str(), 0);
@@ -580,28 +605,7 @@ TEST(coach_turn_bound_seat_runs_on_the_coach_model_under_the_configured_ceiling)
 // F6: a call the phone answered `ok: false` is counted as the phone's refusal, by code, on both
 // lines; a batch the phone refused whole is `refused`, and a code that is not a slug logs as `other`.
 TEST(coach_turn_logs_count_the_phone_refusals_by_code_and_a_batch_refused_whole_is_refused) {
-  struct LogLines {
-    std::mutex mutex;
-    std::vector<std::string> lines;
-    trantor::Logger::LogLevel level = trantor::Logger::logLevel();
-    LogLines() {
-      trantor::Logger::setLogLevel(trantor::Logger::kInfo);
-      trantor::Logger::setOutputFunction(
-          [this](const char* message, std::uint64_t length) {
-            const std::string line(message, length);
-            const std::size_t start = line.find("coach_");
-            if (start == std::string::npos) return;
-            std::lock_guard lock(mutex);
-            lines.push_back(line.substr(start, line.find(" duration_ms=") - start));
-          },
-          [] {});
-    }
-    ~LogLines() {
-      trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
-                                         [] { fflush(stdout); });
-      trantor::Logger::setLogLevel(level);
-    }
-  } logs;
+  LogLines logs;
 
   Harness h;
   h.model->replies = parse(R"([
@@ -638,4 +642,84 @@ TEST(coach_turn_logs_count_the_phone_refusals_by_code_and_a_batch_refused_whole_
       "coach_turn turn=tn_phone_refused1 seat=bound state=completed truncated=0 code=- model_calls=3 batches=2 "
       "ability_calls=list_exercises:1,list_notes:1,list_routines:1,save_note:1 refusals=- "
       "phone_refusals=coach-turn-volume:1,other:1,record-dead:1 question_bytes=2 answer_bytes=5"}));
+}
+
+// §6.3: an `error` frame names when the budget its code names returns and no other moment: a shared
+// free pool's UTC day or month, nothing for a lifetime allowance or a code no period ends. An expected
+// refusal is a `coach_turn` line with its code and never an Issue; a vendor failure stays one.
+TEST(coach_turn_error_frame_names_when_the_refused_budget_returns_and_only_a_failure_files_an_issue) {
+  struct Case {
+    const char* reply;
+    const char* code;
+    const char* frame;
+    std::vector<std::string> issues;
+  };
+  const std::vector<Case> cases{
+      {R"({"refused":"free_day_exhausted"})", "free_day_exhausted", R"({"budgetResetsAtMs":1793059200000,"code":"free_day_exhausted"})", {}},
+      {R"({"refused":"free_month_exhausted"})", "free_month_exhausted", R"({"budgetResetsAtMs":1793491200000,"code":"free_month_exhausted"})", {}},
+      {R"({"refused":"subject_exhausted"})", "subject_exhausted", R"({"code":"subject_exhausted"})", {}},
+      {R"({"refused":"concurrency_exhausted"})", "concurrency_exhausted", R"({"code":"concurrency_exhausted"})", {}},
+      {R"({"refused":"funding_required"})", "funding_required", R"({"code":"funding_required"})", {}},
+      {R"({"refused":"debt_outstanding"})", "debt_outstanding", R"({"code":"debt_outstanding"})", {}},
+      {R"({"refused":"coach-busy"})", "coach-busy", R"({"code":"coach-busy"})", {}},
+      {R"({"refused":"coach-rate-limited"})", "coach-rate-limited", R"({"code":"coach-rate-limited"})", {}},
+      {"null", "coach-vendor-error", R"({"code":"coach-vendor-error"})", {"gym:coach_turn.loop:the model loop failed"}}};
+  for (const Case& refusal : cases) {
+    LogLines logs;
+    Harness h;
+    h.clock.now = 1'793'000'000'000;
+    h.model->replies = parse(std::string("[") + refusal.reply + "]");
+    const TurnAdmission admission = h.service->open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000001","question":"Hi"})")));
+    REQUIRE(admission.turn);
+    auto recorder = std::make_shared<Recorder>();
+    admission.turn->attach(recorder, false);
+    h.model->start();
+    REQUIRE(recorder->waitFor(1));
+    h.service->stop();
+    CHECK_EQ(Replay::dumpAll(recorder->snapshot()), std::string(R"([{"data":)") + refusal.frame + R"(,"event":"error"}])");
+    CHECK(h.failures->reports == refusal.issues);
+    std::lock_guard lock(logs.mutex);
+    CHECK(logs.lines == (std::vector<std::string>{
+        std::string("coach_turn turn=tn_refused_000001 seat=anon state=failed truncated=0 code=") + refusal.code +
+        " model_calls=0 batches=0 ability_calls=- refusals=- phone_refusals=- question_bytes=2 answer_bytes=0"}));
+  }
+}
+
+// A bound seat's own allowance returns at the end of its month, and a resume hears the same frame.
+TEST(coach_turn_error_frame_on_a_bound_seat_names_the_end_of_its_own_period) {
+  Harness h(true);
+  h.clock.now = 1'793'000'000'000;
+  h.model->replies = parse(R"([{"refused":"subject_exhausted"}])");
+  const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000002","question":"Hi"})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(1));
+  h.service->stop();
+  CHECK_EQ(Replay::dumpAll(recorder->snapshot()),
+           std::string(R"([{"data":{"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"}])"));
+  auto resumed = std::make_shared<Recorder>();
+  admission.turn->attach(resumed, true);
+  CHECK_EQ(Replay::dumpAll(resumed->snapshot()),
+           std::string(R"([{"data":{"state":"failed","text":""},"event":"snapshot"},{"data":{"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"}])"));
+  CHECK(h.failures->reports.empty());
+}
+
+// The seat's period is read from its allowance, so a read that fails after the turn names no moment
+// rather than a guess, and reports itself; a pool's boundary is the calendar's and needs no read.
+TEST(coach_turn_error_frame_names_no_seat_period_when_the_allowance_cannot_be_read_after_the_turn) {
+  Harness h(true);
+  h.clock.now = 1'793'000'000'000;
+  h.model->replies = parse(R"([{"refused":"subject_exhausted"}])");
+  h.model->beforeReply = [&h](int) { h.budgetRepository.failRead = true; };
+  const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000003","question":"Hi"})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(1));
+  h.service->stop();
+  CHECK_EQ(Replay::dumpAll(recorder->snapshot()), std::string(R"([{"data":{"code":"subject_exhausted"},"event":"error"}])"));
+  CHECK(h.failures->reports == std::vector<std::string>{"gym:coach_turn.loop:allowance unavailable after the turn"});
 }

@@ -122,6 +122,7 @@ turn driver replays the same file against a fake server that emits `events` and 
 |---|---|
 | `case` | The file's name. |
 | `seat` | `anon` or `bound`: the seat the open runs under. |
+| `clockMs` | Server side only: the server's clock through the exchange, where a frame names a moment derived from it. |
 | `open` | The §6.2 body, verbatim. |
 | `model` | Server side only: the vendor's reply per model call — `{stop_reason, content}`, `null` for a transport failure, `{"refused": code}` for a round the allowance refused. |
 | `events` | The frames the server sends, in order, heartbeats aside. A `done` frame's `allowance` is omitted: it belongs to the environment, and the comparison drops it. `{"await": …}` entries are not frames: they mark where the server waits for the phone — `results` of a `batch`, `stop`, `resume`, or the `timeout` of a silent phone. |

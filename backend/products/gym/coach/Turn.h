@@ -166,8 +166,10 @@ public:
   // Blocks until the pending batch is answered, Stop is requested, or `timeout` passes; the
   // results come back in the batch's call order. Nullopt is a timeout or a Stop.
   std::optional<std::vector<TurnCallResult>> awaitResults(std::chrono::milliseconds timeout);
-  void end(TurnState state, bool truncated, Json::Value allowance, std::string errorCode,
-           std::uint64_t endedAtMs);
+  // §6.3: the turn's one terminal frame. `end` closes with `done`, naming the seat's allowance; `fail`
+  // closes with `error`, naming the §6.5 code and the moment the budget an allowance refusal names returns.
+  void end(TurnState state, bool truncated, Json::Value allowance, std::uint64_t endedAtMs);
+  void fail(std::string code, std::optional<long long> budgetResetsAtMs, std::uint64_t endedAtMs);
 
   // The phone's side.
   ResultsAnswer answer(int batch, std::vector<TurnCallResult> results, const std::string& bodyDigest);
@@ -185,6 +187,7 @@ public:
 
 private:
   void publish(const std::string& event, const Json::Value& data, bool terminal);
+  void close(std::uint64_t endedAtMs);
   Json::Value snapshotUnlocked() const;
   Json::Value terminalData() const;
   bool answered() const;
@@ -199,6 +202,7 @@ private:
   TurnState state_ = TurnState::running;
   bool truncated_ = false;
   std::string errorCode_;
+  std::optional<long long> budgetResetsAtMs_;
   Json::Value allowance_{Json::nullValue};
   std::optional<std::uint64_t> endedAtMs_;
   bool stopRequested_ = false;
