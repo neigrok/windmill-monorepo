@@ -21,9 +21,7 @@ function isShared() {
 
 function readViewMode() {
   const width = typeof window === 'undefined' ? DESKTOP_MIN : window.innerWidth;
-  const breakpoint = breakpointFor(width);
-  const shared = isShared();
-  return { breakpoint, shared, desktopEditor: !shared && breakpoint === 'desktop' };
+  return { breakpoint: breakpointFor(width), shared: isShared() };
 }
 
 export function useViewMode() {

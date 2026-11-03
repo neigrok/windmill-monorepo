@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
@@ -11,14 +11,20 @@ const NEW_NODE_ICON = 'sparkles';
 
 // Every write the Graph's own surfaces make: the scene's gestures, the docks and the tablet panel all come through here.
 // A write returns what `announce` needs to offer its own Undo, or null when the session took nothing.
-export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legendRef, desktopEditorRef, selection, emit, showToast, setAutoFocusNameId, setComposerOpen }) {
-  const { selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
+export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, emit, showToast }) {
+  const { sessionRef, projectionRef, sceneRef, treeRef } = room;
+  const { selectedId, selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
+  const [autoFocusNameId, setAutoFocusNameId] = useState(null);
 
-  const undo = useCallback(() => collabRef.current?.undo(), []);
-  const redo = useCallback(() => collabRef.current?.redo(), []);
+  useEffect(() => {
+    if (autoFocusNameId && selectedId !== autoFocusNameId) setAutoFocusNameId(null);
+  }, [selectedId, autoFocusNameId]);
+
+  const undo = useCallback(() => sessionRef.current?.undo(), []);
+  const redo = useCallback(() => sessionRef.current?.redo(), []);
 
   const write = useCallback((gesture) => {
-    const session = collabRef.current;
+    const session = sessionRef.current;
     const receipt = session?.dispatch(gesture) ?? null;
     return receipt && { session, receipt };
   }, []);
@@ -41,7 +47,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
   }, [showToast]);
 
   const handleRename = useCallback((id, label) => {
-    const node = editorRef.current?.treeData.nodes.find((n) => n.id === id);
+    const node = projectionRef.current?.nodes.find((n) => n.id === id);
     if (!node || node.label === label) return null;
     const written = write({ kind: 'RenameNode', id, label });
     if (written && node.label.trim() !== '') emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
@@ -51,7 +57,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
   const handleCreateChild = useCallback((parentId) => {
     const scene = sceneRef.current;
     const parent = scene?.nodesById.get(parentId);
-    if (!parent || !editorRef.current) return null;
+    if (!parent || !projectionRef.current) return null;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
     const written = write({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId });
     if (!written) return null;
@@ -82,7 +88,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
   }, []);
 
   const deleteNodeAt = useCallback((id) => {
-    const node = editorRef.current?.treeData.nodes.find((n) => n.id === id);
+    const node = projectionRef.current?.nodes.find((n) => n.id === id);
     if (!node) return;
     const written = write({ kind: 'DeleteNode', id });
     if (!written) return;
@@ -97,7 +103,7 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     const ids = [...selectedIdsRef.current];
     const edges = [...selectedEdgesRef.current].map(parseEdgeKey); // {from,to}
     if (!ids.length && !edges.length) return;
-    const nodes = editorRef.current?.treeData.nodes ?? [];
+    const nodes = projectionRef.current?.nodes ?? [];
     const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
     const written = write({ kind: 'BulkDelete', nodeIds: ids, edges });
     if (!written) return;
@@ -133,12 +139,12 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     if (!silent) announce(written, 'recolor', recoloredToast({ count: ids.length }));
   }, [announce]);
 
-  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed.
+  // Whether the plan has landed, or had nothing to land. onTreeChanged re-lays out synchronously, so grafted nodes are
+  // seated before they are pulsed.
   const graftImported = useCallback((parse) => {
-    const editor = editorRef.current;
-    const collab = collabRef.current;
-    if (!editor || !collab) return;
-    const nodes = editor.treeData.nodes;
+    const nodes = projectionRef.current?.nodes;
+    const session = sessionRef.current;
+    if (!nodes || !session) return false;
     const selected = selectedIdRef.current;
     const anchored = selected && nodes.some((node) => node.id === selected);
     const targetId = (anchored ? selected : nodes.find((node) => node.prerequisites.length === 0)?.id) ?? null;
@@ -146,13 +152,13 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     const graft = graftPlan({
       parse,
       targetId,
-      reservedNodeIds: collab.knownNodeIds(), // present AND tombstoned: never resurrect a deleted node
+      reservedNodeIds: session.knownNodeIds(), // present AND tombstoned: never resurrect a deleted node
       liveKinds: legendRef.current,
     });
-    if (graft.nodes.length === 0) { setComposerOpen(false); return; }
+    if (graft.nodes.length === 0) return true;
 
     const written = write({ kind: 'ImportSubgraph', nodes: graft.nodes, edges: graft.edges, kinds: graft.kinds });
-    if (!written) return;
+    if (!written) return false;
 
     for (const grafted of graft.nodes) {
       emit({ verb: 'added', nodeId: grafted.id, label: grafted.label, kind: grafted.color }, { silent: true });
@@ -160,11 +166,11 @@ export function useGraphEditing({ collabRef, editorRef, sceneRef, treeRef, legen
     }
     const under = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
     announce(written, 'graft', graftedToast({ count: graft.nodes.length, under }));
-    setComposerOpen(false);
+    return true;
   }, [emit, announce]);
 
   return {
-    undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
+    autoFocusNameId, undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
     deleteNodeAt, deleteSelected, bulkDelete, handleSetKind, reorderContext, handleSetNodeOrder, bulkRecolor, graftImported,
   };
 }

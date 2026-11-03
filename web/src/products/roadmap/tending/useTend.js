@@ -48,7 +48,7 @@ async function pollToRest(runId, aliveRef) {
 }
 
 // Ask AI in the room: who may use it, whether it is open, and the toast each answer leaves behind.
-export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, collabRef, sceneRef, showToast }) {
+export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, room: { sessionRef, sceneRef }, showToast }) {
   const [tendingEnabled, setTendingEnabled] = useState(false);
   const [tendOpen, setTendOpen] = useState(false);
   useEffect(() => {
@@ -63,7 +63,7 @@ export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, 
   // The run wrote on the server, so no local receipt names it; `created` is exactly what it planted.
   const undoTend = useCallback((planted) => {
     try {
-      if (!collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] })) return;
+      if (!sessionRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] })) return;
       track('roadmap_graph_toast', { act: 'tend', step: 'undo' });
       showToast(TEND_TOAST.reverted, { surface: 'tend' });
     } catch (error) {

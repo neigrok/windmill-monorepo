@@ -7,7 +7,7 @@ import { deriveLegend, withCounts, freeHue, addKind, recolorKind } from '../../m
 
 const legendStore = new LegendStore();
 
-export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
+export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
   const [legend, setLegend] = useState([]);
   const [legendOpen, setLegendOpen] = useState(true); // remembered per tree
   const [legendForceOpen, setLegendForceOpen] = useState(false); // the picker's "+" summoned the key on a 1-kind tree
@@ -53,32 +53,32 @@ export function useLegend({ seedRef, collabRef, editorRef, sceneRef }) {
 
 
   const onRenameKind = useCallback((id, label) => {
-    collabRef.current?.dispatch({ kind: 'RenameKind', id, label });
-  }, [collabRef]);
+    sessionRef.current?.dispatch({ kind: 'RenameKind', id, label });
+  }, [sessionRef]);
   const onDescribeKind = useCallback((id, description) => {
-    collabRef.current?.dispatch({ kind: 'DescribeKind', id, description });
-  }, [collabRef]);
+    sessionRef.current?.dispatch({ kind: 'DescribeKind', id, description });
+  }, [sessionRef]);
   const onAddKind = useCallback((hue) => {
     const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
     if (next === legendRef.current) return; // hue taken or palette full — nothing added
     const added = next[next.length - 1];
-    collabRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
-  }, [collabRef]);
+    sessionRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
+  }, [sessionRef]);
 
   // Remove is offered only for a kind no node wears; read the editor's live nodes against a stale click.
   const onRemoveKind = useCallback((id) => {
-    const nodes = editorRef.current?.treeData.nodes ?? [];
+    const nodes = projectionRef.current?.nodes ?? [];
     const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
     if (!target || target.count > 0) return;
-    collabRef.current?.dispatch({ kind: 'RemoveKind', id });
-  }, [collabRef, editorRef]);
+    sessionRef.current?.dispatch({ kind: 'RemoveKind', id });
+  }, [sessionRef, projectionRef]);
 
   // Recolor swaps the kind's hue AND repaints every node of the old hue, as one atomic gesture.
   const onRecolorKind = useCallback((id, targetHue) => {
     const { newHue } = recolorKind(legendRef.current, id, targetHue);
     if (!newHue) return;
-    collabRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
-  }, [collabRef]);
+    sessionRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
+  }, [sessionRef]);
 
   // State tracks the kind id, but the scene is handed the HUE, null to clear.
   const onHighlightKind = useCallback((id) => {

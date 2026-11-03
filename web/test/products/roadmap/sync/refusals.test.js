@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank, refusalEventCode, isExpectedRefusal } from '../../../../src/products/roadmap/sync/refusals.js';
+import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank, refusalEventCode, isExpectedRefusal , refusalReporter } from '../../../../src/products/roadmap/sync/refusals.js';
 
 // The codes are the wire contract; the sentences beside them are prose the client never reads.
 test('the editor demotes on exactly the two ownership codes, whatever the sentence says', () => {
@@ -58,4 +58,16 @@ test('refusal telemetry labels and expected failures share the wire-code classif
     { code: 'other', expected: false },
     { code: 'other', expected: false },
   ]);
+});
+
+test('an unexpected refusal reports once per code for the life of its session, with its code as the one tag', () => {
+  const issues = [];
+  const report = refusalReporter((operation, error, tags) => issues.push({ operation, stack: Boolean(error.stack), tags }));
+  report({ code: 'protocol_error', episode: 1, lane: 'structure' });
+  report({ code: 'protocol_error', episode: 2, lane: 'structure' });
+  report({ code: 'tree-too-large', episode: 3, lane: 'structure' });
+  assert.deepEqual(issues, [{ operation: 'roadmap-sync-refused', stack: true, tags: { code: 'other' } }]);
+  const nextSession = refusalReporter((operation) => issues.push(operation));
+  nextSession({ code: 'server-error', episode: 1, lane: 'progress' });
+  assert.deepEqual(issues.at(-1), 'roadmap-sync-refused');
 });

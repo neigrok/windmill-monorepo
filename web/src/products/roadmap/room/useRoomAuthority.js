@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
-import { claimLocalTrees } from './sync/claimLocalTrees.js';
-import { isOwnershipRefusal, isSessionRefusal } from './sync/refusals.js';
+import { confirmDeviceOwner } from '../persistence/LocalTreeRegistry.js';
+import { claimLocalTrees } from '../sync/claimLocalTrees.js';
+import { isOwnershipRefusal, isSessionRefusal } from '../sync/refusals.js';
 
 // Who holds this room: the session's lapse, the claim of device trees at sign-in, and the demotion an ownership refusal forces.
-export function useRoomAuthority({ treeId, status, account, refresh, collabRef, sceneRef }) {
+export function useRoomAuthority({ treeId, status, account, refresh, room: { sessionRef, sceneRef } }) {
   const [lapsed, setLapsed] = useState(false);
   const [demotion, setDemotion] = useState(null); // { edits, cardOpen } | null
   const prevAuthRef = useRef(status);
@@ -18,7 +18,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, collabRef, 
   const kickClaim = useCallback(() => {
     if (claimRunRef.current) return;
     claimRunRef.current = true;
-    claimLocalTrees({ openTreeId: treeId, openSession: () => collabRef.current })
+    claimLocalTrees({ openTreeId: treeId, openSession: () => sessionRef.current })
       .finally(() => { claimRunRef.current = false; });
   }, [treeId]);
 
@@ -40,13 +40,13 @@ export function useRoomAuthority({ treeId, status, account, refresh, collabRef, 
       return;
     }
     if (prev === 'ghost' && status === 'signed-in') {
-      collabRef.current?.forceReconnect();
+      sessionRef.current?.forceReconnect();
       kickClaim();
       return;
     }
     if (prev === 'signed-in') {
       if (suspectRef.current) { suspectRef.current = false; setLapsed(true); }
-      collabRef.current?.forceReconnect();
+      sessionRef.current?.forceReconnect();
     }
   }, [status, kickClaim]);
 
@@ -76,7 +76,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, collabRef, 
       stopWaiting();
       demotedRef.current = true;
       sceneRef.current?.setReadOnly?.();
-      setDemotion({ edits: collabRef.current?.pendingEditCount?.() ?? 0, cardOpen: true });
+      setDemotion({ edits: sessionRef.current?.pendingEditCount?.() ?? 0, cardOpen: true });
     };
     const onForbidden = (event) => {
       if (isOwnershipRefusal(event.detail)) {

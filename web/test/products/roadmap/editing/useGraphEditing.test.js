@@ -19,8 +19,8 @@ const SAIL = { id: 'sail', title: 'Sail', nodes: [
 function room(t) {
   const session = new SyncSession({ treeId: 'sail', registry: null, store: { save: () => Promise.resolve() }, reportFailure: () => {} });
   session.seed(SAIL);
-  const editorRef = { current: { treeData: session.lattice.toTreeData() } };
-  session.onTreeChanged((data) => { editorRef.current.treeData = data; });
+  const projectionRef = { current: session.lattice.toTreeData() };
+  session.onTreeChanged((data) => { projectionRef.current = data; });
   const toasts = [];
   const selectedIdRef = { current: null };
   const scene = {
@@ -33,14 +33,13 @@ function room(t) {
     setSelectedId: (id) => { selectedIdRef.current = id; }, leaveMulti() {}, enterMulti() {}, toggleMember() {}, multiMode: false,
   };
   const editing = renderHook(t, () => useGraphEditing({
-    collabRef: { current: session }, editorRef, sceneRef: { current: scene }, treeRef: { current: null }, legendRef: { current: [] },
-    desktopEditorRef: { current: true }, selection, emit() {},
+    room: { sessionRef: { current: session }, projectionRef, sceneRef: { current: scene }, treeRef: { current: null } },
+    legendRef: { current: [] }, desktopEditorRef: { current: true }, selection, emit() {},
     showToast: (message, options) => toasts.push({ message, ...options }),
-    setAutoFocusNameId() {}, setComposerOpen() {},
   }));
   const tablet = renderHook(t, () => useTabletEditing({
     tabletEditor: true, scene, tree: new SkillTree(session.lattice.toTreeData()),
-    nodesById: new Map(session.lattice.toTreeData().nodes.map((node) => [node.id, node])), selectedNode: null, editorRef, selection, editing: editing.tree,
+    nodesById: new Map(session.lattice.toTreeData().nodes.map((node) => [node.id, node])), selectedNode: null, projectionRef, selection, editing: editing.tree,
   }));
   return { session, editing, tablet, scene, selection, toasts };
 }
@@ -162,7 +161,7 @@ test('Ask AI: its Undo deletes exactly what the run planted, keeps a later gestu
   t.after(() => { globalThis.fetch = realFetch; });
   const tend = renderHook(t, () => useRoomTend({
     treeId: 'sail', treeMine: true, status: 'signed-in', shared: false, demo: false, demotion: null,
-    collabRef: { current: session }, sceneRef: { current: null }, showToast: (message, options) => toasts.push({ message, ...options }),
+    room: { sessionRef: { current: session }, sceneRef: { current: null } }, showToast: (message, options) => toasts.push({ message, ...options }),
   }));
   await tend.tree.submitTend('Add a step');
   const { action, ...receipt } = toasts[0];
@@ -186,7 +185,7 @@ test('Ask AI: an Undo the session cannot take claims nothing', async (t) => {
   t.after(() => { globalThis.fetch = realFetch; });
   const tend = renderHook(t, () => useRoomTend({
     treeId: 'sail', treeMine: true, status: 'signed-in', shared: false, demo: false, demotion: null,
-    collabRef: { current: { dispatch: () => null } }, sceneRef: { current: null }, showToast: (message, options) => toasts.push({ message, ...options }),
+    room: { sessionRef: { current: { dispatch: () => null } }, sceneRef: { current: null } }, showToast: (message, options) => toasts.push({ message, ...options }),
   }));
   await tend.tree.submitTend('Add a step');
   toasts[0].action.run();

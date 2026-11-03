@@ -13,7 +13,7 @@ export function activeSurface({ multiMode, aim, removing, selectedNode }) {
 
 // The tablet owner's Graph: tap to connect, tap a link to remove it, hold to select several. With no ⌘Z here, each write says
 // so in a toast whose Undo reverts it alone.
-export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, editorRef, selection, editing }) {
+export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing }) {
   const { multiMode, selectedIdRef, setSelectedId, enterMulti, toggleMember } = selection;
   const { announce, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind } = editing;
   const [aim, setAim] = useState(null); // { sourceId, direction: 'unlocks'|'needs' } | null
@@ -32,7 +32,7 @@ export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selecte
 
   // Naming a new step is part of adding it; only a real rename says so.
   const renameStep = useCallback((id, label) => {
-    const named = editorRef.current?.treeData.nodes.find((n) => n.id === id)?.label.trim();
+    const named = projectionRef.current?.nodes.find((n) => n.id === id)?.label.trim();
     const written = handleRename(id, label);
     if (named) announce(written, 'rename', GRAPH_TOAST.renamed);
   }, [handleRename, announce]);

@@ -54,6 +54,7 @@ export const LOAD_ERROR = {
   body: 'It may have moved, or the server is unreachable.',
   action: 'Try again',
 };
+export const GRAPH_LOAD = { planting: 'Planting the tree…', home: 'Your trees' };
 export const SAVE_FAILURE = { body: 'Couldn’t save. Your draft is kept.', retry: 'Retry', keepEditing: 'Keep editing' };
 export const DISCARD_DRAFT = { title: 'Discard draft?', body: 'Your changes will be lost.', keepEditing: 'Keep editing', discard: 'Discard' };
 export const FILTERED_EMPTY = { title: 'No steps match', action: 'Clear filters' };
@@ -223,6 +224,10 @@ export function createdToast({ step, column, filterCleared = false }) {
 // A fresh plant's arrival ends on this line; a quest names itself.
 export function plantedToast({ quest = false, count, done = 0 }) {
   return `${quest ? 'Quest' : 'Roadmap'} planted · ${stepCount(count)}${done > 0 ? ` · ${formatCount(done)} already done` : ''}`;
+}
+
+export function welcomeBackToast({ count }) {
+  return `Welcome back · ${stepCount(count)} done since your last visit`;
 }
 
 export function forkedToast({ count }) {

@@ -65,10 +65,10 @@ function Room() {
     if (options.action?.label === 'Restore') window.restoreOffers.push(message);
     displayToast(message, options);
   };
-  const editorRef = useRef({ present: null });
-  const collabRef = { current: session };
+  const projectionRef = useRef(initialTree);
+  const sessionRef = { current: session };
   const maskedShownRef = useRef('');
-  const syncStructure = () => setTree(new SkillTree(editorRef.current.present));
+  const syncStructure = () => setTree(new SkillTree(projectionRef.current));
   const syncLegendFromTree = () => {};
   const setStranded = () => {};
   session.onTreeChanged(${treeHandlers[0]});
