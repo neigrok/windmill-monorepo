@@ -61,7 +61,7 @@ export function useGraphStructure({ room, progressActs, showToast, syncLegendFro
       positions = layoutPositions(nextTree);
     } catch (error) {
       console.error('[layout] the edit could not be laid out; the picture is one step behind', error);
-      showToast(GRAPH_TOAST.undrawnEdit);
+      showToast(GRAPH_TOAST.undrawnEdit, { act: 'notice' });
       return;
     }
     const nextStates = UnlockRules.derive(nextTree, progressActs.snapshot);
@@ -77,7 +77,7 @@ export function useGraphStructure({ room, progressActs, showToast, syncLegendFro
       const labelOf = (id) => projection.nodes.find((n) => n.id === id)?.label || id;
       const ring = cycles[0];
       console.log('[loose] rendering invalid graph, cycles:', cycles);
-      showToast(cycleToast({ ring: [...ring, ring[0]].map(labelOf) }));
+      showToast(cycleToast({ ring: [...ring, ring[0]].map(labelOf) }), { act: 'notice' });
     }
     invalidRef.current = invalid;
   }, [layoutPositions, showToast]);
@@ -94,6 +94,7 @@ export function useGraphStructure({ room, progressActs, showToast, syncLegendFro
       maskedShownRef.current = key;
       const count = masked.reduce((sum, m) => sum + m.children.length, 0);
       showToast(keptStepsToast({ count }), {
+        act: 'notice',
         action: { label: GRAPH_TOAST.restore, run: () => masked.forEach((m) => sessionRef.current?.dispatch({ kind: 'ResurrectNode', id: m.id })) },
       });
     } else if (!masked.length) {
