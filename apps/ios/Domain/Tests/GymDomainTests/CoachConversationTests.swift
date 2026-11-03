@@ -6,8 +6,8 @@ import SyncCore
 import SyncSchema
 import Testing
 
-// A Coach conversation on the real engine: the entities against the registry, a turn opened and ended, and the executor
-// recording every call on the Coach message in the one gesture that commits the call's writes (Coach §4.3 step 2).
+// A Coach conversation on the real engine: the entities against the registry, the shared vectors, a turn opened and ended,
+// and the executor recording every call on the Coach message in the one gesture that commits the call's writes (Coach §4.3 step 2).
 struct CoachConversationTests {
   static let now = Instant(ms: 1_800_000_000_000)
 
@@ -46,6 +46,38 @@ struct CoachConversationTests {
     #expect(CoachMessage(id: sample.id, threadId: sample.threadId, role: .lifter, text: "How heavy today?", at: Self.now).fields.keys.sorted()
       == ["at", "role", "text", "threadId"])
     #expect(MessageState.allCases.map(\.rank) == [0, 1, 2, 2, 2, 2])
+  }
+
+  // The shared vectors: opening a turn, ending it, and the pure rules of a call's record and a read's week.
+  @Test(arguments: try Contract.vectors("gym/domain/coach-conversation-actions.json"))
+  func sharedCase(_ vector: Vector) throws {
+    let corpus = ProductCorpus(CoachRules.book)
+    let input = try vector.input.member("input")
+    let f = try Fields(input)
+    let result: JSON = switch try vector.input.member("action").asString() {
+    case "OpenTurn":
+      try corpus.decision(of: OpenTurn(thread: try f.optionalRef("thread", CoachThread.self), question: try f.string("question"),
+                                       pictures: try f.optionalList("pictures", of: Picture.self) ?? []), vector,
+                          result: { ["thread": $0.thread.json, "lifter": $0.lifter.json, "coach": $0.coach.json] }, refusal: \.form)
+    case "EndTurn":
+      try corpus.decision(of: EndTurn(try f.ref("message", CoachMessage.self), state: try #require(MessageState(rawValue: try f.string("state"))),
+                                      text: try f.optionalString("text"), truncated: try f.bool("truncated", default: false)), vector,
+                          result: { _ in .null }, refusal: \.form)
+    case "AbilityCall.recorded":
+      try Self.recordedForm(try CoachMessage(form: try input.member("message")), call: try AbilityCall(json: try input.member("call")))
+    case "ReadServed.week":
+      ["week": JSON(ReadServed.week(of: try f.instant("at")))]
+    case let name:
+      throw ContractError("no coach conversation action \(name)")
+    }
+    #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)")
+  }
+
+  static func recordedForm(_ message: CoachMessage, call: AbilityCall) -> JSON {
+    let recorded = message.recorded(call)
+    var after = message
+    if let recorded { after.calls.append(recorded) }
+    return ["recorded": recorded?.json ?? .null, "callsBytes": JSON(after.callsBytes)]
   }
 
   @Test func aTurnOpensInOneGestureAndEndsWithItsReceipt() throws {

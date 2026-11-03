@@ -804,6 +804,7 @@ public struct RuleBook: Sendable {
 ```swift
 public struct Reader {                                  // valid only inside one run or read
   public let moment: Moment
+  public var replica: String { get }                   // the replica a run's commit writes to (engine §7.12), "" in a read
   public func repository<E: Entity>(_ type: E.Type) -> Repository<E>
   public func device(_ key: String) throws -> JSON?    // device/<product> rows (engine §2.5)
   public func firstPullComplete() throws -> Bool       // engine §7.9, for the reader's scope
