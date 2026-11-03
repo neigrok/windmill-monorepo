@@ -2627,3 +2627,16 @@
   right: calc(env(safe-area-inset-right, 0px) + 12px);
   pointer-events: auto;
 }
+
+.st-graph-refusal {
+  position: absolute;
+  left: var(--space-6);
+  right: var(--space-6);
+  z-index: 24;
+}
+
+.st-graph-refusal.st-graph-refusal--phone {
+  left: var(--space-4);
+  right: var(--space-4);
+  z-index: 41;
+}

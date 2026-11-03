@@ -8,6 +8,9 @@ import { BoardComposer } from '../../../src/products/roadmap/board/useBoardActs.
 import { SkillTree } from '../../../src/products/roadmap/model/SkillTree.js';
 import { BoardQuery } from '../../../src/products/roadmap/board/Board.js';
 import { advanceProgress, progressChanges } from '../../../src/products/roadmap/model/progress.js';
+import { useEffect, useState } from 'react';
+import { renderHook } from '../gym/harness.mjs';
+import { deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from '../../../src/products/roadmap/sync/status.js';
 import { completedToast, LABELS, LINK_COPIED } from '../../../src/products/roadmap/board/copy.js';
 import { boardKey, graphOnlyKey } from '../../../src/products/roadmap/shortcuts/shortcutMap.js';
 
@@ -27,7 +30,7 @@ function collectHandlers(code) {
       const callback = node.init.arguments[0];
       handlers.set(node.id.name, code.slice(callback.start, callback.end));
     }
-    if (node.type === 'FunctionDeclaration' && node.id.name === 'completeStep') {
+    if (node.type === 'FunctionDeclaration' && ['completeStep', 'useRoadmapSyncStatus'].includes(node.id.name)) {
       identityHandlers.set(node.id.name, code.slice(node.start, node.end));
     }
     if (node.type === 'VariableDeclarator' && ['onIdentityQuery', 'shareFromRow', 'exportFromRow', 'undoGraphToast'].includes(node.id.name)) {
@@ -417,4 +420,91 @@ test('Graph-toast Undo uses its captured visible origin, otherwise the pressed v
     const focus = { connected: ['origin'], nonfocusable: ['origin', 'pressed'] }[kind] ?? ['pressed'];
     assert.deepEqual(calls, ['undo', 'dismiss', ...focus]);
   }
+});
+
+
+function syncClock() {
+  let now = 1000;
+  let key = 0;
+  const timers = new Map();
+  return {
+    now: () => now,
+    setTimeout: (run, delay) => { timers.set(++key, { run, at: now + delay }); return key; },
+    clearTimeout: (id) => timers.delete(id),
+    advance: (ms) => {
+      const end = now + ms;
+      while (true) {
+        const next = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next || next[1].at > end) break;
+        timers.delete(next[0]);
+        now = next[1].at;
+        next[1].run();
+      }
+      now = end;
+    },
+    count: () => timers.size,
+  };
+}
+
+function statusSession(overrides = {}) {
+  let snapshot = Object.freeze({ phase: 'live', online: true, structurePending: 0, progressPending: 0,
+    structureInFlight: 0, progressInFlight: 0, refused: null, receiptVersion: 0, ...overrides });
+  const listeners = new Set();
+  return {
+    statusSnapshot: () => snapshot,
+    subscribeStatus: (handler) => { listeners.add(handler); handler(snapshot); return () => listeners.delete(handler); },
+    change: (next) => { snapshot = Object.freeze({ ...snapshot, ...next }); for (const listener of listeners) listener(snapshot); },
+    count: () => listeners.size,
+  };
+}
+
+const syncHook = runInNewContext(`(${identityHandlers.get('useRoadmapSyncStatus')})`, {
+  useEffect, useState, deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS,
+});
+
+test('host sync timing delays Saving, holds Saved, and cleans up every clock and subscription', (t) => {
+  const clock = syncClock();
+  const session = statusSession();
+  const hook = renderHook(t, () => syncHook(session, true, clock));
+  assert.equal(hook.tree.state, null);
+  session.change({ structurePending: 1 });
+  clock.advance(SAVING_DELAY_MS - 1);
+  assert.equal(hook.tree.state, null);
+  clock.advance(1);
+  assert.equal(hook.tree.state, 'saving');
+  session.change({ structurePending: 0 });
+  assert.equal(hook.tree.state, 'saved');
+  clock.advance(SAVED_HOLD_MS - 1);
+  assert.equal(hook.tree.state, 'saved');
+  clock.advance(1);
+  assert.equal(hook.tree.state, null);
+  session.change({ phase: 'offline' });
+  clock.advance(OFFLINE_GRACE_MS - 1);
+  assert.equal(hook.tree.state, null);
+  clock.advance(1);
+  assert.equal(hook.tree.state, 'offline');
+  hook.unmount();
+  assert.deepEqual([session.count(), clock.count()], [0, 0]);
+});
+
+test('host sync refuses stale session readings, fast acks never flash Saving, and a disabled host subscribes to nothing', (t) => {
+  const clock = syncClock();
+  const first = statusSession();
+  const second = statusSession({ online: false });
+  let session = first;
+  let enabled = true;
+  const hook = renderHook(t, () => syncHook(session, enabled, clock));
+  first.change({ progressPending: 1 });
+  clock.advance(SAVING_DELAY_MS - 1);
+  first.change({ progressPending: 0 });
+  assert.equal(hook.tree.state, 'saved');
+  session = second;
+  hook.redraw();
+  assert.equal(hook.tree.snapshot, second.statusSnapshot());
+  assert.equal(hook.tree.state, 'offline');
+  assert.deepEqual([first.count(), second.count()], [0, 1]);
+  enabled = false;
+  hook.redraw();
+  assert.deepEqual({ ...hook.tree }, { snapshot: null, state: null });
+  assert.deepEqual([first.count(), second.count(), clock.count()], [0, 0, 0]);
 });

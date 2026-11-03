@@ -148,7 +148,7 @@ contain post-apply notification, storage and transport exceptions under `roadmap
 change has already applied; persistence or transport failure marks durability at risk.
 
 The gated identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, `newStep`, `export`,
-`settings`, `shortcuts`, `fork`, `more`, `next` or folded-icon `find`), `door` (`row`, `more` or
+`settings`, `shortcuts`, `fork`, `more`, `next` or folded-icon `find`), `door` (`row`, `more`, `offer` or
 `sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
 sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new` or `browse`), or `step: close`
 and `via` (`close`, `escape` or `scrim`). What's next emits `roadmap_whats_next` with `step: open`,
@@ -166,6 +166,24 @@ export build/download failures report `roadmap-export`; a Graph completion Undo 
 `roadmap-step-restore`. All use static operation names and stack frames. Other restore and revert
 failures retain their existing operations. None of these events carries titles, ids, search text or roadmap names. State-word
 copy and focus-ring changes emit no new events.
+
+The gated sync status emits `roadmap_sync_offline` with `step` (`shown` or `cleared`) once per
+offline episode and `pending` bucketed through `countBucket`. Saving and Saved emit nothing.
+Refusals emit `roadmap_sync_refused` with `step` (`shown`, `retry` or `discard`), `lane`
+(`structure` or `progress`) and `code` (`tree-too-large`, `bad-frame`, `no-such-tree`,
+`server-error` or `other`). Shown fires once for the refused frame, including across re-flushes.
+The device line emits `roadmap_device_line` with `step: shown` once per visit, `line`
+(`anonymous` or `lapsed`) and `place` (`row` or `shell`); tapping its phone row emits
+`step: sign_in`. The phone reader Board's Fork offer emits `roadmap_verb` with `verb: fork`,
+`door: offer`, `view: board` and `band: phone`. The existing `fork_attempt` and `fork_claim`
+retain their meanings.
+
+Unexpected refused codes (`bad-frame`, `server-error` and unknown codes) report
+`roadmap-sync-refused` once per code per session while the Board gate is open. Capacity and
+missing-tree refusals are expected and emit no Issue. Unexpected discard failures report
+`roadmap-sync-discard`. Reports carry static operation names and call-site stacks; events never
+carry titles, identifiers, raw counts, server reasons or user content. The existing sync failure
+operations retain their meanings. Gate-closed Fork presentation changes emit no new event.
 
 The switch, the tabs, the rail, Show all, the controls, the states, the step’s page and modal, and the
 composer and picker exist only while the Board’s development gate

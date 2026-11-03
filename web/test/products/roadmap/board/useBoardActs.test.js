@@ -541,3 +541,39 @@ test('invalid edit prerequisites refuse before quiet, dispatch, activity or an e
   assert.deepEqual(c.errors, []);
   assert.equal(c.toast, undefined);
 });
+
+
+test('receipt invalidation dismisses its captured toast without releasing a held delete', () => {
+  const calls = [];
+  const { acts, c } = fixture({ dismissInvalidatedToast: () => calls.push('dismiss') });
+  acts.delete(['wind'], 'menu');
+  const held = c.held;
+  const pending = acts.pending;
+  acts.invalidateReceipts();
+  assert.deepEqual(calls, ['dismiss']);
+  assert.equal(acts.held, held);
+  assert.equal(acts.pending, pending);
+  assert.equal(c.held, held);
+});
+
+
+test('a held delete whose timer expires during discard waits for the server baseline', () => {
+  const { acts, c, calls } = fixture();
+  acts.delete(['wind'], 'menu');
+  const held = c.held;
+  c.session.rebaselining = 'structure';
+  acts.release('timer');
+  assert.equal(acts.held, held);
+  assert.equal(acts.pending.held, held);
+  assert.equal(acts.pending.releaseVia, 'timer');
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
+  c.session.rebaselining = null;
+  acts.release(acts.pending.releaseVia);
+  assert.equal(acts.held, null);
+  assert.equal(acts.pending, null);
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
+    ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }],
+    ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
+  ]);
+});

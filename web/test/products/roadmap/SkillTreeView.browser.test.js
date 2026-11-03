@@ -20,6 +20,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
+import { Shell } from '/src/shell/chrome/Shell.jsx';
+import { getRoomStatus } from '/src/shell/roomStatus.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
@@ -29,10 +31,18 @@ if (params.has('single')) window.fixture.nodes = [{ ...window.fixture.nodes[0], 
 if (params.has('large')) window.fixture.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
 if (params.has('empty')) window.fixture.nodes = [];
 SyncSession.prototype.start = function () {
-  this.store = { save: () => Promise.resolve() };
+  this.store = { save: () => Promise.resolve(), replaceLane: () => Promise.resolve() };
+  this.scheduleReconnect = () => {};
+  this.forceReconnect = () => { window.reconnects = (window.reconnects ?? 0) + 1; };
   this.registry = null;
   this.seed(window.fixture);
   for (const node of window.fixture.nodes) if (node.status === 'complete') this.markProgress(node.id, 'complete');
+  this.phase = 'live';
+  this.ackedServerVector = this.lattice.frontier();
+  this.ackedProgressVector = this.progress.join(this.progress.toFrame());
+  window.serverTree = this.lattice.toFrame();
+  window.serverProgress = this.progress.toFrame();
+  this.emitStatus();
   window.session = this;
 };
 window.events = [];
@@ -55,7 +65,10 @@ if (params.has('crash')) {
     }
   };
 }
-createRoot(document.getElementById('root')).render(React.createElement(SkillTreeView, { treeId: 't_sail', demo: params.has('demo') }));
+window.roomStatus = getRoomStatus;
+const props = { treeId: 't_sail', demo: params.has('demo') };
+const app = params.has('shell') ? React.createElement(Shell, { location: { pathname: '/app/roadmap', hash: '#/app/t_sail', search: '' }, neutral: { Component: SkillTreeView, props } }) : React.createElement(SkillTreeView, props);
+createRoot(document.getElementById('root')).render(app);
 `;
 const scene = `
 export class SkillTreeScene {
@@ -80,10 +93,19 @@ export class SkillTreeScene {
 }
 `;
 const auth = `
+import { useSyncExternalStore } from 'react';
 const owner = new URLSearchParams(location.search).get('role') === 'owner';
-const account = owner ? { id: 'u_fixture' } : null;
-const refresh = async () => {};
-export const useAuth = () => ({ status: owner ? 'signed-in' : 'ghost', account, refresh });
+const account = { id: 'u_fixture' };
+const user = { name: 'Ada' };
+const refresh = async () => null;
+let status = owner ? 'signed-in' : 'ghost';
+const listeners = new Set();
+const subscribe = (handler) => { listeners.add(handler); return () => listeners.delete(handler); };
+window.setFixtureAuth = (next) => { status = next; for (const listener of listeners) listener(); };
+export const useAuth = () => {
+  const current = useSyncExternalStore(subscribe, () => status);
+  return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, refresh };
+};
 `;
 let server, browser, origin;
 const ready = (async () => {
@@ -101,7 +123,7 @@ const ready = (async () => {
         if (id === '\0host-entry') return entry;
         if (id === '\0host-scene') return scene;
         if (id === '\0host-auth') return auth;
-        if (id === '\0host-signin') return 'export const useSignInDoor = () => () => { window.signInOpened = (window.signInOpened ?? 0) + 1; };';
+        if (id === '\0host-signin') return 'const open = () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoor = () => open; export const useSignInDoorHost = () => () => {};';
         if (id === '\0host-events') return beacon;
         if (id === '\0host-issues') return 'export function captureError(product, operation, stack) { window.issues.push({ operation, stack: !!stack }); }';
       },
@@ -130,10 +152,11 @@ function hostTest(name, run) {
   });
 }
 
-async function openHost({ width = 1440, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false } = {}) {
+async function openHost({ width = 1440, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, fixedClock = false } = {}) {
   await ready;
   const page = await browser.newPage({ viewport: { width, height: 1000 }, reducedMotion: 'reduce' });
   page.setDefaultTimeout(5000);
+
   const errors = [];
   const { fail } = runningTest.getStore();
   const report = (message) => {
@@ -163,12 +186,17 @@ async function openHost({ width = 1440, role = 'owner', gate = 'open', surface =
   });
   const params = new URLSearchParams({ role, gate, surface });
   if (role === 'reader') params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty, shell })) {
     if (enabled) params.set(name, '1');
   }
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
   await page.waitForFunction(() => !!window.session?.ready);
   if (gate === 'open' && !crash && !demo) await page.locator('.st-roadmap-progress').waitFor();
+  if (role === 'reader' && gate === 'open' && surface === 'board') await page.getByRole('button', { name: 'Board', exact: true }).click();
+  if (fixedClock) {
+    await page.clock.install({ time: new Date('2026-11-03T11:59:00Z') });
+    await page.clock.pauseAt(new Date('2026-11-03T12:00:00Z'));
+  }
   return { page, errors };
 }
 
@@ -470,11 +498,11 @@ hostTest('Chromium: the demo Board slash shortcut focuses the displayed demo Fin
   } finally { await page.close(); }
 });
 
-for (const width of [320, 390, 744]) {
-  hostTest(`Chromium: the device-only Graph keeps its honesty nudge reachable at ${width}px`, async () => {
+for (const width of [320, 390]) {
+  hostTest(`Chromium: the device-only Graph keeps its device line reachable at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, role: 'ghost' });
     try {
-      const nudge = page.getByRole('button', { name: 'Saved on this device — sign in to keep it →', exact: true });
+      const nudge = page.getByRole('button', { name: 'Saved on this device — sign in to keep it', exact: true });
       await nudge.waitFor();
       assert.equal(await nudge.count(), 1);
       assert.equal(await nudge.evaluate((element) => {
@@ -571,3 +599,237 @@ hostTest('Chromium: crash fallback switch and Board inset follow the measured le
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+
+for (const width of [320, 390, 744, 1440]) {
+  hostTest(`Chromium: signed-in owner publishes Saving, Saved and Offline to the real Shell at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, shell: true, fixedClock: true });
+    try {
+      assert.equal(await page.locator('.wm-room-status').count(), 0);
+      await page.evaluate(() => window.session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' }));
+      await page.clock.runFor(299);
+      assert.equal(await page.locator('.wm-room-status').count(), 0);
+      await page.clock.runFor(1);
+      await page.getByRole('status', { name: 'Saving…', exact: true }).waitFor();
+      await page.evaluate(() => {
+        window.session.ackedServerVector = window.session.lattice.frontier();
+        window.session.emitStatus();
+      });
+      await page.getByRole('status', { name: 'Saved', exact: true }).waitFor();
+      await page.clock.runFor(1999);
+      assert.equal(await page.getByRole('status', { name: 'Saved', exact: true }).count(), 1);
+      await page.clock.runFor(1);
+      await page.locator('.wm-room-status').waitFor({ state: 'detached' });
+      await page.evaluate(() => { window.session.online = false; window.session.emitStatus(); });
+      await page.getByRole('status', { name: 'Offline · changes will sync', exact: true }).waitFor();
+      const shown = await page.locator('.wm-room-status').evaluate((slot) => {
+        const visible = (selector) => getComputedStyle(slot.querySelector(selector)).display !== 'none';
+        return { full: visible('.wm-room-status-full'), compact: visible('.wm-room-status-compact'), tap: visible('.wm-room-status-tap') };
+      });
+      assert.deepEqual(shown, { full: width >= 744, compact: width >= 360 && width < 744, tap: width < 360 });
+      await page.evaluate(() => { window.session.online = true; window.session.emitStatus(); });
+      await page.locator('.wm-room-status').waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_sync_offline')), [
+        { name: 'roadmap_sync_offline', props: { step: 'shown', pending: '0' } },
+        { name: 'roadmap_sync_offline', props: { step: 'cleared', pending: '0' } },
+      ]);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const options of [{ role: 'reader' }, { role: 'ghost' }, { demo: true }, { gate: 'closed' }]) {
+  hostTest(`Chromium: sync publication is absent outside signed-in owner chrome ${JSON.stringify(options)}`, async () => {
+    const { page, errors } = await openHost({ ...options, shell: true, width: 390 });
+    try {
+      await page.evaluate(() => { window.session.online = false; window.session.emitStatus(); });
+      assert.equal(await page.evaluate(() => window.roomStatus()), null);
+      assert.equal(await page.locator('.wm-room-status').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_sync_offline')), []);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const width of [320, 390, 744, 1440]) {
+  for (const surface of ['tree', 'board']) {
+    hostTest(`Chromium: anonymous and lapsed device lines use one placement at ${width}px on ${surface}`, async () => {
+      const { page, errors } = await openHost({ role: 'ghost', width, surface, shell: true });
+      try {
+        const line = 'Saved on this device — sign in to keep it';
+        if (width < 744) {
+          const button = page.getByRole('button', { name: line, exact: true });
+          await button.waitFor();
+          assert.equal(await button.count(), 1);
+          await button.click();
+          assert.equal(await page.evaluate(() => window.signInOpened), 1);
+          assert.equal(await page.locator('.wm-room-status').count(), 0);
+        } else {
+          await page.getByRole('status', { name: line, exact: true }).waitFor();
+          assert.equal(await page.getByRole('button', { name: line, exact: true }).count(), 0);
+        }
+        assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_device_line' && props.step === 'shown')),
+          [{ name: 'roadmap_device_line', props: { step: 'shown', line: 'anonymous', place: width < 744 ? 'row' : 'shell' } }]);
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+      const lapsed = await openHost({ width, surface, shell: true });
+      try {
+        await lapsed.page.evaluate(async () => {
+          window.session.receiveReject({ code: 'sign-in-required' });
+          await Promise.resolve();
+          window.setFixtureAuth('ghost');
+        });
+        const line = 'Signed out — saved on this device';
+        const notice = width < 744 ? lapsed.page.getByRole('button', { name: line, exact: true }) : lapsed.page.getByRole('status', { name: line, exact: true });
+        await notice.waitFor();
+        assert.equal(await notice.count(), 1);
+        assert.deepEqual(lapsed.errors, []);
+      } finally { await lapsed.page.close(); }
+    });
+  }
+}
+
+for (const width of [320, 390, 744, 1440]) {
+  for (const surface of ['tree', 'board']) {
+    hostTest(`Chromium: real refusal surface retries, discards and restores focus at ${width}px on ${surface}`, async () => {
+      const { page, errors } = await openHost({ width, surface, shell: true });
+      try {
+        if (surface === 'tree' && width < 744) await page.evaluate(() => window.scene.select('wind'));
+        await page.evaluate(() => {
+          const session = window.session;
+          session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
+          session.inFlight.set('fixture-refused', session.lattice.frontier());
+          session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
+        });
+        const alert = page.getByRole('alert');
+        await alert.waitFor();
+        assert.equal(await alert.getByText("Couldn't sync this change.", { exact: true }).count(), 1);
+        if (surface === 'tree' && width < 744) {
+          await page.waitForFunction(() => {
+            const card = document.querySelector('.st-graph-refusal')?.getBoundingClientRect();
+            const sheet = document.querySelector('.st-graph-sheet-host')?.firstElementChild?.getBoundingClientRect();
+            return card && sheet && card.bottom <= sheet.top && window.cameraInsets.bottom >= window.innerHeight - card.top;
+          });
+          assert.equal(await page.locator('.st-graph-refusal').evaluate((element) => {
+            const card = element.getBoundingClientRect();
+            const sheet = document.querySelector('.st-graph-sheet-host').firstElementChild.getBoundingClientRect();
+            return card.bottom <= sheet.top;
+          }), true);
+        }
+
+        await alert.getByRole('button', { name: 'Retry', exact: true }).click();
+        await alert.waitFor({ state: 'detached' });
+        await page.waitForFunction(() => document.activeElement !== document.body);
+        assert.equal(await page.evaluate(() => window.reconnects), 1);
+        await page.evaluate(() => {
+          const session = window.session;
+          session.inFlight.set('fixture-refused-again', session.lattice.frontier());
+          session.receiveReject({ frameId: 'fixture-refused-again', code: 'server-error' });
+        });
+        await alert.waitFor();
+        await alert.getByRole('button', { name: 'Discard change', exact: true }).click();
+        await alert.waitFor({ state: 'detached' });
+        await page.waitForFunction(() => document.activeElement !== document.body);
+        await page.evaluate(() => window.session.receiveState({ ...window.serverTree, intent: 'delta' }));
+        await page.waitForFunction(() => window.session.ready);
+        assert.equal(await page.evaluate(() => window.session.lattice.toTreeData().nodes.find(({ id }) => id === 'wind').label), 'Read the wind');
+        assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_sync_refused')), [
+          { name: 'roadmap_sync_refused', props: { step: 'shown', lane: 'structure', code: 'server-error' } },
+          { name: 'roadmap_sync_refused', props: { step: 'retry', lane: 'structure', code: 'server-error' } },
+          { name: 'roadmap_sync_refused', props: { step: 'discard', lane: 'structure', code: 'server-error' } },
+        ]);
+        assert.deepEqual(await page.evaluate(() => window.issues), [{ operation: 'roadmap-sync-refused', stack: true }]);
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+}
+
+for (const width of [390, 744, 1024, 1440]) {
+  for (const gate of ['open', 'closed']) {
+    hostTest(`Chromium: Fork uses approved presentation and returns to its opener at ${width}px with gate ${gate}`, async () => {
+      const { page, errors } = await openHost({ width, role: 'reader', gate });
+      try {
+        const label = gate === 'closed' || width === 390 ? 'Fork this tree' : 'Fork';
+        const opener = page.getByRole('button', { name: label, exact: true });
+        await opener.click();
+        if (width >= 744 || gate === 'open') await page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Make it yours' }) }).waitFor();
+        else await page.getByRole('heading', { name: 'Make it yours' }).waitFor();
+        await page.keyboard.press('Escape');
+        if (width >= 744 || gate === 'open') {
+          await page.waitForFunction((label) => document.activeElement?.getAttribute('aria-label') === label || document.activeElement?.textContent?.trim() === label, label);
+          assert.equal(await opener.evaluate((element) => document.activeElement === element), true);
+        }
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+}
+
+
+hostTest('Chromium: discarding a Graph create dismisses its invalidated Undo toast', async () => {
+  const { page, errors } = await openHost();
+  try {
+    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Practice knots');
+    await page.getByRole('button', { name: 'Create step', exact: true }).click();
+    await page.locator('.st-graph-toast').waitFor();
+    await page.evaluate(() => {
+      const session = window.session;
+      session.inFlight.set('fixture-create', session.lattice.frontier());
+      session.receiveReject({ frameId: 'fixture-create', code: 'bad-frame' });
+    });
+    await page.getByRole('alert').getByRole('button', { name: /^Discard/ }).click();
+    await page.locator('.st-graph-toast').waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => window.session.receiptVersion), 1);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 744, 1440]) {
+  hostTest(`Chromium: gate-closed refusal retains legacy words and emits no wave-7 telemetry at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, gate: 'closed', shell: true });
+    try {
+      await page.evaluate(() => {
+        const session = window.session;
+        session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
+        session.inFlight.set('fixture-refused', session.lattice.frontier());
+        session.receiveReject({ frameId: 'fixture-refused', code: 'tree-too-large' });
+      });
+      await page.getByText('Not saving — this roadmap is at its limit', { exact: true }).waitFor();
+      assert.equal(await page.getByRole('alert').count(), 0);
+      assert.equal(await page.locator('.wm-room-status').count(), 0);
+      assert.deepEqual(await page.evaluate(() => ({
+        events: window.events.filter(({ name }) => ['roadmap_sync_refused', 'roadmap_sync_offline', 'roadmap_device_line'].includes(name)),
+        issues: window.issues,
+      })), { events: [], issues: [] });
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+
+for (const width of [390, 1440]) {
+  hostTest(`Chromium: Graph refusal drain returns focus to the displayed view switch at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width });
+    try {
+      await page.evaluate(() => {
+        const session = window.session;
+        session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
+        session.inFlight.set('fixture-refused', session.lattice.frontier());
+        session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
+      });
+      const alert = page.getByRole('alert');
+      await alert.getByRole('button', { name: 'Retry', exact: true }).focus();
+      await page.evaluate(() => {
+        const session = window.session;
+        session.ackedServerVector = session.lattice.frontier();
+        session.emitStatus();
+      });
+      await alert.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement?.matches('.st-roadmap-identity .st-board-switch-option[aria-pressed="true"]'));
+      assert.equal(await page.locator('.st-roadmap-identity .st-board-switch-option[aria-pressed="true"]').evaluate((element) => document.activeElement === element), true);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

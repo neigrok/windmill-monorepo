@@ -118,3 +118,317 @@ test('legacy dispatch keeps post-apply boundary exceptions when failure capture 
   assert.deepEqual(failures, []);
   assert.equal(session.undoStack.length, 1);
 });
+
+class TestSocket extends EventTarget {
+  static OPEN = 1;
+  static sockets = [];
+  constructor() {
+    super();
+    this.readyState = 0;
+    this.frames = [];
+    TestSocket.sockets.push(this);
+  }
+  send(text) { this.frames.push(JSON.parse(text)); }
+  open() { this.readyState = TestSocket.OPEN; this.dispatchEvent(new Event('open')); }
+  close() { this.readyState = 3; this.dispatchEvent(new Event('close')); }
+  message(frame) { this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) })); }
+}
+
+function connectedSession(t, overrides = {}) {
+  t.mock.method(globalThis, 'setInterval', () => 0);
+  t.mock.method(globalThis, 'clearInterval', () => {});
+  const priorSocket = globalThis.WebSocket;
+  const priorWindow = globalThis.window;
+  globalThis.WebSocket = TestSocket;
+  globalThis.window = new EventTarget();
+  t.after(() => { globalThis.WebSocket = priorSocket; globalThis.window = priorWindow; });
+  const saves = [];
+  const store = {
+    save: async (treeId, value) => { saves.push(structuredClone(value)); },
+    replaceLane: async (treeId, lane, frame) => {
+      const value = structuredClone(saves.at(-1));
+      if (lane === 'structure') { value.frame = frame; value.lastSeq = 0; }
+      else value.progress = frame;
+      saves.push(value);
+    },
+    ...overrides,
+  };
+  const session = new SyncSession({ treeId: 'tree', store, registry: null });
+  t.after(() => session.close());
+  session.connect();
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1,
+    nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] });
+  session.receiveProgressGraft({ marks: [] });
+  return { session, saves, store };
+}
+
+function refuseLast(session, lane, code = 'bad-frame') {
+  const map = lane === 'structure' ? session.inFlight : session.progressInFlight;
+  const frameId = [...map.keys()].at(-1);
+  assert.ok(frameId);
+  session.receiveReject({ t: 'reject', frameId, code });
+  return frameId;
+}
+
+test('status snapshots are frozen, stable and cover both lanes, socket transitions and acknowledgements', (t) => {
+  const { session } = connectedSession(t);
+  const seen = [];
+  const stop = session.subscribeStatus((value) => seen.push(value));
+  assert.deepEqual(seen, [{ phase: 'live', online: true, structurePending: 0, progressPending: 0,
+    structureInFlight: 0, progressInFlight: 0, refused: null, receiptVersion: 0 }]);
+  assert.equal(session.statusSnapshot(), seen[0]);
+  assert.equal(Object.isFrozen(seen[0]), true);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  assert.deepEqual(seen.at(-1), { ...seen[0], structurePending: 1, structureInFlight: 1 });
+  session.markProgress('root', 'complete');
+  assert.deepEqual(seen.at(-1), { ...seen[0], structurePending: 1, progressPending: 1, structureInFlight: 1, progressInFlight: 1 });
+  session.receiveAck({ frameId: [...session.inFlight.keys()][0] });
+  assert.deepEqual(seen.at(-1), { ...seen[0], progressPending: 1, progressInFlight: 1 });
+  session.receiveProgressAck({ frameId: [...session.progressInFlight.keys()][0] });
+  assert.deepEqual(seen.at(-1), seen[0]);
+  session.ws.close();
+  assert.deepEqual(seen.at(-1), { ...seen[0], phase: 'offline' });
+  session.connect();
+  session.ws.open();
+  assert.deepEqual(seen.at(-1), { ...seen[0], phase: 'syncing' });
+  stop();
+  const count = seen.length;
+  session.close();
+  assert.equal(seen.length, count);
+});
+
+test('refusals retain both lanes, exclude ownership/session codes, and clear at lane drain', (t) => {
+  const { session } = connectedSession(t);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  refuseLast(session, 'structure', 'tree-too-large');
+  const structure = session.statusSnapshot().refused;
+  assert.equal(Object.isFrozen(structure), true);
+  assert.deepEqual({ lane: structure.lane, code: structure.code }, { lane: 'structure', code: 'tree-too-large' });
+  session.markProgress('root', 'complete');
+  refuseLast(session, 'progress', 'server-error');
+  session.receiveState({ ...session.lattice.toFrame(), seq: 2 });
+  assert.deepEqual({ lane: session.statusSnapshot().refused.lane, code: session.statusSnapshot().refused.code }, { lane: 'progress', code: 'server-error' });
+  session.receiveProgressGraft(session.progress.toFrame());
+  assert.equal(session.statusSnapshot().refused, null);
+  for (const code of ['not-yours', 'nobodys-tree', 'sign-in-required']) {
+    session.dispatch({ kind: 'RenameNode', id: 'root', label: code });
+    refuseLast(session, 'structure', code);
+    assert.equal(session.statusSnapshot().refused, null);
+  }
+});
+
+test('retry uses reconnect and graft flush and preserves the refusal episode for the same bank', (t) => {
+  const { session } = connectedSession(t);
+  const serverFrame = session.lattice.toFrame();
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  refuseLast(session, 'structure');
+  const episode = session.statusSnapshot().refused.episode;
+  session.retry();
+  assert.equal(session.statusSnapshot().refused, null);
+  assert.equal(session.phase, 'offline');
+  assert.ok(session.reconnectTimer);
+  session.connect();
+  session.ws.open();
+  session.receiveState({ ...serverFrame, seq: 1 });
+  assert.equal(session.ws.frames.at(-1).intent, 'flush');
+  refuseLast(session, 'structure');
+  assert.equal(session.statusSnapshot().refused.episode, episode);
+});
+
+test('structure discard durably replaces one lane, preserves projection and progress, and invalidates receipts', async (t) => {
+  const { session, saves } = connectedSession(t);
+  const server = session.lattice.toFrame();
+  const projections = [];
+  session.onTreeChanged((value) => projections.push(value.nodes.map((node) => node.label)));
+  const receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  session.markProgress('root', 'complete');
+  const progress = session.progress.toFrame();
+  refuseLast(session, 'structure');
+  assert.equal(await session.discard(), true);
+  assert.deepEqual(session.lattice.toFrame(), { nodes: [], edges: [], kinds: [] });
+  assert.deepEqual(session.progress.toFrame(), progress);
+  assert.deepEqual(saves.at(-1).progress, progress);
+  assert.deepEqual(saves.at(-1).frame.nodes, []);
+  assert.deepEqual(session.undoStack, []);
+  assert.deepEqual(session.redoStack, []);
+  assert.equal(session.revert(receipt), false);
+  assert.equal(session.statusSnapshot().receiptVersion, 1);
+  assert.equal(session.dispatch({ kind: 'CreateNode', id: 'blocked' }), null);
+  assert.deepEqual(projections, [['Local']]);
+  session.connect();
+  session.ws.open();
+  assert.deepEqual(session.ws.frames[0], { t: 'subscribe', treeId: 'tree', lastSeq: 0, vector: {} });
+  session.receiveState({ ...server, seq: 1 });
+  assert.deepEqual(projections, [['Local'], ['Root']]);
+  assert.equal(session.ready, true);
+  assert.deepEqual(session.progress.toFrame(), progress);
+});
+
+test('progress discard preserves structure and its outbox until a fresh progress graft arrives', async (t) => {
+  const { session, saves } = connectedSession(t);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  const structure = session.lattice.toFrame();
+  session.markProgress('root', 'complete');
+  const overlays = [];
+  session.onProgress((value) => overlays.push([...value.completed]));
+  refuseLast(session, 'progress');
+  assert.equal(await session.discard(), true);
+  assert.deepEqual(saves.at(-1).frame, structure);
+  assert.deepEqual(saves.at(-1).progress, { marks: [] });
+  assert.deepEqual(session.lattice.toFrame(), structure);
+  assert.equal(session.pendingEditCount(), 1);
+  assert.deepEqual(overlays, []);
+  assert.equal(session.ready, false);
+  session.receiveState({ nodes: [], edges: [], kinds: [], seq: 1 });
+  assert.equal(session.ready, false);
+  session.receiveProgressGraft({ marks: [] });
+  assert.equal(session.ready, true);
+  assert.deepEqual(overlays, [[]]);
+});
+
+test('discard quiesces pending saves, incoming frames and local writes while replacement awaits', async (t) => {
+  let finish;
+  const { session, saves } = connectedSession(t, { replaceLane: () => new Promise((resolve) => { finish = resolve; }) });
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  refuseLast(session, 'structure');
+  session.scheduleSave();
+  const previous = session.lattice.toFrame();
+  const socket = session.ws;
+  const discarding = session.discard();
+  assert.equal(session.saveTimer, null);
+  const count = saves.length;
+  await session.persistNow();
+  socket.message({ t: 'subgraph', intent: 'delta', seq: 9, nodes: [{ id: 'late', createdAt: '999:0:server' }] });
+  session.markProgress('root', 'complete');
+  session.renameTree('No write');
+  session.undo();
+  session.flush();
+  assert.equal(session.dispatch({ kind: 'RenameNode', id: 'root', label: 'No write' }), null);
+  assert.deepEqual(session.lattice.toFrame(), previous);
+  assert.deepEqual(session.progress.toFrame(), { marks: [] });
+  assert.equal(saves.length, count);
+  finish();
+  assert.equal(await discarding, true);
+  session.connect();
+  session.ws.open();
+  socket.message({ t: 'subgraph', intent: 'delta', seq: 9, ...previous });
+  assert.deepEqual(session.lattice.toFrame().nodes, []);
+});
+
+test('failed discard restores the refusal, preserves receipts and reports one real-stack boundary failure', async (t) => {
+  const error = new Error('private storage failure');
+  const { session } = connectedSession(t, { replaceLane: async () => { throw error; } });
+  const reports = [];
+  session.reportFailure = (operation, failure) => reports.push({ operation, failure });
+  const receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  refuseLast(session, 'structure');
+  const refused = session.statusSnapshot().refused;
+  assert.equal(await session.discard(), false);
+  assert.equal(session.statusSnapshot().refused, refused);
+  assert.equal(session.statusSnapshot().receiptVersion, 0);
+  assert.equal(session.ready, true);
+  assert.deepEqual(reports, [{ operation: 'roadmap-sync-discard', failure: error }]);
+  assert.ok(reports[0].failure.stack);
+  assert.equal(session.revert(receipt), true);
+});
+
+test('browser online changes publish immediately and listeners leave with the session', async (t) => {
+  const priorWindow = globalThis.window;
+  const priorDocument = globalThis.document;
+  const priorSocket = globalThis.WebSocket;
+  globalThis.window = new EventTarget();
+  globalThis.document = new EventTarget();
+  globalThis.WebSocket = TestSocket;
+  t.after(() => { globalThis.window = priorWindow; globalThis.document = priorDocument; globalThis.WebSocket = priorSocket; });
+  const session = new SyncSession({ treeId: 'tree', registry: null,
+    store: { load: async () => null, requestPersistent: async () => true, save: async () => {} } });
+  t.after(() => session.close());
+  const snapshots = [];
+  session.subscribeStatus((value) => snapshots.push(value));
+  await session.start();
+  window.dispatchEvent(new Event('offline'));
+  assert.equal(snapshots.at(-1).online, false);
+  window.dispatchEvent(new Event('online'));
+  assert.equal(snapshots.at(-1).online, true);
+  session.close();
+  const count = snapshots.length;
+  window.dispatchEvent(new Event('offline'));
+  assert.equal(snapshots.length, count);
+});
+
+test('legacy refusal signals and warnings remain unchanged without a status subscriber', (t) => {
+  const { session } = connectedSession(t);
+  const forbidden = [];
+  const warnings = [];
+  window.addEventListener('wm-edit-forbidden', (event) => forbidden.push(event.detail));
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const capacity = { t: 'reject', frameId: 'legacy-frame', code: 'tree-too-large', reason: 'private sentence' };
+  const auth = { t: 'reject', code: 'sign-in-required' };
+  const other = { t: 'reject', code: 'server-error', reason: 'private sentence' };
+  session.receiveReject(capacity);
+  session.receiveReject(auth);
+  session.receiveReject(other);
+  assert.deepEqual(forbidden, [capacity, auth]);
+  assert.deepEqual(warnings, [['[sync] frame rejected —', 'server-error', 'private sentence']]);
+  assert.equal(session.durabilityAtRisk, true);
+  assert.equal(session.statusSnapshot().refused, null);
+});
+
+test('a delayed socket close after durable discard leaves exactly one reconnect', async (t) => {
+  const { session } = connectedSession(t);
+  const timers = new Map();
+  let nextTimer = 0;
+  t.mock.method(globalThis, 'setTimeout', (run) => {
+    const id = ++nextTimer;
+    timers.set(id, run);
+    return id;
+  });
+  t.mock.method(globalThis, 'clearTimeout', (id) => timers.delete(id));
+  const socket = session.ws;
+  t.mock.method(socket, 'close', () => { socket.readyState = 3; });
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
+  refuseLast(session, 'structure');
+  assert.equal(await session.discard(), true);
+  assert.equal(timers.size, 1);
+  const firstTimer = session.reconnectTimer;
+  socket.dispatchEvent(new Event('close'));
+  assert.equal(timers.has(firstTimer), false);
+  assert.equal(timers.size, 1);
+  const reconnect = timers.get(session.reconnectTimer);
+  timers.delete(session.reconnectTimer);
+  reconnect();
+  assert.notEqual(session.ws, socket);
+  const replacement = session.ws;
+  socket.dispatchEvent(new Event('close'));
+  assert.equal(session.ws, replacement);
+  assert.equal(timers.size, 0);
+});
+
+test('start refreshes browser connectivity after an asynchronous local load', async (t) => {
+  const priorWindow = globalThis.window;
+  const priorDocument = globalThis.document;
+  const priorSocket = globalThis.WebSocket;
+  const priorNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  globalThis.window = new EventTarget();
+  globalThis.document = new EventTarget();
+  globalThis.WebSocket = TestSocket;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } });
+  t.after(() => {
+    globalThis.window = priorWindow;
+    globalThis.document = priorDocument;
+    globalThis.WebSocket = priorSocket;
+    if (priorNavigator) Object.defineProperty(globalThis, 'navigator', priorNavigator);
+    else delete globalThis.navigator;
+  });
+  let load;
+  const session = new SyncSession({ treeId: 'tree', registry: null,
+    store: { load: () => new Promise((resolve) => { load = resolve; }), requestPersistent: async () => true, save: async () => {} } });
+  t.after(() => session.close());
+  const started = session.start();
+  navigator.onLine = false;
+  window.dispatchEvent(new Event('offline'));
+  load(null);
+  await started;
+  assert.equal(session.statusSnapshot().online, false);
+});

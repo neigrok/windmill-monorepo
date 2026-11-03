@@ -1,7 +1,8 @@
 // The /app shell: a room switcher, the account seat, and the active room. data-brand and
 // data-theme are stamped together — palettes.css keys a room's ground on the pair.
 
-import React, { Suspense, useEffect, useLayoutEffect } from 'react';
+import React, { Suspense, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { CloudOff } from 'lucide-react';
 import { BrandMark } from '../../design-system';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
@@ -12,6 +13,53 @@ import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
 import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 import { navigate } from '../navigation.js';
+import { useRoomStatus } from '../roomStatus.js';
+
+const STATUS_TOOLTIP_HOLD = 4000;
+
+function RoomStatus({ status }) {
+  const [tooltipLine, setTooltipLine] = useState(null);
+  const tooltip = tooltipLine === status.line;
+  const tooltipId = useId();
+  const root = useRef(null);
+  useEffect(() => {
+    if (!tooltip) {
+      if (tooltipLine !== null) setTooltipLine(null);
+      return;
+    }
+    const timer = setTimeout(() => setTooltipLine(null), STATUS_TOOLTIP_HOLD);
+    const dismiss = (event) => {
+      if (!root.current?.contains(event.target)) setTooltipLine(null);
+    };
+    const escape = (event) => {
+      if (event.key === 'Escape') setTooltipLine(null);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [tooltip, tooltipLine]);
+
+  const icon = status.icon === 'offline' ? <CloudOff size={16} aria-hidden="true" /> : null;
+  return (
+    <div ref={root} className={`wm-room-status${status.narrow ? ` wm-room-status--${status.narrow}` : ''}`}>
+      <span className="wm-room-status-announcement" role="status" aria-live="polite" aria-atomic="true" aria-label={status.line}>{status.line}</span>
+      <span className="wm-room-status-full" aria-hidden="true">{status.line}</span>
+      <span className="wm-room-status-compact" aria-hidden="true">{icon}{status.short ?? status.line}</span>
+      {status.narrow === 'icon' && <button
+        type="button"
+        className="wm-room-status-tap"
+        aria-label={status.line}
+        aria-describedby={tooltip ? tooltipId : undefined}
+        onClick={() => setTooltipLine(tooltip ? null : status.line)}
+      >{icon}</button>}
+      {tooltip && <span id={tooltipId} className="wm-room-status-tooltip" role="tooltip">{status.line}</span>}
+    </div>
+  );
+}
 
 function RoomLink({ href, label, active }) {
   const onClick = (e) => {
@@ -68,6 +116,7 @@ export function Shell({ location, neutral = null }) {
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const { resolved: appearance } = useAppearance();
+  const roomStatus = useRoomStatus();
   const room = resolveRoom(location.pathname, neutral);
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
@@ -100,7 +149,7 @@ export function Shell({ location, neutral = null }) {
 
   return (
     <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
-      <header className="wm-head">
+      <header className={roomStatus ? 'wm-head wm-head--status' : 'wm-head'}>
         <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home"><BrandMark size={30} /></a>
         <nav className="wm-switch" aria-label="Rooms">
           <RoomLink href="/app" label="Home" active={room.kind === 'home' && !redirect} />
@@ -108,9 +157,10 @@ export function Shell({ location, neutral = null }) {
             <RoomLink key={p.id} href={p.shell.room} label={p.label} active={room.product?.id === p.id} />
           ))}
         </nav>
+        {roomStatus && <RoomStatus status={roomStatus} />}
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
-          <AccountSeat
+          {roomStatus && status === 'ghost' ? <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button> : <AccountSeat
             user={user}
             status={status}
             size={30}
@@ -119,7 +169,7 @@ export function Shell({ location, neutral = null }) {
             onSettings={() => navigate('/app/settings')}
             onConnect={() => navigate('/app/connect')}
             onSignOut={signOut}
-          />
+          />}
         </div>
       </header>
       <main className="wm-room">

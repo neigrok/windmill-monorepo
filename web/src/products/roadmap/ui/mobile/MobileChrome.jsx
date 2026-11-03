@@ -4,6 +4,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { TABLET_PANEL_WIDTH } from '../viewport.js';
+import { DeviceLine } from '../../board/SyncNotices.jsx';
 
 const SAFE_TOP = 'var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px))';
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
@@ -19,6 +20,7 @@ export function MobileChrome({
   dominantKind,
   onFork,
   onSignInToKeep,
+  deviceLine = null,
   ctaEcho = false,
   onFocus,
   onShowAll,
@@ -50,7 +52,7 @@ export function MobileChrome({
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
   const canvasView = view === 'tree';
   const wideCamera = identity && band !== 'phone';
-  const identityNudge = identity && canvasView && band !== 'desktop' && Boolean(onSignInToKeep);
+  const identityNudge = identity && canvasView && band === 'phone' && Boolean(deviceLine);
   const phoneCameraTop = rowBottom + (identityNudge ? nudgeHeight + 16 : 8);
 
   useLayoutEffect(() => {
@@ -284,7 +286,7 @@ export function MobileChrome({
 
       {identityNudge && (
         <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom + 8 }}>
-          {signInNudge}
+          <DeviceLine {...deviceLine} />
         </div>
       )}
 

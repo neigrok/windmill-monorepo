@@ -44,6 +44,10 @@ export class BoardActs {
 
   update(collaborators) { this.collaborators = collaborators; }
 
+  invalidateReceipts() {
+    this.collaborators.dismissInvalidatedToast?.();
+  }
+
   recolor(ids, hue) {
     const c = this.collaborators;
     if (!c.active || !c.owner || !c.tree) return { ok: false };
@@ -225,6 +229,10 @@ export class BoardActs {
   release(via = 'left') {
     const pending = this.pending;
     if (!pending) return;
+    if (pending.session?.rebaselining) {
+      pending.releaseVia = via;
+      return;
+    }
     this.pending = null;
     this.held = null;
     const c = this.collaborators;
@@ -260,6 +268,16 @@ export function useBoardActs(collaborators) {
   if (!controller.current) controller.current = new BoardActs(args);
   controller.current.update(args);
   const acts = controller.current;
+  const receiptRef = useRef({ session: collaborators.session, version: collaborators.receiptVersion });
+  useEffect(() => {
+    const previous = receiptRef.current;
+    receiptRef.current = { session: collaborators.session, version: collaborators.receiptVersion };
+    if (previous.session !== collaborators.session || previous.version == null || collaborators.receiptVersion <= previous.version) return;
+    acts.invalidateReceipts();
+  }, [acts, collaborators.session, collaborators.receiptVersion]);
+  useEffect(() => {
+    if (collaborators.session?.ready && acts.pending?.releaseVia) acts.release(acts.pending.releaseVia);
+  }, [acts, collaborators.session, collaborators.syncReady]);
   useEffect(() => {
     if (collaborators.active && collaborators.owner) return;
     acts.release('left');

@@ -65,11 +65,13 @@ including a one-step roadmap, and hides at zero. Picking a row selects and revea
 step. Activity remains available through A; the feed never opens itself while identity is mounted.
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
-The identity replaces the plaque, wordmark and hairline, and only phones retain the Fork pill.
-The anonymous/lapsed desktop status and the desktop dock sit beneath the measured identity, so
-an open step never covers the row's verbs. On the phone and tablet Graph, the existing
-device-only sign-in nudge sits beneath the row; the phone camera clears it, and its measured
-bottom contributes to the Graph viewport. A row render failure reports `roadmap-identity` and
+The identity replaces the plaque, wordmark and hairline. Phone Graph readers retain the Fork pill;
+the phone Board receives its Fork opener through `onFork`, without pill padding. From 744px the
+Fork host chooses the centred dialog with either gate state; phones retain the sheet.
+The desktop dock sits beneath the measured identity, so an open step never covers the row's verbs.
+The gated host derives one anonymous or lapsed device line: the Shell carries it from 744px,
+and both phone views receive the tappable `DeviceLine`. The phone camera clears its measured
+bottom. A row render failure reports `roadmap-identity` and
 mounts legacy chrome with a view switch. Fallback chrome and switch border-box measurements feed
 the switch position and Board inset. Gate-closed chrome, feed auto-open, shortcuts and viewport
 geometry retain their existing paths; state words use `board/copy.js` without changing ceremony
@@ -96,7 +98,7 @@ sticky heading and starting just under the identity row, whose measured bottom f
 top inset on every band. From 744px to 1023px one side column folds to a rail, Done first; Show swaps which
 one, and Up next never folds (`columnStage` in `BoardColumns.jsx`). Phones show one column at a time
 behind Locked · Up next · Done tabs in a bottom band (`PhoneSegments.jsx`). No band draws the action
-lane while the identity row is mounted; a phone reader's Fork pill lifts the columns and the band clear of it. Shown with a step
+lane while the identity row is mounted. Shown with a step
 selected, the Board opens that step's column (its tab, past the Done fold, or out of the rail) and
 scrolls its card into view. The layer stays mounted across Board/Graph switches, so each column keeps
 its scroll there. Crossing 744px rebuilds the columns, and a column that folds to a rail starts at the
@@ -373,6 +375,24 @@ or `roadmap-sync-send` operations with stack frames, while the applied write ret
 Persistence and transport failures mark durability at risk. A failed pre-apply dispatch still throws.
 Legacy callers retain their default exception behavior while the Board remains gated. `rb-simplify`
 owns bringing all callers under one failure-containment policy when gate parity permits it.
+
+`SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' derived pending writes,
+in-flight frames, socket phase, browser connectivity and the current refusal. The session retains
+one refusal per lane; ownership and authentication refusals keep their existing host path.
+`sync/status.js` derives Offline after a three-second socket grace (immediately when the browser
+is offline), Saving after 300ms pending, and Saved for two seconds after a live drain. Refusals
+suppress Saving and Saved. The host supplies the clock and publishes through the product-neutral
+`shell/roomStatus.js` service only while the gated identity is mounted. Sync status belongs to
+signed-in owners; readers and the demo publish none, and a device line takes precedence.
+
+The Shell keeps one full-line polite live region. From 744px the line is visible; phones show
+the short form where supplied. Below 360px Saving and Saved are announced only, and Offline uses
+an icon whose tap opens the full-line tooltip for four seconds, until another tap or outside tap.
+The host passes refusal code, refused-lane count and stable Retry/Discard actions to the Board
+and Graph notice component. The Graph measures its notice into the camera's usable viewport.
+Retry clears the refusal and reconnects through the existing graft/flush path. A successful
+discard invalidates session Undo/Redo and captured receipts; receipt-backed Board and Graph
+toasts are dismissed while an unsent held delete remains available.
 
 Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this tree.
 Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A
