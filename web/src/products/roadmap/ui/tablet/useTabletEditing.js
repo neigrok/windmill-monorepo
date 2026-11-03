@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { illegalTargets, edgeFor } from './aim.js';
-import { GRAPH_TOAST } from '../../board/copy.js';
+import { GRAPH_TOAST } from '../../copy.js';
 
 // One surface at a time: bulk bar, then aim bar, then remove-link bar, then the selection editor.
 export function activeSurface({ multiMode, aim, removing, selectedNode }) {

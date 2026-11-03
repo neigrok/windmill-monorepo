@@ -13,8 +13,8 @@ import { useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
 import { BoardToast } from './BoardToast.jsx';
-import { DeviceLine, RefusedSync } from './SyncNotices.jsx';
-import { FORK_OFFER } from './copy.js';
+import { DeviceLine, RefusedSync } from '../sync/SyncNotices.jsx';
+import { FORK_OFFER } from '../copy.js';
 import { Button } from '../../../design-system/core/Button.jsx';
 import { track } from '../../../telemetry/beacon.js';
 

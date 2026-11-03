@@ -4,9 +4,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
 
-const DEFAULT_LABELS = { heading: 'Checklist', add: 'Add a sub-task' };
+const LABELS = { heading: 'Checklist', add: 'Add a sub-task' };
 
-export function Checklist({ items, hue, labels = DEFAULT_LABELS, autoStartAdd = false, onToggle, onEdit, onDelete, onAdd, onClose }) {
+export function Checklist({ items, hue, autoStartAdd = false, onToggle, onEdit, onDelete, onAdd, onClose }) {
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState('');
   const [adding, setAdding] = useState(autoStartAdd);
@@ -60,7 +60,7 @@ export function Checklist({ items, hue, labels = DEFAULT_LABELS, autoStartAdd = 
   return (
     <div>
       <div className="st-check-head">
-        <span className="st-step-heading">{labels.heading}</span>
+        <span className="st-step-heading">{LABELS.heading}</span>
         <span className="st-check-count">{done} of {items.length}</span>
       </div>
       <div className="st-check-list" style={chkVars}>
@@ -131,7 +131,7 @@ export function Checklist({ items, hue, labels = DEFAULT_LABELS, autoStartAdd = 
         ) : (
           <button type="button" className="st-check-add" onClick={beginAdd}>
             <Icon name="plus" size={13} />
-            {labels.add}
+            {LABELS.add}
           </button>
         )}
       </div>

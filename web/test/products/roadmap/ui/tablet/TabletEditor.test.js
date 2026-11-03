@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { beacon, withBrowserErrors } from '../../board/composerFixture.js';
+import { beacon, withBrowserErrors } from '../../browserFixture.js';
 
 const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const entry = `

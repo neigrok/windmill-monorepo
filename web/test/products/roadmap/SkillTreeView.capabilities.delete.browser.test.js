@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { DELETE_CONFIRM, LABELS, STEP_DETAIL, branchChip, deletedToast } from '../../../src/products/roadmap/board/copy.js';
+import { DELETE_CONFIRM, LABELS, STEP_DETAIL, branchChip, deletedToast } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 

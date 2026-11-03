@@ -1,4 +1,4 @@
-import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/products/roadmap/board/copy.js';
+import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/products/roadmap/copy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';

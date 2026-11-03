@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { REFUSED_SYNC } from '../../../src/products/roadmap/board/copy.js';
+import { REFUSED_SYNC } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 

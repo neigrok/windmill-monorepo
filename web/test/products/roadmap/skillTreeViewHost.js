@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
-import { beacon } from './board/composerFixture.js';
+import { beacon } from './browserFixture.js';
 
 // The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
 const root = fileURLToPath(new URL('../../../', import.meta.url));

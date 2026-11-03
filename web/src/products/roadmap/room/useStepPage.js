@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { stepIsStale } from '../board/stepAddress.js';
+import { stepIsStale } from '../step/stepAddress.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 
 // A step opens over either view: the modal from 744px, the pushed page below. It rides the URL, so a link lands on it and

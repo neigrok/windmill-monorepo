@@ -12,7 +12,7 @@ import { KIND_CSS, hueOf, prefersReducedMotion } from '../theme.js';
 import { focusableElements, wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
-} from './copy.js';
+} from '../copy.js';
 
 const MENU_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const RECOLOR_PULSE_MS = 120;

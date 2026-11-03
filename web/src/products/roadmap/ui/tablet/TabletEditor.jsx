@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
-import { deleteCostLine } from '../../board/copy.js';
+import { deleteCostLine } from '../../copy.js';
 import { kindName } from '../../model/Legend.js';
 
 const verbBase = {

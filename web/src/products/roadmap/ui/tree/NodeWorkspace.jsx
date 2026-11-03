@@ -149,7 +149,7 @@ const ADD_CHOICES = [
   { kind: 'link', label: 'Link', icon: 'external-link' },
 ];
 
-export function NodeWorkspace({ nodeId, workspace, hue, checklistLabels, onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }) {
+export function NodeWorkspace({ nodeId, workspace, hue, onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink }) {
   const subtasks = workspace?.subtasks ?? [];
   const note = workspace?.note ?? '';
   const links = workspace?.links ?? [];
@@ -210,7 +210,6 @@ export function NodeWorkspace({ nodeId, workspace, hue, checklistLabels, onAddSu
         <Checklist
           items={subtasks}
           hue={hue}
-          labels={checklistLabels}
           autoStartAdd={checklistBootstrap}
           onToggle={(id) => onToggleSubtask(nodeId, id)}
           onEdit={(id, label) => onEditSubtask(nodeId, id, label)}

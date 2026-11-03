@@ -3,7 +3,7 @@ import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
 import { receiptUndo } from '../board/acts.js';
-import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../board/copy.js';
+import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 

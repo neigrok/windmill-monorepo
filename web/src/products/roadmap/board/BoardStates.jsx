@@ -7,7 +7,7 @@ import './states.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { NewStep } from './BoardControls.jsx';
-import { COLUMN_TITLES, EMPTY_ROADMAP, LOAD_ERROR, roadmapComplete } from './copy.js';
+import { COLUMN_TITLES, EMPTY_ROADMAP, LOAD_ERROR, roadmapComplete } from '../copy.js';
 
 const COLUMNS = ['locked', 'upNext', 'done'];
 const SKELETON_CARDS = { locked: 3, upNext: 2, done: 3 };

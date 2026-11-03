@@ -5,7 +5,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { regroup, DONE_RECENT_LIMIT } from './Board.js';
 import { StepCard } from './StepCard.jsx';
 import { SHOW_ALL } from './traversal.js';
-import { reasonLine, showAllDone } from './copy.js';
+import { reasonLine, showAllDone } from '../copy.js';
 import { prefersReducedMotion } from '../theme.js';
 
 const WAKE_MS = 2400; // the Arrived edge settles over two 1200ms pulses

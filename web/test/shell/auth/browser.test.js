@@ -1,10 +1,10 @@
-import { SYNC_STATUS, ANONYMOUS_OWNER, LAPSED_SESSION } from '../../../src/products/roadmap/board/copy.js';
+import { SYNC_STATUS, ANONYMOUS_OWNER, LAPSED_SESSION } from '../../../src/products/roadmap/copy.js';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { withBrowserErrors } from '../../products/roadmap/board/composerFixture.js';
+import { withBrowserErrors } from '../../products/roadmap/browserFixture.js';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));

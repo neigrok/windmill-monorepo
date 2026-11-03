@@ -4,7 +4,7 @@ import { register } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { withBrowserErrors } from './composerFixture.js';
+import { withBrowserErrors } from '../browserFixture.js';
 
 register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;

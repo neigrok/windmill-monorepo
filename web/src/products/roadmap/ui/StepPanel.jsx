@@ -3,7 +3,7 @@ import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
-import { COLUMN_TITLES, unlocksWhen } from '../board/copy.js';
+import { COLUMN_TITLES, unlocksWhen } from '../copy.js';
 import { kindName } from '../model/Legend.js';
 
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };

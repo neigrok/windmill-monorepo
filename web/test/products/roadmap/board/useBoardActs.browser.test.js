@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { parse } from 'acorn';
 import { chromium } from 'playwright';
 import { createServer, transformWithEsbuild } from 'vite';
-import { withBrowserErrors } from './composerFixture.js';
+import { withBrowserErrors } from '../browserFixture.js';
 
 const CLOCK_START = new Date('2026-11-02T12:00:00Z');
 
@@ -37,7 +37,7 @@ import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { hlcText } from '/src/products/roadmap/sync/lattice.js';
-import { GRAPH_TOAST, keptStepsToast } from '/src/products/roadmap/board/copy.js';
+import { GRAPH_TOAST, keptStepsToast } from '/src/products/roadmap/copy.js';
 import '/src/styles/global.css';
 const root = createRoot(document.getElementById('root'));
 const initialTree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [

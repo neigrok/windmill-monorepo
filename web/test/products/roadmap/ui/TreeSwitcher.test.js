@@ -12,10 +12,7 @@ const props = {
   listTrees: async () => [], onNew() {},
 };
 
-for (const variant of ['graph', 'identity']) {
-  test(`TreeSwitcher ${variant} matches its full markup`, async () => {
-    const expected = (await readFile(new URL(`TreeSwitcher.${variant}.html`, import.meta.url), 'utf8')).trimEnd();
-    assert.equal(renderToStaticMarkup(React.createElement(TreeSwitcher, { ...props, variant })), expected);
-    if (variant === 'graph') assert.equal(renderToStaticMarkup(React.createElement(TreeSwitcher, props)), expected);
-  });
-}
+test('TreeSwitcher matches its full markup', async () => {
+  const expected = (await readFile(new URL('TreeSwitcher.html', import.meta.url), 'utf8')).trimEnd();
+  assert.equal(renderToStaticMarkup(React.createElement(TreeSwitcher, props)), expected);
+});

@@ -31,10 +31,8 @@ function agoFrom(updatedAt) {
   return days < 7 ? `${days}d ago` : `${Math.round(days / 7)}w ago`;
 }
 
-export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTitle, onDelete, variant = 'graph' }) {
-  const identity = variant === 'identity';
+export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTitle, onDelete }) {
   const [open, setOpen] = useState(false);
-  const [hover, setHover] = useState(false);
   const [trees, setTrees] = useState(null); // null = not loaded; [] = loaded, none
   const [hoverId, setHoverId] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -67,21 +65,16 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       const close = () => {
         if (editingRef.current != null) commitRef.current?.();
         setOpen(false);
-        if (identity) triggerRef.current?.focus();
+        triggerRef.current?.focus();
       };
-      if (identity) {
-        dismissOverlayOutside(event, rootRef.current, close);
-        return;
-      }
-      if (rootRef.current?.contains(event.target)) return;
-      close();
+      dismissOverlayOutside(event, rootRef.current, close);
     };
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       if (editingRef.current != null) return; // the field's own esc handler restores it
       if (confirmRef.current != null) { setConfirmId(null); return; }
       setOpen(false);
-      if (identity) triggerRef.current?.focus();
+      triggerRef.current?.focus();
     };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
@@ -89,7 +82,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, identity]);
+  }, [open]);
 
   useEffect(() => {
     if (open) return;
@@ -182,31 +175,27 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   const name = (liveDraft ? draft : current?.title)?.trim() || 'Untitled roadmap';
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', ...(identity ? { maxWidth: '100%' } : {}) }}>
+    <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', maxWidth: '100%' }}>
       <button
         ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 5,
-          marginLeft: 'var(--space-2)', padding: '3px 8px',
+          marginLeft: 0, padding: '0 4px 0 0',
           border: 'none', borderRadius: 'var(--radius-full)', cursor: 'pointer',
           background: open ? 'var(--color-brand-soft)' : 'transparent',
           boxShadow: open ? '0 0 0 1.5px var(--accent-terracotta-200)' : 'none',
-          fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-sm)',
-          color: 'var(--text-primary)', maxWidth: 220,
+          fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 24,
+          color: 'var(--text-primary)', maxWidth: '100%',
           transition: 'background var(--duration-fast) var(--ease-standard)',
-          ...(identity ? {
-            maxWidth: '100%', height: 44, marginLeft: 0, padding: '0 4px 0 0', fontSize: 24, lineHeight: '32px',
-          } : {}),
+          height: 44, lineHeight: '32px',
         }}
       >
         <span title={name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-        <Caret shown={hover || open} identity={identity} />
+        <Caret />
       </button>
 
       {open && (
@@ -353,12 +342,10 @@ function RowMeta({ tree }) {
   );
 }
 
-function Caret({ shown, identity = false }) {
-  const size = identity ? 20 : 9;
-  const opacity = shown ? 0.7 : 0;
+function Caret() {
   return (
-    <svg width={size} height={size} viewBox={identity ? '0 0 20 20' : '0 0 12 12'} fill="none" style={{ opacity: identity ? 1 : opacity, ...(identity ? { flexShrink: 0, color: 'var(--text-secondary)' } : {}), transition: 'opacity var(--duration-fast) var(--ease-standard)' }}>
-      <path d={identity ? 'M5 7.5L10 12.5L15 7.5' : 'M3 4.5L6 7.5L9 4.5'} stroke="currentColor" strokeWidth={identity ? '1.66667' : '1.8'} strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={20} height={20} viewBox="0 0 20 20" fill="none" style={{ opacity: 1, flexShrink: 0, color: 'var(--text-secondary)', transition: 'opacity var(--duration-fast) var(--ease-standard)' }}>
+      <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.66667" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

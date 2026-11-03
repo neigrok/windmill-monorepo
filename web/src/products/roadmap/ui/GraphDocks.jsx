@@ -6,7 +6,7 @@ import { Icon, IconButton } from '../../../design-system';
 import { ActivityFeed } from '../activity/ActivityFeed.jsx';
 import { ActivityRows } from '../activity/ActivityRows.jsx';
 import { deletable } from '../board/acts.js';
-import { LABELS, ROADMAP_VERBS } from '../board/copy.js';
+import { LABELS, ROADMAP_VERBS } from '../copy.js';
 import { emptyWorkspace } from '../model/NodeWorkspace.js';
 import { GraphDock } from './GraphChrome.jsx';
 import { StepPanel } from './StepPanel.jsx';

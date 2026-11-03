@@ -7,7 +7,7 @@ const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { ActivityRows } = await import('../../../../src/products/roadmap/activity/ActivityRows.jsx');
 const { ActorAvatar, EventSentence } = await import('../../../../src/products/roadmap/activity/grammar.jsx');
-const { ACTIVITY } = await import('../../../../src/products/roadmap/board/copy.js');
+const { ACTIVITY } = await import('../../../../src/products/roadmap/copy.js');
 const render = (component, props) => renderToStaticMarkup(React.createElement(component, props));
 
 test('touch Activity renders the exact shipped empty state outside the Tab order', () => {

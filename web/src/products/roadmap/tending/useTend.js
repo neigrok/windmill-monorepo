@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchTending, startTend, fetchRun } from './tendingClient.js';
 import { isTerminal, runFace } from './receipts.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
-import { LABELS, TEND_TOAST } from '../board/copy.js';
+import { LABELS, TEND_TOAST } from '../copy.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const POLL_INTERVAL_MS = 1200;

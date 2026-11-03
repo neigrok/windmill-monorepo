@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { beacon, withBrowserErrors } from '../board/composerFixture.js';
+import { beacon, withBrowserErrors } from '../browserFixture.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -14,7 +14,7 @@ import '/src/styles/global.css';
 import { TreeSwitcher } from '/src/products/roadmap/ui/TreeSwitcher.jsx';
 createRoot(document.getElementById('fixture')).render(React.createElement(TreeSwitcher, {
   current: { id: 'sail', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky' },
-  listTrees: async () => [], onNew() {}, variant: 'identity',
+  listTrees: async () => [], onNew() {},
 }));
 window.entryReady = true;
 `;

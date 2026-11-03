@@ -3,7 +3,7 @@ import { layoutTree } from '../layout/index.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { makeRenderable } from '../model/renderableGraph.js';
-import { GRAPH_TOAST, cycleToast, keptStepsToast } from '../board/copy.js';
+import { GRAPH_TOAST, cycleToast, keptStepsToast } from '../copy.js';
 
 const NO_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 

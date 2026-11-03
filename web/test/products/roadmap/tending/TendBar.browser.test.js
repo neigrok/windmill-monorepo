@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { ASK_AI_PLACEHOLDER } from '../../../../src/products/roadmap/board/copy.js';
-import { withBrowserErrors } from '../board/composerFixture.js';
+import { ASK_AI_PLACEHOLDER } from '../../../../src/products/roadmap/copy.js';
+import { withBrowserErrors } from '../browserFixture.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -13,7 +13,7 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import { TendBar } from '/src/products/roadmap/tending/TendBar.jsx';
-import { ASK_AI_PLACEHOLDER } from '/src/products/roadmap/board/copy.js';
+import { ASK_AI_PLACEHOLDER } from '/src/products/roadmap/copy.js';
 window.submitted = [];
 window.dismissed = 0;
 const query = new URLSearchParams(location.search);

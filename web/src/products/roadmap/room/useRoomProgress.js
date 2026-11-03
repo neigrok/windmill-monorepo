@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
-import { LABELS, completedStepsToast, completedToast } from '../board/copy.js';
+import { LABELS, completedStepsToast, completedToast } from '../copy.js';
 import { COACHED_NODE_ID, DEMO_COPY } from '../demo/demoStage.js';
 import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';

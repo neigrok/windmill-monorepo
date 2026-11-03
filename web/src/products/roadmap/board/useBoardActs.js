@@ -3,7 +3,7 @@ import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBuc
 import { sharedKind } from '../selection/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
-import { LABELS } from './copy.js';
+import { LABELS } from '../copy.js';
 import { BoardQuery } from './Board.js';
 
 export class BoardComposer {

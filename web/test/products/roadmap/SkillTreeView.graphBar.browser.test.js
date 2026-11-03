@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { DELETE_CONFIRM, EDIT_STEP, FORK_OFFER, OPEN_STEP, STEP_DETAIL, backTo, deletedToast } from '../../../src/products/roadmap/board/copy.js';
+import { DELETE_CONFIRM, EDIT_STEP, FORK_OFFER, OPEN_STEP, STEP_DETAIL, backTo, deletedToast } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 

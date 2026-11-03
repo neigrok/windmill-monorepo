@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../../design-system';
 import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
-import { coverBeneath, useComposerViewport } from '../board/composerFocus.js';
-import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../board/copy.js';
+import { coverBeneath, useComposerViewport } from '../step/composerFocus.js';
+import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../copy.js';
 
 export function TendBar({
   presentation,

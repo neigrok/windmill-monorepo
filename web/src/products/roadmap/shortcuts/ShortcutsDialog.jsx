@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
-import { SHORTCUTS_TITLE } from '../board/copy.js';
+import { SHORTCUTS_TITLE } from '../copy.js';
 import { visibleGroups, keyLabel, detectPlatform } from './shortcutMap.js';
 
 function Keycap({ children }) {

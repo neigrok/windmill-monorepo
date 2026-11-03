@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef } from 'react';
 import { COLUMN_OF_STATE } from '../model/UnlockRules.js';
-import { titleOf } from '../board/StepFacts.js';
+import { titleOf } from '../step/StepFacts.js';
 import { track } from '../../../telemetry/beacon.js';
 
 // The phone Graph's bottom bar: the one selected step while nothing covers it, else the reader's Fork pill. A bar that goes

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { navigate } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { Board } from '../board/Board.js';
-import { LINK_COPIED } from '../board/copy.js';
+import { LINK_COPIED } from '../copy.js';
 import { deleteTree, listAllTrees, renameTree } from '../persistence/TreeRegistry.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { buildRoadmapExport, downloadExport } from '../settings/exportArchive.js';

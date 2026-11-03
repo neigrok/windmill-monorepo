@@ -10,7 +10,7 @@ import { UpNextRest } from './BoardStates.jsx';
 import { ColumnEmpty } from './BoardControls.jsx';
 import { BoardQuery } from './Board.js';
 import { RAIL, columnStops, useRovingFocus } from './traversal.js';
-import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount, showColumn } from './copy.js';
+import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount, showColumn } from '../copy.js';
 
 export const DEFAULT_RAIL = 'done';
 const RAIL_DECK_DEPTH = 3;

@@ -7,7 +7,7 @@ register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { GraphChrome } = await import('../../../../src/products/roadmap/ui/GraphChrome.jsx');
-const { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } = await import('../../../../src/products/roadmap/board/copy.js');
+const { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } = await import('../../../../src/products/roadmap/copy.js');
 
 const render = (props = {}) => renderToStaticMarkup(React.createElement(GraphChrome, { onFork() {}, ...props }));
 

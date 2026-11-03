@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { plantedToast, welcomeBackToast } from '../board/copy.js';
+import { plantedToast, welcomeBackToast } from '../copy.js';
 import { DEMO_STAGED_COMPLETED, DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
 import { SkillTree } from '../model/SkillTree.js';
