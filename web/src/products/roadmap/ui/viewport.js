@@ -21,22 +21,29 @@ const MINIMAP = { width: 186, height: 146 };
 // .st-legend-dock: --space-6 from the left on every breakpoint, clear of the minimap's seat below it.
 const LEGEND_CORNER = { left: 24, bottom: 24 + 196 };
 
-export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false, sheetHeight = 0, laneInset = 0, legendBox = null }) {
+export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false, sheetHeight = 0, laneInset = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
   if (breakpoint === 'desktop') {
+    const right = dockOpen ? DESKTOP.dock : DESKTOP.margin;
+    const blocks = [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox)];
+    if (cameraBlock) blocks.push({ right, bottom: DESKTOP.margin, ...cameraBlock });
     return {
-      top: DESKTOP.top, right: dockOpen ? DESKTOP.dock : DESKTOP.margin, bottom: DESKTOP.margin, left: DESKTOP.margin,
-      blocks: [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox)],
+      top: rowBottom ?? DESKTOP.top, right, bottom: DESKTOP.margin, left: DESKTOP.margin,
+      blocks,
     };
   }
   if (breakpoint === 'tablet') {
+    const right = dockOpen ? TABLET.panel : TABLET.margin;
+    const bottom = laneInset + TABLET.laneGutter;
+    const blocks = legendBlocks(legendBox);
+    if (cameraBlock) blocks.push({ right: Math.max(24, right), bottom: Math.max(24, bottom), ...cameraBlock });
     return {
-      top: TABLET.top, right: dockOpen ? TABLET.panel : TABLET.margin, bottom: laneInset + TABLET.laneGutter, left: TABLET.margin,
-      blocks: legendBlocks(legendBox),
+      top: rowBottom ?? TABLET.top, right, bottom, left: TABLET.margin,
+      blocks,
     };
   }
   // The lane rides above an open sheet, so the phone's bottom band clears whichever of the two reaches higher.
   const bottom = Math.max(sheetOpen ? sheetHeight + PHONE.sheetGutter : 0, laneInset + PHONE.laneGutter);
-  return { top: PHONE.top, right: PHONE.margin, bottom, left: PHONE.margin, blocks: [] };
+  return { top: rowBottom ?? PHONE.top, right: PHONE.margin, bottom, left: PHONE.margin, blocks: [] };
 }
 
 // The legend dock publishes its own measured box, since its height is its rows'; the phone hides it altogether.

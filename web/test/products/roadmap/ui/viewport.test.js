@@ -50,3 +50,26 @@ test('the frontier is the remembered selection, else the top Next-up row, else t
   const empty = new SkillTree({ id: 'e', title: 'E', nodes: [] });
   assert.equal(frontierTarget(empty, new Map(), {}), null);
 });
+
+test('the identity row replaces the top inset and the camera block clears the open dock or panel', () => {
+  const cameraBlock = { width: 248, height: 50 };
+  assert.deepEqual(viewportInsets({ breakpoint: 'desktop', rowBottom: 112, cameraBlock }), {
+    top: 112, right: 24, bottom: 24, left: 24,
+    blocks: [MINIMAP_BLOCK, { right: 24, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'desktop', rowBottom: 112, cameraBlock, dockOpen: true }), {
+    top: 112, right: 408, bottom: 24, left: 24,
+    blocks: [MINIMAP_BLOCK, { right: 408, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', rowBottom: 104, cameraBlock }), {
+    top: 104, right: 12, bottom: 16, left: 12,
+    blocks: [{ right: 24, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', rowBottom: 104, cameraBlock, dockOpen: true }), {
+    top: 104, right: 368, bottom: 16, left: 12,
+    blocks: [{ right: 368, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', rowBottom: 104, cameraBlock, sheetOpen: true, sheetHeight: 300 }), {
+    top: 104, right: 12, bottom: 312, left: 12, blocks: [],
+  });
+});

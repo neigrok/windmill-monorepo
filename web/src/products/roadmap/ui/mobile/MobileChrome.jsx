@@ -9,6 +9,7 @@ const SAFE_TOP = 'var(--content-safe-area-top, max(env(safe-area-inset-top, 0px)
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 // The reader's Fork this tree pill, above the bottom safe area; whatever must clear it reads its geometry here.
 export const FORK_PILL = { bottom: 18, height: 50 };
+export const GRAPH_CAMERA_SIZE = { width: 248, height: 50 };
 
 export function MobileChrome({
   title,
@@ -24,6 +25,13 @@ export function MobileChrome({
   tablet = false,
   panelOpen = false,
   view = 'tree',
+  identity = false,
+  band = 'phone',
+  rowBottom = 0,
+  onZoomIn,
+  onZoomOut,
+  cameraRight = 24,
+  cameraBottom = 24,
 }) {
   const [pressed, setPressed] = useState(false);
 
@@ -36,6 +44,7 @@ export function MobileChrome({
   const cameraGroupRight = tablet && panelOpen ? TABLET_PANEL_WIDTH + 24 : 12;
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
   const canvasView = view === 'tree';
+  const wideCamera = identity && band !== 'phone';
 
   // The list and the Board never render this: each carries the device notice under its header.
   const signInNudge = onSignInToKeep ? (
@@ -66,7 +75,7 @@ export function MobileChrome({
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20 }}
     >
       {/* Dominant-kind rule — a 4px hairline across the very top */}
-      <div
+      {!identity && <div
         style={{
           position: 'absolute',
           top: 0,
@@ -75,9 +84,9 @@ export function MobileChrome({
           height: 4,
           background: c.base,
         }}
-      />
+      />}
 
-      {canvasView && (
+      {canvasView && !identity && (
       <>
       {/* Plaque — a label, never a menu; sits below the status-bar-safe area */}
       <div
@@ -206,7 +215,7 @@ export function MobileChrome({
       )}
 
       {/* Fork CTA — the share page's one verb; absent on your own trees */}
-      {onFork && (
+      {onFork && (!identity || band === 'phone') && (
       <button
         type="button"
         className={ctaEcho ? 'wm-cta-echo' : undefined}
@@ -245,15 +254,15 @@ export function MobileChrome({
       </button>
       )}
 
-      {/* Camera group — Focus reads the step you are on, All steps shows the whole roadmap; it sits under the wordmark, clear of the lane, the sheet and the fork pill. The list and the Board have no camera. */}
-      {canvasView && (
+      {/* The phone camera sits below the identity row; legacy readers keep it under the wordmark. */}
+      {canvasView && !wideCamera && (
         <div
           className="st-view-actions"
           role="group"
           aria-label="Camera"
           style={{
             position: 'absolute',
-            top: `calc(${SAFE_TOP} + 48px)`,
+            top: identity ? rowBottom + 8 : `calc(${SAFE_TOP} + 48px)`,
             right: `calc(env(safe-area-inset-right, 0px) + ${cameraGroupRight}px)`,
             pointerEvents: 'auto',
             display: 'inline-flex',
@@ -269,6 +278,20 @@ export function MobileChrome({
         >
           <button type="button" className="st-view-action" onClick={onFocus}>Focus</button>
           <button type="button" className="st-view-action" onClick={onShowAll}>All steps</button>
+        </div>
+      )}
+
+      {canvasView && wideCamera && (
+        <div className="st-graph-camera" role="group" aria-label="Camera"
+          style={{ right: cameraRight, bottom: cameraBottom }}>
+          <button type="button" className="st-graph-camera-zoom" aria-label="Zoom out" title="Zoom out" onClick={onZoomOut}>
+            <Icon name="zoom-out" size={20} />
+          </button>
+          <button type="button" className="st-graph-camera-zoom" aria-label="Zoom in" title="Zoom in" onClick={onZoomIn}>
+            <Icon name="zoom-in" size={20} />
+          </button>
+          <button type="button" className="st-graph-camera-action" onClick={onFocus}>Focus</button>
+          <button type="button" className="st-graph-camera-action" onClick={onShowAll}>All steps</button>
         </div>
       )}
 

@@ -14,7 +14,7 @@ function GesturePill({ children }) {
   return <span className="st-gesture">{children}</span>;
 }
 
-export function ShortcutsDialog({ open, onClose, readOnly = false, view = 'graph', trackingEnabled = false }) {
+export function ShortcutsDialog({ open, onClose, readOnly = false, view = 'graph', trackingEnabled = false, boardOpen = false }) {
   const [platform, setPlatform] = useState(detectPlatform);
   const board = view === 'board';
   const shownPlatform = board ? detectPlatform() : platform;
@@ -33,7 +33,7 @@ export function ShortcutsDialog({ open, onClose, readOnly = false, view = 'graph
       </div>}
 
       <div className={board ? 'st-sc-grid st-sc-grid--board' : 'st-sc-grid'}>
-        {visibleGroups(readOnly, view).map((group) => (
+        {visibleGroups(readOnly, view, boardOpen).map((group) => (
           <section className="st-sc-group" key={group.title}>
             <h3 className="st-sc-heading">{group.title}</h3>
             <ul className="st-sc-list">

@@ -39,51 +39,7 @@
   padding-right: var(--space-4);
 }
 
-/* ---- Identity row: title, progress, Board/Graph. ---- */
-.st-board-identity {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 64px;
-  padding-top: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 8px);
-  padding-bottom: 8px;
-}
-.st-board-identity-title {
-  min-width: 0;
-  max-width: 480px;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 24px;
-  line-height: 32px;
-  color: var(--text-primary);
-}
-.st-board-identity-progress {
-  flex-shrink: 0;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--text-secondary);
-}
-.st-board--phone .st-board-identity {
-  min-height: 60px;
-}
-.st-board--phone .st-board-identity-title {
-  flex: 1;
-  max-width: none;
-  font-size: 20px;
-}
-.st-board--phone .st-board-identity-progress {
-  font-weight: 600;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-/* Heard, never seen: the progress figure's spoken form. */
+/* Heard, never seen: polite announcements and expanded labels. */
 .st-board-spoken {
   position: absolute;
   width: 1px;
@@ -426,7 +382,8 @@ button.st-board-toast-message {
   line-height: var(--leading-sm);
   cursor: pointer;
 }
-.st-board--phone .st-board-toast {
+.st-board--phone .st-board-toast,
+.st-graph-toast--phone .st-board-toast {
   bottom: calc(var(--space-24) + var(--space-6) + env(safe-area-inset-bottom));
   width: calc(100% - var(--space-8));
   gap: var(--space-2);
@@ -436,10 +393,12 @@ button.st-board-toast-message {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
 }
-.st-board--phone .st-board-toast-message {
+.st-board--phone .st-board-toast-message,
+.st-graph-toast--phone .st-board-toast-message {
   font-weight: var(--font-weight-bold);
 }
-.st-board--phone .st-board-toast-undo {
+.st-board--phone .st-board-toast-undo,
+.st-graph-toast--phone .st-board-toast-undo {
   width: var(--space-16);
 }
 .st-board-card.is-restored {

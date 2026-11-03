@@ -98,7 +98,7 @@ function Room() {
     React.createElement('output', null, held ? 'held' : 'clear'),
     React.createElement(BoardView, {
       tree: held ? held.projected(tree) : tree, ...progress, query, onQuery: setQuery, quiet,
-      active, breakpoint: 'desktop', title: tree.title, onSelect: () => {}, onSwitchView: () => {},
+      active, breakpoint: 'desktop', onSelect: () => {},
       toast, onToastShown: (key) => { window.shownAt = Date.now(); boardToastShown(key); },
       onToastUndo: () => { toast.action.run(); dismissToast(); },
     }));

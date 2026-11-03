@@ -66,3 +66,25 @@ test('a stock `unzip` accepts the archive and hands every file back verbatim', (
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('one roadmap exports its current marks as a paste-format Markdown file with a stable name', async () => {
+  const { buildRoadmapExport } = await import('../../../../src/products/roadmap/settings/exportArchive.js');
+  const { parsePlan, serializePlan } = await import('../../../../src/products/roadmap/paste/planGrammar.js');
+  const tree = {
+    id: 't_1234567890', title: 'Learn to sail', kinds: [], nodes: [
+      { id: 'root', label: 'Learn to sail', color: 'terracotta', prerequisites: [] },
+      { id: 'wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['root'] },
+      { id: 'dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['wind'], description: 'Check the lines.' },
+    ],
+  };
+  const file = buildRoadmapExport(tree, { completed: new Set(['wind']) });
+  assert.deepEqual(file, {
+    name: 'learn-to-sail-12345678.md',
+    text: '# Learn to sail\n- [x] Read the wind\n  - Leave the dock\n    Check the lines.',
+  });
+  const replanted = parsePlan(file.text);
+  assert.equal(serializePlan(replanted, replanted.kinds), file.text);
+  assert.deepEqual(buildRoadmapExport({ id: 't_abcdefghijk', title: '🌱', nodes: [], kinds: [] }, null), {
+    name: 'roadmap-abcdefgh.md', text: '# 🌱',
+  });
+});
