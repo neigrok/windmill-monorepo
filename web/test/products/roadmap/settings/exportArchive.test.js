@@ -80,7 +80,7 @@ test('one roadmap exports its current marks as a paste-format Markdown file with
   const file = buildRoadmapExport(tree, { completed: new Set(['wind']) });
   assert.deepEqual(file, {
     name: 'learn-to-sail-12345678.md',
-    text: '# Learn to sail\n<!-- windmill:roadmap -->\n## <!-- windmill:kind terracotta -->\n- Learn to sail\n  - [x] Read the wind\n    - Leave the dock\n      Check the lines.',
+    text: '# Learn to sail\n<!-- windmill:roadmap -->\n- Learn to sail <!-- windmill:kind terracotta -->\n  - [x] Read the wind\n    - Leave the dock\n      Check the lines.',
   });
   const replanted = parsePlan(file.text);
   assert.equal(serializePlan(replanted, replanted.kinds), file.text);
@@ -102,7 +102,7 @@ test('export and Settings zip preserve a distinct root label and its completion 
   const file = buildRoadmapExport(tree, { completed: new Set(['root', 'wind']) });
   assert.deepEqual(file, {
     name: 'learn-to-sail-12345678.md',
-    text: '# Learn to sail\n<!-- windmill:roadmap -->\n## <!-- windmill:kind terracotta -->\n- [x] Choose a course\n  - [x] Read the wind\n    - Leave the dock',
+    text: '# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - [x] Read the wind\n    - Leave the dock',
   });
   const replanted = parsePlan(file.text);
   assert.deepEqual(replanted, {
@@ -115,7 +115,6 @@ test('export and Settings zip preserve a distinct root label and its completion 
     ],
     kinds: [],
     gutter: [
-      { glyph: null, nodeId: null, liberty: null },
       { glyph: null, nodeId: null, liberty: null },
       { glyph: null, nodeId: null, liberty: null },
       { glyph: '✓', nodeId: 'choose-a-course', liberty: null },

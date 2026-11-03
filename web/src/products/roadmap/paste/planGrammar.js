@@ -167,6 +167,12 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
     // Depth is dependency, numbers chain, bullets fan, [x] arrives done. A level jump past the
     // previous line clamps to the nearest real ancestor.
     if (line.kind === 'item') {
+      const exportedKind = root.exported && line.content.match(/^(.*?) <!-- windmill:kind (terracotta|olive|gold|brick|sky|plum)(?: (.*?))? -->$/);
+      if (exportedKind) {
+        line.content = exportedKind[1];
+        hue = exportedKind[3] ? book.claim(unescapeExportText(exportedKind[3]), exportedKind[2]).hue : exportedKind[2];
+      }
+      if (root.exported) line.content = unescapeExportText(line.content);
       const liberties = [];
       if (line.ragged) liberties.push({ type: 'clamp', detail: 'mixed indent clamped' });
       let level = line.level;
@@ -199,14 +205,14 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
   return { nodes, marks, kinds: book.kinds };
 }
 
-// Duplicate labels get " (2)" exhaustively, ids are slug + occurrence counter (never time, never
-// random), and parents become prerequisite arrays.
+// Ordinary pastes rename duplicate labels; exports retain them. IDs use a slug and occurrence
+// counter, and parents become prerequisite arrays.
 function assemble(root, grove, lines) {
   const labels = new Set();
   const ids = new Set();
   const named = grove.nodes.map((draft, index) => {
     let label = draft.label;
-    if (label !== '' && labels.has(label)) {
+    if (!root.exported && label !== '' && labels.has(label)) {
       let n = 2;
       while (labels.has(`${label} (${n})`)) n += 1;
       label = `${label} (${n})`;
@@ -270,8 +276,16 @@ function slug(label) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 }
 
-// Export headings name the roadmap and kinds; only list items create steps. Extra prerequisites
-// become `needs also` notes; kind descriptions and link labels are not represented in Markdown.
+function escapeExportText(text, comment = false) {
+  return text.replace(comment ? /[&<>\r\n-]/g : /[&<>\r\n]/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
+function unescapeExportText(text) {
+  return text.replace(/&#(38|60|62|13|10|45);/g, (_, code) => String.fromCharCode(Number(code)));
+}
+
+// Export list items preserve primary dependencies; extra prerequisites become `needs also` notes.
+// Kind descriptions and link labels are not represented in Markdown.
 
 // The app carries links as { url, label } objects; parsePlan produces bare url strings.
 const linkUrl = (link) => (typeof link === 'string' ? link : link?.url ?? '');
@@ -297,12 +311,11 @@ export function serializePlan(treeData, kinds, progress) {
   let hue = null;
   const walk = (node, depth) => {
     const kind = kindByHue.get(node.color);
-    if (node.color !== hue) {
-      out.push(`## ${kind?.label ? `${kind.label} ` : ''}<!-- windmill:kind ${node.color} -->`);
-      hue = node.color;
-    }
+    const kindLabel = kind?.label ? ` ${escapeExportText(kind.label, true)}` : '';
+    const kindMarker = node.color === hue ? '' : ` <!-- windmill:kind ${node.color}${kindLabel} -->`;
+    hue = node.color;
     const box = completed.has(node.id) ? '[x] ' : '';
-    out.push(`${'  '.repeat(depth)}- ${box}${node.label}`);
+    out.push(`${'  '.repeat(depth)}- ${box}${escapeExportText(node.label)}${kindMarker}`);
     const noteIndent = '  '.repeat(depth + 1);
     if (node.description) for (const line of String(node.description).split('\n')) out.push(noteIndent + line);
     const also = node.prerequisites.filter((id, index) => index > 0 || !byId.has(id));

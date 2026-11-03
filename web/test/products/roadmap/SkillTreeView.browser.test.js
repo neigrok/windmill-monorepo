@@ -30,6 +30,10 @@ if (params.has('milestone')) window.fixture.nodes[1].status = 'complete';
 if (params.has('single')) window.fixture.nodes = [{ ...window.fixture.nodes[0], status: 'none' }];
 if (params.has('large')) window.fixture.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
 if (params.has('empty')) window.fixture.nodes = [];
+if (params.has('legend')) {
+  window.fixture.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
+  window.fixture.nodes[1].color = 'olive';
+}
 SyncSession.prototype.start = function () {
   this.store = { save: () => Promise.resolve() };
   this.registry = null;
@@ -142,9 +146,9 @@ function hostTest(name, run) {
   });
 }
 
-async function openHost({ width = 1440, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false } = {}) {
+async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height: 1000 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce' });
   page.setDefaultTimeout(5000);
   const errors = [];
   const { fail } = runningTest.getStore();
@@ -167,6 +171,10 @@ async function openHost({ width = 1440, role = 'owner', gate = 'open', surface =
       if (single) data.nodes = [{ ...data.nodes[0], status: 'none' }];
       if (large) data.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
       if (empty) data.nodes = [];
+      if (legend) {
+        data.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
+        data.nodes[1].color = 'olive';
+      }
       body = { data, mine: role !== 'reader', visibility: 'public' };
     }
     if (path === '/v1/trees') body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }] };
@@ -175,7 +183,7 @@ async function openHost({ width = 1440, role = 'owner', gate = 'open', surface =
   });
   const params = new URLSearchParams({ role, gate, surface });
   if (role === 'reader') params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty, shell })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty, shell, legend })) {
     if (enabled) params.set(name, '1');
   }
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
@@ -511,9 +519,7 @@ for (const width of [320, 390, 744]) {
         const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]').getBoundingClientRect();
         return camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left;
       }), true);
-      if (width === 744) {
-        assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => element.getBoundingClientRect().left), 24);
-      }
+      assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => element.getBoundingClientRect().left), width === 744 ? 24 : 16);
       await nudge.click();
       assert.equal(await page.evaluate(() => window.signInOpened), 1);
       assert.deepEqual(errors, []);
@@ -565,6 +571,7 @@ hostTest('Chromium: crash fallback switch and Board inset follow the measured le
     const fallback = page.locator('.st-roadmap-identity-fallback');
     await fallback.waitFor();
     assert.equal(await fallback.locator('.st-zoom-group').isVisible(), false);
+    assert.equal(await fallback.locator('.st-activity-chip').isVisible(), false);
     await page.waitForFunction(() => document.activeElement?.matches('.st-roadmap-fallback-switch [aria-pressed="true"]'));
     const geometry = () => page.evaluate(() => {
       const chrome = document.querySelector('.st-roadmap-identity-fallback .st-topbar');
@@ -619,22 +626,88 @@ for (const width of [744, 1024, 1440]) {
 }
 
 for (const width of [744, 1024, 1280, 1440]) {
-  hostTest(`Chromium: Graph completion toast clears the open panel and camera at ${width}px`, async () => {
-    const { page, errors } = await openHost({ width });
-    try {
-      await page.evaluate(() => window.scene.select('wind'));
-      await page.getByRole('button', { name: width < 1024 ? 'Mark done' : 'Complete', exact: true }).click();
-      await page.locator('.st-graph-toast .st-board-toast').waitFor();
-      await page.waitForFunction(() => {
-        const toast = document.querySelector('.st-graph-toast .st-board-toast').getBoundingClientRect();
-        const camera = document.querySelector('.st-graph-camera').getBoundingClientRect();
-        const panel = document.querySelector('.st-detail-panel--open').getBoundingClientRect();
-        return toast.right <= panel.left && (toast.bottom <= camera.top || toast.right <= camera.left || toast.left >= camera.right);
-      });
-      assert.deepEqual(errors, []);
-    } finally { await page.close(); }
-  });
+  for (const legacy of [false, true]) {
+    hostTest(`Chromium: Graph ${legacy ? 'legacy' : 'completion'} toast keeps its drawn width and clears panel, minimap and camera at ${width}px`, async () => {
+      const { page, errors } = await openHost({ width, height: 900, legend: true });
+      try {
+        await page.evaluate(() => document.fonts.ready);
+        const time = new Date('2026-11-03T12:00:00Z');
+        await page.clock.install({ time: new Date(time.getTime() - 60000) });
+        await page.clock.pauseAt(time);
+        await page.evaluate(() => window.scene.select('wind'));
+        await page.locator('.st-detail-panel--open').waitFor();
+        await page.clock.runFor(300);
+        if (legacy) {
+          await page.evaluate(() => window.scene.options.onCeremonyToast('Read the wind done · Leave the dock up next'));
+        } else {
+          await page.getByRole('button', { name: width < 1024 ? 'Mark done' : 'Complete', exact: true }).click();
+          await page.locator('.st-graph-toast').waitFor();
+        }
+        await page.clock.runFor(300);
+        const selector = legacy ? '.st-toast' : '.st-graph-toast .st-board-toast';
+        await page.locator(selector).waitFor();
+        await page.waitForFunction((selector) => {
+          const toast = document.querySelector(selector).getBoundingClientRect();
+          return [...document.querySelectorAll('.st-graph-camera, .st-minimap, .st-legend-dock, .st-detail-panel--open')]
+            .filter((element) => element.getClientRects().length > 0)
+            .every((element) => {
+              const obstacle = element.getBoundingClientRect();
+              return toast.right <= obstacle.left || toast.left >= obstacle.right || toast.bottom <= obstacle.top || toast.top >= obstacle.bottom;
+            });
+        }, selector);
+        const geometry = await page.locator(selector).evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const message = element.querySelector('.st-board-toast-message, .st-toast-row > span');
+          const range = document.createRange();
+          range.selectNodeContents(message);
+          return { inCanvas: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+            lines: range.getClientRects().length, message: message.textContent };
+        });
+        assert.equal(geometry.inCanvas, true);
+        assert.equal(geometry.lines, 1);
+        assert.equal(geometry.message, 'Read the wind done · Leave the dock up next');
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
 }
+
+hostTest('Chromium: tablet read-only Graph legend names its non-interactive swatches by kind', async () => {
+  const { page, errors } = await openHost({ width: 744, role: 'reader', legend: true });
+  try {
+    const legend = page.locator('.st-legend-dock');
+    await legend.waitFor();
+    assert.deepEqual(await legend.locator('[role="img"]').evaluateAll((elements) => elements.map((element) => ({
+      tag: element.tagName, name: element.getAttribute('aria-label'), tabIndex: element.tabIndex,
+    }))), [{ tag: 'SPAN', name: 'Build', tabIndex: -1 }, { tag: 'SPAN', name: 'Learn', tabIndex: -1 }]);
+    assert.equal(await legend.locator('button:not([aria-label])').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: tablet Mark not done uses the canon focus ring after keyboard completion', async () => {
+  const { page, errors } = await openHost({ width: 744 });
+  try {
+    await page.evaluate(() => window.scene.select('wind'));
+    const complete = page.getByRole('button', { name: 'Mark done', exact: true });
+    await complete.focus();
+    await page.keyboard.press('Enter');
+    const reset = page.getByRole('button', { name: 'Mark not done', exact: true });
+    await reset.waitFor();
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Mark not done');
+    assert.deepEqual(await reset.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const sample = document.createElement('span');
+      sample.style.color = 'var(--color-brand)';
+      element.append(sample);
+      const brand = getComputedStyle(sample).color;
+      sample.remove();
+      return { focused: element.matches(':focus-visible'), width: style.outlineWidth, style: style.outlineStyle,
+        offset: style.outlineOffset, brand: style.outlineColor === brand };
+    }), { focused: true, width: '2px', style: 'solid', offset: '2px', brand: true });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
 
 hostTest('Chromium: phone legacy reader toast clears Focus, and editor completion clears the action row', async () => {
   for (const role of ['reader', 'owner']) {

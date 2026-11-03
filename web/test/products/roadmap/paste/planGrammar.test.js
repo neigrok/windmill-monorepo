@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePlan, serializePlan } from '../../../../src/products/roadmap/paste/planGrammar.js';
+import { readFileSync } from 'node:fs';
+import { dogfoodTreeData } from '../fixtures/dogfoodTree.js';
+import { largeRoadmap, ROADMAP_SHAPES } from '../fixtures/largeRoadmap.js';
 import shipV1 from '../../../../src/products/roadmap/quests/roster/shipV1.js';
 
 const KINDS = [
@@ -310,14 +313,12 @@ test('serializePlan round-trips a parsePlan document — nodes and kinds land id
   assert.equal(markdown, [
     '# Learn WebGL',
     '<!-- windmill:roadmap -->',
-    '## Basics <!-- windmill:kind terracotta -->',
-    '- Learn WebGL',
+    '- Learn WebGL <!-- windmill:kind terracotta Basics -->',
     '  - Basics',
     '    - [x] Read the spec',
     '    - Draw a triangle',
     '      - Understand shaders',
-    '## Projects <!-- windmill:kind olive -->',
-    '  - Projects',
+    '  - Projects <!-- windmill:kind olive Projects -->',
     '    - Particle system',
     '      - Terrain renderer',
     '        Just a stray thought',
@@ -348,9 +349,8 @@ test('serializePlan is best-effort on a multi-parent DAG — primary parent inde
   const back = parsePlan(markdown, shipV1.kinds);
   const find = (label) => back.nodes.find((node) => node.label === label);
 
-  // Colours are grouped under `## <kind label>` headings.
-  assert.ok(markdown.includes('## Polish'), markdown);
-  assert.ok(markdown.includes('## Launch'), markdown);
+  assert.ok(markdown.includes('<!-- windmill:kind sky Polish -->'), markdown);
+  assert.ok(markdown.includes('<!-- windmill:kind gold Launch -->'), markdown);
   assert.equal(find('Dogfood it for a week').color, 'sky');
   assert.equal(find('Run a friendly beta').color, 'gold');
 
@@ -406,11 +406,11 @@ test('exports round-trip every root, completion, note, link and cross-kind prima
   const kinds = [{ id: 'sky', hue: 'sky', label: '', description: '' }];
   const markdown = serializePlan(tree, kinds);
   assert.equal(markdown, [
-    '# Learn to sail', '<!-- windmill:roadmap -->', '## <!-- windmill:kind sky -->',
-    '- [x] Choose a course', '  Start nearby.', '  Check the dates.', '  https://example.com/course',
-    '## <!-- windmill:kind olive -->', '  - [x] Read the wind',
-    '## <!-- windmill:kind sky -->', '    - Leave the dock',
-    '## <!-- windmill:kind gold -->', '- [x] Pack a bag',
+    '# Learn to sail', '<!-- windmill:roadmap -->',
+    '- [x] Choose a course <!-- windmill:kind sky -->', '  Start nearby.', '  Check the dates.', '  https://example.com/course',
+    '  - [x] Read the wind <!-- windmill:kind olive -->',
+    '    - Leave the dock <!-- windmill:kind sky -->',
+    '- [x] Pack a bag <!-- windmill:kind gold -->',
   ].join('\n'));
   const parsed = parsePlan(markdown);
   assert.equal(parsed.title, tree.title);
@@ -475,4 +475,97 @@ test('every prerequisite references an emitted id, single-parented', () => {
     assert.equal(node.prerequisites.length, 1, node.id);
     assert.ok(ids.has(node.prerequisites[0]), `${node.id} → ${node.prerequisites[0]}`);
   });
+});
+
+const EXPORT_FIXTURES = [shipV1, dogfoodTreeData(), ...ROADMAP_SHAPES.map((shape) => largeRoadmap(5000, shape))];
+
+test('existing roadmap fixtures round-trip as Markdown with their primary shape and done marks', () => {
+  for (const tree of EXPORT_FIXTURES) {
+    const markdown = serializePlan(tree, tree.kinds);
+    const parsed = parsePlan(markdown, tree.kinds);
+    assert.equal(parsed.title, tree.title);
+    assert.equal(parsed.nodes.length, tree.nodes.length, tree.title);
+    assert.deepEqual(parsed.nodes.map((node) => [node.label, node.color, node.status === 'complete']).sort(),
+      tree.nodes.map((node) => [node.label, node.color, node.status === 'complete']).sort(), tree.title);
+    const originalById = new Map(tree.nodes.map((node) => [node.id, node]));
+    const parsedById = new Map(parsed.nodes.map((node) => [node.id, node]));
+    assert.deepEqual(parsed.nodes.map((node) => [node.label, node.prerequisites.map((id) => parsedById.get(id).label)]).sort(),
+      tree.nodes.map((node) => [node.label, node.prerequisites.slice(0, 1).filter((id) => originalById.has(id)).map((id) => originalById.get(id).label)]).sort(), tree.title);
+    assert.equal(serializePlan(parsed, parsed.kinds), markdown, tree.title);
+  }
+});
+
+test('exported fixture lines never form CommonMark indented code blocks inside or outside lists', () => {
+  for (const tree of EXPORT_FIXTURES) {
+    const listIndents = [];
+    for (const line of serializePlan(tree, tree.kinds).split('\n')) {
+      if (!line.trim()) continue;
+      const indent = line.length - line.trimStart().length;
+      const body = line.trimStart();
+      if (body.startsWith('- ')) {
+        while (listIndents.length && listIndents.at(-1) >= indent) listIndents.pop();
+        const containerIndent = listIndents.length ? listIndents.at(-1) + 2 : 0;
+        assert.ok(indent - containerIndent < 4, `${tree.title}: ${line}`);
+        listIndents.push(indent);
+        continue;
+      }
+      while (listIndents.length && indent < listIndents.at(-1) + 2) listIndents.pop();
+      const containerIndent = listIndents.length ? listIndents.at(-1) + 2 : 0;
+      assert.ok(indent - containerIndent < 4, `${tree.title}: ${line}`);
+    }
+  }
+});
+
+test('ordinary pastes and legacy exports retain the complete main parser result', () => {
+  const fixtures = JSON.parse(readFileSync(new URL('./planGrammar-legacy.json', import.meta.url), 'utf8'));
+  for (const fixture of fixtures) {
+    assert.deepEqual(parsePlan(fixture.text, fixture.kinds, fixture.options), fixture.parsed, fixture.name);
+  }
+});
+
+test('kind-heading exports remain readable by the parser', () => {
+  const parsed = parsePlan('# Sail\n<!-- windmill:roadmap -->\n## Sailing <!-- windmill:kind sky -->\n- [x] Choose a course\n## Practice <!-- windmill:kind olive -->\n  - Read the wind');
+  assert.deepEqual(parsed.nodes, [
+    { id: 'choose-a-course', label: 'Choose a course', color: 'sky', prerequisites: [], icon: 'sparkles', status: 'complete' },
+    { id: 'read-the-wind', label: 'Read the wind', color: 'olive', prerequisites: ['choose-a-course'] },
+  ]);
+});
+
+test('marked exports preserve duplicate and comment-shaped labels without changing ordinary duplicate pastes', () => {
+  const tree = { title: 'Plan', nodes: [
+    { id: 'a', label: 'Same', color: 'sky', prerequisites: [] },
+    { id: 'b', label: 'Same', color: 'sky', prerequisites: ['a'] },
+    { id: 'c', label: 'Second <!-- windmill:kind gold -->', color: 'sky', prerequisites: ['b'] },
+  ] };
+  const kinds = [{ id: 'odd', hue: 'sky', label: 'A --> B & C\nD', description: '' }];
+  const markdown = serializePlan(tree, kinds);
+  assert.equal(markdown, [
+    '# Plan', '<!-- windmill:roadmap -->',
+    '- Same <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->',
+    '  - Same',
+    '    - Second &#60;!-- windmill:kind gold --&#62;',
+  ].join('\n'));
+  const parsed = parsePlan(markdown);
+  assert.deepEqual(parsed.nodes, [
+    { id: 'same', label: 'Same', color: 'sky', prerequisites: [], icon: 'sparkles' },
+    { id: 'same-2', label: 'Same', color: 'sky', prerequisites: ['same'] },
+    { id: 'second-windmill-kind-gold', label: 'Second <!-- windmill:kind gold -->', color: 'sky', prerequisites: ['same-2'] },
+  ]);
+  assert.deepEqual(parsed.kinds, [{ id: 'a-b-c-d', hue: 'sky', label: kinds[0].label, description: '', source: 'added' }]);
+  assert.equal(serializePlan(parsed, parsed.kinds), markdown);
+  assert.deepEqual(parsePlan('# Plan\n- Same\n- Same').nodes, [
+    { id: 'plan', label: 'Plan', color: 'terracotta', prerequisites: [], icon: 'sparkles' },
+    { id: 'same', label: 'Same', color: 'terracotta', prerequisites: ['plan'] },
+    { id: 'same-2', label: 'Same (2)', color: 'terracotta', prerequisites: ['plan'] },
+  ]);
+});
+
+test('an export declares its first hue even when the import target starts with another kind', () => {
+  const markdown = serializePlan({ title: 'Plan', nodes: [
+    { id: 'root', label: 'Start', color: 'terracotta', prerequisites: [] },
+  ] }, []);
+  assert.equal(markdown, '# Plan\n<!-- windmill:roadmap -->\n- Start <!-- windmill:kind terracotta -->');
+  assert.deepEqual(parsePlan(markdown, [{ id: 'learn', hue: 'sky', label: 'Learning' }]).nodes, [
+    { id: 'start', label: 'Start', color: 'terracotta', prerequisites: [], icon: 'sparkles' },
+  ]);
 });

@@ -55,7 +55,7 @@ import { cmpOrder } from './model/TrunkTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { layoutNameFrom, loadLayoutEngine, layoutTree } from './layout/index.js';
-import { frontierTarget, viewportInsets, DOCK_WIDTH, TABLET_PANEL_WIDTH } from './ui/viewport.js';
+import { frontierTarget, viewportInsets, graphToastPlacement, DOCK_WIDTH, TABLET_PANEL_WIDTH } from './ui/viewport.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
@@ -1952,39 +1952,49 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (toast?.surface === 'graph' && (!canvasView || !identityActive)) dismissToast();
   }, [toast?.surface, canvasView, identityActive, dismissToast]);
 
-  const [graphToastBottom, setGraphToastBottom] = useState(24);
+  const [graphToastPosition, setGraphToastPosition] = useState({ center: null, bottom: 24 });
   useLayoutEffect(() => {
     if (!identityActive || !canvasView || !toast || phone) return undefined;
     const root = rootRef.current;
+    const obstacleSelector = '.st-graph-camera, .st-minimap, .st-legend-dock, .st-detail-panel--open';
     const measure = () => {
       const shownToast = root.querySelector('.st-graph-toast .st-board-toast, .st-toast');
-      const camera = root.querySelector('.st-graph-camera');
-      if (!shownToast || !camera) return;
-      const toastBox = shownToast.getBoundingClientRect();
-      const cameraBox = camera.getBoundingClientRect();
-      const overlaps = toastBox.left < cameraBox.right && toastBox.right > cameraBox.left;
-      const bottom = overlaps ? root.getBoundingClientRect().bottom - cameraBox.top + CHROME_GAP : 24;
-      setGraphToastBottom(bottom);
+      if (!shownToast) return;
+      const rootBox = root.getBoundingClientRect();
+      const obstacles = [...root.querySelectorAll(obstacleSelector)]
+        .filter((element) => element.getClientRects().length > 0)
+        .map((element) => {
+          const box = element.getBoundingClientRect();
+          return { left: box.left - rootBox.left, right: box.right - rootBox.left, top: box.top - rootBox.top, bottom: box.bottom - rootBox.top };
+        });
+      const position = graphToastPlacement({
+        width: rootBox.width, height: rootBox.height,
+        toastWidth: shownToast.offsetWidth, toastHeight: shownToast.offsetHeight,
+        leftInset: insets.left, rightInset: insets.right, obstacles, gap: CHROME_GAP,
+      });
+      setGraphToastPosition((current) => current.center === position.center && current.bottom === position.bottom ? current : position);
     };
     const resized = new ResizeObserver(measure);
     resized.observe(root);
     const watchToast = () => {
       const shownToast = root.querySelector('.st-graph-toast .st-board-toast, .st-toast');
       if (shownToast) resized.observe(shownToast);
+      for (const obstacle of root.querySelectorAll(obstacleSelector)) resized.observe(obstacle);
       measure();
     };
     const mounted = new MutationObserver(watchToast);
     mounted.observe(root, { childList: true, subtree: true });
     watchToast();
+    root.addEventListener('transitionend', measure);
     return () => {
+      root.removeEventListener('transitionend', measure);
       resized.disconnect();
       mounted.disconnect();
     };
   }, [identityActive, canvasView, toast?.key, phone, insets]);
   const graphToastStyle = identityActive && canvasView ? {
-    '--graph-toast-left': `${insets.left}px`,
-    '--graph-toast-right': `${insets.right}px`,
-    '--graph-toast-bottom': `${graphToastBottom}px`,
+    '--graph-toast-center': graphToastPosition.center === null ? '50%' : `${graphToastPosition.center}px`,
+    '--graph-toast-bottom': `${graphToastPosition.bottom}px`,
     '--graph-toast-top': `${graphTop + CHROME_GAP}px`,
   } : undefined;
 
@@ -2085,7 +2095,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     />
   );
   return (
-    <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}`} ref={rootRef}>
+    <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}${BOARD_OPEN ? ' st-root--board-enabled' : ''}`} ref={rootRef}>
       <canvas
         ref={canvasRef}
         className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''} ${(phone || BOARD_OPEN) && view !== null ? 'st-canvas--layer' : ''}`}
@@ -2341,6 +2351,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       {legendVisible && (
         <div ref={legendDockRef} className="st-legend-dock" style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
           <KindLegend
+            passiveSwatches={BOARD_OPEN}
             kinds={legendWithCounts}
             defaultOpen={legendOpen}
             onOpenChange={onLegendOpenChange}

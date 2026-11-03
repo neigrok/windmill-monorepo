@@ -59,10 +59,10 @@ owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by
 cards and List.
 Export builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`,
 using the same download edge as the settings archive. Exported Markdown carries a
-`<!-- windmill:roadmap -->` marker: its title and kind headings are metadata, and every step,
-including each root, is a list item with its own completion mark. The parser retains primary
-prerequisites across kind headings; additional prerequisites become `needs also` notes. Kind
-descriptions and link labels are outside the paste format. Ordinary pasted plans keep their
+`<!-- windmill:roadmap -->` marker: its title is metadata, and every step, including each root,
+is a list item with its own completion mark. Kind changes are inline comments, keeping the nested
+list uninterrupted in Markdown viewers. Indentation preserves primary prerequisites; additional
+prerequisites become `needs also` notes. Kind descriptions and link labels are outside the paste format. Ordinary pasted plans keep their
 heading-created root and branches. Settings exports all roadmaps as a zip.
 
 On the gated Graph, the owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order,
@@ -70,8 +70,9 @@ including a one-step roadmap, and hides at zero. Picking a row selects and revea
 step. Activity remains available through A; the feed never opens itself while identity is mounted.
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
-Graph toasts center within the remaining canvas and rise above the pill when their horizontal
-spans overlap. Phone legacy toasts and completion toasts over an open editor use the top slot
+Graph toasts retain their intrinsic width, centering in the free canvas when they fit or across
+the canvas otherwise; `graphToastPlacement` owns measured clearance from the camera, minimap,
+panel and legend. Phone legacy toasts and completion toasts over an open editor use the top slot
 below the measured camera; other phone Graph toasts retain their bottom slot. Created steps
 reveal after the scene receives their model and the selected-step panel's insets.
 The identity replaces the plaque, wordmark and hairline, and only phones retain the Fork pill.
