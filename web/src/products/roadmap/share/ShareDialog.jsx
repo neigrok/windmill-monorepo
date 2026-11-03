@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, Button } from '../../../design-system';
-import { reportUnexpectedFailure, setVisibility } from '../persistence/TreeRegistry.js';
+import { setVisibility } from '../persistence/TreeRegistry.js';
+import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 
 // A roadmap's public address, or null for one with no id yet; a step's link adds its `?step=` to this.

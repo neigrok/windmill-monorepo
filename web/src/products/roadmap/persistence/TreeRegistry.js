@@ -3,7 +3,6 @@
 
 import { AuthError } from '../../../shell/auth/AuthClient.js';
 import { API_BASE } from '../../../shell/apiBase.js';
-import { reportRoadmapFailure } from '../reportFailure.js';
 import { LocalTreeRegistry, resolveDeviceOwner } from './LocalTreeRegistry.js';
 
 // One row per owned roadmap: { id, title, done, total, updatedAt }.
@@ -136,13 +135,6 @@ export async function deleteTree(treeId) {
   if (response.status === 401) throw new AuthError('Sign in to delete a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
   throw new AuthError(body.error ?? 'Could not delete the roadmap', { code: body.code, status: response.status });
-}
-
-// A refusal and a request lost offline are expected answers; a server failure or a lost request while online is not.
-export function reportUnexpectedFailure(operation, error) {
-  const lostOnline = error?.status === 0 && navigator.onLine !== false;
-  if (error?.status < 500 && !lostOnline) return;
-  reportRoadmapFailure(operation, error);
 }
 
 // Forks a shared roadmap → { treeId }. The server mints the id; progress starts cleared.
