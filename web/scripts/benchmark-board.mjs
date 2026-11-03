@@ -7,9 +7,10 @@
 //     [--rates 4,6] [--json <path>]
 //
 // --cookie is a session of a throwaway account; it owns the two roadmaps this script plants. Layout shares need names, so
-// they read n/a unless --base serves `vite build --minify false`.
+// they read n/a unless --base serves an unminified build, which needs the offline shell's precache budget off too.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { loadavg } from 'node:os';
 import { chromium } from 'playwright';
 import { largeRoadmap } from '../test/products/roadmap/fixtures/largeRoadmap.js';
 
@@ -228,7 +229,7 @@ async function measureOne({ browser, site, fixture, viewport, rate }) {
   await context.close();
 
   return {
-    roadmap: fixture.name, viewport: viewport.name, cpuThrottle: rate,
+    roadmap: fixture.name, viewport: viewport.name, cpuThrottle: rate, machineLoad: Math.round(loadavg()[0]),
     openMs: { firstCard: round(opened.marks.card), rowInteractive: round(opened.marks.row) },
     openLongTasks: longTaskSummary(opened.longTasks.map((task) => task.duration)),
     heapMb: Math.round((metrics.JSHeapUsedSize / (1024 * 1024)) * 10) / 10,
@@ -245,7 +246,7 @@ async function measureOne({ browser, site, fixture, viewport, rate }) {
 function line(result) {
   const { openMs, openLongTasks, heapMb, scroll, eventTimingMs, layoutOfOpen } = result;
   const layout = layoutOfOpen ? `${layoutOfOpen.layoutMs}ms of ${layoutOfOpen.busyMs}ms busy, ${Math.round(layoutOfOpen.share * 100)}%` : 'n/a (minified)';
-  return `${result.roadmap} · ${result.viewport} · ${result.cpuThrottle}×
+  return `${result.roadmap} · ${result.viewport} · ${result.cpuThrottle}× · machine load ${result.machineLoad}
   open: first card ${openMs.firstCard}ms, row interactive ${openMs.rowInteractive}ms; long tasks ${openLongTasks.count}, p95 ${openLongTasks.p95}ms, max ${openLongTasks.max}ms; heap ${heapMb}MB
   scroll: ${scroll.frames} frames over ${scroll.scrolledPx}px of ${scroll.columnPx}px; rAF p50 ${scroll.frameP50}ms, p95 ${scroll.frameP95}ms; long tasks ${scroll.longTasks.count}, p95 ${scroll.longTasks.p95}ms, max ${scroll.longTasks.max}ms; at most ${scroll.maxCardsInDom} cards in the DOM
   Event Timing: open a card ${eventTimingMs.openCard}ms, complete a card ${eventTimingMs.completeCard}ms
