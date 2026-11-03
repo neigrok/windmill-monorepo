@@ -19,7 +19,7 @@ import { BoardQuery, COLUMN_OF_STATE } from './board/Board.js';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './board/RoadmapIdentity.jsx';
 import { BoardToast } from './board/BoardToast.jsx';
 import { useRoadmapToast } from './board/useRoadmapToast.js';
-import { completedToast, completedStepsToast, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS } from './board/copy.js';
+import { completedToast, completedStepsToast, forkedToast, plantedToast, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS } from './board/copy.js';
 import { useRoadmapIdentityActs } from './useRoadmapIdentityActs.js';
 import { useRoomAuthority } from './useRoomAuthority.js';
 import { StepDetail } from './board/StepDetail.jsx';
@@ -45,7 +45,7 @@ import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { layoutNameFrom, loadLayoutEngine } from './layout/index.js';
-import { frontierTarget, viewportInsets } from './ui/viewport.js';
+import { frontierTarget, opensOnFrontier, viewportInsets } from './ui/viewport.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
@@ -54,7 +54,7 @@ import { renameLocalTree, deleteLocalTree, loadDeviceTree } from './sync/localTr
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { LocalTreeRegistry, resolveDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
-import { ViewPrefs, initialView, boardCanShow, viewToShow, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
+import { ViewPrefs, initialView, boardCanShow, viewToShow, peekBorn, clearBorn, takePlantNote } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
@@ -77,7 +77,7 @@ import { captureError } from '../../telemetry/sentry.js';
 import { useRoadmapKeys } from './shortcuts/useRoadmapKeys.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { useDemoCoach } from './demo/useDemoCoach.js';
-import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, FORKED_FROM_DEMO_KEY, DEMO_COPY } from './demo/demoStage.js';
+import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, DEMO_COPY } from './demo/demoStage.js';
 
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
@@ -86,17 +86,6 @@ const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-const PLANTED_QUEST_KEY = 'windmill:planted-quest';
-
-function consumeSessionFlag(key) {
-  try {
-    if (sessionStorage.getItem(key) !== '1') return false;
-    sessionStorage.removeItem(key);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function reportBoardFailure(operation, error) {
   const stack = typeof error?.stack === 'string' && error.stack.trim()
@@ -150,8 +139,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const onTreeChangedRef = useRef(null);
   const applyRemoteProgressRef = useRef(null);
 
-  const plantedQuestRef = useRef(null); // null until consumed; survives StrictMode’s double effect
-  const forkedFromDemoRef = useRef(null);
+  const plantNoteRef = useRef(null); // null until read; survives StrictMode’s double effect
   const demoRef = useRef(demo);
   useEffect(() => { demoRef.current = demo; }, [demo]);
   const {
@@ -308,10 +296,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       onCeremonyToast: showToast,
       ...editing,
     });
-    if (plantedQuestRef.current === null) plantedQuestRef.current = consumeSessionFlag(PLANTED_QUEST_KEY);
-    if (plantedQuestRef.current) nextScene.setArrivalNoun('Quest');
-    if (forkedFromDemoRef.current === null) forkedFromDemoRef.current = consumeSessionFlag(FORKED_FROM_DEMO_KEY);
-    if (forkedFromDemoRef.current) nextScene.setArrivalSummary(DEMO_COPY.forkToast);
     sceneRef.current = nextScene;
     setScene(nextScene);
     nextScene.start();
@@ -386,6 +370,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setTreeVisibility(null);
     setTreeMine(false);
     firstFrameRef.current = null;
+    if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
 
     async function loadTree() {
       const layoutName = layoutNameFrom(window.location);
@@ -423,8 +408,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       if (sinceIds.length) {
         scene.armReturnRecap(sinceIds, `Welcome back · ${sinceIds.length} step${sinceIds.length > 1 ? 's' : ''} done since your last visit`);
       }
-      // The first view: a saved place is restored (clamped to the zoom range); the owner with none opens on the
-      // frontier at the working zoom, no glide; a visitor keeps the whole-tree fit and the arrival ceremony.
+      // The first view: a saved place is restored (clamped to the zoom range); a fresh plant and a visitor keep the
+      // whole-tree fit and the arrival ceremony; any other owner opens on the frontier at the working zoom, no glide.
       const place = desktopView ? placeStore.load(layoutRef.current.name) : null;
       const returning = place?.treeId === seed.id ? place : null;
       const savedCamera = returning?.camera
@@ -433,13 +418,16 @@ export function SkillTreeView({ treeId, demo = false }) {
       const restoredSelection = returning?.selectedId && treeData.nodes.some((n) => n.id === returning.selectedId)
         ? returning.selectedId : null;
       const owner = seed.mine === true && !shared && !demo;
-      const opensOnFrontier = !savedCamera && owner;
-      if (opensOnFrontier) scene.suppressArrival();
-      const justPlanted = !demo && (plantedQuestRef.current || forkedFromDemoRef.current || peekBorn(seed.id));
-      if (!justPlanted) scene.suppressArrivalToast();
+      const born = owner && peekBorn(seed.id);
+      const onFrontier = opensOnFrontier({ savedCamera, owner, born, stepCount: treeData.nodes.length });
+      if (onFrontier) scene.suppressArrival();
+      if (born) {
+        const done = [...states.values()].filter((state) => state === 'complete').length;
+        scene.setArrivalSummary(plantedToast({ quest: plantNoteRef.current.quest, count: treeData.nodes.length, done }));
+      }
       scene.setModel(model);
       if (savedCamera) scene.restoreViewpoint(savedCamera);
-      if (opensOnFrontier) {
+      if (onFrontier) {
         const target = frontierTarget(nextTree, overlay, { selectedId: restoredSelection });
         scene.setViewportInsets(insetsRef.current ?? viewportInsets({ breakpoint, dockOpen: !!restoredSelection && desktopView }));
         scene.focusWorking(target, { instant: true });
@@ -610,6 +598,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
   }, [view, treeId]);
+  // A fork opens as any other owned roadmap does; its one sentence says what just happened.
+  useEffect(() => {
+    if (view === null || !plantNoteRef.current?.forked) return;
+    plantNoteRef.current = { ...plantNoteRef.current, forked: false };
+    showToast(forkedToast({ count: tree.nodes.length }), { surface: view === 'board' ? 'board' : 'graph', act: 'fork', holdMs: 4000 });
+  }, [view]);
   useEffect(() => {
     const decision = initialDecisionRef.current;
     if (!decision || viewOpenedRef.current === treeId) return;
@@ -1380,7 +1374,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {(reader || demo) && (
-        <ForkDoor open={forkOpen} presentation={phone ? 'sheet' : 'dialog'} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
+        <ForkDoor open={forkOpen} presentation={phone ? 'sheet' : 'dialog'} treeId={treeId} signedIn={status === 'signed-in'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 
       {demo && coachAllowed && scene && canvasView && (

@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 import { PlaceStore } from './persistence/PlaceStore.js';
+import { noteForked } from './persistence/ViewPrefs.js';
 import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
@@ -24,8 +25,9 @@ function home() {
 }
 
 function landingAfterSignIn(forkedTree) {
-  if (forkedTree) return `#/app/${forkedTree}`;
-  return home();
+  if (!forkedTree) return home();
+  noteForked();
+  return `#/app/${forkedTree}`;
 }
 
 function appTarget(hash) {

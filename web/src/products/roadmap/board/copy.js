@@ -220,6 +220,15 @@ export function createdToast({ step, column, filterCleared = false }) {
   return `${step} added · ${COLUMN_TITLES[column]}`;
 }
 
+// A fresh plant's arrival ends on this line; a quest names itself.
+export function plantedToast({ quest = false, count, done = 0 }) {
+  return `${quest ? 'Quest' : 'Roadmap'} planted · ${stepCount(count)}${done > 0 ? ` · ${formatCount(done)} already done` : ''}`;
+}
+
+export function forkedToast({ count }) {
+  return `Forked — ${stepCount(count)} planted`;
+}
+
 export function deletedToast({ step }) {
   return `${step} deleted`;
 }

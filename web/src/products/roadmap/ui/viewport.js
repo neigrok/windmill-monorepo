@@ -3,6 +3,7 @@
 
 import { Board } from '../board/Board.js';
 import { cmpOrder } from '../model/TrunkTree.js';
+import { ARRIVAL_MIN_STEPS } from '../theme.js';
 
 // The docked panels' widths, applied as inline widths by the panels themselves so one number moves both the chrome and
 // the camera behind it.
@@ -67,6 +68,13 @@ export function graphToastPlacement({ width, height, toastWidth, toastHeight, le
     }
   }
   return { center, bottom };
+}
+
+// A saved place restores and a visitor keeps the whole-tree fit; a fresh plant fits the whole tree for its arrival, and
+// any other owner opens on the frontier.
+export function opensOnFrontier({ savedCamera, owner, born, stepCount }) {
+  if (savedCamera || !owner) return false;
+  return !born || stepCount < ARRIVAL_MIN_STEPS;
 }
 
 // The frontier: the selection the device remembers, else the top Up next card, else the most recent completion this
