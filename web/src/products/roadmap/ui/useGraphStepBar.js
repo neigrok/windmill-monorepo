@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef } from 'react';
-import { COLUMN_OF_STATE } from '../board/Board.js';
+import { COLUMN_OF_STATE } from '../model/UnlockRules.js';
 import { titleOf } from '../board/StepFacts.js';
 import { track } from '../../../telemetry/beacon.js';
 

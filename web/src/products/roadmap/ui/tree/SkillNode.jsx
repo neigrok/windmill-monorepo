@@ -1,4 +1,5 @@
 import React from 'react';
+import { prefersReducedMotion } from '../../theme.js';
 
 // Colour comes from `kind`; tier comes from `state` and is shown by treatment alone — the tier never re-hues.
 const KINDS = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
@@ -20,10 +21,7 @@ export function SkillNode({
   const base = `var(--kind-${k})`;
   const glow = `var(--kind-${k}-glow)`;
   const [hover, setHover] = React.useState(false);
-  const noMotion =
-    typeof window !== 'undefined' &&
-    window.matchMedia &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const noMotion = prefersReducedMotion();
 
   const body = {
     locked: {

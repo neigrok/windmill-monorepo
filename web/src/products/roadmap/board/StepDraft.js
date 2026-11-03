@@ -1,10 +1,9 @@
-import { UnlockRules } from '../model/UnlockRules.js';
+import { COLUMN_OF_STATE, UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { COLUMN_TITLES, COMPOSER, PICKER, STEP_DETAIL, afterStep, placementPreview } from './copy.js';
 
 const DEFAULT_DRAFT_COLOR = 'sky';
 const PAGE_SIZE = 20;
-const COLUMN_OF_STATE = { complete: 'done', available: 'upNext', locked: 'locked' };
 const PICKER_COLUMNS = ['done', 'upNext', 'locked'];
 
 export class StepDraft {

@@ -75,7 +75,7 @@ function Room() {
   window.maskedWork = () => session.maskedWork();
   window.projectedSteps = () => session.lattice.toTreeData().nodes.map(({ id, prerequisites }) => ({ id, prerequisites }));
   window.recheckTree = () => session.emitTree();
-  window.deleteLegacy = () => session.dispatch({ kind: 'DeleteNode', id: 'wind' });
+  window.deleteOnGraph = () => session.dispatch({ kind: 'DeleteNode', id: 'wind' });
   window.loadHistoricalDelete = () => {
     session.lattice.join({ nodes: [{ id: 'wind', deletedAt: hlcText(session.clock.tick(Date.now())) }] });
     session.emitTree();
@@ -225,15 +225,15 @@ test('Chromium: the real host offer boundary still reports masked work from a pr
   } finally { await page.close(); }
 });
 
-test('Chromium: the real host offer boundary stays clear after a Graph or List delete', async () => {
+test('Chromium: the real host offer boundary stays clear after a Graph delete', async () => {
   await ready;
   const page = await browser.newPage();
 
   try {
     await withBrowserErrors(page, async () => {
       await page.goto(`${origin}/board-acts-test`);
-      await page.waitForFunction(() => !!window.deleteLegacy);
-      await page.evaluate(() => window.deleteLegacy());
+      await page.waitForFunction(() => !!window.deleteOnGraph);
+      await page.evaluate(() => window.deleteOnGraph());
       assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers })), {
         masked: [], offers: [],
       });

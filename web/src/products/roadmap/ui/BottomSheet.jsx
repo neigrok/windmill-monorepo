@@ -2,6 +2,7 @@
 // A raised keyboard forces the sheet fully expanded and pads the scroller by the measured inset.
 
 import React, { useEffect, useRef, useState } from 'react';
+import { prefersReducedMotion } from '../theme.js';
 
 const PEEK_HEIGHT = 216;
 const MAX_VH = 62;
@@ -10,8 +11,6 @@ const TAP_SLOP = 4;           // movement under this reads as a tap, not a drag
 
 const sheetHeightPx = () => Math.round((window.innerHeight * MAX_VH) / 100);
 const peekOffsetPx = () => Math.max(0, sheetHeightPx() - PEEK_HEIGHT);
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function BottomSheet({ open, onDismiss, children }) {
   const [rendered, setRendered] = useState(false);

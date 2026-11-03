@@ -1,8 +1,6 @@
 import React, { useEffect } from 'react';
 import { Button } from '../../../design-system';
-
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { prefersReducedMotion } from '../theme.js';
 
 const enterAnimation = () =>
   prefersReducedMotion()

@@ -10,6 +10,7 @@ import { BottomSheet } from './BottomSheet.jsx';
 import { useViewMode } from './useViewMode.js';
 import { DOCK_WIDTH } from './viewport.js';
 import { stampBorn } from '../persistence/ViewPrefs.js';
+import { prefersReducedMotion } from '../theme.js';
 import { track } from '../../../telemetry/beacon.js';
 
 
@@ -19,8 +20,6 @@ function openBorn(treeId) {
   window.location.hash = `#/app/${treeId}`;
 }
 
-const reduced = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function NewTreeBirth() {
   const { status } = useAuth();
@@ -174,7 +173,7 @@ export function NewTreeBirth() {
       </div>
 
       <div style={stage}>
-        <span className={`birth-bud ${planting ? 'is-planting' : ''} ${reduced() ? '' : 'is-wake'} ${composerOpen ? 'is-dimmed' : ''}`} />
+        <span className={`birth-bud ${planting ? 'is-planting' : ''} ${prefersReducedMotion() ? '' : 'is-wake'} ${composerOpen ? 'is-dimmed' : ''}`} />
 
         {phase === 'error' ? (
           <>

@@ -6,6 +6,7 @@ import { regroup, DONE_RECENT_LIMIT } from './Board.js';
 import { StepCard } from './StepCard.jsx';
 import { SHOW_ALL } from './traversal.js';
 import { reasonLine, showAllDone } from './copy.js';
+import { prefersReducedMotion } from '../theme.js';
 
 const WAKE_MS = 2400; // the Arrived edge settles over two 1200ms pulses
 const OVERSCAN = 10;
@@ -96,7 +97,7 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
   });
   const positions = useRef(new Map());
   const animations = useRef([]);
-  const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = prefersReducedMotion();
 
   if (board !== state.target) {
     const change = board && state.board

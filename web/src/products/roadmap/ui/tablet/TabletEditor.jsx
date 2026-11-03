@@ -3,10 +3,7 @@ import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { deleteCostLine } from '../../board/copy.js';
-
-function cap(hue) {
-  return hue.charAt(0).toUpperCase() + hue.slice(1);
-}
+import { kindName } from '../../model/Legend.js';
 
 const verbBase = {
   display: 'flex',
@@ -145,7 +142,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
           <button
             key={kind.id}
             type="button"
-            aria-label={`Set kind to ${kind.label || cap(kind.hue)}`}
+            aria-label={`Set kind to ${kindName(kind)}`}
             style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: 0, background: 'none', cursor: 'pointer' }}
             onClick={() => { if (kind.hue !== currentKind) onSetKind(node.id, kind.hue); }}
           >

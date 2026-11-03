@@ -3,8 +3,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
 import { KIND_CSS, NODE_COLOR_NAMES } from '../../theme.js';
+import { hueName, kindName } from '../../model/Legend.js';
 
-const capHue = (hue) => hue.charAt(0).toUpperCase() + hue.slice(1);
 
 export function KindLegend({
   kinds = [],
@@ -135,7 +135,7 @@ export function KindLegend({
         {inUse.map((k) => (
           <span
             key={k.id}
-            title={k.label || capHue(k.hue)}
+            title={kindName(k)}
             style={{ width: 12, height: 12, borderRadius: 'var(--radius-full)', background: KIND_CSS[k.hue].base }}
           />
         ))}
@@ -199,7 +199,7 @@ export function KindLegend({
               <Swatch
                 type={Swatch === 'button' ? 'button' : undefined}
                 role={Swatch === 'span' ? 'img' : undefined}
-                aria-label={onRecolor ? `Recolour ${k.label || capHue(k.hue)}` : k.label || capHue(k.hue)}
+                aria-label={onRecolor ? `Recolour ${kindName(k)}` : kindName(k)}
                 onClick={onRecolor ? (e) => { e.stopPropagation(); setSwatchId((id) => (id === k.id ? null : k.id)); } : undefined}
                 style={{
                   display: 'block',
@@ -240,7 +240,7 @@ export function KindLegend({
                         key={hue}
                         type="button"
                         disabled={disabled}
-                        title={disabled ? `${capHue(hue)} — in use` : capHue(hue)}
+                        title={disabled ? `${hueName(hue)} — in use` : hueName(hue)}
                         onClick={(e) => { e.stopPropagation(); pickHue(k, hue); }}
                         style={{
                           width: 18,
@@ -266,7 +266,7 @@ export function KindLegend({
                   <input
                     ref={labelRef}
                     value={labelDraft}
-                    placeholder={capHue(k.hue)}
+                    placeholder={hueName(k.hue)}
                     onChange={(e) => setLabelDraft(e.target.value)}
                     onBlur={commitLabel}
                     onKeyDown={(e) => {
@@ -288,7 +288,7 @@ export function KindLegend({
                   />
                 ) : (
                   <span style={{ fontWeight: empty ? 600 : 700, color: empty ? 'var(--text-tertiary)' : 'var(--text-primary)' }}>
-                    {empty ? capHue(k.hue) : k.label}
+                    {kindName(k)}
                   </span>
                 )}
                 {onDescribe && (
@@ -331,7 +331,7 @@ export function KindLegend({
                   color: empty ? 'var(--text-tertiary)' : 'var(--text-primary)',
                 }}
               >
-                {empty ? capHue(k.hue) : k.label}
+                {kindName(k)}
               </span>
             )}
 
@@ -343,7 +343,7 @@ export function KindLegend({
               ) : onRemove ? (
                 <button
                   type="button"
-                  aria-label={`Remove ${k.label || capHue(k.hue)}`}
+                  aria-label={`Remove ${kindName(k)}`}
                   onClick={(e) => { e.stopPropagation(); onRemove(k.id); }}
                   style={{
                     flexShrink: 0,

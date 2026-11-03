@@ -3,7 +3,7 @@
 .st-board-step-layer {
   position: absolute;
   inset: 0;
-  z-index: 45; /* over the Board, the topbar and the mobile chrome; under the z-50 toast, which still speaks from here */
+  z-index: 45; /* over the Board, the row and the Graph's chrome; under the z-50 toast, which still speaks from here */
   font-family: var(--font-body);
 }
 

@@ -5,7 +5,7 @@ import { notePlantedQuest, stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
 import { useViewMode } from '../ui/useViewMode.js';
 import { track } from '../../../telemetry/beacon.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR, prefersReducedMotion } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';
 import { ROSTER } from './roster/index.js';
 
@@ -13,8 +13,6 @@ const SEED_EASE_MS = 600;
 const CROSSFADE_MS = 280;   // the reduced-motion beat
 const MINT_TIMEOUT_MS = 10000;  // past this the server isn't answering
 
-const reduced = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function QuestShelf() {
   const { status } = useAuth();
@@ -56,7 +54,7 @@ export function QuestShelf() {
       new Promise((_, reject) => setTimeout(() => reject(new Error('mint timed out')), MINT_TIMEOUT_MS)),
     ]);
     const thumb = thumbRefs.current.get(quest.id);
-    if (!reduced() && thumb) {
+    if (!prefersReducedMotion() && thumb) {
       const rect = thumb.getBoundingClientRect();
       setSeed({
         id: quest.id,
@@ -66,7 +64,7 @@ export function QuestShelf() {
     }
     setPickedId(quest.id);
     // Both beats are floors, not races: a local plant lands in ~20ms.
-    const ease = new Promise((resolve) => setTimeout(resolve, reduced() ? CROSSFADE_MS : SEED_EASE_MS));
+    const ease = new Promise((resolve) => setTimeout(resolve, prefersReducedMotion() ? CROSSFADE_MS : SEED_EASE_MS));
     try {
       const [treeId] = await Promise.all([mint, ease]);
       notePlantedQuest();
@@ -85,7 +83,7 @@ export function QuestShelf() {
   const planting = pickedId !== null;
   const shelfClass = [
     'quest-shelf',
-    planting && (reduced() ? 'quest-shelf--crossfade' : 'quest-shelf--planting'),
+    planting && (prefersReducedMotion() ? 'quest-shelf--crossfade' : 'quest-shelf--planting'),
   ].filter(Boolean).join(' ');
 
   const card = (quest) => {

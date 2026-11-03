@@ -4,6 +4,7 @@ import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { COLUMN_TITLES, unlocksWhen } from '../board/copy.js';
+import { kindName } from '../model/Legend.js';
 
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
 const noop = () => {};
@@ -37,10 +38,6 @@ function absoluteTime(at) {
 function shortDate(at) {
   const date = new Date(at);
   return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
-}
-
-function cap(hue) {
-  return hue.charAt(0).toUpperCase() + hue.slice(1);
 }
 
 // Authored intent that travels with the tree, distinct from the per-user workspace.
@@ -81,7 +78,7 @@ export function NodeAnnotation({ description, links = [] }) {
   );
 }
 
-// The shared/mobile viewer gets the compact read-only detail, everyone else the full editor.
+// A reader gets the compact read-only detail, the desktop editor the full one.
 export function StepPanel(props) {
   if (props.readOnly) return <ReadOnlyStep {...props} />;
   return <EditorStep {...props} />;
@@ -254,8 +251,8 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
               type="button"
               className={`st-step-swatch ${kind.hue === currentKind ? 'st-step-swatch--current' : ''}`}
               style={{ background: KIND_CSS[kind.hue].base }}
-              title={kind.label || cap(kind.hue)}
-              aria-label={`Set kind to ${kind.label || cap(kind.hue)}`}
+              title={kindName(kind)}
+              aria-label={`Set kind to ${kindName(kind)}`}
               onPointerEnter={() => onPreviewKind(node.id, kind.hue)}
               onPointerLeave={() => onRestoreKind(node.id)}
               onClick={() => onSetKind(node.id, kind.hue)}

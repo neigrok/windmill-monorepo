@@ -27,7 +27,7 @@ test('exported note renderer preserves the complete dialect markup and safe link
   ]);
 });
 
-test('legacy Graph workspace renders the same exported note inside its existing controls', () => {
+test('the Graph workspace renders the same exported note inside its controls', () => {
   const markup = renderToStaticMarkup(React.createElement(NodeWorkspace, {
     nodeId: 'wind', workspace: { note, subtasks: [], links: [] }, hue: 'sky',
   }));
@@ -35,7 +35,7 @@ test('legacy Graph workspace renders the same exported note inside its existing 
     + noteMarkup + '</div></div>' + addMarkup);
 });
 
-test('exporting the renderer leaves the empty legacy Graph workspace unchanged', () => {
+test('an empty Graph workspace offers its bootstrap', () => {
   assert.equal(renderToStaticMarkup(React.createElement(NodeWorkspace, {
     nodeId: 'wind', workspace: { note: '', subtasks: [], links: [] }, hue: 'sky',
   })), addMarkup);

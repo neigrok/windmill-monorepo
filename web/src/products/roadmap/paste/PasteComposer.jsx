@@ -9,6 +9,7 @@ import { KIND_CSS } from '../theme.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { readComposeStream } from './composeStream.js';
 import { reportError } from '../../../telemetry/beacon.js';
+import { kindName } from '../model/Legend.js';
 
 const PLACEHOLDER = 'Paste anything — a to-do list, an outline, markdown checkboxes.';
 const AI_RESET_MS = 5000;
@@ -373,7 +374,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
           {parse.kinds.map((kind) => (
             <span key={kind.id} className="pc-chip">
               <i style={{ background: KIND_CSS[kind.hue]?.base }} />
-              {kind.label || kind.hue.charAt(0).toUpperCase() + kind.hue.slice(1)}
+              {kindName(kind)}
             </span>
           ))}
         </div>

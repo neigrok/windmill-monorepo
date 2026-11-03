@@ -5,6 +5,7 @@ import React, { useMemo } from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { ActivityFeed } from '../activity/ActivityFeed.jsx';
 import { ActivityRows } from '../activity/ActivityRows.jsx';
+import { deletable } from '../board/acts.js';
 import { LABELS, ROADMAP_VERBS } from '../board/copy.js';
 import { emptyWorkspace } from '../model/NodeWorkspace.js';
 import { GraphDock } from './GraphChrome.jsx';
@@ -30,11 +31,6 @@ export function GraphDocks({
   const unlocks = useMemo(() => (selectedNode && tree
     ? tree.nodes.filter((node) => node.prerequisites.includes(selectedNode.id)).map((node) => relatedStep(node, states))
     : []), [selectedNode, tree, states]);
-  // Only a SINGLE root gives up Delete and Mark done; never re-derive this from parentlessness.
-  const singleRootId = useMemo(() => {
-    const roots = tree?.roots() ?? [];
-    return roots.length === 1 ? roots[0].id : null;
-  }, [tree]);
 
   const autoFocusName = selectedId !== null && selectedId === editing.autoFocusNameId;
   const stepFacts = {
@@ -112,7 +108,7 @@ export function GraphDocks({
           completedAt={progress.completedAt[selectedId]}
           kinds={legend}
           autoFocusName={autoFocusName}
-          isRoot={selectedId !== null && selectedId === singleRootId}
+          isRoot={selectedNode !== null && !deletable(tree, [selectedNode.id])}
           onMarkDone={(id) => progressActs.complete(id)}
           onUnmarkDone={(id) => progressActs.reset(id)}
           onDelete={editing.deleteNodeAt}
