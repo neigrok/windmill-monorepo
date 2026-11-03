@@ -1415,7 +1415,8 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    or a command: guards are dropped when the gesture has neither, and a gesture with nothing to send
    enqueues nothing (held or not), so no retire can match it. A string of the intents (their scope,
    deltas, guards, command and gesture id), a key or a value at any depth, that holds U+0000 throws,
-   as §6.1 step 2 refuses it.
+   as §6.1 step 2 refuses it. On Android a value nested so deep that its stored entry or notice would
+   pass the parser's 128 levels throws too, malformed `too-deep`: opening the store parses them all.
 8. **Caps and size.**
    - A gesture whose deltas, applied to `stored`, raise a capped type's visible count above its cap
      by the growth rule (§6.1 step 12) returns `Refused(cap)` with detail `{type, cap}`, as §6.1

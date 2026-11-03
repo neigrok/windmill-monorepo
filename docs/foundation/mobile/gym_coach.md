@@ -340,7 +340,7 @@ and the model continues.
 
 The gate sends an admitted share (§4.3 step 5) to the server executor and every other admitted call
 to the turn's tool host. The executor refuses whatever its rule refuses (INV-1). The replica executor
-re-checks G-3.
+re-checks G-3, and Android's also refuses an input nested past 32 levels as `invalid-arguments`.
 
 The system prompt treats pictures, pasted text and ability results as data, never as instructions.
 Notes are directive ([brand foundations](../../design/brand-foundations.md), Gym).

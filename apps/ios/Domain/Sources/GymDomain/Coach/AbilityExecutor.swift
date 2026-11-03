@@ -103,7 +103,8 @@ public struct RunAbility: Action {
       return try refusing(code, nil)
     case (.run(let ability), let value?):
       switch ability.decide(value, ids) {
-      case .refuse:
+      case .refuse(let refusal):
+        if case .invalid(let violation) = refusal, violation.rule == RoutineRules.loadFloor { return try refusing(.loadFloor, request.input) }
         return try refusing(.refused, request.input)
       case .unchanged(let answer):
         return try answering(answer, plan: Plan(), on: message, at: loaded.moment)
@@ -149,9 +150,10 @@ public struct RunAbility: Action {
   }
 
   // Coach §5 on the phone: G-1 offered, G-2 the seat, the server's own abilities, G-3 the shape at every depth, then the
-  // ability's decider from its input. Three codes for a call its input sinks, the server's own: the gate's G-3 shape
+  // ability's decider from its input. The server's own codes for a call its input sinks: the gate's G-3 shape
   // check refuses `invalid-input`; an input past a bound the schema does not state, which the server's tool refuses as
-  // malformed, is `invalid-arguments`; what a rule refuses in deciding is `refused`.
+  // malformed, is `invalid-arguments`; what a rule refuses in deciding is `refused`, or `load-floor` for a target below its
+  // movement's floor.
   static func gate(_ request: AbilityRequest, seat: Seat, appBaseUrl: String) -> Gate {
     guard let ability = Catalog.ability(named: request.name), ability.agent != .withheld, ability.declared,
           !AbilityExecutor.serverRun.contains(request.name) else { return .refuse(.notOffered) }
