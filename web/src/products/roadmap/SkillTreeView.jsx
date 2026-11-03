@@ -1255,6 +1255,10 @@ export function SkillTreeView({ treeId, demo = false }) {
     for (const state of states.values()) if (state === 'available') count += 1;
     return count;
   }, [tree, states]);
+  let readyPill = null;
+  if (nextUpPlan?.mount) {
+    readyPill = nextUpPlan.mode === 'allDone' ? nextUpPlan.pill : upNextCount({ count: readyCount });
+  }
 
   const nodesById = useMemo(() => {
     if (!tree) return new Map();
@@ -1846,15 +1850,19 @@ export function SkillTreeView({ treeId, demo = false }) {
     ? () => switchView(boardActive ? 'tree' : 'board')
     : null;
   // The legacy phone lane keeps its List switch; the demo keeps its Graph switch.
-  const lanePill = BOARD_OPEN
-    ? (readOnly && breakpoint !== 'desktop' && !boardActive ? viewSwitch : null)
-    : (listReady ? <ViewPill view={view} onSwitch={switchView} /> : null);
+  let lanePill = null;
+  if (BOARD_OPEN && readOnly && breakpoint !== 'desktop' && !boardActive) lanePill = viewSwitch;
+  if (!BOARD_OPEN && listReady) lanePill = <ViewPill view={view} onSwitch={switchView} />;
+  const tendPlaceholder = tree && tree.nodes.length === 0
+    ? 'What do you want to learn or build?'
+    : 'Tell the tree what to change…';
+  const tendExamples = tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : [];
   const laneTend = canTend && breakpoint !== 'desktop' && mobileSurface === 'empty' ? (
     <TendBar
       variant="phone"
       working={tendWorking}
-      placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
-      examples={tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}
+      placeholder={tendPlaceholder}
+      examples={tendExamples}
       onSubmit={submitTend}
     />
   ) : null;
@@ -2248,8 +2256,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         <TendBar
           variant="desktop"
           working={tendWorking}
-          placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
-          examples={tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}
+          placeholder={tendPlaceholder}
+          examples={tendExamples}
           onSubmit={submitTend}
           onDismiss={() => setTendOpen(false)}
           preserveOutsideFocus={identityActive}
@@ -2340,7 +2348,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                 onHoverNode={handleRowHover}
                 onLeaveNode={handleRowLeave}
                 onRevealNode={handleRevealNode}
-                readyPill={nextUpPlan?.mount ? (nextUpPlan.mode === 'allDone' ? nextUpPlan.pill : upNextCount({ count: readyCount })) : null}
+                readyPill={readyPill}
                 nextUp={nextUpPlan?.mount ? (
                   <NextUp
                     plan={nextUpPlan}

@@ -49,7 +49,7 @@ export const SHORTCUT_GROUPS = [
   },
 ];
 
-export const GRAPH_SHORTCUT_GROUPS = SHORTCUT_GROUPS.map((group) => {
+const GRAPH_SHORTCUT_GROUPS = SHORTCUT_GROUPS.map((group) => {
   if (group.title === 'Navigate') {
     return { ...group, rows: [...group.rows, { label: 'Find a step', chords: [[key('/')]] }] };
   }

@@ -3,7 +3,7 @@ import { Check, ChevronRight, Compass, Download, Plus, Share, Sparkles, Sun } fr
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { Sheet } from './BoardControls.jsx';
-import { ROADMAP_SHEET, ROADMAP_VERBS, exactProgress, progressFigure, progressLabel } from './copy.js';
+import { COMPACT_COUNT_THRESHOLD, ROADMAP_SHEET, ROADMAP_VERBS, exactProgress, progressFigure, progressLabel } from './copy.js';
 
 export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, onSettings, onClose }) {
   const { current, listTrees } = sheet;
@@ -44,7 +44,7 @@ export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, on
   return (
     <Sheet host={document.body} variant="roadmap" title={ROADMAP_SHEET.title} onClose={close}>
       <h3 className="st-roadmap-sheet-name">{current.title}</h3>
-      {current.total >= 1000 && <p className="st-roadmap-sheet-progress">{currentProgress}</p>}
+      {current.total >= COMPACT_COUNT_THRESHOLD && <p className="st-roadmap-sheet-progress">{currentProgress}</p>}
       {verbs.length > 0 && (
         <div className="st-roadmap-sheet-verbs">
           {verbs.map(({ verb, label, Icon, callback }) => (

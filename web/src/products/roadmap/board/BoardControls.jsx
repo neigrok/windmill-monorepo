@@ -8,12 +8,16 @@ import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, hueOf } from '../theme.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
 } from './copy.js';
 
 const MENU_STEPS = { ArrowDown: 1, ArrowUp: -1 };
+const RECOLOR_PULSE_MS = 120;
+const RECOLOR_FADE_MS = 150;
+const RECOLOR_PULSE_SCALE = 1.04;
+const RECOLOR_FADE_OPACITY = 0.6;
 const SHEET_FOCUSABLE = 'button, input, [tabindex="0"]';
 
 export function dismissOverlayOutside(event, root, onClose) {
@@ -113,10 +117,10 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
     if (applying.current !== null) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const chip = bar.current.querySelectorAll('[role="radio"]')[kinds.findIndex((kind) => kind.hue === hue)];
-    const duration = reduced ? 150 : 120;
+    const duration = reduced ? RECOLOR_FADE_MS : RECOLOR_PULSE_MS;
     chip.animate(reduced
-      ? [{ opacity: 1 }, { opacity: 0.6 }, { opacity: 1 }]
-      : [{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration });
+      ? [{ opacity: 1 }, { opacity: RECOLOR_FADE_OPACITY }, { opacity: 1 }]
+      : [{ transform: 'scale(1)' }, { transform: `scale(${RECOLOR_PULSE_SCALE})` }, { transform: 'scale(1)' }], { duration });
     applying.current = setTimeout(() => {
       applying.current = null;
       latestRecolor.current(hue);
@@ -173,13 +177,6 @@ function sortBy(query, onQuery, sort) {
 function toggleKind(query, onQuery, hue) {
   track('roadmap_board_filter', { count: query.toggledKind(hue).kinds.length });
   onQuery((current) => current.toggledKind(hue));
-}
-
-// All also drops kinds no swatch offers any more (among() set them aside), so they never come back on their own; only a
-// change the reader can see emits.
-function clearKinds(query, onQuery) {
-  if (query.kinds.length > 0) track('roadmap_board_filter', { count: 0 });
-  onQuery((current) => (current.kinds.length === 0 ? current : current.without('kinds')));
 }
 
 // `what` is 'search', 'kinds' or 'both'; `from` is the door: 'field', 'empty' or 'sheet'.
@@ -339,7 +336,10 @@ function BranchScope({ step, onQuery, onAnchor }) {
 function KindSwatches({ worn, query, onQuery, withAll = false }) {
   return (
     <div className="st-board-swatches" role="group" aria-label={LABELS.filterByKind}>
-      {withAll && <KindSwatch label={LABELS.allKinds} on={query.kinds.length === 0} onToggle={() => clearKinds(query, onQuery)} />}
+      {withAll && <KindSwatch label={LABELS.allKinds} on={query.kinds.length === 0} onToggle={() => {
+        if (query.kinds.length > 0) track('roadmap_board_filter', { count: 0 });
+        onQuery((current) => (current.kinds.length === 0 ? current : current.without('kinds')));
+      }} />}
       {worn.map((kind) => (
         <KindSwatch
           key={kind.hue}
@@ -354,7 +354,7 @@ function KindSwatches({ worn, query, onQuery, withAll = false }) {
 }
 
 function KindSwatch({ hue = null, label, on, onToggle }) {
-  const kind = hue === null ? null : KIND_CSS[hue] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+  const kind = hue === null ? null : hueOf(hue);
   return (
     <button
       type="button"

@@ -151,8 +151,10 @@ The gated identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, 
 `settings`, `shortcuts`, `fork`, `more`, `next` or folded-icon `find`), `door` (`row`, `more` or
 `sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
 sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new` or `browse`), or `step: close`
-and `via` (`close`, `escape` or `scrim`). What's next emits `roadmap_whats_next` with `step`
-(`open`, `pick` or `close`) and `count` in `countBucket`'s `0`, `1`, `2-5`, `6-20` or `21+` buckets.
+and `via` (`close`, `escape` or `scrim`). What's next emits `roadmap_whats_next` with `step: open`,
+then either `pick` or `close`; a pick does not also emit close. Each event's `count` uses the value captured
+on opening, in `countBucket`'s allowlisted `0`, `1`, `2-5`, `6-20` or `21+` buckets. No user content
+enters these events.
 Export emits `roadmap_export` with `outcome` (`done` or `failed`) and `door` (`more` or `sheet`).
 A missing projection or displayed tree emits `failed` without an Issue.
 A Graph search handing off to the Board emits `roadmap_graph_find` with `step: handoff`.

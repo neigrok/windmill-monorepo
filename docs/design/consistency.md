@@ -677,6 +677,21 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the switch while loading, but not after a failed load: the Graph's load error veils the topbar, so the switch would
   lead where a pointer cannot come back from. Draw what the topbar names before the name is known, and say whether
   the switch belongs on 02.10 once the Graph's load error leaves the topbar reachable.
+- **Board · Activity, demo identity and sheet search.** With the development gate open, Activity
+  has only the A shortcut, the demo retains its existing chrome and honest byline, and the phone
+  roadmap sheet has no switcher search. G1, G11 and G17 need approved wave-8 frames before the
+  gate lifts; the orchestrator owns their design follow-ups.
+- **Board · Graph and compact-row interims.** G2 hands a Graph search to the Board while keeping
+  the query and field focus. G-F expands the drawn wide Find field into the compact row. G3 uses
+  the existing TendBar overlay from More or the phone sheet, and G4 retains the phone Graph
+  camera group under the row. These approved interims still need their dedicated drawings.
+- **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file
+  in the paste format, with the browser download as feedback; Settings retains the all-roadmaps
+  zip. G24 copies the reader's roadmap link and uses the existing *Link copied* toast. Draw these
+  outcomes before replacing the approved interims.
+- **Board · device-only Graph nudge.** The phone and tablet Graph keep *Saved on this device —
+  sign in to keep it →* beneath the gated identity row. The phone camera clears this measured
+  nudge; wave 7's status slot must retain its honesty line.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

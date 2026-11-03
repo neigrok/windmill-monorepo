@@ -20,6 +20,7 @@ const PHONE = { top: 156, margin: 12, sheetGutter: 12, laneGutter: 16 };
 const MINIMAP = { width: 186, height: 146 };
 // .st-legend-dock: --space-6 from the left on every breakpoint, clear of the minimap's seat below it.
 const LEGEND_CORNER = { left: 24, bottom: 24 + 196 };
+const CAMERA_GUTTER = 24;
 
 export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false, sheetHeight = 0, laneInset = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
   if (breakpoint === 'desktop') {
@@ -35,7 +36,7 @@ export function viewportInsets({ breakpoint, dockOpen = false, sheetOpen = false
     const right = dockOpen ? TABLET.panel : TABLET.margin;
     const bottom = laneInset + TABLET.laneGutter;
     const blocks = legendBlocks(legendBox);
-    if (cameraBlock) blocks.push({ right: Math.max(24, right), bottom: Math.max(24, bottom), ...cameraBlock });
+    if (cameraBlock) blocks.push({ right: Math.max(CAMERA_GUTTER, right), bottom: Math.max(CAMERA_GUTTER, bottom), ...cameraBlock });
     return {
       top: rowBottom ?? TABLET.top, right, bottom, left: TABLET.margin,
       blocks,

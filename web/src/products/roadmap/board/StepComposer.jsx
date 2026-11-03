@@ -46,7 +46,8 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   const draft = stored.reconcile(tree);
   const choices = tree.nodes.length > 0 ? picker?.reconcile(tree, completed) ?? null : null;
   const pickerOpen = choices !== null;
-  const pickerLayout = phone ? 'phone' : viewport.panelFits ? 'panel' : 'page';
+  const widePickerLayout = viewport.panelFits ? 'panel' : 'page';
+  const pickerLayout = phone ? 'phone' : widePickerLayout;
   const pickerPage = pickerOpen && pickerLayout !== 'panel';
   const placement = draft.placement(tree, completed);
   const PlacementIcon = { locked: StepIcons.rowLocked, upNext: StepIcons.rowUpNext, done: StepIcons.rowDone }[placement.column] ?? StepIcons.rowUpNext;

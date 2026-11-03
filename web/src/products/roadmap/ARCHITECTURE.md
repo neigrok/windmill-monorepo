@@ -47,9 +47,14 @@ Dialog and the gated TendBar/Fork sheet share `useDialogFocus`; the composer use
 More and the roadmap sheet close and focus their surviving trigger before invoking a verb. From
 1280px Find and Ask AI have their full forms; 1024–1279px folds them to icons, and 744–1023px
 puts Ask AI and Share in More. Phone owners open the roadmap sheet from the title. Its current
-row comes from the host projection, with exact Up next and Locked counts from the unfiltered
-Board model, and the remaining roadmaps from `listAllTrees`; navigation
+row comes from the host projection, with `sheet.current.upNext` and `locked` from the same
+unfiltered Board model as Next. At 1,000 or more total steps, the sheet uses `exactProgress` when
+both state counts are supplied; otherwise it uses the truthful done/total `progressLabel`.
+The remaining roadmaps come from `listAllTrees`; navigation
 uses the existing roadmap, new-roadmap and browse routes. Readers never receive the owner sheet.
+Identity menus share keyboard and outside-dismiss rules through `BoardControls`. `TreeSwitcher`
+owns its identity variant, and `theme.js` owns the DOM kind-hue fallback used by the row, sheet,
+cards and List.
 Export builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`,
 using the same download edge as the settings archive. The paste format uses the roadmap title
 as the root: a distinct root-step label and its completion are not preserved. Other exported
@@ -64,11 +69,11 @@ The identity replaces the plaque, wordmark and hairline, and only phones retain 
 The anonymous/lapsed desktop status sits beneath the measured identity. On the phone and tablet
 Graph, the existing device-only sign-in nudge sits beneath the row; the phone camera clears it,
 and its measured bottom contributes to the Graph viewport. A row render failure reports
-`roadmap-identity` and restores legacy chrome with a view switch. The fallback chrome measures
-its bottom, the switch sits below it with a named gap, and the switch bottom sets the Board inset.
-Gate-closed chrome,
-feed auto-open, shortcuts and viewport geometry retain their existing paths; state words use
-`board/copy.js` without changing ceremony structure or timing.
+`roadmap-identity` and mounts legacy chrome with a view switch. Fallback chrome and switch
+measurements feed the switch position and Board inset; their browser geometry remains an open
+verification issue below. Gate-closed chrome, feed auto-open, shortcuts and viewport geometry
+retain their existing paths; state words use `board/copy.js` without changing ceremony structure
+or timing.
 
 `SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
 branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`
@@ -208,10 +213,11 @@ silently and reports `roadmap-board-delete` with stack frames.
 The host owns one toast slot. `BoardToast` serves both the Board and the gated Graph. Board toasts
 render inside `BoardView`, with a six-second Complete, Create or Recolor hold and nine-second Delete
 hold. A gated Graph completion without a milestone offer has a six-second toast with Undo through
-`restoreStep`; a milestone offer keeps its canvas ceremony. Graph-toast Undo restores focus to
-the action’s captured control when it remains connected and uncovered, otherwise to the pressed
-view switch. Graph creation has receipt-based Undo,
-and a reader's copied link uses the same slot without Undo. Leaving a view dismisses its toast.
+`restoreStep`; a milestone offer keeps its canvas ceremony. Graph-toast Undo attempts focus on
+the action’s captured control when it remains connected and uncovered, then falls back to the
+pressed view switch. Focus after unrelated row activity remains an open verification issue below.
+Graph creation has receipt-based Undo, and a reader's copied link uses the same slot without Undo.
+Leaving a view dismisses its toast.
 Remote completions keep their announcements. Gate-closed Graph/List toasts keep their renderer and timing. Regroup delays only a new toast's entry: a visible toast and its Undo remain available during
 later motion. Complete Undo restores that step's progress; Create Undo reverts its exact session
 receipt, so later unrelated gestures remain. Newer toasts replace older ones, with no coalescing.
@@ -388,6 +394,9 @@ the URL selectable; owners can make a tree private again.
 
 ## Open work
 
+- Graph completion Undo does not yet pass the browser case that returns focus to Complete after
+  unrelated row activity. The crash-fallback switch and Board inset also have a failing browser
+  case against measured legacy chrome. Both require browser verification and correction.
 - Board, List and Graph each own a long-press recognizer; `rb-simplify` owns consolidation while
   preserving the Board hold/swipe exclusion and the legacy interaction contracts.
 - Icon slots are reassigned by distance rank each frame; stable node ownership could remove

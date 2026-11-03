@@ -56,7 +56,7 @@ export const LOAD_ERROR = {
 export const SAVE_FAILURE = { body: 'Couldn’t save. Your draft is kept.', retry: 'Retry', keepEditing: 'Keep editing' };
 export const DISCARD_DRAFT = { title: 'Discard draft?', body: 'Your changes will be lost.', keepEditing: 'Keep editing', discard: 'Discard' };
 export const FILTERED_EMPTY = { title: 'No steps match', action: 'Clear filters' };
-export const CLEAR_BOTH = 'Clear both';
+const CLEAR_BOTH = 'Clear both';
 export const SYNC_STATUS = { saving: 'Saving…', saved: 'Saved', offline: 'Offline · changes will sync' };
 export const REFUSED_SYNC = { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' };
 export const ANONYMOUS_OWNER = 'Saved on this device — sign in to keep it';
@@ -114,12 +114,16 @@ export const NOTE_EDITOR = {
 };
 export const BULK = { done: 'Done', recolor: 'Recolor' };
 
+export const COMPACT_COUNT_THRESHOLD = 1000;
+const MILLION = 1_000_000;
+const COMPACT_DECIMALS = 1;
+
 // Full numbers with thousands separators; `compact` abbreviates from 1,000 for the phone's segments and progress figure.
 export function formatCount(count, { compact = false } = {}) {
-  if (!compact || count < 1000) return count.toLocaleString('en-US');
-  const thousands = Number((count / 1000).toFixed(1));
-  if (thousands < 1000) return `${thousands}k`;
-  return `${Number((count / 1_000_000).toFixed(1))}m`;
+  if (!compact || count < COMPACT_COUNT_THRESHOLD) return count.toLocaleString('en-US');
+  const thousands = Number((count / COMPACT_COUNT_THRESHOLD).toFixed(COMPACT_DECIMALS));
+  if (thousands < COMPACT_COUNT_THRESHOLD) return `${thousands}k`;
+  return `${Number((count / MILLION).toFixed(COMPACT_DECIMALS))}m`;
 }
 
 export function stepCount(count) {

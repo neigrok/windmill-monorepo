@@ -12,6 +12,8 @@ import { countBucket } from './acts.js';
 import { LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from './copy.js';
 import './identity.css';
 
+const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
+
 export function RoadmapIdentity({
   band, view, role, title, switcher, progress, onSwitchView, find, next,
   onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom,
@@ -22,7 +24,7 @@ export function RoadmapIdentity({
   const nextButton = useRef(null);
   const moreBox = useRef(null);
   const nextBox = useRef(null);
-  const [fullDesktop, setFullDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches);
+  const [fullDesktop, setFullDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia(FULL_DESKTOP_QUERY).matches);
   const [overlay, setOverlay] = useState(null);
   const phone = band === 'phone';
   const owner = role === 'owner';
@@ -45,7 +47,7 @@ export function RoadmapIdentity({
   const open = overlay?.context === context && available[overlay.kind] ? overlay.kind : null;
 
   useEffect(() => {
-    const media = window.matchMedia('(min-width: 1280px)');
+    const media = window.matchMedia(FULL_DESKTOP_QUERY);
     const change = () => setFullDesktop(media.matches);
     change();
     media.addEventListener('change', change);
@@ -129,7 +131,6 @@ export function RoadmapIdentity({
     setOverlay({ kind, context, ...(kind === 'next' ? { count: next.count } : {}) });
   };
 
-  const menuKeys = (event) => handleMenuKey(event, { root: moreBox.current, onEscape: close, onTab: close });
   const showSwitcher = title !== undefined && !sheetAvailable && !phone && owner && !!switcher;
   const showHeading = title !== undefined && !sheetAvailable && !showSwitcher;
   const identitySwitcher = React.isValidElement(switcher) && switcher.type === TreeSwitcher
@@ -254,7 +255,14 @@ export function RoadmapIdentity({
               <MoreHorizontal size={20} aria-hidden />
             </button>
           </Tooltip>
-          {open === 'more' && <div className="st-roadmap-menu" role="menu" aria-label={ROADMAP_VERBS.more} onKeyDown={menuKeys}>
+          {open === 'more' && <div
+            className="st-roadmap-menu"
+            role="menu"
+            aria-label={ROADMAP_VERBS.more}
+            onKeyDown={(event) => handleMenuKey(event, {
+              root: moreBox.current, onEscape: close, onTab: close,
+            })}
+          >
             {menuItems.map((item) => (
               <button key={item.verb} type="button" role="menuitem" onClick={() => {
                 verb(item.verb, 'more');

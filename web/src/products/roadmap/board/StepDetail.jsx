@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { hueOf } from '../theme.js';
 import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from './acts.js';
@@ -280,7 +280,8 @@ export function StepDetail({
     onEdit(id);
   } : null;
   const noteAction = surface === 'page' && section === 'workspace';
-  const editLabel = noteAction ? (workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote) : STEP_DETAIL.editStep;
+  const noteLabel = workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote;
+  const editLabel = noteAction ? noteLabel : STEP_DETAIL.editStep;
   const actions = editable && !noteEditing && (facts.column !== 'locked' || noteAction || edit)
     ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset}
         editLabel={editLabel} editRef={pinnedNoteRef} onEdit={noteAction ? () => workspaceRef.current?.openNote(pinnedNoteRef) : edit} />
@@ -390,7 +391,7 @@ export function StepDetail({
 }
 
 function StepIdentity({ step, titleId, compact = false }) {
-  const kind = KIND_CSS[step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
+  const kind = hueOf(step.color);
   return (
     <div className={`st-board-step-identity${compact ? ' st-board-step-identity--compact' : ''}`} style={{ '--st-board-step-rail': kind.base }}>
       {!compact && <span className="st-board-step-identity-rail" aria-hidden />}
