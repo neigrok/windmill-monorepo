@@ -1,20 +1,48 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import android.provider.Settings
+import androidx.test.core.app.ApplicationProvider
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.*
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
-import kotlinx.coroutines.*
-import org.junit.Assert.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.presentation.*
-import works.windmill.gym.store.*
+import works.windmill.gym.GymRoom
+import works.windmill.platform.LocalShellActions
+import works.windmill.platform.ShellActions
+import works.windmill.gym.presentation.Note
+import works.windmill.gym.presentation.NoteWrite
+import works.windmill.gym.presentation.Notes
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.WithheldDelete
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -53,6 +81,48 @@ class NotesStateTests {
                     runBlocking { room.training.notes() }.map { it.id to NoteWrite(it.title, it.body) })
                 assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
             }
+        } } finally { scope.cancel() }
+    }
+
+    @Test fun twoNewNotesKeepTheirOwnWordsThroughRecreationAndAnimatedPops() {
+        Settings.Global.putFloat(ApplicationProvider.getApplicationContext<Context>().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            signedIn(room)
+            val shell = ShellActions(openYou = {})
+            var showing by mutableStateOf(true)
+            val restored = StateRestorationTester(compose)
+            restored.setContent {
+                if (showing) CompositionLocalProvider(LocalShellActions provides shell) {
+                    GymMaterial { GymRoom(room.account(), room.store) }
+                }
+            }
+            compose.runOnIdle { shell.destinations.single { it.id == "notes" }.onOpen() }
+            compose.onNodeWithText(Notes.add).performClick()
+            compose.onNodeWithContentDescription("Title field").performTextReplacement("A")
+            compose.onNodeWithContentDescription("Note field").performTextReplacement("First body")
+            restored.emulateSavedInstanceStateRestore()
+            compose.onNodeWithContentDescription("Title field").assertTextEquals("Title", "A")
+            compose.onNodeWithContentDescription("Note field").assertTextEquals("Note", "First body")
+            compose.onNodeWithText(Notes.save).performClick()
+            val first = compose.runOnIdle { runBlocking { room.training.notes() }.single() }
+            compose.onNodeWithText(Notes.add).performClick()
+            compose.onNodeWithContentDescription("Title field").assertTextEquals("Title", "")
+            compose.onNodeWithContentDescription("Note field").assertTextEquals("Note", "")
+            compose.onNodeWithContentDescription("Title field").performTextReplacement("B")
+            compose.onNodeWithContentDescription("Note field").performTextReplacement("Second body")
+            compose.onNodeWithText(Notes.save).performClick()
+            compose.runOnIdle {
+                val saved = runBlocking { room.training.notes() }
+                assertEquals(2, saved.size)
+                assertEquals(2, saved.map { it.id }.distinct().size)
+                assertEquals(first, saved.single { it.id == first.id })
+                assertEquals(listOf(NoteWrite("A", "First body"), NoteWrite("B", "Second body")),
+                    saved.map { NoteWrite(it.title, it.body) })
+                showing = false
+            }
+            compose.waitForIdle()
         } } finally { scope.cancel() }
     }
 

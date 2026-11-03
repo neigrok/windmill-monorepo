@@ -35,7 +35,7 @@ object GymSkin {
         line = Color(0xFF202627), lineStrong = Color(0xFF2A3133),
         accent = Color(0xFF5FCDB4),
         onAccent = Color(0xFF1B1408), ink = Color(0xFFF1F0EB), inkDim = Color(0xFFB6B5AF),
-        inkFaint = Color(0xFF727771), setDone = Color(0xFF9AA859),
+        inkFaint = Color(0xFF898E88), setDone = Color(0xFF9AA859),
         accentSoft = Color(0x335FCDB4), prInk = Color(0xFFD9B04C), prSoft = Color(0x26D9B04C),
         alarmInk = Color(0xFFD08268), error = Color(0xFFE46962), onError = Color(0xFF410E0B), scrim = Color(0xB8030606),
     )

@@ -84,6 +84,47 @@ class SignInDoorTests {
             List(4) { server.takeRequest().body.readUtf8() })
     }
 
+    @Test fun malformedCodesStayLocalAndKeepTheApprovedRefusal() {
+        val sessions = MemorySessions()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val auth = AuthStore(server.url("/"), sessions, telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        })
+        runBlocking { auth.restore() }
+        server.enqueue(MockResponse().setBody("{}"))
+        repeat(3) { server.enqueue(MockResponse().setResponseCode(410).setBody(
+            """{"error":"That code didn't work","detail":"Check the digits, or send a fresh one."}""")) }
+        var done = 0
+        compose.setContent { WindmillMaterial { SignInDoor(auth, { done++ }) } }
+        compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
+        compose.onNodeWithText("Send code").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
+        val refusal = "That code didn't work. Check the digits, or send a fresh one."
+
+        for ((index, entry) in listOf("12345", "abc123", "1234567").withIndex()) {
+            compose.onNodeWithContentDescription("Code").performTextReplacement(entry)
+            compose.onNodeWithText("Sign in").performClick()
+            compose.waitUntil(5_000) { compose.onAllNodesWithText(refusal).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText(refusal).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithContentDescription("Code").assertTextContains(entry)
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, refusal))
+            compose.onNodeWithText("Sign in").assertIsEnabled()
+            compose.runOnIdle {
+                assertEquals(1, server.requestCount)
+                assertEquals(AuthStatus.SignedOut, auth.status)
+                assertEquals(LocalSession.Absent, sessions.localSession)
+                assertNull(sessions.proposed)
+                assertEquals(0, done)
+                assertEquals(emptyList<String>(), failures)
+                assertEquals(listOf("auth_restore" to mapOf("outcome" to "signed_out"),
+                    "auth_code_requested" to emptyMap(), "auth_code_sent" to emptyMap()) +
+                    List(index + 1) { "auth_sign_in_started" to mapOf("method" to "code") }, events)
+            }
+        }
+    }
+
     @Test fun emailAndCodeOfferAutofillAndTheCodeOpensTheDigitKeyboard() {
         val auth = AuthStore(server.url("/"), MemorySessions())
         runBlocking { auth.restore() }
@@ -138,7 +179,10 @@ class SignInDoorTests {
         server.takeRequest(); server.takeRequest()
         val request = server.takeRequest()
         assertEquals("/v1/auth/verify", request.path)
+        assertEquals("POST", request.method)
         assertEquals("""{"token":"exact-token"}""", request.body.readUtf8())
+        assertEquals(3, server.requestCount)
+        assertEquals(AuthStatus.SignedIn(User("A", "a@example.com", "Ana")), auth.status)
     }
 
     @Test fun pendingRequestIsSingleFlightAndAReplacedAuthStoreCannotReceiveItsReply() {

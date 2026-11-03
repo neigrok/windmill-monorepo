@@ -65,6 +65,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -322,7 +324,8 @@ fun FinishScreen(
                 if (onKeep == null && finished.reviewRead) {
                     Finish.recordSentence(finished.review?.record, catalog)?.let { RecordLine(it) }
                 }
-                Text("Performed", style = GymType.numeralDetail, color = colors.onSurfaceVariant)
+                Text("Performed", style = GymType.numeralDetail, color = colors.onSurfaceVariant,
+                    modifier = Modifier.semantics { heading() })
                 summary.exercises.forEach { id ->
                     val sets = finished.sets.filter { it.exerciseId == id }
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),

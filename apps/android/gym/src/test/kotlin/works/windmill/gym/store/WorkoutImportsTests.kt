@@ -2,17 +2,27 @@ package works.windmill.gym.store
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import works.windmill.domain.kit.PlanError
 import works.windmill.gym.presentation.*
+import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitFailure
+import works.windmill.sync.api.DeviceWrite
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
 import works.windmill.sync.core.ClockReading
+import works.windmill.sync.core.Command
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.Registry
 import works.windmill.sync.engine.*
 import works.windmill.sync.modelserver.*
 import works.windmill.sync.schema.SyncSchema
 
 class WorkoutImportsTests {
+    @get:Rule val tmp = TemporaryFolder()
     private val scope = WorkoutImports.scope
     private var testNow = 100_000L
     private val timing get() = RequestTiming(ClockReading(testNow, testNow, "boot"), ClockReading(testNow, testNow, "boot"))
@@ -30,6 +40,258 @@ class WorkoutImportsTests {
     private fun sources(engine: Engine) = engine.read(scope) { reader -> reader.devices(WorkoutImports.journalPrefix).values
         .flatMap { it.member("items").obj().values } }
 
+    @Test fun aGestureBuildFailureAbortsPreparationWithoutARefusalOrJournalWrite() {
+        val definition = SyncSchema.registry.json
+        val commands = definition.member("commands").arr().map { command ->
+            if (command["name"] != Json.of("gym.importSession")) command
+            else Json.Obj((command.obj() + ("predicts" to Json.array())).toList())
+        }
+        val registry = Registry(Json.Obj((definition.obj() + ("commands" to Json.Arr(commands))).toList()))
+        Engine.memory(registry, clock = object : EngineClock { override fun now() = testNow }).use { local ->
+            val imports = WorkoutImports(local)
+            val before = local.snapshot()
+            assertThrows(PlanError::class.java) { imports.prepare(finished()) }
+            assertEquals(before, local.snapshot())
+            assertEquals(emptyList<Json>(), sources(local))
+            assertEquals(emptyList<ImportRefusal>(), imports.refusals())
+        }
+    }
+
+    @Test fun aDeferredAdoptionPreservesAnExistingJournalAndRetriesWithoutASecondSourceCount() {
+        val original = engine().use { local ->
+            WorkoutImports(local).prepare(finished(start = 101_000, finish = 103_000))
+            local.snapshot()
+        }
+        val definition = SyncSchema.registry.json
+        val commands = definition.member("commands").arr().map { command ->
+            if (command["name"] != Json.of("gym.importSession")) command
+            else Json.Obj((command.obj() + ("predicts" to Json.array())).toList())
+        }
+        val registry = Registry(Json.Obj((definition.obj() + ("commands" to Json.Arr(commands))).toList()))
+        val held = Engine.memory(registry, original, clock = object : EngineClock { override fun now() = testNow },
+            intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
+            rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { local ->
+            val imports = WorkoutImports(local)
+            val opening = imports.opening("session01")
+            val before = sources(local).map(Json::jcs)
+            assertTrue(imports.prepareForAdoption(finished()) is PlanError)
+            val deferred = local.snapshot()
+            val stale = assertThrows(TrainingRefused::class.java) { imports.discardRefusal("session01", opening) }
+            assertEquals("saved-workout-changed", stale.code)
+            assertEquals(deferred, local.snapshot())
+            engine(deferred).use { retried ->
+                val retry = WorkoutImports(retried)
+                assertNull(retry.prepareForAdoption(finished(start = 101_000, finish = 103_000)))
+                assertEquals(finished(), retry.retainedWorkouts().single())
+                assertEquals(emptyMap<String, Json>(), retried.read(scope) { it.devices("rack:deferredImport") })
+            }
+            assertEquals(before, sources(local).map(Json::jcs))
+            assertEquals(emptyList<Json>(), outbox(local))
+            assertEquals(Json.objectOf("session" to Json.of(1), "set" to Json.of(2)), local.anonCount(local.activeReplica(), "gym"))
+            val server = EngineRoomFixture.server()
+            signIn(local, server)
+            pull(local, server)
+            assertTrue(WorkoutImports(local).reconcileConfirmed() is PlanError)
+            assertEquals(before, sources(local).map(Json::jcs))
+            assertEquals(emptyList<ImportDeletion>(), WorkoutImports(local).deletedSets())
+            assertEquals(emptyList<Json>(), outbox(local))
+            local.snapshot()
+        }
+        engine(held).use { local ->
+            val imports = WorkoutImports(local)
+            assertNull(imports.reconcileConfirmed())
+            assertEquals(emptyMap<String, Json>(), local.read(scope) { it.devices("rack:deferredImport") })
+            assertEquals(listOf("gym.importSession"), outbox(local).map { it.member("intent").member("cmd").member("name").str() })
+            assertEquals(finished(), imports.retainedWorkouts().single())
+        }
+    }
+
+    @Test fun deferringAFinishedCopyOfAQueuedStartCountsItsPendingSetsOnlyOnce() {
+        val row = finished().copy(deleted = emptyList())
+        val original = engine().use { local ->
+            WorkoutImports(local).prepare(row.copy(session = row.session.copy(finishedAtMs = null)))
+            assertEquals("queued", sources(local).single { it["kind"] == Json.of("start") }.member("state").str())
+            local.snapshot()
+        }
+        val definition = SyncSchema.registry.json
+        val commands = definition.member("commands").arr().map { command ->
+            if (command["name"] != Json.of("gym.importSession")) command
+            else Json.Obj((command.obj() + ("predicts" to Json.array())).toList())
+        }
+        val registry = Registry(Json.Obj((definition.obj() + ("commands" to Json.Arr(commands))).toList()))
+        Engine.memory(registry, original, clock = object : EngineClock { override fun now() = testNow },
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork).use { local ->
+            val imports = WorkoutImports(local)
+            val before = sources(local).map(Json::jcs)
+            assertTrue(imports.prepareForAdoption(row) is PlanError)
+            assertEquals(before, sources(local).map(Json::jcs))
+            assertEquals(emptyList<Json>(), outbox(local))
+            assertEquals(Json.objectOf("session" to Json.of(1), "set" to Json.of(1)), local.anonCount(local.activeReplica(), "gym"))
+            assertEquals(Json.objectOf("session" to Json.of(1)), local.read(scope) {
+                it.devices("rack:deferredImport").values.single().member("count")
+            })
+        }
+    }
+
+    @Test fun discardingADeferredSourceRemovesItsRetryMarkerInTheSameCommit() {
+        val definition = SyncSchema.registry.json
+        val commands = definition.member("commands").arr().map { command ->
+            if (command["name"] != Json.of("gym.importSession")) command
+            else Json.Obj((command.obj() + ("predicts" to Json.array())).toList())
+        }
+        val registry = Registry(Json.Obj((definition.obj() + ("commands" to Json.Arr(commands))).toList()))
+        Engine.memory(registry, clock = object : EngineClock { override fun now() = testNow },
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork).use { local ->
+            val imports = WorkoutImports(local)
+            assertTrue(imports.prepareForAdoption(finished()) is PlanError)
+            val source = sources(local).single().member("source").jcs
+            imports.discardRefusal("session01")
+            assertEquals(emptyMap<String, Json>(), local.read(scope) { it.devices("rack:deferredImport") })
+            assertEquals(source, sources(local).single().member("source").jcs)
+            assertEquals("discarded", sources(local).single().member("state").str())
+            assertEquals(emptyList<Json>(), outbox(local))
+            assertEquals(Json.objectOf(), local.anonCount(local.activeReplica(), "gym"))
+        }
+    }
+
+    @Test fun aNegativeStartRetainsTheDomainsSpecificBadInstantRefusal() {
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            val row = finished(start = -1)
+            imports.prepare(row)
+            assertEquals(listOf(ImportRefusal(row.session.id, row.session, row.sets, row.deleted,
+                "bad-instant", WorkoutImports.reason("bad-instant"))), imports.refusals())
+            assertEquals(listOf("refused"), sources(local).map { it.member("state").str() })
+            assertEquals(row, diskJson.decodeFromString(SavedWorkout.serializer(), sources(local).single().member("source").jcs))
+            assertEquals(emptyList<Json>(), outbox(local))
+        }
+    }
+
+    @Test fun aLoadThatWouldBeRoundedKeepsItsExactSourceAndRequiresCorrection() {
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            val row = finished().let { it.copy(sets = listOf(it.sets.single().copy(weightKg = 60.001))) }
+            imports.prepare(row)
+            assertEquals(listOf(ImportRefusal(row.session.id, row.session, row.sets, row.deleted,
+                "source-needs-correction", WorkoutImports.reason("source-needs-correction"))), imports.refusals())
+            assertEquals(listOf("refused"), sources(local).map { it.member("state").str() })
+            assertEquals(row, diskJson.decodeFromString(SavedWorkout.serializer(), sources(local).single().member("source").jcs))
+            assertEquals(emptyList<Json>(), outbox(local))
+        }
+    }
+
+    @Test fun aCorruptStartEntryMakesTheWholeSourceUnreadableWithoutChangingItsBytes() = runBlocking {
+        for (state in listOf("refused", "pending", "retained", "queued", "submitted")) engine().use { local ->
+            val imports = WorkoutImports(local)
+            val row = finished(start = 101_000, finish = 103_000).let { it.copy(session = it.session.copy(finishedAtMs = null),
+                sets = listOf(it.sets.single().copy(completedAtMs = 102_000), it.sets.single().copy(id = "set00002", completedAtMs = 102_001)), deleted = emptyList()) }
+            imports.prepare(row)
+            local.commit(scope) { context ->
+                val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                    val items = journal.member("items").obj().mapValues { (_, item) ->
+                        if (item["kind"] != Json.of("start")) item else {
+                            val source = item.member("source")
+                            val entries = source.member("entries").obj().mapValues { (id, entry) ->
+                                if (id != "set00002") entry else Json.Obj((entry.obj() + ("set" to
+                                    Json.Obj((entry.member("set").obj() + ("reps" to Json.of("eight"))).toList()))).toList())
+                            }
+                            Json.Obj((item.obj() + mapOf("state" to Json.of(state), "source" to
+                                Json.Obj((source.obj() + ("entries" to Json.Obj(entries.toList()))).toList()))).toList())
+                        }
+                    }
+                    DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                }
+                Gesture(emptyList(), local = writes) to Unit
+            }
+            val before = local.snapshot()
+            val raw = sources(local).single { it["kind"] == Json.of("start") }.member("source").jcs
+            val failure = ImportRefusal(row.session.id, null, emptyList(), emptyList(), "source-unreadable",
+                WorkoutImports.reason("source-unreadable"), "start")
+            assertEquals(if (state == "refused") listOf(failure) else emptyList<ImportRefusal>(), imports.refusals())
+            assertEquals(emptyList<SavedWorkout>(), imports.retainedWorkouts())
+            assertEquals(emptyList<SavedWorkout>(), imports.startSources())
+            val review = imports.reviewWorkouts().single { it.id == row.session.id }
+            assertNull(review.workout)
+            assertFalse(review.adding)
+            assertEquals(listOf(failure), review.refusals)
+            assertEquals(raw, sources(local).single { it["kind"] == Json.of("start") }.member("source").jcs)
+            assertEquals(before, local.snapshot())
+            if (state == "refused") EngineRoomFixture(tmp.newFolder(), this, snapshot = before).use { room ->
+                assertEquals(emptyList<SessionSummary>(), room.store.history.refusedImports())
+                assertNull(room.store.history.shelfDetail(row.session.id))
+            }
+        }
+    }
+
+    @Test fun anUnreadableQueuedStartDoesNotBlockAnotherItemsReconciliation() {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            val saved = finished(id = "broken001").let { it.copy(session = it.session.copy(finishedAtMs = null)) }
+            imports.prepare(saved)
+            signIn(local, server)
+            pull(local, server)
+            local.commit(scope) { context ->
+                val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                    val items = journal.member("items").obj().mapValues { (_, item) ->
+                        when (item["kind"]) {
+                            Json.of("start") -> Json.Obj((item.obj() + ("source" to
+                                Json.Obj((item.member("source").obj() + ("session" to Json.of("unreadable"))).toList()))).toList())
+                            Json.of("operation") -> Json.Obj((item.obj() + mapOf("state" to Json.of("recovering"),
+                                "recoveryGestures" to Json.array())).toList())
+                            else -> item
+                        }
+                    }
+                    DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                }
+                Gesture(emptyList(), local = writes) to Unit
+            }
+            val broken = sources(local).single { it["kind"] == Json.of("start") }.jcs
+            val operationSource = sources(local).single { it["kind"] == Json.of("operation") }.member("source").jcs
+            imports.reconcileConfirmed()
+            assertEquals(broken, sources(local).single { it["kind"] == Json.of("start") }.jcs)
+            assertEquals(operationSource, sources(local).single { it["kind"] == Json.of("operation") }.member("source").jcs)
+            assertEquals(listOf(ImportRefusal("set00001", null, saved.sets, emptyList(), "recovery-retry",
+                WorkoutImports.reason("recovery-retry"), "operation", "broken001")), imports.refusals())
+            val review = imports.reviewWorkouts().single { it.id == "broken001" }
+            assertFalse(review.adding)
+            assertNull(review.workout)
+            assertEquals(imports.refusals() + ImportRefusal("broken001", null, emptyList(), emptyList(), "source-unreadable",
+                WorkoutImports.reason("source-unreadable"), "start"), review.refusals)
+        }
+    }
+
+    @Test fun anUnreadableOperationParentDoesNotBlockReadsReconciliationOrAnotherWritesReceipt() = runBlocking {
+        for (state in listOf("pending", "recovering", "resolved")) {
+            val server = EngineRoomFixture.server()
+            engine(stranded(server)).use { local ->
+                local.commit(scope) { context ->
+                    val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                        val items = journal.member("items").obj().mapValues { (_, item) ->
+                            if (item["kind"] != Json.of("operation")) item else Json.Obj((item.obj() - "submissionGesture" +
+                                mapOf("source" to Json.Obj((item.member("source").obj() + ("sessionId" to Json.of(42))).toList()), "state" to Json.of(state))).toList())
+                        }
+                        DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                    }
+                    Gesture(emptyList(), local = writes) to Unit
+                }
+                val imports = WorkoutImports(local)
+                val broken = sources(local).single { it["kind"] == Json.of("operation") }.jcs
+                assertEquals(emptyList<ImportOperation>(), imports.operations())
+                assertEquals("set00001", imports.opening("set00001").id)
+                if (state != "resolved") assertEquals(listOf(ImportRefusal("set00001", null, emptyList(), emptyList(),
+                    "source-unreadable", WorkoutImports.reason("source-unreadable"), "operation")),
+                    imports.reviewWorkouts().single { it.id == "set00001" }.refusals)
+                EngineTraining(local).startSession(SessionStart("other001", 5_000))
+                push(local, server)
+                assertNull(imports.reconcileConfirmed())
+                assertEquals(broken, sources(local).single { it["kind"] == Json.of("operation") }.jcs)
+                assertEquals(emptyList<Json>(), outbox(local))
+                assertEquals("other001", EngineTraining(local).openWorkout()?.session?.id)
+            }
+        }
+    }
+
     @Test fun recoveryPreviewWritesNothingAndCorrectionPreservesTheRawLegacySet() {
         val row = finished(start = 101_000, finish = 103_000).copy(sets = listOf(finished().sets.single().copy(completedAtMs = 102_000)))
         engine().use { local ->
@@ -42,9 +304,9 @@ class WorkoutImportsTests {
                         val sets = source.member("sets").arr().map { set -> Json.Obj((set.obj() + ("kind" to Json.of("warmup"))).toList()) }
                         Json.Obj((item.obj() + ("source" to Json.Obj((source.obj() + ("sets" to Json.Arr(sets))).toList()))).toList())
                     }
-                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                    DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
                 }
-                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
+                Gesture(emptyList(), local = writes) to Unit
             }
             val original = sources(local).single().member("source")
             val opening = imports.opening(row.session.id)
@@ -203,9 +465,9 @@ class WorkoutImportsTests {
                             if (item["kind"] != Json.of("operation")) item else Json.Obj((item.obj() + mapOf(
                                 "source" to Json.Obj((item.member("source").obj() + ("sessionId" to parent)).toList()), "state" to Json.of(state))).toList())
                         }
-                        works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                        DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
                     }
-                    works.windmill.sync.api.Gesture(emptyList(), local = writes + works.windmill.sync.api.DeviceWrite(WorkoutImports.journalPrefix + "healthy", healthy)) to Unit
+                    Gesture(emptyList(), local = writes + DeviceWrite(WorkoutImports.journalPrefix + "healthy", healthy)) to Unit
                 }
                 val before = local.snapshot()
                 val raw = sources(local).single { it["kind"] == Json.of("operation") }.member("source").jcs
@@ -419,8 +681,8 @@ class WorkoutImportsTests {
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
             // An older build took this barbell load below zero offline; the floor guards only a load entered now.
-            local.commit(scope, works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.create("set",
-                works.windmill.sync.api.NewID.Given(RecordID("set00001")), mapOf("sessionId" to Json.of("session01"),
+            local.commit(scope, Gesture(listOf(Change.create("set",
+                NewID.Given(RecordID("set00001")), mapOf("sessionId" to Json.of("session01"),
                     "exerciseId" to Json.of("back-squat"), "weightKg" to Json.of(-2.5), "reps" to Json.of(5), "completedAt" to Json.of(2_000))))))
             gym.prepareAdoption()
             signIn(local, server); pull(local, server); push(local, server)
@@ -456,9 +718,9 @@ class WorkoutImportsTests {
                     val items = journal.member("items").obj().mapValues { (_, item) ->
                         if (item["kind"] == Json.of("operation")) Json.Obj((item.obj() + ("state" to Json.of("resolved"))).toList()) else item
                     }
-                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                    DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
                 }
-                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
+                Gesture(emptyList(), local = writes) to Unit
             }
             gym.finishSession("session01", 4_000)
             local.snapshot()
@@ -574,13 +836,13 @@ class WorkoutImportsTests {
         signIn(local, server); pull(local, server); push(local, server)
         gym.appendSet("session01", SetWrite("standing1", "back-squat", 80.0, 8, 2_500))
         gym.fixSet("session01", "standing1", SetFix(note = "Standing", rpe = 8.0, rpeNamed = true))
-        if (standingCount > 1) local.commit(scope, works.windmill.sync.api.Gesture((2..standingCount).map { number ->
-            works.windmill.sync.api.Change.create("set", works.windmill.sync.api.NewID.Given(RecordID("standing$number")), mapOf(
+        if (standingCount > 1) local.commit(scope, Gesture((2..standingCount).map { number ->
+            Change.create("set", NewID.Given(RecordID("standing$number")), mapOf(
                 "sessionId" to Json.of("session01"), "exerciseId" to Json.of("back-squat"), "weightKg" to Json.of(80.0),
                 "reps" to Json.of(8), "completedAt" to Json.of(2_500)))
         }, atomic = true))
         push(local, server)
-        local.commit(scope, works.windmill.sync.api.Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.finish",
+        local.commit(scope, Gesture(emptyList(), command = Command("gym.finish",
             Json.objectOf("sessionId" to Json.of("session01"), "finishedAt" to Json.of(3_000)))))
         push(local, server)
         if (standingCount <= 200) { correct(local, gym.session("session01")!!.sets, "Evening"); push(local, server) }
@@ -594,7 +856,7 @@ class WorkoutImportsTests {
             val item = items.getValue(operation.token)
             val source = Json.Obj((item.member("source").obj() + ("write" to Json.of(write.name))).toList())
             items[operation.token] = Json.Obj((item.obj() + ("source" to source)).toList())
-            works.windmill.sync.api.Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(saved.key,
+            Gesture(emptyList(), local = listOf(DeviceWrite(saved.key,
                 Json.Obj((saved.value.obj() + ("items" to Json.Obj(items.toList()))).toList())))) to Unit
         }
         imports.refuseOperation(imports.operations().single(), "session-finished")
@@ -602,7 +864,7 @@ class WorkoutImportsTests {
     }
 
     private fun correct(local: Engine, sets: List<TrainingSet>, name: String) {
-        local.commit(scope) { context -> works.windmill.sync.api.Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.correctSession",
+        local.commit(scope) { context -> Gesture(emptyList(), command = Command("gym.correctSession",
             Json.objectOf("sessionId" to Json.of("session01"), "requestId" to Json.of(context.opaqueID()),
                 "startedAt" to Json.of(1_000), "finishedAt" to Json.of(3_000), "routineName" to Json.of(name),
                 "sets" to Json.Arr(sets.map { set -> Json.objectOf("id" to Json.of(set.id), "exerciseId" to Json.of(set.exerciseId),
@@ -844,9 +1106,9 @@ class WorkoutImportsTests {
                         if (token != stale.token) item else Json.Obj((item.obj() + ("source" to
                             Json.parse(diskJson.encodeToString(OwedSet.serializer(), corrected)))).toList())
                     }
-                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                    DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
                 }
-                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
+                Gesture(emptyList(), local = writes) to Unit
             }
             imports.retry("set00001")
             val before = local.snapshot()
@@ -968,9 +1230,9 @@ class WorkoutImportsTests {
         engine().use { e ->
             val before = e.snapshot()
             assertThrows(CommitFailure::class.java) { e.commitWithPrerequisites(scope) {
-                works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.update("routine", RecordID("unknown1"))),
-                    command = works.windmill.sync.api.Command("gym.start", Json.objectOf("id" to Json.of("session01"), "startedAt" to Json.of(1_000))),
-                    local = listOf(works.windmill.sync.api.DeviceWrite(WorkoutImports.journalPrefix + "unknown", Json.of("original source")))) to Unit
+                Gesture(listOf(Change.update("routine", RecordID("unknown1"))),
+                    command = Command("gym.start", Json.objectOf("id" to Json.of("session01"), "startedAt" to Json.of(1_000))),
+                    local = listOf(DeviceWrite(WorkoutImports.journalPrefix + "unknown", Json.of("original source")))) to Unit
             } }
             assertEquals(before, e.snapshot()); assertTrue(outbox(e).isEmpty())
         }
@@ -1032,8 +1294,7 @@ class WorkoutImportsTests {
         }
     }
 
-    // A signed-out workout started from a routine that was deleted before sign-in.
-    // The phone refuses what the account would, before sending: the domain's import checks run over the saved copy.
+    // A signed-out workout started from a routine that was deleted before sign-in. The phone refuses what the account would, before sending: the domain's import checks run over the saved copy.
     @Test fun aSavedWorkoutOnAMovementTheCatalogueLacksIsRefusedByThePhone() {
         val row = finished().copy(sets = listOf(finished().sets.single().copy(exerciseId = "ghost-movement")))
         engine().use { engine ->
@@ -1130,11 +1391,11 @@ class WorkoutImportsTests {
             engine.onPushResponse(request, SyncResponse(reply.status, reply.body), timing)
             assertEquals("session-overlap", WorkoutImports(engine).refusals().single().code)
             assertEquals(source, sources(engine).single().member("source"))
-            assertEquals(emptyList<works.windmill.gym.presentation.ProgressSession>(), EngineTraining(engine).progress().sessions)
+            assertEquals(emptyList<ProgressSession>(), EngineTraining(engine).progress().sessions)
             assertEquals(listOf("session01"), EngineTraining(engine).details().map { it.session.id })
             engine(engine.snapshot()).use { reopened ->
                 assertEquals("session-overlap", WorkoutImports(reopened).refusals().single().code)
-                assertEquals(emptyList<works.windmill.gym.presentation.ProgressSession>(), EngineTraining(reopened).progress().sessions)
+                assertEquals(emptyList<ProgressSession>(), EngineTraining(reopened).progress().sessions)
                 WorkoutImports(reopened).retry("session01")
                 assertNotEquals(priorGesture, sources(reopened).single().member("gestureId"))
                 assertEquals(source, sources(reopened).single().member("source"))

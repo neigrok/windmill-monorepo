@@ -1,5 +1,6 @@
 package works.windmill.platform.auth
 
+import java.io.IOException
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -208,7 +209,6 @@ class AuthStore(
         val answer = api.sendCapturingSession<UserResponse>(
             "POST", "/v1/auth/verify-code", CodeRequest(email.trim(), code.trim()))
         if (attempt != generation) throw CancellationException("Authentication changed.")
-        if (answer.session.isNullOrEmpty()) throw MagicLink.unreadable
         beforeCommit(answer.reply.user)
         if (attempt != generation) throw CancellationException("Authentication changed.")
         signedIn(answer, attempt)
@@ -224,16 +224,13 @@ class AuthStore(
         val token = MagicLink.token(pasted) ?: throw MagicLink.unreadable
         val answer = api.sendCapturingSession<UserResponse>("POST", "/v1/auth/verify", TokenRequest(token))
         if (attempt != generation) throw CancellationException("Authentication changed.")
-        if (answer.session.isNullOrEmpty()) throw MagicLink.unreadable
         beforeCommit(answer.reply.user)
         if (attempt != generation) throw CancellationException("Authentication changed.")
         signedIn(answer, attempt)
     }
 
     private suspend fun signedIn(answer: Captured<UserResponse>, attempt: Long) {
-        val session = answer.session
-        if (session.isNullOrEmpty()) throw MagicLink.unreadable
-        val proposed = ProposedSignIn(session, answer.reply.user)
+        val proposed = ProposedSignIn(answer.session, answer.reply.user)
         try { sessions.stage(proposed) }
         catch (failure: Exception) {
             identityRevision += 1
@@ -594,13 +591,10 @@ data class UserResponse(val user: User)
 
 // The emailed link is `{app}/#/auth?token=…`: the token is in the fragment, not the query.
 object MagicLink {
-    val unreadable: WindmillApiException = WindmillApiException.Refused(400, Refusal())
+    val unreadable: WindmillApiException = WindmillApiException.Refused(400,
+        Refusal("That code didn't work", "Check the digits, or send a fresh one."))
 
-    const val expired = "That link has expired. Links work once and last 15 minutes — send a fresh one."
-    const val expiredCode = "That code has expired. Codes work once and last 15 minutes — send a fresh one."
-
-    fun refusal(failure: Throwable, ofCode: Boolean = false): String {
-        if (failure is WindmillApiException.Offline) return failure.line
+    fun refusal(failure: WindmillApiException): String {
         if (failure is WindmillApiException.Refused) {
             if (failure.status == 426) return failure.line
             val message = failure.refusal.message?.trim().orEmpty()
@@ -612,13 +606,15 @@ object MagicLink {
             if (message.isNotEmpty()) return message
             if (detail.isNotEmpty()) return detail
         }
-        return if (ofCode) expiredCode else expired
+        return failure.line
     }
+
+    fun looksLikeLink(entry: String): Boolean = entry.contains("://") || entry.contains("token=")
 
     fun token(pasted: String): String? {
         val trimmed = pasted.trim()
         if (trimmed.isEmpty()) return null
-        if (!trimmed.contains("://") && !trimmed.contains("token=")) return trimmed
+        if (!looksLikeLink(trimmed)) return trimmed
 
         val start = trimmed.indexOf("token=")
         if (start < 0) return null
@@ -693,18 +689,19 @@ class PrefsSessions(
     constructor(context: Context, vault: SecretVault, telemetry: Telemetry) : this(SharedPrefsValues(context), vault, telemetry)
 
     private var unavailable = false
+    private var legacyRefused = false
     override val signOutPending: Boolean get() = prefs.read(signOutKey) != null || prefs.read(signOutIntentKey) != null
     override val pendingSignOut: SignOutIntent? get() {
         prefs.read(signOutIntentKey)?.let { sealed ->
             return vault.open(sealed)?.let { raw -> runCatching { WindmillJson.decodeFromString<SignOutIntent>(raw) }
-                .onFailure { telemetry.failure("session_sign_out_decode", java.io.IOException("The sign-out choice could not be read.")) }.getOrNull() }
+                .onFailure { telemetry.failure("session_sign_out_decode", IOException("The sign-out choice could not be read.")) }.getOrNull() }
         }
         return if (prefs.read(signOutKey) == "1") user()?.let { SignOutIntent(it.id, AuthSignOutChoice.Keep) } else null
     }
     override fun beginSignOut(intent: SignOutIntent) {
         check(user()?.id == intent.account) { "The account changed." }
         val encoded = vault.seal(WindmillJson.encodeToString(SignOutIntent.serializer(), intent))
-            ?: throw java.io.IOException("The sign-out choice could not be sealed.")
+            ?: throw IOException("The sign-out choice could not be sealed.")
         persist(mapOf(signOutIntentKey to encoded, signOutKey to null))
     }
 
@@ -776,13 +773,13 @@ class PrefsSessions(
 
     override val proposed: ProposedSignIn? get() = prefs.read(proposedKey)?.let { encoded ->
         vault.open(encoded)?.let { runCatching { WindmillJson.decodeFromString<SavedSession>(it) }
-            .onFailure { telemetry.failure("session_decode", java.io.IOException("The proposed account could not be read.")) }
+            .onFailure { telemetry.failure("session_decode", IOException("The proposed account could not be read.")) }
             .getOrNull()?.let { saved -> ProposedSignIn(saved.secret, saved.user) } }
     }
 
     override fun stage(proposed: ProposedSignIn) {
         val encoded = vault.seal(WindmillJson.encodeToString(SavedSession.serializer(), SavedSession(proposed.secret, proposed.user)))
-            ?: throw java.io.IOException("The proposed session could not be sealed.")
+            ?: throw IOException("The proposed session could not be sealed.")
         persist(mapOf(proposedKey to encoded))
     }
 
@@ -799,20 +796,32 @@ class PrefsSessions(
 
     override fun commit(secret: String, user: User) {
         val value = WindmillJson.encodeToString(SavedSession.serializer(), SavedSession(secret, user))
-        val encoded = vault.seal(value) ?: throw java.io.IOException("The session could not be sealed.")
+        val encoded = vault.seal(value) ?: throw IOException("The session could not be sealed.")
         persist(mapOf(bundleKey to encoded, proposedKey to null, signOutKey to null, signOutIntentKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
     }
 
-    override fun read(): String? = if (unavailable) null else if (prefs.read(bundleKey) != null) saved()?.secret else kept(secretKey)
-
-    override fun write(secret: String) {
-        val encoded = vault.seal(secret) ?: return
-        persist(mapOf(secretKey + sealed to encoded, secretKey to null, bundleKey to null))
+    override fun read(): String? {
+        if (unavailable) return null
+        if (prefs.read(bundleKey) != null) return saved()?.secret
+        if (legacyRefused) return null
+        return kept(secretKey)
     }
 
-    override fun user(): User? = if (unavailable) null else if (prefs.read(bundleKey) != null) saved()?.user else kept(userKey)
-        ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.onFailure { telemetry.failure("session_user_decode", it) }.getOrNull() }
+    override fun write(secret: String) {
+        val encoded = vault.seal(secret) ?: throw IOException("The session could not be sealed.")
+        persist(mapOf(secretKey + sealed to encoded, secretKey to null, bundleKey to null))
+        legacyRefused = false
+    }
+
+    override fun user(): User? {
+        if (unavailable) return null
+        if (prefs.read(bundleKey) != null) return saved()?.user
+        if (legacyRefused) return null
+        return kept(userKey)?.let {
+            runCatching { WindmillJson.decodeFromString<User>(it) }.onFailure { telemetry.failure("session_user_decode", it) }.getOrNull()
+        }
+    }
 
     override fun remember(user: User) {
         val secret = read()
@@ -824,16 +833,24 @@ class PrefsSessions(
         persist(mapOf(
             bundleKey to null, proposedKey to null, signOutKey to null, signOutIntentKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
+        legacyRefused = false
     }
 
     private fun seal(key: String, plain: String) {
-        val wrapped = vault.seal(plain) ?: return
+        val wrapped = vault.seal(plain) ?: throw IOException("The session value could not be sealed.")
         persist(mapOf(key + sealed to wrapped, key to null))
     }
 
     private fun kept(key: String): String? {
         prefs.read(key)?.let { fromBefore ->
-            try { seal(key, fromBefore) } catch (failure: Exception) { telemetry.failure("session_migrate", failure); return null }
+            try { seal(key, fromBefore) }
+            catch (failure: Exception) {
+                legacyRefused = true
+                // A failed legacy migration must not block clear() or sign-out.
+                unavailable = false
+                telemetry.failure("session_migrate", IOException("The saved session could not be migrated."))
+                return null
+            }
             return fromBefore
         }
         return prefs.read(key + sealed)?.let { vault.open(it) }
@@ -867,7 +884,7 @@ private class SharedPrefsValues(context: Context) : KeptValues {
         for ((key, value) in values) {
             if (value == null) edit.remove(key) else edit.putString(key, value)
         }
-        if (!edit.commit()) throw java.io.IOException("The session could not be saved.")
+        if (!edit.commit()) throw IOException("The session could not be saved.")
     }
 }
 

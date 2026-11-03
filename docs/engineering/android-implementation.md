@@ -938,8 +938,7 @@ Task 14 is on main as `ee70d13c`, with ten canonical frames marked in production
 fixture repair uses the immediate Main dispatcher and pumps Main at controlled read/transport-entry
 barriers, retaining ten-second bounds and exact one-close/two-question/distinct-chat assertions.
 All 27 cases pass in each variant and remain green in the combined gate. The existing discard
-sentence says `1 set`. The Target-summary overlap fix is human-postponed; proposal `1675:10931`
-remains unapproved, and the known 320 dp / 200% overlap is outside this release's scope.
+sentence says `1 set`.
 
 UI accounting requires each selected method to start and finish exactly once. Only the named
 finite-load fixture probe may skip with its exact missing-fixture reason; requesting the fixture
@@ -1070,7 +1069,7 @@ Native evidence uses the original 45-path freeze
 captures cover normal, per-set, keyboard and unsaved states. At 320dp/200%, focused `−12.5` and
 valid `0` remain readable with identical bounds, the unit below, native minus and pinned Done.
 Whole-buffer comma-decimal replacement and duplicate rejection are established; native partial
-selection is not. The broader Target-summary layout remains unchanged and postponed.
+selection is not.
 
 A staged custom movement followed by outer Cancel retains the full SQL baseline. The remaining
 Save-only proof retains all post-Save artifacts before assertions: all six SQL tables match the
@@ -1149,8 +1148,8 @@ Main `b40dd5e0` contains tasks 18, 22, 23, 24, 45, 51 and 52 as separate task co
 33 of the 42 active tasks are on main; tasks 19, 25 and 50 followed this batch. The canonical shipped frames and complete
 Weigh-in/Connected-log flows are marked In production; mixed Routines/Workout parents and
 unfinished creation, History and Coach states retain their own statuses. Shell A4 reuses the
-approved headerless rack without changing its surrounding composition. The Target-summary
-proposal and postponed Coach actions remain outside the release scope.
+approved headerless rack without changing its surrounding composition. Postponed Coach actions
+remain outside the release scope.
 
 The web workflow retains the complete pinned `b40dd5e0` artifact, then holds before rsync because
 the live backend does not admit the new client interval. No compatibility cutoff is activated.
@@ -1160,3 +1159,19 @@ five affected tests pass. Python HTTP probes use the configured API-contract dir
 backend-only layouts; seven affected tests pass through the actual configured CTest target.
 These support fixes change test/build admission and stale copy, not app behavior. Their main CI
 reruns remain required; the complete supported iOS run `40789910187` is green.
+
+## Package 115 · Faint ink and modal sheet width
+
+Android Gym's Dark `inkFaint` is `#898E88`; Daylight remains `#625C58`.
+The role stays below `inkDim` in contrast and clears 4.5:1 on canvas, surface and raised
+grounds in both appearances. The workout page's row numbers and plan caption retain their
+existing type and semantics.
+
+`WindmillSheet` supplies `sheetMaxWidth = 560.dp` to Material, covering every Gym and Shell
+modal sheet. Narrow windows retain full-width sheets; wider windows centre the bounded sheet.
+The existing shape, drag handle and vertical sizing remain in place.
+
+F2's Target-summary layout remains deferred until board 02.26's spacing and reading-order
+values are available. All set wording remains unchanged pending S1. Task
+[115](../../androidgym_tasks/115-faint-ink-and-sheet-width.md) holds the remaining cross-surface
+faint-ink drift and sheet-handle observations.

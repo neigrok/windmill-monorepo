@@ -20,6 +20,7 @@ import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.WorkoutEvent
 import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.gym.presentation.WorkoutMoment
+import works.windmill.gym.presentation.WorkoutRack
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.domain.kit.Id
 import works.windmill.gym.domain.sync.Exercise as DomainExercise
@@ -79,10 +80,7 @@ class WorkoutControlsTests {
         assertEquals("not json at all", file.readText())
     }
 
-    // The bytes an earlier app version wrote: a live session on a plan in the scalar `sets · reps ·
-    // weightKg` shape and a set carrying the retired delivery fields. Opening rewrites the plan on the
-    // way in and reads past the fields this version no longer holds; the next flush writes this
-    // version's shape.
+    // The earlier-version fixture has scalar plan targets and retired delivery fields; opening preserves its values and flush writes the current shape.
     @Test
     fun aDocumentWrittenByAnEarlierVersionIsRewrittenOnOpenAndNothingIsLost() {
         val file = controlsFile()
@@ -97,29 +95,58 @@ class WorkoutControlsTests {
             PlanEntry(exerciseId = "chin-up", sets = List(2) { SetTarget() }),
             PlanEntry(exerciseId = "face-pull"),
         ))
+        val original = file.readText()
+        val set = TrainingSet("set_z", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 5100)
         fun WorkoutControls.assertWhole() {
-            assertEquals("ses_9", session?.id)
-            assertEquals(plan, session?.plan)
+            assertEquals(Session("ses_9", 5000, routineId = "rt_1", plan = plan), session)
+            assertEquals(listOf(set), sets)
+            assertEquals(WorkoutControls.Entry(set, "ses_9"), entry("set_z"))
             assertEquals(listOf("bench-press"), order)
-            assertEquals(listOf("set_z"), sets.map { it.id })
+            assertNull(chosenMovement)
+            assertFalse(loggerHidden)
         }
 
         val controls = WorkoutControls(file)
         controls.assertWhole()
         assertTrue(controls.writable)
-        assertTrue("not written back until the next flush", file.readText().contains("\"sets\":3"))
+        assertEquals("not written back until the next flush", original, file.readText())
 
         controls.flush()
-        val written = file.readText()
-        assertFalse(written.contains("\"sets\":3") || written.contains("\"sets\":2"))
-        assertFalse(written.contains("needsPush") || written.contains("unclaimed"))
-        assertTrue(written.contains("\"sets\":[{\"reps\":8,\"weightKg\":60.0}"))
-        assertTrue(written.contains("{\"exerciseId\":\"face-pull\"}"))
+        controls.assertWhole()
+        val expected = """{
+            "queues": {
+                "anon": {
+                    "session": {
+                        "id": "ses_9", "startedAt": 5000, "routineId": "rt_1",
+                        "plan": {
+                            "routine": "Push A",
+                            "entries": [
+                                {"exerciseId": "bench-press", "sets": [
+                                    {"reps": 8, "weightKg": 60.0},
+                                    {"reps": 8, "weightKg": 60.0},
+                                    {"reps": 8, "weightKg": 60.0}
+                                ]},
+                                {"exerciseId": "chin-up", "sets": [{}, {}]},
+                                {"exerciseId": "face-pull"}
+                            ]
+                        }
+                    },
+                    "entries": {
+                        "set_z": {
+                            "set": {"id": "set_z", "exerciseId": "bench-press", "weightKg": 60.0,
+                                "reps": 8, "completedAt": 5100},
+                            "sessionId": "ses_9"
+                        }
+                    },
+                    "order": ["bench-press"]
+                }
+            }
+        }"""
+        assertEquals(diskJson.parseToJsonElement(expected), diskJson.parseToJsonElement(file.readText()))
         WorkoutControls(file).assertWhole()
     }
 
-    // A row this build cannot read costs that row and never the document around it: a set beside an
-    // unreadable one is still held, and an unreadable live session leaves its sets in place.
+    // A row this build cannot read costs that row and never the document around it: a set beside an unreadable one is still held, and an unreadable live session leaves its sets in place.
     @Test
     fun oneUnreadableRowCostsThatRowAndNeverTheDocument() {
         val file = controlsFile()
@@ -254,7 +281,7 @@ class WorkoutControlsTests {
 
         restored.adopt("other")
         assertNull(restored.workout.rack)
-        assertEquals(emptyMap<String, works.windmill.gym.presentation.WorkoutRack>(), restored.workout.editedRacks)
+        assertEquals(emptyMap<String, WorkoutRack>(), restored.workout.editedRacks)
         restored.adopt(null)
         assertEquals(editedRow.weightKg, restored.workout.rack!!.weightKg, 0.0)
         restored.close("first")
@@ -262,7 +289,7 @@ class WorkoutControlsTests {
         restored.choose("row")
         restored.prepare(unread, moment, true) { "set_${++id}" }
         assertEquals(listOf(20.0, 5, false), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
-        assertEquals(emptyMap<String, works.windmill.gym.presentation.WorkoutRack>(), restored.workout.editedRacks)
+        assertEquals(emptyMap<String, WorkoutRack>(), restored.workout.editedRacks)
         assertEquals(restored.workout, WorkoutControls(file).workout)
     }
 

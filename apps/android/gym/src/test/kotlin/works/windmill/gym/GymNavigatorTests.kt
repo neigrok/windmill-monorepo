@@ -1,21 +1,27 @@
 package works.windmill.gym
 
+import android.content.Context
+import java.util.UUID
 import android.provider.Settings
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
+import androidx.compose.material3.TextField
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
@@ -24,6 +30,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
@@ -34,6 +42,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -62,22 +71,22 @@ class GymNavigatorTests {
         assertEquals(BackMeans.HideTheWorkout, workout.means)
         assertEquals(Frame.Workout(Tab.Routines), workout.frame)
         assertEquals(Standing(Tab.Routines, emptyList(), building = false, logger = false), workout.afterBack())
-        val notesOverIt = Standing(Tab.Log, listOf(Away.Notes), building = false, logger = true)
+        val notesOverIt = Standing(Tab.Log, listOf(Entry("notes", Away.Notes)), building = false, logger = true)
         assertEquals(BackMeans.PopOnePushedScreen, notesOverIt.means)
         assertEquals(Frame.Workout(Tab.Log), notesOverIt.afterBack()!!.frame)
     }
 
     @Test
     fun backIsCancelInTheEditorAndPopsOneScreenElsewhere() {
-        val editing = Standing(Tab.Routines, listOf(Away.Notes), building = true, logger = false)
+        val editing = Standing(Tab.Routines, listOf(Entry("notes", Away.Notes)), building = true, logger = false)
         assertEquals(BackMeans.LeaveTheDraft, editing.means)
         assertEquals(Frame.Draft(Tab.Routines), editing.frame)
-        assertEquals(Frame.Pushed(Tab.Routines, Away.Notes, 1, null), editing.afterBack()!!.frame)
-        val deep = Standing(Tab.Coach, listOf(Away.Threads, Away.Thread("t1"), Away.Notes, Away.Bodyweight), building = false, logger = false)
+        assertEquals(Frame.Pushed(Tab.Routines, Entry("notes", Away.Notes), 1, null), editing.afterBack()!!.frame)
+        val deep = Standing(Tab.Coach, listOf(Entry("threads", Away.Threads), Entry("thread", Away.Thread("t1")), Entry("notes", Away.Notes), Entry("weight", Away.Bodyweight)), building = false, logger = false)
         assertEquals(BackMeans.PopOnePushedScreen, deep.means)
-        assertEquals(Frame.Pushed(Tab.Coach, Away.Bodyweight, 4, Away.Notes), deep.frame)
+        assertEquals(Frame.Pushed(Tab.Coach, Entry("weight", Away.Bodyweight), 4, Away.Notes), deep.frame)
         assertEquals("one at a time, never the whole stack",
-            Frame.Pushed(Tab.Coach, Away.Notes, 3, Away.Thread("t1")), deep.afterBack()!!.frame)
+            Frame.Pushed(Tab.Coach, Entry("notes", Away.Notes), 3, Away.Thread("t1")), deep.afterBack()!!.frame)
     }
 
     @Test
@@ -97,9 +106,9 @@ class GymNavigatorTests {
         assertFalse("a workout takes the whole frame", Frame.Workout(Tab.Routines).railStands)
         assertFalse("so does a draft", Frame.Draft(Tab.Coach).railStands)
         assertFalse("and a pushed screen, a finished workout included",
-            Frame.Pushed(Tab.Log, Away.Bodyweight, 1, null).railStands)
-        assertTrue(Frame.Pushed(Tab.Routines, Away.Coach(), 1, null).railStands)
-        assertTrue(Frame.Pushed(Tab.Routines, Away.Thread("t1"), 2, Away.Threads).railStands)
+            Frame.Pushed(Tab.Log, Entry("weight", Away.Bodyweight), 1, null).railStands)
+        assertTrue(Frame.Pushed(Tab.Routines, Entry("coach", Away.Coach()), 1, null).railStands)
+        assertTrue(Frame.Pushed(Tab.Routines, Entry("thread", Away.Thread("t1")), 2, Away.Threads).railStands)
     }
 
     @Test
@@ -117,8 +126,20 @@ class GymNavigatorTests {
 
     @Test
     fun retiredSettingsIsRemovedWithoutLosingOtherRoutes() {
-        val raw = """[{"type":"works.windmill.gym.Away.Notes"},{"type":"works.windmill.gym.Away.Settings"},{"type":"works.windmill.gym.Away.Connections"}]"""
-        assertEquals(listOf(Away.Notes, Away.Connections), awaySaver(Telemetry.None).restore(raw))
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val legacy = """[{"type":"works.windmill.gym.Away.Notes"},{"type":"works.windmill.gym.Away.Settings"},{"type":"works.windmill.gym.Away.Connections"}]"""
+        val current = """[{"id":"notes","away":{"type":"works.windmill.gym.Away.Notes"}},{"id":"settings","away":{"type":"works.windmill.gym.Away.Settings"}},{"id":"connections","away":{"type":"works.windmill.gym.Away.Connections"}}]"""
+        val saver = awaySaver(telemetry)
+        val migrated = saver.restore(legacy)!!
+        assertEquals(listOf(Away.Notes, Away.Connections), migrated.map { it.away })
+        assertEquals(2, migrated.map { it.id }.distinct().size)
+        assertNotEquals(migrated.map { it.id }, saver.restore(legacy)!!.map { it.id })
+        assertEquals(listOf(Entry("notes", Away.Notes), Entry("connections", Away.Connections)), saver.restore(current))
+        assertEquals(emptyList<String>(), failures)
     }
 
     @Test
@@ -128,10 +149,17 @@ class GymNavigatorTests {
             override fun event(name: String, properties: Map<String, String>) = Unit
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
-        for (raw in listOf("""[{"type":"unknown"}]""", "null", "not json")) {
-            assertEquals(emptyList<Away>(), awaySaver(telemetry).restore(raw))
+        val malformed = listOf(
+            """[{"type":"unknown"}]""", "null", "not json",
+            """[{"id":"x","away":{"type":"unknown"}}]""",
+            """[{"away":{"type":"works.windmill.gym.Away.Notes"}}]""",
+            """[{"id":"","away":{"type":"works.windmill.gym.Away.Notes"}}]""",
+            """[{"id":"x","away":{"type":"works.windmill.gym.Away.Notes"}},{"id":"x","away":{"type":"works.windmill.gym.Away.Bodyweight"}}]""",
+        )
+        for (raw in malformed) {
+            assertEquals(emptyList<Entry>(), awaySaver(telemetry).restore(raw))
         }
-        assertEquals(List(3) { "gym.restoreNavigation" }, failures)
+        assertEquals(List(malformed.size) { "gym.restoreNavigation" }, failures)
     }
 
     @Test
@@ -157,7 +185,7 @@ class GymNavigatorTests {
 
     @Test
     fun removeAnimationsPreviewsNothingAndPopsWithACut() {
-        Settings.Global.putFloat(ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver,
+        Settings.Global.putFloat(ApplicationProvider.getApplicationContext<Context>().contentResolver,
             Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
         bodyweight { _ ->
             startGesture()
@@ -251,15 +279,14 @@ class GymNavigatorTests {
 
     @Test
     fun theSameScreenAtTwoDepthsIsTwoFramesWithTheirOwnSavedState() {
-        val navigator = GymNavigator(away = listOf(Away.Notes, Away.Bodyweight))
+        val navigator = GymNavigator(entries = listOf(Away.Notes, Away.Bodyweight).map(::Entry))
         val seen = mutableListOf<String>()
         compose.setContent {
             activity = LocalActivity.current as ComponentActivity
             val states = rememberSaveableStateHolder()
-            GymStage(navigator.standing(building = false, logger = false), navigator.guards,
-                onBack = { navigator.pop() }) { frame ->
+            GymStage(navigator.standing(false, false), navigator.guards, { navigator.pop() }) { frame ->
                 states.SaveableStateProvider(frame.key) {
-                    val opened = rememberSaveable { frame.key }
+                    val opened = rememberSaveable { frame.label }
                     Text(opened)
                     SideEffect { seen += opened }
                 }
@@ -269,8 +296,116 @@ class GymNavigatorTests {
         compose.runOnIdle { navigator.reset(listOf(Away.Bodyweight)) }
         compose.onNodeWithText("away:1:bodyweight").assertExists()
         compose.onNodeWithText("away:2:bodyweight").assertDoesNotExist()
-        assertEquals("both frames stood on the stage together, each with its own state",
-            listOf("away:2:bodyweight", "away:1:bodyweight"), seen.distinct())
+        assertEquals(listOf("away:2:bodyweight", "away:1:bodyweight"), seen.distinct())
+    }
+
+    @Test
+    fun successiveVisitsKeepDifferentSavedValues() {
+        val navigator = GymNavigator(entries = listOf(Entry(Away.NoteEditor(null, ""))))
+        val firstKey = navigator.standing(false, false).frame.key
+        val values = mutableMapOf<String, String>()
+        compose.setContent {
+            activity = LocalActivity.current as ComponentActivity
+            val holder = rememberSaveableStateHolder()
+            GymStage(navigator.standing(false, false), navigator.guards, { navigator.pop() }) { frame ->
+                holder.SaveableStateProvider(frame.key) {
+                    val value = rememberSaveable { UUID.randomUUID().toString() }
+                    SideEffect { values[frame.key] = value }
+                }
+            }
+        }
+        compose.runOnIdle { navigator.pop() }
+        compose.waitForIdle()
+        compose.runOnIdle { navigator.push(Away.NoteEditor(null, "")) }
+        compose.runOnIdle {
+            val secondKey = navigator.standing(false, false).frame.key
+            assertNotEquals(firstKey, secondKey)
+            assertNotEquals(values.getValue(firstKey), values.getValue(secondKey))
+        }
+    }
+
+    @Test
+    fun anAnimatedPopRetiresStateBeforeRecreation() {
+        Settings.Global.putFloat(ApplicationProvider.getApplicationContext<Context>().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        val navigator = GymNavigator()
+        var probe by mutableStateOf<String?>(null)
+        val restore = StateRestorationTester(compose)
+        restore.setContent {
+            val states = rememberFrameStates("a", navigator.ownedStateKeys(false))
+            GymStage(navigator.standing(false, false), navigator.guards, { navigator.pop() }) { frame ->
+                if (frame is Frame.Pushed) SavedNavigationField(states.holder, frame.key)
+            }
+            probe?.let { SavedNavigationField(states.holder, it) }
+        }
+        compose.runOnIdle { navigator.push(Away.NoteEditor(null, "")) }
+        compose.waitForIdle()
+        val popped = navigator.entries.single().stateKey
+        compose.onNode(hasSetTextAction()).performTextReplacement("Typed note")
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { navigator.pop() }
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithText("Typed note").assertExists()
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        compose.onNodeWithText("Typed note").assertDoesNotExist()
+        restore.emulateSavedInstanceStateRestore()
+        compose.runOnIdle { probe = popped }
+        compose.onNode(hasSetTextAction()).assertTextEquals("fresh")
+    }
+
+    @Test
+    fun ownedStateRetiresExactlyOnceAcrossPopResetAndDraftClose() {
+        val removed = mutableListOf<Any>()
+        val states = FrameStates(object : SaveableStateHolder {
+            @Composable override fun SaveableStateProvider(key: Any, content: @Composable () -> Unit) { content() }
+            override fun removeState(key: Any) { removed += key }
+        })
+        val navigator = GymNavigator()
+        fun keep(draft: Boolean = false) {
+            states.keep(navigator.ownedStateKeys(draft))
+        }
+        navigator.push(Away.Notes)
+        val first = navigator.entries.single().stateKey
+        keep()
+        navigator.push(Away.Bodyweight)
+        val second = navigator.entries.last().stateKey
+        keep()
+        navigator.pop()
+        keep()
+        keep()
+        navigator.push(Away.Coach())
+        navigator.push(Away.Threads)
+        val retired = navigator.entries.map { it.stateKey }
+        keep()
+        navigator.reset(listOf(Away.Notes))
+        keep()
+        keep(draft = true)
+        keep()
+        assertEquals(listOf(second) + retired + listOf("draft"), removed)
+        assertEquals(first, retired.first())
+    }
+
+    @Test
+    fun saverRetainsVisitIdsAndTheirTypedState() {
+        val scope = SaverScope { true }
+        val original = GymNavigator(entries = listOf(Entry(Away.Notes), Entry(Away.NoteEditor(null, ""))))
+        val saver = GymNavigator.saver(Telemetry.None)
+        val saved = with(saver) { scope.save(original) }!!
+        assertEquals(original.entries, saver.restore(saved)!!.entries)
+        val restore = StateRestorationTester(compose)
+        restore.setContent {
+            val navigator = rememberGymNavigator(Telemetry.None)
+            val holder = rememberFrameStates("a", navigator.ownedStateKeys(false)).holder
+            if (navigator.entries.isEmpty()) SideEffect { navigator.push(Away.NoteEditor(null, "")) }
+            else holder.SaveableStateProvider(navigator.standing(false, false).frame.key) {
+                var typed by rememberSaveable { mutableStateOf("") }
+                TextField(typed, { typed = it })
+            }
+        }
+        compose.onNode(hasSetTextAction()).performTextReplacement("Typed note")
+        restore.emulateSavedInstanceStateRestore()
+        compose.onNode(hasSetTextAction()).assertTextEquals("Typed note")
     }
 
     @Test
@@ -278,11 +413,11 @@ class GymNavigatorTests {
         val order = mutableListOf<String>()
         compose.setContent {
             activity = LocalActivity.current as ComponentActivity
-            val navigator = remember { GymNavigator(away = listOf(Away.Notes, Away.Bodyweight)) }
+            val navigator = remember { GymNavigator(entries = listOf(Away.Notes, Away.Bodyweight).map(::Entry)) }
             GymStage(navigator.standing(building = false, logger = false), navigator.guards,
                 onBack = { order += "back"; navigator.pop() }) { frame ->
-                Text(frame.key)
-                if (frame is Frame.Pushed) KeepOnBack { order += "kept ${frame.key}" }
+                Text(frame.label)
+                if (frame is Frame.Pushed) KeepOnBack { order += "kept ${frame.label}" }
             }
         }
         startGesture()
@@ -299,10 +434,10 @@ class GymNavigatorTests {
         var drawn by mutableStateOf("first")
         compose.setContent {
             activity = LocalActivity.current as ComponentActivity
-            val navigator = remember { GymNavigator(away = listOf(Away.Notes)) }
+            val navigator = remember { GymNavigator(entries = listOf(Entry(Away.Notes))) }
             val seen = drawn
             fun goBack(means: BackMeans) { heard += "$seen ${means.name}" }
-            GymStage(navigator.standing(building = false, logger = false), navigator.guards, onBack = ::goBack) { frame -> Text(frame.key) }
+            GymStage(navigator.standing(building = false, logger = false), navigator.guards, onBack = ::goBack) { frame -> Text(frame.label) }
         }
         compose.runOnIdle { drawn = "second" }
         compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
@@ -332,10 +467,10 @@ class GymNavigatorTests {
         this.guarded = guarded
         compose.setContent {
             activity = LocalActivity.current as ComponentActivity
-            val navigator = remember { GymNavigator(away = away) }
+            val navigator = remember { GymNavigator(entries = away.map(::Entry)) }
             GymStage(navigator.standing(building = false, logger = false), navigator.guards,
                 onBack = { navigator.pop(); onPop() }) { frame ->
-                Text(frame.key)
+                Text(frame.label)
                 if (frame is Frame.Pushed) {
                     BackHandler(enabled = busy) {}
                     BackGuard(enabled = this.guarded, ask = onAsk)
@@ -365,7 +500,7 @@ class GymNavigatorTests {
                 room.store.bodyweight.weighIn(day.toString(), 82.4)
             }
             room.store.observeEngine()
-            val content: @androidx.compose.runtime.Composable () -> Unit = {
+            val content: @Composable () -> Unit = {
                 activity = LocalActivity.current as ComponentActivity
                 if (showing) CompositionLocalProvider(LocalTelemetry provides telemetry) {
                     GymMaterial { GymRoom(room.account(), room.store) }
@@ -385,5 +520,16 @@ class GymNavigatorTests {
             scope.cancel()
             room.close()
         }
+    }
+}
+
+private val Frame.label: String
+    get() = if (this is Frame.Pushed) "away:$position:${away.screen}" else key
+
+@Composable
+private fun SavedNavigationField(holder: SaveableStateHolder, stateKey: String) {
+    holder.SaveableStateProvider(stateKey) {
+        var value by rememberSaveable(key = "typed") { mutableStateOf("fresh") }
+        TextField(value, { value = it })
     }
 }

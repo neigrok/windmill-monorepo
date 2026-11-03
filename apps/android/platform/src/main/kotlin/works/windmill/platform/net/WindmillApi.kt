@@ -57,22 +57,28 @@ class WindmillApi(
     suspend inline fun <reified Reply> get(path: String, operation: String = "http_request"): Reply = send("GET", path, operation = operation)
 
     suspend inline fun <reified Reply> send(method: String, path: String, body: Any? = null, timeoutSeconds: Long? = null, operation: String = "http_request"): Reply =
-        exchange<Reply>(method, path, body, timeoutSeconds, operation).reply
+        exchange(method, path, body, timeoutSeconds, operation) { decode<Reply>(it.body) }
 
     // The session is minted only as a Set-Cookie.
     suspend inline fun <reified Reply> sendCapturingSession(
         method: String,
         path: String,
         body: Any? = null,
-    ): Captured<Reply> = exchange(method, path, body, null, "auth_request")
+    ): Captured<Reply> = exchange(method, path, body, null, "auth_request") { answer ->
+        val session = sessionCookie(answer.headers)?.takeIf { it.isNotEmpty() } ?: throw WindmillApiException.Malformed
+        Captured(decode<Reply>(answer.body), session)
+    }
 
     @PublishedApi
-    internal suspend inline fun <reified Reply> exchange(method: String, path: String, body: Any?, timeoutSeconds: Long?, operation: String): Captured<Reply> {
+    internal suspend fun <Reply> exchange(
+        method: String, path: String, body: Any?, timeoutSeconds: Long?, operation: String,
+        read: (Answer) -> Reply,
+    ): Reply {
         val diagnostics = RequestDiagnostics()
         return try {
             val answer = perform(method, path, encode(body), timeoutSeconds, diagnostics)
             diagnostics.phase = NetworkPhase.Decode
-            Captured(decode(answer.body), sessionCookie(answer.headers))
+            read(answer)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -219,15 +225,15 @@ class WindmillApi(
     internal class Answer(val code: Int, val body: String, val headers: Headers)
 
     companion object {
-        // Empty or unparseable means production.
+        // Empty means production; a configured host must be an http(s) URL.
         fun resolvedBaseUrl(configured: String): HttpUrl {
             if (configured.isBlank()) return "https://windmill.works".toHttpUrl()
-            return configured.toHttpUrlOrNull() ?: "https://windmill.works".toHttpUrl()
+            return configured.toHttpUrlOrNull() ?: throw IllegalArgumentException("windmill.apiBase is not an http(s) URL")
         }
     }
 }
 
-data class Captured<Reply>(val reply: Reply, val session: String?)
+data class Captured<Reply>(val reply: Reply, val session: String)
 
 @Serializable
 data class Refusal(
@@ -259,7 +265,7 @@ sealed class WindmillApiException(cause: Throwable? = null) : Exception(cause) {
             is Transport -> "That connection was interrupted. Try again."
             is Unexpected -> "That didn’t go through"
             is Refused -> if (status == 426) "Update Windmill to keep syncing. Your work is saved on this phone."
-                else refusal.message ?: "That didn’t go through"
+                else refusal.message?.takeIf { it.isNotBlank() } ?: "That didn’t go through"
             is Malformed -> "That didn’t go through"
         }
 }

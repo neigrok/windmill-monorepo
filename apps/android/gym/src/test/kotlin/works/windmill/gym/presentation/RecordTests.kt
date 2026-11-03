@@ -31,7 +31,7 @@ class RecordTests {
             val other = set("other", kg, reps, today, exerciseId = chin.id)
             val details = if (combined) listOf(session("mixed", today, listOf(zero, other)))
                 else listOf(session("zero", today - 86_400_000, listOf(zero)), session("other", today, listOf(other)))
-            val page = Record.page(MovementRecord.of(chin, details, today), today, StatsProgress.of(details, today).movement(chin.id))
+            val page = Record.page(MovementRead(MovementRecord.of(chin, details, today), StatsProgress.of(details, today).movement(chin.id), today), today)
             assertEquals(Record.Tile("Most reps", "12", "reps · no added load", false), page.tiles.last())
         }
     }
@@ -78,7 +78,7 @@ class RecordTests {
         assertEquals(Record.Page("Back Squat", "Barbell",
             listOf(Record.Tile("Best e1RM", "116.7", "kg · today", true), Record.Tile("Heaviest", "120", "kg · 12 reps", false)),
             emptyList(),
-            listOf(Record.Day("today", "100 × 5 · 120 × 12")), null, null, true), Record.page(record, today, progress))
+            listOf(Record.Day("today", "100 × 5 · 120 × 12")), null, null, true), Record.page(MovementRead(record, progress, today), today))
     }
 
     // The phone's copy of an account it has not pulled yet is partial: it lists the sets it holds and claims nothing.
@@ -90,26 +90,26 @@ class RecordTests {
         assertEquals(2, unread.estimates.size)
         assertEquals(Record.Page("Back Squat", "Barbell", emptyList(), emptyList(),
             listOf(Record.Day("today", "110 × 5"), Record.Day("13 Jul", "100 × 5")), null, null, false),
-            Record.page(MovementRecord.of(squat, history, today), today, unread))
+            Record.page(MovementRead(MovementRecord.of(squat, history, today), unread, today), today))
         assertEquals(Record.Page("Back Squat", "Barbell", emptyList(), emptyList(), emptyList(), null, null, false),
-            Record.page(MovementRecord(squat), today, StatsProgress.of(emptyList(), today, complete = false).movement(squat.id)))
+            Record.page(MovementRead(MovementRecord(squat), StatsProgress.of(emptyList(), today, complete = false).movement(squat.id), today), today))
         assertEquals(Record.Page("Back Squat", "Barbell",
             listOf(Record.Tile("Best e1RM", "128.3", "kg · today", true), Record.Tile("Heaviest", "110", "kg · 5 reps", false)),
             listOf(Record.Best("100 × 5", "e1RM 116.7", "13 Jul")),
             listOf(Record.Day("today", "110 × 5"), Record.Day("13 Jul", "100 × 5")), null, null, true),
-            Record.page(MovementRecord.of(squat, history, today), today, StatsProgress.of(history, today).movement(squat.id)))
+            Record.page(MovementRead(MovementRecord.of(squat, history, today), StatsProgress.of(history, today).movement(squat.id), today), today))
     }
 
     @Test
     fun signedFactsAndSuccessfulUntrainedDataNeverBecomeZeroEstimates() {
         val detail = session("assisted", today, listOf(set("assistance", -20.0, 8, today, exerciseId = chin.id)))
         val movement = StatsProgress.of(listOf(detail), today).movement(chin.id)
-        val page = Record.page(MovementRecord.of(chin, listOf(detail), today), today, movement)
+        val page = Record.page(MovementRead(MovementRecord.of(chin, listOf(detail), today), movement, today), today)
         assertEquals(listOf(Record.Tile("Heaviest", "−20", "kg · 8 reps", false)), page.tiles)
         assertNull(page.noEstimate)
         assertNull(page.nothingYet)
         assertEquals("Nothing logged for this movement yet. The first set you log lands here.",
-            Record.page(MovementRecord(chin), today, StatsProgress.empty(today).movement(chin.id)).nothingYet)
+            Record.page(MovementRead(MovementRecord(chin), StatsProgress.empty(today).movement(chin.id), today), today).nothingYet)
     }
     @Test
     fun earlierRecordsUseTheSharedStatedStepsWithoutRepeatingTheStandingBest() {
@@ -119,12 +119,11 @@ class RecordTests {
         }
         val progress = StatsProgress.of(rows, today).movement(squat.id)
         assertEquals(listOf("workout0", "workout2"), progress.earlierRecords.map { it.id })
-        val page = Record.page(MovementRecord.of(squat, rows, today), today, progress)
+        val page = Record.page(MovementRead(MovementRecord.of(squat, rows, today), progress, today), today)
         assertEquals(listOf(Record.Best("51.5 × 4", "e1RM 58.4", "10 Aug"),
             Record.Best("46 × 8", "e1RM 58.3", "8 Aug")), page.records)
         assertEquals(Record.Tile("Best e1RM", "62.3", "kg · today", true), page.tiles.first())
-        assertEquals(emptyList<Record.Best>(), Record.page(MovementRecord.of(squat, rows.take(2), today), today,
-            StatsProgress.of(rows.take(2), today).movement(squat.id)).records)
+        assertEquals(emptyList<Record.Best>(), Record.page(MovementRead(MovementRecord.of(squat, rows.take(2), today), StatsProgress.of(rows.take(2), today).movement(squat.id), today), today).records)
     }
 
     @Test
@@ -138,7 +137,7 @@ class RecordTests {
         val zone = ZoneId.of("UTC")
 
         assertEquals(listOf("slight", "beyond"), progress.newBests.map { it.sessionId })
-        val page = Record.page(MovementRecord.of(squat, rows, today), today, progress.movement(squat.id))
+        val page = Record.page(MovementRead(MovementRecord.of(squat, rows, today), progress.movement(squat.id), today), today)
         assertEquals(listOf(Record.Best("115 × 8", "e1RM 145.7", "4 Aug"), Record.Best("100 × 10", "e1RM 133.3", "28 Jul")), page.records)
         val timeline = logTimeline(rows.map { SessionSummary(it.session, it.sets, listOf(squat)) }, progress, emptyList(), today + week, zone)
         assertTrue("the log states it once, by its woven moment", timeline.any { it is LogEntry.Moment.Best && it.best.sessionId == "slight" })

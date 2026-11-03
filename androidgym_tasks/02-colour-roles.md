@@ -29,7 +29,7 @@
 | onAccent | #1B1408 | #FFFFFF |
 | ink | #F1F0EB | #1A1918 |
 | inkDim | #B6B5AF | #4C4744 |
-| inkFaint | #727771 | #625C58 |
+| inkFaint | #898E88 | #625C58 |
 | setDone | #9AA859 | #7D8C43 |
 | prInk | #D9B04C | #6E5217 |
 | prSoft | #D9B04C at 15% | #A17822 at 14% |

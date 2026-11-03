@@ -4,6 +4,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -438,6 +440,15 @@ class ShareWithCoachTests {
         compose.onNodeWithText("Save a routine").assertDoesNotExist()
         compose.onNodeWithText("Share this workout").assertDoesNotExist()
         compose.onNodeWithText("Discard").assertDoesNotExist()
+    }
+
+    @Test
+    fun performedIsAHeadingInBothReceiptBranches() {
+        receipt()
+        listOf(ordinary, short).forEach { finished ->
+            show(finished)
+            compose.onNode(hasText("Performed") and isHeading()).assertExists()
+        }
     }
 
     @Test
