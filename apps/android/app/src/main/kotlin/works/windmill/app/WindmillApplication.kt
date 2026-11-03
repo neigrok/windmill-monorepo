@@ -10,6 +10,9 @@ import works.windmill.gym.coach.onboarding.CoachOnboardingHttp
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.onboarding.CoachOnboardingStore
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
+import works.windmill.gym.coach.turn.CoachTurns
+import works.windmill.gym.coach.turn.TurnLease
+import works.windmill.gym.coach.turn.TurnLeaseHost
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationHttp
 import works.windmill.platform.ai.AiInstallationLifecycle
@@ -31,6 +34,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import androidx.compose.runtime.snapshotFlow
+import okhttp3.OkHttpClient
 import works.windmill.gym.notification.AndroidWorkoutClock
 import works.windmill.gym.notification.WorkoutNotificationHost
 import works.windmill.gym.notification.WorkoutNotifications
@@ -59,7 +63,7 @@ import works.windmill.sync.engine.HTTPTransport
 import works.windmill.sync.engine.SyncRuntime
 import works.windmill.sync.schema.SyncSchema
 
-class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileHost {
+class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileHost, TurnLeaseHost {
     private var connectivity: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var processLifecycle: DefaultLifecycleObserver? = null
@@ -85,6 +89,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
     override lateinit var workoutNotifications: WorkoutNotifications
         private set
     override lateinit var workoutTile: WorkoutTile
+        private set
+    override lateinit var turnLease: TurnLease
         private set
 
     override fun onCreate() {
@@ -123,7 +129,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             signOutDrainAllowed = { !sessions.signOutPending && !deletionStorage.blocked })
         val training = EngineTraining(engine, writeAuthority = ::accountWritable)
         val localCoach = LocalCoach(File(filesDir, LocalCoach.fileName), writesAllowed = { !deletionPending() })
-        val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry), telemetry, BuildConfig.VERSION_NAME)
+        val coachClient = OkHttpClient()
+        val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry, coachClient), telemetry, BuildConfig.VERSION_NAME)
         if (local is LocalSession.Owned && !deletionPending()) {
             try { installation.retainBindingIntent() }
             catch (_: Exception) { telemetry.event("ai_installation_outcome", mapOf("action" to "bind", "outcome" to "failed")) }
@@ -134,6 +141,9 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         }
         coachOnboarding = CoachOnboardingStore(localCoach, installation, CoachOnboardingHttp(baseUrl, telemetry), anonymousSeat, scope, telemetry)
         coachImports = CoachRoutineImports(engine, anonymousSeat, scope, telemetry)
+        turnLease = TurnLease(this, telemetry)
+        val coachTurns = CoachTurns.onThisDevice(this, training, baseUrl, coachClient, installation,
+            accountToken = { (sessions.localSession as? LocalSession.Owned)?.let { sessions.read() } }, turnLease, telemetry, scope)
         val store = TrainingStore(
             controls = WorkoutControls(File(filesDir, WorkoutControls.fileName), owner, telemetry = telemetry),
             training = training,
@@ -148,6 +158,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             }, telemetry = telemetry,
             localCoach = localCoach,
             coachOnboarding = coachOnboarding,
+            coachTurns = coachTurns,
             pullAgain = syncRuntime::pullAgain, pulls = syncRuntime.pulls,
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = {
@@ -184,6 +195,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
                 val credential = engineStorage.token(pending.user.id)
                 check(credential == null || credential == pending.credential) { "The account credential changed." }
                 store.eraseDeletedOwner(pending.user.id, pending.replica)
+                coachTurns.sweep()
                 if (credential != null) engineStorage.delete(pending.user.id)
                 auth.completeAccountDeletion(pending.user, pending.credential)
             }, telemetry = telemetry)
@@ -202,6 +214,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         workoutNotifications.start()
         workoutTile = WorkoutTile(gym, ComponentName(this, MainActivity::class.java), store.workout::requestRoutines, telemetry)
         store.observeEngine()
+        coachTurns.start()
         scope.launch { engine.revisions().collect { accountDeletion.refreshCount() } }
         val manager = getSystemService(ConnectivityManager::class.java)
         var knownOnline: Boolean? = null
@@ -227,6 +240,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
                 gym.restoreLocal()
                 workoutNotifications.refreshCapabilities()
                 applyRuntimeActivity()
+                coachTurns.sweep()
             }
         }
         val lifecycle = object : DefaultLifecycleObserver {

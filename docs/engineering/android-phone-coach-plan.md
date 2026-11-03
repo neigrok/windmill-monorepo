@@ -253,8 +253,8 @@ W0 to W4 add no visible change and need no board. **W6 cannot start until the de
   only `CoachOnboardingStore` calls them today (`CoachOnboardingStore.kt:210-211,238-239`).
 - A subscribable `activeReplicaChanged` in `:sync-engine`.
 - Pictures: the model copy made once beside the original. Bytes live in app files; `picture:<id>` rows hold
-  metadata. Bytes go with `WithdrawTurn`, `DeleteConversation`, discard and account deletion. Tested on the emulator
-  with a picture at the §9.3 bounds.
+  metadata. Bytes go with `WithdrawTurn`, `DeleteConversation`, discard and account deletion. Tested on the JVM at the
+  §9.3 bounds; the emulator run with a 5 MiB picture is W6's.
 - `TurnLease`: an expedited WorkManager job (§4.5) that awaits the driver's work. WorkManager is a new
   dependency. Below API 31 an expedited job needs a foreground notification, which is visible and has no
   board, so API 26-30 takes no lease; there a killed turn ends `interrupted` at the next engine start.

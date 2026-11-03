@@ -206,8 +206,8 @@ The corpora hold `abilities/` (18 files), `rules/bodyweight.json`, `rules/collat
 executors claim every case of the `abilities/` files, catalog/2's `propose_workout_change.json` included; the share cases, which run on the server executor (§4.3),
 they check as refused on the phone. The Swift, Kotlin and web domain suites claim
 `rules/bodyweight.json`; the Swift and Kotlin suites claim `rules/collation.json`, the order `list_exercises` reads on a
-phone, and the Kotlin suite reads `catalog.json` through the kit's `Catalog`. The Kotlin suite marks `turns/` not applicable, since
-Android runs no turn driver yet. The server loop and the iOS turn driver replay `turns/`.
+phone, and the Kotlin suite reads `catalog.json` through the kit's `Catalog`. The server loop, the iOS turn driver and the
+Android turn driver and gym host (no Android screen sends a turn yet) replay `turns/`.
 
 ---
 

@@ -55,6 +55,7 @@ import works.windmill.sync.api.DeviceWrite
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.IntentResultDeviceWrites
 import works.windmill.sync.api.Replica
+import works.windmill.sync.api.ScopeReader
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.DeviceValueRewrite
@@ -110,6 +111,19 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             return engine.undo(gestureId)
         }
     }
+    private fun requireActive(replica: String) {
+        if (engine.activeReplica() != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+    }
+    // A turn's door: `writable`'s one rule, on the replica the turn opened on alone, so nothing it reads or writes crosses to the replica that replaced it.
+    private fun pinnedTo(replica: String) = object : Replica by writable {
+        override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
+            writable.commit(scope) { context -> requireActive(replica); body(context) }
+        override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T =
+            writable.read(scope) { reader -> requireActive(replica); body(reader) }
+    }
+    // Whether `pinnedOn` would let a turn through now: asking first keeps a refused commit, which the engine files as a fault, for the race.
+    fun mayWriteOn(replica: String): Boolean = writeAuthority() && engine.activeReplica() == replica
+    suspend fun <T> pinnedOn(replica: String, body: (ActionRunner) -> T): T = writing(pinnedTo(replica), body)
     // A held removal lasts the window the room asked for; every other gesture keeps the engine's own.
     private fun holding(holdMs: Long) = object : Replica by writable {
         override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =

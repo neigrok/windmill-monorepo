@@ -18,7 +18,7 @@ account and backend. There is no subscription surface.
 | `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
 | `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering, refusal subjects, and what an ability is: catalog, seats and schema check. |
 | `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
-| `:agent` | JVM product-neutral agent turn: the driver, its host and transport ports, and the turn wire (frames, event stream, refusals). No product hosts a turn on it yet. |
+| `:agent` | JVM product-neutral agent turn: the driver, its host and transport ports, and the turn wire (frames, event stream, refusals). `:gym` hosts its Coach turn on it. |
 | `:gym:domain` | JVM gym actions (`works.windmill.gym.domain.sync`), training reads, progress, units and rules, including signed-out workout recovery (saved-copy checks, stranded-set placement, separate-restore steps); every shared gym domain vector. `gym/store/WorkoutImports.kt` keeps the saved-workout journal's I/O and state machine. |
 
 The JVM sync and kit modules and the Android engine library contain the SyncAPI, client runtime, model
@@ -209,6 +209,19 @@ App workouts start from a saved routine. Workouts received from another surface 
 retain their movement picker and read as **Free workout**. Receipts do not create routines.
 The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
+`coach/turn/` is the phone Coach, which no screen sends yet: `CoachTurns` (one per application, handed out by
+`TrainingStore.coachTurns`) admits a question, records it and runs the turn through `:agent`'s driver;
+`GymTurnHost` runs each step on the replica the turn opened on, through `EngineTraining.pinnedOn`, which keeps
+`writable`'s one rule, so a turn writes nothing during a transition or onto the replica that replaced its own: it
+waits out a transition a sheet can still cancel, and a change of the active replica abandons it. `PictureFiles`
+keeps a turn's originals and model copies in `noBackupFilesDir/coach-pictures`, with one metadata row per picture on
+the replica; the engine stays in `filesDir`, and neither rides a backup or a device transfer. `TurnLease` holds an
+expedited WorkManager job for the length of a turn on API 31 and above. WorkManager starts on demand
+(`TurnLeaseHost`, the application's `Configuration.Provider`), `gym/src/main/AndroidManifest.xml` removes its startup
+initializer, its foreground service and the permissions it asks for beyond what a job on JobScheduler uses, and a job the system restarts in a
+new process finds no turn and ends. The ability catalog is the contract's own `gym/catalog.json`, copied into `:gym`'s
+generated assets by a Gradle task and parsed at the first send.
+
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns chat selection,
 thread reads, retries, streaming and confirmed conversation deletion in the application scope;
 `TrainingStore` composes it with the seat's account and the routines' refresh. `LocalCoach` atomically
@@ -287,6 +300,10 @@ arrive as imports with their IDs and frozen routine lineage. Check crash/restart
 refused-import recovery. Log offline, restart, reconnect and verify the server records; exercise
 Add and Discard with data on both sides, and Keep at sign-out. A same-debug-key source upgrade
 does not establish published release signing.
+
+`CoachTurnsLiveWireTests` runs a turn on both seats against a local backend with `AI_ALLOWANCES_ENABLED`,
+`AI_INSTALLATIONS_ENABLED` and `COACH_ANTHROPIC_BASE_URL` at `tools/fake_coach_vendor.py`, on a fresh database and a
+fresh account: set `WM_ANDROID_TURN_WIRE_TEST=1`, `WM_WIRE_BASE`, `WM_WIRE_BEARER` and `WM_WIRE_EVIDENCE`.
 
 The live-wire suite requires a fresh local account credential and a single-use magic-link token
 issued against that backend; the runbook's direct-database development code uses the normal auth

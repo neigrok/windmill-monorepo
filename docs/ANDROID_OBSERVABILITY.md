@@ -80,6 +80,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.choose` | gym | Reading the last time or saving the movement choice fails |
 | `gym.coachOnboarding` | gym, app | Signed-out Coach transport, request storage, recovery, photo preparation or routine import fails |
 | `gym.coachRoutineConfirm` | gym | Confirming a Coach routine fails |
+| `gym.coachTurn` | gym | A phone Coach turn fails: by `failure_kind`, `transport` (a stream or a post that failed other than by lost network), `decode` (a frame or answer that cannot be read), `storage` (the replica or a picture file threw), `refusal` (the replica refused the turn's own record), `http` with `status` (a 5xx), and `lease` (its job could not be enqueued). Lost network, a cancellation, a seat change, an account in transition and a refusal the server answered on purpose file nothing; they end the turn with their code on `coach_turn` |
 | `gym.connect` | gym | Connecting the training store to the account fails |
 | `gym.copyMessage` | gym | Copying a Coach message or its link to the clipboard fails |
 | `gym.create` | gym | Creating a movement fails |
@@ -192,8 +193,8 @@ Every event carries `platform`, `app_version`, `build`, `release` and `environme
 `_ . : / -`, at most 900 bytes per event.
 
 A module registers a schema for each event whose labels it bounds, through `:platform`'s
-`EventSchema` (`EventSchemas`, `LabelSchema`); such an event keeps only the labels its schema
-allows. `:platform` registers `account_delete` and `ai_installation_outcome`. `:gym` registers
+`EventSchema` (`EventSchemas`, `LabelSchema`, which also takes counts: digits alone); such an event keeps
+only the labels its schema allows, under any key the schema names. `:platform` registers `account_delete` and `ai_installation_outcome`. `:gym` registers
 the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the app hands
 `GymEvents.schemas` to `AndroidTelemetry`. An unregistered event keeps only the keys `operation`,
 `outcome`, `failure_kind`, `status`, `cap`, `action`, `method`, `route`, `state`, `duration_ms`,
@@ -203,7 +204,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 |---|---|---|
 | `account_delete` | platform | `state`: `shown`; `action`: `confirm`, `check`, `cleanup`, `back`, `done`, `retry` (Try again on Not deleted), `date_time` (with `outcome`: `failed` when date settings cannot open); `outcome`: `started`, `cancelled`, `refused`, `clock_refused` (the phone's date and time are wrong), `not_deleted` (the close never reached Windmill in time), `failed`, `ok`, `cleanup_pending`, `pending_confirmation`. Refusals file no Issue. |
 | `ai_installation_outcome` | platform | `action`: `bind`; `outcome`: `refused`, `failed` |
-| `api_request_failed` | platform | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase` |
+| `api_request_failed` | platform, gym | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase`. A Coach turn the server refused before its stream sends `operation`: `gym_coach_turn`, `route`: `/v1/gym`, `method`: `POST`, `failure_kind`: `http`, `status` |
 | `app_backgrounded` | app | none |
 | `app_foregrounded` | app | none |
 | `app_started` | app | none |
@@ -214,10 +215,12 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `auth_signed_in` | platform | none |
 | `auth_signed_out` | platform | none |
 | `client_error` | platform | `operation`, `failure_kind` and the failure's allowed properties |
+| `coach_ability` | gym | One per ability call a turn ran, the context reads included: `name` (the catalog name, or `other`); `outcome`: `ok`, `not-offered`, `seat-required`, `invalid-input`, `invalid-arguments`, `refused`, `result-too-large`, `coach-turn-volume`, `other` |
+| `coach_turn` | gym | One per turn that opened: `state`: `interrupted`, `completed`, `declined`, `failed`, `stopped`; `seat`: `anon`, `bound`; `code`: the §6.5 code a failed turn ended on, or an interrupted one's cause: `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `concurrency_exhausted`, `funding_required`, `debt_outstanding`, `device_bound`, `invalid_installation`, `coach-bad-request`, `coach-update-required`, `coach-turn-conflict`, `coach-turn-unknown`, `coach-turn-order`, `coach-turn-volume`, `coach-rate-limited`, `coach-replica-syncing`, `coach-busy`, `coach-vendor-error`, `coach-stream-replaced`, or this phone's own `transport`, `decode`, `storage`, `refusal`, `http`, `seat_changed` (the active replica changed under it; its counts are absent when the record left with that replica), `process_ended` (the process died under it, told at the next engine start, with no duration), `other`; `ability_calls`, `refusals`, `answer_bytes` and `duration_ms` as counts |
 | `client_update_required` | app, platform | `state`: `shown` with `status`: `426`; or `action`: `dismiss`, `keep`, `update`, with `outcome`: `failed` when the update link cannot open |
 | `gym_action` | gym | `screen`, `action` and `outcome` from the table below; an action that asks first sends `state`: `shown` without an outcome when its question opens |
-| `gym_ask_outcome` | gym | Signed in: `outcome`: `answered`, `refused`, `capped`, `failed`, `fresh`, `absent`, `cancelled`; `duration_ms`; `cap`: `daily`, `ceiling`, `allowance`; `failure_kind`; `status`. Signed out: `state`: `anonymous`; `outcome`: `answered`, `refused`, `capped`, `failed`, `cancelled`; `duration_ms`; `cap`: `allowance` |
-| `gym_ask_started` | gym | none signed in; `state`: `anonymous` signed out |
+| `gym_ask_outcome` | gym | Signed in: `outcome`: `answered`, `refused`, `capped`, `failed`, `fresh`, `absent`, `cancelled`; `duration_ms`; `cap`: `daily`, `ceiling`, `allowance`; `failure_kind`; `status`. Signed out: `state`: `anonymous`; `outcome`: `answered`, `refused`, `capped`, `failed`, `cancelled`; `duration_ms`; `cap`: `allowance`. A phone Coach turn, either seat: `screen`: `coach`; `outcome`: `answered` (completed), `cancelled` (stopped), `refused` (declined, a refusal before the stream, or the local admission of a log still arriving), `failed` (failed, interrupted, or a 5xx before the stream), `capped` with `cap`: `allowance` or `daily`, `absent` (a deployment without the turn route), `offline` (a send held back with no network); `duration_ms` |
+| `gym_ask_started` | gym | none signed in; `state`: `anonymous` signed out. A phone Coach turn, once recorded on the replica, either seat: `screen`: `coach` |
 | `gym_bodyweight_saved` | gym | none |
 | `gym_coach_import` | gym | `outcome`: `started`, `committed`, `replayed`, `refused`, `failed` |
 | `gym_coach_routine_confirm` | gym | `outcome`: `started`, `saved`, `refused`, `failed` |
