@@ -1,8 +1,7 @@
-// §2.5 of the wave-8 architecture: what ControlBar, the lane and the plaque carried has its home in the row and camera.
+// §2.5 of the wave-8 architecture: what ControlBar carried has its home in the row's switcher and the camera.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ROADMAP_VERBS } from '../../../src/products/roadmap/board/copy.js';
 
 startRoadmapHost('capabilitiesChrome');
 
@@ -10,10 +9,6 @@ const everyWidth = [320, 390, 744, 1440];
 const phones = [320, 390];
 const wide = [744, 1440];
 const bothRoles = ['owner', 'reader'];
-
-function identityView(page) {
-  return page.locator('.st-roadmap-identity').getAttribute('data-view');
-}
 
 for (const width of wide) {
   hostTest(`§2.5 Switch roadmap · Plant · Planted in public: the row's switcher at ${width}px for owner`, async () => {
@@ -58,33 +53,6 @@ for (const width of phones) {
         await camera.getByRole('button', { name: 'Focus', exact: true }).click();
         await camera.getByRole('button', { name: 'All steps', exact: true }).click();
         assert.deepEqual((await page.evaluate(() => window.cameraCalls.map(([name]) => name))).slice(-2), ['focusWorking', 'fitToView']);
-        assert.deepEqual(errors, []);
-      } finally { await page.close(); }
-    });
-  }
-}
-
-for (const width of everyWidth) {
-  for (const role of bothRoles) {
-    hostTest(`§2.5 Tree / List pill: the identity switch at ${width}px for ${role}`, async () => {
-      const { page, errors } = await openHost({ width, role });
-      try {
-        const row = page.locator('.st-roadmap-identity');
-        assert.equal(await identityView(page), 'tree');
-        await row.getByRole('button', { name: 'Board', exact: true }).click();
-        await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'board');
-        await page.locator('.st-view-layer--board.is-active .st-board-card').first().waitFor({ state: 'attached' });
-        await row.getByRole('button', { name: 'Graph', exact: true }).click();
-        await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'tree');
-        assert.deepEqual(errors, []);
-      } finally { await page.close(); }
-    });
-
-    hostTest(`§2.5 Reader plaque: author line (G8-R1): no author in the row at ${width}px for ${role}`, async () => {
-      const { page, errors } = await openHost({ width, role });
-      try {
-        assert.equal(await page.locator('.st-roadmap-identity').evaluate((row) => row.textContent.includes('Ada Lovelace')), false);
-        assert.equal(await page.getByText('Ada Lovelace').count(), 0);
         assert.deepEqual(errors, []);
       } finally { await page.close(); }
     });
