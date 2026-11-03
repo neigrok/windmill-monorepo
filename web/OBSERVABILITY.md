@@ -101,22 +101,43 @@ nothing, and no kind name, step, title or search text is reported. Opening a ste
 `door` (`card`, `step` for a row inside another step, or `link` for a step link the page arrived at, including Back or Forward into a roadmap whose address names a step);
 moving back to a step already open within the same visit emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
 and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
-(which also emits `roadmap_view_switch`), `viewBranch`, `delete`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
+(which also emits `roadmap_view_switch`), `viewBranch`, `delete`, `edit`, `editNote`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
 write is an expected refusal and reports nothing to Sentry. A render failure inside the step's page or modal reports the
 static Sentry operation `roadmap-board-step` with its stack frames and closes it.
 
 Board completion emits `roadmap_board_complete` with `door` (`swipe` or `key`), and toast Undo emits
-`roadmap_board_undo` with `act` (`complete`, `create` or `delete`). Tapping completion or creation toast text emits
+`roadmap_board_undo` with `act` (`complete`, `create`, `delete` or `recolor`). Tapping completion or creation toast text emits
 `roadmap_board_toast_reveal` with `act` (`complete` or `create`). Delete emits `roadmap_board_delete` with `step`
-(`confirm`, `cancel`, `held` or `sent`); `sent` occurs only when release returns a dispatch receipt and also carries `via`
+(`confirm`, `cancel`, `held` or `sent`); `held` carries `door` (`menu`, `key` or `bulk`), and `sent` occurs only when release returns a dispatch receipt and also carries `via`
 (`timer`, `replaced` or `left`). The step-menu `delete` action continues to mean that its menu item was pressed.
 Opening the composer emits `roadmap_board_create` with `step: open` and `door` (`verbs`, `band`, `empty` or
 `complete`); the tablet identity row's New step button uses `door: verbs`. A successful create emits
 `step: saved`, `column` (`locked` or `upNext`) and boolean `filterCleared`.
 The composer also emits `roadmap_board_create` with `step` (`failed`, `retry`, `discard` or `cancel`). The picker
-emits `roadmap_board_picker` with `step` (`open`, `apply`, `cancel` or `more`); only `apply` carries `count`, bucketed
+emits `roadmap_board_picker` with `mode` (`create` or `edit`) and `step` (`open`, `apply`, `cancel`, `more` or `revalidated`); only `apply` carries `count`, bucketed
 as `0`, `1`, `2-5`, `6-20` or `21+`. With zero candidates the Prerequisites row opens no picker and
 emits no event. These events carry no step ids, names, descriptions, queries or kinds.
+Phone selection emits `roadmap_board_select` with `step: start`, or `step: end` and `via`
+(`done`, `back`, `acted`, `emptied` or `left`). Revealing its kinds emits `roadmap_board_bulk` with
+`step: kinds`; an applied bulk act carries `step` (`recolor` or `delete`) and `count` in the same
+buckets as the picker. Re-picking the shared kind closes only the kinds row, retains selection,
+writes nothing and emits no bulk act, toast or selection-end event. A refused recolor also keeps
+selection open and emits no acted selection end; null receipts remain expected, not Issues.
+Edit emits `roadmap_board_edit` with `step` (`failed`, `retry`, `discard`, `cancel` or `unchanged`);
+a saved edit emits `step: saved` and booleans `name`, `description`, `kind` and `prerequisites` for
+changed fields. Opening the workspace note editor emits the step action `editNote`, including Add note.
+Workspace emits `roadmap_board_workspace` with only `action`: `subtaskAdd`, `subtaskToggle`,
+`subtaskDelete`, `linkAdd`, `linkDelete`, `noteSave` for a changed note saved through workspace actions,
+`noteDiscard` for confirming Discard draft, and `undo` for the phone checked toast. Saving an unchanged
+note writes nothing and emits no `noteSave`. System Back or remote detail closure silently drops the
+draft and emits no `noteDiscard`. These local workspace paths add no Sentry operation: render failures
+reach `roadmap-board-step`, composer render failures reach `roadmap-board-composer`, and edit-save
+exceptions reach `roadmap-board-edit`.
+Opening shortcut help while the gate is open emits `roadmap_shortcuts_open` with only `view`
+(`board` or `graph`). These events never carry note text, subtask labels, link URLs, ids or hues.
+A recolor or edit dispatch exception, or a missing session on an editable owner Board, reports
+`roadmap-board-recolor` or `roadmap-board-edit`, respectively. Null receipts are expected no-ops,
+not Issues. Edit has no toast; recolor Undo reverts its receipt and regroups quietly.
 A create exception or missing session on an editable owner surface reports `roadmap-board-create`; a not-ready
 session is an expected failed-create event, not an Issue. An unexpected held delete release exception
 restores the projected step silently and reports `roadmap-board-delete`. A null receipt (already absent or not ready)

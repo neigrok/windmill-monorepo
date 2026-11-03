@@ -44,10 +44,14 @@ export class ActivityLog {
     return this.events.filter((event) => event.nodeId === nodeId).reverse();
   }
 
-  groupedByDay(now) {
+  groupedForNode(nodeId, now) {
+    return this.groupedByDay(now, this.forNode(nodeId));
+  }
+
+  groupedByDay(now, events = this.recent()) {
     const groups = [];
     let current = null;
-    for (const event of this.recent()) {
+    for (const event of events) {
       const label = dayLabel(event.at, now);
       if (!current || current.label !== label) {
         current = { label, events: [] };

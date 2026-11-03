@@ -46,6 +46,11 @@ export function inUseCount(legend, nodes) {
 export function kindOptions(tree, legend = []) {
   const worn = new Set(tree.nodes.map((node) => node.color ?? DEFAULT_NODE_COLOR));
   if (worn.size < 2) return [];
+  return kindOptionsForHues(worn, legend);
+}
+
+export function kindOptionsForHues(available, legend = []) {
+  const worn = new Set(available);
   const named = new Map();
   for (const kind of legend ?? []) if (!named.has(kind.hue)) named.set(kind.hue, kind);
   const hues = [

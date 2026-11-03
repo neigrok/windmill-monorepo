@@ -9,6 +9,30 @@ export const RAIL = Symbol('rail Show');
 
 const COLUMN_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
+export function boardFocusTarget(root, { preferredId = null, excludeId = null, cards = true } = {}) {
+  if (!root) return null;
+  const selectors = [
+    ...(preferredId === null ? [] : [`.st-board-card[data-step-id="${CSS.escape(preferredId)}"]`]),
+    ...(cards ? ['[data-column] [tabindex="0"], [data-column][tabindex="0"]'] : []),
+    '.st-board-phone-segment[aria-selected="true"]',
+    '.st-board-find-input',
+    '.st-board-state button',
+    '[aria-busy="true"][tabindex]',
+  ];
+  for (const selector of selectors) {
+    const target = [...root.querySelectorAll(selector)].find((element) => (
+      !element.disabled && !element.closest('[inert], .is-leaving, .st-board-phone-pane:not(.is-shown)')
+      && element.getClientRects().length > 0
+      && getComputedStyle(element).visibility === 'visible'
+      && (excludeId === null || element.closest('[data-step-id]')?.dataset.stepId !== excludeId)
+    ));
+    if (target) return target;
+  }
+  if (root.closest('[inert]') || root.getClientRects().length === 0 || getComputedStyle(root).visibility !== 'visible') return null;
+  if (root.getAttribute('tabindex') !== '-1') root.tabIndex = -1;
+  return root;
+}
+
 export function columnStops({ cards, folded }) {
   return [...cards.map((card) => card.id), ...(folded ? [SHOW_ALL] : [])];
 }
@@ -97,8 +121,9 @@ function focusInView(element) {
 }
 
 // Holds the roving stop for a container of columns. A card not yet rendered is pinned as pending until it can take focus;
-// a focused stop that unmounts (a sync moved its step) hands focus to the stop instead of dropping it to the page.
-export function useRovingFocus(layout, { onComplete, existingIds, revision, recoveryLayout = layout } = {}) {
+// a focused stop that unmounts (a sync moved its step) hands focus to the stop, else to `fallback`, instead of dropping it
+// to the page.
+export function useRovingFocus(layout, { onComplete, onDelete, existingIds, revision, recoveryLayout = layout, fallback = () => null } = {}) {
   const ref = useRef(null);
   const focused = useRef(null);
   const [memory, setMemory] = useState({ last: null, byColumn: {} });
@@ -119,8 +144,8 @@ export function useRovingFocus(layout, { onComplete, existingIds, revision, reco
     const lost = focused.current;
     if (pending !== null || lost === null || lost.isConnected) return;
     focused.current = null;
-    const fallen = document.activeElement === null || document.activeElement === document.body;
-    const element = fallen && stop !== null ? elementOfStop(ref.current, stop) : null;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    const element = (stop === null ? null : elementOfStop(ref.current, stop)) ?? fallback();
     if (element) focusInView(element);
   });
 
@@ -148,6 +173,12 @@ export function useRovingFocus(layout, { onComplete, existingIds, revision, reco
       typing: Boolean(event.target.closest('input, textarea, select, [contenteditable="true"]')),
       covered: Boolean(event.target.closest('[inert]') || document.querySelector('[aria-modal="true"]')),
     });
+    if (action === 'delete') {
+      if (!onDelete || !event.target.matches('.st-board-card')) return;
+      event.preventDefault();
+      onDelete([from.id], 'key');
+      return;
+    }
     if (action === 'complete') {
       if (from.column !== 'upNext' || !onComplete || !event.target.matches('.st-board-card')) return;
       event.preventDefault();

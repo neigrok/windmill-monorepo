@@ -102,12 +102,19 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
-import BoardView, { coverBeneath } from '/src/products/roadmap/board/BoardView.jsx';
+import BoardView from '/src/products/roadmap/board/BoardView.jsx';
+import { coverBeneath } from '/src/products/roadmap/board/composerFocus.js';
+import { boardFocusTarget } from '/src/products/roadmap/board/traversal.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { StepComposer } from '/src/products/roadmap/board/StepComposer.jsx';
+import { StepCard } from '/src/products/roadmap/board/StepCard.jsx';
 import { boardOpen } from '/src/products/roadmap/board/gate.js';
 import { useViewMode } from '/src/products/roadmap/ui/useViewMode.js';
+import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
+import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
+import { useRoadmapToast } from '/src/products/roadmap/SkillTreeView.jsx';
+import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 
 const legend = [
   { id: 'build', hue: 'terracotta', label: 'Build' },
@@ -214,7 +221,78 @@ window.openIdentityComposer = ({ nodes, owner = true, active = true, gate = true
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
+window.openSelectionBoard = (nodes, options = {}) => {
+  // Count inner renders while preserving the production memo wrapper and its comparator.
+  const renderCard = StepCard.type;
+  window.cardRenders = {};
+  StepCard.type = function CountedStepCard(props) {
+    window.cardRenders[props.card.id] = (window.cardRenders[props.card.id] ?? 0) + 1;
+    return renderCard(props);
+  };
+  window.hostEscapes = 0;
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') window.hostEscapes += 1;
+  });
+  function Room() {
+    const [tree, setTree] = useState(() => new SkillTree({ id: 'selection', title: 'Learn to sail', nodes }));
+    const [session] = useState(() => {
+      const session = new SyncSession({ treeId: 'selection', registry: null, store: { save: () => Promise.resolve() } });
+      session.seed({ id: 'selection', title: tree.title, nodes });
+      return session;
+    });
+    const [owner, setOwner] = useState(options.owner ?? true);
+    const [active, setActive] = useState(true);
+    const [query, setQuery] = useState(() => new BoardQuery());
+    const [quiet, setQuiet] = useState(0);
+    const [revision, setRevision] = useState(0);
+    const address = useStepAddress();
+    const progress = useMemo(() => ({ completed: new Set(options.completed ?? ['course', 'parts', 'rig']), completedAt: { course: 1, parts: 2, rig: 3 } }), []);
+    const { toast, showToast, dismissToast, boardToastShown } = useRoadmapToast();
+    session.onTreeChanged((data) => setTree(new SkillTree(data)));
+    window.writes ??= [];
+    window.selectionAttempts ??= [];
+    const { held, acts } = useBoardActs({
+      tree, treeId: tree.treeId, owner, active, query, progress, now: Date.now,
+      session: {
+        dispatch: (gesture, options) => {
+          window.selectionAttempts.push(gesture);
+          if (window.refuseSelectionWrites) return null;
+          window.writes.push(gesture);
+          return session.dispatch(gesture, options);
+        },
+        revert: (receipt) => session.revert(receipt),
+      },
+      showToast, clearBoardToast: dismissToast, setQuery,
+      onQuiet: () => setQuiet((value) => value + 1), onReveal: () => {},
+      emit: () => {},
+      track: (name, props) => (window.events ??= []).push(name + ' ' + JSON.stringify(props)),
+      report: (operation) => (window.reports ??= []).push(operation),
+    });
+    window.setSelectionOwner = setOwner;
+    window.setSelectionActive = setActive;
+    window.rerenderSelection = () => setRevision((value) => value + 1);
+    window.removeSelectionStep = (id) => session.dispatch({ kind: 'BulkDelete', nodeIds: [id], retireIncidentEdges: true });
+    window.filterSelection = (hue) => setQuery((current) => current.toggledKind(hue));
+    window.selectionQuery = query.kinds;
+    window.selectionSteps = tree.nodes.map(({ id, color }) => ({ id, color }));
+    window.selectionHeld = held?.ids ?? [];
+    window.selectionAddress = address;
+    return React.createElement('div', { className: 'st-view-layer--board' + (active ? ' is-active' : ''), 'data-revision': revision, style: { height: '100vh' } },
+      React.createElement(BoardView, {
+        tree: held ? held.projected(tree) : tree, ...progress, query, onQuery: setQuery, quiet,
+        breakpoint: 'phone', active, editable: owner && active, legend,
+        onSelect: (id) => { (window.opened ??= []).push(id); address.open(id, 'card'); },
+        onNewStep: () => {},
+        onComplete: (id, door) => acts.complete(id, door),
+        onRecolor: (ids, hue) => acts.recolor(ids, hue), onDelete: (ids, door) => acts.delete(ids, door),
+        toast, onToastShown: boardToastShown,
+        onToastUndo: () => { toast.action.run(); dismissToast(); },
+      }));
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
 window.coverBeneath = coverBeneath;
+window.boardFocusTarget = boardFocusTarget;
 window.entryReady = true;
 `;
 
@@ -526,6 +604,25 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order â€
       ['Card', 'Topbar'],
       ['Recolour', 'Graph overlay', 'Card', 'Topbar', 'Edge Ã—'],
     ]);
+    for (const lowerFirst of [true, false]) {
+      assert.deepEqual(await page.evaluate((lowerFirst) => {
+        const stage = document.getElementById('stage');
+        stage.innerHTML = '<button>Base</button><button inert>Already inert</button><div class="lower" style="position:absolute;z-index:18"></div><div class="upper" style="position:absolute;z-index:20"></div>';
+        const lower = coverBeneath(stage.querySelector('.lower'));
+        const upper = coverBeneath(stage.querySelector('.upper'));
+        const snapshot = () => [...stage.children].map((element) => element.inert);
+        const states = [snapshot()];
+        (lowerFirst ? lower : upper)();
+        states.push(snapshot());
+        (lowerFirst ? upper : lower)();
+        states.push(snapshot());
+        return states;
+      }, lowerFirst), [
+        [true, true, true, false],
+        [true, true, lowerFirst, false],
+        [false, true, false, false],
+      ]);
+    }
     assert.deepEqual(errors, []);
   } finally {
     await page.close();
@@ -716,3 +813,525 @@ for (const breakpoint of ['desktop', 'phone']) {
     } finally { await page.close(); }
   });
 }
+
+const SELECTION_CLOCK = new Date('2026-11-03T12:00:00Z');
+
+async function openSelectionPage(width = 390, nodes = learnToSailNodes, options = {}) {
+  await ready;
+  const page = await browser.newPage({ viewport: { width, height: 844 }, hasTouch: true });
+  await page.clock.install({ time: new Date(SELECTION_CLOCK.getTime() - 60_000) });
+  await page.clock.pauseAt(SELECTION_CLOCK);
+  await page.addInitScript(() => localStorage.setItem('windmill:board:dev', '1'));
+  await page.goto(`${origin}/board-view-test#/t/selection`);
+  await page.waitForFunction(() => window.entryReady);
+  await page.evaluate(([nodes, options]) => openSelectionBoard(nodes, options), [nodes, options]);
+  await page.getByRole('tablist').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  return page;
+}
+
+async function holdStep(page, id) {
+  const card = page.locator(`.st-board-phone-pane.is-shown .st-board-card[data-step-id="${id}"]`);
+  await card.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+  await page.clock.runFor(500);
+  await page.locator('.st-board-bulk').waitFor();
+  await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+  await card.dispatchEvent('click');
+}
+
+async function touchStep(page, id) {
+  const card = page.locator(`.st-board-phone-pane.is-shown .st-board-card[data-step-id="${id}"]`);
+  await card.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 8, isPrimary: true, clientX: 100, clientY: 200 });
+  await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 8, isPrimary: true, clientX: 100, clientY: 200 });
+  await card.dispatchEvent('click');
+}
+
+async function settleKinds(page, expanded = true) {
+  await page.locator(`.st-board-bulk-recolor[aria-expanded="${expanded}"]`).waitFor();
+  await page.locator('.st-board-bulk').evaluate(async (bar) => {
+    await Promise.all(bar.getAnimations({ subtree: true }).map((animation) => animation.finished.catch(() => {})));
+  });
+}
+
+for (const width of [390, 320]) {
+  test(`Chromium: phone selection at ${width}px recolors once, preserves equal actions and kind rows, and Undo reverts its receipt`, async () => {
+    const page = await openSelectionPage(width);
+    try {
+      await page.getByRole('tab', { name: 'Locked, 3 steps' }).click();
+      await holdStep(page, 'dock');
+      await touchStep(page, 'triangle');
+      await touchStep(page, 'solo');
+      assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '3 selected');
+      assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
+      assert.equal(await page.locator('.st-board-swipe').count(), 0);
+      const closedActions = await page.locator('.st-board-bulk-actions').boundingBox();
+      await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+      await settleKinds(page);
+      await page.waitForFunction(() => document.activeElement.getAttribute('role') === 'radio');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Build');
+      const geometry = await page.locator('.st-board-bulk').evaluate((bar) => {
+        const buttons = [...bar.querySelectorAll('.st-board-bulk-actions > button')].map((button) => button.getBoundingClientRect());
+        const rows = new Map();
+        for (const chip of bar.querySelectorAll('[role="radio"]')) {
+          const box = chip.getBoundingClientRect();
+          const top = Math.round(box.top);
+          rows.set(top, [...(rows.get(top) ?? []), { name: chip.textContent, height: box.height }]);
+        }
+        return { equal: buttons[0].width === buttons[1].width, top: buttons[0].top, rows: [...rows.values()] };
+      });
+      assert.equal(geometry.equal, true);
+      assert.equal(geometry.top, closedActions.y);
+      assert.deepEqual(geometry.rows, (width === 390
+        ? [['Build', 'Learn', 'Milestone', 'Brick'], ['Sky', 'Plum']]
+        : [['Build', 'Learn', 'Milestone'], ['Brick', 'Sky', 'Plum']])
+        .map((row) => row.map((name) => ({ name, height: 44 }))));
+      await page.getByRole('radio', { name: 'Learn', exact: true }).click();
+      await page.clock.runFor(200);
+      await page.getByRole('tablist').waitFor();
+      await page.waitForFunction(() => !history.state?.boardSelection);
+      await page.clock.runFor(1000);
+      await page.getByText('3 steps recolored', { exact: true }).last().waitFor();
+      assert.deepEqual(await page.evaluate(() => window.writes), [{ kind: 'BulkRecolor', nodeIds: ['dock', 'triangle', 'solo'], color: 'olive' }]);
+      assert.equal(await focused(page), 'Leave the dock');
+      await page.getByRole('button', { name: 'Undo', exact: true }).click();
+      await page.clock.runFor(300);
+      assert.deepEqual(await page.evaluate(() => window.selectionSteps.filter(({ id }) => ['dock', 'triangle', 'solo'].includes(id))), [
+        { id: 'dock', color: 'terracotta' }, { id: 'triangle', color: 'olive' }, { id: 'solo', color: 'gold' },
+      ]);
+      assert.equal(await page.locator('.st-board-card.is-arrived').count(), 0);
+      assert.ok((await events(page)).includes('roadmap_board_undo {"act":"recolor"}'));
+      assert.deepEqual(await page.evaluate(() => window.reports ?? []), []);
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: choosing the focused shared kind closes only kinds without a write, toast or acted event', async () => {
+  const page = await openSelectionPage();
+  try {
+    await holdStep(page, 'bowline');
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.waitForFunction(() => document.activeElement.getAttribute('aria-checked') === 'true');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Learn');
+    await page.getByRole('radio', { name: 'Learn', exact: true }).click();
+    await page.clock.runFor(150);
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-recolor')?.getAttribute('aria-expanded') === 'false');
+    await page.waitForFunction(() => history.state?.boardSelection?.kinds === false);
+    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.equal(await page.locator('.st-board-card[data-step-id="bowline"]').getAttribute('aria-pressed'), 'true');
+    assert.deepEqual(await page.evaluate(() => [window.writes, window.opened ?? []]), [[], []]);
+    assert.equal(await page.locator('.st-board-toast').count(), 0);
+    assert.equal(await focused(page), 'Recolor');
+    assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), [
+      'roadmap_board_select {"step":"start"}',
+    ]);
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.waitForFunction(() => document.activeElement.getAttribute('aria-checked') === 'true');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Learn');
+  } finally { await page.close(); }
+});
+
+test('Chromium: bulk Delete projects every selected step, holds the write, and Undo restores all steps', async () => {
+  const page = await openSelectionPage();
+  try {
+    await page.getByRole('tab', { name: 'Locked, 3 steps' }).click();
+    await holdStep(page, 'dock');
+    await touchStep(page, 'triangle');
+    await page.getByRole('button', { name: 'Delete 2 steps' }).click();
+    await page.getByRole('tablist').waitFor();
+    await page.waitForFunction(() => window.selectionHeld.length === 2);
+    await page.clock.runFor(1000);
+    await page.getByText('2 steps deleted', { exact: true }).last().waitFor();
+    assert.deepEqual(await page.locator('.st-board-phone-pane.is-shown .st-board-card').evaluateAll((cards) => cards.map((card) => card.dataset.stepId)), ['solo']);
+    assert.deepEqual(await page.evaluate(() => window.writes), []);
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('role')), 'tab');
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await page.clock.runFor(300);
+    assert.deepEqual(await page.evaluate(() => [window.selectionHeld, window.writes]), [[], []]);
+    assert.deepEqual(await page.locator('.st-board-phone-pane.is-shown .st-board-card').evaluateAll((cards) => cards.map((card) => card.dataset.stepId)), ['dock', 'triangle', 'solo']);
+  } finally { await page.close(); }
+});
+
+test('Chromium: Back and Escape close kinds before selection, and finished selection never nests a new step entry', async () => {
+  const page = await openSelectionPage();
+  try {
+    await holdStep(page, 'bowline');
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.evaluate(() => history.back());
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-recolor')?.getAttribute('aria-expanded') === 'false');
+    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    await page.keyboard.press('Escape');
+    await page.getByRole('tablist').waitFor();
+    await page.waitForFunction(() => !history.state?.boardSelection);
+    assert.equal(await focused(page), 'Tie a bowline');
+    assert.equal(await page.evaluate(() => window.hostEscapes), 0);
+    await holdStep(page, 'bowline');
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-recolor')?.getAttribute('aria-expanded') === 'false');
+    assert.equal(await page.evaluate(() => window.hostEscapes), 0);
+    await settleKinds(page, false);
+    await page.evaluate(() => {
+      document.querySelector('.st-board-bulk-heading button').click();
+      document.querySelector('.st-board-card[data-step-id="bowline"]').click();
+    });
+    await page.getByRole('tablist').waitFor();
+    await page.waitForFunction(() => !history.state?.boardSelection);
+    assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
+    await page.evaluate(() => new Promise((resolve) => {
+      window.addEventListener('popstate', resolve, { once: true });
+      history.forward();
+    }));
+    assert.equal(await page.evaluate(() => history.state?.boardSelection ?? null), null);
+    await page.locator('.st-board-card[data-step-id="bowline"]').click();
+    await page.waitForFunction(() => window.selectionAddress.id === 'bowline');
+    assert.deepEqual(await page.evaluate(() => history.state), { boardStep: { trail: ['bowline'], pushed: 1 } });
+    await page.evaluate(() => window.selectionAddress.close());
+    await page.waitForFunction(() => window.selectionAddress.id === null);
+    assert.equal(await page.evaluate(() => location.hash), '#/t/selection');
+  } finally { await page.close(); }
+});
+
+test('Chromium: pruning uses the live pane, recolor preserves the kind filter, and Done restores an offscreen starter', async () => {
+  const extra = Array.from({ length: 80 }, (_, index) => ({ id: `locked-${index}`, label: `Locked ${index}`, color: 'olive', prerequisites: ['wind'] }));
+  const page = await openSelectionPage(390, [...learnToSailNodes, ...extra]);
+  const waitForFocus = async (predicate) => {
+    try {
+      await page.waitForFunction(predicate);
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => {
+        const describe = (element) => element ? {
+          tag: element.tagName,
+          class: element.className,
+          role: element.getAttribute('role'),
+          step: element.closest('[data-step-id]')?.dataset.stepId ?? null,
+          column: element.closest('[data-column]')?.dataset.column ?? null,
+          selected: element.getAttribute('aria-selected'),
+          tabIndex: element.tabIndex,
+          inert: Boolean(element.closest('[inert]')),
+          visibility: getComputedStyle(element).visibility,
+          rects: element.getClientRects().length,
+        } : null;
+        const board = document.querySelector('.st-board');
+        const pane = board?.querySelector('.st-board-phone-pane.is-shown');
+        return {
+          active: describe(document.activeElement),
+          fallback: describe(window.boardFocusTarget(board, { cards: false })),
+          board: describe(board),
+          pane: describe(pane),
+          tabs: [...board?.querySelectorAll('[role="tab"]') ?? []].map(describe),
+          cards: [...pane?.querySelectorAll('.st-board-card') ?? []].map(describe),
+          layers: [...document.querySelectorAll('[inert], [aria-modal="true"]')].map(describe),
+          bulk: board?.querySelector('.st-board-bulk')?.className ?? null,
+          href: location.href,
+          history: history.state,
+          query: window.selectionQuery,
+          writes: window.writes,
+          events: window.events,
+          focus: window.selectionFocus,
+        };
+      });
+      error.message += `\nSelection focus diagnostic: ${JSON.stringify(diagnostic, null, 2)}`;
+      throw error;
+    }
+  };
+  try {
+    await page.evaluate(() => {
+      window.selectionFocus = [];
+      document.addEventListener('focusin', (event) => {
+        const element = event.target;
+        window.selectionFocus.push({
+          class: element.className,
+          role: element.getAttribute('role'),
+          step: element.closest('[data-step-id]')?.dataset.stepId ?? null,
+          column: element.closest('[data-column]')?.dataset.column ?? null,
+          inert: Boolean(element.closest('[inert]')),
+          history: history.state,
+        });
+      });
+    });
+    await page.getByRole('tab', { name: 'Locked, 83 steps' }).click();
+    await holdStep(page, 'dock');
+    await page.locator('.st-board-phone-pane.is-shown').evaluate((pane) => { pane.scrollTop = pane.scrollHeight; });
+    await page.clock.runFor(400);
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.getByRole('tablist').waitFor();
+    await waitForFocus(() => document.activeElement.dataset.stepId === 'dock');
+    assert.equal(await page.locator('.st-board-phone-pane.is-shown').evaluate((pane) => pane.scrollTop < 200), true);
+    await page.waitForFunction(() => !history.state?.boardSelection);
+    await holdStep(page, 'dock');
+    await touchStep(page, 'locked-0');
+    await page.evaluate(() => filterSelection('terracotta'));
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading > span')?.textContent === '1 selected');
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.getByRole('radio', { name: 'Learn', exact: true }).click();
+    await page.clock.runFor(200);
+    await page.getByRole('tablist').waitFor();
+    assert.deepEqual(await page.evaluate(() => window.selectionQuery), ['terracotta']);
+    await page.clock.runFor(1000);
+    await page.waitForFunction(() => !document.querySelector('.st-board-phone-pane.is-shown .st-board-card[data-step-id="dock"]'));
+    await waitForFocus(() => document.activeElement.getAttribute('role') === 'tab');
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('role')), 'tab');
+    assert.equal(await page.evaluate(() => document.activeElement === document.body), false);
+    assert.deepEqual(await page.evaluate(() => window.writes), [{ kind: 'BulkRecolor', nodeIds: ['dock'], color: 'olive' }]);
+  } finally { await page.close(); }
+});
+
+test('Chromium: sole roots, scrolling and cancelled touches never start selection; owner and active loss end it', async () => {
+  const page = await openSelectionPage();
+  try {
+    await page.getByRole('tab', { name: 'Done, 3 steps' }).click();
+    const root = page.locator('.st-board-card[data-step-id="course"]');
+    await root.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+    await page.clock.runFor(600);
+    await root.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true });
+    await root.dispatchEvent('click');
+    assert.equal(await page.locator('.st-board-bulk').count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
+    await page.getByRole('tab', { name: 'Up next, 2 steps' }).click();
+    const card = page.locator('.st-board-card[data-step-id="bowline"]');
+    for (const cancel of ['pointercancel', 'move', 'scroll']) {
+      await card.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+      if (cancel === 'pointercancel') await card.dispatchEvent('pointercancel', { pointerType: 'touch', pointerId: 7 });
+      if (cancel === 'move') await card.dispatchEvent('pointermove', { pointerType: 'touch', pointerId: 7, clientX: 100, clientY: 211 });
+      if (cancel === 'scroll') await page.locator('.st-board-phone-pane.is-shown').dispatchEvent('scroll');
+      await page.clock.runFor(600);
+      assert.equal(await page.locator('.st-board-bulk').count(), 0);
+      await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7 });
+    }
+    await holdStep(page, 'bowline');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.stepId), 'bowline');
+    await page.evaluate(() => setSelectionOwner(false));
+    await page.getByRole('tablist').waitFor();
+    await page.waitForFunction(() => !history.state?.boardSelection);
+    await page.evaluate(() => setSelectionOwner(true));
+    await holdStep(page, 'bowline');
+    await page.evaluate(() => setSelectionActive(false));
+    await page.waitForFunction(() => !document.querySelector('.st-board-bulk'));
+    await page.waitForFunction(() => !history.state?.boardSelection);
+    assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), [
+      'roadmap_board_select {"step":"start"}', 'roadmap_board_select {"step":"end","via":"left"}',
+      'roadmap_board_select {"step":"start"}', 'roadmap_board_select {"step":"end","via":"left"}',
+    ]);
+  } finally { await page.close(); }
+});
+
+test('Chromium: a hold without selection swallows release on the single root and every reader column; the next tap opens', async () => {
+  const cases = [
+    { nodes: [{ id: 'root', label: 'Start', prerequisites: [] }], options: { completed: [] }, tab: 'Up next, 1 step', id: 'root' },
+    { nodes: learnToSailNodes, options: { owner: false }, tab: 'Locked, 3 steps', id: 'dock' },
+    { nodes: learnToSailNodes, options: { owner: false }, tab: 'Up next, 2 steps', id: 'bowline' },
+    { nodes: learnToSailNodes, options: { owner: false }, tab: 'Done, 3 steps', id: 'course' },
+  ];
+  for (const { nodes, options, tab, id } of cases) {
+    const page = await openSelectionPage(390, nodes, options);
+    try {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      const card = page.locator(`.st-board-phone-pane.is-shown .st-board-card[data-step-id="${id}"]`);
+      const before = await page.evaluate(() => location.href);
+      await card.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+      await page.clock.runFor(500);
+      await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+      await card.dispatchEvent('click');
+      assert.equal(await page.locator('.st-board-bulk').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
+      assert.equal(await page.evaluate(() => location.href), before);
+      assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), []);
+      await touchStep(page, id);
+      await page.waitForFunction(() => window.opened?.length === 1);
+      assert.deepEqual(await page.evaluate(() => window.opened), [id]);
+    } finally { await page.close(); }
+  }
+});
+
+test('Chromium: an unrelated parent render preserves card memoization and a hold already 200ms underway', async () => {
+  const page = await openSelectionPage();
+  try {
+    await page.getByRole('tab', { name: 'Locked, 3 steps' }).click();
+    const starter = page.locator('.st-board-phone-pane.is-shown .st-board-card[data-step-id="dock"]');
+    await starter.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+    await page.clock.runFor(200);
+    const before = await page.evaluate(() => window.cardRenders);
+    await page.evaluate(() => window.rerenderSelection());
+    await page.locator('.st-view-layer--board[data-revision="1"]').waitFor();
+    assert.deepEqual(await page.evaluate(() => window.cardRenders), before);
+    await page.clock.runFor(299);
+    assert.equal(await page.locator('.st-board-bulk').count(), 0);
+    await page.clock.runFor(1);
+    await page.locator('.st-board-bulk').waitFor();
+    await starter.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
+    await starter.dispatchEvent('click');
+    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
+    assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), [
+      'roadmap_board_select {"step":"start"}',
+    ]);
+  } finally { await page.close(); }
+});
+
+test('Chromium: a delayed kind apply reads the selection pruned during its animation', async () => {
+  const page = await openSelectionPage();
+  try {
+    await page.getByRole('tab', { name: 'Locked, 3 steps' }).click();
+    await holdStep(page, 'dock');
+    await touchStep(page, 'triangle');
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.getByRole('radio', { name: 'Sky', exact: true }).evaluate((chip) => chip.click());
+    await page.clock.runFor(60);
+    await page.evaluate(() => window.filterSelection('terracotta'));
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading > span')?.textContent === '1 selected');
+    assert.deepEqual(await page.evaluate(() => window.writes), []);
+    await page.clock.runFor(60);
+    await page.getByRole('tablist').waitFor();
+    await page.clock.runFor(1000);
+    await page.getByText('1 step recolored', { exact: true }).last().waitFor();
+    assert.deepEqual(await page.evaluate(() => ({ writes: window.writes, query: window.selectionQuery })), {
+      writes: [{ kind: 'BulkRecolor', nodeIds: ['dock'], color: 'sky' }], query: ['terracotta'],
+    });
+    assert.deepEqual(await page.evaluate(() => window.selectionSteps.filter(({ id }) => ['dock', 'triangle'].includes(id))), [
+      { id: 'dock', color: 'sky' }, { id: 'triangle', color: 'olive' },
+    ]);
+  } finally { await page.close(); }
+});
+
+test('Chromium: refused recolor keeps the selection and controls live for a later apply', async () => {
+  const page = await openSelectionPage();
+  try {
+    await holdStep(page, 'bowline');
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.evaluate(() => { window.refuseSelectionWrites = true; });
+    await page.getByRole('radio', { name: 'Build', exact: true }).evaluate((chip) => chip.click());
+    await page.clock.runFor(120);
+    await page.waitForFunction(() => window.selectionAttempts.length === 1);
+    assert.deepEqual(await page.evaluate(() => ({ writes: window.writes, reports: window.reports ?? [] })), { writes: [], reports: [] });
+    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.equal(await page.getByRole('button', { name: 'Recolor', exact: true }).getAttribute('aria-expanded'), 'true');
+    assert.equal(await page.locator('.st-board-toast').count(), 0);
+    assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), ['roadmap_board_select {"step":"start"}']);
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await page.waitForFunction(() => history.state?.boardSelection?.kinds === false);
+    await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+    await settleKinds(page);
+    await page.evaluate(() => { window.refuseSelectionWrites = false; });
+    await page.getByRole('radio', { name: 'Build', exact: true }).evaluate((chip) => chip.click());
+    await page.clock.runFor(120);
+    await page.getByRole('tablist').waitFor();
+    await page.waitForFunction(() => !history.state?.boardSelection);
+    const gesture = { kind: 'BulkRecolor', nodeIds: ['bowline'], color: 'terracotta' };
+    assert.deepEqual(await page.evaluate(() => ({ attempts: window.selectionAttempts, writes: window.writes })), {
+      attempts: [gesture, gesture], writes: [gesture],
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: clearing a filter never resurrects choices pruned from the selection', async () => {
+  const page = await openSelectionPage();
+  try {
+    await page.getByRole('tab', { name: 'Locked, 3 steps' }).click();
+    await holdStep(page, 'dock');
+    await touchStep(page, 'triangle');
+    await page.evaluate(() => window.filterSelection('terracotta'));
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading > span')?.textContent === '1 selected');
+    await page.evaluate(() => window.filterSelection('terracotta'));
+    await page.waitForFunction(() => window.selectionQuery.length === 0);
+    await page.clock.runFor(1000);
+    await page.locator('.st-board-phone-pane.is-shown .st-board-card[data-step-id="triangle"]').waitFor();
+    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.deepEqual(await page.locator('.st-board-phone-pane.is-shown .st-board-card').evaluateAll((cards) => cards.map((card) => ({
+      id: card.dataset.stepId, selected: card.getAttribute('aria-pressed'),
+    }))), [
+      { id: 'dock', selected: 'true' }, { id: 'triangle', selected: 'false' }, { id: 'solo', selected: 'false' },
+    ]);
+    assert.deepEqual(await page.evaluate(() => window.writes), []);
+  } finally { await page.close(); }
+});
+
+for (const change of ['filter', 'remote delete']) {
+  test(`Chromium: ${change} emptying selection restores the shown tab after leaving cards unmount`, async () => {
+    const page = await openSelectionPage();
+    try {
+      await page.getByRole('tab', { name: 'Locked, 3 steps' }).click();
+      await holdStep(page, 'dock');
+      await page.evaluate((change) => {
+        if (change === 'filter') window.filterSelection('sky');
+        else window.removeSelectionStep('dock');
+      }, change);
+      await page.getByRole('tablist').waitFor();
+      await page.clock.runFor(1000);
+      await page.waitForFunction(() => !document.querySelector('.st-board-phone-pane.is-shown .st-board-card[data-step-id="dock"]'));
+      await page.waitForFunction(() => document.activeElement.getAttribute('role') === 'tab');
+      assert.deepEqual(await page.evaluate(() => ({
+        role: document.activeElement.getAttribute('role'),
+        selected: document.activeElement.getAttribute('aria-selected'),
+        body: document.activeElement === document.body,
+      })), { role: 'tab', selected: 'true', body: false });
+      assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), [
+        'roadmap_board_select {"step":"start"}', 'roadmap_board_select {"step":"end","via":"emptied"}',
+      ]);
+      assert.deepEqual(await page.evaluate(() => window.writes), []);
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: deleting both independent roots restores focus to the displayed empty-roadmap action', async () => {
+  const page = await openSelectionPage(390, [
+    { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
+    { id: 'knots', label: 'Practise knots', prerequisites: [], color: 'olive' },
+  ], { completed: [] });
+  try {
+    await holdStep(page, 'wind');
+    await touchStep(page, 'knots');
+    await page.getByRole('button', { name: 'Delete 2 steps' }).click();
+    await page.getByText('Your first step', { exact: true }).waitFor();
+    await page.clock.runFor(1000);
+    await page.waitForFunction(() => !document.querySelector('.st-board-card'));
+    await page.waitForFunction(() => document.activeElement?.matches('.st-board-state button'));
+    assert.deepEqual(await page.evaluate(() => ({
+      name: document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim(),
+      body: document.activeElement === document.body,
+      held: window.selectionHeld,
+      writes: window.writes,
+    })), { name: 'New step', body: false, held: ['wind', 'knots'], writes: [] });
+    assert.equal(await page.getByRole('tablist').count(), 0);
+  } finally { await page.close(); }
+});
+
+test('Chromium: Board recovery skips hidden empty panes and retiring or covered cards', async () => {
+  const page = await openSelectionPage(390, [
+    { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
+    { id: 'knots', label: 'Practise knots', prerequisites: [], color: 'olive' },
+  ], { completed: [] });
+  try {
+    const targets = await page.evaluate(() => {
+      const root = document.querySelector('.st-board');
+      const wind = root.querySelector('[data-step-id="wind"]');
+      const read = (options) => {
+        const target = window.boardFocusTarget(root, options);
+        return { step: target.dataset.stepId ?? null, role: target.getAttribute('role') };
+      };
+      const initial = read();
+      const preferred = read({ preferredId: 'knots' });
+      const excluded = read({ excludeId: 'wind' });
+      wind.classList.add('is-leaving');
+      const retiring = read({ preferredId: 'wind' });
+      wind.classList.remove('is-leaving');
+      wind.inert = true;
+      const covered = read({ preferredId: 'wind' });
+      wind.inert = false;
+      return { initial, preferred, excluded, retiring, covered };
+    });
+    assert.deepEqual(targets, {
+      initial: { step: 'wind', role: null },
+      preferred: { step: 'knots', role: null },
+      excluded: { step: null, role: 'tab' },
+      retiring: { step: null, role: 'tab' },
+      covered: { step: null, role: 'tab' },
+    });
+  } finally { await page.close(); }
+});

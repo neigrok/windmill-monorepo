@@ -8,8 +8,9 @@ const COLUMN_OF_STATE = { complete: 'done', available: 'upNext', locked: 'locked
 const PICKER_COLUMNS = ['done', 'upNext', 'locked'];
 
 export class StepDraft {
-  constructor({ id = crypto.randomUUID(), name = '', description = '', color = DEFAULT_DRAFT_COLOR, prerequisites = [] } = {}) {
+  constructor({ id = crypto.randomUUID(), name = '', description = '', color = DEFAULT_DRAFT_COLOR, prerequisites = [], baseline } = {}) {
     this.id = id;
+    if (baseline) this.baseline = baseline;
     this.name = name;
     this.description = description;
     this.color = color;
@@ -17,11 +18,26 @@ export class StepDraft {
     Object.freeze(this);
   }
 
+  static forStep(step) {
+    const baseline = Object.freeze({
+      name: step.label ?? '',
+      description: step.description ?? '',
+      color: step.color ?? DEFAULT_NODE_COLOR,
+      prerequisites: Object.freeze([...step.prerequisites]),
+    });
+    return new StepDraft({ id: step.id, ...baseline, baseline });
+  }
+
   with(change) {
-    return new StepDraft({ ...this, ...change, id: this.id });
+    return new StepDraft({ ...this, ...change, id: this.id, baseline: this.baseline });
   }
 
   get dirty() {
+    if (this.baseline) {
+      return this.name !== this.baseline.name || this.description !== this.baseline.description
+        || this.color !== this.baseline.color || this.prerequisites.length !== this.baseline.prerequisites.length
+        || this.prerequisites.some((id) => !this.baseline.prerequisites.includes(id));
+    }
     return this.name !== '' || this.description !== '' || this.color !== DEFAULT_DRAFT_COLOR || this.prerequisites.length > 0;
   }
 
@@ -30,19 +46,33 @@ export class StepDraft {
   }
 
   reconcile(tree) {
-    const prerequisites = this.prerequisites.filter((id) => tree.nodesById.has(id));
-    if (prerequisites.length === this.prerequisites.length) return this;
-    return this.with({ prerequisites });
+    const blocked = blockedPrerequisites(tree, this.baseline ? this.id : null);
+    const prerequisites = this.prerequisites.filter((id) => tree.nodesById.has(id) && !blocked.has(id));
+    const baselineIds = this.baseline?.prerequisites.filter((id) => tree.nodesById.has(id) && !blocked.has(id));
+    const baselineChanged = baselineIds && baselineIds.length !== this.baseline.prerequisites.length;
+    if (prerequisites.length === this.prerequisites.length && !baselineChanged) return this;
+    const baseline = baselineChanged
+      ? Object.freeze({ ...this.baseline, prerequisites: Object.freeze(baselineIds) })
+      : this.baseline;
+    return new StepDraft({ ...this, prerequisites, baseline });
   }
 
   placement(tree, completed) {
     const draft = this.reconcile(tree);
-    const states = UnlockRules.derive({ nodes: [...tree.nodes, draft] }, { completed });
+    if (this.baseline && !tree.nodesById.has(this.id)) return { column: null, body: null };
+    const nodes = this.baseline ? tree.nodes.map((step) => step.id === draft.id ? draft : step) : [...tree.nodes, draft];
+    const states = UnlockRules.derive({ nodes }, { completed });
     const prerequisites = draft.prerequisites.map((id) => tree.nodesById.get(id));
     const unmet = prerequisites.filter((step) => states.get(step.id) !== 'complete');
     const unmetLabels = unmet.map((step) => step.label?.trim() ? step.label : STEP_DETAIL.unnamed);
     const preview = placementPreview({ prerequisites, unmet: unmetLabels });
-    return { ...preview, column: COLUMN_OF_STATE[states.get(draft.id)] };
+    const column = COLUMN_OF_STATE[states.get(draft.id)];
+    return { column, body: column === 'done' ? null : preview.body };
+  }
+
+  toEditRequest(tree) {
+    const draft = this.reconcile(tree);
+    return new EditStepRequest({ ...draft, label: draft.name });
   }
 
   toCreateRequest(tree) {
@@ -64,17 +94,43 @@ export class CreateStepRequest {
   }
 }
 
+export class EditStepRequest {
+  constructor({ id, label, description, color, prerequisites }) {
+    const name = label.trim();
+    if (!name) throw new TypeError('A step requires a non-empty label');
+    this.id = id;
+    this.label = name;
+    this.description = description;
+    this.color = color;
+    this.prerequisites = Object.freeze([...prerequisites]);
+    Object.freeze(this);
+  }
+}
+
+export function blockedPrerequisites(tree, editing) {
+  if (!editing || !tree.nodesById.has(editing)) return new Set();
+  return new Set([editing, ...tree.descendantsOf(editing).map((step) => step.id)]);
+}
+
 export class PrerequisiteChoices {
-  constructor(tree, completed, { selected = [], query = '', limit = PAGE_SIZE } = {}) {
+  constructor(tree, completed, { selected = [], query = '', limit = PAGE_SIZE, editing = null, revalidated = [] } = {}) {
     this.tree = tree;
     this.completed = completed;
     this.query = query;
     this.limit = limit;
-    this.selectedIds = Object.freeze([...new Set(selected)].filter((id) => tree.nodesById.has(id)));
+    this.editing = editing;
+    this.blockedIds = blockedPrerequisites(tree, editing);
+    this.selectedIds = Object.freeze([...new Set(selected)].filter((id) => tree.nodesById.has(id) && !this.blockedIds.has(id)));
 
     const chosen = new Set(this.selectedIds);
     const states = UnlockRules.derive(tree, { completed });
     const labels = new Map(tree.nodes.map((step) => [step.id, step.label?.trim() ? step.label : STEP_DETAIL.unnamed]));
+    const dropped = selected.filter((id) => this.blockedIds.has(id));
+    this.revalidated = Object.freeze([...new Map([
+      ...revalidated.map((row) => [row.id, row]),
+      ...dropped.map((id) => [id, Object.freeze({ id, label: labels.get(id) })]),
+    ]).values()]);
+    const revalidatedIds = new Set(this.revalidated.map((row) => row.id));
     const titleCounts = new Map();
     for (const step of tree.nodes) {
       const title = labels.get(step.id).trim().toLowerCase();
@@ -99,10 +155,15 @@ export class PrerequisiteChoices {
     const byId = new Map(candidates.map((row) => [row.id, row]));
     const asked = query.trim().toLowerCase();
     const matches = candidates.filter((row) => row.label.toLowerCase().includes(asked));
-    const ordered = PICKER_COLUMNS.flatMap((column) => matches.filter((row) => row.column === column));
+    this.blocked = Object.freeze(matches.filter((row) => this.blockedIds.has(row.id)).map((row) => Object.freeze({
+      ...row,
+      reason: row.id === editing ? PICKER.thisStep : revalidatedIds.has(row.id) ? PICKER.nowComesAfter : PICKER.comesAfter,
+    })));
+    const selectable = matches.filter((row) => !this.blockedIds.has(row.id));
+    const ordered = PICKER_COLUMNS.flatMap((column) => selectable.filter((row) => row.column === column));
 
-    this.total = candidates.length;
-    this.count = matches.length;
+    this.total = candidates.length - this.blockedIds.size;
+    this.count = selectable.length;
     this.rows = Object.freeze(ordered.slice(0, limit));
     this.selected = Object.freeze(this.selectedIds.map((id) => byId.get(id)));
     Object.freeze(this);
@@ -121,29 +182,29 @@ export class PrerequisiteChoices {
   }
 
   search(query) {
-    return new PrerequisiteChoices(this.tree, this.completed, { selected: this.selectedIds, query });
+    return new PrerequisiteChoices(this.tree, this.completed, { selected: this.selectedIds, query, editing: this.editing });
   }
 
   toggle(id) {
-    if (!this.tree.nodesById.has(id)) return this;
+    if (!this.tree.nodesById.has(id) || this.blockedIds.has(id)) return this;
     const selected = this.selectedIds.includes(id)
       ? this.selectedIds.filter((chosen) => chosen !== id)
       : [...this.selectedIds, id];
-    return new PrerequisiteChoices(this.tree, this.completed, { selected, query: this.query, limit: this.limit });
+    return new PrerequisiteChoices(this.tree, this.completed, { selected, query: this.query, limit: this.limit, editing: this.editing });
   }
 
   more() {
     if (!this.hasMore) return this;
-    return new PrerequisiteChoices(this.tree, this.completed, { selected: this.selectedIds, query: this.query, limit: this.limit + PAGE_SIZE });
+    return new PrerequisiteChoices(this.tree, this.completed, { selected: this.selectedIds, query: this.query, limit: this.limit + PAGE_SIZE, editing: this.editing, revalidated: this.revalidated });
   }
 
   reconcile(tree, completed) {
     if (tree === this.tree && completed === this.completed) return this;
-    return new PrerequisiteChoices(tree, completed, { selected: this.selectedIds, query: this.query, limit: this.limit });
+    return new PrerequisiteChoices(tree, completed, { selected: this.selectedIds, query: this.query, limit: this.limit, editing: this.editing, revalidated: this.revalidated });
   }
 
   differsFrom(ids) {
-    const live = new Set(ids.filter((id) => this.tree.nodesById.has(id)));
+    const live = new Set(ids.filter((id) => this.tree.nodesById.has(id) && !this.blockedIds.has(id)));
     return this.selectedIds.length !== live.size || this.selectedIds.some((id) => !live.has(id));
   }
 }

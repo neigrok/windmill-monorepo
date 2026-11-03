@@ -49,6 +49,34 @@ export const SHORTCUT_GROUPS = [
   },
 ];
 
+export const BOARD_SHORTCUT_GROUPS = [
+  {
+    title: 'Board',
+    rows: [
+      { label: 'Find a step', chords: [[key('/')]] },
+      { label: 'Move between steps', chords: [[key('↑'), key('↓')]] },
+      { label: 'Move between columns', chords: [[key('←'), key('→')]] },
+      { label: 'Open step', chords: [[key('⏎')]] },
+      { label: 'Close step', chords: [[key('esc')]] },
+      { label: 'Complete step', chords: [[key('C')]], owner: true },
+      { label: 'Delete step', chords: [[key('⌫')]], owner: true },
+      { label: 'Board / Graph', chords: [[key('G')]] },
+    ],
+  },
+  {
+    title: 'Edit',
+    rows: [
+      { label: 'Ask AI', chords: [[key('⌘'), key('K')]] },
+      { label: 'Paste a plan', chords: [[key('⌘'), key('V')]] },
+    ],
+  },
+  SHORTCUT_GROUPS.find((group) => group.title === 'History'),
+  {
+    title: 'View',
+    rows: [{ label: 'Keyboard shortcuts', chords: [[key('?')]] }],
+  },
+];
+
 // Authored Mac-style; Windows swaps only these keys.
 const WINDOWS_KEYS = { '⌘': 'Ctrl', '⌥': 'Alt', '⌫': 'Delete', '⏎': 'Enter' };
 
@@ -64,7 +92,13 @@ export function detectPlatform() {
   return 'mac';
 }
 
-export function visibleGroups(readOnly) {
+export function visibleGroups(readOnly, view = 'graph') {
+  if (view === 'board') {
+    if (!readOnly) return BOARD_SHORTCUT_GROUPS;
+    return BOARD_SHORTCUT_GROUPS
+      .filter((group) => group.title === 'Board' || group.title === 'View')
+      .map((group) => ({ ...group, rows: group.rows.filter((row) => !row.owner) }));
+  }
   if (!readOnly) return SHORTCUT_GROUPS;
   return SHORTCUT_GROUPS.filter((group) => group.title === 'Navigate' || group.title === 'View');
 }
@@ -85,11 +119,12 @@ export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = f
 }
 
 // The Board's own keys, unmodified, never while typing in a field and never while a modal layer covers the Board (a step
-// open over it, a dialog, the composer): / for Find a step, G for Board ⇄ Graph, C for Complete.
+// open over it, a dialog, the composer): / for Find a step, G for Board ⇄ Graph, C for Complete, ⌫ for held delete.
 export function boardKey({ key, metaKey = false, ctrlKey = false, altKey = false }, { typing = false, covered = false } = {}) {
   if (metaKey || ctrlKey || altKey || typing || covered) return null;
   if (key === '/') return 'find';
   if (key.toLowerCase() === 'g') return 'switch';
   if (key.toLowerCase() === 'c') return 'complete';
+  if (key === 'Backspace' || key === 'Delete') return 'delete';
   return null;
 }

@@ -104,6 +104,7 @@
 }
 .st-board-step-page .st-board-step-buttons {
   justify-content: stretch;
+  gap: 8px;
 }
 .st-board-step-page .st-board-step-action {
   flex: 1;
@@ -116,4 +117,20 @@
 }
 .st-board-step-page .st-board-step-menu-list {
   width: 208px;
+}
+
+.st-board-step-page .st-board-step-action.st-board-step-action--text {
+  flex: 0 0 76px;
+  min-width: 76px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.st-board-step-page .st-board-step-identity--compact .st-board-step-identity-title {
+  font-size: 20px;
+  line-height: 28px;
 }

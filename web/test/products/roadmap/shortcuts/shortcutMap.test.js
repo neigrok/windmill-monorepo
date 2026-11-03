@@ -1,6 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyLabel, visibleGroups, keyHint, detectPlatform, graphOnlyKey, boardKey, SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
+import { keyLabel, visibleGroups, keyHint, detectPlatform, graphOnlyKey, boardKey, SHORTCUT_GROUPS, BOARD_SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
+
+test('Board groups follow the drawn order and the reader has only navigation and help', () => {
+  assert.equal(visibleGroups(false, 'board'), BOARD_SHORTCUT_GROUPS);
+  const rows = (readOnly) => visibleGroups(readOnly, 'board').map(({ title, rows }) => ({
+    title, rows: rows.map(({ label, chords }) => [label, chords.map((chord) => chord.map(({ label }) => label))]),
+  }));
+  assert.deepEqual(rows(false), [
+    { title: 'Board', rows: [
+      ['Find a step', [['/']]], ['Move between steps', [['↑', '↓']]],
+      ['Move between columns', [['←', '→']]], ['Open step', [['⏎']]],
+      ['Close step', [['esc']]], ['Complete step', [['C']]], ['Delete step', [['⌫']]],
+      ['Board / Graph', [['G']]],
+    ] },
+    { title: 'Edit', rows: [['Ask AI', [['⌘', 'K']]], ['Paste a plan', [['⌘', 'V']]]] },
+    { title: 'History', rows: [['Undo', [['⌘', 'Z']]], ['Redo', [['⇧', '⌘', 'Z']]]] },
+    { title: 'View', rows: [['Keyboard shortcuts', [['?']]]] },
+  ]);
+  assert.deepEqual(rows(true), [
+    { title: 'Board', rows: [
+      ['Find a step', [['/']]], ['Move between steps', [['↑', '↓']]],
+      ['Move between columns', [['←', '→']]], ['Open step', [['⏎']]],
+      ['Close step', [['esc']]], ['Board / Graph', [['G']]],
+    ] },
+    { title: 'View', rows: [['Keyboard shortcuts', [['?']]]] },
+  ]);
+});
+
+test('Board delete is unmodified and yields to typing and every covering layer', () => {
+  for (const key of ['Backspace', 'Delete']) {
+    assert.equal(boardKey({ key }), 'delete');
+    for (const modifier of ['metaKey', 'ctrlKey', 'altKey']) assert.equal(boardKey({ key, [modifier]: true }), null);
+    assert.deepEqual([
+      boardKey({ key }, { typing: true }), boardKey({ key }, { covered: true }),
+    ], [null, null]);
+  }
+});
 
 test('keyLabel swaps the four platform keys on Windows', () => {
   assert.equal(keyLabel('⌘', 'windows'), 'Ctrl');

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
-import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
-import { HeldDelete, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
+import { Board, BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
+import { HeldDelete, StepSelection, deletable, editGesture, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -76,4 +76,79 @@ test('delete cost includes a child retaining another parent and counts shared ch
   assert.equal(deletionCost(tree, ['wind', 'rig', 'rig']), 1);
   assert.equal(deletionCost(tree, ['wind', 'rig', 'dock']), 1);
   assert.equal(deletionCost(tree, []), 0);
+});
+
+test('StepSelection toggles immutably and prunes to the pane order after filtering or regrouping', () => {
+  const tree = treeOf([wind, { ...dock, color: 'sky' }, { id: 'solo', label: 'Solo', color: 'gold', prerequisites: ['wind'] }]);
+  const board = new Board(tree, progress);
+  const empty = new StepSelection();
+  const selected = empty.toggle('solo', board, 'locked').toggle('dock', board, 'locked');
+  assert.deepEqual(empty.ids, []);
+  assert.deepEqual(selected.ids, ['dock', 'solo']);
+  assert.equal(selected.count, 2);
+  assert.equal(selected.prune(board, 'locked'), selected);
+  assert.deepEqual(selected.toggle('dock', board, 'locked').ids, ['solo']);
+  assert.deepEqual(selected.prune(new Board(tree, progress, new BoardQuery({ kinds: ['sky'] })), 'locked').ids, ['dock']);
+  assert.deepEqual(selected.prune(new Board(tree, advanceProgress(progress, ['wind'], 'complete', 1)), 'locked').ids, []);
+  assert.deepEqual(selected.prune(board, 'upNext').ids, []);
+  assert.ok(Object.isFrozen(selected));
+  assert.ok(Object.isFrozen(selected.ids));
+});
+
+test('StepSelection shared kind is the common effective color, otherwise null', () => {
+  const tree = treeOf([wind, { ...dock, color: 'sky' }, { id: 'solo', label: 'Solo', prerequisites: ['wind'] }]);
+  assert.equal(new StepSelection(['wind', 'dock']).sharedKind(tree), 'sky');
+  assert.equal(new StepSelection(['dock', 'solo']).sharedKind(tree), null);
+  assert.equal(new StepSelection(['solo']).sharedKind(tree), 'terracotta');
+  assert.equal(new StepSelection().sharedKind(tree), null);
+  assert.equal(new StepSelection(['missing']).sharedKind(tree), null);
+});
+
+test('deletable excludes the sole root, absent ids and empty selections', () => {
+  const tree = treeOf([wind, dock]);
+  assert.equal(deletable(tree, ['wind']), false);
+  assert.equal(deletable(tree, ['wind', 'dock']), false);
+  assert.equal(deletable(tree, ['dock']), true);
+  assert.equal(deletable(tree, []), false);
+  assert.equal(deletable(tree, ['missing']), false);
+  assert.equal(deletable(null, ['dock']), false);
+  assert.equal(deletable(treeOf([wind, { ...dock, prerequisites: [] }]), ['wind']), true);
+});
+
+test('editGesture diffs each field and prerequisite membership without treating order as a write', () => {
+  const tree = treeOf([wind, dock, { id: 'rig', label: 'Rig', prerequisites: [] }]);
+  const request = { id: 'dock', label: 'Leave the dock', description: '', color: 'terracotta', prerequisites: ['wind'] };
+  assert.equal(editGesture(tree, request), null);
+  assert.equal(editGesture(tree, { ...request, id: 'missing' }), null);
+  for (const [field, value] of [['label', 'Sail'], ['description', 'A description'], ['color', 'gold']]) {
+    assert.deepEqual(editGesture(tree, { ...request, [field]: value }), {
+      kind: 'EditNode', id: 'dock', [field]: value, addPrerequisites: [], removePrerequisites: [],
+    });
+  }
+  assert.deepEqual(editGesture(tree, { ...request, prerequisites: ['rig', 'rig'] }), {
+    kind: 'EditNode', id: 'dock', addPrerequisites: ['rig'], removePrerequisites: ['wind'],
+  });
+  const withTwo = treeOf([wind, { id: 'rig', label: 'Rig', prerequisites: [] }, { ...dock, prerequisites: ['wind', 'rig'] }]);
+  assert.equal(editGesture(withTwo, { ...request, prerequisites: ['rig', 'wind'] }), null);
+});
+
+test('editGesture refuses missing, self and transitive descendant prerequisites without mutating the tree', () => {
+  const tree = treeOf([wind, dock, { id: 'solo', label: 'Solo', prerequisites: ['dock'] }]);
+  const before = structuredClone(tree.nodes);
+  for (const id of ['missing', 'wind', 'dock', 'solo']) {
+    assert.equal(editGesture(tree, { id: 'wind', label: 'Wind', description: '', color: 'sky', prerequisites: [id] }), false);
+  }
+  assert.deepEqual(tree.nodes, before);
+});
+
+test('StepSelection prunes folded Done using the same shown-card limit as the pane', () => {
+  const nodes = Array.from({ length: 14 }, (_, index) => ({ id: `done-${index}`, label: `Done ${index}`, prerequisites: [] }));
+  const board = new Board(treeOf(nodes), {
+    completed: new Set(nodes.map(({ id }) => id)),
+    completedAt: Object.fromEntries(nodes.map(({ id }, index) => [id, index + 1])),
+  });
+  const selected = new StepSelection(['done-0', 'done-1', 'done-2', 'done-13']);
+  assert.deepEqual(selected.prune(board, 'done', { doneExpanded: false }).ids, ['done-13', 'done-2']);
+  assert.deepEqual(selected.prune(board, 'done', { doneExpanded: true }).ids, ['done-13', 'done-2', 'done-1', 'done-0']);
+  assert.deepEqual(new StepSelection(['done-13']).toggle('done-0', board, 'done', { doneExpanded: false }).ids, ['done-13']);
 });

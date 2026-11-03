@@ -81,10 +81,11 @@ function Room() {
     } },
     showToast,
     clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
+    emit: () => {},
     track: (name, props) => window.calls.push(['event', name, props]), report: (op) => window.calls.push(['report', op]),
     onQuiet: () => setQuiet((current) => current + 1), onReveal: () => {},
   });
-  window.deleteStep = () => flushSync(() => acts.delete('wind'));
+  window.deleteStep = () => flushSync(() => acts.delete(['wind'], 'menu'));
   window.flush = () => flushSync(() => {});
   window.leave = (via) => flushSync(() => {
     if (via === 'view') setActive(false);
@@ -135,12 +136,12 @@ for (const trigger of ['view', 'owner', 'roadmap', 'unmount', 'pagehide']) {
       await page.waitForFunction(() => !!window.deleteStep);
       await page.evaluate(() => window.deleteStep());
       await page.waitForFunction(() => document.querySelector('output').textContent === 'held');
-      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held' }]]);
+      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
       await page.evaluate((via) => window.leave(via), trigger);
       await page.waitForFunction(() => window.calls.some(([kind]) => kind === 'dispatch'));
       await page.clock.fastForward(10000);
       assert.deepEqual(await page.evaluate(() => window.calls), [
-        ['event', 'roadmap_board_delete', { step: 'held' }],
+        ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
         ['dispatch', 'sail', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, { captureFailures: true }],
         ['event', 'roadmap_board_delete', { step: 'sent', via: 'left' }],
       ]);
@@ -173,7 +174,7 @@ for (const undo of [false, true]) {
       const shownAt = await page.evaluate(() => window.shownAt);
       assert.equal(shownAt, CLOCK_START.getTime() + 270);
       await page.clock.runFor(8999);
-      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held' }]]);
+      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
       if (undo) {
         await page.locator('.st-board-toast-undo').evaluate((button) => button.click());
         await page.waitForFunction(() => document.querySelector('output').textContent === 'clear');
@@ -182,7 +183,7 @@ for (const undo of [false, true]) {
       const outcome = undo
         ? [['event', 'roadmap_board_undo', { act: 'delete' }]]
         : [['dispatch', 'sail', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, { captureFailures: true }], ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }]];
-      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held' }], ...outcome]);
+      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ...outcome]);
       assert.deepEqual(await page.evaluate(() => [window.maskedWork(), window.restoreOffers]), [[], []]);
       if (!undo) {
         await page.evaluate(() => { window.leave('view'); window.recheckTree(); });

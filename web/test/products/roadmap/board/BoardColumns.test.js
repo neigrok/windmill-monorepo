@@ -148,15 +148,16 @@ test('BoardColumns — the columns are one tab stop: the first Up next card, wit
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import '/src/products/roadmap/board/board.css';
 import { BoardColumns, DEFAULT_RAIL, swapRail } from '/src/products/roadmap/board/BoardColumns.jsx';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
-import { Board } from '/src/products/roadmap/board/Board.js';
+import { Board, BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { useRegroup } from '/src/products/roadmap/board/ColumnCards.jsx';
+import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 
 window.openBoard = (nodes, initiallyCompleted, band) => {
@@ -202,6 +203,59 @@ window.openFirstCreate = () => {
     const tree = useMemo(() => new SkillTree({ id: 'first', title: 'First', nodes }), [nodes]);
     window.createFirstStep = () => setNodes([{ id: 'one', label: 'First step', prerequisites: [] }]);
     return React.createElement(BoardView, { tree, completed: new Set(), completedAt: {}, breakpoint: 'desktop', active: true, onSelect: () => {}, onQuery: () => {}, onNewStep: () => {} });
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Room));
+};
+window.openDeleteBoard = (owner = true) => {
+  const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+    { id: 'course', label: 'Choose a course', prerequisites: [] },
+    { id: 'wind', label: 'Read the wind', prerequisites: ['course'] },
+    { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'] },
+  ] });
+  const progress = { completed: new Set(['course']), completedAt: { course: 1 } };
+  const query = new BoardQuery();
+  window.deleteCalls = [];
+  function Room() {
+    const [toast, setToast] = useState(null);
+    const [quiet, setQuiet] = useState(0);
+    const [covered, setCovered] = useState(false);
+    const { held, acts } = useBoardActs({
+      tree, treeId: 'sail', active: true, owner, query, progress, now: Date.now,
+      session: { dispatch: (gesture, options) => { window.deleteCalls.push(['dispatch', gesture, options]); return {}; } },
+      showToast: (message, options) => setToast({ message, ...options }),
+      track: (name, properties) => window.deleteCalls.push(['event', name, properties]),
+      report: (operation) => window.deleteCalls.push(['report', operation]),
+      onQuiet: () => setQuiet((value) => value + 1), onReveal: () => {},
+      emit: () => {},
+    });
+    useEffect(() => {
+      if (!toast) return undefined;
+      const timer = setTimeout(() => toast.onLeave('timer'), toast.holdMs);
+      return () => clearTimeout(timer);
+    }, [toast]);
+    const projected = useMemo(() => held ? held.projected(tree) : tree, [held]);
+    const board = useMemo(() => new Board(projected, progress, query), [projected]);
+    const rootRef = useRef(null);
+    const motion = useRegroup(board, { root: rootRef, quiet });
+    window.coverDeleteBoard = setCovered;
+    window.inspectDeleteBoard = () => ({
+      held: held?.ids ?? [],
+      nodes: projected.nodes.map(({ id, prerequisites }) => ({ id, prerequisites })),
+      calls: window.deleteCalls,
+      toast: toast ? { message: toast.message, holdMs: toast.holdMs } : null,
+    });
+    return React.createElement(React.Fragment, null,
+      React.createElement('input', { 'aria-label': 'Step note', defaultValue: 'Draft' }),
+      covered && React.createElement('div', { role: 'dialog', 'aria-modal': true }, 'Covering dialog'),
+      React.createElement('output', { 'data-held': held ? 'yes' : 'no' }, toast?.message ?? ''),
+      toast && React.createElement('button', { type: 'button', onClick: () => { toast.action.run(); setToast(null); } }, 'Undo'),
+      React.createElement('div', { ref: rootRef, className: 'st-board st-board--columns', style: { height: '90vh' } },
+        React.createElement(BoardColumns, {
+          board: motion.board, focusBoard: board, counts: motion.counts, arrived: motion.arrived,
+          leaving: motion.leaving, pinned: motion.pinned, settle: motion.settle, band: 'desktop',
+          onDelete: owner ? (ids, door) => acts.delete(ids, door) : undefined,
+          onSelect: () => {}, doneExpanded: false, onExpandDone: () => {},
+        })));
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
@@ -684,3 +738,100 @@ test('Chromium: refused C keeps focus recovery available for a later remote comp
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+const DELETE_CLOCK = new Date('2026-11-02T12:00:00Z');
+
+async function openDeletePage(owner, errors) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.clock.install({ time: new Date(DELETE_CLOCK.getTime() - 60000) });
+  await page.clock.pauseAt(DELETE_CLOCK);
+  await page.goto(`${origin}/board-columns-test`);
+  await page.waitForFunction(() => window.entryReady);
+  await page.evaluate((editable) => window.openDeleteBoard(editable), owner);
+  await page.locator('.st-board-card[data-step-id="wind"]').waitFor();
+  return page;
+}
+
+for (const key of ['Backspace', 'Delete']) {
+  test(`Chromium: focused owner ${key} holds one delete, projects every column and recovers focus before Undo`, async () => {
+    await ready;
+    const errors = [];
+    const page = await openDeletePage(true, errors);
+    try {
+      await page.locator('.st-board-card[data-step-id="wind"]').focus();
+      await page.keyboard.press(key);
+      await page.locator('output[data-held="yes"]').waitFor();
+      await page.clock.runFor(150);
+      await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'dock');
+      assert.deepEqual(await page.evaluate(() => window.inspectDeleteBoard()), {
+        held: ['wind'],
+        nodes: [{ id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] }],
+        calls: [['event', 'roadmap_board_delete', { step: 'held', door: 'key' }]],
+        toast: { message: 'Read the wind deleted', holdMs: 9000 },
+      });
+      assert.deepEqual(await page.locator('[data-column]').evaluateAll((columns) => columns.map((column) => ({
+        column: column.dataset.column,
+        cards: [...column.querySelectorAll('.st-board-card')].map((card) => card.dataset.stepId),
+      }))), [
+        { column: 'locked', cards: [] }, { column: 'upNext', cards: ['dock'] }, { column: 'done', cards: ['course'] },
+      ]);
+      assert.deepEqual(await page.evaluate(() => ({ id: document.activeElement.dataset.stepId, tabIndex: document.activeElement.tabIndex })), {
+        id: 'dock', tabIndex: 0,
+      });
+      await page.clock.runFor(8849);
+      assert.deepEqual(await page.evaluate(() => window.deleteCalls), [['event', 'roadmap_board_delete', { step: 'held', door: 'key' }]]);
+      await page.getByRole('button', { name: 'Undo', exact: true }).evaluate((button) => button.click());
+      await page.locator('output[data-held="no"]').waitFor({ state: 'attached' });
+      await page.clock.runFor(10000);
+      await page.locator('.st-board-card[data-step-id="wind"]').waitFor();
+      assert.deepEqual(await page.evaluate(() => window.inspectDeleteBoard()), {
+        held: [],
+        nodes: [
+          { id: 'course', prerequisites: [] }, { id: 'wind', prerequisites: ['course'] }, { id: 'dock', prerequisites: ['wind'] },
+        ],
+        calls: [
+          ['event', 'roadmap_board_delete', { step: 'held', door: 'key' }],
+          ['event', 'roadmap_board_undo', { act: 'delete' }],
+        ],
+        toast: null,
+      });
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const refusal of ['sole root', 'reader', 'typing', 'covered']) {
+  test(`Chromium: ${refusal} refuses Board keyboard deletion without a hold, write or event`, async () => {
+    await ready;
+    const errors = [];
+    const page = await openDeletePage(refusal !== 'reader', errors);
+    try {
+      if (refusal === 'covered') {
+        await page.evaluate(() => window.coverDeleteBoard(true));
+        await page.getByRole('dialog').waitFor();
+      }
+      if (refusal === 'typing') {
+        await page.getByRole('textbox', { name: 'Step note' }).focus();
+        await page.keyboard.press('End');
+      } else {
+        const id = refusal === 'sole root' ? 'course' : 'wind';
+        await page.locator(`.st-board-card[data-step-id="${id}"]`).focus();
+      }
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Delete');
+      await page.clock.runFor(10000);
+      assert.deepEqual(await page.evaluate(() => window.inspectDeleteBoard()), {
+        held: [],
+        nodes: [
+          { id: 'course', prerequisites: [] }, { id: 'wind', prerequisites: ['course'] }, { id: 'dock', prerequisites: ['wind'] },
+        ],
+        calls: [],
+        toast: null,
+      });
+      assert.equal(await page.locator('.st-board-card').count(), 3);
+      if (refusal === 'typing') assert.equal(await page.getByRole('textbox', { name: 'Step note' }).inputValue(), 'Draf');
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

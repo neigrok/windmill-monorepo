@@ -4,16 +4,122 @@
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import {
-  FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, emptyColumn, removeChip, sortButtonLabel,
+  BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
 } from './copy.js';
 
 const SORT_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const SHEET_FOCUSABLE = 'button, input, [tabindex="0"]';
+
+export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
+  return (
+    <div role="radiogroup" aria-label={label}>
+      {kinds.map((kind, index) => (
+        <button
+          key={kind.hue}
+          type="button"
+          role="radio"
+          aria-checked={value === kind.hue}
+          tabIndex={value === kind.hue || (value === null && index === 0) ? 0 : -1}
+          className="st-board-draft-kind-choice"
+          style={{ '--draft-kind': KIND_CSS[kind.hue].base, '--draft-kind-ring': KIND_CSS[kind.hue].ring }}
+          onClick={() => onChoose(kind.hue)}
+          onKeyDown={(event) => {
+            const direction = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+            if (!direction) return;
+            event.preventDefault();
+            const nextIndex = (index + direction + kinds.length) % kinds.length;
+            if (follow) onChoose(kinds[nextIndex].hue);
+            event.currentTarget.parentElement.querySelectorAll('[role="radio"]')[nextIndex].focus();
+          }}
+        >
+          <span>
+            <i aria-hidden />
+            {kind.label}
+            {value === kind.hue && <Check size={14} strokeWidth={2} aria-hidden />}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete, onDone }) {
+  const [open, setOpen] = useState(false);
+  const bar = useRef(null);
+  const recolor = useRef(null);
+  const applying = useRef(null);
+  const latestRecolor = useRef(onRecolor);
+  latestRecolor.current = onRecolor;
+
+  useEffect(() => () => clearTimeout(applying.current), []);
+
+  useEffect(() => {
+    if (!open) return;
+    (bar.current.querySelector('[aria-checked="true"]') ?? bar.current.querySelector('[role="radio"]'))?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    const back = () => {
+      const expanded = Boolean(window.history.state?.boardSelection?.kinds);
+      clearTimeout(applying.current);
+      applying.current = null;
+      setOpen(expanded);
+      if (!expanded) recolor.current?.focus();
+    };
+    window.addEventListener('popstate', back);
+    return () => window.removeEventListener('popstate', back);
+  }, []);
+
+  const toggle = () => {
+    if (!onKinds(!open)) return;
+    clearTimeout(applying.current);
+    applying.current = null;
+    if (!open) track('roadmap_board_bulk', { step: 'kinds' });
+    setOpen(!open);
+  };
+
+  const choose = (hue) => {
+    if (applying.current !== null) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const chip = bar.current.querySelectorAll('[role="radio"]')[kinds.findIndex((kind) => kind.hue === hue)];
+    const duration = reduced ? 150 : 120;
+    chip.animate(reduced
+      ? [{ opacity: 1 }, { opacity: 0.6 }, { opacity: 1 }]
+      : [{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration });
+    applying.current = setTimeout(() => {
+      applying.current = null;
+      latestRecolor.current(hue);
+    }, duration);
+  };
+
+  return (
+    <div ref={bar} className={`st-board-bulk${open ? ' is-open' : ''}`}>
+      <div className="st-board-bulk-heading">
+        <span>{selectedCount({ count })}</span>
+        <button type="button" onClick={onDone}>{BULK.done}</button>
+      </div>
+      <div className="st-board-bulk-kinds" inert={!open ? '' : undefined} aria-hidden={!open}>
+        <KindChoice kinds={kinds} value={sharedKind} label={COMPOSER.kind} follow={false} onChoose={choose} />
+      </div>
+      <div className="st-board-bulk-actions">
+        <button ref={recolor} type="button" className="st-board-bulk-recolor" aria-expanded={open} onClick={toggle}>
+          <span>{BULK.recolor}</span>
+          {open && <ChevronDown size={16} aria-hidden />}
+        </button>
+        <button type="button" className="st-board-bulk-delete" onClick={onDelete}>
+          <Trash2 size={16} aria-hidden />
+          <span>{deleteStepsAction({ count })}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function NewStep({ variant = 'secondary', compact = false, onClick }) {
   return (

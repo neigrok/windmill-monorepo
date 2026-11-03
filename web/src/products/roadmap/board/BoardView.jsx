@@ -4,7 +4,10 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './board.css';
 import { Board, BoardQuery } from './Board.js';
-import { kindOptions } from '../model/Legend.js';
+import { useStepSelection } from './useStepSelection.js';
+import { boardFocusTarget } from './traversal.js';
+import { NODE_COLOR_NAMES } from '../theme.js';
+import { kindOptions, kindOptionsForHues } from '../model/Legend.js';
 import { FilterStrip, FindStep, NewStep } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { useRegroup } from './ColumnCards.jsx';
@@ -13,31 +16,7 @@ import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, bo
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { progressFigure, progressLabel } from './copy.js';
 
-// Where focus lands once a retried load settles: the columns' tab stop, or the state's own button.
-const FOCUS_AFTER_LOAD = '[data-column] [tabindex="0"], [data-column][tabindex="0"], .st-board-state button';
 const EVERY_STEP = new BoardQuery();
-
-// Everything painted beneath the opaque Board leaves the tab order and the accessibility tree while it is shown: the
-// layer's siblings stacked under it, the Graph's own overlays among them, and any that mount while it stays.
-export function coverBeneath(layer) {
-  const root = layer.parentElement;
-  const floor = Number(getComputedStyle(layer).zIndex);
-  const covered = new Set();
-  const cover = () => {
-    for (const sibling of root.children) {
-      if (sibling === layer || sibling.inert || Number(getComputedStyle(sibling).zIndex) > floor) continue;
-      sibling.inert = true;
-      covered.add(sibling);
-    }
-  };
-  cover();
-  const watcher = new MutationObserver(cover);
-  watcher.observe(root, { childList: true });
-  return () => {
-    watcher.disconnect();
-    for (const sibling of covered) sibling.inert = false;
-  };
-}
 
 function BoardView({
   tree,
@@ -58,6 +37,9 @@ function BoardView({
   onShare,
   onNewStep,
   onComplete,
+  onRecolor,
+  onDelete,
+  editable = false,
   toast = null,
   onToastReveal,
   onToastUndo,
@@ -93,6 +75,17 @@ function BoardView({
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
   const [visibleToast, setVisibleToast] = useState(null);
+  const canSelect = editable && active && phone && nextBoard !== null;
+  const selection = useStepSelection({
+    tree, board: nextBoard, shown, doneExpanded, active, enabled: canSelect,
+    root: boardRef, leaving: motion.leaving, onSelect, onRecolor, onDelete,
+  });
+  const selecting = selection.selection;
+  const selectionKinds = useMemo(() => kindOptionsForHues(NODE_COLOR_NAMES, legend), [legend]);
+  const selectionPins = useMemo(() => {
+    if (!selection.starterId) return motion.pinned;
+    return new Set([...motion.pinned, selection.starterId]);
+  }, [motion.pinned, selection.starterId]);
   const revealing = active && board !== null;
 
   useLayoutEffect(() => { if (motion.counts) onDisplayedOverall?.(motion.counts.overall); }, [motion.counts, onDisplayedOverall]);
@@ -165,17 +158,15 @@ function BoardView({
   useEffect(() => {
     if (!retried.current) return;
     if (frame !== 'loading') retried.current = false;
-    boardRef.current?.querySelector(frame === 'loading' ? '[aria-busy="true"]' : FOCUS_AFTER_LOAD)?.focus();
+    boardFocusTarget(boardRef.current)?.focus();
   }, [frame]);
 
-  // A control the query took away (a cleared chip, an emptied column's way out) hands focus to the columns' tab stop, or
-  // to Find a step while no column has one.
+  // A control the query took away hands focus to the Board's displayed fallback.
   useEffect(() => {
     const lost = lastFocus.current;
     if (lost === null || lost.isConnected) return;
     if (document.activeElement !== null && document.activeElement !== document.body) return;
-    const layer = boardRef.current;
-    (layer?.querySelector('[data-column] [tabindex="0"]') ?? layer?.querySelector('.st-board-find-input'))?.focus();
+    boardFocusTarget(boardRef.current)?.focus();
   }, [query]);
 
   const retry = () => {
@@ -230,14 +221,24 @@ function BoardView({
                 arrived={motion.arrived}
                 leaving={motion.leaving}
                 dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
-                pinned={motion.pinned}
+                pinned={selectionPins}
                 settle={settleFocus}
-                onComplete={onComplete}
+                onComplete={selecting ? undefined : onComplete}
+                onDelete={editable && !selecting ? selection.deleteFromKey : undefined}
+                selection={selecting}
+                kinds={selectionKinds}
+                sharedKind={selecting?.sharedKind(tree) ?? null}
+                onHold={canSelect && !selecting ? selection.start : undefined}
+                selectable={selection.selectable}
+                onKinds={selection.kinds}
+                onRecolor={selection.recolor}
+                onDeleteSelection={selection.deleteSelected}
+                onDoneSelection={selection.done}
                 onNewStep={onNewStep && (() => onNewStep('band'))}
                 shown={shown}
                 onShow={setShown}
                 selectedId={selectedId}
-                onSelect={onSelect}
+                onSelect={selection.pick}
                 onAnchor={anchor}
                 doneExpanded={doneExpanded}
                 onExpandDone={onExpandDone}
@@ -259,6 +260,7 @@ function BoardView({
                   pinned={motion.pinned}
                   settle={settleFocus}
                   onComplete={onComplete}
+                  onDelete={editable ? selection.deleteFromKey : undefined}
                   onStandColumn={(column) => { if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column)); }}
                   band={breakpoint}
                   railed={railed}

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 import { parse } from 'acorn';
 import { transformWithEsbuild } from 'vite';
+import { BoardComposer } from '../../../src/products/roadmap/board/useBoardActs.js';
 import { boardKey, graphOnlyKey } from '../../../src/products/roadmap/shortcuts/shortcutMap.js';
 
 // Run the host's actual event boundaries with injected collaborators, without starting its WebGL scene.
@@ -119,4 +120,58 @@ test('the Board creation verb opens its composer only for the active owner behin
       ['event', 'roadmap_board_create', 'open', 'verbs'],
     ] : []);
   }
+});
+
+test('the edit door belongs to the active owner detail only', () => {
+  for (const [gate, active, owner, id] of [
+    [false, true, true, 'wind'], [true, false, true, 'wind'],
+    [true, true, false, 'wind'], [true, true, true, 'dock'], [true, true, true, 'wind'],
+  ]) {
+    const calls = [];
+    const composer = new BoardComposer({ gate, active, owner, detailId: 'wind', composer: null,
+      onOpen: (draft) => calls.push(draft) });
+    composer.openEdit(id);
+    assert.deepEqual(calls, gate && active && owner && id === 'wind' ? [{ door: 'detail', editing: 'wind' }] : []);
+  }
+});
+
+test('closing, removing or replacing an edit detail immediately excludes its composer and rejects writes', () => {
+  for (const detailId of [null, 'dock', 'wind']) {
+    const calls = [];
+    const draft = { door: 'detail', editing: 'wind' };
+    const composer = new BoardComposer({ gate: true, active: true, owner: true, detailId, composer: draft,
+      acts: { edit: (request) => { calls.push(request); return { ok: true }; } } });
+    const request = { id: 'wind', label: 'Read the wind' };
+    assert.equal(composer.shown, detailId === 'wind' ? draft : null);
+    assert.deepEqual(composer.saveEdit(request), { ok: detailId === 'wind' });
+    assert.deepEqual(calls, detailId === 'wind' ? [request] : []);
+  }
+});
+
+test('Backspace and Delete on the Board never reach the legacy Graph write handler', () => {
+  for (const key of ['Backspace', 'Delete']) {
+    const boundary = host();
+    boundary.key({ key });
+    assert.deepEqual(boundary.calls, []);
+  }
+});
+
+test('edit save refuses a lost owner, inactive Board or closed gate', () => {
+  for (const [gate, active, owner] of [[false, true, true], [true, false, true], [true, true, false]]) {
+    const composer = new BoardComposer({ gate, active, owner, detailId: 'wind',
+      composer: { door: 'detail', editing: 'wind' },
+      acts: { edit: () => assert.fail('an unavailable edit must not dispatch') } });
+    assert.equal(composer.shown, null);
+    assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+  }
+});
+
+test('create composers remain visible without a detail but cannot write through the edit door', () => {
+  const draft = { door: 'verbs' };
+  const composer = new BoardComposer({ gate: true, active: true, owner: true, detailId: null, composer: draft,
+    acts: { edit: () => assert.fail('a create draft must not dispatch an edit') },
+    onOpen: () => assert.fail('there is no detail to edit') });
+  assert.equal(composer.shown, draft);
+  composer.openEdit(null);
+  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
 });

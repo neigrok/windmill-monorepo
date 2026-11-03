@@ -255,7 +255,7 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
 
 // The run scrolls inside its parent, the column. The roving stop, a card focus is moving to and the selected step always
 // render, so focus and a reveal from the Graph reach them wherever the column has scrolled.
-export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVED, selectedId, onSelect, onExpandDone, swipe = false, onComplete, leaving = NOTHING_ARRIVED, pinned = NOTHING_ARRIVED, dimmed = NOTHING_ARRIVED }) {
+export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVED, selectedId, onSelect, onExpandDone, swipe = false, onComplete, selection = null, selectable, onHold, leaving = NOTHING_ARRIVED, pinned = NOTHING_ARRIVED, dimmed = NOTHING_ARRIVED }) {
   const [swiped, setSwiped] = useState(null);
   const listRef = useRef(null);
   const heights = useRef(new Map());
@@ -387,6 +387,9 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
               key={cards[item].id}
               card={cards[item]}
               selected={cards[item].id === selectedId}
+              selecting={selection !== null}
+              checked={selection?.ids.includes(cards[item].id) ?? false}
+              onHold={!selectable || selectable(cards[item].id) ? onHold : undefined}
               arrived={arrived.has(cards[item].id)}
               tabIndex={cards[item].id === stopId ? 0 : -1}
               onSelect={onSelect}

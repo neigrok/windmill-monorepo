@@ -14,6 +14,7 @@ import {
   removeKind,
   recolorKind,
   kindOptions,
+  kindOptionsForHues,
 } from '../../../../src/products/roadmap/model/Legend.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../../../../src/products/roadmap/theme.js';
@@ -340,4 +341,24 @@ test('kindOptions — with no legend at all the worn hues stand in palette order
     { id: 'olive', hue: 'olive', label: 'Olive' },
     { id: 'plum', hue: 'plum', label: 'Plum' },
   ]);
+});
+
+test('kindOptionsForHues shares legend ordering, first names and palette fallback with tree options', () => {
+  const legend = [
+    { id: 'first', hue: 'sky', label: 'Practice' },
+    { id: 'duplicate', hue: 'sky', label: 'Ignored' },
+    { id: 'unused', hue: 'olive', label: 'Unworn' },
+    { id: 'gold-kind', hue: 'gold', label: '' },
+  ];
+  const hues = ['plum', 'sky', 'gold', 'sky'];
+  const expected = [
+    { id: 'first', hue: 'sky', label: 'Practice' },
+    { id: 'gold-kind', hue: 'gold', label: 'Gold' },
+    { id: 'plum', hue: 'plum', label: 'Plum' },
+  ];
+  assert.deepEqual(kindOptionsForHues(hues, legend), expected);
+  assert.deepEqual(kindOptions(tree(hues.map((color, index) => node(`${index}`, [], { color }))), legend), expected);
+  assert.deepEqual(kindOptionsForHues(['sky'], legend), [{ id: 'first', hue: 'sky', label: 'Practice' }]);
+  assert.deepEqual(kindOptions(tree([node('one', [], { color: 'sky' })]), legend), []);
+  assert.deepEqual(kindOptionsForHues([], legend), []);
 });

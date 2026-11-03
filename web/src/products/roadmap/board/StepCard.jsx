@@ -1,22 +1,23 @@
 // One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card opens its step.
 
-import React, { useRef, useState } from 'react';
-import { SwipeGesture, SWIPE_REVEAL } from './gestures.js';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { HoldGesture, HOLD_MS, SwipeGesture, SWIPE_REVEAL } from './gestures.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { completeStepAction, STEP_DETAIL, reasonLine } from './copy.js';
 
-export const StepCard = React.memo(function StepCard({ card, selected = false, arrived = false, tabIndex = 0, onSelect, swipe = false, open = false, onSwipe, onComplete, leaving = false, dimmed = false }) {
+export const StepCard = React.memo(function StepCard({ card, selected = false, arrived = false, tabIndex = 0, onSelect, swipe = false, open = false, onSwipe, onComplete, leaving = false, dimmed = false, selecting = false, checked = false, onHold }) {
   const reason = reasonLine(card);
   const description = card.step.description?.trim() ?? '';
   const kind = KIND_CSS[card.step.color] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   const cardButton = (
     <button
       type="button"
-      className={`st-board-card st-board-card--${card.column}${arrived ? ' is-arrived' : ''}${leaving ? ' is-leaving' : ''}${dimmed ? ' is-restored' : ''}`}
+      className={`st-board-card st-board-card--${card.column}${arrived ? ' is-arrived' : ''}${leaving ? ' is-leaving' : ''}${dimmed ? ' is-restored' : ''}${checked ? ' is-selected' : ''}`}
       style={{ '--st-board-rail': kind.base }}
       data-step-id={card.id}
       tabIndex={tabIndex}
       aria-current={selected ? 'true' : undefined}
+      aria-pressed={selecting ? checked : undefined}
       onClick={() => onSelect(card.id)}
     >
       <span className="st-board-card-rail" aria-hidden />
@@ -27,11 +28,66 @@ export const StepCard = React.memo(function StepCard({ card, selected = false, a
       </span>
     </button>
   );
-  if (!swipe || card.column !== 'upNext') return cardButton;
-  return <SwipeCard card={card} open={open} onSwipe={onSwipe} onComplete={onComplete} tabIndex={tabIndex}>{cardButton}</SwipeCard>;
+  return <InteractiveCard card={card} onHold={onHold} selecting={selecting}
+    swipe={swipe && card.column === 'upNext'} open={open} onSwipe={onSwipe} onComplete={onComplete} tabIndex={tabIndex}>{cardButton}</InteractiveCard>;
 });
 
-function SwipeCard({ card, open, onSwipe, onComplete, tabIndex, children }) {
+function InteractiveCard({ card, onHold, selecting, swipe, open, onSwipe, onComplete, tabIndex, children }) {
+  const hold = useRef(null);
+  const timer = useRef(null);
+  const scroller = useRef(null);
+  const swallowed = useRef(false);
+  const callbacks = useRef({ onHold, onSwipe });
+  callbacks.current = { onHold, onSwipe };
+  const cancelHold = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = null;
+    hold.current?.cancel();
+    scroller.current?.removeEventListener('scroll', cancelHold);
+    scroller.current = null;
+  }, []);
+  const holdEnabled = Boolean(onHold);
+  useEffect(() => cancelHold, [holdEnabled, cancelHold]);
+  const startHold = (event) => {
+    cancelHold();
+    hold.current = null;
+    swallowed.current = false;
+    if (event.pointerType !== 'touch' || event.isPrimary === false) return;
+    const gesture = new HoldGesture({ x: event.clientX, y: event.clientY, at: performance.now() });
+    hold.current = gesture;
+    const deadline = gesture.at + HOLD_MS;
+    scroller.current = event.currentTarget.closest('[data-column]');
+    scroller.current?.addEventListener('scroll', cancelHold, { passive: true });
+    timer.current = setTimeout(() => {
+      if (!gesture.advance(deadline)) return;
+      swallowed.current = true;
+      callbacks.current.onSwipe?.(null);
+      callbacks.current.onHold?.(card.id);
+    }, HOLD_MS);
+  };
+  const button = React.cloneElement(children, {
+    onPointerDown: startHold,
+    onPointerMove: (event) => hold.current?.move(event.clientX, event.clientY),
+    onPointerUp: () => {
+      swallowed.current ||= hold.current?.release() ?? false;
+      cancelHold();
+    },
+    onPointerCancel: cancelHold,
+    onContextMenu: (event) => { if (onHold || selecting) event.preventDefault(); },
+    onClick: (event) => {
+      if (swallowed.current) {
+        swallowed.current = false;
+        event.preventDefault();
+        return;
+      }
+      children.props.onClick(event);
+    },
+  });
+  if (!swipe) return button;
+  return <SwipeCard hold={hold} card={card} open={open} onSwipe={onSwipe} onComplete={onComplete} tabIndex={tabIndex}>{button}</SwipeCard>;
+}
+
+function SwipeCard({ hold, card, open, onSwipe, onComplete, tabIndex, children }) {
   const gesture = useRef(null);
   const dragged = useRef(false);
   const [offset, setOffset] = useState(null);
@@ -41,9 +97,10 @@ function SwipeCard({ card, open, onSwipe, onComplete, tabIndex, children }) {
     dragged.current = false;
   };
   const move = (event) => {
-    if (!gesture.current) return;
+    if (!gesture.current || hold.current?.fired) return;
     const next = gesture.current.move(event.clientX, event.clientY);
     if (!next.claimed) return;
+    hold.current?.cancel();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragged.current = true;
     onSwipe(card.id);
@@ -52,7 +109,7 @@ function SwipeCard({ card, open, onSwipe, onComplete, tabIndex, children }) {
   };
   const end = (cancelled) => {
     if (!gesture.current) return;
-    onSwipe(!cancelled && gesture.current.release() ? card.id : null);
+    onSwipe(!cancelled && !hold.current?.fired && gesture.current.release() ? card.id : null);
     gesture.current = null;
     setOffset(null);
   };

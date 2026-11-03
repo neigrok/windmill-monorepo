@@ -12,6 +12,7 @@ import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { StepDetail } from '/src/products/roadmap/board/StepDetail.jsx';
+import { StepComposer } from '/src/products/roadmap/board/StepComposer.jsx';
 import { useStepAddress, stepIsStale } from '/src/products/roadmap/board/stepAddress.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
@@ -25,7 +26,7 @@ const without = (steps, id) => steps.filter((step) => step.id !== id).map((step)
 
 // Like the shell: the route follows the URL in a transition, and each roadmap is its own view, keyed by its id, that
 // loads its tree a beat after it mounts.
-window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {} }) => {
+window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {}, editingEnabled = false }) => {
   const trees = { sail: nodes, ...others };
   const routeTree = () => window.location.hash.split('?')[0].replace('#/app/', '');
   function App() {
@@ -47,6 +48,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     const tree = useMemo(() => (steps === null ? null : new SkillTree({ id: treeId, title: 'Learn to sail', nodes: steps })), [steps]);
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
+    const [editing, setEditing] = useState(null);
     const [spaces, setSpaces] = useState(workspaces);
     const [query, setQuery] = useState(() => new BoardQuery({ kinds }));
     const [quiet, setQuiet] = useState(0);
@@ -57,6 +59,9 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
       window.addEventListener('resize', follow);
       return () => window.removeEventListener('resize', follow);
     }, []);
+    useEffect(() => {
+      if (editing && address.id !== editing) setEditing(null);
+    }, [editing, address.id]);
     const stale = stepIsStale({ boardOpen: gate, loading: tree === null, tree, treeId, stepId: address.id });
     useEffect(() => { if (stale) address.drop(); }, [stale]);
     const mark = (id, target) => setProgress((current) => advanceProgress(current, [id], target, Date.now()));
@@ -73,8 +78,9 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         editable, deletable: tree.roots().length !== 1 || tree.roots()[0].id !== address.id, stepLink: linked ? 'https://windmill.test/t/sail#?step=' + address.id : null,
         workspace: spaces[address.id] ?? { subtasks: [], note: '', links: [] },
         workspaceActions: { onToggleSubtask: (nodeId, subtaskId) => setSpaces((current) => ({ ...current, [nodeId]: toggleSubtask(current[nodeId], subtaskId) })),
-          onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: noop, onAddLink: noop, onDeleteLink: noop },
+          onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: (nodeId) => call('note ' + nodeId), onAddLink: noop, onDeleteLink: noop },
         history: [],
+        onEdit: editingEnabled ? (id) => setEditing(id) : undefined,
         onOpenStep: (id) => address.open(id, 'step'),
         onBack: address.back,
         onClose: () => { const origin = address.trail[0]; address.close(); setSelectedId(origin); },
@@ -85,6 +91,17 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
         onDelete: (id) => { call('delete ' + id); address.close(); setSteps((current) => without(current, id)); },
         onNotify: (message) => call('notify ' + message),
+      }),
+      open && editing === address.id && React.createElement(StepComposer, {
+        tree, completed: progress.completed, legend: [], band: breakpoint, editing,
+        onCreate: noop,
+        onClose: () => setEditing(null),
+        onEdit: (request) => {
+          (window.editRequests ??= []).push(request);
+          setQuiet((current) => current + 1);
+          setSteps((current) => current.map((node) => node.id === request.id ? { ...node, ...request } : node));
+          return { ok: true };
+        },
       }));
   }
   createRoot(document.getElementById('root')).render(React.createElement(App));
@@ -135,14 +152,14 @@ const learnToSailNodes = [
   { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
 ];
 
-async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {}, start = '#/app/sail', clock = false, permissions = [] }, errors) {
+async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {}, start = '#/app/sail', clock = false, permissions = [], editingEnabled = false }, errors) {
   const context = await browser.newContext({ viewport, permissions });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   if (clock) await page.clock.install();
   await page.goto(`${origin}/step-detail-test${start}`);
   await page.waitForFunction(() => window.entryReady);
-  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, gate, others });
+  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, gate, others, editingEnabled });
   await page.locator('.st-board-card:visible').first().waitFor();
   return page;
 }
@@ -477,7 +494,7 @@ test('Chromium: focus never falls to the page — Complete, Undo, Reset and the 
   }
 });
 
-test('Chromium: Undo expiring and a workspace edit ending hand focus to the status row or the dialog, and Escape still closes', async () => {
+test('Chromium: Undo expiry recovers to status, subtask Cancel returns to its opener, and Escape still closes', async () => {
   await ready;
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, clock: true }, errors);
@@ -489,10 +506,11 @@ test('Chromium: Undo expiring and a workspace edit ending hand focus to the stat
     assert.equal(await activeIs(page), 'status: Done');
 
     await page.getByRole('tab', { name: 'Workspace' }).click();
-    await page.getByRole('button', { name: 'Add to this step' }).click();
-    await page.getByRole('menuitem', { name: 'Sub-task' }).click();
+    await page.getByRole('button', { name: 'Add subtask', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Add subtask', exact: true }).waitFor();
     await page.keyboard.press('Escape');
-    assert.equal(await activeIs(page), 'dialog');
+    await page.waitForFunction(() => document.activeElement.matches('.st-board-workspace-add-task'));
+    assert.equal(await activeIs(page), 'Add subtask');
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'detached' });
     assert.deepEqual(errors, []);
@@ -533,7 +551,34 @@ test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops th
     assert.equal(await page.getByRole('dialog').count(), 1);
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
+    try {
+      await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
+    } catch (error) {
+      const state = await page.evaluate(() => {
+        const describe = (element) => element && ({
+          tag: element.tagName,
+          classes: element.className,
+          step: element.closest('[data-step-id]')?.dataset.stepId ?? null,
+          column: element.closest('[data-column]')?.dataset.column ?? null,
+          role: element.getAttribute('role'),
+          tabIndex: element.tabIndex,
+          inert: Boolean(element.closest('[inert]')),
+          coveredBy: element.closest('[inert]')?.className ?? null,
+          visible: getComputedStyle(element).visibility,
+          rendered: element.getClientRects().length > 0,
+        });
+        return {
+          hash: location.hash,
+          active: describe(document.activeElement),
+          board: describe(document.querySelector('.st-view-layer--board')),
+          layers: [...document.querySelectorAll('.st-board-step-layer, .st-board-composer-layer')].map(describe),
+          panes: [...document.querySelectorAll('[data-column]')].map(describe),
+          stops: [...document.querySelectorAll('.st-board-card, .st-board [tabindex="0"], .st-board-find-input')].map(describe),
+        };
+      });
+      error.message += `\nDelete focus timeout DOM: ${JSON.stringify(state)}`;
+      throw error;
+    }
     assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex), await hash(page)],
       ['Leave the dock', 0, '#/app/sail']);
     await page.evaluate(() => restoreSteps());
@@ -647,7 +692,6 @@ test('Chromium: with the Board’s gate closed a step in the URL is left alone �
   }
 });
 
-
 test('Chromium: delete confirmation cancels without writing on phone and desktop', async () => {
   await ready;
   for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 960 }]) {
@@ -717,3 +761,201 @@ for (const moveFocus of [false, true]) {
     }
   });
 }
+
+
+for (const width of [390, 744, 1440]) {
+  for (const [id, title, primary] of [['wind', 'Read the wind', 'Complete'], ['parts', 'Name the boat parts', 'Reset'], ['dock', 'Leave the dock', null]]) {
+    test(`Chromium ${width}: ${id} actions follow the tab and column`, async () => {
+      await ready;
+      const errors = [];
+      const page = await openRoom({ viewport: { width, height: 960 }, start: `#/app/sail?step=${id}`, editingEnabled: true }, errors);
+      try {
+        await page.getByRole('dialog', { name: title, exact: true }).waitFor();
+        const actions = page.locator(width < 744 ? '.st-board-step-page-pinned' : '.st-board-step-modal-actions');
+        for (const tab of ['Overview', 'Workspace', 'History']) {
+          await page.getByRole('tab', { name: tab, exact: true }).click();
+          await page.waitForFunction((label) => document.querySelector('.st-board-step-sections [aria-selected="true"]')?.textContent === label, tab);
+          await page.evaluate(() => document.fonts.ready);
+          const secondary = width < 744 && tab === 'Workspace' ? 'Add note' : 'Edit step';
+          assert.deepEqual(await actions.getByRole('button').allTextContents(), primary ? [secondary, primary] : [secondary]);
+          if (width < 744) {
+            assert.deepEqual(await page.locator('.st-board-step-identity').evaluate((identity) => ({
+              titleSize: getComputedStyle(identity.querySelector('h2')).fontSize,
+              rails: identity.querySelectorAll('.st-board-step-identity-rail').length,
+            })), { titleSize: tab === 'Overview' ? '32px' : '20px', rails: tab === 'Overview' ? 1 : 0 });
+            if (primary) {
+              assert.deepEqual(await actions.locator('.st-board-step-buttons').evaluate((row) => {
+                const [secondary, primary] = row.querySelectorAll('button');
+                const text = document.createRange();
+                text.selectNodeContents(secondary);
+                return {
+                  fontSize: getComputedStyle(secondary).fontSize,
+                  secondaryWidth: secondary.getBoundingClientRect().width,
+                  primaryWidth: primary.getBoundingClientRect().width,
+                  gap: getComputedStyle(row).gap,
+                  textLines: text.getClientRects().length,
+                };
+              }), { fontSize: '14px', secondaryWidth: 76, primaryWidth: 274, gap: '8px', textLines: 1 });
+            }
+          }
+          if (primary === null) {
+            const button = actions.getByRole('button', { name: secondary, exact: true });
+            assert.equal(await button.evaluate((element) => element.classList.contains('st-board-step-action--secondary')), true);
+            if (width < 744) {
+              assert.equal(await button.evaluate((element) => Math.abs(element.getBoundingClientRect().width - element.parentElement.getBoundingClientRect().width) < 1), true);
+            }
+          }
+        }
+        assert.deepEqual(errors, []);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  test(`Chromium ${width}: empty workspace add buttons center their icons with a six-pixel text gap`, async () => {
+    await ready;
+    const errors = [];
+    const page = await openRoom({ viewport: { width, height: 960 }, start: '#/app/sail?step=wind' }, errors);
+    try {
+      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+      const buttons = page.locator('.st-board-workspace-missing .st-board-step-action');
+      await buttons.first().waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      assert.deepEqual(await buttons.evaluateAll((buttons) => buttons.map((button) => {
+        const style = getComputedStyle(button);
+        const icon = button.querySelector('svg').getBoundingClientRect();
+        const bounds = button.getBoundingClientRect();
+        const text = document.createRange();
+        text.selectNode([...button.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim()));
+        return {
+          label: button.textContent,
+          display: style.display,
+          alignItems: style.alignItems,
+          justifyContent: style.justifyContent,
+          gap: style.gap,
+          textGap: Math.round(text.getBoundingClientRect().left - icon.right),
+          iconCentered: Math.abs(icon.top + icon.height / 2 - bounds.top - bounds.height / 2) < 1,
+        };
+      })), ['Add subtask', 'Add note', 'Add link'].map((label) => ({
+        label, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', textGap: 6, iconCentered: true,
+      })));
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test(`Chromium ${width}: Edit Save returns to its opener and Escape never closes the covered step`, async () => {
+    await ready;
+    const errors = [];
+    const page = await openRoom({ viewport: { width, height: 960 }, editingEnabled: true }, errors);
+    try {
+      await card(page, 'Read the wind').click();
+      await page.getByRole('button', { name: 'Edit step', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Edit step', exact: true }).waitFor();
+      assert.equal(await page.locator('.st-board-step-layer').evaluate((layer) => !!layer.closest('[inert]')), true);
+      await page.getByLabel('Name', { exact: true }).fill('Watch the wind');
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor({ state: 'detached' });
+      assert.equal(await hash(page), '#/app/sail?step=wind');
+      assert.equal(await page.locator('.st-board-step-layer').count(), 1);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Watch the wind', exact: true }).waitFor();
+      await page.waitForFunction(() => document.activeElement.textContent === 'Edit step');
+      assert.equal(await activeIs(page), 'Edit step');
+      assert.deepEqual(await page.evaluate(() => window.editRequests), [{
+        id: 'wind', label: 'Watch the wind', description: 'Learn to spot shifts in wind direction.', color: 'sky', prerequisites: ['parts'],
+      }]);
+      assert.equal(await page.locator('.st-board-card.is-arrived').count(), 0);
+      assert.deepEqual(await calls(page), []);
+      await page.getByRole('button', { name: 'Edit step', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Edit step', exact: true }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: 'Watch the wind', exact: true }).waitFor();
+      await page.waitForFunction(() => document.activeElement.textContent === 'Edit step');
+      assert.equal(await hash(page), '#/app/sail?step=wind');
+      await page.keyboard.press('Escape');
+      await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test(`Chromium ${width}: note discard traps focus and returns to the note opener`, async () => {
+    await ready;
+    const errors = [];
+    const page = await openRoom({ viewport: { width, height: 960 }, editingEnabled: true,
+      workspaces: { wind: { subtasks: [], note: 'Watch the water', links: [] } } }, errors);
+    try {
+      await card(page, 'Read the wind').click();
+      await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+      const opener = width < 744 ? 'Edit note' : 'Edit';
+      await page.getByRole('button', { name: opener, exact: true }).click();
+      await page.getByRole('textbox', { name: 'Note', exact: true }).fill('Watch the sails');
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      const discard = page.getByRole('dialog', { name: 'Discard draft?', exact: true });
+      await discard.waitFor();
+      await discard.getByRole('button', { name: 'Discard', exact: true }).focus();
+      await page.keyboard.press('Tab');
+      assert.equal(await focusedName(page), 'Keep editing');
+      await page.keyboard.press('Shift+Tab');
+      assert.equal(await focusedName(page), 'Discard');
+      await page.keyboard.press('Escape');
+      await discard.waitFor({ state: 'detached' });
+      assert.equal(await hash(page), '#/app/sail?step=wind');
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await page.getByRole('button', { name: 'Discard', exact: true }).click();
+      await page.locator('.st-board-note-editor').waitFor({ state: 'detached' });
+      await page.waitForFunction((label) => document.activeElement.textContent === label, opener);
+      assert.equal(await activeIs(page), opener);
+      assert.equal(await page.getByRole('tab', { name: 'Workspace', exact: true }).getAttribute('aria-selected'), 'true');
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test(`Chromium ${width}: readers have no edit action or personal workspace`, async () => {
+    await ready;
+    const errors = [];
+    const page = await openRoom({ viewport: { width, height: 960 }, editable: false, editingEnabled: true }, errors);
+    try {
+      await card(page, 'Read the wind').click();
+      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      assert.deepEqual(await page.locator('.st-board-step-modal-actions, .st-board-step-page-pinned, .st-board-workspace').allTextContents(), []);
+      assert.equal(await page.getByRole('tab', { name: 'Workspace', exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: 'Edit step', exact: true }).count(), 0);
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+
+
+test('Chromium: system Back closes the phone detail without saving its local note draft', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 390, height: 844 }, editingEnabled: true,
+    workspaces: { wind: { subtasks: [], note: 'Keep this note', links: [] } } }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit note', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Note', exact: true }).fill('Unsaved draft');
+    await page.goBack();
+    await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
+    assert.deepEqual(await calls(page), []);
+    await card(page, 'Read the wind').click();
+    await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+    assert.equal(await page.locator('.st-board-workspace-note').textContent(), 'Keep this note');
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});

@@ -31,7 +31,8 @@ identity row carries it, and the Graph's rides the action lane on phones and tab
 visitor's Graph has no switch yet. While the Board stands in for a roadmap that has not loaded, the topbar names
 none and offers no Share, and after a failed load it offers no switch. Graph keyboard shortcuts do not act on the Board;
 `/` focuses *Find a step* there instead of opening Ask AI, which keeps ⌘K, and on the desktop editor, where both views
-carry the switch, G switches Board and Graph. C completes a focused Up next card. `boardKey` in
+carry the switch, G switches Board and Graph. C completes a focused Up next card; Backspace and Delete
+start a nine-second held delete on a deletable owner card, without a confirm. `boardKey` in
 `shortcuts/shortcutMap.js` owns these keys and their shared typing and covered-layer refusal: a step
 open over the Board, a dialog or the composer prevents them from acting. With the gate open, the
 host also refuses paste, global Undo/Redo and shortcut help while that layer covers it, including
@@ -63,8 +64,8 @@ selected, the Board opens that step's column (its tab, past the Done fold, or ou
 scrolls its card into view. The layer stays mounted across Board/Graph switches, so each column keeps
 its scroll there. Crossing 744px rebuilds the columns, and a column that folds to a rail starts at the
 top when it stands again.
-While the Board is shown, `coverBeneath` in `BoardView.jsx` makes everything stacked under its layer
-inert, the Graph's overlays and legend included.
+While the Board is shown, `coverBeneath` in `composerFocus.js` makes everything stacked under its layer
+inert, the Graph's overlays and legend included. Covered elements remain inert until the last covering layer closes.
 
 Each column renders only the cards in view plus ten either side (`ColumnCards.jsx`), estimating an
 unmeasured card's height from its text and the column's width, measuring each card as it renders and
@@ -81,7 +82,8 @@ own button, so a card opens its step. A focused stop that unmounts hands focus t
 after Try again focus rests on the skeleton until the roadmap loads. On phones each pane has a roving
 card stop with the same Up, Down, Home and End; an empty pane itself takes focus. The tabs keep their
 own arrow keys. C follows an accepted completion to the same step in Done without expanding the
-column. A refused action creates no pending focus request.
+column. A refused action creates no pending focus request. Deletion reads the current projected membership
+and leaves focus recovery to the surviving stop, or the phone's column tab while regroup settles.
 
 `regroup` in `Board.js` derives departures, moves and arrivals. One `useRegroup` in `BoardView`
 coordinates displayed cards and counts across columns. Query and other changes with no movement
@@ -100,6 +102,30 @@ drag after 10px within 30 degrees, tracks to 96px and resists beyond it. Release
 and never completes. A real Complete button follows the card in DOM order; Tab reveals it, and Escape
 or leaving focus closes it. Crossing the threshold offers one 8ms haptic where supported.
 
+On an active owner phone Board, a 500ms touch hold within 10px starts pane-scoped selection.
+`HoldGesture` and `SwipeGesture` cancel each other on claim; scroll and pointer cancellation stop
+the hold, and its release never opens a step. Holding survives unrelated renders; card callbacks
+keep their identities. `BoardView` mounts `useStepSelection`, which owns selection, history and focus
+transitions separately from the Graph/List multi-select. Its current immutable `StepSelection` reads
+the filtered pane and permanently drops choices that leave it. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion
+and the step menu.
+
+Selection replaces the phone band with `BulkBar`: count and Done, optional six named kind radios,
+then equal-width Recolor and Delete. `KindChoice follow={false}` moves focus with arrows and
+applies only on activation. Re-picking the shared kind closes only the kinds row and keeps the
+selection, without writing, toasting or emitting an acted selection end. Recolor again also keeps
+the selection. Back and Escape close the kinds before ending selection.
+Selection owns same-URL history entries, separate from step visits. Ending selection waits for its
+history entries to close, then restores its starting card only when it belongs to the filtered,
+displayed pane and is not leaving; otherwise
+focus returns to the pane's tab. If the pane is replaced, focus lands on its state action or loading
+stop. Losing ownership restores focus while the same Board remains active. Selection also ends on an act, an empty
+prune, leaving the Board, losing ownership or changing roadmaps. There is no keyboard entry into
+multi-select. Recolor dispatches one `BulkRecolor`; its six-second toast Undo reverts that exact
+receipt with a quiet regroup. A refused recolor keeps the selection and kinds available; delayed
+apply reads the current selection. Bulk Delete creates one held projection and releases one
+`BulkDelete` after nine seconds; it asks no confirmation. Neither act clears the query.
+
 A card opens its step (`StepDetail.jsx`): from 744px a modal over the scrimmed roadmap, 760px wide and 24px in from the
 window below that; below 744px a page pushed over the Board, which stays mounted beneath it with its pane and scroll.
 Crossing 744px swaps the frame inside the same layer. The open step rides the hash as `?step=<id>` (`stepAddress.js`).
@@ -108,8 +134,15 @@ back row names the screen it returns to; closing pops the whole visit, and a lin
 Board with that step open. A view reads a step only on its own roadmap's route, and once that roadmap has loaded without
 the step, the step leaves the URL in place, so restoring it reopens nothing; with the gate closed the URL is never
 touched. While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape, wherever focus is,
-closes the modal or steps the page back. When the element holding focus gives way (an action replaced, Undo expiring, a
-workspace edit ending) focus lands on the status row, or the dialog where there is none. Closing returns focus to the card
+closes the topmost editor or confirmation before the detail. Edit step opens the shared composer over the detail.
+Workspace and History use `StepWorkspace.jsx`: named checkboxes, the shared note renderer, personal links and static
+activity rows grouped through `ActivityLog`. The note editor keeps a local draft and saves once through workspace actions;
+changed Cancel asks to discard. System Back and remote detail closure silently discard the unsaved note draft,
+consistent with the edit composer's G9 policy. Neither editor adds a navigation guard. Formatting uses pure
+`formatNote`; phone keyboard sizing follows the composer viewport. The editor keeps
+source ranges from the shared renderer; each browser edit changes only its mapped source span, preserving untouched note bytes.
+A phone subtask check offers an in-page Undo for six seconds; desktop checks stay quiet. Editor completion returns focus
+to its opener; other disappearing controls recover to the status row or dialog. Closing returns focus to the card
 the visit began on, or to the columns' tab stop once that card has gone (deleted, or outside the branch View branch
 scoped). After a held delete, roving recovery uses current membership and skips the deleted card
 even while regroup still displays it. On phones, if no surviving card is visible yet, focus rests
@@ -138,8 +171,8 @@ loss, unmount or pagehide. Undo cancels it without sending. An already-absent st
 session is an expected no-op, not a Sentry Issue; an unexpected release error restores the projection
 silently and reports `roadmap-board-delete` with stack frames.
 
-The host owns one toast slot. Board toasts render inside `BoardView`, with a six-second Complete or
-Create hold and nine-second Delete hold; legacy Graph/List toasts keep their existing renderer and
+The host owns one toast slot. Board toasts render inside `BoardView`, with a six-second Complete, Create or
+Recolor hold and nine-second Delete hold; legacy Graph/List toasts keep their existing renderer and
 timing. Regroup delays only a new toast's entry: a visible toast and its Undo remain available during
 later motion. Complete Undo restores that step's progress; Create Undo reverts its exact session
 receipt, so later unrelated gestures remain. Newer toasts replace older ones, with no coalescing.
@@ -148,7 +181,14 @@ unlock; Create reveals the new step. Reveal clears only query dimensions that hi
 preserves sort. Delete toast text is not tappable. Board completion keeps activity emits and skips
 the Graph ceremony and milestone offer.
 The owner's up next and done steps offer View branch, which closes the step and scopes the Board to its branch. A
-visitor gets the overview and the menu without Delete. The detail offers no Edit step yet.
+visitor gets the overview and the menu without Delete. Owners get Edit step beside Complete or Reset, or alone while
+locked; the phone Workspace action is Add note or Edit note. The host opens Edit step only from an owner's
+open detail and keeps the composer mounted only while that detail still names an existing step.
+`BoardComposer` in `useBoardActs.js` shares the host’s open, display and save guards.
+`BoardActs.edit` refuses missing, self or descendant prerequisites, diffs valid requests against the
+held projection, quiets regroup, dispatches one `EditNode`, and emits rename activity when the name changes.
+A clean diff writes nothing.
+The edit result carries no toast or targeted Undo.
 
 The Board draws its own states (`BoardStates.jsx`). Until the roadmap arrives it stands wherever it
 would open: the saved choice, or the owner's default anywhere but a share or the demo. While the roadmap
@@ -159,9 +199,13 @@ is done, Up next rests on Roadmap complete: the owner gets its body line, Share 
 reader gets the title alone.
 
 New step in the verbs row, tablet identity row, phone band, empty state or complete state opens `StepComposer` through
-the gated host mount. `StepDraft` owns validation and placement; the picker changes only draft
-prerequisites until creation. The host dispatches one `CreateNode` with the request's stable id and
-all prerequisite edges stamped together. Failure keeps the draft for Retry. Success reveals and
+the gated host mount. Edit step uses the same form with an existing step baseline; a clean Save closes
+without writing. `StepDraft` owns validation, dirty comparison and placement with the edited step
+replaced in the tree. The picker changes only draft prerequisites until Save; it groups the step
+and its descendants as unavailable, excludes them from match counts, and drops newly blocked
+selections with a notice that lasts until the next search or toggle. Deleted prerequisites leave silently. The host dispatches one `CreateNode` with the request's stable id and
+all prerequisite edges stamped together; edits send the full intended state through `onEdit` and
+return quietly to the detail, without a toast. Failure keeps the draft and exact request for Retry. Successful creation reveals and
 wakes the step in its derived column, clears only hiding query dimensions and offers targeted Undo.
 The composer sits inside an error boundary reporting `roadmap-board-composer` and portals its layer
 to `document.body`, covering the viewport independently of the shell's containing blocks. The tablet
@@ -172,7 +216,11 @@ page in the 600px dialog from 744px and a full-screen page on phones. `StepCompo
 selection and query so resizing between these layouts preserves them. With zero candidates the
 Prerequisites row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots
 start in the first legend kind. Layout and focus handling live in `StepComposer.jsx`,
-`PrerequisitePicker.jsx`, `composerFocus.js` and `composer.css`.
+`PrerequisitePicker.jsx`, `composerFocus.js`, `DiscardDraft.jsx` and `composer.css`; `composerFocus.js` owns shared layer
+focus, viewport hooks and `coverBeneath`, the single rule for making covered layers inert; `StepDetail` owns
+fallback focus within the detail. `boardFocusTarget` in `traversal.js` owns fallback targets on the displayed
+Board, excluding covered, hidden and leaving elements. The shared `KindChoice` lives in
+`BoardControls.jsx` with its styles in `controls.css`.
 
 ## Package map
 
@@ -268,7 +316,8 @@ The [graph synchronization contract](../../../../docs/GRAPH_SYNC_DESIGN.md) defi
 coverage, acknowledgements and durability limits. Shared structure and private progress use one
 socket and HLC clock but separate frames. Pending writes are derived from lattice state.
 `materialize.js` turns each local gesture into stamped field writes; refusal handling uses machine
-codes rather than error sentences.
+codes rather than error sentences. `EditNode` stamps the changed name, description, kind and
+prerequisite edge additions/removals together, preserving the existing gestures’ encodings.
 
 `SyncSession.dispatch(gesture, { captureFailures = false })` returns an opaque receipt or null when
 nothing applies. `revert(receipt)` restamps that captured inverse once and removes it from the global
@@ -299,6 +348,8 @@ the URL selectable; owners can make a tree private again.
 
 ## Open work
 
+- Board, List and Graph each own a long-press recognizer; `rb-simplify` owns consolidation while
+  preserving the Board hold/swipe exclusion and the legacy interaction contracts.
 - Icon slots are reassigned by distance rank each frame; stable node ownership could remove
   unnecessary sorting and slot swaps.
 - Remote structural deletion prunes scene selection without pruning React's selection sets, so

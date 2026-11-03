@@ -620,9 +620,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · New step on an empty phone roadmap.** With the development gate open, an owner’s empty
   roadmap reaches the Board on phone, tablet and desktop. Its New step opens the composer (185:2149,
   226:1055); the tablet uses the desktop empty-state structure pending the 744px drawing above.
-- **Board · revealed Recolour in multi-select.** The owner-approved ✅ 21.02b Recolor kinds revealed
-  is the canon for `rb-multi-select` in wave 5: light 468:12024, dark 468:12150, 320px 468:12258,
-  with spec 469:12287. It defines the revealed Kinds row, shared-kind ring and responsive bar layout.
 - **Board · completion toast replacement.** The swipe spec (379:17279) says completions coalesce.
   The pinned wave-4 ruling replaces the older toast and gives Undo only the step named in the new
   toast. Correct the spec; there is no multi-completion copy or combined Undo.
@@ -655,10 +652,25 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · phone large-picker dark and unreachable states.** Phone 10.x has no dark frames; dark
   uses the existing tokens with the light structure. Search runs synchronously in memory, so 10.09
   Searching and 10.10 Search unavailable are not reachable. Draw dark 10.x and align the search flows.
-- **Board · keyboard deletion and shared Undo.** Backspace on a Board card has no approved cost-line
-  flow and stays inert (`rb-kbd-dialog`). On an uncovered Board, Command-Z still uses the global
-  structural Undo stack; the composer and picker block the host shortcut. `rb-simplify` owns
-  reconciling that path with targeted Board toast Undo.
+- **Board · shared Undo.** Backspace and Delete on an owner Board card start the nine-second held
+  delete directly; the hold is its safety (wave-5 G10). On an uncovered Board, Command-Z still uses
+  the global structural Undo stack; the composer and picker block the host shortcut. `rb-simplify`
+  owns reconciling that path with targeted Board toast Undo.
+- **Board · multi-select entry for keyboard and screen readers.** Phone multi-select starts only
+  through a touch hold (wave-5 G14). Draw a keyboard and screen-reader entry before exposing one;
+  the orchestrator owns its follow-up node.
+- **Board · phone Edit step field copy.** The edit page inherits the composer fields and placement
+  preview (wave-5 G5). Align [02.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1675):
+  its *Step name* label and count-only prerequisites row differ from *Name* and the selected step names.
+- **Board · blocked prerequisite reasons.** Both bands name blocked rows *Comes after this step*
+  and the edited step *This step* (wave-5 G6). Align desktop
+  [09.09](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=384-20365), which says
+  *Unlocked by this step* and omits the edited step.
+- **Board · edit placement preview.** Keep *Prerequisites done: lands in Up next.* (wave-5 G7).
+  Align [02.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=403-34462), which names
+  one completed prerequisite in its preview instead.
+- **Board · shortcut annotations.** 10.03's orange row bullets and stray *f* by Delete are drawing
+  annotations, not UI (G15b). Remove them from the production specimen.
 - **Board · the topbar before a roadmap loads.** Desktop 02.09 (374:5067) and 02.10 (374:5202) draw the roadmap's
   name with its switcher chevron and the Board/Graph switch, and no Share. Before the load answers, or after it
   fails, the build knows no name, so it shows none rather than *Untitled roadmap*, and it offers no Share. It shows

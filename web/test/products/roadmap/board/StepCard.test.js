@@ -96,7 +96,7 @@ test('StepCard — a click selects the card’s step', () => {
   const selected = [];
   const card = learnToSailBoard().upNext.cards[0];
   const element = StepCard.type({ card, onSelect: (id) => selected.push(id) });
-  element.props.onClick();
+  element.props.children.props.onClick();
   assert.deepEqual(selected, ['wind']);
 });
 

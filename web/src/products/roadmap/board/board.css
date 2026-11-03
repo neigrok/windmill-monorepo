@@ -224,7 +224,8 @@
 .st-board-card--locked:active {
   background: var(--surface-hover);
 }
-.st-board-card[aria-current="true"] {
+.st-board-card[aria-current="true"],
+.st-board-card.is-selected {
   border-color: var(--text-primary);
   box-shadow: inset 0 0 0 1px var(--text-primary);
 }
