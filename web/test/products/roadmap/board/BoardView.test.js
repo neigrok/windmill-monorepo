@@ -86,13 +86,13 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
-import { coverBeneath } from '/src/products/roadmap/board/composerFocus.js';
+import { coverBeneath } from '/src/products/roadmap/step/composerFocus.js';
 import { boardFocusTarget } from '/src/products/roadmap/board/traversal.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { StepCard } from '/src/products/roadmap/board/StepCard.jsx';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
-import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
+import { useStepAddress } from '/src/products/roadmap/step/stepAddress.js';
 import { useRoadmapToast } from '/src/products/roadmap/board/useRoadmapToast.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 

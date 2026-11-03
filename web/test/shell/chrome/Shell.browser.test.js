@@ -1,10 +1,10 @@
-import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/products/roadmap/board/copy.js';
+import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/products/roadmap/copy.js';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { beacon, withBrowserErrors } from '../../products/roadmap/board/composerFixture.js';
+import { beacon, withBrowserErrors } from '../../products/roadmap/browserFixture.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const offline = { line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon' };

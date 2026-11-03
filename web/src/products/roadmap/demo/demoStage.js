@@ -1,4 +1,4 @@
-import { STATE_WORDS, completedToast } from '../board/copy.js';
+import { STATE_WORDS, completedToast } from '../copy.js';
 
 export const DEMO_TREE_ID = 't_9e407a96b5330ebe';
 

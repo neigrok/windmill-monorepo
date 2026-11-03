@@ -109,6 +109,8 @@ export const BODY_WU = NODE_SIZE * BODY_FRACTION;
 export const WORKING_ZOOM = 52 / BODY_WU;
 // The phone's working view: the same body at 40 px.
 export const PHONE_WORKING_ZOOM = 40 / BODY_WU;
+export const prefersReducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
 // A single step has nothing to cascade through.
 export const ARRIVAL_MIN_STEPS = 2;
 // A body never draws narrower than this many screen px at any zoom; the crowned root keeps a taller floor.

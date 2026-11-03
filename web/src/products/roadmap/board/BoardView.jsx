@@ -6,15 +6,15 @@ import { Board, BoardQuery } from './Board.js';
 import { useStepSelection } from './useStepSelection.js';
 import { boardFocusTarget } from './traversal.js';
 import { kindOptions } from '../model/Legend.js';
-import { bulkKindChoice } from '../selection/bulkSelection.js';
+import { bulkKindChoice } from '../model/bulkSelection.js';
 import { FilterStrip } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
 import { BoardToast } from './BoardToast.jsx';
-import { DeviceLine, RefusedSync } from './SyncNotices.jsx';
-import { FORK_OFFER } from './copy.js';
+import { DeviceLine, RefusedSync } from '../sync/SyncNotices.jsx';
+import { FORK_OFFER } from '../copy.js';
 import { Button } from '../../../design-system/core/Button.jsx';
 import { track } from '../../../telemetry/beacon.js';
 
@@ -171,6 +171,13 @@ function BoardView({
     if (revealFocus.current?.dataset.stepId !== id) motion.settle(id);
   };
 
+  // What the phone's panes and the columns both show.
+  const cards = {
+    board, focusBoard: nextBoard, counts: motion.counts, arrived: motion.arrived, leaving: motion.leaving,
+    dimmed: motion.phase === 'quiet' ? motion.dimmed : undefined, settle: settleFocus,
+    selectedId, doneExpanded, onExpandDone, query, onQuery,
+  };
+
   const refusedNotice = refusal && (
     <div className="st-board-refusal" data-board-refusal="">
       <RefusedSync band={breakpoint} code={refusal.code} count={refusal.count}
@@ -209,15 +216,9 @@ function BoardView({
           {phone
             ? (
               <PhoneSegments
-                board={board}
+                {...cards}
                 beforeBand={phoneNotices}
-                focusBoard={nextBoard}
-                counts={motion.counts}
-                arrived={motion.arrived}
-                leaving={motion.leaving}
-                dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
                 pinned={selectionPins}
-                settle={settleFocus}
                 onComplete={selecting ? undefined : onComplete}
                 onDelete={editable && !selecting ? selection.deleteFromKey : undefined}
                 selection={selecting}
@@ -232,14 +233,9 @@ function BoardView({
                 onNewStep={onNewStep && (() => onNewStep('band'))}
                 shown={shown}
                 onShow={setShown}
-                selectedId={selectedId}
                 onSelect={selection.pick}
                 onAnchor={anchor}
-                doneExpanded={doneExpanded}
-                onExpandDone={onExpandDone}
-                query={query}
                 worn={worn}
-                onQuery={onQuery}
               />
             )
             : (
@@ -247,26 +243,15 @@ function BoardView({
                 <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={anchor} />
                 {refusedNotice}
                 <BoardColumns
-                  board={board}
-                  focusBoard={nextBoard}
-                  counts={motion.counts}
-                  arrived={motion.arrived}
-                  leaving={motion.leaving}
-                  dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
+                  {...cards}
                   pinned={motion.pinned}
-                  settle={settleFocus}
                   onComplete={onComplete}
                   onDelete={editable ? selection.deleteFromKey : undefined}
                   onStandColumn={(column) => { if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column)); }}
                   band={breakpoint}
                   railed={railed}
                   onShowRail={() => setRailed(swapRail)}
-                  selectedId={selectedId}
                   onSelect={onSelect}
-                  doneExpanded={doneExpanded}
-                  onExpandDone={onExpandDone}
-                  query={query}
-                  onQuery={onQuery}
                 />
               </>
             )}

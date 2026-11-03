@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ANONYMOUS_OWNER, DEMO_BYLINE, LAPSED_SESSION } from '../../../src/products/roadmap/board/copy.js';
+import { ANONYMOUS_OWNER, DEMO_BYLINE, LAPSED_SESSION } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 

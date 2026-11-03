@@ -41,6 +41,14 @@ export function inUseCount(legend, nodes) {
   return withCounts(legend, nodes).filter((kind) => kind.count > 0).length;
 }
 
+export function hueName(hue) {
+  return `${hue[0].toUpperCase()}${hue.slice(1)}`;
+}
+
+export function kindName(kind) {
+  return kind.label || hueName(kind.hue);
+}
+
 // The kind filter's options. Hue is the key because hue is what a node stores: two legend kinds
 // sharing one hue are one option. A roadmap wearing one hue gets no options at all.
 export function kindOptions(tree, legend = []) {
@@ -60,7 +68,7 @@ export function kindOptionsForHues(available, legend = []) {
   return [...new Set(hues)].map((hue) => ({
     id: named.get(hue)?.id ?? hue,
     hue,
-    label: named.get(hue)?.label || `${hue[0].toUpperCase()}${hue.slice(1)}`,
+    label: named.get(hue)?.label || hueName(hue),
   }));
 }
 

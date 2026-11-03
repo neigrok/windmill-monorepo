@@ -677,3 +677,44 @@ test('delete confirmation and cancellation identify the current Graph surface', 
     ['event', 'roadmap_board_delete', { step: 'cancel', view: 'graph' }],
   ]);
 });
+
+test('the edit door belongs to the active owner detail only', () => {
+  for (const [owner, id] of [[false, 'wind'], [true, 'dock'], [true, 'wind']]) {
+    const calls = [];
+    const composer = new BoardComposer({ owner, detailId: 'wind', composer: null,
+      onOpen: (draft) => calls.push(draft) });
+    composer.openEdit(id);
+    assert.deepEqual(calls, owner && id === 'wind' ? [{ door: 'detail', editing: 'wind' }] : []);
+  }
+});
+
+test('closing, removing or replacing an edit detail immediately excludes its composer and rejects writes', () => {
+  for (const detailId of [null, 'dock', 'wind']) {
+    const calls = [];
+    const draft = { door: 'detail', editing: 'wind' };
+    const composer = new BoardComposer({ owner: true, detailId, composer: draft,
+      acts: { edit: (request) => { calls.push(request); return { ok: true }; } } });
+    const request = { id: 'wind', label: 'Read the wind' };
+    assert.equal(composer.shown, detailId === 'wind' ? draft : null);
+    assert.deepEqual(composer.saveEdit(request), { ok: detailId === 'wind' });
+    assert.deepEqual(calls, detailId === 'wind' ? [request] : []);
+  }
+});
+
+test('edit save refuses a lost owner', () => {
+  const composer = new BoardComposer({ owner: false, detailId: 'wind',
+    composer: { door: 'detail', editing: 'wind' },
+    acts: { edit: () => assert.fail('an unavailable edit must not dispatch') } });
+  assert.equal(composer.shown, null);
+  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+});
+
+test('create composers remain visible without a detail but cannot write through the edit door', () => {
+  const draft = { door: 'verbs' };
+  const composer = new BoardComposer({ owner: true, detailId: null, composer: draft,
+    acts: { edit: () => assert.fail('a create draft must not dispatch an edit') },
+    onOpen: () => assert.fail('there is no detail to edit') });
+  assert.equal(composer.shown, draft);
+  composer.openEdit(null);
+  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+});

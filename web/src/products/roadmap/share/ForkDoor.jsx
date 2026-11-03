@@ -7,13 +7,11 @@ import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
 import { requestMagicLink } from '../../../shell/auth/AuthClient.js';
 import { forkTree, reportUnexpectedFailure } from '../persistence/TreeRegistry.js';
 import { noteForked } from '../persistence/ViewPrefs.js';
+import { prefersReducedMotion } from '../theme.js';
 import { track } from '../../../telemetry/beacon.js';
 import './fork-door.css';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = false, onClose, onSubmit, stepCount = null }) {
   const [email, setEmail] = useState('');

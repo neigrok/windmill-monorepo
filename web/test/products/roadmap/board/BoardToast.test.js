@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadScreen, renderHook, elementsOf, textOf } from '../../gym/harness.mjs';
-import { createdToast } from '../../../../src/products/roadmap/board/copy.js';
+import { createdToast } from '../../../../src/products/roadmap/copy.js';
 
 test('phone refusal defers the creation toast, including one already visible', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { COACH_DONE_KEY, DEMO_COPY } from './demoStage.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR, NODE_SIZE } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR, NODE_SIZE, prefersReducedMotion } from '../theme.js';
 
 const ARRIVAL_SETTLE_MS = 1200;
 const IDLE_MS = 800;            // pointer-quiet required before mounting
@@ -9,9 +9,6 @@ const POLL_MS = 100;
 const CARD_WIDTH = 264;
 const ANCHOR_GAP = 18;          // px between the node's edge and the card
 const VIEW_MARGIN = 12;
-
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 

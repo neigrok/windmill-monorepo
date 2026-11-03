@@ -5,12 +5,12 @@ import { readFile } from 'node:fs/promises';
 import { parse } from 'acorn';
 import { chromium } from 'playwright';
 import { createServer, transformWithEsbuild } from 'vite';
-import { withBrowserErrors } from './composerFixture.js';
+import { withBrowserErrors } from '../browserFixture.js';
 
 const CLOCK_START = new Date('2026-11-02T12:00:00Z');
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const source = await readFile(new URL('../../../../src/products/roadmap/editing/useGraphStructure.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../../../src/products/roadmap/graph/useGraphStructure.js', import.meta.url), 'utf8');
 const { code } = await transformWithEsbuild(source, 'useGraphStructure.js', { loader: 'jsx' });
 const treeHandlers = [];
 const visit = (node) => {
@@ -37,7 +37,7 @@ import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { hlcText } from '/src/products/roadmap/sync/lattice.js';
-import { GRAPH_TOAST, keptStepsToast } from '/src/products/roadmap/board/copy.js';
+import { GRAPH_TOAST, keptStepsToast } from '/src/products/roadmap/copy.js';
 import '/src/styles/global.css';
 const root = createRoot(document.getElementById('root'));
 const initialTree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
@@ -75,7 +75,7 @@ function Room() {
   window.maskedWork = () => session.maskedWork();
   window.projectedSteps = () => session.lattice.toTreeData().nodes.map(({ id, prerequisites }) => ({ id, prerequisites }));
   window.recheckTree = () => session.emitTree();
-  window.deleteLegacy = () => session.dispatch({ kind: 'DeleteNode', id: 'wind' });
+  window.deleteOnGraph = () => session.dispatch({ kind: 'DeleteNode', id: 'wind' });
   window.loadHistoricalDelete = () => {
     session.lattice.join({ nodes: [{ id: 'wind', deletedAt: hlcText(session.clock.tick(Date.now())) }] });
     session.emitTree();
@@ -225,15 +225,15 @@ test('Chromium: the real host offer boundary still reports masked work from a pr
   } finally { await page.close(); }
 });
 
-test('Chromium: the real host offer boundary stays clear after a Graph or List delete', async () => {
+test('Chromium: the real host offer boundary stays clear after a Graph delete', async () => {
   await ready;
   const page = await browser.newPage();
 
   try {
     await withBrowserErrors(page, async () => {
       await page.goto(`${origin}/board-acts-test`);
-      await page.waitForFunction(() => !!window.deleteLegacy);
-      await page.evaluate(() => window.deleteLegacy());
+      await page.waitForFunction(() => !!window.deleteOnGraph);
+      await page.evaluate(() => window.deleteOnGraph());
       assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers })), {
         masked: [], offers: [],
       });

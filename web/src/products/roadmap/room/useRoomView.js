@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
-import { coverBeneath } from '../board/composerFocus.js';
+import { coverBeneath } from '../step/composerFocus.js';
 import { ViewPrefs, boardCanShow, clearBorn, initialView, peekBorn, viewToShow } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 

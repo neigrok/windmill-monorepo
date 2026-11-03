@@ -1,5 +1,5 @@
 import React from 'react';
-import { ACTIVITY } from '../board/copy.js';
+import { ACTIVITY } from '../copy.js';
 import { ActorAvatar, EventSentence, relativeTime } from './grammar.jsx';
 
 export function ActivityRows({ groups, nodesById, onOpenStep }) {

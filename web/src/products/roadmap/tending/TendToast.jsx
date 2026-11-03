@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
-import { TEND_TOAST } from '../board/copy.js';
+import { TEND_TOAST } from '../copy.js';
 
 // Ask AI's answers, in the pill 08.02 draws for them: a receipt may open its reason, and reading it holds the toast.
 export function TendToast({ toast, overCanvas, style, onShown, onPause, onAct }) {

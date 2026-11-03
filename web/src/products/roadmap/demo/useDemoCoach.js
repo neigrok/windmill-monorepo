@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { listAllTrees } from '../persistence/TreeRegistry.js';
+import { prefersReducedMotion } from '../theme.js';
 import { COACHED_NODE_ID, COACH_DONE_KEY, coachEligible } from './demoStage.js';
 
 const CTA_ECHO_DELAY = 1500;
@@ -26,8 +27,7 @@ export function useDemoCoach({ demo, status }) {
   const noteCompletion = useCallback((id) => {
     if (!demo) return;
     setDemoCompletions((count) => count + 1);
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (id === COACHED_NODE_ID && !reduced) {
+    if (id === COACHED_NODE_ID && !prefersReducedMotion()) {
       setTimeout(() => { setCtaEcho(true); setTimeout(() => setCtaEcho(false), CTA_ECHO_MS); }, CTA_ECHO_DELAY);
     }
   }, [demo]);

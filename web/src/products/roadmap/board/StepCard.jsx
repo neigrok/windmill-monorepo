@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { SwipeGesture, SWIPE_REVEAL } from './gestures.js';
 import { HoldGesture, HOLD_MS } from '../input/HoldGesture.js';
 import { hueOf } from '../theme.js';
-import { completeStepAction, STEP_DETAIL, reasonLine } from './copy.js';
+import { completeStepAction, STEP_DETAIL, reasonLine } from '../copy.js';
 
 const SWIPE_ACTION_GAP = 8;
 const SWIPE_HAPTIC_MS = 8;

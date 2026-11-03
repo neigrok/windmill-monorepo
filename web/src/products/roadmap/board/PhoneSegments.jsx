@@ -10,7 +10,7 @@ import { UpNextRest } from './BoardStates.jsx';
 import { ActiveFilters, BulkBar, PaneEmpty, PhoneSort, PhoneTools } from './BoardControls.jsx';
 import { BoardQuery } from './Board.js';
 import { columnStops, useRovingFocus } from './traversal.js';
-import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount } from './copy.js';
+import { COLUMN_TITLES, LABELS, columnHeadingLabel, formatCount } from '../copy.js';
 
 const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 

@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
-import { LABELS, completedStepsToast, completedToast } from '../board/copy.js';
+import { LABELS, completedStepsToast, completedToast } from '../copy.js';
 import { COACHED_NODE_ID, DEMO_COPY } from '../demo/demoStage.js';
 import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { detectMilestones } from '../model/milestones.js';
 import { advanceProgress, milestoneAnnouncement, progressChanges } from '../model/progress.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
-import { markDoneTargets } from '../selection/bulkSelection.js';
+import { markDoneTargets } from '../model/bulkSelection.js';
 
 const NO_PROGRESS = Object.freeze({ completed: new Set(), completedAt: {} });
 

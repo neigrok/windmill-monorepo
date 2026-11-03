@@ -1,8 +1,8 @@
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
-import { blockedPrerequisites } from './StepDraft.js';
-import { LABELS, completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from './copy.js';
+import { blockedPrerequisites } from '../step/StepDraft.js';
+import { LABELS, completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from '../copy.js';
 
 export class StepSelection {
   constructor(ids = []) {
