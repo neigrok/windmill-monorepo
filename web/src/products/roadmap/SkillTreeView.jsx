@@ -2518,7 +2518,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {(shared || !!demotion) && (
-        <ForkDoor preserveOutsideFocus={identityActive} open={forkOpen} tablet={breakpoint === 'tablet'} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
+        <ForkDoor preserveOutsideFocus={identityActive} open={forkOpen} presentation={breakpoint === 'tablet' ? 'dialog' : 'sheet'} drawn={false} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 
       {demo && coachAllowed && scene && canvasView && (

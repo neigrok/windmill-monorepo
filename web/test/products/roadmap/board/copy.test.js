@@ -25,9 +25,11 @@ import {
   DISCARD_DRAFT,
   FILTERED_EMPTY,
   SYNC_STATUS,
+  SYNC_OFFLINE_SHORT,
   REFUSED_SYNC,
   ANONYMOUS_OWNER,
   LAPSED_SESSION,
+  FORK_OFFER,
   formatCount,
   stepCount,
   needsLine,
@@ -76,6 +78,14 @@ import {
   showMore,
   draftLine,
 } from '../../../../src/products/roadmap/board/copy.js';
+
+test('copy — compact offline status', () => {
+  assert.equal(SYNC_OFFLINE_SHORT, 'Offline');
+});
+
+test('copy — reader Fork offer', () => {
+  assert.equal(FORK_OFFER, 'Fork this tree');
+});
 
 test('copy — one word per state, one title per column, one label per sort', () => {
   assert.deepEqual(STATE_WORDS, { locked: 'locked', upNext: 'up next', done: 'done' });

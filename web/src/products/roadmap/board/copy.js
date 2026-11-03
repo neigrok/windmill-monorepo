@@ -58,9 +58,11 @@ export const DISCARD_DRAFT = { title: 'Discard draft?', body: 'Your changes will
 export const FILTERED_EMPTY = { title: 'No steps match', action: 'Clear filters' };
 const CLEAR_BOTH = 'Clear both';
 export const SYNC_STATUS = { saving: 'Saving…', saved: 'Saved', offline: 'Offline · changes will sync' };
+export const SYNC_OFFLINE_SHORT = 'Offline';
 export const REFUSED_SYNC = { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' };
 export const ANONYMOUS_OWNER = 'Saved on this device — sign in to keep it';
 export const LAPSED_SESSION = 'Signed out — saved on this device';
+export const FORK_OFFER = 'Fork this tree';
 export const DELETE_CONFIRM = { cancel: 'Cancel', delete: 'Delete' };
 export const COMPOSER = {
   title: 'New step',

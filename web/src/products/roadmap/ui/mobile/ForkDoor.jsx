@@ -14,7 +14,7 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null, preserveOutsideFocus = false }) {
+export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null, preserveOutsideFocus = false }) {
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | rate_limited | unreachable
   const [typo, setTypo] = useState(false);
@@ -46,7 +46,7 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
     if (!busy) onClose?.();
   };
 
-  useDialogFocus({ open: open && !tablet && preserveOutsideFocus, cardRef: sheetRef, onClose: close, preserveOutsideFocus });
+  useDialogFocus({ open: open && presentation !== 'dialog' && preserveOutsideFocus, cardRef: sheetRef, onClose: close, preserveOutsideFocus });
 
   useEffect(() => {
     if (!open || preserveOutsideFocus) return undefined;
@@ -222,7 +222,7 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
     </form>
   );
 
-  if (tablet) {
+  if (presentation === 'dialog') {
     return (
       <Dialog open={open} onClose={close} width={420} preserveOutsideFocus={preserveOutsideFocus}>
         {content}
