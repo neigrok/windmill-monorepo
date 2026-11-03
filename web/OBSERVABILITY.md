@@ -80,7 +80,7 @@ Only `failed` reports to Sentry, under the static operation `gym-coach-routine-c
 conversation, question, identifier or server text is reported.
 
 Roadmap's Board/Graph switch emits `roadmap_view_switch` with only `view` (`board` or `graph`) when a reader
-switches. While the gate is open, the first resolved view of each roadmap visit emits
+switches. The first resolved view of each roadmap visit emits
 `roadmap_view_open` with `view` (`board` or `graph`), `band` (`phone`, `tablet` or `desktop`),
 `role` (`owner`, `reader` or `demo`) and `door` (`saved`, `default`, `link`, `empty` or `born`),
 returned by the same `initialView` branch that chose the view. Below 744px the Board's column tabs emit `roadmap_board_column`
@@ -136,7 +136,7 @@ note writes nothing and emits no `noteSave`. System Back or remote detail closur
 draft and emits no `noteDiscard`. These local workspace paths add no Sentry operation: render failures
 reach `roadmap-board-step`, composer render failures reach `roadmap-board-composer`, and edit-save
 exceptions reach `roadmap-board-edit`.
-Opening shortcut help while the gate is open emits `roadmap_shortcuts_open` with only `view`
+Opening shortcut help emits `roadmap_shortcuts_open` with only `view`
 (`board` or `graph`). These events never carry note text, subtask labels, link URLs, ids or hues.
 A recolor or edit dispatch exception, or a missing session on an editable owner Board, reports
 `roadmap-board-recolor` or `roadmap-board-edit`, respectively. Null receipts are expected no-ops,
@@ -150,7 +150,7 @@ contains post-apply notification, storage and transport exceptions under `roadma
 `roadmap-sync-persist` and `roadmap-sync-send`, respectively. Those writes retain their receipt because their lattice
 change has already applied; persistence or transport failure marks durability at risk.
 
-The gated identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, `newStep`, `export`,
+The identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, `newStep`, `export`,
 `settings`, `shortcuts`, `fork`, `more`, `activity`, `next` or folded-icon `find`), `door` (`row`, `more`, `offer`,
 `bar`, `key` or `sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
 sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new`, `search` or `browse`), or
@@ -167,7 +167,7 @@ A Graph search handing off to the Board emits `roadmap_graph_find` with `step: h
 Graph toast outcomes emit `roadmap_graph_toast` with `act` (`complete`, `create`, `delete` or `link`) and
 `step` (`shown` or `undo`). The Graph detail menu uses the shared nine-second held delete and
 its Undo cancels that hold; `roadmap_board_delete` distinguishes the originating view throughout
-confirmation, hold and release. Successful gated reader Share emits `link_copy` with no properties;
+confirmation, hold and release. Successful reader Share emits `link_copy` with no properties;
 a clipboard refusal emits `roadmap_graph_toast` with `act: link` and `outcome: failed`, without
 a share-funnel beacon or Issue. Identity render failures report `roadmap-identity`. The selected-step
 bar sits outside that boundary; a bar render failure reaches the room handler. Unexpected
@@ -176,7 +176,7 @@ export build/download failures report `roadmap-export`; a Graph completion Undo 
 failures retain their existing operations. None of these events carries titles, ids, search text or roadmap names. State-word
 copy and focus-ring changes emit no new events.
 
-The gated sync status emits `roadmap_sync_offline` with `step` (`shown` or `cleared`) once per
+The sync status emits `roadmap_sync_offline` with `step` (`shown` or `cleared`) once per
 offline episode and `pending` bucketed through `countBucket`. These counts exclude server-confirmed
 records being rebaselined. An online discard rebaseline emits no offline episode or Saved state.
 Saving and Saved emit nothing.
@@ -198,31 +198,26 @@ line. It is an expected auth outcome, not an Issue. Unexpected account refresh f
 `auth-session` with a real stack. Explicit sign-out and account replacement retain their cleanup.
 
 Unexpected refused codes (`bad-frame`, `server-error` and unknown codes) report
-`roadmap-sync-refused` once per code per session in both gate states. Capacity and
+`roadmap-sync-refused` once per code per session. Capacity and
 missing-tree refusals are expected and emit no Issue. Unexpected discard failures report
-`roadmap-sync-discard` in both gate states. Refusal product events remain tied to the gated
-visible surfaces. A refusal-only session subscription supplies the reports without enabling full
-status snapshots, status timers or host re-renders for gate-closed users. Refusal Issues include the bounded refusal code as a tag, and deduplication
+`roadmap-sync-discard`. Refusal product events remain tied to the
+visible surfaces. Refusal Issues include the bounded refusal code as a tag, and deduplication
 keeps different codes distinct. An epoch-notification failure after the discard transaction commits
 reports `roadmap-sync-notify` without turning the successful discard into a failure. A discard
 projection callback failure also reports `roadmap-sync-notify` without stranding the discard or
 its reconnect. An IndexedDB
 epoch-check failure before a structure or progress write send reports `roadmap-sync-send` and
-retains the pending bank in both gate states. Reports carry static operation names and call-site
+retains the pending bank. Reports carry static operation names and call-site
 stacks; events never carry titles, identifiers, raw counts, server reasons or user content. The existing sync failure
-operations retain their meanings. Gate-closed Fork presentation changes emit no new event.
+operations retain their meanings.
 The room registration keeps the Shell live region mounted while its status is idle and suppresses
 the global offline notice before paint. Anonymous and lapsed device rooms keep that registration.
 The shared controlled Tooltip and these presentation changes emit no additional product events;
 the existing offline shown/cleared events describe the connectivity episode.
 
-The switch, the tabs, the rail, Show all, the controls, the states, the step’s page and modal, and the
-composer and picker exist only while the Board’s development gate
-(`products/roadmap/board/gate.js`) is open. The `windmill:board:dev = 1` opt-in opens it in
-production as well as development; without it the gate stays closed. Reading the gate's storage
-flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board` with its stack frames (file, line, column and function name only),
-drops the Board until that roadmap is opened again and shows the Graph. Loading a roadmap reports to Sentry whatever the
-gate: `HttpTreeRepository` reports the static operation `roadmap-tree-load` when the server answers 5xx, answers 200
+A render failure inside the Board reports the static Sentry operation `roadmap-board` with its stack frames (file, line, column and function name only),
+drops the Board and shows the Graph; choosing Board on the switch tries it again. Loading a roadmap reports to Sentry:
+`HttpTreeRepository` reports the static operation `roadmap-tree-load` when the server answers 5xx, answers 200
 with something that is not a tree (an app shell a proxy served, say), or the request is lost while the page is visible,
 the browser believes it is online and the roadmap is still wanted. It stays silent on a refusal (4xx), a request lost
 offline or behind a hidden page, and a load aborted because the roadmap was left. Any other failure that stops the load,

@@ -3,6 +3,7 @@
 
 const LAST_VIEW_KEY = 'windmill:view:last';
 const VIEWS = ['list', 'board', 'tree'];
+const WRITTEN_VIEWS = ['board', 'tree'];
 
 export class ViewPrefs {
   constructor(storage = window.localStorage) {
@@ -15,6 +16,7 @@ export class ViewPrefs {
   }
 
   setLastView(treeId, view) {
+    if (!WRITTEN_VIEWS.includes(view)) return;
     const map = this.readMap(LAST_VIEW_KEY);
     map[treeId] = view;
     this.writeMap(LAST_VIEW_KEY, map);
@@ -37,18 +39,17 @@ export class ViewPrefs {
   }
 }
 
-// Empty or just-planted roadmaps open the canvas, except editable empty Boards.
-// With the Board enabled, step links open the Board and confirmed readers open the Graph; other visits keep their saved choice.
-export function initialView({ saved, owner, reader = false, empty, born = false, boardOpen = false, linkedStep = null, canAddFirstStep = false }) {
-  const working = boardOpen ? 'board' : 'list';
-  if (boardOpen && owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
+// Empty or just-planted roadmaps open the canvas, except editable empty Boards. Step links open the Board and confirmed
+// readers the Graph; other visits keep their saved choice, and a saved `list` from before the Board reads as `board`.
+export function initialView({ saved, owner, reader = false, empty, born = false, linkedStep = null, canAddFirstStep = false }) {
+  if (owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
   if (born) return { view: 'tree', door: 'born' };
   if (empty) return { view: 'tree', door: 'empty' };
-  if (boardOpen && linkedStep !== null) return { view: 'board', door: 'link' };
-  if (boardOpen && reader) return { view: 'tree', door: 'default' };
+  if (linkedStep !== null) return { view: 'board', door: 'link' };
+  if (reader) return { view: 'tree', door: 'default' };
   if (saved === 'tree') return { view: 'tree', door: 'saved' };
-  if (saved === 'list' || saved === 'board') return { view: working, door: 'saved' };
-  return { view: owner ? working : 'tree', door: 'default' };
+  if (saved === 'list' || saved === 'board') return { view: 'board', door: 'saved' };
+  return { view: owner ? 'board' : 'tree', door: 'default' };
 }
 
 // The Board shows while its roadmap loads or fails to load, and once loaded unless it crashed; a roadmap with no steps

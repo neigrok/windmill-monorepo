@@ -44,15 +44,11 @@ function collectHandlers(code) {
       const callback = node.arguments[0];
       identityHandlers.set('reportRefusal', code.slice(callback.start, callback.end));
     }
-    if (node.type === 'CallExpression' && node.callee.name === 'useRoadmapSyncStatus') {
-      identityHandlers.set('syncStatusEnabled', code.slice(node.arguments[1].start, node.arguments[1].end));
-    }
     if (node.type === 'CallExpression' && node.callee.name === 'useEffect') {
       const callback = node.arguments[0];
       const body = code.slice(callback.start, callback.end);
       if (body.includes('insetsRef.current = insets;')) {
         identityHandlers.set('publishInsets', body);
-        identityHandlers.set('insetDependencies', code.slice(node.arguments[1].start, node.arguments[1].end));
       }
     }
     for (const child of Object.values(node)) {
@@ -67,15 +63,14 @@ const identitySource = await readFile(new URL('../../../src/products/roadmap/use
 collectHandlers(identitySource);
 assert.deepEqual([...handlers.keys()].sort(), ['newStepFromBoard', 'onEditorKey', 'onPaste']);
 
-function host({ gate = true, coveringPage = false, modal = false, pasteComposer = false, typing = false, activityEnabled = true } = {}) {
+function host({ coveringPage = false, modal = false, pasteComposer = false, typing = false, activityEnabled = true } = {}) {
   const calls = [];
   const scope = {
-    BOARD_OPEN: gate,
     activityActsRef: { current: { enabled: activityEnabled, open: (door) => calls.push(['activity', door]) } },
     keyboardCovered: () => coveringPage || modal || pasteComposer,
     boardKey,
     graphOnlyKey,
-    boardActiveRef: { current: gate },
+    boardActiveRef: { current: true },
     boardSwitchRef: { current: null },
     stepDetailOpenRef: { current: coveringPage },
     composerOpenRef: { current: pasteComposer },
@@ -129,51 +124,31 @@ test('uncovered Board keeps undo, redo, shortcuts and paste, while typing keeps 
   assert.deepEqual(typing.calls, []);
 });
 
-test('the closed Board gate preserves the host shortcut behavior under other layers', () => {
-  const boundary = host({ gate: false, coveringPage: true, modal: true });
-  boundary.key({ key: 'z', metaKey: true });
-  boundary.key({ key: 'Z', ctrlKey: true, shiftKey: true });
-  boundary.key({ key: '?' });
-  boundary.paste();
-  assert.deepEqual(boundary.calls, [
-    'preventDefault', 'undo', 'preventDefault', 'redo', 'preventDefault', 'shortcuts',
-    'preventDefault', ['kinds', []], ['draft', 'A sailing plan'], ['composer', true],
-  ]);
-  const pasteComposer = host({ gate: false, pasteComposer: true });
-  pasteComposer.paste();
-  assert.deepEqual(pasteComposer.calls, []);
-});
-
-test('the Board creation verb opens its composer only for the active owner behind the open gate', () => {
-  for (const [gate, active, owner] of [[false, true, true], [true, false, true], [true, true, false], [true, true, true]]) {
+test('the creation verb opens its composer for the owner on either view', () => {
+  for (const [active, owner] of [[true, false], [true, true], [false, false], [false, true]]) {
     const calls = [];
     const open = runInNewContext(`(${handlers.get('newStepFromBoard')})`, {
-      BOARD_OPEN: gate,
       document: { activeElement: null },
       boardActive: active,
-      identityActive: false,
       owner,
-      setBoardComposer: ({ door }) => calls.push(['composer', door]),
-      track: (name, { step, door }) => calls.push(['event', name, step, door]),
+      setBoardComposer: (draft) => calls.push(['composer', { ...draft }]),
+      track: (name, props) => calls.push(['event', name, { ...props }]),
     });
     open('verbs');
-    assert.deepEqual(calls, gate && active && owner ? [
-      ['composer', 'verbs'],
-      ['event', 'roadmap_board_create', 'open', 'verbs'],
+    assert.deepEqual(calls, owner ? [
+      ['composer', { door: 'verbs', view: active ? 'board' : 'tree', opener: null }],
+      ['event', 'roadmap_board_create', { step: 'open', door: 'verbs', view: active ? 'board' : 'graph' }],
     ] : []);
   }
 });
 
 test('the edit door belongs to the active owner detail only', () => {
-  for (const [gate, active, owner, id] of [
-    [false, true, true, 'wind'], [true, false, true, 'wind'],
-    [true, true, false, 'wind'], [true, true, true, 'dock'], [true, true, true, 'wind'],
-  ]) {
+  for (const [owner, id] of [[false, 'wind'], [true, 'dock'], [true, 'wind']]) {
     const calls = [];
-    const composer = new BoardComposer({ gate, active, owner, detailId: 'wind', composer: null,
+    const composer = new BoardComposer({ owner, detailId: 'wind', composer: null,
       onOpen: (draft) => calls.push(draft) });
     composer.openEdit(id);
-    assert.deepEqual(calls, gate && active && owner && id === 'wind' ? [{ door: 'detail', editing: 'wind' }] : []);
+    assert.deepEqual(calls, owner && id === 'wind' ? [{ door: 'detail', editing: 'wind' }] : []);
   }
 });
 
@@ -181,7 +156,7 @@ test('closing, removing or replacing an edit detail immediately excludes its com
   for (const detailId of [null, 'dock', 'wind']) {
     const calls = [];
     const draft = { door: 'detail', editing: 'wind' };
-    const composer = new BoardComposer({ gate: true, active: true, owner: true, detailId, composer: draft,
+    const composer = new BoardComposer({ owner: true, detailId, composer: draft,
       acts: { edit: (request) => { calls.push(request); return { ok: true }; } } });
     const request = { id: 'wind', label: 'Read the wind' };
     assert.equal(composer.shown, detailId === 'wind' ? draft : null);
@@ -198,41 +173,22 @@ test('Backspace and Delete on the Board never reach the legacy Graph write handl
   }
 });
 
-test('edit save refuses a lost owner, inactive Board or closed gate', () => {
-  for (const [gate, active, owner] of [[false, true, true], [true, false, true], [true, true, false]]) {
-    const composer = new BoardComposer({ gate, active, owner, detailId: 'wind',
-      composer: { door: 'detail', editing: 'wind' },
-      acts: { edit: () => assert.fail('an unavailable edit must not dispatch') } });
-    assert.equal(composer.shown, null);
-    assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-  }
+test('edit save refuses a lost owner', () => {
+  const composer = new BoardComposer({ owner: false, detailId: 'wind',
+    composer: { door: 'detail', editing: 'wind' },
+    acts: { edit: () => assert.fail('an unavailable edit must not dispatch') } });
+  assert.equal(composer.shown, null);
+  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
 });
 
 test('create composers remain visible without a detail but cannot write through the edit door', () => {
   const draft = { door: 'verbs' };
-  const composer = new BoardComposer({ gate: true, active: true, owner: true, detailId: null, composer: draft,
+  const composer = new BoardComposer({ owner: true, detailId: null, composer: draft,
     acts: { edit: () => assert.fail('a create draft must not dispatch an edit') },
     onOpen: () => assert.fail('there is no detail to edit') });
   assert.equal(composer.shown, draft);
   composer.openEdit(null);
   assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-});
-
-test('the Graph create verb stamps its view and is unavailable outside the owner identity', () => {
-  for (const owner of [false, true]) {
-    const calls = [];
-    const open = runInNewContext(`(${handlers.get('newStepFromBoard')})`, {
-      BOARD_OPEN: true, boardActive: false, identityActive: true, owner,
-      document: { activeElement: null },
-      setBoardComposer: (draft) => calls.push(['composer', { ...draft }]),
-      track: (name, props) => calls.push(['event', name, { ...props }]),
-    });
-    open('verbs');
-    assert.deepEqual(calls, owner ? [
-      ['composer', { door: 'verbs', view: 'tree', opener: null }],
-      ['event', 'roadmap_board_create', { step: 'open', door: 'verbs', view: 'graph' }],
-    ] : []);
-  }
 });
 
 test('Graph Find hands the same query to the Board and retains field focus', () => {
@@ -256,7 +212,7 @@ test('Graph Find hands the same query to the Board and retains field focus', () 
   }
 });
 
-function completionHost({ gate = true, offer = null, restoreError = null } = {}) {
+function completionHost({ offer = null, restoreError = null } = {}) {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
     { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
     { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'], color: 'terracotta' },
@@ -267,7 +223,6 @@ function completionHost({ gate = true, offer = null, restoreError = null } = {})
   const origin = {};
   const scope = {
     document: { activeElement: origin },
-    BOARD_OPEN: gate, identityActive: gate, canvasView: true, boardActive: false,
     tree, boardTree: tree, nodesById: tree.nodesById, completed, completedAt,
     advanceProgress, progressChanges, completedToast, LABELS, demo: false,
     setCompleted: (value) => calls.push(['completed', [...value]]),
@@ -306,19 +261,14 @@ test('Graph completion shows the pinned toast for six seconds and Undo restores 
   assert.equal(host.calls.some(([kind]) => kind === 'ceremony'), false);
 });
 
-test('a Graph milestone keeps its canvas ceremony and closed gate keeps ceremony presentation with P2 copy', () => {
+test('a Graph milestone keeps its canvas ceremony in place of the toast', () => {
   const action = { label: 'Share', run: () => {} };
-  for (const [gate, offer, expected] of [
-    [true, { summary: 'A milestone', action }, ['A milestone', { action }]],
-    [false, null, ['Read the wind done · Leave the dock up next', {}]],
-  ]) {
-    const host = completionHost({ gate, offer });
-    host.complete('wind', { at: 100 });
-    const ceremony = host.calls.find(([kind]) => kind === 'ceremony');
-    assert.equal(ceremony[1], expected[0]);
-    assert.deepEqual({ ...ceremony[2] }, expected[1]);
-    assert.equal(host.calls.some(([kind]) => kind === 'toast' || kind === 'event'), false);
-  }
+  const host = completionHost({ offer: { summary: 'A milestone', action } });
+  host.complete('wind', { at: 100 });
+  const ceremony = host.calls.find(([kind]) => kind === 'ceremony');
+  assert.equal(ceremony[1], 'A milestone');
+  assert.deepEqual({ ...ceremony[2] }, { action });
+  assert.equal(host.calls.some(([kind]) => kind === 'toast' || kind === 'event'), false);
 });
 
 test('reader link copy treats a clipboard refusal as an outcome and discards stale async successes', async () => {
@@ -327,7 +277,7 @@ test('reader link copy treats a clipboard refusal as an outcome and discards sta
     const shareRequestRef = { current: 0 };
     const copy = runInNewContext(`(${identityHandlers.get('shareFromRow')})`, {
       owner: false, treeId: 'sail', LINK_COPIED, shareRequestRef, currentTreeIdRef: { current: 'sail' },
-      graphViewRef: { current: true }, identityActiveRef: { current: true },
+      graphViewRef: { current: true },
       treeShareUrl: (id) => `https://windmill.test/t/${id}`,
       navigator: { clipboard: { writeText: async (url) => {
         calls.push(['copy', url]);
@@ -480,7 +430,7 @@ const syncHook = runInNewContext(`(${identityHandlers.get('useRoadmapSyncStatus'
 test('host sync timing delays Saving, holds Saved, and cleans up every clock and subscription', (t) => {
   const clock = syncClock();
   const session = statusSession();
-  const hook = renderHook(t, () => syncHook(session, true, clock));
+  const hook = renderHook(t, () => syncHook(session, clock));
   assert.equal(hook.tree.state, null);
   session.change({ structurePending: 1 });
   clock.advance(SAVING_DELAY_MS - 1);
@@ -502,13 +452,12 @@ test('host sync timing delays Saving, holds Saved, and cleans up every clock and
   assert.deepEqual([session.count(), clock.count()], [0, 0]);
 });
 
-test('host sync refuses stale session readings, fast acks never flash Saving, and a disabled host subscribes to nothing', (t) => {
+test('host sync refuses stale session readings, fast acks never flash Saving, and no session subscribes to nothing', (t) => {
   const clock = syncClock();
   const first = statusSession();
   const second = statusSession({ online: false });
   let session = first;
-  let enabled = true;
-  const hook = renderHook(t, () => syncHook(session, enabled, clock));
+  const hook = renderHook(t, () => syncHook(session, clock));
   first.change({ progressPending: 1 });
   clock.advance(SAVING_DELAY_MS - 1);
   first.change({ progressPending: 0 });
@@ -518,24 +467,24 @@ test('host sync refuses stale session readings, fast acks never flash Saving, an
   assert.equal(hook.tree.snapshot, second.statusSnapshot());
   assert.equal(hook.tree.state, 'offline');
   assert.deepEqual([first.count(), second.count()], [0, 1]);
-  enabled = false;
+  session = null;
   hook.redraw();
   assert.deepEqual({ ...hook.tree }, { snapshot: null, state: null });
   assert.deepEqual([first.count(), second.count(), clock.count()], [0, 0, 0]);
 });
 
 test('Graph reveal waits for the selected step model and panel insets, while a repeated selection reveals immediately', () => {
-  for (const [active, selected] of [[false, 'wind'], [true, 'course'], [true, 'wind']]) {
+  for (const selected of ['course', 'wind']) {
     const calls = [];
     const graphRevealRef = { current: null };
     const jump = runInNewContext(`(${identityHandlers.get('handleSheetJump')})`, {
-      identityActiveRef: { current: active }, selectedIdRef: { current: selected }, graphRevealRef,
+      selectedIdRef: { current: selected }, graphRevealRef,
       sceneRef: { current: { revealNode: (id) => calls.push(['reveal', id]) } },
       setSelectedId: (id) => calls.push(['select', id]),
     });
     jump('wind');
-    assert.deepEqual(calls, active && selected !== 'wind' ? [['select', 'wind']] : [['reveal', 'wind'], ['select', 'wind']]);
-    assert.equal(graphRevealRef.current, active && selected !== 'wind' ? 'wind' : null);
+    assert.deepEqual(calls, selected !== 'wind' ? [['select', 'wind']] : [['reveal', 'wind'], ['select', 'wind']]);
+    assert.equal(graphRevealRef.current, selected !== 'wind' ? 'wind' : null);
   }
   const calls = [];
   const graphRevealRef = { current: 'wind' };
@@ -557,18 +506,6 @@ test('Graph reveal waits for the selected step model and panel insets, while a r
   assert.deepEqual(calls, [['insets', insets], ['insets', insets], ['reveal', 'wind']]);
   assert.equal(graphRevealRef.current, null);
   assert.equal(firstFrameRef.current, null);
-});
-
-test('closed identity gate keeps selection and model changes out of initial camera framing dependencies', () => {
-  const scene = {};
-  const insets = {};
-  const dependencies = (identityActive, selectedId, renderModel) => [...runInNewContext(identityHandlers.get('insetDependencies'), {
-    scene, insets, identityActive, selectedId, renderModel,
-  })];
-  assert.deepEqual(dependencies(false, 'wind', {}), [scene, insets, null, null]);
-  assert.deepEqual(dependencies(false, 'dock', {}), [scene, insets, null, null]);
-  const model = {};
-  assert.deepEqual(dependencies(true, 'wind', model), [scene, insets, 'wind', model]);
 });
 
 test('host reports discard only after the session confirms success', async () => {
@@ -664,14 +601,12 @@ test('P4 reports through the refusal-only callback once per code per session wit
   scope.reportedCodes = new Set();
   report({ code: 'protocol_error', episode: 1, lane: 'structure' });
   assert.equal(issues.length, 2);
-  assert.equal(runInNewContext(identityHandlers.get('syncStatusEnabled'), { identityActive: false }), false);
-  assert.equal(runInNewContext(identityHandlers.get('syncStatusEnabled'), { identityActive: true }), true);
 });
 
 test('discard rebaselines never announce Saving or Saved, including a slow online resubscribe', (t) => {
   const clock = syncClock();
   const session = statusSession({ structurePending: 2, refused: { lane: 'structure', code: 'bad-frame' } });
-  const hook = renderHook(t, () => syncHook(session, true, clock));
+  const hook = renderHook(t, () => syncHook(session, clock));
   clock.advance(SAVING_DELAY_MS);
   session.change({ rebaselining: true, structurePending: 0, refused: null, phase: 'syncing' });
   assert.equal(hook.tree.state, null);
@@ -688,28 +623,26 @@ test('discard rebaselines never announce Saving or Saved, including a slow onlin
   assert.equal(hook.tree.state, 'saved');
 });
 
-test('Graph bulk completion is one progress gesture with the gate open and preserves legacy writes when closed', () => {
-  for (const gate of [true, false]) {
-    const calls = [];
-    const targets = ['wind', 'dock'];
-    const bulk = runInNewContext(`(${identityHandlers.get('bulkMarkDone')})`, {
-      BOARD_OPEN: gate, selectedIdsRef: { current: new Set(targets) },
-      completed: new Set(), completedAt: {}, tree: {}, nodesById: new Map(),
-      markDoneTargets: () => targets,
-      advanceProgress,
-      setCompleted() {}, setCompletedAt() {}, witnessProgress() {},
-      pushProgress: (ids, status) => calls.push([ids, status]),
-      emit() {}, progressChanges: () => ({ unlocked: [] }), milestoneOffer: () => null,
-    });
-    bulk();
-    assert.deepEqual(calls, gate ? [[targets, 'complete']] : [['wind', 'complete'], ['dock', 'complete']]);
-  }
+test('Graph bulk completion is one progress gesture', () => {
+  const calls = [];
+  const targets = ['wind', 'dock'];
+  const bulk = runInNewContext(`(${identityHandlers.get('bulkMarkDone')})`, {
+    selectedIdsRef: { current: new Set(targets) },
+    completed: new Set(), completedAt: {}, tree: {}, nodesById: new Map(),
+    markDoneTargets: () => targets,
+    advanceProgress,
+    setCompleted() {}, setCompletedAt() {}, witnessProgress() {},
+    pushProgress: (ids, status) => calls.push([ids, status]),
+    emit() {}, progressChanges: () => ({ unlocked: [] }), milestoneOffer: () => null,
+  });
+  bulk();
+  assert.deepEqual(calls, [[targets, 'complete']]);
 });
 
 test('a real pending progress gesture still shows Saving during a structure rebaseline', (t) => {
   const clock = syncClock();
   const session = statusSession({ structurePending: 2, progressPending: 1, refused: { lane: 'structure', code: 'bad-frame' } });
-  const hook = renderHook(t, () => syncHook(session, true, clock));
+  const hook = renderHook(t, () => syncHook(session, clock));
   session.change({ rebaselining: true, structurePending: 0, refused: null, phase: 'syncing' });
   clock.advance(SAVING_DELAY_MS);
   assert.equal(hook.tree.state, 'saving');

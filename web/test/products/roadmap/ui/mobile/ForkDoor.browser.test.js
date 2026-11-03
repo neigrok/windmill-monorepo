@@ -89,12 +89,8 @@ test('Fork browser entry compiles through its real Vite virtual-module configura
   assert.doesNotThrow(() => parse(compiled.code, { ecmaVersion: 'latest', sourceType: 'module' }));
 });
 
-for (const props of [
-  { presentation: 'sheet', drawn: true },
-  { presentation: 'dialog', drawn: true },
-  { presentation: 'dialog', drawn: false },
-]) {
-  test(`Chromium: Fork ${props.presentation}, drawn ${props.drawn}, labels, wraps focus and restores its opener`, async () => {
+for (const props of [{ presentation: 'sheet' }, { presentation: 'dialog' }]) {
+  test(`Chromium: Fork ${props.presentation} labels, wraps focus and restores its opener`, async () => {
     await withDoor(props, async (page) => {
       const dialog = page.getByRole('dialog', { name: 'Make it yours', exact: true });
       await dialog.waitFor();
@@ -118,7 +114,7 @@ for (const props of [
 
 for (const width of [744, 1024, 1440]) {
   test(`Chromium: the production Fork dialog is centered at ${width}`, async () => {
-    await withDoor({ presentation: 'dialog', drawn: false }, async (page) => {
+    await withDoor({ presentation: 'dialog' }, async (page) => {
       const box = await page.getByRole('dialog', { name: 'Make it yours', exact: true }).boundingBox();
       assert.equal(box.width, 406);
       assert.ok(Math.abs(box.x + box.width / 2 - width / 2) < 1);
@@ -126,20 +122,14 @@ for (const width of [744, 1024, 1440]) {
   });
 }
 
-for (const { presentation, drawn } of [
-  { presentation: 'sheet', drawn: true },
-  { presentation: 'sheet', drawn: false },
-  { presentation: 'dialog', drawn: true },
-  { presentation: 'dialog', drawn: false },
-]) {
-  const modal = drawn || presentation === 'dialog';
+for (const presentation of ['sheet', 'dialog']) {
   for (const [code, title, body, back] of [
     [null, 'Check your email', 'We sent a link to sailor@example.test. It works once, lasts 15 minutes, and finishes the fork — the copy lands in your trees.', 'Use a different email'],
     ['rate_limited', "That's a few links in a row", 'Check your spam folder first — or try again in 10 minutes. Only the newest link carries this fork.', 'Use a different email'],
     ['unreachable', "Can't reach windmill.works", 'Nothing was sent — try again in a moment.', 'Back'],
   ]) {
-    test(`Chromium: Fork ${presentation}, drawn ${drawn}, preserves sending and ${code ?? 'sent'} copy and events`, async () => {
-      await withDoor({ presentation, drawn }, async (page) => {
+    test(`Chromium: Fork ${presentation} preserves sending and ${code ?? 'sent'} copy and events`, async () => {
+      await withDoor({ presentation }, async (page) => {
         const titleId = await page.getByRole('heading', { name: 'Make it yours', exact: true }).getAttribute('id');
         await page.locator('input').fill('sailor@example.test');
         await page.getByRole('button', { name: 'Email me a link', exact: true }).click();
@@ -152,17 +142,13 @@ for (const { presentation, drawn } of [
         await page.getByRole('heading', { name: title, exact: true }).waitFor();
         const heading = page.getByRole('heading', { name: title, exact: true });
         assert.equal(await heading.getAttribute('id'), titleId);
-        if (modal) {
-          const surface = page.getByRole('dialog', { name: title, exact: true });
-          await surface.waitFor();
-          assert.equal(await surface.getAttribute('aria-labelledby'), titleId);
-        }
+        const surface = page.getByRole('dialog', { name: title, exact: true });
+        await surface.waitFor();
+        assert.equal(await surface.getAttribute('aria-labelledby'), titleId);
         assert.equal(await heading.locator('..').locator('p').textContent(), body);
         assert.equal(await page.evaluate(() => window.submitted), code === null ? 1 : 0);
-        if (modal) {
-          await page.waitForFunction(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement));
-          assert.equal(await page.getByRole('dialog').evaluate((element) => element.contains(document.activeElement)), true);
-        }
+        await page.waitForFunction(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement));
+        assert.equal(await page.getByRole('dialog').evaluate((element) => element.contains(document.activeElement)), true);
         await page.getByRole('button', { name: back, exact: true }).click();
         await page.getByRole('heading', { name: 'Make it yours', exact: true }).waitFor();
         assert.equal(await page.getByRole('heading', { name: 'Make it yours', exact: true }).getAttribute('id'), titleId);
@@ -171,8 +157,8 @@ for (const { presentation, drawn } of [
     });
   }
 
-  test(`Chromium: Fork ${presentation}, drawn ${drawn}, never dismisses the instant fork in flight and keeps error recovery`, async () => {
-    await withDoor({ presentation, drawn, signedIn: true }, async (page) => {
+  test(`Chromium: Fork ${presentation} never dismisses the instant fork in flight and keeps error recovery`, async () => {
+    await withDoor({ presentation, signedIn: true }, async (page) => {
       await page.getByRole('button', { name: 'Fork this tree', exact: true }).click();
       const busy = page.getByRole('button', { name: 'Forking…', exact: true });
       await busy.waitFor();
@@ -181,7 +167,7 @@ for (const { presentation, drawn } of [
       if (presentation === 'dialog') await page.getByRole('button', { name: 'Close', exact: true }).click();
       await page.mouse.click(2, 2);
       assert.equal(await page.evaluate(() => window.forkClosed), 0);
-      assert.equal(await page.getByRole('dialog').count(), modal ? 1 : 0);
+      assert.equal(await page.getByRole('dialog').count(), 1);
       assert.equal(await busy.count(), 1);
       assert.deepEqual(await page.evaluate(() => window.events), [{ name: 'fork_attempt', props: { mode: 'instant' } }]);
       await page.evaluate(() => window.finishFork('server_error'));
@@ -194,14 +180,14 @@ for (const { presentation, drawn } of [
       assert.equal(await page.getByRole('button', { name: 'Email me a link', exact: true }).count(), 1);
       await page.keyboard.press('Escape');
       await page.getByRole('heading', { name: 'Make it yours', exact: true }).waitFor({ state: 'detached' });
-      if (modal) await page.waitForFunction(() => document.activeElement.id === 'opener');
+      await page.waitForFunction(() => document.activeElement.id === 'opener');
     });
   });
 }
 
 
-test('Chromium: the drawn sheet uses the canon brand focus ring on keyboard opening', async () => {
-  await withDoor({ presentation: 'sheet', drawn: true }, async (page) => {
+test('Chromium: the sheet uses the canon brand focus ring on keyboard opening', async () => {
+  await withDoor({ presentation: 'sheet' }, async (page) => {
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'detached' });
     await page.locator('#opener').focus();

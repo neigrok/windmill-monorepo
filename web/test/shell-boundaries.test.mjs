@@ -323,14 +323,16 @@ test('the brand FAQ prices Gym by its true rule: the log, the connected log and 
   assert.equal(SHELL.includes(cost), true, 'web/index.html carries the same answer');
 });
 
-test('nothing imports the retired roadmap List', () => {
-  const retired = path.join(PRODUCTS_DIR, 'roadmap', 'list') + path.sep;
-  assert.equal(fs.existsSync(retired), false);
+test('nothing imports the retired roadmap List or Board gate', () => {
+  const list = path.join(PRODUCTS_DIR, 'roadmap', 'list') + path.sep;
+  const gate = path.join(PRODUCTS_DIR, 'roadmap', 'board', 'gate.js');
+  assert.deepEqual([fs.existsSync(list), fs.existsSync(gate)], [false, false]);
   const offenders = [];
   for (const file of sourceFiles(SRC)) {
     for (const { specifier, line } of importsOf(file)) {
       if (!specifier.startsWith('.')) continue;
-      if (`${path.resolve(path.dirname(file), specifier)}${path.sep}`.startsWith(retired)) offenders.push(`${path.relative(SRC, file)}:${line}`);
+      const resolved = path.resolve(path.dirname(file), specifier);
+      if (`${resolved}${path.sep}`.startsWith(list) || resolved === gate) offenders.push(`${path.relative(SRC, file)}:${line}`);
     }
   }
   assert.deepEqual(offenders, []);

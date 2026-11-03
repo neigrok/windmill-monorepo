@@ -35,9 +35,9 @@ function render(props, { knots = 0 } = {}) {
   };
 }
 
-test('BoardView — below 744px the phone segments take the columns, lifted clear of a Fork pill', () => {
-  assert.deepEqual(render({ breakpoint: 'phone', bottomInset: 68 }), {
-    wrapper: '<div class="st-board st-board--phone" style="padding-bottom:68px">',
+test('BoardView — below 744px the phone segments take the columns', () => {
+  assert.deepEqual(render({ breakpoint: 'phone' }), {
+    wrapper: '<div class="st-board st-board--phone">',
     columns: false,
     rails: [],
     showAll: [],
@@ -47,7 +47,7 @@ test('BoardView — below 744px the phone segments take the columns, lifted clea
 
 test('BoardView — a tablet stands two columns and folds Done to a rail', () => {
   assert.deepEqual(render({ breakpoint: 'tablet' }), {
-    wrapper: '<div class="st-board st-board--columns" style="padding-bottom:0">',
+    wrapper: '<div class="st-board st-board--columns">',
     columns: true,
     rails: ['done'],
     showAll: [],
@@ -57,7 +57,7 @@ test('BoardView — a tablet stands two columns and folds Done to a rail', () =>
 
 test('BoardView — under the desktop topbar the columns start a gap below where the bar ends', () => {
   assert.deepEqual(render({ breakpoint: 'desktop', topInset: 90 }), {
-    wrapper: '<div class="st-board st-board--columns" style="padding-top:calc(90px + var(--space-3));padding-bottom:0">',
+    wrapper: '<div class="st-board st-board--columns" style="padding-top:calc(90px + var(--space-3))">',
     columns: true,
     rails: [],
     showAll: [],
@@ -721,7 +721,6 @@ async function openSelectionPage(width = 390, nodes = learnToSailNodes, options 
   const page = await browser.newPage({ viewport: { width, height: 844 }, hasTouch: true });
   await page.clock.install({ time: new Date(SELECTION_CLOCK.getTime() - 60_000) });
   await page.clock.pauseAt(SELECTION_CLOCK);
-  await page.addInitScript(() => localStorage.setItem('windmill:board:dev', '1'));
   await page.goto(`${origin}/board-view-test#/t/selection`);
   await page.waitForFunction(() => window.entryReady);
   await page.evaluate(([nodes, options]) => openSelectionBoard(nodes, options), [nodes, options]);

@@ -13,7 +13,7 @@ const render = (props = {}) => renderToStaticMarkup(React.createElement(ForkDoor
 }));
 
 for (const presentation of ['sheet', 'dialog']) {
-  test(`ForkDoor ${presentation} pins gate-closed markup and its approved drawn form`, async (t) => {
+  test(`ForkDoor ${presentation} pins its approved markup`, async (t) => {
     const document = globalThis.document;
     globalThis.document = { activeElement: null };
     t.after(() => {
@@ -22,11 +22,6 @@ for (const presentation of ['sheet', 'dialog']) {
     });
     const expected = (await readFile(new URL(`ForkDoor.${presentation}.html`, import.meta.url), 'utf8')).trimEnd();
     assert.equal(render({ presentation }), expected);
-    assert.equal(render({ presentation, drawn: false }), expected);
-    const drawn = presentation === 'dialog' ? expected
-      : (await readFile(new URL('ForkDoor.drawn-sheet.html', import.meta.url), 'utf8')).trimEnd();
-    assert.equal(render({ presentation, drawn: true }), drawn);
     assert.equal(render({ presentation, open: false }), '');
-    if (presentation === 'sheet') assert.equal(render(), expected);
   });
 }

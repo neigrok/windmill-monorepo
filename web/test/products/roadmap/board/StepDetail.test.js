@@ -26,7 +26,7 @@ const without = (steps, id) => steps.filter((step) => step.id !== id).map((step)
 
 // Like the shell: the route follows the URL in a transition, and each roadmap is its own view, keyed by its id, that
 // loads its tree a beat after it mounts.
-window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {}, editingEnabled = false }) => {
+window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, editingEnabled = false }) => {
   const trees = { sail: nodes, ...others };
   const routeTree = () => window.location.hash.split('?')[0].replace('#/app/', '');
   function App() {
@@ -62,12 +62,12 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     useEffect(() => {
       if (editing && address.id !== editing) setEditing(null);
     }, [editing, address.id]);
-    const stale = stepIsStale({ boardOpen: gate, loading: tree === null, tree, treeId, stepId: address.id });
+    const stale = stepIsStale({ loading: tree === null, tree, treeId, stepId: address.id });
     useEffect(() => { if (stale) address.drop(); }, [stale]);
     const mark = (id, target) => setProgress((current) => advanceProgress(current, [id], target, Date.now()));
     window.restoreSteps = () => setSteps(trees[treeId]);
     if (tree === null) return null;
-    const open = gate && address.id !== null && tree.nodesById.has(address.id);
+    const open = address.id !== null && tree.nodesById.has(address.id);
     return React.createElement('div', { style: { position: 'fixed', inset: 0 } },
       React.createElement('div', { className: 'st-view-layer--board is-active', style: { position: 'absolute', inset: 0, zIndex: 18 } },
         React.createElement(BoardView, { tree, completed: progress.completed, completedAt: progress.completedAt, selectedId,
@@ -152,14 +152,14 @@ const learnToSailNodes = [
   { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
 ];
 
-async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, gate = true, others = {}, start = '#/app/sail', clock = false, permissions = [], editingEnabled = false }, errors) {
+async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, start = '#/app/sail', clock = false, permissions = [], editingEnabled = false }, errors) {
   const context = await browser.newContext({ viewport, permissions });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   if (clock) await page.clock.install();
   await page.goto(`${origin}/step-detail-test${start}`);
   await page.waitForFunction(() => window.entryReady);
-  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, gate, others, editingEnabled });
+  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, others, editingEnabled });
   await page.locator('.st-board-card:visible').first().waitFor();
   return page;
 }
@@ -668,24 +668,6 @@ test('Chromium: Back from another roadmap into a step link keeps the step and op
     await page.evaluate(() => window.history.back());
     await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
     assert.equal(await hash(page), '#/app/sail?step=wind');
-    assert.deepEqual(errors, []);
-  } finally {
-    await page.context().close();
-  }
-});
-
-test('Chromium: with the Board’s gate closed a step in the URL is left alone — a stale one, and one met again on Back', async () => {
-  await ready;
-  const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sail?step=nope', gate: false }, errors);
-  try {
-    assert.equal(await hash(page), '#/app/sail?step=nope');
-    await page.evaluate(() => { window.location.hash = '#/app/sail?step=wind'; });
-    await page.evaluate(() => { window.location.hash = '#/app/sea'; });
-    await page.locator('.st-board-card-title', { hasText: 'Read the tide' }).waitFor();
-    await page.evaluate(() => window.history.back());
-    await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor();
-    assert.deepEqual([await hash(page), await page.getByRole('dialog').count(), await events(page)], ['#/app/sail?step=wind', 0, []]);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();

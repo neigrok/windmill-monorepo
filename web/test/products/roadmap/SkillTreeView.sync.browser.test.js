@@ -105,7 +105,7 @@ for (const width of [320, 390, 744, 1440]) {
   });
 }
 
-for (const options of [{ role: 'reader' }, { demo: true }, { gate: 'closed' }]) {
+for (const options of [{ role: 'reader' }, { demo: true }]) {
   hostTest(`Chromium: sync publication is absent outside signed-in owner chrome ${JSON.stringify(options)}`, async () => {
     const { page, errors } = await openHost({ ...options, shell: true, width: 390 });
     try {

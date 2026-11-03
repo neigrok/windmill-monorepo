@@ -14,7 +14,7 @@ import { StepIcons } from './StepIcons.jsx';
 import { COLUMN_TITLES, COMPOSER, EDIT_STEP, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from './copy.js';
 import './composer.css';
 
-export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose, preserveOutsideFocus = false, savingBlocked = false }) {
+export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose, savingBlocked = false }) {
   const phone = band === 'phone';
   const missingStep = Boolean(editing && !tree.nodesById.has(editing));
   const mode = editing ? 'edit' : 'create';
@@ -42,7 +42,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
   const nameId = useId();
   const errorId = useId();
   const descriptionId = useId();
-  const focus = useComposerFocus(dialog, !discard, { preserveOutsideFocus });
+  const focus = useComposerFocus(dialog, !discard, { preserveOutsideFocus: true });
   const draft = stored.reconcile(tree);
   const choices = tree.nodes.length > 0 ? picker?.reconcile(tree, completed) ?? null : null;
   const pickerOpen = choices !== null;

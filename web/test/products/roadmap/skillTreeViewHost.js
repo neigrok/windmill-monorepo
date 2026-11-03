@@ -174,10 +174,9 @@ export function startRoadmapHost(concern) {
         configureServer(server) {
           server.middlewares.use('/roadmap-host-test', (request, response) => {
             const params = new URL(request.url, 'http://localhost').searchParams;
-            const gate = params.get('gate') !== 'closed';
             const view = params.get('surface') ?? 'tree';
             response.setHeader('Content-Type', 'text/html');
-            response.end('<!doctype html><meta name="viewport" content="width=device-width"><script>localStorage.clear();localStorage.setItem("windmill:board:dev",' + JSON.stringify(gate ? '1' : '0') + ');localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));</script><div id="root" style="height:100vh"></div><script type="module" src="/roadmap-host-entry.js"></script>');
+            response.end('<!doctype html><meta name="viewport" content="width=device-width"><script>localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));</script><div id="root" style="height:100vh"></div><script type="module" src="/roadmap-host-entry.js"></script>');
           });
         },
       }], optimizeDeps: { include: ['react', 'react-dom/client'] }, server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
@@ -197,7 +196,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false } = {}) {
   await ready;
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -242,15 +241,15 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', ga
     if (path.endsWith('/activity')) body = { events: [] };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
-  const params = new URLSearchParams({ role, gate, surface });
+  const params = new URLSearchParams({ role, surface });
   if (role === 'reader') params.set('view', '1');
   for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached })) {
     if (enabled) params.set(name, '1');
   }
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
   await page.waitForFunction(() => !!window.session?.ready);
-  if (gate === 'open' && !crash && !demo) await page.locator('.st-roadmap-progress').waitFor();
-  if (role === 'reader' && gate === 'open' && surface === 'board') await page.getByRole('button', { name: 'Board', exact: true }).click();
+  if (!crash && !demo) await page.locator('.st-roadmap-progress').waitFor();
+  if (role === 'reader' && surface === 'board' && !crash) await page.getByRole('button', { name: 'Board', exact: true }).click();
   if (fixedClock) {
     await page.clock.install({ time: new Date('2026-11-03T11:59:00Z') });
     await page.clock.pauseAt(new Date('2026-11-03T12:00:00Z'));

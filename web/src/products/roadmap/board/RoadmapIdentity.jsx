@@ -304,6 +304,29 @@ export function RoadmapIdentity({
   );
 }
 
+// A row that crashed leaves its switch at its position: the Shell carries the way home, and the camera lives on its own.
+export function RoadmapIdentityFallback({ view, phone, onSwitchView, onBottom }) {
+  const bar = useRef(null);
+
+  useLayoutEffect(() => {
+    const report = () => onBottom(bar.current.offsetTop + bar.current.offsetHeight);
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(bar.current, { box: 'border-box' });
+    return () => observer.disconnect();
+  }, [onBottom]);
+
+  useEffect(() => {
+    (bar.current.querySelector('[aria-pressed="true"]') ?? bar.current).focus();
+  }, []);
+
+  return (
+    <div ref={bar} tabIndex={-1} className="st-roadmap-identity-fallback">
+      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} />}
+    </div>
+  );
+}
+
 function RowButton({ label, tooltip, icon: Icon, expanded = false, primary = false, brand = false, keycap, onClick }) {
   const classes = [expanded ? 'st-roadmap-chip' : 'st-roadmap-icon'];
   if (primary) classes.push('st-roadmap-fork');

@@ -19,7 +19,6 @@ export const COACH_DONE_KEY = 'wm-coach-done';   // once ever, per human
 export const FORKED_FROM_DEMO_KEY = 'windmill:forked-from-demo'; // one-shot note the fork leaves for the re-plant
 
 export const DEMO_COPY = {
-  plaqueByline: 'Windmill demo',
   coachSentence: `This step is ${STATE_WORDS.upNext} — mark it done.`,
   coachButton: 'Mark it done',
   unlockToast: completedToast({ step: 'Rig the boat yourself', unlockedCount: COACHED_CHILDREN.length }),

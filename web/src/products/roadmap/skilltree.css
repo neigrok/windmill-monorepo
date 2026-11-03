@@ -83,54 +83,6 @@
   color: var(--text-primary);
 }
 
-/* ---- Top bar: brand (left), dataset + camera controls (right) ---- */
-.st-topbar {
-  position: absolute;
-  inset: 0 0 auto 0;
-  z-index: 20;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-6);
-  pointer-events: none;
-}
-.st-brand,
-.st-controls {
-  pointer-events: auto;
-}
-
-.st-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: saturate(1.3) blur(8px);
-}
-.st-brand-home {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  text-decoration: none;
-  border-radius: var(--radius-full);
-}
-.st-brand-home:hover .st-brand-name {
-  color: var(--color-brand-hover);
-}
-.st-brand-name {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-base);
-  color: var(--text-primary);
-}
-.st-brand-title {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
 .st-switcher-flash {
   animation: wm-switcher-flash 700ms var(--ease-standard);
 }
@@ -150,35 +102,6 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-.st-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  /* Desktop only: an open dock reserves the docked step panel's width (360px at right: 24px) plus a gutter
-     here so the controls never sit under it. Inert on tablet and phone, where the topbar is not rendered. */
-  padding-right: 0;
-  transition: padding-right var(--duration-fast) var(--ease-standard);
-}
-.st-root--panel-open .st-controls {
-  padding-right: calc(360px + var(--space-6));
-}
-@media (prefers-reduced-motion: reduce) {
-  .st-controls {
-    transition: none;
-  }
-}
-.st-zoom-group {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: var(--space-1);
-  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: saturate(1.3) blur(8px);
-}
-/* Focus · All steps: the two camera verbs, as text so the words carry the meaning on every surface. */
 .st-view-action {
   padding: 0 10px;
   min-height: 32px;
@@ -1374,84 +1297,11 @@
   border-color: transparent;
 }
 
-/* ---- Activity chip: the toolbar summon ---- */
-.st-activity-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: saturate(1.3) blur(8px);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
-}
-.st-activity-chip:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-.st-activity-chip--on {
-  color: var(--color-brand-hover);
-  background: var(--color-brand-soft);
-  border-color: var(--accent-terracotta-400);
-}
-
-/* AI assistance’s front door (desktop). Only rendered for an owner of an armed tree. */
-.st-tend-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--color-brand);
-  background: var(--color-brand-soft);
-  border: 1px solid var(--accent-terracotta-200);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
-}
-.st-tend-chip:hover {
-  background: var(--surface-card);
-  border-color: var(--accent-terracotta-400);
-}
-.st-activity-chip-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 800;
-  color: var(--text-on-accent);
-  background: var(--accent-terracotta-500);
-  border-radius: var(--radius-full);
-}
-.st-activity-chip--ping {
-  animation: wm-chip-ping var(--duration-glow) var(--ease-glow) 2;
-}
-@keyframes wm-chip-ping {
-  0%, 100% { box-shadow: var(--shadow-sm); }
-  50% { box-shadow: 0 0 0 5px var(--color-brand-soft); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .st-dock-tenant,
   .st-event--new,
   .st-ticker-item,
-  .st-ws-add-menu,
-  .st-activity-chip--ping {
+  .st-ws-add-menu {
     animation: none;
   }
   /* Toast still fades, but without the 8px rise; exit stays the opacity-only fade above. */
@@ -1866,25 +1716,13 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Read-only & mobile: the responsive reflow. The mobile chrome self-positions in screen space. ---- */
+/* ---- The Graph's chrome self-positions in screen space. ---- */
 
 /* Chrome yields while panning: it fades to a whisper, then eases back ~200ms after the pan. */
 .st-mobile-chrome {
   transition: opacity 200ms var(--ease-soft);
 }
 
-/* The wordmark chip is a real link home: hover surface + focus ring. */
-.st-wordmark-link {
-  background: var(--surface-card);
-  transition: background var(--duration-fast) var(--ease-standard);
-}
-.st-wordmark-link:hover {
-  background: var(--surface-hover);
-}
-.st-wordmark-link:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
-}
 .st-root.panning .st-mobile-chrome {
   opacity: 0.35;
 }
@@ -1897,16 +1735,15 @@
   max-height: 70%;
 }
 
-/* Small screens: the minimap retires; on tablet the Fork pill owns the bottom-left corner. */
+/* Small screens: the minimap retires. */
 @media (max-width: 1023px) {
   .st-minimap {
     display: none;
   }
 }
 
-/* Phone (<744): full-bleed canvas, only the mobile chrome and the bottom sheet remain. */
+/* Phone (<744): full-bleed canvas without the legend. */
 @media (max-width: 743px) {
-  .st-topbar,
   .st-legend-dock {
     display: none;
   }
@@ -2477,18 +2314,6 @@
   z-index: 24;
 }
 
-.st-roadmap-identity-fallback {
-  position: absolute;
-  inset: 0;
-  z-index: 24;
-  pointer-events: none;
-}
-
-.st-roadmap-fallback-switch {
-  position: absolute;
-  left: var(--space-6);
-  pointer-events: auto;
-}
 
 .st-graph-camera {
   position: absolute;
@@ -2563,27 +2388,22 @@
   max-width: calc(100% - 48px);
 }
 
-.st-roadmap-identity-fallback--board .st-zoom-group,
-.st-roadmap-identity-fallback--board .st-activity-chip {
-  display: none;
-}
-
 @media (max-width: 743px) {
   .st-graph-toast.st-graph-toast--phone {
     right: 0;
     left: 0;
   }
 
-  .st-toast.st-toast--graph {
-    left: 50%;
-    width: auto;
-    max-width: calc(100% - 56px);
+  .st-graph-toast.st-graph-toast--phone .st-board-toast {
+    bottom: var(--graph-toast-bottom, 24px);
   }
 
-  .st-toast.st-toast--graph,
-  .st-graph-toast--phone.st-graph-toast--sheet .st-board-toast {
-    top: var(--graph-toast-top);
-    bottom: auto;
+  .st-toast.st-toast--graph {
+    top: auto;
+    left: 50%;
+    bottom: var(--graph-toast-bottom, 24px);
+    width: auto;
+    max-width: calc(100% - 56px);
   }
 }
 
@@ -2613,7 +2433,7 @@
   }
 }
 
-.st-root--board-enabled .st-detail-panel--tablet button:focus-visible {
+.st-detail-panel--tablet button:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
@@ -2785,13 +2605,3 @@ button.st-graph-step-title {
   display: none;
 }
 
-@media (max-width: 743px) {
-  .st-root--board-enabled .st-graph-toast--phone .st-board-toast {
-    bottom: var(--graph-toast-bottom, 24px);
-  }
-
-  .st-root--board-enabled .st-toast.st-toast--graph {
-    top: auto;
-    bottom: var(--graph-toast-bottom, 24px);
-  }
-}

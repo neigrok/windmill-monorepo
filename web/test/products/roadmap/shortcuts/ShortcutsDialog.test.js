@@ -22,17 +22,3 @@ for (const view of ['graph', 'board']) {
     }
   });
 }
-
-test('gated Graph shortcut dialog matches its full markup snapshot', async () => {
-  const previous = globalThis.document;
-  globalThis.document = { activeElement: null };
-  try {
-    const expected = (await readFile(new URL('ShortcutsDialog.graph-gated.html', import.meta.url), 'utf8')).trimEnd();
-    const actual = renderToStaticMarkup(React.createElement(ShortcutsDialog, {
-      open: true, onClose() {}, view: 'graph', boardOpen: true,
-    }));
-    assert.equal(actual, expected);
-  } finally {
-    globalThis.document = previous;
-  }
-});

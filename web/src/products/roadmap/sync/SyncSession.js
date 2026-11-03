@@ -39,7 +39,7 @@ function frameFrontier(writes) {
 }
 
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(), trackGestures = false,
+  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
     reportFailure = (operation, error) => captureError('roadmap', operation,
       typeof error?.stack === 'string' && error.stack ? error.stack : new Error(operation).stack, '#/app') } = {}) {
     this.url = url;
@@ -53,7 +53,6 @@ export class SyncSession {
     this.confirmedStructure = new TreeLattice(treeId, title);
     this.confirmedProgress = new ProgressLattice();
     this.confirmedKnown = { structure: false, progress: false };
-    this.trackGestures = trackGestures;
     this.gestures = { structure: {}, progress: {} };
     this.epochs = { structure: 0, progress: 0 };
     this.structureWrites = new Map();
@@ -323,12 +322,10 @@ export class SyncSession {
       try { this.progress.join(saved.progress); }
       catch { this.progress = new ProgressLattice(); }
     }
-    if (this.trackGestures) {
-      this.gestures.structure = pendingGestures(saved?.gestures?.structure ? {} : saved?.frame, saved?.confirmed?.structure, saved?.gestures?.structure);
-    }
+    this.gestures.structure = pendingGestures(saved?.gestures?.structure ? {} : saved?.frame, saved?.confirmed?.structure, saved?.gestures?.structure);
     // localStorage residue folds in uncovered, so the first graft flushes it.
     if (this.registry) new ProgressStore().drainInto(this.treeId, this.progress);
-    if (this.trackGestures) this.gestures.progress = pendingGestures(this.progress.toFrame(), saved?.confirmed?.progress, saved?.gestures?.progress);
+    this.gestures.progress = pendingGestures(this.progress.toFrame(), saved?.confirmed?.progress, saved?.gestures?.progress);
     if (this.progress.marks.size) {
       this.progress.seedClock(this.clock);
       this.progressHandler?.(this.progress.overlay());
@@ -582,7 +579,7 @@ export class SyncSession {
       if (this.progress.mark(nodeId, status, at, now)) changed = true;
     }
     if (!changed) return this.progress.overlay();
-    if (this.trackGestures) this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.gestures.progress);
+    this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.gestures.progress);
     this.persistNow();
     this.flushProgress();
     this.emitStatus();
@@ -648,7 +645,6 @@ export class SyncSession {
   }
 
   confirm(lane) {
-    if (!this.trackGestures) return;
     const confirmed = lane === 'structure' ? this.confirmedStructure.toFrame() : this.confirmedProgress.toFrame();
     this.gestures[lane] = pendingGestures({}, confirmed, this.gestures[lane]);
   }
@@ -673,15 +669,10 @@ export class SyncSession {
 
   // How much of the bank the server does not hold.
   pendingEditCount() {
-    if (!this.trackGestures) {
-      const pending = this.lattice.deltaSince(this.ackedServerVector);
-      return pending.nodes.length + pending.edges.length + pending.kinds.length + (pending.title ? 1 : 0);
-    }
     return pendingRecordCount(unconfirmedStamps(writeStamps(this.lattice.toFrame()), writeStamps(this.confirmedStructure.toFrame())));
   }
 
   pendingProgressCount() {
-    if (!this.trackGestures) return this.progress.deltaSince(this.ackedProgressVector).marks.length;
     return pendingRecordCount(unconfirmedStamps(writeStamps(this.progress.toFrame()), writeStamps(this.confirmedProgress.toFrame())));
   }
 
@@ -753,7 +744,7 @@ export class SyncSession {
 
   apply(writes) {
     this.lattice.join(writes);
-    if (this.trackGestures) this.gestures.structure = pendingGestures(writes, this.confirmedStructure.toFrame(), this.gestures.structure);
+    this.gestures.structure = pendingGestures(writes, this.confirmedStructure.toFrame(), this.gestures.structure);
     try {
       this.emitStatus();
     } catch (error) {
@@ -827,7 +818,7 @@ export class SyncSession {
     const value = {
       frame: this.lattice.toFrame(), progress: this.progress.toFrame(), lastSeq: this.lastSeq,
       epochs: { ...this.epochs },
-      ...(this.trackGestures ? { gestures: structuredClone(this.gestures) } : {}),
+      gestures: structuredClone(this.gestures),
       confirmed: {
         structure: this.confirmedKnown.structure ? this.confirmedStructure.toFrame() : null,
         progress: this.confirmedKnown.progress ? this.confirmedProgress.toFrame() : null,

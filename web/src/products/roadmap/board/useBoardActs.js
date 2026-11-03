@@ -6,8 +6,8 @@ import { LABELS } from './copy.js';
 import { BoardQuery } from './Board.js';
 
 export class BoardComposer {
-  constructor({ gate, active, owner, view = 'board', detailId, composer, acts, onOpen }) {
-    this.available = gate && owner && (active || view === 'tree');
+  constructor({ owner, view = 'board', detailId, composer, acts, onOpen }) {
+    this.available = owner;
     this.editable = this.available && detailId != null;
     this.view = view;
     this.detailId = detailId;

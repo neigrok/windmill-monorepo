@@ -9,20 +9,21 @@ import { cmpOrder } from '../model/TrunkTree.js';
 export const DOCK_WIDTH = 360;
 export const TABLET_PANEL_WIDTH = 320;
 
-// Desktop: the control bar along the top and the dock at right: 24px when open. The minimap and legend hold only the
-// bottom-left corner, so they take no full-width inset — they are blocks a caption may not sit under.
+// The identity row's measured bottom replaces each `top` once it has measured itself. Desktop: the dock at right: 24px
+// when open. The minimap and legend hold only the bottom-left corner, so they take no full-width inset; they are blocks a
+// caption may not sit under.
 const DESKTOP = { top: 76, margin: 24, dock: DOCK_WIDTH + 24 + 24 };
-// Tablet: the plaque and wordmark row along the top, the panel at right when open, the action lane below.
-const TABLET = { top: 156, margin: 12, panel: TABLET_PANEL_WIDTH + 24 + 24, laneGutter: 16 };
-// Phone: the plaque row along the top, the sheet or the action lane below.
-const PHONE = { top: 156, margin: 12, sheetGutter: 12, laneGutter: 16 };
+// Tablet: the panel at right when open.
+const TABLET = { top: 156, margin: 12, panel: TABLET_PANEL_WIDTH + 24 + 24, gutter: 16 };
+// Phone: the selected-step bar below.
+const PHONE = { top: 156, margin: 12, barGutter: 12, gutter: 16 };
 // The minimap: its 168x128 canvas, 8 px of padding and a 1 px border, in the corner margin.
 const MINIMAP = { width: 186, height: 146 };
 // .st-legend-dock: --space-6 from the left on every breakpoint, clear of the minimap's seat below it.
 const LEGEND_CORNER = { left: 24, bottom: 24 + 196 };
 const CAMERA_GUTTER = 24;
 
-export function viewportInsets({ breakpoint, dockOpen = false, laneInset = 0, barBottom = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
+export function viewportInsets({ breakpoint, dockOpen = false, barBottom = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
   if (breakpoint === 'desktop') {
     const right = dockOpen ? DESKTOP.dock : DESKTOP.margin;
     const blocks = [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox)];
@@ -34,7 +35,7 @@ export function viewportInsets({ breakpoint, dockOpen = false, laneInset = 0, ba
   }
   if (breakpoint === 'tablet') {
     const right = dockOpen ? TABLET.panel : TABLET.margin;
-    const bottom = laneInset + TABLET.laneGutter;
+    const bottom = TABLET.gutter;
     const blocks = legendBlocks(legendBox);
     if (cameraBlock) blocks.push({ right: Math.max(CAMERA_GUTTER, right), bottom: Math.max(CAMERA_GUTTER, bottom), ...cameraBlock });
     return {
@@ -42,10 +43,7 @@ export function viewportInsets({ breakpoint, dockOpen = false, laneInset = 0, ba
       blocks,
     };
   }
-  const bottom = Math.max(
-    laneInset + PHONE.laneGutter,
-    barBottom > 0 ? barBottom + PHONE.sheetGutter : 0,
-  );
+  const bottom = barBottom > 0 ? barBottom + PHONE.barGutter : PHONE.gutter;
   return { top: rowBottom ?? PHONE.top, right: PHONE.margin, bottom, left: PHONE.margin, blocks: [] };
 }
 

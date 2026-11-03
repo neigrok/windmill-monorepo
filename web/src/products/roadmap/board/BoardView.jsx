@@ -49,7 +49,6 @@ function BoardView({
   reveal = null,
   quiet = 0,
   topInset = 0,
-  bottomInset = 0,
   query: asked = EVERY_STEP,
   onQuery,
   legend = [],
@@ -196,7 +195,7 @@ function BoardView({
       onFocus={(event) => { lastFocus.current = event.target; }}
       onPointerDown={(event) => motion.settle(event.target.closest('.st-board-card')?.dataset.stepId)}
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
-      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined, paddingBottom: bottomInset }}
+      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined }}
     >
       {phone && deviceLine && <DeviceLine text={deviceLine.text} onSignIn={deviceLine.onSignIn} />}
       {frame !== 'columns' && !phone && refusedNotice}

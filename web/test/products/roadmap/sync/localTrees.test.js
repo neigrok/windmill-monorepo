@@ -95,10 +95,10 @@ for (const action of [deleteLocalTree, forgetDeviceTrees]) {
 test('tracked local renames retain gesture history through repeated title changes and an id move', async (t) => {
   const { store } = device(t);
   await store.save('source', { frame, confirmed: { structure: frame }, gestures: { structure: {}, progress: {} } });
-  await renameLocalTree('source', 'First title', { trackGestures: true });
+  await renameLocalTree('source', 'First title');
   const first = await store.load('source');
   assert.deepEqual(Object.keys(first.gestures.structure), [first.frame.title.at]);
-  await renameLocalTree('source', 'Second title', { trackGestures: true });
+  await renameLocalTree('source', 'Second title');
   const second = await store.load('source');
   assert.deepEqual(Object.keys(second.gestures.structure), [first.frame.title.at, second.frame.title.at]);
   await moveLocalTree('source', 'destination');

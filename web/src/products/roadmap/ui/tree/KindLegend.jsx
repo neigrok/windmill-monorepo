@@ -8,7 +8,6 @@ const capHue = (hue) => hue.charAt(0).toUpperCase() + hue.slice(1);
 
 export function KindLegend({
   kinds = [],
-  passiveSwatches = false,
   defaultOpen = true,
   onOpenChange,
   selectedId = null,
@@ -174,7 +173,7 @@ export function KindLegend({
       )}
 
       {rows.map((k) => {
-        const Swatch = passiveSwatches && !onRecolor ? 'span' : 'button';
+        const Swatch = onRecolor ? 'button' : 'span';
         const editing = editingId === k.id;
         const selected = selectedId === k.id;
         const empty = !k.label || k.label.trim() === '';
@@ -200,10 +199,10 @@ export function KindLegend({
               <Swatch
                 type={Swatch === 'button' ? 'button' : undefined}
                 role={Swatch === 'span' ? 'img' : undefined}
-                aria-label={onRecolor ? `Recolour ${k.label || capHue(k.hue)}` : passiveSwatches ? k.label || capHue(k.hue) : undefined}
-                onClick={Swatch === 'button' ? (e) => { e.stopPropagation(); if (onRecolor) setSwatchId((id) => (id === k.id ? null : k.id)); } : undefined}
+                aria-label={onRecolor ? `Recolour ${k.label || capHue(k.hue)}` : k.label || capHue(k.hue)}
+                onClick={onRecolor ? (e) => { e.stopPropagation(); setSwatchId((id) => (id === k.id ? null : k.id)); } : undefined}
                 style={{
-                  display: passiveSwatches ? 'block' : undefined,
+                  display: 'block',
                   width: 14,
                   height: 14,
                   padding: 0,

@@ -176,30 +176,28 @@ test('Graph create Undo refuses expired receipts quietly and reports thrown reve
   }
 });
 
-test('Graph composers expose owner create and open-detail edit only behind the gate', () => {
-  for (const gate of [false, true]) {
-    for (const owner of [false, true]) {
-      for (const detailId of [null, 'wind']) {
-        const calls = [];
-        const draft = { door: 'verbs', view: 'tree' };
-        const composer = new BoardComposer({ gate, active: false, owner, view: 'tree',
-          detailId, composer: draft,
-          acts: { edit: (request) => { calls.push(['edit', request]); return { ok: true }; } },
-          onOpen: (value) => calls.push(['open', value]),
-        });
-        const editable = gate && owner && detailId !== null;
-        assert.equal(composer.shown, gate && owner ? draft : null);
-        composer.openEdit('wind');
-        assert.deepEqual(calls, editable ? [['open', { door: 'detail', editing: 'wind' }]] : []);
-        assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-        composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
-        assert.equal(composer.shown, editable ? composer.composer : null);
-        assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: editable });
-        assert.deepEqual(composer.saveEdit({ id: 'other' }), { ok: false });
-        assert.deepEqual(calls, editable ? [
-          ['open', { door: 'detail', editing: 'wind' }], ['edit', { id: 'wind' }],
-        ] : []);
-      }
+test('Graph composers expose owner create and open-detail edit to the owner alone', () => {
+  for (const owner of [false, true]) {
+    for (const detailId of [null, 'wind']) {
+      const calls = [];
+      const draft = { door: 'verbs', view: 'tree' };
+      const composer = new BoardComposer({ owner, view: 'tree',
+        detailId, composer: draft,
+        acts: { edit: (request) => { calls.push(['edit', request]); return { ok: true }; } },
+        onOpen: (value) => calls.push(['open', value]),
+      });
+      const editable = owner && detailId !== null;
+      assert.equal(composer.shown, owner ? draft : null);
+      composer.openEdit('wind');
+      assert.deepEqual(calls, editable ? [['open', { door: 'detail', editing: 'wind' }]] : []);
+      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+      composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
+      assert.equal(composer.shown, editable ? composer.composer : null);
+      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: editable });
+      assert.deepEqual(composer.saveEdit({ id: 'other' }), { ok: false });
+      assert.deepEqual(calls, editable ? [
+        ['open', { door: 'detail', editing: 'wind' }], ['edit', { id: 'wind' }],
+      ] : []);
     }
   }
 });
@@ -208,7 +206,7 @@ test('a composer is hidden immediately after switching away from its originating
   for (const origin of ['board', 'tree']) {
     for (const view of ['board', 'tree']) {
       const draft = { door: 'verbs', view: origin };
-      const composer = new BoardComposer({ gate: true, active: view === 'board', owner: true,
+      const composer = new BoardComposer({ owner: true,
         view, detailId: null, composer: draft,
       });
       assert.equal(composer.shown, origin === view ? draft : null);

@@ -120,7 +120,7 @@ const ready = (async () => {
       configureServer(server) {
         server.middlewares.use('/board-acts-test', (_request, response) => {
           response.setHeader('Content-Type', 'text/html');
-          response.end('<!doctype html><script>localStorage.setItem("windmill:board:dev", "1")</script><div id="root"></div><script type="module" src="/board-acts-entry.js"></script>');
+          response.end('<!doctype html><div id="root"></div><script type="module" src="/board-acts-entry.js"></script>');
         });
       },
     }], optimizeDeps: { include: ['react', 'react-dom/client'] },

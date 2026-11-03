@@ -106,7 +106,7 @@ export async function loadDeviceTree(treeId) {
 
 // The registry keeps the listing title and the blob takes one stamped title write, so the name
 // survives the claim's flush.
-export async function renameLocalTree(treeId, title, { trackGestures = false } = {}) {
+export async function renameLocalTree(treeId, title) {
   const next = title.trim();
   if (!next) return;
   const registry = new LocalTreeRegistry();
@@ -123,10 +123,10 @@ export async function renameLocalTree(treeId, title, { trackGestures = false } =
     lattice.seedClock(clock);
     lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
     const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs,
-      ...(trackGestures ? { gestures: {
+      gestures: {
         structure: pendingGestures(lattice.toFrame(), saved.confirmed?.structure, saved.gestures?.structure),
         progress: saved.gestures?.progress ?? {},
-      } } : {}) });
+      } });
     if (result.status === 'saved') {
       registry.rename(treeId, next);
       return;

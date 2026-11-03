@@ -13,6 +13,27 @@
   color: var(--text-primary);
 }
 
+.st-roadmap-identity-fallback {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 8px) 24px 8px;
+  background: var(--surface-canvas);
+  outline: none;
+}
+
+@media (max-width: 743px) {
+  .st-roadmap-identity-fallback {
+    min-height: 60px;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
 .st-roadmap-context {
   min-width: 0;
   max-width: 480px;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 
 function sessionWith({ notify = () => {}, registry = null, save = () => Promise.resolve(), reportFailure = () => {}, Session = SyncSession } = {}) {
-  const session = new Session({ trackGestures: true, treeId: 'tree', registry, store: { save }, reportFailure });
+  const session = new Session({ treeId: 'tree', registry, store: { save }, reportFailure });
   session.seed({ id: 'tree', title: 'Tree', nodes: [{ id: 'root', label: 'Root', prerequisites: [] }] });
   session.onTreeChanged(notify);
   return session;
@@ -12,7 +12,7 @@ function sessionWith({ notify = () => {}, registry = null, save = () => Promise.
 const snapshot = (session) => session.lattice.toTreeData().nodes.map(({ id, label, prerequisites }) => ({ id, label, prerequisites }));
 
 test('dispatch returns null before ready and for gestures writing nothing', () => {
-  const session = new SyncSession({ trackGestures: true, treeId: 'tree', registry: null });
+  const session = new SyncSession({ treeId: 'tree', registry: null });
   assert.equal(session.dispatch({ kind: 'CreateNode', id: 'x' }), null);
   assert.equal(session.revert({}), false);
   assert.deepEqual(session.undoStack, []);
@@ -202,7 +202,7 @@ class TestSocket extends EventTarget {
   message(frame) { this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) })); }
 }
 
-function connectedSession(t, overrides = {}, trackGestures = true) {
+function connectedSession(t, overrides = {}) {
   t.mock.method(globalThis, 'setInterval', () => 0);
   t.mock.method(globalThis, 'clearInterval', () => {});
   const priorSocket = globalThis.WebSocket;
@@ -223,7 +223,7 @@ function connectedSession(t, overrides = {}, trackGestures = true) {
     },
     ...overrides,
   };
-  const session = new SyncSession({ trackGestures, treeId: 'tree', store, registry: null });
+  const session = new SyncSession({ treeId: 'tree', store, registry: null });
   t.after(() => session.close());
   session.connect();
   session.ws.open();
@@ -417,7 +417,7 @@ test('browser online changes publish immediately and listeners leave with the se
   globalThis.document = new EventTarget();
   globalThis.WebSocket = TestSocket;
   t.after(() => { globalThis.window = priorWindow; globalThis.document = priorDocument; globalThis.WebSocket = priorSocket; });
-  const session = new SyncSession({ trackGestures: true, treeId: 'tree', registry: null,
+  const session = new SyncSession({ treeId: 'tree', registry: null,
     store: { load: async () => null, requestPersistent: async () => true, save: async () => {} } });
   t.after(() => session.close());
   const snapshots = [];
@@ -498,7 +498,7 @@ test('start refreshes browser connectivity after an asynchronous local load', as
     else delete globalThis.navigator;
   });
   let load;
-  const session = new SyncSession({ trackGestures: true, treeId: 'tree', registry: null,
+  const session = new SyncSession({ treeId: 'tree', registry: null,
     store: { load: () => new Promise((resolve) => { load = resolve; }), requestPersistent: async () => true, save: async () => {} } });
   t.after(() => session.close());
   const started = session.start();
@@ -610,40 +610,6 @@ test('refusal-only subscribers add no full status computation or pending-delta s
   assert.equal(session.statusHandlers.size, 0);
   unsubscribe();
   assert.equal(session.refusalHandlers.size, 0);
-});
-
-test('refusal-only reporting with gesture tracking disabled adds no status or pending scans and persists no gesture metadata', (t) => {
-  const { session, saves } = connectedSession(t, {}, false);
-  const reads = [];
-  for (const method of ['statusSnapshot', 'pendingEditCount', 'pendingProgressCount']) {
-    const original = session[method].bind(session);
-    t.mock.method(session, method, (...args) => {
-      reads.push(method);
-      return original(...args);
-    });
-  }
-  const deltaSince = session.lattice.deltaSince.bind(session.lattice);
-  t.mock.method(session.lattice, 'deltaSince', (vector) => {
-    if (vector != null) reads.push('structure-delta');
-    return deltaSince(vector);
-  });
-  const seen = [];
-  session.subscribeRefusals((refusal) => seen.push(refusal));
-  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
-  session.receiveAck({ frameId: [...session.inFlight.keys()][0] });
-  session.markProgress('root', 'complete');
-  session.receiveProgressAck({ frameId: [...session.progressInFlight.keys()][0] });
-  session.receiveLive({ t: 'subgraph', seq: 2, nodes: [{ id: 'peer', createdAt: '999:0:peer' }], edges: [], kinds: [] });
-  session.emitStatus();
-  assert.deepEqual(reads, []);
-  assert.deepEqual(seen, []);
-  assert.deepEqual(session.gestures, { structure: {}, progress: {} });
-  assert.equal(saves.every((value) => !Object.hasOwn(value, 'gestures')), true);
-  assert.equal(session.statusHandlers.size, 0);
-  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Refused' });
-  refuseLast(session, 'structure');
-  assert.deepEqual(reads, ['structure-delta']);
-  assert.deepEqual(seen, [session.refusals.get('structure')]);
 });
 
 test('refusal-only subscriptions replay current lanes and stop at unsubscribe or session close', (t) => {
@@ -857,13 +823,4 @@ test('one chunk acknowledgement cannot clear a partly confirmed multi-record ges
     if (session.inFlight.has(frameId)) session.receiveAck({ frameId });
   }
   assert.equal(session.statusSnapshot().structureGestures, 1);
-});
-
-test('a session without gesture tracking keeps the legacy save shape and skips gesture metadata', () => {
-  const saves = [];
-  const session = new SyncSession({ treeId: 'tree', registry: null, store: { save: async (_id, value) => saves.push(value) } });
-  session.seed({ id: 'tree', title: 'Tree', nodes: [{ id: 'root', label: 'Root', prerequisites: [] }] });
-  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Legacy' });
-  assert.deepEqual(session.gestures, { structure: {}, progress: {} });
-  assert.equal(Object.hasOwn(saves.at(-1), 'gestures'), false);
 });

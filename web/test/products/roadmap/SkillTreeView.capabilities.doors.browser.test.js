@@ -51,7 +51,7 @@ for (const width of everyWidth) {
       const row = page.locator('.st-roadmap-identity[data-role="demo"]');
       await row.waitFor();
       assert.equal(await row.locator('.st-roadmap-sample').textContent(), width < 744 ? DEMO_BYLINE.phone : DEMO_BYLINE.wide);
-      assert.equal(await page.getByText(DEMO_COPY.plaqueByline).count(), 0);
+      assert.equal(await page.getByText('Windmill demo').count(), 0);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });
@@ -81,7 +81,6 @@ for (const width of phones) {
     try {
       await (await openSheet(page)).getByRole('button', { name: ROADMAP_VERBS.activity, exact: true }).click();
       await page.getByRole('dialog', { name: ACTIVITY.heading, exact: true }).waitFor();
-      assert.equal(await page.locator('.st-activity-chip, .st-activity-chip-badge').count(), 0);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });
@@ -130,7 +129,6 @@ for (const width of wide) {
       await page.locator('.st-roadmap-identity').getByRole('button', { name: ROADMAP_VERBS.more, exact: true }).click();
       await page.getByRole('menuitem', { name: ROADMAP_VERBS.activity }).click();
       await page.locator(width === 744 ? '.st-roadmap-activity-panel' : '.st-detail-panel--open .st-activity').waitFor();
-      assert.equal(await page.locator('.st-activity-chip, .st-activity-chip-badge').count(), 0);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });

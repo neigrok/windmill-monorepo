@@ -76,7 +76,6 @@ for (const width of everyWidth) {
         await page.locator('.st-view-layer--board.is-active .st-board-card').first().waitFor({ state: 'attached' });
         await row.getByRole('button', { name: 'Graph', exact: true }).click();
         await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'tree');
-        assert.equal(await page.locator('.st-view-pill, .st-action-lane').count(), 0);
         assert.deepEqual(errors, []);
       } finally { await page.close(); }
     });

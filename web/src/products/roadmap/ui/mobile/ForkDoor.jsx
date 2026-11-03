@@ -15,7 +15,7 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null, preserveOutsideFocus = false }) {
+export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null }) {
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | rate_limited | unreachable
   const [typo, setTypo] = useState(false);
@@ -26,7 +26,6 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
   const sheetRef = useRef(null);
   const titleId = useId();
   const dialog = presentation === 'dialog';
-  const modal = drawn || dialog;
 
   const reduced = prefersReducedMotion();
 
@@ -51,18 +50,8 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
   }, [busy, onClose]);
 
   const trapTab = useDialogFocus({
-    open: open && !dialog && (drawn || preserveOutsideFocus),
-    cardRef: sheetRef, onClose: close, preserveOutsideFocus, recoverFocus: drawn,
+    open: open && !dialog, cardRef: sheetRef, onClose: close, preserveOutsideFocus: true, recoverFocus: true,
   });
-
-  useEffect(() => {
-    if (!open || modal || preserveOutsideFocus) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') close();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, modal, close, preserveOutsideFocus]);
 
   if (!open) return null;
 
@@ -123,16 +112,15 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
 
   const stepsPhrase = stepCount ? `all ${stepCount} steps` : 'every step';
   const instantFork = signedIn && forkError !== 'unauthenticated';
-  const centered = drawn && !dialog && instantFork;
+  const centered = !dialog && instantFork;
   const titleStyle = centered ? { ...TITLE_STYLE, fontSize: 22, textAlign: 'center' } : TITLE_STYLE;
-  const drawnGap = centered ? 12 : 14;
-  const copyStyle = modal ? {
+  const contentGap = centered ? 12 : 14;
+  const copyStyle = {
     ...COPY_STYLE,
-    margin: `${drawnGap}px 0 0`,
+    margin: `${contentGap}px 0 0`,
     fontSize: centered ? 'var(--text-sm)' : 'var(--text-base)',
     textAlign: centered ? 'center' : undefined,
-  } : COPY_STYLE;
-  const contentGap = modal ? drawnGap : 18;
+  };
 
   const content = phase === 'sent' ? (
     <div style={{ textAlign: 'center' }}>
@@ -162,7 +150,7 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
           <path d="M3.5 7 L12 13 L20.5 7" />
         </svg>
       </div>
-      <h2 id={modal ? titleId : undefined} style={{ ...TITLE_STYLE, marginTop: 14 }}>Check your email</h2>
+      <h2 id={titleId} style={{ ...TITLE_STYLE, marginTop: 14 }}>Check your email</h2>
       <p style={{ ...COPY_STYLE, textAlign: 'center' }}>
         We sent a link to {email.trim()}. It works once, lasts 15 minutes, and finishes the fork — the copy lands in your trees.
       </p>
@@ -172,7 +160,7 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
     </div>
   ) : phase === 'rate_limited' ? (
     <div>
-      <h2 id={modal ? titleId : undefined} style={TITLE_STYLE}>That's a few links in a row</h2>
+      <h2 id={titleId} style={TITLE_STYLE}>That's a few links in a row</h2>
       <p style={COPY_STYLE}>
         Check your spam folder first — or try again in 10 minutes. Only the newest link carries this fork.
       </p>
@@ -182,7 +170,7 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
     </div>
   ) : phase === 'unreachable' ? (
     <div>
-      <h2 id={modal ? titleId : undefined} style={TITLE_STYLE}>Can't reach windmill.works</h2>
+      <h2 id={titleId} style={TITLE_STYLE}>Can't reach windmill.works</h2>
       <p style={COPY_STYLE}>Nothing was sent — try again in a moment.</p>
       <div style={{ display: 'grid', marginTop: 14 }}>
         <Button variant="ghost" size="sm" onClick={backToForm}>Back</Button>
@@ -190,7 +178,7 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
     </div>
   ) : instantFork ? (
     <div>
-      <h2 id={modal ? titleId : undefined} style={titleStyle}>Make it yours</h2>
+      <h2 id={titleId} style={titleStyle}>Make it yours</h2>
       <p style={copyStyle}>
         Forking plants a copy of {stepsPhrase} in your trees — progress cleared, yours to grow.
       </p>
@@ -205,7 +193,7 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
     </div>
   ) : (
     <form onSubmit={submitEmail}>
-      <h2 id={modal ? titleId : undefined} style={titleStyle}>Make it yours</h2>
+      <h2 id={titleId} style={titleStyle}>Make it yours</h2>
       <p style={copyStyle}>
         Forking plants a copy of {stepsPhrase} in your trees — progress cleared, yours to grow.
       </p>
@@ -241,7 +229,7 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
 
   if (dialog) {
     return (
-      <Dialog open={open} onClose={close} labelledBy={titleId} width={406} padding="28px" preserveOutsideFocus={preserveOutsideFocus}>
+      <Dialog open={open} onClose={close} labelledBy={titleId} width={406} padding="28px" preserveOutsideFocus>
         <div style={{ paddingTop: 28 }}>{content}</div>
       </Dialog>
     );
@@ -263,24 +251,22 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
     >
       <div
         ref={sheetRef}
-        className={drawn ? 'st-fork-sheet' : undefined}
-        tabIndex={drawn || preserveOutsideFocus ? -1 : undefined}
-        role={drawn ? 'dialog' : undefined}
-        aria-modal={drawn ? true : undefined}
-        aria-labelledby={drawn ? titleId : undefined}
-        onKeyDown={drawn ? trapTab : undefined}
+        className="st-fork-sheet"
+        tabIndex={-1}
+        role="dialog"
+        aria-modal
+        aria-labelledby={titleId}
+        onKeyDown={trapTab}
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
           background: 'var(--surface-card)',
-          borderTopLeftRadius: drawn ? 'var(--radius-2xl)' : 'var(--radius-xl)',
-          borderTopRightRadius: drawn ? 'var(--radius-2xl)' : 'var(--radius-xl)',
+          borderTopLeftRadius: 'var(--radius-2xl)',
+          borderTopRightRadius: 'var(--radius-2xl)',
           boxShadow: 'var(--shadow-lg)',
-          padding: drawn
-            ? 'var(--space-6) var(--space-4) calc(env(safe-area-inset-bottom, 0px) + var(--space-6))'
-            : 'var(--space-5) var(--space-5) calc(env(safe-area-inset-bottom, 0px) + var(--space-6))',
-          maxHeight: drawn ? '90dvh' : undefined,
-          overflowY: drawn ? 'auto' : undefined,
+          padding: 'var(--space-6) var(--space-4) calc(env(safe-area-inset-bottom, 0px) + var(--space-6))',
+          maxHeight: '90dvh',
+          overflowY: 'auto',
           transform: reduced ? 'none' : shown ? 'translateY(0)' : 'translateY(100%)',
           transition: reduced
             ? 'opacity var(--duration-base) var(--ease-soft)'
@@ -288,15 +274,6 @@ export function ForkDoor({ open, presentation = 'sheet', drawn = false, treeId, 
           willChange: 'transform',
         }}
       >
-        {!drawn && <div
-          style={{
-            width: 40,
-            height: 5,
-            margin: '0 auto 14px',
-            borderRadius: 'var(--radius-full)',
-            background: 'var(--border-default)',
-          }}
-        />}
         {content}
       </div>
     </div>

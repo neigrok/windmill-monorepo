@@ -113,26 +113,6 @@ for (const width of [744, 1024, 1440]) {
   }
 }
 
-hostTest('Chromium: P4 reports with the gate closed while Board events and surfaces stay absent', async () => {
-  const { page, errors } = await openHost({ gate: 'closed' });
-  try {
-    assert.equal(await page.evaluate(() => window.session.statusHandlers.size), 0);
-    await page.evaluate(() => {
-      const session = window.session;
-      session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
-      for (const frameId of ['first', 'second']) {
-        session.inFlight.set(frameId, session.lattice.frontier());
-        session.receiveReject({ frameId, code: 'server-error' });
-      }
-    });
-    await page.waitForFunction(() => window.issues.length === 1);
-    assert.deepEqual(await page.evaluate(() => window.issues), [{ operation: 'roadmap-sync-refused', stack: true, tags: { code: 'server-error' } }]);
-    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => ['roadmap_view_open', 'roadmap_sync_refused'].includes(name))), []);
-    assert.equal(await page.locator('.st-roadmap-identity, [data-graph-step-bar]').count(), 0);
-    assert.deepEqual(errors, []);
-  } finally { await page.close(); }
-});
-
 for (const [role, demo] of [['owner', false], ['reader', false], ['reader', true]]) {
   hostTest(`Chromium: view-open is once per visit for ${demo ? 'demo' : role}`, async () => {
     const { page, errors } = await openHost({ role, demo });

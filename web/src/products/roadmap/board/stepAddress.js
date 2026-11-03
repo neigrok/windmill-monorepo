@@ -35,9 +35,9 @@ function hrefWith(hash) {
   return `${window.location.pathname}${window.location.search}${hash === '#' ? '' : hash}`;
 }
 
-// Stale steps leave the URL only after this route loads its roadmap and while the Board gate is open.
-export function stepIsStale({ boardOpen, loading, tree, treeId, stepId }) {
-  return boardOpen && !loading && tree !== null && tree.treeId === treeId && stepId !== null && !tree.nodesById.has(stepId);
+// Stale steps leave the URL only after this route loads its roadmap.
+export function stepIsStale({ loading, tree, treeId, stepId }) {
+  return !loading && tree !== null && tree.treeId === treeId && stepId !== null && !tree.nodesById.has(stepId);
 }
 
 export function useStepAddress() {

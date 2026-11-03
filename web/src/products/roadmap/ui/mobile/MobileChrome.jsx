@@ -2,40 +2,27 @@
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
-import { TABLET_PANEL_WIDTH } from '../viewport.js';
 import { DeviceLine } from '../../board/SyncNotices.jsx';
 import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } from '../../board/copy.js';
 
-const SAFE_TOP = 'var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px))';
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 // The reader's Fork this tree pill, above the bottom safe area; whatever must clear it reads its geometry here.
 export const FORK_PILL = { bottom: 18, height: 50 };
 export const GRAPH_CAMERA_SIZE = { width: 248, height: 50 };
 
 export function MobileChrome({
-  title,
-  progress = { done: 0, total: 0 },
-  author,
-  byline = null,
-  dominantKind,
   onFork,
-  onSignInToKeep,
   deviceLine = null,
   ctaEcho = false,
   onFocus,
   onShowAll,
-  tablet = false,
-  panelOpen = false,
   view = 'tree',
-  identity = false,
   band = 'phone',
   rowBottom = 0,
   onZoomIn,
   onZoomOut,
   cameraRight = 24,
   cameraBottom = 24,
-  cameraVisible = true,
   onTopBottom,
   step = null,
   onOpenStep = null,
@@ -43,24 +30,17 @@ export function MobileChrome({
 }) {
   const [pressed, setPressed] = useState(false);
   const [nudgeHeight, setNudgeHeight] = useState(0);
-  const plaqueRef = useRef(null);
   const cameraRef = useRef(null);
   const nudgeRef = useRef(null);
   const barRef = useRef(null);
 
-  const hue = KIND_CSS[dominantKind] ? dominantKind : DEFAULT_NODE_COLOR;
-  const c = KIND_CSS[hue];
-  const total = progress?.total ?? 0;
-  const done = progress?.done ?? 0;
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  const cameraGroupRight = tablet && panelOpen ? TABLET_PANEL_WIDTH + 24 : 12;
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
   const canvasView = view === 'tree';
-  const wideCamera = identity && band !== 'phone';
-  const identityNudge = identity && canvasView && band === 'phone' && Boolean(deviceLine);
-  const phoneCameraTop = rowBottom + 8 + (identityNudge ? nudgeHeight : 0);
-  const showStep = identity && canvasView && band === 'phone' && Boolean(step);
+  const phone = band === 'phone';
+  const phoneGraph = phone && canvasView;
+  const nudge = phoneGraph && Boolean(deviceLine);
+  const phoneCameraTop = rowBottom + 8 + (nudge ? nudgeHeight : 0);
+  const showStep = phoneGraph && Boolean(step);
 
   useLayoutEffect(() => {
     if (!onBarBottom) return undefined;
@@ -80,16 +60,16 @@ export function MobileChrome({
   }, [showStep, onBarBottom]);
 
   useLayoutEffect(() => {
-    if (!onTopBottom && !identityNudge) return undefined;
+    if (!onTopBottom && !nudge) return undefined;
     const measure = () => {
       setNudgeHeight(nudgeRef.current?.offsetHeight ?? 0);
-      const topChrome = [plaqueRef.current, cameraRef.current, nudgeRef.current].filter(Boolean);
-      const bottom = Math.max(identity ? rowBottom : 0, ...topChrome.map((element) => element.offsetTop + element.offsetHeight));
+      const topChrome = [cameraRef.current, nudgeRef.current].filter(Boolean);
+      const bottom = Math.max(rowBottom, ...topChrome.map((element) => element.offsetTop + element.offsetHeight));
       onTopBottom?.(bottom);
     };
     measure();
     const observer = new ResizeObserver(measure);
-    for (const element of [plaqueRef.current, cameraRef.current, nudgeRef.current]) {
+    for (const element of [cameraRef.current, nudgeRef.current]) {
       if (element) observer.observe(element, { box: 'border-box' });
     }
     window.addEventListener('resize', measure);
@@ -97,179 +77,15 @@ export function MobileChrome({
       observer.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [onTopBottom, identityNudge, identity, canvasView, rowBottom, phoneCameraTop, tablet, panelOpen, cameraVisible]);
-
-  // The list and the Board never render this: each carries the device notice under its header.
-  const signInNudge = onSignInToKeep ? (
-    <button
-      type="button"
-      onClick={onSignInToKeep}
-      style={{
-        pointerEvents: 'auto',
-        marginTop: 1,
-        padding: 0,
-        border: 'none',
-        background: 'none',
-        textAlign: 'left',
-        fontFamily: 'var(--font-body)',
-        fontSize: 12,
-        fontWeight: 700,
-        color: 'var(--color-brand)',
-        cursor: 'pointer',
-      }}
-    >
-      Saved on this device — sign in to keep it →
-    </button>
-  ) : null;
+  }, [onTopBottom, nudge, canvasView, rowBottom, phoneCameraTop]);
 
   return (
     <div
       className="st-mobile-chrome"
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20 }}
     >
-      {/* Dominant-kind rule — a 4px hairline across the very top */}
-      {!identity && <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 4,
-          background: c.base,
-        }}
-      />}
-
-      {canvasView && !identity && (
-      <>
-      {/* Plaque — a label, never a menu; sits below the status-bar-safe area */}
-      <div
-        ref={plaqueRef}
-        style={{
-          position: 'absolute',
-          top: `calc(${SAFE_TOP} + 8px)`,
-          left: 'calc(env(safe-area-inset-left, 0px) + 12px)',
-          maxWidth: 'min(236px, calc(100vw - 182px))',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          padding: '10px 12px',
-          borderRadius: 'var(--radius-lg)',
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-md)',
-          animation: appear,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <span
-            style={{
-              flexShrink: 0,
-              width: 10,
-              height: 10,
-              borderRadius: 'var(--radius-full)',
-              background: c.base,
-              boxShadow: `inset 0 0 0 1.5px ${c.ring}`,
-            }}
-          />
-          <span
-            style={{
-              flex: 1,
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: 17,
-              color: 'var(--text-primary)',
-            }}
-          >
-            {title}
-          </span>
-        </div>
-
-        {byline ? (
-          // The demo plaque: one honest byline in place of the count + bar.
-          <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-            {byline}
-          </span>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 12,
-                fontVariantNumeric: 'tabular-nums',
-                color: 'var(--text-secondary)',
-              }}
-            >
-              {done}/{total}
-            </span>
-            <span
-              style={{
-                flex: 1,
-                maxWidth: 96,
-                height: 6,
-                borderRadius: 'var(--radius-full)',
-                background: 'var(--surface-sunken)',
-                overflow: 'hidden',
-              }}
-            >
-              <span
-                style={{
-                  display: 'block',
-                  height: '100%',
-                  width: `${pct}%`,
-                  borderRadius: 'var(--radius-full)',
-                  background: `linear-gradient(90deg, ${c.soft}, ${c.base})`,
-                  transition: 'width var(--duration-base) var(--ease-soft)',
-                }}
-              />
-            </span>
-          </div>
-        )}
-
-        {author && !byline && (
-          <span style={{ fontFamily: 'var(--font-body)', fontSize: 11, color: 'var(--text-tertiary)' }}>
-            {author}
-          </span>
-        )}
-
-        {signInNudge}
-      </div>
-
-      {/* Wordmark chip — the way home: a real link on every read-only surface */}
-      <a
-        className="st-wordmark-link"
-        href="#/"
-        aria-label="Windmill — home"
-        style={{
-          position: 'absolute',
-          top: `calc(${SAFE_TOP} + 8px)`,
-          right: 'calc(env(safe-area-inset-right, 0px) + 12px)',
-          display: 'inline-flex',
-          alignItems: 'center',
-          height: 30,
-          padding: '0 12px',
-          borderRadius: 'var(--radius-full)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-sm)',
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: 13,
-          color: 'var(--color-brand)',
-          textDecoration: 'none',
-          pointerEvents: 'auto',
-          animation: appear,
-        }}
-      >
-        Windmill
-      </a>
-      </>
-      )}
-
       {/* Fork CTA — the share page's one verb; absent on your own trees */}
-      {onFork && !showStep && (!identity || band === 'phone') && (
+      {onFork && !showStep && phone && (
       <button
         type="button"
         className={ctaEcho ? 'wm-cta-echo' : undefined}
@@ -281,8 +97,8 @@ export function MobileChrome({
         style={{
           position: 'absolute',
           bottom: `calc(${SAFE_BOTTOM} + ${FORK_PILL.bottom}px)`,
-          left: tablet ? 'calc(env(safe-area-inset-left, 0px) + 20px)' : '50%',
-          transform: `${tablet ? '' : 'translateX(-50%) '}scale(${pressed ? 0.97 : 1})`,
+          left: '50%',
+          transform: `translateX(-50%) scale(${pressed ? 0.97 : 1})`,
           pointerEvents: 'auto',
           display: 'inline-flex',
           alignItems: 'center',
@@ -325,14 +141,14 @@ export function MobileChrome({
         </div>
       )}
 
-      {identityNudge && (
+      {nudge && (
         <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom }}>
           <DeviceLine {...deviceLine} />
         </div>
       )}
 
-      {/* The phone camera clears the row and its device notice; legacy readers keep it under the wordmark. */}
-      {canvasView && cameraVisible && !wideCamera && (
+      {/* The phone camera clears the row and its device notice. */}
+      {phoneGraph && (
         <div
           className="st-view-actions"
           ref={cameraRef}
@@ -340,8 +156,8 @@ export function MobileChrome({
           aria-label="Camera"
           style={{
             position: 'absolute',
-            top: identity ? phoneCameraTop : `calc(${SAFE_TOP} + 48px)`,
-            right: `calc(env(safe-area-inset-right, 0px) + ${cameraGroupRight}px)`,
+            top: phoneCameraTop,
+            right: 'calc(env(safe-area-inset-right, 0px) + 12px)',
             pointerEvents: 'auto',
             display: 'inline-flex',
             alignItems: 'center',
@@ -359,7 +175,7 @@ export function MobileChrome({
         </div>
       )}
 
-      {canvasView && cameraVisible && wideCamera && (
+      {canvasView && !phone && (
         <div className="st-graph-camera" role="group" aria-label="Camera"
           style={{ right: cameraRight, bottom: cameraBottom }}>
           <button type="button" className="st-graph-camera-zoom" aria-label="Zoom out" title="Zoom out" onClick={onZoomOut}>

@@ -539,8 +539,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Web shortcuts layout.** `skilltree.css` keeps two columns and nonshrinking keycap groups.
   At 390px, Pan/Zoom overlap View; Windows desktop Zoom also extends slightly into Edit. Local
   owner/reader and Mac/Windows captures confirm this. Adapt columns/key wrapping in the implementation;
-  current Figma deliberately shows the defect. Phone owners receive Navigate/View only because
-  `SkillTreeView.jsx` passes its canvas read-only flag, despite mobile ownership editing support.
+  current Figma deliberately shows the defect.
 - **Published web input sizing.** The imported Design System Input field imposes 100px minimum height,
   while ForkDoor uses 46px. The product drawing uses an explicitly named local source adapter. The
   library owner should correct the primitive sizing before replacing that adapter with an instance.
@@ -551,10 +550,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   empty-state specimen retains the current contradictory copy with a ledger annotation. Gallery
   search/filter thresholds in `galleryIndex.js` are not rendered by `BrowsePage.jsx` and are not
   current controls.
-- **Web mobile empty tree.** `SkillTreeView.jsx` mounts the “Add your first step” empty card only
-  when `!readOnly`, which excludes phone and tablet canvas. Mobile owners can edit populated trees;
-  an existing zero-node mobile tree needs an explicit recovery affordance. The Figma empty-card
-  specimen is scoped to desktop.
 - **Marketing capability copy.** `RoadmapLanding.jsx` says starter quests and paste-list creation
   are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
   that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
@@ -582,8 +577,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
   prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
   lists it plainly. The build follows each drawing. Choose one.
-- **Board · `/` is Find a step.** On the Board `/` focuses *Find a step* and Ask AI keeps ⌘K, as the
-  proposal draws (desktop 10.03 386:13666); on the Graph `/` still opens Ask AI.
 - **Board · two names for the checklist.** The Board's step workspace says *Subtasks* and *Add subtask*
   (07.01, 03.08); the Graph's step panel (`ui/StepPanel.jsx` through `ui/tree/Checklist.jsx`) says
   *Checklist* and *Add a sub-task*, and its add menu *Sub-task*. Choose one name for both views.
@@ -614,7 +607,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · states at 744px.** The loading, load-error and empty frames are drawn at
   1440 and on phones; 744–1023px uses the desktop frames, with the three skeleton columns side by side
   rather than the tablet's rail. Draw the tablet states.
-- **Board · New step on an empty phone roadmap.** With the development gate open, an owner’s empty
+- **Board · New step on an empty phone roadmap.** An owner’s empty
   roadmap reaches the Board on phone, tablet and desktop. Its New step opens the composer (185:2149,
   226:1055); the tablet uses the desktop empty-state structure pending the 744px drawing above.
 - **Board · completion toast replacement.** The swipe spec (379:17279) says completions coalesce.
@@ -683,28 +676,25 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph.
   The Board shortcuts dialog does not list A because its approved specimen has no Activity row.
   Draw that row before adding it to `BOARD_SHORTCUT_GROUPS`; A does nothing on phones.
-- **Board · Activity live signal.** Approved G8-A1 touch feeds have no live dot. The gate-open
-  desktop host also hides `.st-activity-live`, while the gate-closed feed retains the live dot.
-  Reconcile the shared feed treatment when the legacy chrome retires.
-- **Board · dock beneath the row.** With the gate open, the step dock from 744px starts 8px
+- **Board · dock beneath the row.** The step dock from 744px starts 8px
   below the measured identity row and clears any Graph refusal banner, so an open step never
   covers Share, Next, New step, More or refusal actions.
-  Owner-approved ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step
+  Owner-approved ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the desktop Graph with a step
   in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
 - **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file
   in the paste format, with the browser download as feedback; Settings retains the all-roadmaps
   zip. G24 copies the reader's roadmap link and uses the existing *Link copied* toast. Draw these
   outcomes before replacing the approved interims.
-- **Board · device-only status.** The gated host carries the anonymous or lapsed line in the Shell
+- **Board · device-only status.** The host carries the anonymous or lapsed line in the Shell
   from 744px and in the tappable Device note below the identity on both phone views. The phone
   Graph camera clears the measured note.
 - **Board · single offline notice.** Approved 03.17 shows the room's Offline signal without the global
   notice. The global notice yields only to an explicitly offline room publication; a device-only
   line does not hide connectivity. Rooms without an Offline publication retain the global notice.
-- **Board · mobile Shell mark.** The approved mobile Shell omits the mark. A gated room registered
-  for status keeps that layout while idle, Saving, Saved or Offline, with space reserved for the
-  longest compact status. Rooms without a publisher retain the production mark and navigation;
-  reconciling that mobile mark with the canon remains a gate-lift task.
+- **Board · mobile Shell mark.** The approved mobile Shell omits the mark. A roadmap room registered for status (an
+  owner signed in or on this device) keeps that layout while idle, Saving, Saved or Offline, with space reserved for
+  the longest compact status. Readers and the demo publish no status, so their phone Shell keeps the mark, as journal
+  and gym do; the reader frames (04.02, 04.06) draw it without. Draw or rule the reader's Shell.
 - **Design System · Dialog close target.** The shared `Dialog` close control is 28×28 with a 14px
   glyph; the approved [04.03 Fork dialog](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-29874)
   and the other dialog frames draw ✅ Close at 44×44 with a 20px glyph. Align the shared control and

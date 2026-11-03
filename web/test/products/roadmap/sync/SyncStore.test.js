@@ -63,7 +63,7 @@ function environment(t) {
   return {
     store() { const store = new SyncStore(); stores.push(store); return store; },
     async session(store) {
-      const session = new SyncSession({ trackGestures: true, treeId: 'tree', store, registry: null, reportFailure: (operation, error) => {
+      const session = new SyncSession({ treeId: 'tree', store, registry: null, reportFailure: (operation, error) => {
         throw new Error(`${operation}: ${error.stack}`);
       } });
       sessions.push(session);
@@ -354,7 +354,7 @@ test('BroadcastChannel construction failure reports once and falls back to trans
   const failure = new Error('channel unavailable');
   globalThis.BroadcastChannel = class { constructor() { throw failure; } };
   const reports = [];
-  const session = new SyncSession({ trackGestures: true, treeId: 'tree', store, registry: null,
+  const session = new SyncSession({ treeId: 'tree', store, registry: null,
     reportFailure: (operation, error) => reports.push({ operation, error }) });
   t.after(() => session.close());
   await session.start();

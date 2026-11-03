@@ -23,7 +23,6 @@ for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1024, 'desktop'],
             sheet: band === 'phone' && role === 'owner',
           });
           assert.equal(await page.locator('.st-roadmap-identity').count(), 1);
-          assert.equal(await page.locator('.st-action-lane').count(), 0);
           assert.deepEqual(errors, []);
         } finally { await page.close(); }
       });
