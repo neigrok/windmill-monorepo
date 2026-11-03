@@ -105,6 +105,8 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
+    this.setLongPress = (handler) => { window.longPress = handler; };
+    this.setEditTap = (handler) => { window.editTap = handler; };
     window.scene = new Proxy(this, { get(target, property) { return property in target ? target[property] : () => {}; } });
     return window.scene;
   }

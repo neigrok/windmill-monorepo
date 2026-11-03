@@ -152,24 +152,20 @@ hostTest('Chromium: tablet read-only Graph legend names its non-interactive swat
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: phone legacy reader toast clears Focus, and editor completion clears the action row', async () => {
+hostTest('Chromium: phone Graph toast clears the camera and selected-step bar for both roles', async () => {
   for (const role of ['reader', 'owner']) {
     const { page, errors } = await openHost({ width: 390, role });
     try {
-      if (role === 'reader') {
-        await page.evaluate(() => window.scene.options.onCeremonyToast('A roadmap update'));
-        await page.locator('.st-toast').waitFor();
-      } else {
-        await page.evaluate(() => window.scene.select('wind'));
-        await page.getByRole('button', { name: 'Mark done', exact: true }).click();
-        await page.locator('.st-graph-toast .st-board-toast').waitFor();
-      }
-      await page.waitForFunction((role) => {
-        const toast = document.querySelector('.st-graph-toast .st-board-toast, .st-toast').getBoundingClientRect();
+      await page.evaluate(() => window.scene.select('wind'));
+      await page.locator('[data-graph-step-bar]').waitFor();
+      await page.evaluate(() => window.scene.options.onCeremonyToast('A roadmap update'));
+      await page.locator('.st-toast').waitFor();
+      await page.waitForFunction(() => {
+        const toast = document.querySelector('.st-toast').getBoundingClientRect();
         const camera = document.querySelector('.st-view-actions').getBoundingClientRect();
-        const action = [...document.querySelectorAll('button')].find((element) => element.textContent.trim() === 'Mark not done');
-        return toast.top >= camera.bottom && (role === 'reader' || toast.bottom <= action.getBoundingClientRect().top);
-      }, role);
+        const bar = document.querySelector('[data-graph-step-bar]').getBoundingClientRect();
+        return toast.top >= camera.bottom && toast.bottom <= bar.top;
+      });
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   }

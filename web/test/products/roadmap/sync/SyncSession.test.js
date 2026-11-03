@@ -64,7 +64,7 @@ test('a pre-apply refusal preserves the undo journal and leaves no node', () => 
   session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' });
   session.undo();
   const redo = [...session.redoStack];
-  assert.throws(() => session.dispatch({ kind: 'CreateNode', id: null, prerequisites: [] }, { captureFailures: true }), { message: 'malformed node entry' });
+  assert.throws(() => session.dispatch({ kind: 'CreateNode', id: null, prerequisites: [] }), { message: 'malformed node entry' });
   assert.deepEqual(session.undoStack, []);
   assert.deepEqual(session.redoStack, redo);
   assert.deepEqual(snapshot(session), [{ id: 'root', label: 'Root', prerequisites: [] }]);
@@ -85,7 +85,7 @@ test('applied writes keep their receipt and report real errors at each failed bo
     reportFailure: (operation, error) => failures.push({ operation, error }),
   });
   session.phase = 'live';
-  const receipt = session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', prerequisites: ['root'] }, { captureFailures: true });
+  const receipt = session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', prerequisites: ['root'] });
   assert.ok(receipt);
   assert.deepEqual(snapshot(session), [{ id: 'root', label: 'Root', prerequisites: [] }, { id: 'child', label: 'Child', prerequisites: ['root'] }]);
   assert.deepEqual(failures, [
@@ -104,20 +104,85 @@ test('asynchronous persistence failure retains its real error after dispatch suc
     save: () => Promise.reject(storageError),
     reportFailure: (operation, error) => failures.push({ operation, error }),
   });
-  const receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' }, { captureFailures: true });
+  const receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' });
   await Promise.resolve();
   assert.ok(receipt);
   assert.deepEqual(failures, [{ operation: 'roadmap-sync-persist', error: storageError }]);
   assert.equal(session.durabilityAtRisk, true);
 });
 
-test('legacy dispatch keeps post-apply boundary exceptions when failure capture is not requested', () => {
-  const failures = [];
-  const session = sessionWith({ notify: () => { throw new Error('legacy callback'); }, reportFailure: (operation) => failures.push(operation) });
-  assert.throws(() => session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' }), { message: 'legacy callback' });
-  assert.deepEqual(failures, []);
-  assert.equal(session.undoStack.length, 1);
-});
+for (const action of ['dispatch', 'revert', 'undo', 'redo', 'renameTree']) {
+  for (const boundary of ['status', 'notify', 'persist', 'save', 'send']) {
+    test(`${action} contains ${boundary} failure after applying and retains its undo journal`, async () => {
+      const failure = new Error('private boundary failure');
+      const reports = [];
+      let fail = false;
+      class BoundarySession extends SyncSession {
+        emitStatus() {
+          if (fail && boundary === 'status') throw failure;
+          super.emitStatus();
+        }
+        send() {
+          if (fail && boundary === 'send') throw failure;
+        }
+      }
+      const session = sessionWith({
+        Session: BoundarySession,
+        notify: () => { if (fail && boundary === 'notify') throw failure; },
+        registry: { touch: () => { if (fail && boundary === 'persist') throw failure; } },
+        save: () => fail && boundary === 'save' ? Promise.reject(failure) : Promise.resolve(),
+        reportFailure: (operation, error) => reports.push({ operation, error }),
+      });
+      session.phase = 'live';
+      let receipt;
+      if (['revert', 'undo', 'redo'].includes(action)) {
+        receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' });
+      }
+      if (action === 'redo') session.undo();
+      fail = true;
+      let result;
+      assert.doesNotThrow(() => {
+        if (action === 'dispatch') result = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' });
+        if (action === 'revert') result = session.revert(receipt);
+        if (action === 'undo') session.undo();
+        if (action === 'redo') session.redo();
+        if (action === 'renameTree') result = session.renameTree('New title');
+      });
+      await Promise.resolve();
+      const operation = boundary === 'status' || boundary === 'notify' ? 'notify' : boundary === 'send' ? 'send' : 'persist';
+      assert.deepEqual(reports, [{ operation: `roadmap-sync-${operation}`, error: failure }]);
+      assert.equal(session.durabilityAtRisk, operation !== 'notify');
+      assert.deepEqual(snapshot(session), [{ id: 'root', label: ['dispatch', 'redo'].includes(action) ? 'Renamed' : 'Root', prerequisites: [] }]);
+      assert.deepEqual([session.undoStack.length, session.redoStack.length], {
+        dispatch: [1, 0], revert: [0, 0], undo: [0, 1], redo: [1, 0], renameTree: [0, 0],
+      }[action]);
+      if (action === 'dispatch') assert.equal(Object.isFrozen(result), true);
+      if (action === 'revert' || action === 'renameTree') assert.equal(result, true);
+      if (action === 'renameTree') assert.equal(session.lattice.title, 'New title');
+    });
+  }
+}
+
+for (const kind of ['DeleteNode', 'BulkDelete']) {
+  test(`${kind} global Undo restores every retired incident edge and node`, () => {
+    const session = sessionWith();
+    session.dispatch({ kind: 'CreateNode', id: 'middle', label: 'Middle', parentId: 'root' });
+    session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', parentId: 'middle' });
+    const before = session.lattice.toTreeData();
+    const beforeEdges = session.lattice.presentEdges();
+    session.dispatch(kind === 'DeleteNode' ? { kind, id: 'middle' } : { kind, nodeIds: ['middle'] });
+    assert.deepEqual(session.lattice.presentEdges(), [{ from: 'root', to: 'child' }]);
+    assert.deepEqual(session.maskedWork(), []);
+    session.undo();
+    const restored = session.lattice.toTreeData();
+    assert.deepEqual(restored.nodes.map(({ createdAt, createdMs, ...node }) => node), before.nodes.map(({ createdAt, createdMs, ...node }) => node));
+    assert.deepEqual({ id: restored.id, title: restored.title, kinds: restored.kinds }, { id: before.id, title: before.title, kinds: before.kinds });
+    assert.deepEqual(session.lattice.presentEdges(), beforeEdges);
+    session.redo();
+    assert.deepEqual(session.lattice.presentEdges(), [{ from: 'root', to: 'child' }]);
+    assert.deepEqual(session.maskedWork(), []);
+  });
+}
 
 class TestSocket extends EventTarget {
   static OPEN = 1;

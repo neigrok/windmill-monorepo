@@ -53,14 +53,14 @@ export class ViewPrefs {
 // With the Board enabled, step links open the Board and confirmed readers open the Graph; other visits keep their saved choice.
 export function initialView({ saved, owner, reader = false, empty, born = false, boardOpen = false, linkedStep = null, canAddFirstStep = false }) {
   const working = boardOpen ? 'board' : 'list';
-  if (boardOpen && owner && empty && canAddFirstStep) return 'board';
-  if (born) return 'tree';
-  if (empty) return 'tree';
-  if (boardOpen && linkedStep !== null) return 'board';
-  if (boardOpen && reader) return 'tree';
-  if (saved === 'tree') return 'tree';
-  if (saved === 'list' || saved === 'board') return working;
-  return owner ? working : 'tree';
+  if (boardOpen && owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
+  if (born) return { view: 'tree', door: 'born' };
+  if (empty) return { view: 'tree', door: 'empty' };
+  if (boardOpen && linkedStep !== null) return { view: 'board', door: 'link' };
+  if (boardOpen && reader) return { view: 'tree', door: 'default' };
+  if (saved === 'tree') return { view: 'tree', door: 'saved' };
+  if (saved === 'list' || saved === 'board') return { view: working, door: 'saved' };
+  return { view: owner ? working : 'tree', door: 'default' };
 }
 
 // The Board shows while its roadmap loads or fails to load, and once loaded unless it crashed; a roadmap with no steps

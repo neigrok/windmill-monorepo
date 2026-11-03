@@ -74,6 +74,18 @@ test('the identity row replaces the top inset and the camera block clears the op
   });
 });
 
+test('the phone Graph clears the measured selected-step bar with its safe area and gutter', () => {
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', rowBottom: 108, barBottom: 158 }), {
+    top: 108, right: 12, bottom: 170, left: 12, blocks: [],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', rowBottom: 108, barBottom: 0 }), {
+    top: 108, right: 12, bottom: 16, left: 12, blocks: [],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', barBottom: 124, sheetOpen: true, sheetHeight: 300 }), {
+    top: 156, right: 12, bottom: 312, left: 12, blocks: [],
+  });
+});
+
 
 test('Graph toast keeps intrinsic width in the tablet canvas and clears the camera below the panel', () => {
   assert.deepEqual(graphToastPlacement({

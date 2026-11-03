@@ -22,16 +22,12 @@ for (const width of [320, 390, 744, 1440]) {
         if (surface === 'tree' && width < 744) {
           await page.waitForFunction(() => {
             const card = document.querySelector('.st-graph-refusal')?.getBoundingClientRect();
-            let sheetRoot = document.querySelector('.st-step-name');
-            while (sheetRoot && getComputedStyle(sheetRoot).position !== 'fixed') sheetRoot = sheetRoot.parentElement;
-            const sheet = sheetRoot?.getBoundingClientRect();
+            const sheet = document.querySelector('[data-graph-step-bar]')?.getBoundingClientRect();
             return card && sheet && card.bottom <= sheet.top && window.cameraInsets.bottom >= window.innerHeight - card.top;
           });
           assert.equal(await page.locator('.st-graph-refusal').evaluate((element) => {
             const card = element.getBoundingClientRect();
-            let sheetRoot = document.querySelector('.st-step-name');
-            while (sheetRoot && getComputedStyle(sheetRoot).position !== 'fixed') sheetRoot = sheetRoot.parentElement;
-            const sheet = sheetRoot.getBoundingClientRect();
+            const sheet = document.querySelector('[data-graph-step-bar]').getBoundingClientRect();
             return card.bottom <= sheet.top;
           }), true);
         }

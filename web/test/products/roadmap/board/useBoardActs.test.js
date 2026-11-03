@@ -45,7 +45,7 @@ for (const via of ['timer', 'replaced', 'left']) {
     assert.equal(c.held, null);
     assert.deepEqual(calls, [
       ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
-      ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }],
+      ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
       ['event', 'roadmap_board_delete', { step: 'sent', via }],
     ]);
   });
@@ -68,7 +68,7 @@ test('a new held delete releases its predecessor and owns its own Undo', () => {
   first.action.run();
   first.onLeave('replaced');
   assert.deepEqual(c.held.ids, ['dock']);
-  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }]]);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }]]);
 });
 
 test('a release retains its original session across roadmap changes', () => {
@@ -76,7 +76,7 @@ test('a release retains its original session across roadmap changes', () => {
   acts.delete(['wind'], 'menu');
   acts.update({ ...c, session: { dispatch() { throw Error('Wrong session'); } } });
   acts.release('left');
-  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }]]);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), [['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }]]);
 });
 
 test('a no-op release clears the projection without reporting an expected refusal', () => {
@@ -147,12 +147,13 @@ test('Graph create preserves Board filters, reveals on the Graph and Undo revert
   ]);
 });
 
-test('Graph availability permits owner create only, without enabling Board mutation doors', () => {
+test('Graph availability permits owner create without enabling Board keyboard or bulk doors', () => {
   for (const owner of [false, true]) {
     const { acts, c, calls } = fixture({ active: false, graphActive: true, owner });
     c.onGraphReveal = () => {};
     assert.equal(acts.complete('wind', 'key'), false);
-    assert.equal(acts.delete(['wind']), false);
+    assert.equal(acts.delete(['wind'], 'key'), false);
+    assert.equal(acts.delete(['wind'], 'bulk'), false);
     assert.deepEqual(acts.edit({ ...request, id: 'wind' }), { ok: false });
     assert.deepEqual(acts.recolor(['wind'], 'gold'), { ok: false });
     assert.deepEqual(calls, []);
@@ -175,21 +176,30 @@ test('Graph create Undo refuses expired receipts quietly and reports thrown reve
   }
 });
 
-test('Graph composers expose create for owners behind the gate and reject every edit door', () => {
+test('Graph composers expose owner create and open-detail edit only behind the gate', () => {
   for (const gate of [false, true]) {
     for (const owner of [false, true]) {
-      const draft = { door: 'verbs', view: 'tree' };
-      const composer = new BoardComposer({ gate, active: false, owner, view: 'tree',
-        detailId: 'wind', composer: draft,
-        acts: { edit: () => assert.fail('Graph must not dispatch Board edits') },
-        onOpen: () => assert.fail('Graph must not open Board edits'),
-      });
-      assert.equal(composer.shown, gate && owner ? draft : null);
-      composer.openEdit('wind');
-      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-      composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
-      assert.equal(composer.shown, null);
-      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+      for (const detailId of [null, 'wind']) {
+        const calls = [];
+        const draft = { door: 'verbs', view: 'tree' };
+        const composer = new BoardComposer({ gate, active: false, owner, view: 'tree',
+          detailId, composer: draft,
+          acts: { edit: (request) => { calls.push(['edit', request]); return { ok: true }; } },
+          onOpen: (value) => calls.push(['open', value]),
+        });
+        const editable = gate && owner && detailId !== null;
+        assert.equal(composer.shown, gate && owner ? draft : null);
+        composer.openEdit('wind');
+        assert.deepEqual(calls, editable ? [['open', { door: 'detail', editing: 'wind' }]] : []);
+        assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+        composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
+        assert.equal(composer.shown, editable ? composer.composer : null);
+        assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: editable });
+        assert.deepEqual(composer.saveEdit({ id: 'other' }), { ok: false });
+        assert.deepEqual(calls, editable ? [
+          ['open', { door: 'detail', editing: 'wind' }], ['edit', { id: 'wind' }],
+        ] : []);
+      }
     }
   }
 });
@@ -269,13 +279,13 @@ test('delete confirmation and cancellation only emit their bounded event', () =>
   ]);
 });
 
-test('Board create and held release opt into truthful dispatch receipts', () => {
+test('Board create and held release use the common dispatch receipt policy', () => {
   const options = [];
   const { acts } = fixture({ session: { dispatch: (_gesture, value) => { options.push(value); return {}; } } });
   acts.create(request);
   acts.delete(['wind'], 'menu');
   acts.release('timer');
-  assert.deepEqual(options, [{ captureFailures: true }, { captureFailures: true }]);
+  assert.deepEqual(options, [undefined, undefined]);
 });
 
 
@@ -332,7 +342,7 @@ for (const via of ['timer', 'left']) {
   });
 }
 
-test('recolor dispatches once with truthful capture, preserves the query and Undo targets its receipt quietly', () => {
+test('recolor dispatches once with the common receipt policy, preserves the query and Undo targets its receipt quietly', () => {
   const options = [];
   const { acts, c, calls, receipt } = fixture();
   const dispatch = c.session.dispatch;
@@ -340,7 +350,7 @@ test('recolor dispatches once with truthful capture, preserves the query and Und
   assert.deepEqual(acts.recolor(['wind', 'dock'], 'gold'), { ok: true, changed: true });
   assert.equal(c.toast.message, '2 steps recolored');
   assert.equal(c.toast.holdMs, 6000);
-  assert.deepEqual(options, [{ captureFailures: true }]);
+  assert.deepEqual(options, [undefined]);
   c.toast.action.run();
   assert.deepEqual(calls, [
     ['dispatch', { kind: 'BulkRecolor', nodeIds: ['wind', 'dock'], color: 'gold' }],
@@ -373,7 +383,7 @@ test('bulk and key deletion use one held entity and reject the sole root', () =>
   assert.deepEqual(calls, [
     ['event', 'roadmap_board_delete', { step: 'held', door: 'bulk' }],
     ['event', 'roadmap_board_bulk', { step: 'delete', count: '2-5' }],
-    ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind', 'dock'], retireIncidentEdges: true }],
+    ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind', 'dock'] }],
     ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
   ]);
   calls.length = 0;
@@ -387,14 +397,14 @@ test('bulk and key deletion use one held entity and reject the sole root', () =>
 
 const editRequest = { id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', prerequisites: [] };
 
-test('edit diffs, marks quiet before one captured write, emits rename and bounded changes without toast', () => {
+test('edit diffs, marks quiet before one contained write, emits rename and bounded changes without toast', () => {
   const { acts, c, calls } = fixture();
   const options = [];
   const dispatch = c.session.dispatch;
   c.session.dispatch = (gesture, capture) => { options.push(capture); return dispatch(gesture); };
   c.emit = (event) => calls.push(['activity', event]);
   assert.deepEqual(acts.edit(editRequest), { ok: true });
-  assert.deepEqual(options, [{ captureFailures: true }]);
+  assert.deepEqual(options, [undefined]);
   assert.equal(c.toast, undefined);
   assert.deepEqual(calls, [
     ['quiet'],
@@ -591,7 +601,74 @@ test('a held delete whose timer expires during discard waits for the server base
   assert.equal(acts.pending, null);
   assert.deepEqual(calls, [
     ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
-    ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }],
+    ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
     ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
   ]);
 });
+
+
+test('Graph detail edits use the same action and receipt policy as Board detail edits', () => {
+  for (const graphActive of [false, true]) {
+    for (const owner of [false, true]) {
+      const { acts, calls } = fixture({ active: false, graphActive, owner, emit: () => {} });
+      assert.deepEqual(acts.edit(editRequest), { ok: graphActive && owner });
+      if (!graphActive || !owner) assert.deepEqual(calls, []);
+      else assert.deepEqual(calls, [
+        ['quiet'],
+        ['dispatch', { kind: 'EditNode', id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', addPrerequisites: [], removePrerequisites: ['wind'] }],
+        ['event', 'roadmap_board_edit', { step: 'saved', name: true, description: true, kind: true, prerequisites: true }],
+      ]);
+    }
+  }
+});
+
+for (const undo of [false, true]) {
+  test(`Graph detail delete uses the shared held policy${undo ? ' and Undo cancels it' : ' and releases once'}`, () => {
+    const { acts, c, calls } = fixture({ active: false, graphActive: true });
+    c.onGraphReveal = (id) => calls.push(['graph reveal', id]);
+    assert.equal(acts.delete(['wind'], 'menu'), true);
+    assert.deepEqual({ surface: c.toast.surface, act: c.toast.act, holdMs: c.toast.holdMs }, {
+      surface: 'graph', act: 'delete', holdMs: 9000,
+    });
+    assert.deepEqual(acts.pending.surface, 'graph');
+    assert.deepEqual(calls, [
+      ['event', 'roadmap_graph_toast', { act: 'delete', step: 'shown' }],
+      ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
+    ]);
+    calls.length = 0;
+    if (undo) c.toast.action.run();
+    c.toast.onLeave('timer');
+    c.toast.onLeave('timer');
+    assert.equal(c.held, null);
+    assert.deepEqual(calls, undo ? [
+      ['quiet'], ['graph reveal', 'wind'], ['event', 'roadmap_graph_toast', { act: 'delete', step: 'undo' }],
+    ] : [
+      ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
+      ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }],
+    ]);
+  });
+}
+
+for (const origin of ['board', 'graph']) {
+  test(`a ${origin} held delete survives redraw but releases on leaving its originating view`, (t) => {
+    const { c, calls } = fixture({ active: origin === 'board', graphActive: origin === 'graph' });
+    const previousWindow = globalThis.window;
+    globalThis.window = { addEventListener() {}, removeEventListener() {} };
+    const hook = renderHook(t, () => useBoardActs(c));
+    t.after(() => { globalThis.window = previousWindow; });
+    const acts = hook.tree.acts;
+    acts.delete(['wind'], 'menu');
+    calls.length = 0;
+    hook.redraw();
+    assert.deepEqual(calls, []);
+    assert.deepEqual(acts.held.ids, ['wind']);
+    c.active = origin !== 'board';
+    c.graphActive = origin !== 'graph';
+    hook.redraw();
+    assert.equal(acts.held, null);
+    assert.deepEqual(calls, [
+      ['dispatch', { kind: 'BulkDelete', nodeIds: ['wind'] }],
+      ['event', 'roadmap_board_delete', { step: 'sent', via: 'left' }],
+    ]);
+  });
+}

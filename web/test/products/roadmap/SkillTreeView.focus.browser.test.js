@@ -135,14 +135,14 @@ hostTest('Chromium: clipboard refusal emits no successful share beacon or link t
 hostTest('Chromium: the demo Board slash shortcut focuses the displayed demo Find field', async () => {
   const { page, errors } = await openHost({ surface: 'board', demo: true });
   try {
-    const find = page.locator('.st-demo-board-identity .st-board-find-input');
+    const find = page.locator('.st-roadmap-identity[data-role="demo"] .st-board-find-input');
     await find.waitFor();
     await page.locator('.st-board-card').first().focus();
     await page.keyboard.press('/');
     assert.equal(await find.evaluate((element) => document.activeElement === element), true);
     await find.fill('wind');
     assert.equal(await find.inputValue(), 'wind');
-    assert.equal(await page.locator('.st-roadmap-identity').count(), 0);
+    assert.equal(await page.locator('.st-roadmap-identity[data-role="demo"]').count(), 1);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

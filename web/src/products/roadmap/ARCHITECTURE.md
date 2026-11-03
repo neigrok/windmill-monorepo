@@ -22,25 +22,27 @@ owner view reframes as chrome measurements arrive until the reader moves the cam
 
 With the Board gate closed, phones open owners on the outline List and visitors on the canvas; a
 saved choice wins, and an empty or just-planted tree opens on the canvas. `board/gate.js` keeps the
-Board closed in production; off production, localStorage `windmill:board:dev` set to `1` opens it.
+Board closed by default; localStorage `windmill:board:dev` set to `1` opens it in development
+and production. An unavailable or throwing storage read keeps it closed.
 With the gate open, `initialView` in `persistence/ViewPrefs.js` chooses the view: an owner's empty
 roadmap opens on the Board on every band. A non-empty just-planted roadmap opens on the Graph;
 otherwise a step link selects the Board. Once ownership is known, non-demo readers of a not-owned or
 ownership-demoted roadmap open the Graph regardless of a saved choice. The demo and an owned roadmap
 opened through a shared URL keep their saved choice. Other visits keep their saved choice, with owners
 defaulting to the Board and visitors to the Graph. Loading does not infer ownership. The selected step carries
-across views. With the gate open, the host mounts one `RoadmapIdentity` above both layers for every non-demo
-role and band. The row persists across switches.
-The identity precedes the Board in DOM and tab order. The demo keeps its existing chrome. While the
+across views. `initialView` returns `{ view, door }`, so the opening event uses the same branch
+that chose the view. With the gate open, the host mounts one `RoadmapIdentity` above both layers
+for every role and band, passing `demo` for the sample. The row persists across switches and
+precedes the Board in DOM and tab order. While the
 Board awaits its roadmap, the row names no title or
 progress and offers no Share; after a failed load it offers no switch. From 744px, `/` focuses
 *Find a step* on either view and G switches Board and Graph for owners and readers. A non-empty
-Graph search hands off to the Board with its query and field focus kept. The demo Board
-resolves `/` from its own header. Ask AI keeps ⌘K.
+Graph search hands off to the Board with its query and field focus kept. The demo uses the same
+Find route. Ask AI keeps ⌘K.
 Graph selection shortcuts do not act on the Board. C completes a focused Up next card; Backspace and Delete
 start a nine-second held delete on a deletable owner card, without a confirm. `boardKey` in
 `shortcuts/shortcutMap.js` owns these keys and their shared typing and covered-layer refusal: a step
-open over the Board, a dialog or the composer prevents them from acting. With the gate open, the
+open over either view, a dialog or the composer prevents them from acting. With the gate open, the
 host also refuses paste, global Undo/Redo and shortcut help while that layer covers it, including
 the composer’s picker. An uncovered Board still shares the session’s global keyboard Undo stack.
 
@@ -70,7 +72,10 @@ heading-created root and branches. Settings exports all roadmaps as a zip.
 
 On the gated Graph, the owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order,
 including a one-step roadmap, and hides at zero. Picking a row selects and reveals that canvas
-step. Activity remains available through A; the feed never opens itself while identity is mounted.
+step. Desktop and tablet owners open Activity through the identity callback or A on either
+view; the feed never opens itself while identity is mounted. On desktop, opening it from the Board switches to the
+Graph dock. At 744–1023px a separate Activity panel keeps the current view usable; its rows open
+step details, and X, Escape or the Activity callback closes it and returns focus to More.
 From 744px the Graph camera controls form a bottom-right pill whose viewport block clears the
 dock or tablet panel. Phone camera controls keep their shipped form beneath the measured row.
 Graph toasts retain their intrinsic width, centering in the free canvas when they fit or across
@@ -78,8 +83,14 @@ the canvas otherwise; `graphToastPlacement` owns measured clearance from the cam
 panel and legend. Phone legacy toasts and completion toasts over an open editor use the top slot
 below the measured camera; other phone Graph toasts retain their bottom slot. Created steps
 reveal after the scene receives their model and the selected-step panel's insets.
-The identity replaces the plaque, wordmark and hairline. Phone Graph readers retain the Fork pill;
-the phone Board receives its Fork opener through `onFork`, without pill padding. From 744px the
+The identity replaces the plaque, wordmark and hairline. On the phone Graph, a single selected
+step shows a bottom bar with its title and derived state. Owners open its step page from Open step;
+readers and the demo open it from the title and keep Fork as the primary action. The detail opens
+over the Graph, and Back preserves selection. Its Edit step uses the shared composer. The bar
+replaces the reader Fork pill while visible; without selection, readers retain the pill. Its
+measured height clears the canvas, refusal card and Graph toast. Legacy phone editor, aim, link
+removal and multi-select surfaces remain available only with the identity absent. The phone
+Board receives its Fork opener through `onFork`, without pill padding. From 744px the
 Fork host chooses the centred dialog with either gate state; phones retain the sheet.
 From 744px the selected-step dock sits beneath the measured identity and any Graph refusal banner,
 so neither the row's verbs nor the refusal actions are covered.
@@ -88,8 +99,11 @@ and both phone views receive the tappable `DeviceLine`. The phone camera clears 
 bottom. A row render failure reports `roadmap-identity` and
 mounts legacy chrome with a view switch. Fallback chrome and switch border-box measurements feed
 the switch position and Board inset. Gate-closed chrome, feed auto-open, shortcuts and viewport
-geometry retain their existing paths; state words use `board/copy.js` without changing ceremony
-structure or timing.
+geometry retain their existing paths. The selected-step bar sits outside the identity boundary;
+its render failures reach the room boundary. State words use `board/copy.js` without changing ceremony
+structure or timing. Gated Ask AI uses an overlay from 744px and a modal dock on phones, with
+examples above its field. The dock reuses composer viewport tracking to clear the keyboard, and
+Escape, scrim or submit dismisses it. The inline gate-closed phone bar keeps its existing behavior.
 
 `SkillTreeView` owns the Board's query (`BoardQuery` in `board/Board.js`): the sort, the kinds on, the search text and the
 branch in scope. It lasts the visit: leaving the roadmap or reloading starts it over, and nothing is stored. `viewBranch`
@@ -182,7 +196,8 @@ apply reads the current selection. Bulk Delete creates one held projection and r
 `BulkDelete` after nine seconds; it asks no confirmation. Neither act clears the query.
 
 A card opens its step (`StepDetail.jsx`): from 744px a modal over the scrimmed roadmap, 760px wide and 24px in from the
-window below that; below 744px a page pushed over the Board, which stays mounted beneath it with its pane and scroll.
+window below that; below 744px a page pushed over the current view. The Board keeps its pane
+and scroll beneath it, and the Graph keeps its selection and camera.
 Crossing 744px swaps the frame inside the same layer. The open step rides the hash as `?step=<id>` (`stepAddress.js`).
 Each step opened from a card or from another step is a history entry, so Back steps out one step at a time and the page's
 back row names the screen it returns to; closing pops the whole visit, and a link lands owner and visitor alike on the
@@ -214,11 +229,10 @@ Delete to an owner unless the step is the roadmap's sole root. That rule reads t
 Delete first confirms in an anchored desktop popover or phone sheet. Its cost line counts the step's
 children through `acts.deletionCost`, matching the Graph and List; it does not count newly spliced edges.
 Confirm closes the detail and creates a `HeldDelete`, with no structural write yet. For its nine-second
-Undo window, every Board surface reads the held projection: cards, counts, identity, topbar, detail
-and composer. `SkillTree.without` and eventual `BulkDelete` share `respliceEdges`. Board release also
-retires the deleted steps' incident edges in that same stamped gesture, so those edges cannot raise
-the legacy masked-work Restore offer after the hold or after a switch to Graph. Graph and List
-delete gestures retain their existing output.
+Undo window, Board surfaces read the held projection: cards, counts, identity, topbar, detail
+and composer. A delete from Graph detail uses the same hold and projects it into the Graph. `SkillTree.without` and eventual `BulkDelete` share `respliceEdges`. Every structural delete
+retires the deleted steps' incident edges in that same stamped gesture, including Graph and List
+deletes, so those local edges cannot raise the masked-work Restore offer after a reload.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one
 held delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner
@@ -260,8 +274,8 @@ is done, Up next rests on Roadmap complete: the owner gets its body line, Share 
 reader gets the title alone.
 
 New step in the identity row on Board or Graph, phone Board band, empty state or complete state
-opens `StepComposer` through the gated host mount. Graph allows creation only; editing requires
-an open Board detail. A view change closes the composer. Edit step uses the same form with an existing step baseline; a clean Save closes
+opens `StepComposer` through the gated host mount. Editing requires an open owner detail on
+either view. A view change closes the composer. Edit step uses the same form with an existing step baseline; a clean Save closes
 without writing. `StepDraft` owns validation, dirty comparison and placement with the edited step
 replaced in the tree. The picker changes only draft prerequisites until Save; it groups the step
 and its descendants as unavailable, excludes them from match counts, and drops newly blocked
@@ -381,14 +395,18 @@ socket and HLC clock but separate frames. Pending writes are derived from lattic
 codes rather than error sentences. `EditNode` stamps the changed name, description, kind and
 prerequisite edge additions/removals together, preserving the existing gestures’ encodings.
 
-`SyncSession.dispatch(gesture, { captureFailures = false })` returns an opaque receipt or null when
-nothing applies. `revert(receipt)` restamps that captured inverse once and removes it from the global
-Undo stack. Board structural actions opt into `captureFailures: true`: notification, persistence or
-transport exceptions after the lattice join report static `roadmap-sync-notify`, `roadmap-sync-persist`
-or `roadmap-sync-send` operations with stack frames, while the applied write retains its receipt.
-Persistence and transport failures mark durability at risk. A failed pre-apply dispatch still throws.
-Legacy callers retain their default exception behavior while the Board remains gated. `rb-simplify`
-owns bringing all callers under one failure-containment policy when gate parity permits it.
+`SyncSession.dispatch(gesture)` returns an opaque receipt or null when nothing applies.
+`revert(receipt)` restamps that captured inverse once and removes it from the global Undo stack.
+Every local structural apply, including dispatch, targeted revert, global Undo/Redo and tree rename,
+contains notification, persistence and transport failures after the lattice join. They report static
+`roadmap-sync-notify`, `roadmap-sync-persist` and `roadmap-sync-send` operations with stack frames;
+applied dispatches retain their receipt, and persistence or transport failures mark durability at
+risk. Pre-apply failures still throw. The receive path retains its server-durable save policy.
+
+`DeleteNode` and `BulkDelete` retire all present incident edges of their deleted steps in the same
+stamped gesture as their tombstones and respliced edges. Undo restores the captured node lives and
+edges. Concurrent peer edges stamped after that gesture remain recoverable through masked work;
+existing masked edges are not cleaned retroactively.
 
 `SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' derived pending writes,
 in-flight frames, socket phase, browser connectivity and the current refusal. The session retains
@@ -418,9 +436,8 @@ notice when the device is offline. The host passes refusal code, refused-lane co
 Retry/Discard actions to the shared `RefusedSync` component on both Board and Graph. The notice
 owns capacity-specific Retry suppression and uses the refused-lane count for its message and
 Discard label. The Graph measures its notice into the camera's usable viewport and clears the
-selected-step dock from 744px. On phones,
-`BottomSheet` reports its footprint through `onHeight`; the host uses that clearance without
-observing the sheet's DOM. Retry clears the refusal and reconnects through the existing graft/flush
+selected-step dock from 744px. On the gated phone Graph, `MobileChrome` reports the selected-step
+bar footprint through `onBarBottom`; the refusal card clears that bar or the reader Fork pill. Retry clears the refusal and reconnects through the existing graft/flush
 path. A successful discard invalidates session Undo/Redo and captured receipts; only toast actions
 backed by those receipts are dismissed. Progress-based completion Undo remains available during a
 structure-only replacement and rebaseline; its durable save waits for the replacement's new epoch.

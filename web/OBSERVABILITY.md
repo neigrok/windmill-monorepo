@@ -80,7 +80,10 @@ Only `failed` reports to Sentry, under the static operation `gym-coach-routine-c
 conversation, question, identifier or server text is reported.
 
 Roadmap's Board/Graph switch emits `roadmap_view_switch` with only `view` (`board` or `graph`) when a reader
-switches; the view a tree opens on emits nothing. Below 744px the Board's column tabs emit `roadmap_board_column`
+switches. While the gate is open, the first resolved view of each roadmap visit emits
+`roadmap_view_open` with `view` (`board` or `graph`), `band` (`phone`, `tablet` or `desktop`),
+`role` (`owner`, `reader` or `demo`) and `door` (`saved`, `default`, `link`, `empty` or `born`),
+returned by the same `initialView` branch that chose the view. Below 744px the Board's column tabs emit `roadmap_board_column`
 with only `column` (`locked`, `upNext` or `done`) when a reader picks another column; the column a Board opens on, or
 moves to because a step was selected elsewhere, emits nothing. From 744px to 1023px Show on the Board's rail emits
 `roadmap_board_rail` with only `column` (`locked` or `done`, the column the reader stands) when a reader presses it;
@@ -98,7 +101,7 @@ way out, `sheet` for the filter sheet's Clear filters); `roadmap_board_branch` w
 branch scope's title returns to its step, `clear` for its ×); and `roadmap_board_menu` with only `menu` (`sort` or
 `filter`) when the sort menu or a phone sheet opens. Dismissing a menu, a sheet or a re-pick of the order in force emits
 nothing, and no kind name, step, title or search text is reported. Opening a step from the Board emits `roadmap_board_step_open` with only `surface` (`modal` or `page`), `column` (`locked`, `upNext` or `done`) and
-`door` (`card`, `step` for a row inside another step, or `link` for a step link the page arrived at, including Back or Forward into a roadmap whose address names a step);
+`door` (`card`, `graph` for the selected-step bar, `activity` for a touch Activity row, `step` for a row inside another step, or `link` for a step link the page arrived at, including Back or Forward into a roadmap whose address names a step);
 moving back to a step already open within the same visit emits nothing. An action in the step's page or modal emits `roadmap_board_step_action` with only `surface`
 and `action`: `complete`, `completeFromSubtasks` (All subtasks done · Complete step), `reset`, `undo`, `openInGraph`
 (which also emits `roadmap_view_switch`), `viewBranch`, `delete`, `edit`, `editNote`, and `copyLink` with `outcome` `ok` or `failed`; a refused clipboard
@@ -142,24 +145,27 @@ A create exception or missing session on an editable owner surface reports `road
 session is an expected failed-create event, not an Issue. An unexpected held delete release exception
 restores the projected step silently and reports `roadmap-board-delete`. A null receipt (already absent or not ready)
 is an expected no-op and reports no Issue. A composer render crash reports
-`roadmap-board-composer`. Reports use static operation names and stack frames only. Board structural writes also
-contain post-apply notification, storage and transport exceptions under `roadmap-sync-notify`,
+`roadmap-board-composer`. Reports use static operation names and stack frames only. Every local structural write (dispatch, targeted revert, Undo, Redo and tree rename)
+contains post-apply notification, storage and transport exceptions under `roadmap-sync-notify`,
 `roadmap-sync-persist` and `roadmap-sync-send`, respectively. Those writes retain their receipt because their lattice
 change has already applied; persistence or transport failure marks durability at risk.
 
 The gated identity row emits `roadmap_verb` with only `verb` (`askAI`, `share`, `newStep`, `export`,
-`settings`, `shortcuts`, `fork`, `more`, `next` or folded-icon `find`), `door` (`row`, `more`, `offer` or
-`sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
-sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new` or `browse`), or `step: close`
-and `via` (`close`, `escape` or `scrim`). What's next emits `roadmap_whats_next` with `step: open`,
+`settings`, `shortcuts`, `fork`, `more`, `activity`, `next` or folded-icon `find`), `door` (`row`, `more`, `offer`,
+`bar`, `key` or `sheet`), `view` (`board` or `graph`) and `band` (`phone`, `tablet` or `desktop`). The roadmap
+sheet emits `roadmap_sheet` with `step` (`open`, `switch`, `new`, `search` or `browse`), or
+`step: close` and `via` (`close`, `escape` or `scrim`). Search emits once per opening that receives
+a typed query, never its text; the pinned New roadmap button adds `door: search` to `step: new`.
+Activity entry uses `roadmap_verb` with `verb: activity` and `door: more` or `sheet`. What's next emits `roadmap_whats_next` with `step: open`,
 then either `pick` or `close`; focus leaving the popover emits `close`, and a pick does not also emit close. Each event's `count` uses the value captured
 on opening, in `countBucket`'s allowlisted `0`, `1`, `2-5`, `6-20` or `21+` buckets. No user content
 enters these events.
 Export emits `roadmap_export` with `outcome` (`done` or `failed`) and `door` (`more` or `sheet`).
 A missing projection or displayed tree emits `failed` without an Issue.
 A Graph search handing off to the Board emits `roadmap_graph_find` with `step: handoff`.
-Graph toast outcomes emit `roadmap_graph_toast` with `act` (`complete`, `create` or `link`) and
-`step` (`shown` or `undo`). Successful gated reader Share emits `link_copy` with no properties;
+Graph toast outcomes emit `roadmap_graph_toast` with `act` (`complete`, `create`, `delete` or `link`) and
+`step` (`shown` or `undo`). The Graph detail menu uses the shared nine-second held delete and
+its Undo cancels that hold; `roadmap_board_delete` retains its held/sent events. Successful gated reader Share emits `link_copy` with no properties;
 a clipboard refusal emits `roadmap_graph_toast` with `act: link` and `outcome: failed`, without
 a share-funnel beacon or Issue. Identity render failures report `roadmap-identity`; unexpected
 export build/download failures report `roadmap-export`; a Graph completion Undo failure reports
@@ -176,13 +182,16 @@ Discard fires only after the session confirms a successful discard.
 The device line emits `roadmap_device_line` with `step: shown` once per visit, `line`
 (`anonymous` or `lapsed`) and `place` (`row` or `shell`); tapping its phone row emits
 `step: sign_in`. The phone reader Board's Fork offer emits `roadmap_verb` with `verb: fork`,
-`door: offer`, `view: board` and `band: phone`. The existing `fork_attempt` and `fork_claim`
-retain their meanings.
+`door: offer`, `view: board` and `band: phone`. The phone Graph bar's Fork emits the same event with `door: bar`, `view: graph` and `band: phone`.
+Activity's A key emits `roadmap_verb` with `verb: activity` and `door: key`. Ask AI retains its
+existing verb and tending outcomes. The demo uses reader row events, while `demo_open` is
+unchanged. The existing `fork_attempt` and `fork_claim` retain their meanings.
 
 Unexpected refused codes (`bad-frame`, `server-error` and unknown codes) report
-`roadmap-sync-refused` once per code per session while the Board gate is open. Capacity and
+`roadmap-sync-refused` once per code per session in both gate states. Capacity and
 missing-tree refusals are expected and emit no Issue. Unexpected discard failures report
-`roadmap-sync-discard`. Refusal Issues include the bounded refusal code as a tag, and deduplication
+`roadmap-sync-discard` in both gate states. Refusal product events remain tied to the gated
+visible surfaces. Refusal Issues include the bounded refusal code as a tag, and deduplication
 keeps different codes distinct. An epoch-notification failure after the discard transaction commits
 reports `roadmap-sync-notify` without turning the successful discard into a failure. An IndexedDB
 epoch-check failure before a structure or progress write send reports `roadmap-sync-send` and
@@ -196,8 +205,9 @@ the existing offline shown/cleared events describe the connectivity episode.
 
 The switch, the tabs, the rail, Show all, the controls, the states, the step’s page and modal, and the
 composer and picker exist only while the Board’s development gate
-(`products/roadmap/board/gate.js`) is open, which it never is in production. Reading the gate's
-storage flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board` with its stack frames (file, line, column and function name only),
+(`products/roadmap/board/gate.js`) is open. The `windmill:board:dev = 1` opt-in opens it in
+production as well as development; without it the gate stays closed. Reading the gate's storage
+flag fails closed and reports nothing. A render failure inside the Board reports the static Sentry operation `roadmap-board` with its stack frames (file, line, column and function name only),
 drops the Board until that roadmap is opened again and shows the Graph. Loading a roadmap reports to Sentry whatever the
 gate: `HttpTreeRepository` reports the static operation `roadmap-tree-load` when the server answers 5xx, answers 200
 with something that is not a tree (an app shell a proxy served, say), or the request is lost while the page is visible,

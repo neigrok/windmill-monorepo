@@ -1,11 +1,11 @@
-// Closed in production; off production a developer opens the Board with localStorage `windmill:board:dev` = "1".
+// The Board opens only with the device opt-in `windmill:board:dev` = "1", including production.
 
 const DEV_OPT_IN_STORAGE = 'windmill:board:dev';
 
-export function boardOpen({ production = import.meta.env?.PROD === true, storage = globalThis.localStorage } = {}) {
-  if (production) return false;
+export function boardOpen({ storage } = {}) {
   try {
-    return storage?.getItem(DEV_OPT_IN_STORAGE) === '1';
+    const deviceStorage = storage === undefined ? globalThis.localStorage : storage;
+    return deviceStorage?.getItem(DEV_OPT_IN_STORAGE) === '1';
   } catch {
     return false;
   }

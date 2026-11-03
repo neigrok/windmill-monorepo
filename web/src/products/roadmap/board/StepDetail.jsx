@@ -1,4 +1,4 @@
-// Board step detail: a pushed page below 744px and a modal otherwise.
+// Roadmap step detail: a pushed page below 744px and a modal otherwise.
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
@@ -329,9 +329,7 @@ export function StepDetail({
     </DetailFocusContext.Provider>
   );
 
-  // Below 744px the step is a page pushed over the Board, which stays mounted beneath it with its pane and scroll; the
-  // back row names the screen it returns to, and the sections and actions sit under the thumb. From 744px it is a modal
-  // centred over the scrim, 760 wide and 24px in from the window below that (05.06); a press on the scrim closes it.
+  // Below 744px the step overlays the current view; from 744px it uses the 05.06 modal.
   if (surface === 'page') {
     const previous = trail.length > 1 ? tree.nodesById.get(trail[trail.length - 2]) : null;
     const backLabel = previous ? titleOf(previous) : roadmapTitle;

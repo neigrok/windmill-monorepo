@@ -618,7 +618,7 @@ export class SyncSession {
     for (const chunk of chunkDelta(pending)) this.send(chunk, 'flush');
   }
 
-  dispatch(gesture, { captureFailures = false } = {}) {
+  dispatch(gesture) {
     if (!this.ready) return null;
     const writes = materialize(gesture, this.lattice, this.clock);
     if (!writes.nodes.length && !writes.edges.length && !writes.kinds.length) return null;
@@ -628,29 +628,26 @@ export class SyncSession {
     this.undoStack.push(inverse);
     this.redoStack = [];
     try {
-      this.apply(writes, { captureFailures });
+      this.apply(writes);
     } catch (error) {
-      if (captureFailures) {
-        this.undoStack.splice(this.undoStack.indexOf(inverse), 1);
-        this.redoStack = redo;
-      }
+      this.undoStack.splice(this.undoStack.indexOf(inverse), 1);
+      this.redoStack = redo;
       throw error;
     }
-    this.receipts.set(receipt, { inverse, captureFailures });
+    this.receipts.set(receipt, inverse);
     return receipt;
   }
 
   revert(receipt) {
     if (!this.ready) return false;
-    const captured = this.receipts.get(receipt);
-    if (!captured) return false;
-    const { inverse, captureFailures } = captured;
+    const inverse = this.receipts.get(receipt);
+    if (!inverse) return false;
     const index = this.undoStack.indexOf(inverse);
     if (index === -1) return false;
+    this.apply(this.restamp(inverse, this.clock.tick(Date.now())));
     this.receipts.delete(receipt);
     this.undoStack.splice(index, 1);
     this.redoStack = [];
-    this.apply(this.restamp(inverse, this.clock.tick(Date.now())), { captureFailures });
     return true;
   }
 
@@ -670,21 +667,21 @@ export class SyncSession {
 
   replay(from, to) {
     if (this.rebaselining) return;
-    const inverse = from.pop();
+    const inverse = from.at(-1);
     if (!inverse) return;
     const writes = this.restamp(inverse, this.clock.tick(Date.now()));
-    to.push(this.captureInverse(writes));  // the counter-inverse, captured before applying
+    const counterInverse = this.captureInverse(writes);
     this.apply(writes);
+    from.pop();
+    to.push(counterInverse);
   }
 
-  apply(writes, { captureFailures = false } = {}) {
+  apply(writes) {
     this.lattice.join(writes);
-    this.emitStatus();
-    if (!captureFailures) {
-      this.emitTree();
-      this.persistNow();
-      if (this.phase === 'live') this.send(writes);
-      return;
+    try {
+      this.emitStatus();
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
     }
     try {
       this.emitTree();
@@ -692,7 +689,7 @@ export class SyncSession {
       this.reportFailure('roadmap-sync-notify', error);
     }
     try {
-      this.persistNow({ captureFailures });
+      this.persistNow((error) => this.reportFailure('roadmap-sync-persist', error));
     } catch (error) {
       this.durabilityAtRisk = true;
       this.reportFailure('roadmap-sync-persist', error);
@@ -743,7 +740,7 @@ export class SyncSession {
 
   // Persists both lanes + lastSeq atomically; the snapshot is taken synchronously, before any
   // await. A closed session never writes. Returns the save's settle.
-  persistNow({ captureFailures = false } = {}) {
+  persistNow(onFailure = null) {
     if (this.closed) return Promise.resolve();
     if (this.discardPending) {
       this.deferredSave = true;
@@ -765,14 +762,14 @@ export class SyncSession {
       return result;
     }, (error) => {
       this.durabilityAtRisk = true;
-      if (captureFailures) this.reportFailure('roadmap-sync-persist', error);
+      onFailure?.(error);
     });
   }
 
   persistDeferred() {
     if (!this.deferredSave) return Promise.resolve();
     this.deferredSave = false;
-    return this.persistNow({ captureFailures: true });
+    return this.persistNow((error) => this.reportFailure('roadmap-sync-persist', error));
   }
 
   // Coalesced save for the receive path: received content is already server-durable.

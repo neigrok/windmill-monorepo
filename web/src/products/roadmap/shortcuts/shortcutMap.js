@@ -136,6 +136,7 @@ export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = f
 export function boardKey({ key, metaKey = false, ctrlKey = false, altKey = false }, { typing = false, covered = false } = {}) {
   if (metaKey || ctrlKey || altKey || typing || covered) return null;
   if (key === '/') return 'find';
+  if (key.toLowerCase() === 'a') return 'activity';
   if (key.toLowerCase() === 'g') return 'switch';
   if (key.toLowerCase() === 'c') return 'complete';
   if (key === 'Backspace' || key === 'Delete') return 'delete';
