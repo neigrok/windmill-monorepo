@@ -1937,6 +1937,13 @@ export function SkillTreeView({ treeId, demo = false }) {
       emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
     }
     if (quiet || (BOARD_OPEN && door === 'board')) return next;
+    if (demo) {
+      setDemoCompletions((count) => count + 1);
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (id === COACHED_NODE_ID && !reduced) {
+        setTimeout(() => { setCtaEcho(true); setTimeout(() => setCtaEcho(false), 2600); }, CTA_ECHO_DELAY);
+      }
+    }
     const label = node?.label?.trim() || 'Step';
     const stepSummary = demo && id === COACHED_NODE_ID
       ? DEMO_COPY.unlockToast
@@ -1962,14 +1969,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     const ceremonyOptions = offer ? { action: offer.action } : {};
     if (layerActive) showToast(ceremony, ceremonyOptions);
     else sceneRef.current?.announceCeremony(ceremony, ceremonyOptions);
-
-    if (demo) {
-      setDemoCompletions((count) => count + 1);
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (id === COACHED_NODE_ID && !reduced) {
-        setTimeout(() => { setCtaEcho(true); setTimeout(() => setCtaEcho(false), 2600); }, CTA_ECHO_DELAY);
-      }
-    }
   }
 
   // completeStep can't be looped: each call reads the same render-time `completed`, so only the last would stick.

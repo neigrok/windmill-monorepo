@@ -9,17 +9,24 @@ import { beacon } from './board/composerFixture.js';
 // The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const treeData = {
-  id: 't_sail', title: 'Learn to sail', kinds: [], nodes: [
+  id: 't_sail', title: 'Learn to sail', author: 'Ada Lovelace', kinds: [], nodes: [
     { id: 'course', label: 'Choose a course', color: 'terracotta', prerequisites: [], status: 'complete' },
     { id: 'wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['course'] },
     { id: 'dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['wind'] },
   ],
 };
+const DOCK_DESCRIPTION = 'Cast off on an ebb tide after checking the fenders.';
+const BROAD_NODES = [
+  { id: 'knots', label: 'Tie the knots', color: 'terracotta', prerequisites: ['course'] },
+  { id: 'charts', label: 'Read the charts', color: 'sky', prerequisites: ['course'] },
+];
+const COACHED_NODE = { id: 'rigging', label: 'Rig the boat yourself', color: 'terracotta', prerequisites: [] };
 const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { SyncStore } from '/src/products/roadmap/sync/SyncStore.js';
+import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
 import { getRoomStatus } from '/src/shell/roomStatus.js';
@@ -34,6 +41,13 @@ if (params.has('empty')) window.fixture.nodes = [];
 if (params.has('legend')) {
   window.fixture.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
   window.fixture.nodes[1].color = 'olive';
+}
+if (params.has('described')) window.fixture.nodes[2].description = ${JSON.stringify(DOCK_DESCRIPTION)};
+if (params.has('allDone')) for (const node of window.fixture.nodes) node.status = 'complete';
+if (params.has('broad')) window.fixture.nodes.push(...${JSON.stringify(BROAD_NODES)});
+if (params.has('coached')) window.fixture.nodes.push(${JSON.stringify(COACHED_NODE)});
+if (params.has('crashBoard')) {
+  BoardQuery.prototype.among = () => { throw new Error('Fixture Board failure'); };
 }
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
@@ -61,6 +75,7 @@ window.issues = [];
 window.ceremonies = [];
 window.revealed = [];
 window.revealFrames = [];
+window.cameraCalls = [];
 window.copied = [];
 Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
   writeText: async (text) => {
@@ -105,6 +120,10 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
+    this.projectToScreen = () => ({ x: 20, y: 300 });
+    this.zoomBy = (factor) => window.cameraCalls.push(['zoomBy', factor]);
+    this.focusWorking = (id, opts) => { if (!opts?.instant) window.cameraCalls.push(['focusWorking', id]); };
+    this.fitToView = () => window.cameraCalls.push(['fitToView']);
     this.setLongPress = (handler) => { window.longPress = handler; };
     this.setEditTap = (handler) => { window.editTap = handler; };
     window.scene = new Proxy(this, { get(target, property) { return property in target ? target[property] : () => {}; } });
@@ -178,9 +197,9 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
   firstPage = false;
 
@@ -188,6 +207,7 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', ga
   const { fail } = runningTest.getStore();
   const report = (message) => {
     if (crash && (message.includes('Fixture identity measurement failure') || message.includes('The above error occurred in the <RoadmapIdentity> component'))) return;
+    if (crashBoard && (message.includes('Fixture Board failure') || message.includes('The above error occurred in the <BoardView> component'))) return;
     errors.push(message);
     fail(new Error(message));
     void page.close();
@@ -209,15 +229,22 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', ga
         data.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
         data.nodes[1].color = 'olive';
       }
+      if (described) data.nodes[2].description = DOCK_DESCRIPTION;
+      if (allDone) for (const node of data.nodes) node.status = 'complete';
+      if (broad) data.nodes.push(...structuredClone(BROAD_NODES));
+      if (coached) data.nodes.push(structuredClone(COACHED_NODE));
       body = { data, mine: role !== 'reader', visibility: 'public' };
     }
-    if (path === '/v1/trees') body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }] };
+    if (path === '/v1/trees') {
+      const others = manyTrees ? Array.from({ length: 11 }, (_, index) => ({ id: `t_many_${index}`, title: `Spanish chapter ${index}`, done: 0, total: 5, dominantKind: 'olive' })) : [];
+      body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }, ...others] };
+    }
     if (path.endsWith('/activity')) body = { events: [] };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   const params = new URLSearchParams({ role, gate, surface });
   if (role === 'reader') params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty, shell, legend })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached })) {
     if (enabled) params.set(name, '1');
   }
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
