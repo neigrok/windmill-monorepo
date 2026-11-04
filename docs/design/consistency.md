@@ -602,8 +602,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · phone large-picker dark.** Phone 10.x dark uses the existing tokens with the light structure. Proposed, awaiting the owner:
   the 11 dark frames in section 539:16665, beside 10.05 dark (383:19007).
 - **Board · shared Undo.** Backspace and Delete on an owner Board card start the nine-second held delete directly; the hold is its
-  safety (wave-5 G10). A toast's Undo reverts its own act. Command-Z walks the session's global structural stack across both views and is
-  refused under a covering layer.
+  safety (wave-5 G10). A toast's Undo reverts its own act. Command-Z walks the session's global structural stack across both views, cancels
+  a hold first, as the hold is the last act, and is refused under a covering layer and in a text field.
 - **Board · multi-select entry for keyboard and screen readers.** Phone multi-select starts only through a touch hold (wave-5 G14).
   Proposed, awaiting the owner: *Select* in the step menu, *Select steps* in the roadmap sheet, a selection state with none chosen and
   the accessible bulk bar (25.18–25.22). The follow-up node is `rb-multi-select-keyboard`.
@@ -623,7 +623,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
 - **Graph and Board · last root.** A roadmap keeps a root on every view and band. The desktop dock drops *Delete step* for a sole root, and the
   desktop and tablet selection bars and the phone Board's bulk bar drop Delete while the selection takes every root, with nothing saying why. No frame draws that dock or
-  those bars. Draw them, or rule that not offering is enough.
+  those bars. On the phone bar that leaves Recolor alone at half width: a designer is drawing that state for the owner, and the build stays as it is
+  until it lands. For the other bars and the dock, draw them, or rule that not offering is enough.
 - **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph. The Board shortcuts dialog does not list A.
   Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.
   A does nothing on phones.

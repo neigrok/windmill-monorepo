@@ -248,7 +248,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
 | `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step page's inline offer | The offer leaves |
-| `roadmap-graph-undo` | A Graph toast's Undo reverting its receipt | The toast closes |
+| `roadmap-graph-undo` | A Graph toast's Undo, or the Board's Undo of a pasted plan, reverting its receipt | The toast closes |
 | `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |
 | `roadmap-export` | Building or downloading an export | `roadmap_export` `failed`, no file |
 | `roadmap-export-load` | Settings' Export all reading a roadmap or its marks, by the rules of `roadmap-tree-load` | *Exported 1 of 2 roadmaps.*, or the export's error when none could be read |
@@ -277,9 +277,8 @@ refusal, a refused clipboard, a browser refusing storage (one `[sync]` console w
 the server), a socket unanswered while offline or hidden, a 4xx, a load aborted because the roadmap was left, a request lost offline or behind a hidden
 page. Session expiry, including the 20-second account poll, keeps device work and reaches the lapsed line.
 
-A render failure with no boundary of its own, an uncaught error and an unhandled rejection go through `reportError`: it
-sends `client_error` with `kind`, `route` and scrubbed `message` and `stack`, and a Sentry report of that `kind` with the
-scrubbed message. These carry the exception's own text, and on `#/app/<id>` the roadmap's id in `route`.
+A render failure with no boundary of its own, an uncaught error and an unhandled rejection go through `reportError`, which
+sends the labels and frames the shell's reporter above describes and no exception text.
 
 `scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer. Any Sentry attempt or
 `client_error` beacon it blocks fails its walk.
