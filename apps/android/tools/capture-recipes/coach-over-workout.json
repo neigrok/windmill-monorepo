@@ -286,7 +286,7 @@
                 ]
               },
               {
-                "exerciseId": "ex_cafe0846",
+                "exerciseId": "dumbbell-bench-press",
                 "sets": [
                   {
                     "reps": 10,
@@ -343,7 +343,7 @@
       [
         {
           "type": "text",
-          "text": "Overhead Press is logged, so it stays. Swap the incline press for a floor press."
+          "text": "Overhead Press is logged, so it stays. Swap the incline press for a flat dumbbell press."
         }
       ]
     ],
@@ -409,7 +409,7 @@
         "tap": "Overhead Press"
       },
       {
-        "tap": "Dumbbell Floor Press"
+        "tap": "Dumbbell Bench Press"
       },
       {
         "wait": "Load, kg each"
@@ -477,7 +477,7 @@
                 ]
               },
               {
-                "exerciseId": "ex_cafe0846",
+                "exerciseId": "dumbbell-bench-press",
                 "sets": [
                   {
                     "reps": 10,
@@ -732,7 +732,7 @@
                 ]
               },
               {
-                "exerciseId": "ex_cafe0846",
+                "exerciseId": "dumbbell-bench-press",
                 "sets": [
                   {
                     "reps": 10,

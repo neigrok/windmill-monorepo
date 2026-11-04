@@ -236,7 +236,7 @@ fun AskScreen(
                 thread.forEachIndexed { index, exchange ->
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            ChatTimestamp(exchange.atMs, nowMs)
+                            if (!overWorkout) ChatTimestamp(exchange.atMs, nowMs)
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 exchange.pictures.forEach { CoachPhoto(coach, it.photo, Modifier.size(160.dp), it.onThisPhone) }
                                 if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question, if (exchange.pictures.isEmpty()) CoachGroup.Single else CoachGroup.Last)
@@ -375,7 +375,7 @@ private fun Answer(
 fun ReceiptLine(line: String) {
     val colors = MaterialTheme.colorScheme
     val applied = line.startsWith("Applied")
-    Text(line, style = WindmillType.labelParagraph,
+    Text(line, style = GymType.button,
         color = if (applied) colors.primary else colors.onSurface,
         modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
 }

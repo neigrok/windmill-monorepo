@@ -1,13 +1,5 @@
 {
-  "exercises": [
-    {
-      "id": "ex_cafe0846",
-      "name": "Dumbbell Floor Press",
-      "pattern": "press",
-      "equipment": "dumbbell",
-      "stepKg": 2
-    }
-  ],
+  "exercises": [],
   "routines": [
     {
       "name": "Push A",

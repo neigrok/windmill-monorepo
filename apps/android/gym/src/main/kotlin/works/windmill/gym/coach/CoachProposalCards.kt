@@ -70,7 +70,7 @@ internal fun AnswerProposals(
                 proposal.receipt?.let { ReceiptLine(it) }
             }
         }
-        if ((workouts + minted).any { it.isPending && it.outOfDate == null }) Text(Ask.promise, style = WindmillType.detail, color = colors.onSurfaceVariant)
+        if ((workouts + minted).any { it.isPending && it.outOfDate == null }) Text(Ask.promise, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
     }
 }
 
@@ -93,14 +93,14 @@ internal fun CoachProposalCard(kicker: String, summary: String, count: String, r
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp),
     ) {
-        Text(kicker, style = WindmillType.kicker, color = colors.onSurfaceVariant)
-        Text(summary, style = GymType.proposalSummary, color = colors.onSurface)
-        Text(count, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
-        reason?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurface) }
+        Text(kicker, style = GymType.coachStrong, color = colors.onSurfaceVariant)
+        Text(summary, style = GymType.coachProposalSummary, color = colors.onSurface)
+        Text(count, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
+        reason?.let { Text(it, style = GymType.coachSupporting, color = colors.onSurface) }
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onReview).padding(12.dp),
-        ) { Text(Proposal.review, style = WindmillType.label, color = colors.onSurface) }
+        ) { Text(Proposal.review, style = GymType.button, color = colors.onSurface) }
     }
 }
 

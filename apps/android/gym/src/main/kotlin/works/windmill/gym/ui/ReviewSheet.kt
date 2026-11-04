@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -293,6 +294,15 @@ fun ReviewSheet(
     }
 }
 
+// A change to this workout is reviewed in Coach's Nunito, as it was asked (08.55b); a routine's review keeps the reading sans it stands in.
+private class ReviewType(val summary: TextStyle, val row: TextStyle, val rowLine: TextStyle, val kept: TextStyle, val action: TextStyle, val atomic: TextStyle) {
+    companion object {
+        val routine = ReviewType(WindmillType.paragraph, WindmillType.labelParagraph, WindmillType.supportingParagraph, WindmillType.paragraph, WindmillType.label, GymType.captionLoose)
+        val workout = ReviewType(GymType.coachParagraph, GymType.button, GymType.coachSupporting, GymType.coachParagraph, GymType.button, GymType.coachCaption)
+        fun of(proposal: Proposal) = if (proposal.target == ProposalTarget.Workout) workout else routine
+    }
+}
+
 @Composable
 private fun Head(proposal: Proposal?) {
     val colors = MaterialTheme.colorScheme
@@ -310,9 +320,10 @@ private fun Body(
 ) {
     val colors = MaterialTheme.colorScheme
     val workout = proposal.target == ProposalTarget.Workout
+    val type = ReviewType.of(proposal)
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (proposal.summary.isNotBlank()) Text(proposal.kicker, style = WindmillType.kicker, color = colors.onSurfaceVariant)
-        Text(proposal.summaryLine(proposal.routineName), style = WindmillType.paragraph, color = colors.onSurface)
+        Text(proposal.summaryLine(proposal.routineName), style = type.summary, color = colors.onSurface)
     }
     if (proposal.intent == ProposalIntent.Remove) {
         ChangeCard() {
@@ -324,7 +335,7 @@ private fun Body(
         (if (workout) proposal.changesFirst else proposal.document).forEach { row ->
             when (row) {
                 is DocumentRow.Changed -> ChangeRow(proposal, row.change, catalog)
-                is DocumentRow.Unchanged -> KeptRun(row, catalog, if (workout) 0.dp else GymLayout.rowInset)
+                is DocumentRow.Unchanged -> KeptRun(row, catalog, if (workout) 0.dp else GymLayout.rowInset, type)
             }
         }
         if (proposal.renames) ChangeCard() {
@@ -352,7 +363,7 @@ private const val supersededLine =
 // A run of kept rows, collapsed to its count where it stands and expanded in place: the position is
 // the document.
 @Composable
-private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>, inset: Dp) {
+private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>, inset: Dp, type: ReviewType) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     var open by remember(row) { mutableStateOf(false) }
@@ -367,7 +378,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>, inset: 
                 .clickable(role = Role.Button) { open = !open }
                 .padding(horizontal = inset),
         ) {
-            Text(row.label, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
+            Text(row.label, style = type.rowLine, color = colors.onSurfaceVariant)
             Icon(
                 if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = null,
@@ -383,13 +394,13 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>, inset: 
                 ) {
                     Text(
                         Readout.movement(change.exerciseId, catalog),
-                        style = WindmillType.paragraph,
+                        style = type.kept,
                         color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
                         (change.after ?: change.before)?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget,
-                        style = WindmillType.supportingParagraph,
+                        style = type.rowLine,
                         color = colors.onSurfaceVariant,
                     )
                 }
@@ -403,32 +414,33 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
     val colors = MaterialTheme.colorScheme
     val name = Readout.movement(change.exerciseId, catalog)
     val workout = proposal.target == ProposalTarget.Workout
+    val type = ReviewType.of(proposal)
     ChangeCard(tight = workout) {
         val title = when (change.kind) {
             ChangeKind.Added -> "Add $name"
             ChangeKind.Removed -> "Remove $name"
             else -> name
         }
-        Text(title, style = WindmillType.labelParagraph, color = colors.onSurface)
+        Text(title, style = type.row, color = colors.onSurface)
         when (change.kind) {
             ChangeKind.Added -> {
                 val target = change.after?.let { after ->
                     if (workout) Readout.targetWithUnit(after.sets, catalog.firstOrNull { it.id == change.exerciseId }) else Readout.targetWithUnit(after.sets)
                 } ?: Readout.openTarget
                 val after = proposal.landsAfter(change)?.let { "after ${Readout.movement(it, catalog)}" } ?: "first in ${proposal.within}"
-                Text("$target · $after", style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
+                Text("$target · $after", style = type.rowLine, color = colors.onSurfaceVariant)
             }
-            ChangeKind.Removed -> Text(change.removedLine(proposal.within), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
+            ChangeKind.Removed -> Text(change.removedLine(proposal.within), style = type.rowLine, color = colors.onSurfaceVariant)
             else -> {
                 val before = change.before
                 val after = change.after
                 val moved = if (before == null || after == null) emptyList() else Proposal.moves(before, after)
                 if (moved.isEmpty()) Text((after ?: before)?.let { Readout.targetWithUnit(it.sets) } ?: "No targets",
-                    style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
+                    style = type.rowLine, color = colors.onSurfaceVariant)
                 moved.forEach { move ->
                     if (move.label == Proposal.setsLabel && before != null && after != null) {
-                        SchemeMove(move.copy(before = Readout.targetWithUnit(before.sets), after = Readout.targetWithUnit(after.sets)), before.sets, after.sets, change)
-                    } else MoveLine(move.label, move.before, move.after)
+                        SchemeMove(move.copy(before = Readout.targetWithUnit(before.sets), after = Readout.targetWithUnit(after.sets)), before.sets, after.sets, change, type)
+                    } else MoveLine(move.label, move.before, move.after, type = type)
                 }
             }
         }
@@ -437,11 +449,11 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
 
 // Expand a changed scheme to compare every set, with a dash for a missing side.
 @Composable
-private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: List<SetTarget>, change: ProposalChange) {
+private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: List<SetTarget>, change: ProposalChange, type: ReviewType) {
     var unfolded by remember(change) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         MoveLine(
-            move.label, move.before, move.after,
+            move.label, move.before, move.after, type,
             Modifier
                 .fillMaxWidth()
                 .semantics { stateDescription = if (unfolded) "expanded" else "collapsed" }
@@ -455,6 +467,7 @@ private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: Lis
                     label = "set ${at + 1}",
                     before = standing.getOrNull(at)?.let(Readout::setTarget) ?: "—",
                     after = proposed.getOrNull(at)?.let(Readout::setTarget) ?: "—",
+                    type = type,
                     modifier = Modifier.padding(start = WindmillSpace.x3),
                 )
             }
@@ -463,10 +476,10 @@ private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: Lis
 }
 
 @Composable
-private fun MoveLine(label: String, before: String, after: String, modifier: Modifier = Modifier) {
+private fun MoveLine(label: String, before: String, after: String, type: ReviewType = ReviewType.routine, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     Text((if (label.isBlank() || label == Proposal.setsLabel) "" else "$label · ") + "$before → $after",
-        style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant,
+        style = type.rowLine, color = colors.onSurfaceVariant,
         modifier = modifier.semantics(mergeDescendants = true) {})
 }
 
@@ -492,16 +505,18 @@ private fun Foot(
     receiptModifier: Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val type = ReviewType.of(proposal)
+    val workout = proposal.target == ProposalTarget.Workout
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = WindmillSpace.x5)
-            .padding(vertical = 12.dp),
+            .padding(top = if (workout) 4.dp else 12.dp, bottom = if (workout) 0.dp else 12.dp),
     ) {
-        said?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
+        said?.let { Text(it, style = type.rowLine, color = colors.onSurfaceVariant) }
         if (!decidable) {
-            proposal.receipt?.let { Text(it, style = WindmillType.labelParagraph, color = colors.primary,
+            proposal.receipt?.let { Text(it, style = type.row, color = colors.primary,
                 modifier = receiptModifier) }
             return@Column
         }
@@ -536,7 +551,7 @@ private fun Foot(
                 disabledContentColor = colors.onPrimary.copy(alpha = .4f),
             ),
         ) {
-            Text(proposal.applyLabel, style = WindmillType.label)
+            Text(proposal.applyLabel, style = type.action)
         }
         // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree in
         // BOTH: the reason Apply is refusing belongs to Apply, which says it above, and a reader
@@ -553,7 +568,7 @@ private fun Foot(
         )
         Text(
             proposal.atomicLine,
-            style = GymType.captionLoose,
+            style = type.atomic,
             color = colors.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -564,7 +579,7 @@ private fun Foot(
             shape = RoundedCornerShape(WindmillRadius.lg),
             colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
         ) {
-            Text(Proposal.turnDownVerb, style = WindmillType.label)
+            Text(Proposal.turnDownVerb, style = type.action)
         }
     }
 }
