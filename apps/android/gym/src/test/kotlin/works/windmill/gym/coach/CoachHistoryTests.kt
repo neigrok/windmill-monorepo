@@ -219,6 +219,7 @@ class CoachHistoryTests {
         assertEquals(emptyList<String>(), conversations.threads.map { it.title })
 
         compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("History").assertIsDisplayed()
         waitUntil { conversations.threads.isNotEmpty() }
         assertEquals(listOf("thread-one"), conversations.threads.map { it.title })
 
@@ -230,6 +231,7 @@ class CoachHistoryTests {
         assertEquals(listOf("thread-one"), conversations.threads.map { it.title })
 
         compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("History").assertIsDisplayed()
         waitUntil { conversations.threads.size == 2 }
         assertEquals(setOf("thread-one", "thread-two"), conversations.threads.map { it.title }.toSet())
     }

@@ -247,8 +247,8 @@ class StanceReadsTheAccountTests {
         val store = room.store
         val thread = room.heldConversation("why is my bench stalled?", "Hold the load.")
         assertTrue(room.engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.create(Gym.Types.message, NewID.Given(RecordID("msgLaterBuild0001")), mapOf(
-            "threadId" to Json.of(thread), "role" to Json.of("coach"), "at" to Json.of(room.now), "text" to Json.of("private answer"),
-            "state" to Json.of("completed"), "calls" to Json.parse("""[{"callId":"c1","name":"a_later_ability","outcome":"ok"}]""")))))) is CommitOutcome.Committed)
+            "threadId" to Json.of(thread), "role" to Json.of("a_later_role"), "at" to Json.of(room.now), "text" to Json.of("private answer"),
+            "state" to Json.of("completed"), "calls" to Json.array()))))) is CommitOutcome.Committed)
         store.observeEngine()
         val threads = ThreadsBinding(store.coach)
         compose.setContent { ThreadsScreen(state = threads, events = threads, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {}) }
