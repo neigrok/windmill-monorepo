@@ -245,8 +245,8 @@ accepts a valid acknowledged prefix, retains operation identity for the suffix, 
 
 Each `responses` entry is one Anthropic response's content blocks. Text and `tool_use` blocks work
 in JSON and streaming responses. `$routine0` is replaced with the first fixture routine's id.
-Optional `model_timing` supplies integer `start_delay_ms` (0–30000), `chunk_chars` (1–4096)
-and `chunk_delay_ms` (0–1000). Validation bounds the entire scenario to 256 text chunks and thirty
+Optional `model_timing` supplies integer `start_delay_ms` (0–60000), `chunk_chars` (1–4096)
+and `chunk_delay_ms` (0–1000). Validation bounds the entire scenario to 256 text chunks and sixty
 seconds of fixture delay before startup. Text chunks preserve Unicode characters; tool JSON and
 default responses retain their existing event sequence. A stopped response may close its local
 fixture connection without a transport log.
@@ -269,8 +269,8 @@ exact native input echo before sending or navigating; a partial fixture input fa
 precondition. Use two separate runs, each with a new output directory. The synthetic source workout has one set and
 400 kg volume; the previews are deterministic fixture answers.
 
-`capture-recipes/coach-notices.json` captures empty History (08.53) and a fresh chat waiting on an answer
-running in another (08.61). The other notices need a refusal from the server, no connection or a question
+`capture-recipes/coach-notices.json`, with `--capture-only --fixture capture-recipes/coach-setup-fixture.json`, captures
+empty History (08.53) and a fresh chat waiting on an answer running in another (08.61). The other notices need a refusal from the server, no connection or a question
 past its bound, which these steps cannot make: Coach's notices test holds their words and doors.
 
 Recipes fail if their queued model responses were not consumed. A model-backed write recipe must

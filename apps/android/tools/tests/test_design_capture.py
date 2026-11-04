@@ -97,10 +97,10 @@ class DesignCaptureTests(unittest.TestCase):
         scenario = {"board": "08.11", "name": "coach-streaming", "account": "fixture",
                     "responses": [[{"type": "text", "text": "a" * 256}]]}
         self.assertEqual((0, None, 0), capture.model_timing(scenario))
-        self.assertEqual((30000, None, 0), capture.model_timing({**scenario, "model_timing": {"start_delay_ms": 30000}}))
+        self.assertEqual((60000, None, 0), capture.model_timing({**scenario, "model_timing": {"start_delay_ms": 60000}}))
         self.assertEqual((0, 1, 0), capture.model_timing({**scenario, "model_timing": {"chunk_chars": 1}}))
-        invalid = [None, [], {"unknown": 1}, {"chunk_chars": 1, "chunk_delay_ms": 120}]
-        for key, values in {"start_delay_ms": [-1, 30001, 1.5, True, "1"],
+        invalid = [None, [], {"unknown": 1}, {"chunk_chars": 1, "chunk_delay_ms": 240}]
+        for key, values in {"start_delay_ms": [-1, 60001, 1.5, True, "1"],
                             "chunk_chars": [0, 4097, 1.5, True, "1"],
                             "chunk_delay_ms": [-1, 1001, 1.5, True, "1"]}.items():
             invalid.extend({key: value} for value in values)
@@ -108,9 +108,9 @@ class DesignCaptureTests(unittest.TestCase):
             with self.subTest(timing=timing), self.assertRaises(ValueError):
                 capture.validate_scenarios([{**scenario, "model_timing": timing}])
         for responses, timing in [([[{"type": "text", "text": "a" * 257}]], {"chunk_chars": 1}),
-                                  (scenario["responses"] * 2, {"start_delay_ms": 15001}),
+                                  (scenario["responses"] * 2, {"start_delay_ms": 30001}),
                                   ([[{"type": "text", "text": "ab"}]] * 2,
-                                   {"start_delay_ms": 14500, "chunk_chars": 1, "chunk_delay_ms": 501})]:
+                                   {"start_delay_ms": 29500, "chunk_chars": 1, "chunk_delay_ms": 501})]:
             with self.subTest(responses=len(responses), timing=timing), self.assertRaises(ValueError):
                 capture.validate_scenarios([{**scenario, "responses": responses, "model_timing": timing}])
 

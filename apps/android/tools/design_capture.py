@@ -63,7 +63,7 @@ def model_timing(scenario):
     timing = scenario.get("model_timing", {})
     if not isinstance(timing, dict) or set(timing) - {"start_delay_ms", "chunk_chars", "chunk_delay_ms"}:
         raise ValueError("Model timing supports only start_delay_ms, chunk_chars and chunk_delay_ms.")
-    for key, low, high in (("start_delay_ms", 0, 30000), ("chunk_chars", 1, 4096), ("chunk_delay_ms", 0, 1000)):
+    for key, low, high in (("start_delay_ms", 0, 60000), ("chunk_chars", 1, 4096), ("chunk_delay_ms", 0, 1000)):
         if key in timing and (type(timing[key]) is not int or not low <= timing[key] <= high):
             raise ValueError("Model timing needs bounded integer delays and chunk sizes.")
     start, chars, delay = timing.get("start_delay_ms", 0), timing.get("chunk_chars"), timing.get("chunk_delay_ms", 0)
@@ -71,8 +71,8 @@ def model_timing(scenario):
         responses = scenario.get("responses") or [MODEL_FALLBACK]
         counts = [sum(max(1, (len(block["text"]) + chars - 1) // chars) if chars else 1
                       for block in content if block["type"] == "text") for content in responses]
-        if sum(counts) > 256 or len(responses) * start + sum(max(0, count - 1) * delay for count in counts) > 30000:
-            raise ValueError("Model timing permits at most 256 text chunks and 30000 ms across a scenario.")
+        if sum(counts) > 256 or len(responses) * start + sum(max(0, count - 1) * delay for count in counts) > 60000:
+            raise ValueError("Model timing permits at most 256 text chunks and 60000 ms across a scenario.")
     return start, chars, delay
 
 

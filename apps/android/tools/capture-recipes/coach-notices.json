@@ -25,7 +25,7 @@
     "name": "coach-answer-in-progress",
     "account": "fixture",
     "model_timing": {
-      "start_delay_ms": 25000
+      "start_delay_ms": 55000
     },
     "responses": [
       [
