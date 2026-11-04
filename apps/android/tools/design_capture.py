@@ -63,7 +63,7 @@ def model_timing(scenario):
     timing = scenario.get("model_timing", {})
     if not isinstance(timing, dict) or set(timing) - {"start_delay_ms", "chunk_chars", "chunk_delay_ms"}:
         raise ValueError("Model timing supports only start_delay_ms, chunk_chars and chunk_delay_ms.")
-    for key, low, high in (("start_delay_ms", 0, 10000), ("chunk_chars", 1, 4096), ("chunk_delay_ms", 0, 1000)):
+    for key, low, high in (("start_delay_ms", 0, 30000), ("chunk_chars", 1, 4096), ("chunk_delay_ms", 0, 1000)):
         if key in timing and (type(timing[key]) is not int or not low <= timing[key] <= high):
             raise ValueError("Model timing needs bounded integer delays and chunk sizes.")
     start, chars, delay = timing.get("start_delay_ms", 0), timing.get("chunk_chars"), timing.get("chunk_delay_ms", 0)
@@ -71,8 +71,8 @@ def model_timing(scenario):
         responses = scenario.get("responses") or [MODEL_FALLBACK]
         counts = [sum(max(1, (len(block["text"]) + chars - 1) // chars) if chars else 1
                       for block in content if block["type"] == "text") for content in responses]
-        if sum(counts) > 256 or len(responses) * start + sum(max(0, count - 1) * delay for count in counts) > 10000:
-            raise ValueError("Model timing permits at most 256 text chunks and 10000 ms across a scenario.")
+        if sum(counts) > 256 or len(responses) * start + sum(max(0, count - 1) * delay for count in counts) > 30000:
+            raise ValueError("Model timing permits at most 256 text chunks and 30000 ms across a scenario.")
     return start, chars, delay
 
 
@@ -541,7 +541,7 @@ class Device:
         self.run("shell", "rm", "-f", "/data/local/tmp/design-capture.xml")
         if self.notification_clock or self.tile_clock or self.workout_clock or self.live_coach:
             self.run("shell", "CLASSPATH=/data/local/tmp/capture-tree.jar:/system/framework/uiautomator.jar",
-                     "app_process", "/system/bin", "works.windmill.capture.CaptureTree")
+                     "app_process", "/system/bin", "works.windmill.capture.CaptureTree", check=False)
         else:
             self.run("shell", "uiautomator", "dump", "/data/local/tmp/design-capture.xml")
         try:
@@ -617,6 +617,44 @@ class Device:
                 return
             previous = current
         raise RuntimeError("The capture control did not stop moving.")
+
+    def focused_field(self):
+        return next((node for node in self.tree().iter("node")
+                     if node.get("focused") == "true" and "EditText" in node.get("class", "")), None)
+
+    # The keyboard rises on its own time and moves the field. A key sent before it stands is lost, and a tap aimed at Send
+    # where it stood lands on the keyboard's backspace.
+    def field_rest(self):
+        resting, last = 0, None
+        for _ in range(20):
+            field = self.focused_field()
+            bounds = field.get("bounds") if field is not None else None
+            resting = resting + 1 if bounds == last else 0
+            if resting == 3:
+                return
+            last = bounds
+            time.sleep(.5)
+
+    # `input text` sends its keys one by one and a loaded emulator drops some of them, so a field left short of the text
+    # is cleared and the text goes again. A field that shows its own form of the text is left as it stands.
+    def type(self, text):
+        self.field_rest()
+        def part(shown):
+            keys = iter(text)
+            return all(key in keys for key in shown)
+        for _ in range(6):
+            self.run("shell", "input", "text", text.replace(" ", "%s"))
+            shown = ""
+            for _ in range(10):
+                time.sleep(.2)
+                field = self.focused_field()
+                shown = field.get("text", "") if field is not None else ""
+                if shown == text or not part(shown):
+                    break
+            if shown == text or not shown or not part(shown):
+                break
+            self.run("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * len(shown)))
+        self.field_rest()
 
     def launch(self, launcher=False):
         intent = ["-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER"] if launcher else ["-a", "android.intent.action.VIEW"]
@@ -734,7 +772,7 @@ class Device:
                 if tree.tag == "unavailable" or any(step["absent"] in (node.get("text"), node.get("content-desc")) for node in tree.iter("node")):
                     raise RuntimeError("Private notification content was present or unreadable.")
             elif "text" in step:
-                self.run("shell", "input", "text", step["text"].replace(" ", "%s"))
+                self.type(step["text"])
             elif "keyboard" in step:
                 if step["keyboard"] == "show":
                     self.run("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
@@ -978,6 +1016,8 @@ def main():
                     device.sign_in(fixture.link())
                     device.find("Hi, I’m Coach. I can help you with:" if args.capture_only else "Push A")
                 for scenario in [item for item in scenarios if item["account"] == account]:
+                    # A record's id is taken across accounts, so a planted row or a model's write names the account it was made for.
+                    scenario = json.loads(json.dumps(scenario).replace("$account", fixture.account.replace("-", "")[:12]))
                     completions = sum(step.get("auth_code") == "valid" for step in scenario["steps"] + scenario.get("after", []))
                     sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
                     responses = json.dumps(scenario.get("responses", []))
@@ -997,9 +1037,7 @@ def main():
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
-                        # A record's id is taken across accounts, so a planted row names the account it was planted for.
                         if "sync" in scenario:
-                            scenario = {**scenario, "sync": json.loads(json.dumps(scenario["sync"]).replace("$account", fixture.account.replace("-", "")[:12]))}
                             fixture.sync_recipe_rows(scenario["sync"])
                         if "logged_elsewhere" in scenario:
                             fixture.mcp("gym_log_set", {**scenario["logged_elsewhere"], "sessionId": fixture.open_session(),

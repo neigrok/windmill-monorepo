@@ -1,5 +1,6 @@
 from contextlib import ExitStack
 import importlib.util
+from itertools import chain, repeat
 from pathlib import Path
 import tempfile
 import json
@@ -96,10 +97,10 @@ class DesignCaptureTests(unittest.TestCase):
         scenario = {"board": "08.11", "name": "coach-streaming", "account": "fixture",
                     "responses": [[{"type": "text", "text": "a" * 256}]]}
         self.assertEqual((0, None, 0), capture.model_timing(scenario))
-        self.assertEqual((10000, None, 0), capture.model_timing({**scenario, "model_timing": {"start_delay_ms": 10000}}))
+        self.assertEqual((30000, None, 0), capture.model_timing({**scenario, "model_timing": {"start_delay_ms": 30000}}))
         self.assertEqual((0, 1, 0), capture.model_timing({**scenario, "model_timing": {"chunk_chars": 1}}))
-        invalid = [None, [], {"unknown": 1}, {"chunk_chars": 1, "chunk_delay_ms": 40}]
-        for key, values in {"start_delay_ms": [-1, 10001, 1.5, True, "1"],
+        invalid = [None, [], {"unknown": 1}, {"chunk_chars": 1, "chunk_delay_ms": 120}]
+        for key, values in {"start_delay_ms": [-1, 30001, 1.5, True, "1"],
                             "chunk_chars": [0, 4097, 1.5, True, "1"],
                             "chunk_delay_ms": [-1, 1001, 1.5, True, "1"]}.items():
             invalid.extend({key: value} for value in values)
@@ -107,9 +108,9 @@ class DesignCaptureTests(unittest.TestCase):
             with self.subTest(timing=timing), self.assertRaises(ValueError):
                 capture.validate_scenarios([{**scenario, "model_timing": timing}])
         for responses, timing in [([[{"type": "text", "text": "a" * 257}]], {"chunk_chars": 1}),
-                                  (scenario["responses"] * 2, {"start_delay_ms": 5001}),
+                                  (scenario["responses"] * 2, {"start_delay_ms": 15001}),
                                   ([[{"type": "text", "text": "ab"}]] * 2,
-                                   {"start_delay_ms": 4500, "chunk_chars": 1, "chunk_delay_ms": 501})]:
+                                   {"start_delay_ms": 14500, "chunk_chars": 1, "chunk_delay_ms": 501})]:
             with self.subTest(responses=len(responses), timing=timing), self.assertRaises(ValueError):
                 capture.validate_scenarios([{**scenario, "responses": responses, "model_timing": timing}])
 
@@ -826,6 +827,46 @@ class DesignCaptureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 device.steps([{"auth_code": "valid"}])
         self.assertEqual([], calls)
+
+    def typing_device(self, fields, sent):
+        class Device(capture.Device):
+            def run(self, *arguments, **kwargs): sent.append(arguments)
+            def tree(self):
+                root = ET.Element("hierarchy")
+                text, bounds = next(fields)
+                ET.SubElement(root, "node", {"class": "android.widget.EditText", "focused": "true", "text": text, "bounds": bounds})
+                return root
+        return Device(Path("/unused"), 5584)
+
+    def test_a_field_left_short_of_its_text_is_cleared_and_the_text_goes_again(self):
+        for short in ("What should T", "hat should Thursday look like"):
+            with self.subTest(short=short):
+                sent = []
+                fields = chain([("", "[0,0][9,9]")] * 4, [(short, "[0,0][9,9]")] * 10, repeat(("What should Thursday look like", "[0,0][9,9]")))
+                with patch.object(capture.time, "sleep"):
+                    self.typing_device(fields, sent).steps([{"text": "What should Thursday look like"}])
+                self.assertEqual([("shell", "input", "text", "What%sshould%sThursday%slook%slike"),
+                                  ("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * len(short))),
+                                  ("shell", "input", "text", "What%sshould%sThursday%slook%slike")], sent)
+
+    def test_a_field_that_shows_its_own_form_of_the_text_takes_it_once(self):
+        sent = []
+        with patch.object(capture.time, "sleep"):
+            self.typing_device(repeat(("22.5 kg", "[0,0][9,9]")), sent).steps([{"text": "22.5"}])
+        self.assertEqual([("shell", "input", "text", "22.5")], sent)
+
+    def test_typing_waits_for_the_rising_keyboard_to_stop_moving_the_field_before_and_after(self):
+        rising = [("", "[0,2000][9,2100]")] * 2 + [("", "[0,1500][9,1600]")] * 2 + [("", "[0,1300][9,1400]")] * 4
+        reads = []
+        def fields():
+            for field in chain(rising, repeat(("Is", "[0,1300][9,1400]"))):
+                reads.append(field)
+                yield field
+        sent = []
+        with patch.object(capture.time, "sleep"):
+            self.typing_device(fields(), sent).steps([{"text": "Is"}])
+        self.assertEqual(rising + [("Is", "[0,1300][9,1400]")] * 5, reads)
+        self.assertEqual([("shell", "input", "text", "Is")], sent)
 
     def test_settlement_tolerates_only_the_bounded_resend_countdown(self):
         states = ["Resend in 20s", "Resend in 19s"]

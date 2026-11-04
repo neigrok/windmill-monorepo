@@ -51,6 +51,7 @@ public final class CaptureTree {
         xml.attribute(null, "clickable", Boolean.toString(value.isClickable()));
         xml.attribute(null, "checked", Boolean.toString(value.isChecked()));
         xml.attribute(null, "selected", Boolean.toString(value.isSelected()));
+        xml.attribute(null, "focused", Boolean.toString(value.isFocused()));
         xml.attribute(null, "visible-to-user", Boolean.toString(value.isVisibleToUser()));
         Rect bounds = new Rect(); value.getBoundsInScreen(bounds);
         xml.attribute(null, "bounds", bounds.toShortString());
