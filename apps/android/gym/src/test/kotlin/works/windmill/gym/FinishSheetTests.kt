@@ -64,7 +64,7 @@ import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.heldThreads
 import works.windmill.gym.coach.turn.CoachTurnFault
-import works.windmill.gym.coach.turn.OpenTurnOnce
+import works.windmill.gym.domain.coach.OpenTurnOnce
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.MessageState

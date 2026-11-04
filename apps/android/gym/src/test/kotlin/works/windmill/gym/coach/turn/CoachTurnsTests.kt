@@ -44,6 +44,7 @@ import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.domain.sync.Routine
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.ReplicaPin
 import works.windmill.gym.telemetry.GymEvents
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
@@ -623,7 +624,7 @@ class CoachTurnsTests {
             val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
             testScheduler.runCurrent()
             val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(replica, true) { runner -> assertTrue(runner.run(DeleteConversation(turn.thread)) is Outcome.Committed) }
+            phone.room.training.pinnedOn(ReplicaPin(replica, true)) { runner -> assertTrue(runner.run(DeleteConversation(turn.thread)) is Outcome.Committed) }
             advanceUntilIdle()
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             assertNull(phone.device(EndTurn.runningTurnKey))
@@ -637,7 +638,7 @@ class CoachTurnsTests {
     @Test fun aRowNamingAGoneMessageLetsGoAtTheSweep() = runTest {
         TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
             val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(replica, true) { runner ->
+            phone.room.training.pinnedOn(ReplicaPin(replica, true)) { runner ->
                 val turn = (runner.run(OpenTurn(question = "Question")) as Outcome.Committed).result
                 assertTrue(runner.run(DeleteConversation(turn.thread)) is Outcome.Committed)
                 phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(EndTurn.runningTurnKey, turn.coach.json))))
@@ -985,7 +986,7 @@ class CoachTurnsTests {
             {"callId":"toolu_2","name":"create_routine","input":{"id":"rt_00000010","name":"Day 2","position":1,"entries":[{"exerciseId":"bench-press"}]}}]}},
         {"await":"results","batch":1}]""")
 
-    private fun hostOf(phone: TurnPhone, turn: OpenTurn.Turn) = GymTurnHost(turn, TurnSeat.Anon("credential"), "Add a day", phone.engine.activeReplica(),
+    private fun hostOf(phone: TurnPhone, turn: OpenTurn.Turn) = GymTurnHost(turn, "Add a day", ReplicaPin(phone.engine.activeReplica(), true),
         phone.room.training, TurnPhone.catalog(), phone.pictures, "https://windmill.works", Dispatchers.Unconfined)
 
     private suspend fun assertThrowsRecordRefused(work: suspend () -> Unit) {

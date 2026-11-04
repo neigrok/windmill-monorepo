@@ -36,14 +36,10 @@ import works.windmill.agent.TurnFailure
 import works.windmill.agent.TurnSeat
 import works.windmill.agent.TurnState
 import works.windmill.agent.TurnTransport
-import works.windmill.domain.kit.Action
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.Catalog
-import works.windmill.domain.kit.Decision
-import works.windmill.domain.kit.IDSource
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
-import works.windmill.domain.kit.Reader
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachPictureRow
 import works.windmill.gym.domain.coach.CoachRules
@@ -56,10 +52,11 @@ import works.windmill.gym.domain.coach.ForgetUnclaimedPictures
 import works.windmill.gym.domain.coach.KeepPicture
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
+import works.windmill.gym.domain.coach.OpenTurnOnce
 import works.windmill.gym.domain.coach.Picture
 import works.windmill.gym.domain.coach.caughtUpWithItsLog
-import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.store.EngineTraining
+import works.windmill.gym.store.ReplicaPin
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.platform.agent.TurnHttp
 import works.windmill.platform.ai.AiInstallation
@@ -95,7 +92,7 @@ class CoachTurns(
     beat: Duration = 1.seconds,
     private val elapsedMs: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
-    private class LiveTurn(val turn: OpenTurn.Turn, val replica: String, val seat: TurnSeat, val question: String, val picture: ChosenPicture?, val started: Long) {
+    private class LiveTurn(val turn: OpenTurn.Turn, val pin: ReplicaPin, val seat: TurnSeat, val question: String, val picture: ChosenPicture?, val started: Long) {
         lateinit var work: Job
         @Volatile var abandoned = false
     }
@@ -134,10 +131,10 @@ class CoachTurns(
     fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch(storage, start = CoroutineStart.UNDISPATCHED) {
-            engine.activeReplicaChanges().collect { change -> attempted(Unit) { seatChanged(change.previous) { it.replica == change.previous } } }
+            engine.activeReplicaChanges().collect { change -> attempted(Unit) { seatChanged(change.previous) { it.pin.replica == change.previous } } }
         }
         scope.launch(storage, start = CoroutineStart.UNDISPATCHED) {
-            engine.activeReplicaRebinds().collect { replica -> attempted(Unit) { seatChanged(replica) { it.replica == replica && it.seat.kind == SeatKind.anon } } }
+            engine.activeReplicaRebinds().collect { replica -> attempted(Unit) { seatChanged(replica) { it.pin.replica == replica && it.pin.anonymous } } }
         }
         scope.launch(storage, start = CoroutineStart.UNDISPATCHED) { engine.revisions().collect { accountSettled() } }
         sweep()
@@ -177,16 +174,13 @@ class CoachTurns(
     suspend fun deleteConversation(thread: Id<CoachThread>): Boolean = withContext(storage) {
         admitting.withLock {
             if (running?.turn?.thread == thread) return@withLock false
-            val replica = engine.activeReplica()
-            if (!training.mayWriteOn(replica, training.anonymous)) return@withLock false
-            attempted(false) {
-                withContext(NonCancellable) {
-                    training.pinnedOn(replica, training.anonymous) { runner ->
-                        when (val outcome = runner.run(DeleteConversation(thread))) {
-                            is Outcome.Committed -> { pictures.delete(outcome.result); true }
-                            is Outcome.Unchanged -> true
-                            is Outcome.Refused -> false
-                        }
+            onSeatInHand(false) { pin ->
+                if (!training.mayWriteOn(pin)) return@onSeatInHand false
+                training.pinnedOn(pin) { runner ->
+                    when (val outcome = runner.run(DeleteConversation(thread))) {
+                        is Outcome.Committed -> { pictures.delete(outcome.result); true }
+                        is Outcome.Unchanged -> true
+                        is Outcome.Refused -> false
                     }
                 }
             }
@@ -210,12 +204,13 @@ class CoachTurns(
             if (answered != null) return refusing(answered)
             return said(CoachTurnFault.noAnswer)
         }
-        if (!training.mayWriteOn(replica, anonymous)) return said(CoachTurnFault.accountChanging)
-        val arriving = attempted(null) { training.pinnedOn(replica, anonymous) { runner -> runner.read(CoachMessage.scope) { !it.firstPullComplete() } } }
+        val pin = ReplicaPin(replica, anonymous)
+        if (!training.mayWriteOn(pin)) return said(CoachTurnFault.accountChanging)
+        val arriving = attempted(null) { training.pinnedOn(pin) { runner -> runner.read(CoachMessage.scope) { !it.firstPullComplete() } } }
         if (arriving == null) return said(CoachTurnFault.accountChanging)
         if (arriving) return refusing(CoachTurnRefusal.LogArriving)
         interruptNamed()
-        return opened(question, picture, thread, replica, anonymous, seat, once)
+        return opened(question, picture, thread, pin, seat, once)
     }
 
     // A seat the phone could not take: no connection, or the installation the server refused by code. Anything else is this phone's own, which `AiInstallation` has reported.
@@ -226,7 +221,7 @@ class CoachTurns(
     }
 
     // §4.1 step 2, then the driver. Past the commit nothing may stop the turn from starting: a caller that went away leaves it running, and `running` tells the next send.
-    private suspend fun opened(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, replica: String, anonymous: Boolean, seat: TurnSeat, once: String?): OpenTurn.Turn? {
+    private suspend fun opened(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, pin: ReplicaPin, seat: TurnSeat, once: String?): OpenTurn.Turn? {
         val abilities: Catalog
         val row: CoachPictureRow?
         try {
@@ -241,7 +236,7 @@ class CoachTurns(
         }
         return withContext(NonCancellable) {
             val (turn, fresh) = try {
-                training.pinnedOn(replica, anonymous) { runner ->
+                training.pinnedOn(pin) { runner ->
                     if (row != null && runner.run(KeepPicture(row)) is Outcome.Refused) return@pinnedOn null
                     val onMessage = listOfNotNull(row?.let { Picture(it.id, PictureFiles.modelMediaType, localOnly = true) })
                     val opening = OpenTurn(thread, question, onMessage)
@@ -263,7 +258,7 @@ class CoachTurns(
                 tells.failure(TurnFailure.storage, null)
                 return@withContext said(CoachTurnFault.unsaved)
             } ?: return@withContext said(CoachTurnFault.unsaved)
-            if (fresh) launched(LiveTurn(turn, replica, seat, question, picture, elapsedMs()), abilities) else takenBack.value = null
+            if (fresh) launched(LiveTurn(turn, pin, seat, question, picture, elapsedMs()), abilities) else takenBack.value = null
             turn
         }
     }
@@ -271,11 +266,9 @@ class CoachTurns(
     // The driver's slot is taken before this returns, so a seat change that follows finds the turn to abandon.
     private fun launched(live: LiveTurn, abilities: Catalog) {
         running = live
-        refused.value = null
-        faulted.value = null
         takenBack.value = null
         tells.started()
-        val host = GymTurnHost(live.turn, live.seat, live.question, live.replica, training, abilities, pictures, appBaseUrl, storage)
+        val host = GymTurnHost(live.turn, live.question, live.pin, training, abilities, pictures, appBaseUrl, storage)
         live.work = scope.launch(storage, start = CoroutineStart.UNDISPATCHED) {
             try {
                 val exit = driver.run(host.turnId, live.seat, host)
@@ -344,20 +337,16 @@ class CoachTurns(
     // The account's change a send met is over once the seat in hand may write again, and its sentence goes with it, so Send comes back with no gesture: at every revision, and at each sweep for what no revision marks.
     private suspend fun accountSettled() {
         attempted(Unit) {
-            if (faulted.value == CoachTurnFault.accountChanging && training.mayWriteOn(engine.activeReplica(), training.anonymous)) faulted.value = null
+            if (faulted.value == CoachTurnFault.accountChanging && training.mayWrite) faulted.value = null
         }
     }
 
     private suspend fun interruptLeft(left: LiveTurn, previous: String?) {
-        val message = attempted(null) {
-            withContext(NonCancellable) {
-                val replica = engine.activeReplica()
-                val anonymous = training.anonymous
-                training.pinnedOn(replica, anonymous) { runner ->
-                    val found = runner.read(CoachMessage.scope) { it.repository(CoachMessage).find(left.turn.coach, ViewMode.drawn) }
-                    if (found != null && found.replica == previous && training.mayWriteOn(replica, anonymous)) interrupt(runner, found)
-                    found
-                }
+        val message = onSeatInHand(null) { pin ->
+            training.pinnedOn(pin) { runner ->
+                val found = runner.read(CoachMessage.scope) { it.repository(CoachMessage).find(left.turn.coach, ViewMode.drawn) }
+                if (found != null && found.replica == previous && training.mayWriteOn(pin)) interrupt(runner, found)
+                found
             }
         }
         if (left.abandoned && told.add(left.turn.coach)) tells.interrupted(left.seat.kind, InterruptedCause.seat_changed, message, elapsedMs() - left.started)
@@ -366,23 +355,19 @@ class CoachTurns(
     // §4.5: a running Coach message the device row names, when nothing runs, ended with whatever ran it, and this tells of it unless this process already did. A row naming a message that ended lets go of it, and so does one naming a message gone from a replica that would know.
     private suspend fun interruptNamed() {
         if (running != null) return
-        attempted(Unit) {
-            withContext(NonCancellable) {
-                val replica = engine.activeReplica()
-                val anonymous = training.anonymous
-                if (!training.mayWriteOn(replica, anonymous)) return@withContext
-                val ended = training.pinnedOn(replica, anonymous) { runner ->
-                    val named = runner.read(CoachMessage.scope) { it.device(EndTurn.runningTurnKey)?.let(::messageId) } ?: return@pinnedOn null
-                    val message = runner.read(CoachMessage.scope) { it.repository(CoachMessage).find(named, ViewMode.drawn) }
-                    when {
-                        message == null -> if (runner.read(CoachMessage.scope) { it.caughtUpWithItsLog }) runner.run(ForgetRunningTurn(named))
-                        interrupt(runner, message) -> return@pinnedOn message
-                        else -> runner.run(ForgetRunningTurn(named))
-                    }
-                    null
+        onSeatInHand(Unit) { pin ->
+            if (!training.mayWriteOn(pin)) return@onSeatInHand
+            val ended = training.pinnedOn(pin) { runner ->
+                val named = runner.read(CoachMessage.scope) { it.device(EndTurn.runningTurnKey)?.let(::messageId) } ?: return@pinnedOn null
+                val message = runner.read(CoachMessage.scope) { it.repository(CoachMessage).find(named, ViewMode.drawn) }
+                when {
+                    message == null -> if (runner.read(CoachMessage.scope) { it.caughtUpWithItsLog }) runner.run(ForgetRunningTurn(named))
+                    interrupt(runner, message) -> return@pinnedOn message
+                    else -> runner.run(ForgetRunningTurn(named))
                 }
-                if (ended != null && told.add(ended.id)) tells.interrupted(if (anonymous) SeatKind.anon else SeatKind.bound, InterruptedCause.process_ended, ended, null)
+                null
             }
+            if (ended != null && told.add(ended.id)) tells.interrupted(if (pin.anonymous) SeatKind.anon else SeatKind.bound, InterruptedCause.process_ended, ended, null)
         }
     }
 
@@ -401,19 +386,20 @@ class CoachTurns(
 
     // Rows no message claims go first, while the account allows a write. Then the files no row in any retained replica names, which takes no write and no permission.
     private suspend fun sweepPictures() {
-        attempted(Unit) {
-            withContext(NonCancellable) {
-                val replica = engine.activeReplica()
-                val anonymous = training.anonymous
-                if (engine.retainedDeviceKeys(gymProduct, pictureKeys).isNotEmpty() && training.mayWriteOn(replica, anonymous)) {
-                    training.pinnedOn(replica, anonymous) { it.run(ForgetUnclaimedPictures()) }
-                }
-                val held = pictures.held()
-                if (held.isEmpty()) return@withContext
-                val named = engine.retainedDeviceKeys(gymProduct, pictureKeys)
-                pictures.delete(held.filter { CoachPictureRow.key(it) !in named })
+        onSeatInHand(Unit) { pin ->
+            if (engine.retainedDeviceKeys(gymProduct, pictureKeys).isNotEmpty() && training.mayWriteOn(pin)) {
+                training.pinnedOn(pin) { it.run(ForgetUnclaimedPictures()) }
             }
+            val held = pictures.held()
+            if (held.isEmpty()) return@onSeatInHand
+            val named = engine.retainedDeviceKeys(gymProduct, pictureKeys)
+            pictures.delete(held.filter { CoachPictureRow.key(it) !in named })
         }
+    }
+
+    // One settling step on the seat in hand, which cancellation never cuts short.
+    private suspend fun <T> onSeatInHand(otherwise: T, step: suspend (ReplicaPin) -> T): T = attempted(otherwise) {
+        withContext(NonCancellable) { step(training.pin()) }
     }
 
     // A store that failed is reported; a transition that closed the door is no failure, and what waited on it runs at the next sweep.
@@ -457,31 +443,5 @@ class CoachTurns(
                 lazy { Catalog(application.assets.open(catalogAsset).use { Json.parse(it.readBytes()) }) },
                 telemetry, lease::hold, baseUrl.toString().trimEnd('/'), scope)
         }
-    }
-}
-
-// A question one gesture may ask twice, across a recreation or a process death: the finish share. Its key and the turn it opened commit in one transaction in a device row, so no death between them can open a second turn. The row remembers the newest such question; a withdrawn turn leaves no thread behind to find, and opens again.
-internal class OpenTurnOnce(private val once: String, private val opening: OpenTurn) : Action<OpenTurnOnce.Loaded, OpenTurn.Turn, GymRefusal> {
-    class Loaded(val opened: OpenTurn.Turn?, val inner: OpenTurn.Loaded)
-
-    override val scope = opening.scope
-    override val refusals = opening.refusals
-
-    override fun load(read: Reader): Loaded {
-        val row = read.device(key)?.takeIf { it["once"]?.str() == once }
-        val turn = row?.let { OpenTurn.Turn(Id(RecordID(it.member("thread")), CoachThread), Id(RecordID(it.member("lifter")), CoachMessage), Id(RecordID(it.member("coach")), CoachMessage)) }
-        return Loaded(turn?.takeIf { read.repository(CoachThread).find(it.thread, ViewMode.drawn) != null }, opening.load(read))
-    }
-
-    override fun decide(loaded: Loaded, ids: IDSource): Decision<OpenTurn.Turn, GymRefusal> {
-        loaded.opened?.let { return Decision.Unchanged(it) }
-        val decided = opening.decide(loaded.inner, ids)
-        if (decided is Decision.Write) decided.plan.device(key, Json.objectOf("once" to Json.of(once), "thread" to decided.result.thread.json,
-            "lifter" to decided.result.lifter.json, "coach" to decided.result.coach.json))
-        return decided
-    }
-
-    companion object {
-        const val key = "rack:coachOnceTurn"
     }
 }

@@ -67,6 +67,9 @@ import works.windmill.sync.schema.Gym
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
+// The seat a turn holds to: its replica, and whether that replica is anonymous, since a sign-in can rebind it under the same id.
+data class ReplicaPin(val replica: String, val anonymous: Boolean)
+
 class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> Boolean = engine::release,
     private val writeAuthority: () -> Boolean = { true }) {
     companion object {
@@ -117,19 +120,23 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             return engine.undo(gestureId)
         }
     }
-    private fun requireSeat(replica: String, anonymous: Boolean, reader: ScopeReader) {
-        if (engine.activeReplica() != replica || engine.signInAsking() || reader.isAnonymous != anonymous) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+    private fun requireSeat(pin: ReplicaPin, reader: ScopeReader) {
+        if (engine.activeReplica() != pin.replica || engine.signInAsking() || reader.isAnonymous != pin.anonymous) throw TrainingRefused("account-changed", "The account changed. Open this again.")
     }
-    // A turn's door: `writable`'s one rule, and the seat the turn opened under alone: its replica, and whether that replica is anonymous, since a sign-in can rebind it under the same id. Reads hold to it too, or an account's records would leave under the seat before it. A sign-in waiting on its decision closes it, since what the decision counted must hold still.
-    private fun pinnedTo(replica: String, anonymous: Boolean) = object : Replica by writable {
+    // A turn's door: `writable`'s one rule, and the seat the turn opened under alone. Reads hold to it too, or an account's records would leave under the seat before it. A sign-in waiting on its decision closes it, since what the decision counted must hold still.
+    private fun pinnedTo(pin: ReplicaPin) = object : Replica by writable {
         override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
-            writable.commit(scope) { context -> requireSeat(replica, anonymous, context); body(context) }
+            writable.commit(scope) { context -> requireSeat(pin, context); body(context) }
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T =
-            writable.read(scope) { reader -> requireSeat(replica, anonymous, reader); body(reader) }
+            writable.read(scope) { reader -> requireSeat(pin, reader); body(reader) }
     }
+    // The seat in hand, for a turn to hold to.
+    fun pin() = ReplicaPin(engine.activeReplica(), anonymous)
+    // Whether the seat in hand may write now. It reads past the engine's lock, so Main may ask it.
+    val mayWrite: Boolean get() = writeAuthority() && !engine.signInAsking()
     // Whether `pinnedOn` would let a turn through now: asking first keeps a refused commit, which the engine files as a fault, for the race.
-    fun mayWriteOn(replica: String, anonymous: Boolean): Boolean = writeAuthority() && engine.activeReplica() == replica && !engine.signInAsking() && this.anonymous == anonymous
-    suspend fun <T> pinnedOn(replica: String, anonymous: Boolean, body: (ActionRunner) -> T): T = writing(pinnedTo(replica, anonymous), body)
+    fun mayWriteOn(pin: ReplicaPin): Boolean = mayWrite && engine.activeReplica() == pin.replica && anonymous == pin.anonymous
+    suspend fun <T> pinnedOn(pin: ReplicaPin, body: (ActionRunner) -> T): T = writing(pinnedTo(pin), body)
     // A held removal lasts the window the room asked for; every other gesture keeps the engine's own.
     private fun holding(holdMs: Long) = object : Replica by writable {
         override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =

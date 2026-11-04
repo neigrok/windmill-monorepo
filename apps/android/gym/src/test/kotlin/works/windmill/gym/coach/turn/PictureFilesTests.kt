@@ -41,6 +41,7 @@ import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.CoachTurnBounds
 import works.windmill.gym.domain.coach.KeepPicture
 import works.windmill.gym.domain.coach.Picture
+import works.windmill.gym.store.ReplicaPin
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.discardDormant
 import works.windmill.sync.engine.signIn
@@ -264,7 +265,7 @@ class PictureFilesTests {
             advanceUntilIdle()
             val row = phone.pictures.keep(small("picture-row"))
             val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(replica, true) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
+            phone.room.training.pinnedOn(ReplicaPin(replica, true)) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
             phone.pictures.keep(small("picture-loose"))
             File(phone.pictureFolder, "picture-torn.original.tmp").writeText("half")
 
@@ -335,7 +336,7 @@ class PictureFilesTests {
             phone.signIn()
             val row = phone.pictures.keep(small("picture-row"))
             val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(replica, false) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
+            phone.room.training.pinnedOn(ReplicaPin(replica, false)) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
             assertTrue(phone.engine.signOut("keep").member("complete").bool())
             assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true)).member("complete").bool())
             phone.turns.sweep()

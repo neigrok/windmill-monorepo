@@ -322,6 +322,32 @@ class OpenTurn(val thread: Id<CoachThread>? = null, val question: String, val pi
     }
 }
 
+// A question one gesture may ask twice, across a recreation or a process death: the finish share. Its key and the turn it opened commit in one transaction in a device row, so no death between them can open a second turn. The row remembers the newest such question; a withdrawn turn leaves no thread behind to find, and opens again.
+class OpenTurnOnce(private val once: String, private val opening: OpenTurn) : Action<OpenTurnOnce.Loaded, OpenTurn.Turn, GymRefusal> {
+    class Loaded(val opened: OpenTurn.Turn?, val inner: OpenTurn.Loaded)
+
+    override val scope = opening.scope
+    override val refusals = opening.refusals
+
+    override fun load(read: Reader): Loaded {
+        val row = read.device(key)?.takeIf { it["once"]?.str() == once }
+        val turn = row?.let { OpenTurn.Turn(Id(RecordID(it.member("thread")), CoachThread), Id(RecordID(it.member("lifter")), CoachMessage), Id(RecordID(it.member("coach")), CoachMessage)) }
+        return Loaded(turn?.takeIf { read.repository(CoachThread).find(it.thread, ViewMode.drawn) != null }, opening.load(read))
+    }
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<OpenTurn.Turn, GymRefusal> {
+        loaded.opened?.let { return Decision.Unchanged(it) }
+        val decided = opening.decide(loaded.inner, ids)
+        if (decided is Decision.Write) decided.plan.device(key, Json.objectOf("once" to Json.of(once), "thread" to decided.result.thread.json,
+            "lifter" to decided.result.lifter.json, "coach" to decided.result.coach.json))
+        return decided
+    }
+
+    companion object {
+        const val key = "rack:coachOnceTurn"
+    }
+}
+
 // Coach §4.4, §4.5: the terminal state, the answer and the receipt in one transaction, and `runningTurn` cleared unless it names another turn, as a merge's row can. A turn a writer already ended is final.
 class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: String? = null, val truncated: Boolean = false) : Action<EndTurn.Loaded, Unit, GymRefusal> {
     data class Loaded(val message: CoachMessage?, val moment: Moment, val named: Json?)

@@ -7,7 +7,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import works.windmill.agent.ContextRead
-import works.windmill.agent.SeatKind
 import works.windmill.agent.ToolCall
 import works.windmill.agent.ToolOutcome
 import works.windmill.agent.TurnEnd
@@ -18,7 +17,6 @@ import works.windmill.agent.TurnPicture
 import works.windmill.agent.TurnRecordGone
 import works.windmill.agent.TurnRecordRefused
 import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnSeat
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.Catalog
 import works.windmill.domain.kit.Outcome
@@ -41,6 +39,7 @@ import works.windmill.gym.domain.coach.history
 import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.domain.sync.TrainingLog
 import works.windmill.gym.store.EngineTraining
+import works.windmill.gym.store.ReplicaPin
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.Json
@@ -48,12 +47,11 @@ import works.windmill.sync.core.Json
 // A call the turn makes of itself at its opening, before the model has asked for anything (Coach §4.1 step 3).
 const val contextCallPrefix = "context-"
 
-// What gym does in one turn, under the seat the turn opened with (Coach §4.1 steps 3-5, §4.3, §4.4, D-10). It holds the turn's records and seat, and every step is one transaction on the storage dispatcher that cancellation never cuts short: a commit in flight lands, and whoever abandoned the turn reads the record again.
+// What gym does in one turn, on the seat it opened under (Coach §4.1 steps 3-5, §4.3, §4.4, D-10). It holds the turn's records and seat, and every step is one transaction on the storage dispatcher that cancellation never cuts short: a commit in flight lands, and whoever abandoned the turn reads the record again.
 class GymTurnHost(
     private val turn: OpenTurn.Turn,
-    private val seat: TurnSeat,
     private val question: String,
-    private val replica: String,
+    private val pin: ReplicaPin,
     private val training: EngineTraining,
     private val catalog: Catalog,
     private val pictures: PictureFiles,
@@ -62,8 +60,6 @@ class GymTurnHost(
     private val accountWait: Duration = 1.seconds,
 ) : TurnHost {
     val turnId: String = checkNotNull(turn.coach.record.string) { "a Coach message's id is a string" }
-
-    private val anonymous = seat.kind == SeatKind.anon
 
     // How the turn closed, for the one who runs it to read after the driver returns.
     @Volatile var withdrawal: TurnRefusal? = null
@@ -147,7 +143,7 @@ class GymTurnHost(
     private suspend fun <T> onReplica(work: (ActionRunner) -> T): T {
         while (true) {
             try {
-                if (withContext(storage) { training.mayWriteOn(replica, anonymous) }) return withContext(storage) { withContext(NonCancellable) { training.pinnedOn(replica, anonymous, work) } }
+                if (withContext(storage) { training.mayWriteOn(pin) }) return withContext(storage) { withContext(NonCancellable) { training.pinnedOn(pin, work) } }
             } catch (_: TrainingRefused) {
                 // The race lost; the wait covers it.
             }

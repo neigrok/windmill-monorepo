@@ -70,7 +70,7 @@ class TrainingStore(
         accountOwner = { seat.owner },
         onProgramChanged = { scope.launch { seat.tried("gym.refreshWorkout") { routines.readProgram() } } },
         conversations = conversations, turns = coachTurns, localCoach = localCoach, imports = coachImports, access = coachAccess,
-        telemetry = telemetry, scope = scope, storageDispatcher = coachStorage, now = now, seatReplica = { seat.replica }, seatReady = { seat.accountReady && training.mayWriteOn(training.engine.activeReplica(), training.anonymous) },
+        telemetry = telemetry, scope = scope, storageDispatcher = coachStorage, now = now, seatReplica = { seat.replica }, seatReady = { seat.accountReady && training.mayWrite },
     )
 
     private var connecting = false

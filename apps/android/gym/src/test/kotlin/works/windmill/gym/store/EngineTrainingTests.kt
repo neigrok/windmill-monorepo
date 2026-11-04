@@ -58,40 +58,40 @@ class EngineTrainingTests {
             fun messages() = room.engine.read(scope) { it.drawn(Gym.Types.message) }.size
 
             permitted = false
-            assertFalse(door.mayWriteOn(replica, anonymous = true))
-            assertEquals(replica, door.pinnedOn(replica, true) { runner -> runner.read(scope) { it.replica } })
-            assertTrue(refused { door.pinnedOn(replica, true) { runner -> runner.run(OpenTurn(question = "Held")) } })
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertEquals(replica, door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.read(scope) { it.replica } })
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Held")) } })
             assertEquals(0, messages())
 
             permitted = true
-            assertTrue(door.mayWriteOn(replica, anonymous = true))
-            assertFalse(door.mayWriteOn(replica, anonymous = false))
-            assertTrue(refused { door.pinnedOn(replica, false) { runner -> runner.read(scope) { it.replica } } })
-            assertTrue(door.pinnedOn(replica, true) { runner -> runner.run(OpenTurn(question = "Mine")) } is Outcome.Committed)
+            assertTrue(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, false)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, false)) { runner -> runner.read(scope) { it.replica } } })
+            assertTrue(door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Mine")) } is Outcome.Committed)
             assertEquals(2, messages())
 
             // A sign-in waiting on its decision closes the door: what it counted holds still.
             val question = room.engine.signIn("account-1", mapOf("gym" to true))
             assertFalse(question.member("complete").bool())
-            assertFalse(door.mayWriteOn(replica, anonymous = true))
-            assertTrue(refused { door.pinnedOn(replica, true) { runner -> runner.read(scope) { it.replica } } })
-            assertTrue(refused { door.pinnedOn(replica, true) { runner -> runner.run(OpenTurn(question = "Under the sheet")) } })
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.read(scope) { it.replica } } })
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Under the sheet")) } })
 
             // The decision lands and the replica rebinds: the id stands, and the seat it opened under is over.
             val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
             assertTrue(room.engine.signIn("account-1", mapOf("gym" to true), mapOf("gym" to "add"), pins).member("complete").bool())
             assertEquals(replica, room.engine.activeReplica())
-            assertFalse(door.mayWriteOn(replica, anonymous = true))
-            assertTrue(door.mayWriteOn(replica, anonymous = false))
-            assertTrue(refused { door.pinnedOn(replica, true) { runner -> runner.read(scope) { it.replica } } })
-            assertTrue(refused { door.pinnedOn(replica, true) { runner -> runner.run(OpenTurn(question = "Crossed")) } })
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertTrue(door.mayWriteOn(ReplicaPin(replica, false)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.read(scope) { it.replica } } })
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Crossed")) } })
 
             room.engine.reidentify()
             val renamed = room.engine.activeReplica()
-            assertFalse(door.mayWriteOn(replica, anonymous = false))
-            assertTrue(door.mayWriteOn(renamed, anonymous = false))
-            assertTrue(refused { door.pinnedOn(replica, false) { runner -> runner.read(scope) { it.replica } } })
-            assertEquals(renamed, door.pinnedOn(renamed, false) { runner -> runner.read(scope) { it.replica } })
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, false)))
+            assertTrue(door.mayWriteOn(ReplicaPin(renamed, false)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, false)) { runner -> runner.read(scope) { it.replica } } })
+            assertEquals(renamed, door.pinnedOn(ReplicaPin(renamed, false)) { runner -> runner.read(scope) { it.replica } })
             assertEquals(2, messages())
         }
     }

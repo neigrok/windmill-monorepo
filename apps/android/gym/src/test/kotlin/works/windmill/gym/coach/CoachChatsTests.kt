@@ -35,7 +35,7 @@ import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
-import works.windmill.gym.coach.turn.OpenTurnOnce
+import works.windmill.gym.domain.coach.OpenTurnOnce
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.domain.coach.AbilityCall
