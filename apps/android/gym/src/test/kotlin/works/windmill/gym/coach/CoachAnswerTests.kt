@@ -344,6 +344,9 @@ class CoachAnswerTests {
         compose.onNodeWithText("Only on this phone ·").assertDoesNotExist()
         compose.onNodeWithText("Full body B", useUnmergedTree = true).performClick()
         compose.runOnIdle { assertEquals(listOf("routine-b"), opened) }
+        val first = compose.onNodeWithText("Full body A", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val second = compose.onNodeWithText("Full body B", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals("a receipt stands 64 dp, as 01.8 draws it", 64.dp, second.top - first.top)
         val card = compose.onNodeWithText("Routine created · 1 movement", useUnmergedTree = true).getUnclippedBoundsInRoot()
         val line = compose.onNodeWithText("Read nothing from your log", useUnmergedTree = true).getUnclippedBoundsInRoot()
         assertTrue("what it read stands under the card", line.top > card.bottom)

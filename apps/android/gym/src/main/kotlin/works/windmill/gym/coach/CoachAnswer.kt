@@ -196,12 +196,12 @@ private fun CreatedRoutines(routines: List<CreatedRoutine>, onOpen: ((String) ->
         routines.forEach { routine ->
             key(routine.id) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
                         .clickable(enabled = onOpen != null, role = Role.Button, onClickLabel = "Open routine") { onOpen?.invoke(routine.id) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
                     Icon(painterResource(R.drawable.gym_coach_check), null, Modifier.size(20.dp), tint = colors.primary)
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(routine.name, style = GymType.coachReceiptTitle, color = colors.onSurface)
                         Text("Routine created · ${Readout.movementCount(routine.movements)}", style = GymType.coachDetail, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
