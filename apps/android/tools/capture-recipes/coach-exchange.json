@@ -156,7 +156,7 @@
     ],
     "after": [
       {
-        "wait": "Send"
+        "wait_contains": "workouts ·"
       }
     ]
   },
@@ -217,7 +217,7 @@
         "network": "on"
       },
       {
-        "wait": "Send"
+        "wait_contains": "workouts ·"
       }
     ]
   },
