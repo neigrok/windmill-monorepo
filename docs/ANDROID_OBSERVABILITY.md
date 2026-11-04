@@ -297,7 +297,7 @@ foot turns to Retry.
 | `workout` | `fix` | `ok`, `refused`, `failed` | |
 | `workout` | `hide` | `ok`, `refused` | |
 | `workout` | `movement_switch` | `ok` | |
-| `workout` | `open_coach` | `ok` | Coach raised over the workout; `gym_screen_viewed` then says `coach` until it closes |
+| `workout` | `open_coach` | `ok` | |
 | `workout` | `open_workout` | `ok` | |
 | `workout` | `picker_add` | `ok`, `refused` | |
 | `workout` | `picker_cancel` | `ok` | |

@@ -3,22 +3,6 @@
     "board": "08.64",
     "name": "what-coach-read-movement-history",
     "account": "fixture",
-    "responses": [
-      [
-        {
-          "type": "tool_use",
-          "id": "toolu_stats",
-          "name": "get_stats",
-          "input": {}
-        }
-      ],
-      [
-        {
-          "type": "text",
-          "text": "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set."
-        }
-      ]
-    ],
     "steps": [
       {
         "tap": "Coach"
@@ -27,16 +11,10 @@
         "wait": "Question"
       },
       {
-        "tap": "Question"
+        "tap": "History"
       },
       {
-        "text": "Is Push A still useful"
-      },
-      {
-        "wait": "Is Push A still useful"
-      },
-      {
-        "tap": "Send"
+        "tap": "Is Push A still doing anything?"
       },
       {
         "wait": "Read your movement history"
@@ -57,6 +35,155 @@
       },
       {
         "wait": "Push A"
+      }
+    ],
+    "sync": [
+      {
+        "t": "thread",
+        "id": "thr_capture_0864",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "title": [
+            "Is Push A still doing anything?",
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_capture_0864_q",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_capture_0864",
+            "$stamp"
+          ],
+          "role": [
+            "lifter",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "Is Push A still doing anything?",
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_capture_0864_a",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_capture_0864",
+            "$stamp"
+          ],
+          "role": [
+            "coach",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set.",
+            "$stamp"
+          ],
+          "replica": [
+            "rp_anotherdevice",
+            "$stamp"
+          ],
+          "state": [
+            "completed",
+            "$stamp"
+          ],
+          "truncated": [
+            false,
+            "$stamp"
+          ],
+          "calls": [
+            [
+              {
+                "callId": "context-list_sessions",
+                "name": "list_sessions",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "context-list_notes",
+                "name": "list_notes",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "context-list_exercises",
+                "name": "list_exercises",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "context-list_routines",
+                "name": "list_routines",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "toolu_stats",
+                "name": "get_stats",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sets": 24,
+                  "sessions": 0,
+                  "weeks": 0
+                },
+                "readTruncated": true
+              }
+            ],
+            "$stamp"
+          ]
+        }
       }
     ]
   },
