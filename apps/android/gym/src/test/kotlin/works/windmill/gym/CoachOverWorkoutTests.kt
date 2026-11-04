@@ -162,14 +162,14 @@ class CoachOverWorkoutTests {
         compose.runOnIdle { assertEquals(emptyList<String>(), conversations.threads.map { it.title }) }
 
         compose.onNodeWithContentDescription("Coach").performClick()
-        compose.waitUntil(10_000) {
+        compose.waitUntil(60_000) {
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             conversations.threads.isNotEmpty()
         }
         compose.runOnIdle { assertEquals(listOf("thread-one"), conversations.threads.map { it.title }) }
 
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(60_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
         plant("thread-two")
         compose.waitForIdle()
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()

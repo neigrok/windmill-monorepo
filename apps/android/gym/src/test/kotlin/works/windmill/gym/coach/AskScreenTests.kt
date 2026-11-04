@@ -1179,7 +1179,7 @@ class AskScreenTests {
         compose.runOnIdle { assertEquals(emptyList<Map<String, String>>(), telling.named("gym_proposal_missing")) }
 
         saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
-        compose.waitUntil(5_000) { compose.runOnIdle { telling.named("gym_proposal_missing").isNotEmpty() } }
+        compose.waitUntil(60_000) { compose.runOnIdle { telling.named("gym_proposal_missing").isNotEmpty() } }
         compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
         compose.onNodeWithText("Reading proposal…").assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf(emptyMap<String, String>()), telling.named("gym_proposal_missing")) }

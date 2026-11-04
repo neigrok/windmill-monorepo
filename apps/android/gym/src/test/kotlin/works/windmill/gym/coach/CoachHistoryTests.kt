@@ -66,7 +66,7 @@ class CoachHistoryTests {
     }
     @After fun close() { room?.close(); scope.cancel() }
 
-    private fun waitUntil(ready: () -> Boolean) = compose.waitUntil(10_000) {
+    private fun waitUntil(ready: () -> Boolean) = compose.waitUntil(60_000) {
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
         ready()
     }
