@@ -262,8 +262,43 @@ class CoachConversationsTests {
             conversations.watch("chat", checkNotNull(asked.thread.record.string), emptyList())
             conversations.read()
             val reply = checkNotNull(conversations.exchanges("chat").last().answer)
-            assertEquals("read your recent workouts · read your notes · read your movement list · read your program", reply.readLine)
+            assertEquals("Read your recent workouts · read your notes · read your movement list · read your program", reply.readLine)
             assertEquals(listOf("Read your recent workouts", "Read your notes", "Read your movement list", "Read your program"), reply.readRows.map { it.title })
+        }
+    }
+
+    // A screenshot turn on an empty log, as 01.8 and 01.16 draw it: what it made is no log it read. A later turn reads what that one made, and the earlier line stands.
+    @Test fun aScreenshotTurnOnAnEmptyLogThatMadeThreeRoutinesReadNothing() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            fun routine(n: Int) = "create_routine" to """{"id":"rt_0000000$n","name":"Day $n","position":${n - 1},"entries":[{"exerciseId":"bench-press"}]}"""
+            val made = room.turn(null, "list_sessions" to "{}", "list_notes" to "{}", "list_exercises" to "{}", "list_routines" to "{}", routine(1), routine(2), routine(3))
+            val conversations = room.store.conversations
+            conversations.watch("chat", checkNotNull(made.thread.record.string), emptyList())
+            conversations.read()
+            val reply = checkNotNull(conversations.exchanges("chat").single().answer)
+            assertEquals("Read nothing from your log", reply.readLine)
+            assertEquals(listOf(CreatedRoutine("rt_00000001", "Day 1", 1), CreatedRoutine("rt_00000002", "Day 2", 1), CreatedRoutine("rt_00000003", "Day 3", 1)), reply.routines)
+            room.now += 60_000
+            room.turn(made.thread, "list_notes" to "{}", "list_routines" to "{}")
+            conversations.read()
+            assertEquals(listOf("Read nothing from your log", "Read your notes · read your program"), conversations.exchanges("chat").map { it.answer?.readLine })
+        }
+    }
+
+    // The seeded movement list is a catalog: reading it says nothing of an empty log, and says its phrase once a note stood.
+    @Test fun theSeededMovementListCountsAsNoLogOfThePersons() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            val first = room.turn(null, "list_exercises" to "{}")
+            room.now += 60_000
+            room.turn(first.thread, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""")
+            room.now += 60_000
+            room.turn(first.thread, "list_exercises" to "{}")
+            val conversations = room.store.conversations
+            conversations.watch("chat", checkNotNull(first.thread.record.string), emptyList())
+            conversations.read()
+            assertEquals(listOf("Read nothing from your log", "Read nothing from your log", "Read your movement list"), conversations.exchanges("chat").map { it.answer?.readLine })
         }
     }
 

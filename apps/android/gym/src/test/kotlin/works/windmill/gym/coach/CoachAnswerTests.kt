@@ -411,7 +411,7 @@ class CoachAnswerTests {
         compose.onNodeWithTag("coach-read-sources").assertDoesNotExist()
         compose.runOnIdle { reply.value = reply.value.copy(state = MessageState.completed) }
         compose.onNodeWithTag("coach-step-line").assertDoesNotExist()
-        compose.onNodeWithText("read your recent workouts · read your notes").assertIsDisplayed()
+        compose.onNodeWithText("Read your recent workouts · read your notes").assertIsDisplayed()
     }
 
     @Test fun anAnswerOnItsWayWithNoWordsYetDrawsTheDotsOverItsSteps() {
@@ -447,7 +447,7 @@ class CoachAnswerTests {
     @Test @Config(qualifiers = "w380dp-h800dp-xhdpi") @GraphicsMode(GraphicsMode.Mode.NATIVE) fun aReadLineOfTwoPhrasesWrapsBesideAChevronThatKeepsItsWidth() {
         val reply = coachReply("Prose.", calls = listOf(coachCall("get_last_times", "read the last time you trained each movement"), coachCall("list_sessions", "read your recent workouts")))
         compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) { CoachAnswer("Prose.", reply, emptyList()) } } }
-        val words = compose.onNodeWithText("read the last time you trained each movement · read your recent workouts", useUnmergedTree = true)
+        val words = compose.onNodeWithText("Read the last time you trained each movement · read your recent workouts", useUnmergedTree = true)
         val layouts = mutableListOf<TextLayoutResult>()
         words.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
         assertEquals(2, layouts.single().lineCount)

@@ -43,14 +43,18 @@ class AskTests {
     }
 
     @Test
-    fun theReceiptSaysTheWorkoutsItReadThenItsMovementHistoryThenItsOtherReadsAndNothingOnlyWhenNoReadRan() {
+    fun theReceiptSaysTheWorkoutsItReadThenItsMovementHistoryThenNothingOverAnEmptyLogThenItsOtherReads() {
         assertEquals("Read 18 workouts · 6 weeks", coachReply(read = ReadTally(sets = 214, sessions = 18, weeks = 6)).readLine)
         assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1)).readLine)
         assertEquals("Read nothing from your log", coachReply().readLine)
         assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("get_stats"))).readLine)
         assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = listOf(said("get_stats"), said("list_notes"))).readLine)
         assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("list_notes"), said("get_stats"))).readLine)
-        assertEquals("read your notes · read your program", coachReply(calls = listOf(said("list_notes"), said("list_routines"))).readLine)
+        assertEquals("Read your notes · read your program", coachReply(calls = listOf(said("list_notes"), said("list_routines"))).readLine)
+        val emptyLog = listOf(said("list_sessions"), said("list_notes"), said("list_exercises"), said("list_routines"))
+        assertEquals("Read nothing from your log", coachReply(calls = emptyLog, logStood = false).readLine)
+        assertEquals("Read your movement history", coachReply(calls = emptyLog + said("get_stats"), logStood = false).readLine)
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = emptyLog, logStood = false).readLine)
         assertEquals("a write is no read", "Read nothing from your log", coachReply(calls = listOf(said("create_routine"))).readLine)
         assertEquals("a read that was refused did not run", "Read nothing from your log",
             coachReply(calls = listOf(said("list_notes", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readLine)

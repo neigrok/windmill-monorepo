@@ -90,7 +90,7 @@ data class SavedNote(val id: String, val text: String)
 // A movement a turn made, as its record holds it.
 data class MadeMovement(val id: String, val name: String, val equipment: String, val stepKg: Double)
 
-// Coach's answer as its message holds it. `onThisPhone` says the replica writing it is this phone's. `routines`, `savedNotes` and `madeMovements` are what the turn created and the replica still holds, read now.
+// Coach's answer as its message holds it. `onThisPhone` says the replica writing it is this phone's. `routines`, `savedNotes` and `madeMovements` are what the turn created and the replica still holds, read now. `logStood` says a note or a routine of the person's stood by this message's moment, past what the turn itself made.
 data class CoachReply(
     val id: String,
     val text: String,
@@ -102,6 +102,7 @@ data class CoachReply(
     val routines: List<CreatedRoutine>,
     val savedNotes: List<SavedNote> = emptyList(),
     val madeMovements: List<MadeMovement> = emptyList(),
+    val logStood: Boolean = false,
 ) {
     val running: Boolean get() = state == MessageState.running
     // A running answer another device writes: this phone never writes it (Coach §4.5).
@@ -112,14 +113,14 @@ data class CoachReply(
     val stepLine: String? get() = steps.takeIf { it.isNotEmpty() }?.joinToString(" · ")
     // The rows of What Coach read.
     val readRows: List<CoachCall> get() = calls.filter { it.ran && it.title != null }
-    // The receipt under an ended answer, by the first that holds: the workouts it read by identity, its movement history, the catalog's phrases of the other reads it ran, or that it read nothing, when no read ran at all.
+    // The receipt under an ended answer, by the first that holds: the workouts it read by identity; its movement history; that it read nothing, when no read ran or no log stood for one to read; the catalog's phrases of the reads it ran.
     val readLine: String? get() {
         val reads = calls.filter { it.ran && it.reads }
         return when {
             receipt.read.sessions > 0 -> "Read ${Readout.sessionCount(receipt.read.sessions)} · ${Readout.weekCount(receipt.read.weeks)}"
             reads.any { it.name == "get_stats" } -> Ask.readMovementHistory
-            reads.isEmpty() -> Ask.readNothing
-            else -> reads.mapNotNull { it.phrase }.joinToString(" · ").ifEmpty { null }
+            reads.isEmpty() || !logStood -> Ask.readNothing
+            else -> reads.mapNotNull { it.phrase }.joinToString(" · ").ifEmpty { null }?.replaceFirstChar { it.uppercase() }
         }
     }
     // The routine proposals this answer minted, in the order it minted them.
@@ -253,9 +254,9 @@ class CoachConversations(
         val threads = decoded(CoachThread, reader.source.drawn(CoachThread.type))
         val replica = training.engine.activeReplica()
         val transcript = wanted.chat?.let { chat ->
-            val said = wanted.thread?.let { decoded(CoachMessage, reader.source.drawn(CoachMessage.type, "threadId", Id<CoachThread>(it, CoachThread).record)) }.orEmpty()
+            val said = wanted.thread?.let { reader.source.drawn(CoachMessage.type, "threadId", Id<CoachThread>(it, CoachThread).record) }.orEmpty()
             val retained = wanted.retained.map { record -> CoachExchange(record, record.response?.let { response -> receipt(reader, response.resultId) }) }
-            Transcript(chat, (retained + exchanges(said, reader, replica)).sortedBy { it.atMs })
+            Transcript(chat, (retained + exchanges(decoded(CoachMessage, said), said.associate { it.id to it.born }, reader, replica)).sortedBy { it.atMs })
         }
         val rows = if (!wanted.history) null else decoded(reader.source.drawn(CoachMessage.type), ::MessageLine).groupBy { it.thread }.let { said ->
             threads.map { thread -> ConversationRow(thread, said[thread.id].orEmpty()) }
@@ -272,7 +273,7 @@ class CoachConversations(
     }
 
     // The conversation's messages in the order they were said, each answer under its question. An answer whose question has not arrived, as a pull page can leave it, stands alone.
-    private fun exchanges(messages: List<CoachMessage>, reader: Reader, replica: String): List<CoachExchange> {
+    private fun exchanges(messages: List<CoachMessage>, born: Map<RecordID, Stamp?>, reader: Reader, replica: String): List<CoachExchange> {
         val exchanges = mutableListOf<CoachExchange>()
         val named = Named(reader)
         for (message in messages.inOrder) {
@@ -281,7 +282,7 @@ class CoachConversations(
                 exchanges += CoachExchange(id, message.text, message.at.ms, message.pictures.map { sent(it, reader) })
                 continue
             }
-            val reply = reply(message, id, replica, named)
+            val reply = reply(message, id, replica, named, born[message.id.record])
             val last = exchanges.lastOrNull()
             if (last != null && last.answer == null) exchanges[exchanges.lastIndex] = last.copy(answer = reply)
             else exchanges += CoachExchange(id, "", message.at.ms, answer = reply)
@@ -289,13 +290,14 @@ class CoachConversations(
         return exchanges
     }
 
-    private fun reply(message: CoachMessage, id: String, replica: String, named: Named): CoachReply {
+    private fun reply(message: CoachMessage, id: String, replica: String, named: Named, born: Stamp?): CoachReply {
         val receipt = CoachReceipt(message.calls)
         val routines = receipt.created.mapNotNull { ref -> named.routine(ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
         val notes = receipt.created.mapNotNull { ref -> named.note(ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
         val movements = receipt.created.mapNotNull { ref -> named.movement(ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, Readout.equipment(it.equipment, it.loadCount), it.stepKg) } }
         val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, call.created, reads(call.name), call.callId) }
-        return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements)
+        return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements,
+            named.logStood(born, message.calls.flatMap { it.created }))
     }
 
     private fun phrase(name: String): String? = turns?.catalog?.value?.ability(name)?.phrase
@@ -304,6 +306,12 @@ class CoachConversations(
 
     // What an answer's calls name, read from the records now, as What Coach read says it.
     private inner class Named(private val reader: Reader) {
+        // The person's notes and routines as rows: one read however many answers ask, and undecoded, since an answer asks only when each was born.
+        private val log by lazy { (reader.source.drawn(Note.type) + reader.source.drawn(Routine.type)).filter { it.isVisible } }
+
+        // Whether a note or a routine stood by a message's moment, past what its own turn made. The seeded movement list is a catalog, so it is no part of this.
+        fun logStood(born: Stamp?, made: List<RecordRef>): Boolean = log.any { record -> stoodBy(record, born) && RecordRef(record.type, record.id) !in made }
+
         fun routine(ref: RecordRef): Routine? = held(Routine, ref)
         fun note(ref: RecordRef): Note? = held(Note, ref)
         fun movement(ref: RecordRef): Exercise? = held(Exercise, ref)
@@ -340,9 +348,12 @@ class CoachConversations(
             }
         }
 
-        // What a list call read, as near as the records can say until `calls` records it: those born by its message's moment, and those its earlier calls made. A record deleted since drops out of the row, and a name reads as it stands now.
+        // A record stood by a message's moment when it was born by then, as near as the records can say until `calls` records what a read served. A record deleted since drops out, and a name reads as it stands now.
+        private fun stoodBy(record: Record, born: Stamp?): Boolean = born == null || record.born.let { it == null || it <= born }
+
+        // What a list call read: those that stood by its message's moment, and those its earlier calls made.
         private fun <E : Entity<E>> listed(type: EntityType<E>, born: Stamp?, madeBefore: List<RecordRef>): List<E> = decoded(type, reader.source.drawn(type.type).filter { record ->
-            born == null || record.born.let { it == null || it <= born } || RecordRef(type.type, record.id) in madeBefore
+            stoodBy(record, born) || RecordRef(type.type, record.id) in madeBefore
         })
 
         private fun named(ref: RecordRef): String? = when (ref.type) {
