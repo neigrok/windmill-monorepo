@@ -15,6 +15,7 @@ import works.windmill.agent.TurnHost
 import works.windmill.agent.TurnLine
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnPicture
+import works.windmill.agent.TurnRecordGone
 import works.windmill.agent.TurnRecordRefused
 import works.windmill.agent.TurnRefusal
 import works.windmill.agent.TurnSeat
@@ -27,8 +28,10 @@ import works.windmill.gym.domain.coach.AbilityOutcome
 import works.windmill.gym.domain.coach.AbilityRequest
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachPictureRow
+import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.CoachTurnBounds
 import works.windmill.gym.domain.coach.EndTurn
+import works.windmill.gym.domain.coach.ForgetRunningTurn
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.domain.coach.StreamTurnText
@@ -42,7 +45,7 @@ import works.windmill.gym.store.TrainingRefused
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.Json
 
-// What gym does in one turn, on the replica the turn opened on (Coach §4.1 steps 3-5, §4.3, §4.4). It holds the turn's records and seat, and every step is one transaction on the storage dispatcher that cancellation never cuts short: a commit in flight lands, and whoever abandoned the turn reads the record again.
+// What gym does in one turn, under the seat the turn opened with (Coach §4.1 steps 3-5, §4.3, §4.4, D-10). It holds the turn's records and seat, and every step is one transaction on the storage dispatcher that cancellation never cuts short: a commit in flight lands, and whoever abandoned the turn reads the record again.
 class GymTurnHost(
     private val turn: OpenTurn.Turn,
     private val seat: TurnSeat,
@@ -57,10 +60,15 @@ class GymTurnHost(
 ) : TurnHost {
     val turnId: String = checkNotNull(turn.coach.record.string) { "a Coach message's id is a string" }
 
+    private val anonymous = seat.kind == SeatKind.anon
+
     // How the turn closed, for the one who runs it to read after the driver returns.
     @Volatile var withdrawal: TurnRefusal? = null
         private set
     @Volatile var ending: TurnEnd? = null
+        private set
+    // Whether the conversation stands once the turn is taken back; it goes with a turn that was all it held.
+    @Volatile var threadStands = true
         private set
 
     override suspend fun open(): TurnOpen {
@@ -96,17 +104,28 @@ class GymTurnHost(
 
     override suspend fun end(end: TurnEnd) {
         ending = end
-        onReplica { runner -> runner.run(EndTurn(turn.coach, MessageState.valueOf(end.state.name), end.text, end.truncated)).answered() }
+        onReplica { runner -> closing(runner) { runner.run(EndTurn(turn.coach, MessageState.valueOf(end.state.name), end.text, end.truncated)).answered() } }
     }
 
     override suspend fun withdraw(refusal: TurnRefusal) {
         withdrawal = refusal
-        onReplica { runner -> pictures.delete(runner.run(WithdrawTurn(turn)).answered()) }
+        onReplica { runner ->
+            closing(runner) { pictures.delete(runner.run(WithdrawTurn(turn)).answered()) }
+            threadStands = runner.read(CoachMessage.scope) { it.repository(CoachThread).find(turn.thread, ViewMode.drawn) != null }
+        }
+    }
+
+    // A record gone by the turn's last write leaves nothing to close but the device row that named it.
+    private fun closing(runner: ActionRunner, close: () -> Unit) {
+        try {
+            close()
+        } catch (gone: TurnRecordGone) {
+            runner.run(ForgetRunningTurn(turn.coach))
+        }
     }
 
     private suspend fun ability(call: ToolCall): AbilityOutcome = onReplica { runner ->
-        val seat = if (seat.kind == SeatKind.anon) Seat.anon else Seat.bound
-        AbilityExecutor(runner, catalog, appBaseUrl).run(AbilityRequest(call.callId, call.name, call.input), turn.coach, seat).answered()
+        AbilityExecutor(runner, catalog, appBaseUrl).run(AbilityRequest(call.callId, call.name, call.input), turn.coach, if (anonymous) Seat.anon else Seat.bound).answered()
     }
 
     private fun tool(call: ToolCall, outcome: AbilityOutcome): ToolOutcome = when (outcome) {
@@ -114,18 +133,18 @@ class GymTurnHost(
         is AbilityOutcome.Refused -> ToolOutcome.Refused(call.callId, call.name, outcome.code.code)
     }
 
-    // A refusal of the turn's own record (gone, ended, full) is no outcome of any call: it ends the turn, and the driver reports it.
+    // A refusal of the turn's own record is no outcome of any call: it ends the turn. Gone, a conversation deleted on another phone took it, and that is nobody's fault; anything else (ended, full) the driver reports.
     private fun <T> Outcome<T, GymRefusal>.answered(): T = when (this) {
         is Outcome.Committed -> result
         is Outcome.Unchanged -> result
-        is Outcome.Refused -> throw TurnRecordRefused()
+        is Outcome.Refused -> throw (refusal as? GymRefusal.Gone)?.takeIf { it.subject == turn.coach.ref }?.let { TurnRecordGone() } ?: TurnRecordRefused()
     }
 
-    // The turn's one door to its replica. While the account is in a transition, which a sign-out sheet holds open and its Cancel ends, the turn waits rather than dies: the transition ends, or the active replica changes and the abandon this wait yields to arrives. A race lost to either lands here as the commit's own refusal.
+    // The turn's one door to its seat. While the account is in a transition, which a sign-out sheet holds open and its Cancel ends, or a sign-in waits on its decision, the turn waits rather than dies: the transition ends, or the seat changes and the abandon this wait yields to arrives. A race lost to either lands here as the commit's own refusal.
     private suspend fun <T> onReplica(work: (ActionRunner) -> T): T {
         while (true) {
             try {
-                if (withContext(storage) { training.mayWriteOn(replica) }) return withContext(storage) { withContext(NonCancellable) { training.pinnedOn(replica, work) } }
+                if (withContext(storage) { training.mayWriteOn(replica, anonymous) }) return withContext(storage) { withContext(NonCancellable) { training.pinnedOn(replica, anonymous, work) } }
             } catch (_: TrainingRefused) {
                 // The race lost; the wait covers it.
             }

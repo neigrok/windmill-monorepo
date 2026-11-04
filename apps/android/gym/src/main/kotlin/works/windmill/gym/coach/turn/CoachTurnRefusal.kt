@@ -1,6 +1,7 @@
 package works.windmill.gym.coach.turn
 
 import works.windmill.agent.TurnRefusal
+import works.windmill.gym.coach.Ask
 
 // Why a send could not go: the phone's own admission (Coach §4.1), or the server's refusal by §6.5 code. Each is said once, at the conversation's end, with the one door that exists.
 sealed interface CoachTurnRefusal {
@@ -12,6 +13,7 @@ sealed interface CoachTurnRefusal {
     data object UpdateRequired : CoachTurnRefusal
     data object Absent : CoachTurnRefusal
     data class Installation(val installation: String) : CoachTurnRefusal
+    data object SessionLapsed : CoachTurnRefusal
     data class Said(val said: String) : CoachTurnRefusal
 
     val code: String get() = when (this) {
@@ -23,6 +25,7 @@ sealed interface CoachTurnRefusal {
         UpdateRequired -> "coach-update-required"
         Absent -> "absent"
         is Installation -> installation
+        SessionLapsed -> "unauthenticated"
         is Said -> said
     }
 
@@ -31,7 +34,6 @@ sealed interface CoachTurnRefusal {
         LogArriving -> "Your log is still arriving on this phone. Ask again in a moment."
         is Allowance -> when (allowance) {
             "subject_exhausted" -> "You have used all of your AI allowance."
-            "free_month_exhausted" -> "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit."
             "free_day_exhausted" -> "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
             "concurrency_exhausted" -> "Another AI request is still in progress. Try again when it finishes."
             "funding_required" -> "Your plan has no funded AI allowance for this period."
@@ -43,6 +45,7 @@ sealed interface CoachTurnRefusal {
         Absent -> "This Windmill does not have Coach. You can still read your log."
         is Installation -> if (installation == "invalid_installation") "This phone can’t ask Coach signed out any more. Sign in to continue."
             else "This phone is linked to an account. Sign in to ask Coach."
+        SessionLapsed -> Ask.accessNeedsSignIn
         is Said -> "Coach didn’t answer. Try again in a moment"
     }
 
@@ -57,6 +60,7 @@ sealed interface CoachTurnRefusal {
         is FreeMonthExhausted, RateLimited -> CoachRecovery.ownAgent
         UpdateRequired -> CoachRecovery.update
         is Installation -> if (anonymous) CoachRecovery.signIn else null
+        SessionLapsed -> CoachRecovery.signIn
     }
 
     // The `gym_ask_outcome` this refusal ends with, and the cap it names.
@@ -65,7 +69,7 @@ sealed interface CoachTurnRefusal {
         is Allowance, is FreeMonthExhausted -> "capped" to "allowance"
         RateLimited -> "capped" to "daily"
         Absent -> "absent" to null
-        LogArriving, UpdateRequired, is Installation, is Said -> "refused" to null
+        LogArriving, UpdateRequired, is Installation, SessionLapsed, is Said -> "refused" to null
     }
 
     companion object {
@@ -75,6 +79,7 @@ sealed interface CoachTurnRefusal {
             code in TurnRefusal.allowanceCodes -> Allowance(code)
             code == TurnRefusal.rateLimited -> RateLimited
             code == "coach-update-required" || code == "client-update-required" -> UpdateRequired
+            status == 401 -> SessionLapsed
             status == 404 -> Absent
             else -> Said(code)
         }

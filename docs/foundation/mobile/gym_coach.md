@@ -277,7 +277,10 @@ The model's reasoning and every assistant content block stay on the server.
 - The server sends `done`, keeps the turn's final state for `TURN_LINGER`, then drops the turn.
 - The phone writes the final state, answer text and receipt on the Coach message in one local
   transaction.
-- Every terminal state keeps the partial text and every write that committed.
+- Every terminal state keeps the partial text and every write that committed. Text reaches the record
+  in coalesced commits, each syncing the whole text so far: iOS every 250 ms; Android every 5 s, at each
+  batch and at the end, while its room draws the answer so far from the turn driver. A process death
+  loses what the last commit had not taken.
 
 ### §4.5 Stop, disconnect and resume
 
@@ -301,6 +304,18 @@ The model's reasoning and every assistant content block stay on the server.
   `activeReplicaChanged(previous, replica)` with `previous` the message's `replica` (engine §7.12) —
   ends that `running` turn `interrupted`, under its new id, since the turn's stream ended with its
   identity.
+- **Rebind.** A sign-in that rebinds the `anon` replica keeps its id, so `activeReplicaChanged` does not
+  fire, and the seat has changed all the same (D-10). On Android the engine announces the rebind apart
+  (engine §7.12) and a running `anon` turn ends `interrupted`, its code `seat_changed`; its reads and writes
+  hold to the replica and to its seat, so nothing the account holds leaves under the `anon` seat. iOS has
+  no such signal or hold yet.
+- **A sign-in's decision.** While a sign-in waits on its decision (engine §7.10), a running turn's reads
+  and writes wait with it on Android, since each write would move what the decision counted, and a
+  transition the lifter can still cancel, as the sign-out sheet, holds them the same way: Cancel lets the
+  turn go on, and a seat change ends it. iOS does not wait.
+- **A record gone.** A Coach message removed under its running turn, as a conversation deleted on another
+  phone, ends the turn on Android: `runningTurn` lets go of it, the server hears a Stop, and nothing is
+  reported as a failure.
   When the server drops a turn (§4.4) whose `bound` Coach message is still `running`, it MAY write
   `interrupted` on it, as a server-origin write that sets only `state` (engine §6.3).
 

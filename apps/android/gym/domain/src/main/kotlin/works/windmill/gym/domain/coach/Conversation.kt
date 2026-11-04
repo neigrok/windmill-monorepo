@@ -322,16 +322,16 @@ class OpenTurn(val thread: Id<CoachThread>? = null, val question: String, val pi
     }
 }
 
-// Coach §4.4, §4.5: the terminal state, the answer and the receipt in one transaction, `runningTurn` cleared. A turn a writer already ended is final.
+// Coach §4.4, §4.5: the terminal state, the answer and the receipt in one transaction, and `runningTurn` cleared unless it names another turn, as a merge's row can. A turn a writer already ended is final.
 class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: String? = null, val truncated: Boolean = false) : Action<EndTurn.Loaded, Unit, GymRefusal> {
-    data class Loaded(val message: CoachMessage?, val moment: Moment)
+    data class Loaded(val message: CoachMessage?, val moment: Moment, val named: Json?)
 
     init { require(state.isTerminal) { "a turn ends in a terminal state" } }
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
-    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.moment)
+    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.moment, read.device(runningTurnKey))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
         val running = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
@@ -341,12 +341,27 @@ class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: 
         val written = listOf("state", "text", "receipt", "truncated")
         val plan = Plan()
         plan.update(Valid(ended, CoachMessage, written, loaded.moment), written)
-        plan.device(runningTurnKey, null)
+        if (loaded.named == null || loaded.named == message.json) plan.device(runningTurnKey, null)
         return Decision.Write(plan, Unit)
     }
 
     companion object {
         const val runningTurnKey = "runningTurn"
+    }
+}
+
+// A turn whose message is gone, as a conversation deleted on another phone takes it: `runningTurn` lets go of it, and of no other.
+class ForgetRunningTurn(val message: Id<CoachMessage>) : Action<Json?, Unit, GymRefusal> {
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader) = read.device(EndTurn.runningTurnKey)
+
+    override fun decide(loaded: Json?, ids: IDSource): Decision<Unit, GymRefusal> {
+        if (loaded != message.json) return Decision.Unchanged(Unit)
+        val plan = Plan()
+        plan.device(EndTurn.runningTurnKey, null)
+        return Decision.Write(plan, Unit)
     }
 }
 
@@ -380,6 +395,45 @@ class KeepPicture(val picture: CoachPictureRow) : Action<Unit, Unit, GymRefusal>
         return Decision.Write(plan, Unit)
     }
 }
+
+// The row of a picture kept for a turn that did not open; the caller deletes its files.
+class ForgetPicture(val id: String) : Action<Unit, Unit, GymRefusal> {
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader) = Unit
+
+    override fun decide(loaded: Unit, ids: IDSource): Decision<Unit, GymRefusal> {
+        val plan = Plan()
+        plan.device(CoachPictureRow.key(id), null)
+        return Decision.Write(plan, Unit)
+    }
+}
+
+// The rows no message claims: a conversation deleted on another phone, or a process that died between `KeepPicture` and `OpenTurn`. A replica behind its log cannot tell a message gone from one not yet arrived, so it forgets nothing.
+class ForgetUnclaimedPictures : Action<ForgetUnclaimedPictures.Loaded, Unit, GymRefusal> {
+    data class Loaded(val rows: Set<String>, val claimed: Set<String>)
+
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader): Loaded {
+        val rows = read.devices(CoachPictureRow.key("")).keys
+        if (rows.isEmpty() || !read.caughtUpWithItsLog) return Loaded(emptySet(), emptySet())
+        return Loaded(rows, read.repository(CoachMessage).all(ViewMode.drawn).flatMap { it.pictures }.map { CoachPictureRow.key(it.id) }.toSet())
+    }
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
+        val unclaimed = loaded.rows - loaded.claimed
+        if (unclaimed.isEmpty()) return Decision.Unchanged(Unit)
+        val plan = Plan()
+        unclaimed.forEach { plan.device(it, null) }
+        return Decision.Write(plan, Unit)
+    }
+}
+
+// Whether a record this replica lacks is truly gone, rather than not yet arrived.
+val Reader.caughtUpWithItsLog: Boolean get() = isAnonymous || firstPullComplete() && checkpoint().cleanSeq != null
 
 // The answer as it streams: this replica's running Coach message takes the text so far; a message that ended, or another replica's, takes nothing.
 class StreamTurnText(val message: Id<CoachMessage>, val text: String) : Action<StreamTurnText.Loaded, Unit, GymRefusal> {

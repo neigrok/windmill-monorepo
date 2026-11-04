@@ -61,6 +61,36 @@ class ConversationTests {
     private fun row(picture: Picture) = CoachPictureRow(picture.id, picture.mediaType, 1200, 900, 345_678)
     private fun gone(type: String, id: Id<*>) = GymRefusal.Gone(RecordRef(type, id.record), Refused.Path.predicted)
 
+    // A merge can leave the row naming another turn: an end lets go of its own alone, and a gone turn the same way.
+    @Test fun anEndClearsTheRunningTurnOnlyWhenItNamesThatMessage() = twoPhones { a, _ ->
+        val first = (a.runner.run(OpenTurn(question = "First")) as Outcome.Committed).result
+        val second = (a.runner.run(OpenTurn(first.thread, question = "Second")) as Outcome.Committed).result
+        assertEquals(second.coach.json, a.device(EndTurn.runningTurnKey))
+        assertTrue(a.runner.run(EndTurn(first.coach, MessageState.interrupted)) is Outcome.Committed)
+        assertEquals(second.coach.json, a.device(EndTurn.runningTurnKey))
+        assertEquals(Outcome.Unchanged(Unit), a.runner.run(ForgetRunningTurn(first.coach)))
+        assertEquals(second.coach.json, a.device(EndTurn.runningTurnKey))
+        assertTrue(a.runner.run(ForgetRunningTurn(second.coach)) is Outcome.Committed)
+        assertNull(a.device(EndTurn.runningTurnKey))
+    }
+
+    @Test fun aPictureRowGoesWhenItsTurnDidNotOpenOrNoMessageClaimsIt() = twoPhones { a, _ ->
+        val row = CoachPictureRow("picture-1", "image/jpeg", 40, 30, 100)
+        assertTrue(a.runner.run(KeepPicture(row)) is Outcome.Committed)
+        assertEquals(row.json, a.device(CoachPictureRow.key("picture-1")))
+        assertTrue(a.runner.run(ForgetPicture("picture-1")) is Outcome.Committed)
+        assertNull(a.device(CoachPictureRow.key("picture-1")))
+
+        assertTrue(a.runner.run(KeepPicture(row)) is Outcome.Committed)
+        assertTrue(a.runner.run(KeepPicture(row.copy(id = "picture-2"))) is Outcome.Committed)
+        assertTrue(a.runner.run(OpenTurn(question = "Look", pictures = listOf(Picture("picture-2", "image/jpeg", localOnly = true)))) is Outcome.Committed)
+        a.engine.sync()
+        assertTrue(a.runner.run(ForgetUnclaimedPictures()) is Outcome.Committed)
+        assertNull(a.device(CoachPictureRow.key("picture-1")))
+        assertEquals(row.copy(id = "picture-2").json, a.device(CoachPictureRow.key("picture-2")))
+        assertEquals(Outcome.Unchanged(Unit), a.runner.run(ForgetUnclaimedPictures()))
+    }
+
     @Test fun theEntitiesAgreeWithTheRegistry() {
         val threadId = Id("thrdAAAAAAAAAAA1", CoachThread)
         RegistryCheck.entity(CoachThread, CoachThread(threadId, "How heavy today?"), CoachRules.book)

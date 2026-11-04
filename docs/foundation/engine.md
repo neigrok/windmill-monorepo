@@ -2136,6 +2136,11 @@ so whoever holds an id reads `activeReplica()` again at engine start, or keeps a
 its own, such as the gym Coach's `runningTurn` device row (gym Coach §4.5). On web every tab delivers
 it (§7.8).
 
+The Kotlin engine adds two reads of this state. `activeReplicaRebinds()` announces each completed sign-in
+that rebinds the active `anon` replica, whose id stands and whose seat does not (gym Coach D-10), with the
+event's delivery. `activeReplica()` answers from what the last durable transaction published, so no
+transaction holds its caller up.
+
 A sign-in, a sign-out or a re-identify of the active replica runs the puller (§7.5) and ends every
 doubt (§7.9), whether or not its id changed.
 

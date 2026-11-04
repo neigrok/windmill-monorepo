@@ -25,10 +25,12 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.agent.TurnRefusal
 import works.windmill.domain.kit.Catalog
+import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.CoachPhotos
 import works.windmill.gym.domain.coach.CoachPictureRow
+import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.CoachTurnBounds
 import works.windmill.gym.domain.coach.KeepPicture
 import works.windmill.gym.domain.coach.Picture
@@ -150,16 +152,59 @@ class PictureFilesTests {
         }
     }
 
-    @Test fun aWithdrawnTurnTakesItsPictureFilesWithItsRecords() = runTest {
+    // The turn goes, its files with it, and what the lifter sent returns: the picture itself, and no conversation that went too.
+    @Test fun aWithdrawnTurnTakesItsPictureFilesAndReturnsWhatWasSent() = runTest {
         val server = script("[]").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) }
         TurnPhone(this, folder.newFolder(), server).use { phone ->
-            checkNotNull(phone.turns.send("Look at this", small(), null, anonymous = true))
+            val picture = small()
+            checkNotNull(phone.turns.send("Look at this", picture, null, anonymous = true))
             advanceUntilIdle()
             assertEquals(CoachTurnRefusal.Allowance("subject_exhausted"), phone.turns.refusal.value)
+            assertEquals(WithdrawnTurn("Look at this", picture, null), phone.turns.withdrawn.value)
             assertEquals(emptyList<Any>(), phone.messages())
+            assertEquals(emptyList<Any>(), phone.threads())
             assertNull(phone.device(CoachPictureRow.key("picture-1")))
             assertEquals(emptySet<String>(), phone.pictures.held())
             assertEquals(emptyList<String>(), phone.pictureFolder.list()!!.toList())
+
+            server.refuseOpen = null
+            val back = checkNotNull(phone.turns.withdrawn.value)
+            assertTrue(phone.turns.send(back.question, back.picture, back.thread, anonymous = true) != null)
+            advanceUntilIdle()
+            assertEquals(setOf("picture-1"), phone.pictures.held())
+            assertNull(phone.turns.withdrawn.value)
+        }
+    }
+
+    // A refused open leaves nothing: not the row it kept a moment before, and not the files.
+    @Test fun aRefusedOpenLeavesItsPictureBehindNowhere() = runTest {
+        TurnPhone(this, folder.newFolder(), script()).use { phone ->
+            assertNull(phone.turns.send("Look at this", small(), Id("thrdNobody000000", CoachThread), anonymous = true))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.unsaved, phone.turns.fault.value)
+            assertNull(phone.device(CoachPictureRow.key("picture-1")))
+            assertEquals(emptyList<String>(), phone.pictureFolder.list()?.toList().orEmpty())
+            assertEquals(emptyList<Any>(), phone.messages())
+        }
+    }
+
+    // A discard decision takes a running turn: its stream is stopped, its messages go with the replica's work, and so do its files.
+    @Test fun aDiscardDecisionTakesTheRunningTurnAndItsFiles() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")).use { phone ->
+            phone.turns.start()
+            advanceUntilIdle()
+            checkNotNull(phone.turns.send("Look at this", small(), null, anonymous = true))
+            advanceUntilIdle()
+            val question = phone.engine.signIn("account-1", mapOf("gym" to true))
+            val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
+            assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true), mapOf("gym" to "discard"), pins).member("complete").bool())
+            advanceUntilIdle()
+            assertTrue(phone.turns.idle)
+            assertEquals(1, phone.server.stops)
+            assertEquals(emptyList<Any>(), phone.messages())
+            assertEquals(emptySet<String>(), phone.pictures.held())
+            assertEquals(listOf("seat_changed"), phone.telling.named("coach_turn").map { it["code"] })
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
         }
     }
 
@@ -186,7 +231,7 @@ class PictureFilesTests {
             advanceUntilIdle()
             val row = phone.pictures.keep(small("picture-row"))
             val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(replica) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
+            phone.room.training.pinnedOn(replica, true) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
             phone.pictures.keep(small("picture-loose"))
             File(phone.pictureFolder, "picture-torn.original.tmp").writeText("half")
 
@@ -257,7 +302,7 @@ class PictureFilesTests {
             phone.signIn()
             val row = phone.pictures.keep(small("picture-row"))
             val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(replica) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
+            phone.room.training.pinnedOn(replica, false) { runner -> assertTrue(runner.run(KeepPicture(row)) is Outcome.Committed) }
             assertTrue(phone.engine.signOut("keep").member("complete").bool())
             assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true)).member("complete").bool())
             phone.turns.sweep()

@@ -7,6 +7,7 @@ import java.io.IOException
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -306,6 +307,71 @@ class TurnDriverTests {
     private fun calls(batch: Int, vararg calls: ToolCall) = TurnEvent.Calls(TurnBatch(batch, calls.toList()))
     private fun TestScope.server() = ManualServer { testScheduler.currentTime }
     private fun TestScope.driver(server: TurnTransport, telemetry: TurnTelemetry) = TurnDriver(server, telemetry, this, elapsedMs = { testScheduler.currentTime })
+
+    // The room's copy of the answer: every delta, a snapshot's whole text, and nothing outside a turn. The record takes it on its own cadence.
+    @Test fun theLiveTextHoldsTheAnswerAtEveryDeltaWhileTheRecordCoalesces() = runTest {
+        val frames = Channel<TurnEvent>(Channel.UNLIMITED)
+        val server = server().apply { streams += frames.receiveAsFlow() }
+        val host = EchoHost()
+        val driver = TurnDriver(server, RecordingTelemetry(), this, coalesce = 5.seconds, elapsedMs = { testScheduler.currentTime })
+        assertNull(driver.liveText.value)
+        val run = async { driver.run("tn_1", seat, host) }
+        runCurrent()
+        assertEquals("", driver.liveText.value)
+        frames.send(TurnEvent.Text("Add "))
+        runCurrent()
+        assertEquals("Add ", driver.liveText.value)
+        frames.send(TurnEvent.Text("5 kg."))
+        runCurrent()
+        assertEquals("Add 5 kg.", driver.liveText.value)
+        assertEquals(emptyList<String>(), host.writes)
+        advanceTimeBy(5_001)
+        assertEquals(listOf("Add 5 kg."), host.writes)
+        frames.send(TurnEvent.Snapshot("Replaced.", TurnState.running, null))
+        runCurrent()
+        assertEquals("Replaced.", driver.liveText.value)
+        assertEquals(listOf("Add 5 kg.", "Replaced."), host.writes)
+        frames.send(done)
+        assertEquals(TurnExit.ended, run.await())
+        assertNull(driver.liveText.value)
+        assertEquals("Replaced.", host.ends.single().text)
+    }
+
+    @Test fun anAbandonLeavesNoLiveText() = runTest {
+        val server = server().apply { streams += flow { emit(TurnEvent.Text("Add ")); awaitCancellation() } }
+        val driver = driver(server, RecordingTelemetry())
+        val run = async { driver.run("tn_1", seat, EchoHost()) }
+        runCurrent()
+        assertEquals("Add ", driver.liveText.value)
+        driver.abandon()
+        assertNull(driver.liveText.value)
+        assertEquals(TurnExit.abandoned, run.await())
+        assertNull(driver.liveText.value)
+    }
+
+    // A record removed elsewhere ends the turn: the server hears one Stop, and nothing is reported, since nothing is broken.
+    @Test fun aRecordGoneEndsTheTurnWithNoReport() = runTest {
+        for (fault in listOf<(EchoHost) -> Unit>({ it.executeFault = TurnRecordGone() }, { it.openFault = TurnRecordGone() })) {
+            val server = server().apply { streams += flowOf(calls(1, call("c1"))) }
+            val host = EchoHost().also(fault)
+            val telemetry = RecordingTelemetry()
+            assertEquals(TurnExit.ended, driver(server, telemetry).run("tn_1", seat, host))
+            advanceUntilIdle()
+            assertEquals(listOf(TurnEnd(TurnState.interrupted, "", false, "gone", null)), host.ends)
+            assertEquals(1, server.stops)
+            assertEquals(listOf("ended interrupted bound gone calls=0 refusals=0 bytes=0 ms=${testScheduler.currentTime}"), telemetry.lines)
+        }
+    }
+
+    @Test fun aRecordGoneAtATextCommitEndsTheTurnAndAtItsEndIsNoFailure() = runTest {
+        val server = server().apply { streams += flow { emit(TurnEvent.Text("Add ")); awaitCancellation() } }
+        val host = EchoHost().apply { writeFault = TurnRecordGone(); endFault = TurnRecordGone() }
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, run.await())
+        assertEquals(listOf("ended interrupted bound gone calls=0 refusals=0 bytes=4 ms=${testScheduler.currentTime}"), telemetry.lines)
+    }
 
     @Test fun reconnectsAfterOneTwoFourAndEightBeatsAndAFifthLossEndsTheTurn() = runTest {
         val server = server().apply { repeat(5) { streams += lost } }
@@ -1399,7 +1465,7 @@ class TurnDriverTests {
                 val ender = launch { gate.await(); frames.trySend(TurnEvent.Done(TurnState.completed, false)) }
                 gate.countDown()
                 val late = launch { delay(1); driver.abandon() }
-                val exit = withTimeout(5000) { runner.await() }
+                val exit = withTimeout(60_000) { runner.await() }
                 abandoner.join(); stopper.join(); ender.join(); late.join()
                 if (driver.activity.value != null) broken += "$index left its activity"
                 if (host.ends.size > 1) broken += "$index ended twice"

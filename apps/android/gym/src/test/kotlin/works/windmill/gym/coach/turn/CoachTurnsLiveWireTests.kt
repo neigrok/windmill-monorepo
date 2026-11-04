@@ -16,6 +16,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -48,7 +49,7 @@ import works.windmill.sync.engine.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
-// The turn against a local backend and a fake model vendor: signed in and signed out, a read batch, a `create_routine`, a proposal and a Stop, on the real wire, a real SQLite engine and the real event delivery. The harness that starts them greps the server's lines and the intake.
+// The turn against a local backend and a fake model vendor: signed in and signed out, a read batch, a `create_routine`, a proposal and a Stop, then a sign-in under a running signed-out turn, on the real wire, a real SQLite engine and the real event delivery. The harness that starts them greps the server's lines and the intake.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
@@ -95,8 +96,7 @@ class CoachTurnsLiveWireTests {
         assertEquals(1, proposed.calls.last().created.size)
 
         val stopping = send("wire stop", anonymous)
-        withTimeout(10_000) { turns.activity.first { it != null } }
-        withTimeout(10_000) { while (message(stopping).calls.size < reads.size) delay(20) }
+        withTimeout(30_000) { turns.liveAnswer.first { it?.message == stopping.coach && it.text.isNotEmpty() } }
         turns.requestStop()
         val stopped = settled(stopping)
         assertEquals(MessageState.stopped, stopped.state)
@@ -161,6 +161,26 @@ class CoachTurnsLiveWireTests {
                 is Reply.Failed -> reply.response
                 Reply.Unreachable -> error("The local verification server is unavailable.")
             }
+            suspend fun pull(engine: Engine) {
+                val request = checkNotNull(engine.pullRequest(listOf(scope)))
+                val at = clock.reading()
+                engine.onPullResponse(request, answer(http.pull(request, bearer)), RequestTiming(at, clock.reading()))
+            }
+            // What the host wrote is what the real server admits: every intent lands, and no refusal comes back.
+            suspend fun pushAll(engine: Engine) {
+                withTimeout(30_000) {
+                    while (true) {
+                        val push = engine.nextPush() ?: break
+                        val at = clock.reading()
+                        val response = answer(http.push(push, bearer))
+                        assertEquals(200, response.status)
+                        engine.onPushResponse(push, response, RequestTiming(at, clock.reading()))
+                        pull(engine)
+                    }
+                }
+                val replica = engine.snapshot().let { snapshot -> snapshot.member("replicas").arr().single { it.member("meta").member("replica") == snapshot.member("active") } }
+                assertEquals(0, replica["notices"]?.arr().orEmpty().count())
+            }
 
             val signedIn = turnsOn("bound", bearer)
             signedIn.engine.use { engine ->
@@ -178,28 +198,10 @@ class CoachTurnsLiveWireTests {
                 assertEquals(CoachTurnRefusal.LogArriving, signedIn.turns.refusal.value)
 
                 val training = EngineTraining(engine)
-                suspend fun pull() {
-                    val request = checkNotNull(engine.pullRequest(listOf(scope)))
-                    val at = clock.reading()
-                    engine.onPullResponse(request, answer(http.pull(request, bearer)), RequestTiming(at, clock.reading()))
-                }
-                withTimeout(20_000) { while (!training.firstPullComplete) pull() }
+                withTimeout(20_000) { while (!training.firstPullComplete) pull(engine) }
 
                 signedIn.walk(anonymous = false)
-
-                // What the host wrote is what the real server admits: every intent lands, and no refusal comes back.
-                withTimeout(30_000) {
-                    while (true) {
-                        val push = engine.nextPush() ?: break
-                        val at = clock.reading()
-                        val response = answer(http.push(push, bearer))
-                        assertEquals(200, response.status)
-                        engine.onPushResponse(push, response, RequestTiming(at, clock.reading()))
-                        pull()
-                    }
-                }
-                val replica = engine.snapshot().let { snapshot -> snapshot.member("replicas").arr().single { it.member("meta").member("replica") == snapshot.member("active") } }
-                assertEquals(0, replica["notices"]?.arr().orEmpty().count())
+                pushAll(engine)
             }
 
             credential = null
@@ -208,6 +210,32 @@ class CoachTurnsLiveWireTests {
             signedOut.engine.use {
                 signedOut.turns.start()
                 signedOut.walk(anonymous = true)
+            }
+
+            // A sign-in under a running signed-out turn: its decision lands at the first answer, the turn ends, and what it wrote joins the account.
+            val signingIn = turnsOn("rebound", null)
+            signingIn.engine.use { engine ->
+                signingIn.turns.start()
+                val running = signingIn.send("wire stop", anonymous = true)
+                withTimeout(30_000) { signingIn.turns.liveAnswer.first { it?.message == running.coach && it.text.isNotEmpty() } }
+                val replica = engine.activeReplica()
+                val at = clock.reading()
+                val hello = answer(http.hello(bearer))
+                engine.onHello(hello, RequestTiming(at, clock.reading()))
+                val body = checkNotNull(hello.body)
+                val account = body.member("as").str()
+                val holds = body.member("holdsRecords").obj().mapValues { it.value.bool() }
+                val question = engine.signIn(account, holds, serverSchema = body.member("schema").long())
+                assertFalse(question.member("complete").bool())
+                assertTrue(engine.signInPending())
+                val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
+                assertTrue(engine.signIn(account, holds, mapOf("gym" to "add"), pins, serverSchema = body.member("schema").long()).member("complete").bool())
+                assertEquals(replica, engine.activeReplica())
+                val ended = signingIn.settled(running)
+                assertEquals(MessageState.interrupted, ended.state)
+                assertEquals(CoachTurnBounds.contextReads, ended.calls.map { it.name })
+                engine.subscribe(scope)
+                pushAll(engine)
             }
 
             assertEquals(emptyList<String>(), failures.toList())

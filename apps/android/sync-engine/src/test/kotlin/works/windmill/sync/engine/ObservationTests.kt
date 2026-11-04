@@ -20,12 +20,25 @@ import org.junit.Test
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.schema.SyncSchema
 
 class ObservationTests {
     private val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
     private val scope = ScopeRef.product("probe")
     private val initial = Json.objectOf("active" to Json.of("replica"), "replicas" to Json.array(freshReplica("replica").json()))
-    private fun engine(store: MemoryStore = MemoryStore(registry, initial)): Engine {
+    // A store whose reads keep failing for as long as a test holds them so: a retry on the clock cannot move the state a test is reading.
+    private class HeldReads(private val delegate: MemoryStore) : EngineStore by delegate {
+        val failing = AtomicBoolean(false)
+        val attempted = AtomicBoolean(false)
+        override fun <T> read(body: () -> T): T {
+            if (failing.get()) {
+                attempted.set(true)
+                throw StoreFailure()
+            }
+            return delegate.read(body)
+        }
+    }
+    private fun engine(store: EngineStore = MemoryStore(registry, initial)): Engine {
         var sequence = 0
         return Engine(registry, store, object : EngineClock { override fun now() = 1_000L }, object : IdentitySource {
             override fun opaqueID() = "g${++sequence}"
@@ -123,28 +136,93 @@ class ObservationTests {
             assertTrue(hearing.isCompleted)
         }
     }
-    private suspend fun loaded(view: RecordsView, matches: (RecordsView.Snapshot) -> Boolean = { true }): RecordsView.Snapshot = withTimeout(5_000) {
+    // §7.12: the rebind that keeps the id is heard on its own flow, and only it: a move to another replica and a sign-out are the other flow's, and a rollback says nothing.
+    @Test fun aSignInThatRebindsTheActiveReplicaIsHeardOnItsOwnFlow() = runBlocking<Unit> {
+        var drawn = 0
+        val identities = object : IdentitySource {
+            override fun opaqueID() = "g${++drawn}"
+            override fun draw(bound: Int) = 0
+            override fun replicaID() = "rp_${++drawn}"
+        }
+        Engine(registry, MemoryStore(registry, initial), object : EngineClock { override fun now() = 1_000L }, identities, "actor").use { engine ->
+            val heard = CopyOnWriteArrayList<String>()
+            val hearing = launch(Dispatchers.Unconfined, start = CoroutineStart.UNDISPATCHED) { engine.activeReplicaRebinds().collect { heard.add(it) } }
+            engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0001"))))))
+            engine.failNextCommit()
+            assertThrows(CommitFailure::class.java) { engine.signIn("A", mapOf("probe" to false)) }
+            assertEquals(emptyList<String>(), heard.toList())
+
+            engine.signIn("A", mapOf("probe" to false))
+            assertEquals(listOf("replica"), heard.toList())
+
+            assertTrue(engine.signOut("keep").flag("complete"))
+            engine.signIn("A", mapOf("probe" to false))
+            engine.reidentify()
+            assertEquals(listOf("replica"), heard.toList())
+
+            engine.close()
+            withTimeout(5_000) { hearing.join() }
+        }
+    }
+
+    // The Main thread asks which replica is active; a transaction holding the lock, however long, does not hold it up.
+    @Test fun theActiveReplicaAnswersWhileATransactionHoldsTheLock() = runBlocking<Unit> {
+        engine().use { engine ->
+            val answered = java.util.concurrent.CompletableFuture<String>()
+            engine.lock.withLock {
+                java.util.concurrent.Executors.newSingleThreadExecutor().let { other ->
+                    other.execute { answered.complete(engine.activeReplica()) }
+                    assertEquals("replica", answered.get(5, TimeUnit.SECONDS))
+                    other.shutdown()
+                }
+            }
+            engine.close()
+            assertThrows(CommitFailure::class.java) { engine.activeReplica() }
+        }
+    }
+
+    // A sign-in waits on its decision while it is pending, and keys read across every replica the phone retains.
+    @Test fun aSignInPendingAndDeviceKeysAcrossRetainedReplicas() = runBlocking<Unit> {
+        Engine.memory(SyncSchema.registry).use { engine ->
+            val gym = ScopeRef.product("gym")
+            fun routine(id: String) = Change.create("routine", NewID.Given(RecordID(id)), mapOf("name" to Json.of(id), "position" to Json.of(0), "entries" to Json.array()))
+            assertFalse(engine.signInPending())
+            engine.commit(gym, Gesture(listOf(routine("rt_00000001")), local = listOf(DeviceWrite("picture:pictureone", Json.of(1)), DeviceWrite("runningTurn", Json.of("message01")))))
+            val question = engine.signIn("A", mapOf("gym" to true))
+            assertFalse(question.flag("complete"))
+            assertTrue(engine.signInPending())
+            val pins = question.items("due").associate { it.member("product").str() to it.member("counted").arr().map(Json::str) }
+            assertTrue(engine.signIn("A", mapOf("gym" to true), mapOf("gym" to "add"), pins).flag("complete"))
+            assertFalse(engine.signInPending())
+            assertTrue(engine.signOut("keep").flag("complete"))
+            engine.commit(gym, Gesture(listOf(routine("rt_00000002")), local = listOf(DeviceWrite("picture:picturetwo", Json.of(3)))))
+            assertEquals(setOf("picture:pictureone", "picture:picturetwo"), engine.retainedDeviceKeys("gym", "picture:"))
+        }
+    }
+
+    private suspend fun loaded(view: RecordsView, matches: (RecordsView.Snapshot) -> Boolean = { true }): RecordsView.Snapshot = withTimeout(60_000) {
         (view.state.first { it is RecordsView.State.Loaded && matches(it.snapshot) } as RecordsView.State.Loaded).snapshot
     }
     @Test fun firstReadFailureKeepsLoadingAndRetryLoadsWithoutAnotherWrite() = runBlocking<Unit> {
-        val store = MemoryStore(registry, initial)
-        store.failNextRead = true
+        val store = HeldReads(MemoryStore(registry, initial)).apply { failing.set(true) }
         engine(store).use { engine ->
             val view = engine.records(scope, "card")
-            withTimeout(1_000) { while (store.failNextRead) delay(1) }
+            withTimeout(60_000) { while (!store.attempted.get()) delay(1) }
             assertEquals(RecordsView.State.Loading, view.state.value)
+            store.failing.set(false)
             assertEquals(RecordsView.Snapshot(emptyList(), true), loaded(view))
         }
     }
     @Test fun failedRefreshKeepsItsSnapshotAndOwesEveryChangeUntilRetry() = runBlocking<Unit> {
-        val store = MemoryStore(registry, initial)
+        val store = HeldReads(MemoryStore(registry, initial))
         engine(store).use { engine ->
             val view = engine.records(scope, "card")
             val old = loaded(view)
-            store.failNextRead = true
+            store.failing.set(true)
             engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0001")), mapOf("title" to Json.of("One"))))))
-            withTimeout(1_000) { while (store.failNextRead) delay(1) }
+            withTimeout(60_000) { while (!store.attempted.get()) delay(1) }
             assertEquals(RecordsView.State.Loaded(old), view.state.value)
+            store.failing.set(false)
             engine.commit(scope, Gesture(listOf(Change.update("card", RecordID("card0001"), mapOf("title" to Json.of("Two"))))))
             val next = loaded(view) { it.records.singleOrNull()?.values?.get("title") == Json.of("Two") }
             assertEquals("Two", next.record(RecordID("card0001"))!!.values["title"]!!.str())
