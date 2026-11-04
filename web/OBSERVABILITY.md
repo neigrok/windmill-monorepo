@@ -45,6 +45,20 @@ one that reopens the same account. Closure refuses an unavailable session identi
 Offline copy identifies the REST features that need a connection.
 No account identifier or decision content is included.
 
+The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
+rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste
+shapes. Each emits one `client_error` with only `kind` (`window`, `promise`, `render` or `shape`),
+`failure_kind` (the error's constructor name: `Error`, `TypeError`, `RangeError`, `ReferenceError`,
+`SyntaxError`, `URIError`, `EvalError`, `AggregateError` or `DOMException`) and `route`, the family of
+the current address: `/`, `/app`, `/app/roadmap`, `/app/gym`, `/app/journal`, `/app/settings`,
+`/app/connect`, `/t`, `/demo`, `/browse`, `/gym/shared`, `/auth`, `/oauth/authorize`, `/showcase`,
+`/roadmap`, `/gym` or `/journal`. Anything these sets do not name reads `other`, including product error
+classes and thrown non-errors. No exception message, stack, identifier, token, date or query enters the
+event. The same failure reports to Sentry with `kind` as its type and tag, `route` as its request URL,
+and the exception message and stack frames with share addresses, `token=` and `code=` values struck
+out. This is the one web Sentry report that carries an exception message, and that message can hold
+user text.
+
 Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
 REST transport failures using static `journal-*` Sentry operation names. Migration and recovery
 emit `sync_commit` with bounded outcome labels; claim/save and first-run retirements use the engine's
