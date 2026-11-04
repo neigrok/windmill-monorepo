@@ -1389,9 +1389,9 @@ iOS. It and the product differ in these places.
   it 6 dp under, and the build holds the 6; the note card comes from 08.25, which draws one paragraph, so the build
   shows the note's body and its title stands in What Coach read; every board stands the rail's icons and labels 6 dp
   above where Material's NavigationBar lays them, and the build keeps Material's. An answer that read no workout and no
-  movement history, where a note or a routine stood by its message's moment past what its own turn made, says the
-  catalog's phrases of the reads it ran, joined as the step line joins them with the first letter capitalised, over What
-  Coach read; no board draws that line. 08.61 draws its disabled Send's glyph on-accent, which barely reads on
+  movement history, where Coach itself asked for a read or a note or a routine stood by its message's moment past what
+  its own turn made, says the catalog's phrases of the reads it ran, joined as the step line joins them with the first
+  letter capitalised, over What Coach read; no board draws that line. 08.61 draws its disabled Send's glyph on-accent, which barely reads on
   its circle, and the build keeps Material's disabled colours. The composer's picture line is one sentence on both seats, `CoachPhotos.whereItGoes`
   and `keptHere` as 01.5 draws them, since a picture goes to the provider from either seat (`gym_coach.md` §9.3): board
   01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out and *A copy goes to

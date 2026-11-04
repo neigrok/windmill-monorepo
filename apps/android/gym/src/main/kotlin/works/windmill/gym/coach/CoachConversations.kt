@@ -24,6 +24,7 @@ import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.CoachTurns
 import works.windmill.gym.coach.turn.LiveAnswer
+import works.windmill.gym.coach.turn.contextCallPrefix
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.AbilityRefusal
 import works.windmill.gym.domain.coach.CoachMessage
@@ -62,6 +63,8 @@ data class SentPicture(val photo: CoachAttachment, val onThisPhone: Boolean)
 data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead, val created: List<RecordRef>,
     val reads: Boolean = false, val callId: String = name, val detail: String? = null) {
     val ran: Boolean get() = outcome == AbilityCall.Outcome.Ok
+    // One of the reads the phone runs as a turn opens, which Coach did not choose.
+    val phoneRead: Boolean get() = callId.startsWith(contextCallPrefix)
     val seatRefused: Boolean get() = (outcome as? AbilityCall.Outcome.Refused)?.code == AbilityRefusal.seatRequired
     // Its row in What Coach read: a read that served workouts says how many, every other call its phrase.
     val title: String? get() {
@@ -113,13 +116,13 @@ data class CoachReply(
     val stepLine: String? get() = steps.takeIf { it.isNotEmpty() }?.joinToString(" · ")
     // The rows of What Coach read.
     val readRows: List<CoachCall> get() = calls.filter { it.ran && it.title != null }
-    // The receipt under an ended answer, by the first that holds: the workouts it read by identity; its movement history; that it read nothing, when no read ran or no log stood for one to read; the catalog's phrases of the reads it ran.
+    // The receipt under an ended answer, by the first that holds: the workouts it read by identity; its movement history; that it read nothing, when no read ran, or only the phone's own reads ran and no log stood for them to read; the catalog's phrases of the reads it ran.
     val readLine: String? get() {
         val reads = calls.filter { it.ran && it.reads }
         return when {
             receipt.read.sessions > 0 -> "Read ${Readout.sessionCount(receipt.read.sessions)} · ${Readout.weekCount(receipt.read.weeks)}"
             reads.any { it.name == "get_stats" } -> Ask.readMovementHistory
-            reads.isEmpty() || !logStood -> Ask.readNothing
+            reads.all { it.phoneRead } && (reads.isEmpty() || !logStood) -> Ask.readNothing
             else -> reads.mapNotNull { it.phrase }.joinToString(" · ").ifEmpty { null }?.replaceFirstChar { it.uppercase() }
         }
     }

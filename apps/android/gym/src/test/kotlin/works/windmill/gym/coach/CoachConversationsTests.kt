@@ -35,6 +35,7 @@ import works.windmill.domain.kit.Outcome
 import works.windmill.domain.kit.Repository
 import works.windmill.domain.kit.Seat
 import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.coach.turn.contextCallPrefix
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.coach.turn.TurnPhone
 import works.windmill.gym.domain.coach.AbilityExecutor
@@ -42,6 +43,7 @@ import works.windmill.gym.domain.coach.AbilityOutcome
 import works.windmill.gym.domain.coach.AbilityRequest
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachThread
+import works.windmill.gym.domain.coach.CoachTurnBounds
 import works.windmill.gym.domain.coach.EndTurn
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
@@ -230,14 +232,16 @@ class CoachConversationsTests {
         }
     }
 
-    private fun EngineRoomFixture.turn(thread: Id<CoachThread>?, vararg calls: Pair<String, String>): OpenTurn.Turn {
+    private fun EngineRoomFixture.turn(thread: Id<CoachThread>?, vararg calls: Pair<String, String>, phoneReads: List<String> = emptyList()): OpenTurn.Turn {
         val runner = ActionRunner(engine, engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
         val turn = (runner.run(OpenTurn(thread, "Question")) as Outcome.Committed).result
         val executor = AbilityExecutor(runner, TurnPhone.catalog(), "https://windmill.works")
-        calls.forEachIndexed { index, (name, input) ->
-            val outcome = executor.run(AbilityRequest("call-$index-$name", name, Json.parse(input)), turn.coach, Seat.bound)
+        fun ran(id: String, name: String, input: String) {
+            val outcome = executor.run(AbilityRequest(id, name, Json.parse(input)), turn.coach, Seat.bound)
             assertTrue("$name ran: $outcome", (outcome as Outcome.Committed).result is AbilityOutcome.Result)
         }
+        phoneReads.forEach { name -> ran(contextCallPrefix + name, name, "{}") }
+        calls.forEachIndexed { index, (name, input) -> ran("call-$index-$name", name, input) }
         check(runner.run(EndTurn(turn.coach, MessageState.completed, "An answer")) is Outcome.Committed)
         return turn
     }
@@ -257,7 +261,7 @@ class CoachConversationsTests {
             val seeded = room.turn(null, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""",
                 "create_routine" to """{"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press"}]}""")
             room.now += 60_000
-            val asked = room.turn(seeded.thread, "list_sessions" to "{}", "list_notes" to "{}", "list_exercises" to "{}", "list_routines" to "{}")
+            val asked = room.turn(seeded.thread, phoneReads = CoachTurnBounds.contextReads)
             val conversations = room.store.conversations
             conversations.watch("chat", checkNotNull(asked.thread.record.string), emptyList())
             conversations.read()
@@ -272,7 +276,7 @@ class CoachConversationsTests {
         EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
             room.select("u1")
             fun routine(n: Int) = "create_routine" to """{"id":"rt_0000000$n","name":"Day $n","position":${n - 1},"entries":[{"exerciseId":"bench-press"}]}"""
-            val made = room.turn(null, "list_sessions" to "{}", "list_notes" to "{}", "list_exercises" to "{}", "list_routines" to "{}", routine(1), routine(2), routine(3))
+            val made = room.turn(null, routine(1), routine(2), routine(3), phoneReads = CoachTurnBounds.contextReads)
             val conversations = room.store.conversations
             conversations.watch("chat", checkNotNull(made.thread.record.string), emptyList())
             conversations.read()
@@ -280,9 +284,9 @@ class CoachConversationsTests {
             assertEquals("Read nothing from your log", reply.readLine)
             assertEquals(listOf(CreatedRoutine("rt_00000001", "Day 1", 1), CreatedRoutine("rt_00000002", "Day 2", 1), CreatedRoutine("rt_00000003", "Day 3", 1)), reply.routines)
             room.now += 60_000
-            room.turn(made.thread, "list_notes" to "{}", "list_routines" to "{}")
+            room.turn(made.thread, phoneReads = CoachTurnBounds.contextReads)
             conversations.read()
-            assertEquals(listOf("Read nothing from your log", "Read your notes · read your program"), conversations.exchanges("chat").map { it.answer?.readLine })
+            assertEquals(listOf("Read nothing from your log", "Read your recent workouts · read your notes · read your movement list · read your program"), conversations.exchanges("chat").map { it.answer?.readLine })
         }
     }
 
@@ -290,15 +294,32 @@ class CoachConversationsTests {
     @Test fun theSeededMovementListCountsAsNoLogOfThePersons() = runTest {
         EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
             room.select("u1")
-            val first = room.turn(null, "list_exercises" to "{}")
+            val first = room.turn(null, phoneReads = listOf("list_exercises"))
             room.now += 60_000
             room.turn(first.thread, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""")
             room.now += 60_000
-            room.turn(first.thread, "list_exercises" to "{}")
+            room.turn(first.thread, phoneReads = listOf("list_exercises"))
             val conversations = room.store.conversations
             conversations.watch("chat", checkNotNull(first.thread.record.string), emptyList())
             conversations.read()
             assertEquals(listOf("Read nothing from your log", "Read nothing from your log", "Read your movement list"), conversations.exchanges("chat").map { it.answer?.readLine })
+        }
+    }
+
+    // A phone holding only weigh-ins has no note and no routine, and Coach chose to look: the read it asked for says its phrase and never that it read nothing.
+    @Test fun aPhoneHoldingOnlyWeighInsSaysTheBodyweightCoachChoseToRead() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            val day = Instant.ofEpochMilli(room.now).atZone(ZoneId.of("UTC")).toLocalDate()
+            assertNull(room.store.bodyweight.weighIn(day.toString(), 80.5))
+            val first = room.turn(null, phoneReads = CoachTurnBounds.contextReads)
+            room.now += 60_000
+            room.turn(first.thread, "list_bodyweight" to "{}", phoneReads = CoachTurnBounds.contextReads)
+            val conversations = room.store.conversations
+            conversations.watch("chat", checkNotNull(first.thread.record.string), emptyList())
+            conversations.read()
+            assertEquals(listOf("Read nothing from your log", "Read your recent workouts · read your notes · read your movement list · read your program · read your bodyweight"),
+                conversations.exchanges("chat").map { it.answer?.readLine })
         }
     }
 

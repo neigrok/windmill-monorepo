@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.coach.turn.contextCallPrefix
 import works.windmill.gym.coach.turn.CoachTurnFault
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -51,10 +52,14 @@ class AskTests {
         assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = listOf(said("get_stats"), said("list_notes"))).readLine)
         assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("list_notes"), said("get_stats"))).readLine)
         assertEquals("Read your notes · read your program", coachReply(calls = listOf(said("list_notes"), said("list_routines"))).readLine)
-        val emptyLog = listOf(said("list_sessions"), said("list_notes"), said("list_exercises"), said("list_routines"))
-        assertEquals("Read nothing from your log", coachReply(calls = emptyLog, logStood = false).readLine)
-        assertEquals("Read your movement history", coachReply(calls = emptyLog + said("get_stats"), logStood = false).readLine)
-        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = emptyLog, logStood = false).readLine)
+        val phoneReads = listOf("list_sessions", "list_notes", "list_exercises", "list_routines").map { said(it).copy(callId = contextCallPrefix + it) }
+        val theyAll = "Read your recent workouts · read your notes · read your movement list · read your program"
+        assertEquals("Read nothing from your log", coachReply(calls = phoneReads, logStood = false).readLine)
+        assertEquals(theyAll, coachReply(calls = phoneReads, logStood = true).readLine)
+        assertEquals("a read Coach chose says its phrase over an empty log", "$theyAll · read your bodyweight", coachReply(calls = phoneReads + said("list_bodyweight"), logStood = false).readLine)
+        assertEquals("Read your notes", coachReply(calls = listOf(said("list_notes")), logStood = false).readLine)
+        assertEquals("Read your movement history", coachReply(calls = phoneReads + said("get_stats"), logStood = false).readLine)
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = phoneReads, logStood = false).readLine)
         assertEquals("a write is no read", "Read nothing from your log", coachReply(calls = listOf(said("create_routine"))).readLine)
         assertEquals("a read that was refused did not run", "Read nothing from your log",
             coachReply(calls = listOf(said("list_notes", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readLine)
