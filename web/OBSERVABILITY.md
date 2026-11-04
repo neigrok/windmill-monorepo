@@ -236,7 +236,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
-refusal, a refused clipboard, a 4xx, a load aborted because the roadmap was left, a request lost offline or behind a hidden
+refusal, a refused clipboard, a browser refusing storage, a 4xx, a load aborted because the roadmap was left, a request lost offline or behind a hidden
 page. Session expiry, including the 20-second account poll, keeps device work and reaches the lapsed line.
 
 A render failure with no boundary of its own, an uncaught error and an unhandled rejection go through `reportError`: it

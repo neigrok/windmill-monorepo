@@ -1,12 +1,14 @@
 // Per-tree, per-device view preferences. One localStorage slot each, a { [treeId]: value } map;
 // a broken slot reads as empty. None of it syncs.
 
+import { localStorageOrNothing, sessionStorageOrNothing } from './browserStorage.js';
+
 const LAST_VIEW_KEY = 'windmill:view:last';
 const VIEWS = ['list', 'board', 'tree'];
 const WRITTEN_VIEWS = ['board', 'tree'];
 
 export class ViewPrefs {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 
@@ -89,26 +91,26 @@ function takeNote(key, storage) {
   }
 }
 
-export function notePlantedQuest(storage = globalThis.sessionStorage) {
+export function notePlantedQuest(storage = sessionStorageOrNothing()) {
   leaveNote(PLANTED_QUEST_KEY, storage);
 }
 
-export function noteForked(storage = globalThis.sessionStorage) {
+export function noteForked(storage = sessionStorageOrNothing()) {
   leaveNote(FORKED_KEY, storage);
 }
 
-export function takePlantNote(storage = globalThis.sessionStorage) {
+export function takePlantNote(storage = sessionStorageOrNothing()) {
   return { quest: takeNote(PLANTED_QUEST_KEY, storage), forked: takeNote(FORKED_KEY, storage) };
 }
 
-export function stampBorn(treeId, storage = globalThis.sessionStorage) {
+export function stampBorn(treeId, storage = sessionStorageOrNothing()) {
   try {
     storage.setItem(BORN_KEY, treeId);
   } catch {
   }
 }
 
-export function peekBorn(treeId, storage = globalThis.sessionStorage) {
+export function peekBorn(treeId, storage = sessionStorageOrNothing()) {
   try {
     return storage.getItem(BORN_KEY) === treeId;
   } catch {
@@ -116,7 +118,7 @@ export function peekBorn(treeId, storage = globalThis.sessionStorage) {
   }
 }
 
-export function clearBorn(treeId, storage = globalThis.sessionStorage) {
+export function clearBorn(treeId, storage = sessionStorageOrNothing()) {
   try {
     if (storage.getItem(BORN_KEY) === treeId) storage.removeItem(BORN_KEY);
   } catch {

@@ -487,6 +487,10 @@ respliced edges, so those edges cannot raise the masked-work Restore offer after
 captured node lives and edges; concurrent peer edges stamped after that gesture stay recoverable through
 masked work.
 
+**Device storage.** The stores in `persistence/` keep what never syncs: the last place, the view, the legend, workspaces and
+the ledgers. Each reaches the browser's storage through `browserStorage.js`, so a browser that refuses storage leaves a room
+that opens and remembers nothing, with nothing reported.
+
 **Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo
 and tree rename, contains notification, persistence and transport failures after the lattice join. Applied
 dispatches keep their receipt, and persistence or transport failures mark durability at risk. Pre-apply

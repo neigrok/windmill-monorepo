@@ -191,7 +191,7 @@ function publicFile(pathname) {
 }
 
 function hostPage(view, stylesheet) {
-  return '<!doctype html><meta name="viewport" content="width=device-width"><script>localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));</script>'
+  return '<!doctype html><meta name="viewport" content="width=device-width"><script>try{localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));}catch{}</script>'
     + `<link rel="stylesheet" href="${stylesheet}"><div id="root" style="height:100vh"></div><script type="module" src="/host-entry.js"></script>`;
 }
 
@@ -240,7 +240,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false } = {}) {
   await ready;
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -258,6 +258,13 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', su
   };
   page.on('pageerror', (error) => report(error.stack ?? error.message));
   page.on('console', (message) => { if (message.type() === 'error') report(message.text()); });
+  if (storageRefused) {
+    await page.addInitScript(() => {
+      for (const name of ['localStorage', 'sessionStorage']) {
+        Object.defineProperty(window, name, { configurable: true, get() { throw new DOMException('Access is denied for this document.', 'SecurityError'); } });
+      }
+    });
+  }
   await page.route('**/v1/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     let body = {};

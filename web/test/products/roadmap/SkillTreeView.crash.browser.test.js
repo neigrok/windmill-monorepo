@@ -81,3 +81,17 @@ hostTest('Chromium: asking for a thrown Board again retries it, and a second thr
 function activeLabel(page) {
   return page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
 }
+
+for (const [name, options] of [['an owner', {}], ['a reader', { role: 'reader' }], ['the demo', { role: 'reader', demo: true }]]) {
+  hostTest(`Chromium: where the browser refuses storage the room still opens for ${name}, and keeps nothing`, async () => {
+    const { page, errors } = await openHost({ ...options, storageRefused: true });
+    try {
+      await page.locator('.st-roadmap-identity').waitFor();
+      await page.getByRole('button', { name: 'Board', exact: true }).click();
+      await page.locator('.st-view-layer--board.is-active .st-board-card[data-step-id="wind"]').waitFor();
+      await page.getByRole('button', { name: 'Graph', exact: true }).click();
+      await page.locator('.st-roadmap-identity[data-view="tree"]').waitFor();
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

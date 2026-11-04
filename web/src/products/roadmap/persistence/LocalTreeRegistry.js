@@ -3,6 +3,7 @@
 // of unclaimed entries, so a claim can never adopt a tree this device didn't bear.
 
 import { fetchMe } from '../../../shell/auth/AuthClient.js';
+import { localStorageOrNothing } from './browserStorage.js';
 
 const KEY = 'windmill:device-trees';
 
@@ -42,7 +43,7 @@ function visibleTo(entry, owner) {
 }
 
 export class LocalTreeRegistry {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 

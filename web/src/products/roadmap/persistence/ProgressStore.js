@@ -1,10 +1,13 @@
 // Reads the localStorage progress keys that browsers still hold; nothing writes them. `drainInto`
 // moves residue into the SyncStore private lane and clears the key.
 // TODO: delete this file once the drain has plausibly run everywhere.
+
+import { localStorageOrNothing } from './browserStorage.js';
+
 const KEY_PREFIX = 'windmill:progress:';
 
 export class ProgressStore {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 
