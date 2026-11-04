@@ -78,6 +78,7 @@ switched-to state.
   truncation specimen (353:5801). Focus is a 2px `:focus-visible` ring with 2px offset in the brand colour.
 - Accessible names: the view switch is a two-option group named *View* with `aria-pressed` on the
   active option; *3/8* reads *3 of 8 steps done*; a heading reads *Up next, 2 steps*.
+- The view glyphs are one pair on every band: three outlined columns for Board, a branching tree for Graph (01.02).
 
 ## Step page and modal
 

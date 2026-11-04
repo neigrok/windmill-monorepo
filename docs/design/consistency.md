@@ -580,10 +580,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   fixed 30px height with `white-space: nowrap` and 32px grid gutters, and the 18.05 specimen (380:18803) leaves the Shell out.
   Proposed, awaiting the owner: the pills fold into one current-room menu by em width (phone 25.23–25.24). The Shell owner draws it
   in the Shell file and builds it.
-- **Board · two pairs of view glyphs.** The phone identity row (258:1397) draws Board as three
-  outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
-  strokes and Graph as a branching tree. `identity/ViewSwitch.jsx` follows each band: phones draw the
-  icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
 - **Board · two skeleton cards.** The desktop Skeleton card (369:4027) breathes opacity 1 → .6 over
   1200ms ease-glow for as long as the roadmap loads; the phone Skeleton card (369:10026) holds still,
   and the motion canon reserves endless breathing for the crowned root (`tokens/motion.css`).
