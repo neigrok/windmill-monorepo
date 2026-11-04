@@ -594,7 +594,7 @@ class Device:
 
     def tap(self, value, contains=False):
         previous = None
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + 30 * self.patience
         while time.monotonic() < deadline:
             node = self.find(value, timeout=max(.1, deadline - time.monotonic()), contains=contains)
             current = node.get("bounds", "")
@@ -680,7 +680,7 @@ class Device:
     def sign_in(self, token):
         self.run("shell", "-T", "run-as", PACKAGE, "dd", "of=files/design-capture-link", "bs=1", f"count={len(token)}", input=token.encode())
         self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.DesignCaptureActivity")
-        end = time.monotonic() + 30
+        end = time.monotonic() + 30 * self.patience
         while time.monotonic() < end:
             result = self.run("exec-out", "run-as", PACKAGE, "cat", "files/design-capture-result", check=False).decode()
             if result == "signed-in":
