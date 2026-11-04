@@ -183,7 +183,6 @@ object GymType {
     val proposalTitle = sans(26, FontWeight.Bold, leading = 36)
     val proposalSummary = sans(20, FontWeight.Bold, leading = 28)
     val proposalBadge = sans(12, FontWeight.SemiBold)
-    val retry = sans(14, FontWeight.SemiBold)
     val shareTitle = sans(26, FontWeight.ExtraBold)
 
     // Coach, in Nunito: its answers, choices, sources, access and history.
@@ -196,7 +195,6 @@ object GymType {
     val coachSupporting = nunito(14, leading = 20)
     val coachStrong = nunito(14, FontWeight.Bold, leading = 20)
     val coachAction = nunito(14, FontWeight.Bold, leading = 20, tracking = .1)
-    val coachGroupLabel = nunito(14, FontWeight.Bold)
     val coachLine = nunito(14)
     val coachNone = nunito(15)
     val coachNote = nunito(12)
@@ -217,7 +215,6 @@ object GymType {
     val discardRoutineTitle = discardWorkoutTitle.copy(fontWeight = FontWeight.Normal)
     val discardText = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp)
     val discardAction = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp)
-    val coachChoice = discardAction.copy(letterSpacing = .1.sp)
     val onboardingBackGlyph = TextStyle(fontSize = 32.sp)
 
     // Onboarding.
