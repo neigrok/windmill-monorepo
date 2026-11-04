@@ -223,7 +223,7 @@ class CoachAnonymousChatTests {
             advanceUntilIdle()
             room.store.conversations.read()
             assertEquals(MessageState.failed, coach.exchanges(chat).single().answer?.state)
-            assertEquals(CoachTurnFault.noAnswer.sentence, Ask.ending(MessageState.failed))
+            assertEquals("Coach couldn’t finish. Ask again.", Ask.ending(MessageState.failed, truncated = false))
             coach.saveDraft(chat, CoachDraft("Second question"))
             assertTrue(coach.send(chat, "Second question"))
             advanceUntilIdle()

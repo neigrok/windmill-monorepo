@@ -41,17 +41,12 @@ class AskTests {
     }
 
     @Test
-    fun theReceiptSpellsWhatWasServedAndLeavesOutWhatWasNot() {
-        assertEquals("read 214 sets · 12 weeks · 34 sessions",
-            Ask.receipt(ReadTally(sets = 214, sessions = 34, weeks = 12)))
-        assertEquals("read 1 set · 1 week · 1 session",
-            Ask.receipt(ReadTally(sets = 1, sessions = 1, weeks = 1)))
-        assertEquals("read 34 sessions", Ask.receipt(ReadTally(sessions = 34)))
-    }
-
-    @Test
-    fun anAnswerThatReadNothingSaysSo() {
-        assertEquals("read nothing from your log", Ask.receipt(ReadTally()))
+    fun theReceiptSaysTheWorkoutsItReadElseWhatItReadInWordsElseNothing() {
+        assertEquals("Read 18 workouts · 6 weeks", coachReply(read = ReadTally(sets = 214, sessions = 18, weeks = 6)).readLine)
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1)).readLine)
+        assertEquals("Read nothing from your log", coachReply().readLine)
+        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("get_stats"))).readLine)
+        assertEquals(null, coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("last_time"))).readLine)
     }
 
     @Test
@@ -59,16 +54,17 @@ class AskTests {
         assertEquals(mapOf(
             MessageState.running to null,
             MessageState.completed to null,
-            MessageState.stopped to "Response stopped.",
-            MessageState.declined to "Coach couldn’t take that one",
-            MessageState.failed to "Coach didn’t answer. Try again in a moment",
-            MessageState.interrupted to "Coach didn’t answer. Try again in a moment",
-        ), MessageState.entries.associateWith(Ask::ending))
+            MessageState.stopped to "Stopped.",
+            MessageState.declined to "Coach declined to answer this.",
+            MessageState.failed to "Coach couldn’t finish. Ask again.",
+            MessageState.interrupted to "Interrupted. What arrived is kept.",
+        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false) })
+        assertEquals("Cut short. Ask Coach to go on.", Ask.ending(MessageState.completed, truncated = true))
     }
 
     private fun said(name: String, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok): CoachCall {
         val ability = TurnPhone.catalog().ability(name)
-        return coachCall(name, ability?.phrase, ability?.kind, outcome)
+        return coachCall(name, ability?.phrase, outcome)
     }
 
     @Test
@@ -80,11 +76,28 @@ class AskTests {
     }
 
     @Test
+    fun theStepLineJoinsThePhrasesOfTheCallsSoFarAndAnAnswerWithNoneDrawsNone() {
+        assertEquals("read your recent workouts · read your notes · read your movement list · read your program · wrote a proposal for one of your routines",
+            coachReply(calls = listOf("list_sessions", "list_notes", "list_exercises", "list_routines", "propose_routine_change").map { said(it) }).stepLine)
+        assertEquals(null, coachReply().stepLine)
+    }
+
+    @Test
+    fun aRowOfWhatCoachReadCountsTheWorkoutsItServedAndElseSaysItsPhrase() {
+        val served = ReadServed.decode(Json.objectOf("sessions" to Json.Arr(listOf(Json.of("session01"), Json.of("session02"))), "sets" to Json.Arr(emptyList()), "weeks" to Json.Arr(listOf(Json.of(1_785_000_000_000L)))))
+        assertEquals("Read 2 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Ids(served)).title)
+        assertEquals("Read 3 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Counts(ReadTally(sessions = 3))).title)
+        assertEquals("Read your recent workouts", coachCall("list_sessions", "read your recent workouts").title)
+        assertEquals(null, coachCall("summon_lightning", phrase = null).title)
+        assertEquals(listOf("list_routines"), coachReply(calls = listOf(said("list_routines"), said("summon_lightning"), said("get_stats", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readRows.map { it.name })
+    }
+
+    @Test
     fun aToolThisBuildCannotNameOrThatWasRefusedPrintsNothingAndTheRestStillDo() {
         val reply = coachReply(calls = listOf(said("list_routines"), said("summon_lightning"),
             said("save_note", AbilityCall.Outcome.Refused(AbilityRefusal.refused)), said("get_stats")))
         assertEquals(listOf("read your program", "read your movement history"), reply.steps)
-        assertEquals(listOf(null, null), listOf(said("summon_lightning").phrase, said("summon_lightning").kind))
+        assertEquals(null, said("summon_lightning").phrase)
         assertTrue(reply.calls.none { it.seatRefused })
         assertTrue(said("save_note", AbilityCall.Outcome.Refused(AbilityRefusal.seatRequired)).seatRefused)
     }

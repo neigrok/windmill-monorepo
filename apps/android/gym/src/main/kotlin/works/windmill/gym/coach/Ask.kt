@@ -38,6 +38,7 @@ object Ask {
     const val draftInvalid = "This draft can’t be saved. Ask Coach for a new one."
     const val draftRetry = "Couldn’t save the routine. Try again."
 
+    const val stopped = "Stopped."
     const val couldNotTake = "Coach couldn’t take that one"
 
     const val accessNeedsSignIn = "Coach needs your workout log. Please sign in."
@@ -67,7 +68,7 @@ object Ask {
     fun ending(state: MessageState, truncated: Boolean): String? = when (state) {
         MessageState.running -> null
         MessageState.completed -> if (truncated) "Cut short. Ask Coach to go on." else null
-        MessageState.stopped -> "Stopped."
+        MessageState.stopped -> stopped
         MessageState.declined -> "Coach declined to answer this."
         MessageState.failed -> "Coach couldn’t finish. Ask again."
         MessageState.interrupted -> "Interrupted. What arrived is kept."

@@ -190,8 +190,8 @@ class HiddenWorkoutTests {
             compose.onNode(hasText("Coach") and hasClickAction()).performClick()
             compose.onNodeWithContentDescription("Question").performClick().performTextReplacement("Show my routine")
             compose.onNodeWithContentDescription("Send").performClick()
-            compose.waitUntil(10_000) { compose.onAllNodesWithText("Open routine").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("Open routine").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Routine created · 1 movement", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Leg Day", useUnmergedTree = true).performClick()
             compose.onNodeWithText("Start workout").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Finish").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("Hide workout").performClick()

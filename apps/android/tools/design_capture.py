@@ -253,6 +253,16 @@ class Fixture:
             time.sleep(retry["retryAfterMs"] / 1000)
         raise RuntimeError("Capture fixture sync did not acknowledge every intent within 20 attempts.")
 
+    def sync(self, rows):
+        schema = json.loads((ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"]
+        _, hello = self.request("/v1/sync/hello", token=self.token, headers={"Sync-Schema": str(schema)})
+        self.push(rows, hello["schema"])
+
+    # Rows a recipe says another device wrote: `$now` is this run's clock and `$stamp` its write stamp.
+    def sync_recipe_rows(self, rows):
+        written = json.dumps(rows).replace('"$now"', str(self.now)).replace("$stamp", f"{self.now}:0:r_capture00000")
+        self.sync(json.loads(written))
+
     def seed(self, replacement=None):
         digest = hashlib.sha256(self.token.encode()).hexdigest()
         self.sql(f"INSERT INTO users(id,email) VALUES ('{self.account}','{self.email}');\n"
@@ -325,9 +335,7 @@ class Fixture:
         for index, (title, text) in enumerate([("Training week", "Three sessions each week."), ("Equipment", "Barbells and dumbbells are available.")]):
             rows.append({"t": "note", "id": f"note_{prefix}{index}", "life": ["alive", stamp], "born": stamp,
                          "f": {"title": [title, stamp], "body": [text, stamp], "ord": ["a" + str(index), stamp]}})
-        schema = json.loads((ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"]
-        _, hello = self.request("/v1/sync/hello", token=self.token, headers={"Sync-Schema": str(schema)})
-        self.push(rows, hello["schema"])
+        self.sync(rows)
         _, weights = self.request("/v1/gym/bodyweight", token=self.token)
         _, notes = self.request("/v1/gym/notes", token=self.token)
         if len(weights.get("entries", [])) != 6 or len(notes.get("notes", [])) != 2:
@@ -345,7 +353,9 @@ class ModelFixture(BaseHTTPRequestHandler):
         self.server.calls += 1
         content = self.server.responses.pop(0) if self.server.responses else MODEL_FALLBACK
         start_delay, chunk_chars, chunk_delay = getattr(self.server, "timing", (0, None, 0))
-        stop_reason = "tool_use" if any(block["type"] == "tool_use" for block in content) else "end_turn"
+        named_stop = next((block["reason"] for block in content if block["type"] == "stop"), None)
+        content = [block for block in content if block["type"] != "stop"]
+        stop_reason = named_stop or ("tool_use" if any(block["type"] == "tool_use" for block in content) else "end_turn")
         response = {"id": "msg_capture", "type": "message", "role": "assistant", "model": body.get("model", "fixture"),
                     "content": content, "stop_reason": stop_reason, "usage": {"input_tokens": 100, "output_tokens": 25, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}
         if body.get("stream"):
@@ -736,6 +746,13 @@ class Device:
                 self.run("shell", "-T", "sh", input=f"input text {code}\n".encode())
             elif "key" in step:
                 self.run("shell", "input", "keyevent", step["key"])
+            elif "network" in step:
+                if step["network"] not in ("on", "off"):
+                    raise ValueError("Network steps support on and off.")
+                self.run("shell", "cmd", "connectivity", "airplane-mode", "enable" if step["network"] == "off" else "disable")
+            elif "relaunch" in step:
+                self.run("shell", "am", "force-stop", PACKAGE)
+                self.launch()
             elif "swipe" in step:
                 self.run("shell", "input", "swipe", *map(str, step["swipe"]))
             elif "touch" in step:
@@ -956,6 +973,8 @@ def main():
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
+                        if "sync" in scenario:
+                            fixture.sync_recipe_rows(scenario["sync"])
                         device.steps(scenario["steps"])
                         tree = device.settle(resend_countdown=scenario.get("resend_countdown", False),
                                              notification_clock=device.notification_clock,

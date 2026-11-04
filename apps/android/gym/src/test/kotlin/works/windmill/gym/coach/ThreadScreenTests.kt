@@ -348,8 +348,7 @@ class ThreadScreenTests {
         val ask = AskBinding(room.store)
         compose.setContent { ThreadScreen(ask, ask, "thread0001", emptyList(), emptySet(), "Coach", {}, {}, {}) }
         read("Proposal · Push Day").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Read 1 week · 1 session").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Read 1 workout · 1 week").assertDoesNotExist()
+        compose.onNodeWithText("Read 1 workout · 1 week").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Heavier triples.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
         scope.cancel()

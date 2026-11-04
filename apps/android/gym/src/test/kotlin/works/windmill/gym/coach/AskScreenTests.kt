@@ -21,7 +21,6 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -52,11 +51,18 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.domain.kit.AbilityClass
+import java.io.File
+import kotlinx.coroutines.launch
+import works.windmill.agent.TurnConnectionLost
+import works.windmill.agent.TurnSeat
+import works.windmill.agent.TurnTransport
+import works.windmill.domain.kit.Repository
 import works.windmill.gym.coach.turn.CoachTurnRefusal
+import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.AbilityRefusal
+import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.presentation.ChangeKind
@@ -77,6 +83,7 @@ import works.windmill.domain.kit.Id
 import works.windmill.sync.api.RecordRef
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.Pulls
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.modelserver.ServerCall
@@ -308,7 +315,7 @@ class AskScreenTests {
                 onAsk = { _, _ -> }, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
-        compose.onNodeWithText(CoachTurnFault.noAnswer.sentence).assertIsDisplayed()
+        compose.onNodeWithText("Interrupted. What arrived is kept.").assertIsDisplayed()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         scope.cancel()
     }
@@ -449,32 +456,175 @@ class AskScreenTests {
     }
 
     @Test
-    fun theStepsSitBehindTheReceiptInTheLiftersWords() {
+    fun theStepsStandBehindTheReceiptInTheLiftersWords() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val read = ReadTally(sets = 214, sessions = 34, weeks = 12)
-        val answer = CoachExchange("request-a", "what’s stalled?", 0, answer = coachReply("Bench has been flat for three weeks.", read = read, calls = listOf(
+        val answer = CoachExchange("request-a", "what’s stalled?", 0, answer = coachReply("Bench has been flat for three weeks.", read = ReadTally(sets = 214, sessions = 34, weeks = 12), calls = listOf(
             coachCall("get_stats", "read your movement history"),
-            coachCall("summon_lightning", phrase = null, kind = null),
-            coachCall("list_notes", "read your notes"),
-            coachCall("get_stats", "read your movement history"),
+            coachCall("summon_lightning", phrase = null),
+            coachCall("list_notes", "read your notes", detail = "2 notes"),
         )))
         room(signedIn(scope).store, thread = listOf(answer), refusal = null, doors = mutableListOf())
 
-        val receipt = compose.onNodeWithText(Ask.receipt(read).replaceFirstChar { it.uppercase() }).performScrollTo()
-        receipt.assertIsDisplayed()
-        receipt.assert(hasStateDescription("collapsed"))
         compose.onNodeWithText("Read your movement history").assertDoesNotExist()
-        compose.onNodeWithText("summon_lightning", substring = true).assertDoesNotExist()
-
-        receipt.performClick()
-
-        compose.onNodeWithText(Ask.receipt(read).replaceFirstChar { it.uppercase() }).assert(hasStateDescription("expanded"))
+        compose.onNodeWithText("Read 34 workouts · 12 weeks").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Read your movement history").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Read your notes").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(Ask.receipt(read).replaceFirstChar { it.uppercase() }).assertIsDisplayed()
+        compose.onNodeWithText("2 notes").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("summon_lightning", substring = true).assertDoesNotExist()
         compose.onNodeWithText("get_stats", substring = true).assertDoesNotExist()
         compose.onNodeWithText("list_notes", substring = true).assertDoesNotExist()
+        scope.cancel()
+    }
+
+    // A server that scripts one turn, signed out, on a chat whose read is running.
+    private fun turning(scope: CoroutineScope, server: TurnTransport): EngineRoomFixture =
+        EngineRoomFixture(tmp.newFolder(), scope, coachServer = server, localCoach = LocalCoach(File(tmp.newFolder(), LocalCoach.fileName))).also { room ->
+            rooms += room
+            scope.launch { room.store.conversations.observe() }
+        }
+
+    private fun turnRoom(store: TrainingStore, chat: String) {
+        val ask = AskBinding(store)
+        compose.setContent {
+            AskScreen(ask, ask, store.coach.exchanges(chat), emptyList(), emptySet(), store.coach.isAsking(chat), null,
+                onAsk = { _, _ -> }, seed = "", origin = "https://windmill.works",
+                onThreads = {}, onReview = {}, conversationId = chat, onStop = { store.coach.stop() })
+        }
+    }
+
+    private fun waitForText(text: String) = compose.waitUntil(10_000) { compose.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+
+    @Test
+    fun theRunningWordsReachTheScreenBetweenCommitsAndTheRecordsFinalTextWins() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"text","data":{"delta":" it all."}},{"event":"done","data":{"state":"completed"}}]""").arr())
+        val room = turning(scope, server)
+        val coach = room.store.coach
+        val chat = compose.runOnIdle { coach.freshChat() }
+        turnRoom(room.store, chat)
+        compose.runOnIdle { assertTrue(coach.send(chat, "Question")) }
+        waitForText("Reading")
+        compose.onNodeWithText("Reading").assertIsDisplayed()
+        compose.runOnIdle {
+            val record = room.engine.read(ScopeRef(Gym.scope)) { read -> Repository.decode(CoachMessage, read.drawn(CoachMessage.type)) }.single { it.role == CoachMessage.Role.coach }
+            assertEquals("the record holds none of it until its next commit", "", record.text)
+            assertEquals(MessageState.running, record.state)
+            coach.stop()
+        }
+        waitForText("Reading it all.")
+        compose.onNodeWithText("Reading it all.").assertIsDisplayed()
+        compose.onNodeWithText("Reading").assertDoesNotExist()
+        compose.runOnIdle {
+            val record = room.engine.read(ScopeRef(Gym.scope)) { read -> Repository.decode(CoachMessage, read.drawn(CoachMessage.type)) }.single { it.role == CoachMessage.Role.coach }
+            assertEquals("Reading it all.", record.text)
+            assertEquals(MessageState.completed, record.state)
+            assertFalse(coach.isAsking(chat))
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aDroppedStreamSaysReconnectingInTheBandOverTheComposer() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telling = TellingRecorder()
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"resume"}]""").arr())
+        val room = turning(scope, server)
+        val coach = room.store.coach
+        val chat = compose.runOnIdle { coach.freshChat() }
+        val ask = AskBinding(room.store)
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides telling) {
+                AskScreen(ask, ask, coach.exchanges(chat), emptyList(), emptySet(), coach.isAsking(chat), null,
+                    onAsk = { _, _ -> }, seed = "", origin = "https://windmill.works",
+                    onThreads = {}, onReview = {}, conversationId = chat, onStop = {})
+            }
+        }
+        compose.runOnIdle { assertTrue(coach.send(chat, "Question")) }
+        waitForText(Ask.reconnecting)
+        compose.onNodeWithText(Ask.reconnecting).assertIsDisplayed()
+        compose.onNodeWithText("Reading").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close").assertDoesNotExist()
+        val band = compose.onNodeWithTag("coach-band", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals(16.dp, band.left)
+        assertEquals(48.dp, band.bottom - band.top)
+        compose.runOnIdle { assertTrue(telling.events.contains("gym_action" to mapOf("screen" to "coach", "action" to "reconnecting", "outcome" to "ok"))) }
+        scope.cancel()
+    }
+
+    @Test
+    fun aStopTheServerCouldNotHearSaysSoInABandTheLifterCanClose() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telling = TellingRecorder()
+        val script = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Thursday is still a Push day."}},{"await":"stop"}]""").arr())
+        val server = object : TurnTransport by script {
+            override suspend fun stop(turnId: String, seat: TurnSeat): Unit = throw TurnConnectionLost(null)
+        }
+        val room = turning(scope, server)
+        val coach = room.store.coach
+        val chat = compose.runOnIdle { coach.freshChat() }
+        val ask = AskBinding(room.store)
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides telling) {
+                AskScreen(ask, ask, coach.exchanges(chat), emptyList(), emptySet(), coach.isAsking(chat), null,
+                    onAsk = { _, _ -> }, seed = "", origin = "https://windmill.works",
+                    onThreads = {}, onReview = {}, conversationId = chat, onStop = { coach.stop() })
+            }
+        }
+        compose.runOnIdle { assertTrue(coach.send(chat, "Question")) }
+        waitForText("Thursday is still a Push day.")
+        compose.runOnIdle { coach.stop() }
+        val said = "Coach is stopped on this phone. Stopping it on the server needs a connection."
+        waitForText(said)
+        compose.onNodeWithText("Stopped.").assertIsDisplayed()
+        compose.onNodeWithText("Thursday is still a Push day.").assertIsDisplayed()
+        val band = compose.onNodeWithTag("coach-band", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals(68.dp, band.bottom - band.top)
+        compose.onNodeWithContentDescription("Close").performClick()
+        compose.onNodeWithText(said).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(CoachTurnFault.stoppedOffline, coach.fault)
+            assertTrue(telling.events.containsAll(listOf(
+                "gym_action" to mapOf("screen" to "coach", "action" to "stop_notice", "outcome" to "ok"),
+                "gym_action" to mapOf("screen" to "coach", "action" to "stop_notice_closed", "outcome" to "ok"))))
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aPictureAnotherPhoneHoldsStandsAsItsPlaceInTheLiftersGroup() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val picture = SentPicture(CoachAttachment("picture-a", "image/jpeg", 0, 0, 0), onThisPhone = false)
+        val exchange = CoachExchange("request-a", "Is this program balanced?", 0, listOf(picture), answer = coachReply("It is balanced."))
+        room(signedIn(scope).store, thread = listOf(exchange), refusal = null, doors = mutableListOf())
+        val place = compose.onNodeWithText(Ask.pictureElsewhere).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val question = compose.onNodeWithText("Is this program balanced?").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue("the place stands over the words", place.bottom < question.top)
+        compose.onNodeWithContentDescription("Attached photo").assertDoesNotExist()
+        scope.cancel()
+    }
+
+    @Test
+    fun aRoutineASignedOutAnswerCreatedOffersKeepingItThroughSignIn() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telling = TellingRecorder()
+        val doors = mutableListOf<String>()
+        val exchange = CoachExchange("request-a", "My program", 0, answer = coachReply("I made a routine.", routines = listOf(CreatedRoutine("routine-a", "Full body A", 3)), calls = listOf(coachCall("create_routine", "created a routine"))))
+        val ask = AskBinding(signedOut(scope).store)
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides telling) {
+                AskScreen(ask, ask, listOf(exchange), emptyList(), emptySet(), false, null, { _, _ -> }, "", "https://windmill.works",
+                    onThreads = {}, onReview = {}, onSignIn = { doors += "signIn" }, onOpenRoutine = { doors += "routine:$it" })
+            }
+        }
+        compose.onNodeWithText("Keep it").performScrollTo().performClick()
+        compose.onNodeWithText("Full body A", useUnmergedTree = true).performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("signIn", "routine:routine-a"), doors)
+            assertEquals(listOf(
+                "gym_setup_step" to mapOf("screen" to "coach", "action" to "keep_routines"),
+                "gym_setup_step" to mapOf("screen" to "coach", "action" to "open_routine"),
+            ), telling.events.filter { it.first == "gym_setup_step" })
+        }
         scope.cancel()
     }
 
@@ -590,7 +740,7 @@ class AskScreenTests {
     fun aCallRefusedForItsSeatOffersSignInUnderTheLastAnswerOfASignedOutChatOnly() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val refused = CoachExchange("request-a", "Remember my injury", 0, answer = coachReply("I can’t save that signed out.", id = "answer-a",
-            calls = listOf(coachCall("save_note", "saved a note", AbilityClass.add, AbilityCall.Outcome.Refused(AbilityRefusal.seatRequired)))))
+            calls = listOf(coachCall("save_note", "saved a note", AbilityCall.Outcome.Refused(AbilityRefusal.seatRequired)))))
         val later = answered("And my week?", "Three days suit you.", "request-b")
         var thread by mutableStateOf(listOf(refused))
         val doors = mutableListOf<String>()

@@ -28,7 +28,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
-import works.windmill.domain.kit.AbilityClass
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.OpenTurnOnce
@@ -110,12 +109,13 @@ class CoachChatsTests {
             assertTrue(reply.onThisPhone)
             val created = reply.calls.single { it.name == "create_routine" }
             assertEquals(AbilityCall.Outcome.Ok, created.outcome)
-            assertEquals(AbilityClass.add, created.kind)
             assertEquals(listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009"))), created.created)
             assertEquals(listOf("list_sessions", "list_notes", "list_exercises", "list_routines", "create_routine"), reply.calls.map { it.name })
             assertEquals(reply.calls.map { works.windmill.gym.coach.turn.TurnPhone.catalog().ability(it.name)?.phrase }, reply.steps)
             assertEquals(CoachReceipt(ReadTally(), truncated = false, created = listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009")))), reply.receipt)
-            assertEquals(listOf(CreatedRoutine("rt_00000009", "Day 1")), reply.routines)
+            assertEquals(listOf(CreatedRoutine("rt_00000009", "Day 1", movements = 1)), reply.routines)
+            assertEquals(listOf("Read your recent workouts" to null, "Read your notes" to null, "Read your movement list" to null, "Read your program" to "Day 1", "Created a routine" to "Day 1"),
+                reply.calls.map { it.title to it.detail })
             assertEquals(CoachDraft(), coach.draft(chat))
             assertFalse(coach.isAsking(chat))
             assertEquals(room.threads().single().id.record.string, room.thread(chat))

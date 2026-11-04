@@ -160,7 +160,21 @@ observed control bounds and release in `finally` as described below.
 
 `tap` and `wait` match exact accessibility text, description or resource ID. `wait_contains`
 explicitly matches a visible partial label while a model answer grows. Other steps are `text`, `key`
-(Android key name) and `swipe` (`[fromX, fromY, toX, toY, durationMs]`). Canonical board IDs such as
+(Android key name), `swipe` (`[fromX, fromY, toX, toY, durationMs]`), `network` (`on` or `off`, the
+emulator's airplane mode, so a running stream drops) and `relaunch` (a force-stop and a launch, so a
+running turn dies with its process).
+
+A response may hold a `{"type": "stop", "reason": "..."}` block, which names the round's stop reason:
+`max_tokens` ends a turn truncated, `refusal` declined, and any other unknown reason failed. A recipe's
+optional `sync` array holds rows pushed through the sync door before its steps, as another device
+wrote them; `$now` is the run's clock and `$stamp` its write stamp.
+
+`--scenarios apps/android/tools/capture-recipes/coach-exchange.json` captures the signed-in phone turn's
+states against the seeded account. `coach-exchange-signed-out.json`, with `--capture-only --fixture
+apps/android/tools/capture-recipes/coach-setup-fixture.json`, captures the signed-out answer and the routines
+a turn created. It reads nothing from a log, so 01.19's receipt says so where its board's specimen counts two
+workouts, and neither recipe attaches a picture.
+ Canonical board IDs such as
 `02.7`, `08.58b`, `15a`, `27g` and `A4`, and filename
 slugs are validated. Choose a body-state selector, not the navigation label. Two matching fresh
 accessibility trees establish settlement. Recipes may opt into `resend_countdown: true`, which

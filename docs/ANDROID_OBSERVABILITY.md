@@ -223,7 +223,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_session_finished` | gym | none |
 | `gym_session_started` | gym | none |
 | `gym_set_logged` | gym | none |
-| `gym_setup_step` | gym | `screen`: `coach`; `action`: `shown`, `screenshot`, `build_manually`, `photo_selected`, `photo_removed`, `sign_in` |
+| `gym_setup_step` | gym | `screen`: `coach`; `action`: `shown`, `screenshot`, `build_manually`, `photo_selected`, `photo_removed`, `sign_in`, `open_routine`, `keep_routines` |
 | `gym_sign_in_decision` | gym, app | `state`: `shown`, `discard_confirmation`; `action`: `add`, `discard`, `cancel`; `outcome`: `completed`, `cancelled`, `changed` or the engine's error code |
 | `gym_sign_out` | gym | `state`: `shown`; `action`: `keep`, `discard`, `cancel`; `outcome`: `completed`, `failed`. Keep and Discard send their outcome signed out, under the phone's device id, so it cannot be joined to `shown` per user. A sign-out nobody was asked about (an expired session, account deletion) sends none |
 | `onboarding_action` | gym | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `action`: `next`, `back`, `swipe`, `adjust` |
@@ -249,6 +249,7 @@ foot turns to Retry.
 | `bodyweight` | `delete` | `held`, `closed`, `refused`, `failed` | |
 | `bodyweight` | `undo` | `ok`, `closed`, `failed` | |
 | `coach` | `access` | `available`, `bound`, `unavailable` | |
+| `coach` | `answering_elsewhere` | `ok` | |
 | `coach` | `continue_draft` | `ok` | |
 | `coach` | `copy` | `ok`, `failed` | |
 | `coach` | `copy_link` | `ok`, `failed` | |
@@ -258,7 +259,10 @@ foot turns to Retry.
 | `coach` | `jump_latest` | `ok` | |
 | `coach` | `open_link` | `ok`, `unavailable`, `failed` | |
 | `coach` | `read_sources` | `ok` | |
+| `coach` | `reconnecting` | `ok` | |
 | `coach` | `reply_open` | `ok` | |
+| `coach` | `stop_notice` | `ok` | |
+| `coach` | `stop_notice_closed` | `ok` | |
 | `finish` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
 | `finish` | `done` | `ok` | |
 | `finish` | `keep` | `ok` | |

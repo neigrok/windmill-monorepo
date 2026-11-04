@@ -852,7 +852,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         onThreads = { look(Away.Threads) },
                         onConnections = { look(Away.Connections) },
                         onOpenRoutine = { selectedRoutineId = it },
-                                onOpenChat = { openCoachChat(it, "reply_open") },
+                        onOpenChat = { openCoachChat(it, "reply_open") },
                         receipts = reviewFlow.receiptsAt(Reviewing.thread(standing.threadId)),
                         lookedAt = lookedAtIds,
                         backTo = backTo,

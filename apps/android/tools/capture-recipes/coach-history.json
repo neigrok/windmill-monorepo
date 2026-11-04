@@ -92,7 +92,7 @@
     ]
   },
   {
-    "board": "08.5",
+    "board": "08.36",
     "name": "coach-what-read",
     "account": "fixture",
     "steps": [
@@ -100,16 +100,16 @@
         "tap": "Is Push A still doing anything?"
       },
       {
-        "wait": "Read 1 workout \u00b7 1 week"
+        "wait": "Read 1 workout · 1 week"
       },
       {
-        "tap": "Read 1 workout \u00b7 1 week"
+        "tap": "Read 1 workout · 1 week"
       },
       {
         "wait": "What Coach read"
       },
       {
-        "wait": "Also read your notes."
+        "wait": "What Coach used, in order"
       }
     ],
     "after": [
