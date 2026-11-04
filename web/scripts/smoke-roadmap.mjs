@@ -37,7 +37,7 @@ const ROADMAP_LANDING_APP = '.beats';
 // Every element but the canvas hides for the Graph's shot, so its pixels are what WebGL drew and no caption or chrome.
 const CANVAS_ONLY = '* { visibility: hidden !important; } canvas.st-canvas { visibility: visible !important; }';
 const GROUND_DISTANCE = 24;
-// The share of the canvas far from its commonest colour. A blank one reads 0; the smallest healthy roadmap walked reads 1.4%.
+// The share of the canvas far from its commonest colour. A blank one reads 0; a healthy eight-step roadmap reads 2%.
 const PAINTED_SHARE = 0.002;
 
 function argumentsOf(argv) {

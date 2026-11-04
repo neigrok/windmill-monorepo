@@ -1178,26 +1178,20 @@ for (const change of ['filter', 'remote delete']) {
   });
 }
 
-test('Chromium: deleting both independent roots restores focus to the displayed empty-roadmap action', async () => {
+test('Chromium: a selection of every root offers Recolor and no Delete, and Delete returns once a root is let go', async () => {
   const page = await openSelectionPage(390, [
     { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
     { id: 'knots', label: 'Practise knots', prerequisites: [], color: 'olive' },
   ], { completed: [] });
   try {
     await holdStep(page, 'wind');
+    await page.getByRole('button', { name: 'Delete 1 step' }).waitFor();
     await touchStep(page, 'knots');
-    await page.getByRole('button', { name: 'Delete 2 steps' }).click();
-    await page.getByText('Your first step', { exact: true }).waitFor();
-    await page.clock.runFor(1000);
-    await page.waitForFunction(() => !document.querySelector('.st-board-card'));
-    await page.waitForFunction(() => document.activeElement?.matches('.st-board-state button'));
-    assert.deepEqual(await page.evaluate(() => ({
-      name: document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim(),
-      body: document.activeElement === document.body,
-      held: window.selectionHeld,
-      writes: window.writes,
-    })), { name: 'New step', body: false, held: ['wind', 'knots'], writes: [] });
-    assert.equal(await page.getByRole('tablist').count(), 0);
+    await page.locator('.st-board-bulk-delete').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('.st-board-bulk-recolor').count(), 1);
+    await touchStep(page, 'knots');
+    await page.getByRole('button', { name: 'Delete 1 step' }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.writes), []);
   } finally { await page.close(); }
 });
 

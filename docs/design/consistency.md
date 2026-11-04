@@ -646,8 +646,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   The tablet Activity panel keeps the drawn 12px gap beneath the strip, so on the Board it stands at
   y=184 where [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws
   y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
-- **Graph · last root.** A roadmap keeps a root on every view and band. The desktop dock drops *Delete step* for a sole root, and the
-  desktop and tablet selection bars drop Delete while the selection takes every root, with nothing saying why. No frame draws that dock or
+- **Graph and Board · last root.** A roadmap keeps a root on every view and band. The desktop dock drops *Delete step* for a sole root, and the
+  desktop and tablet selection bars and the phone Board's bulk bar drop Delete while the selection takes every root, with nothing saying why. No frame draws that dock or
   those bars. Draw them, or rule that not offering is enough.
 - **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph. The Board shortcuts dialog does not list A.
   Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.

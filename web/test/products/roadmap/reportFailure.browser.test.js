@@ -15,6 +15,8 @@ import '/src/products/roadmap/skilltree.css';
 import { BrowsePage } from '/src/products/roadmap/browse/BrowsePage.jsx';
 import { TreeSwitcher } from '/src/products/roadmap/identity/TreeSwitcher.jsx';
 import { NewTreeBirth } from '/src/products/roadmap/paste/NewTreeBirth.jsx';
+import { PasteComposer } from '/src/products/roadmap/paste/PasteComposer.jsx';
+import { parsePlan } from '/src/products/roadmap/paste/planGrammar.js';
 import { renameTree, deleteTree } from '/src/products/roadmap/persistence/TreeRegistry.js';
 import { QuestShelf } from '/src/products/roadmap/quests/QuestShelf.jsx';
 import { YourDataSection } from '/src/products/roadmap/settings/YourDataSection.jsx';
@@ -28,6 +30,10 @@ const doors = {
     onRename: (id, title) => renameTree(id, title), onDelete: (id) => deleteTree(id), onPreviewTitle() {},
   }),
   birth: () => React.createElement(NewTreeBirth),
+  composer: () => React.createElement(PasteComposer, {
+    append: true, text: '- Rig the boat', parse: parsePlan('- Rig the boat', []), kinds: [], planting: false,
+    onTextChange() {}, onKindsChange() {}, onClose() {}, onPlant() {},
+  }),
   quests: () => React.createElement(QuestShelf),
   data: () => React.createElement(YourDataSection),
 };
@@ -190,9 +196,8 @@ for (const [verb, act] of [
   }
 }
 
-test("Plant wears its style wherever the composer stands", async () => {
-  await withDoor('birth', {}, async (page) => {
-    await page.getByRole('button', { name: 'paste a plan' }).click();
+test("Add to tree wears Plant's style in a room with no birth page mounted", async () => {
+  await withDoor('composer', {}, async (page) => {
     const plant = page.locator('.pc-plant');
     await plant.waitFor();
     assert.deepEqual(await plant.evaluate((button) => {
