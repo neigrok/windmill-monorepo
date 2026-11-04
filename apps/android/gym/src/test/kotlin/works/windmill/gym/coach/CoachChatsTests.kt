@@ -650,6 +650,43 @@ class CoachChatsTests {
         }
     }
 
+    // Spaces alone hold nothing: they make no row and date none, and a picture beside them is the row's own, under its one name.
+    @Test fun aDraftOfOnlySpacesMakesNoRowInHistoryAndDatesNone() = runTest {
+        room(answers("Rest more")).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            conversations.watchHistory(true)
+            conversations.read()
+
+            val spaces = coach.freshChat()
+            for (text in listOf(" ", "   ", "\n\t ")) {
+                coach.saveDraft(spaces, CoachDraft(text))
+                assertEquals(emptyList<ConversationRow>(), coach.history)
+                assertFalse(coach.hasConversations)
+            }
+
+            val (photo, _) = room.withDraftPhoto(spaces, " ")
+            assertEquals(listOf(ConversationRow(spaces, "Photo", coach.chat(spaces)!!.updatedAtMs)), coach.history)
+            coach.saveDraft(spaces, CoachDraft(" ", photo))
+            assertEquals("Photo", coach.history.single().title)
+            coach.saveDraft(spaces, CoachDraft())
+
+            val asked = coach.freshChat()
+            assertTrue(coach.send(asked, "Am I overtraining?"))
+            advanceUntilIdle()
+            conversations.read()
+            val saidAt = room.messages().maxOf { it.at.ms }
+            room.now += 60_000
+            coach.saveDraft(asked, CoachDraft(" "))
+            assertEquals(listOf(ConversationRow(asked, "Am I overtraining?", saidAt, answerPreview = "Rest more")), coach.history)
+            coach.saveDraft(asked, CoachDraft("A real thought"))
+            assertEquals(listOf(ConversationRow(asked, "Am I overtraining?", coach.chat(asked)!!.updatedAtMs, answerPreview = "Rest more")), coach.history)
+        }
+    }
+
     @Test fun aRunningTurnReadsAsAnsweringAndItsConversationStays() = runTest {
         room(holdsOpen).use { room ->
             val coach = room.store.coach

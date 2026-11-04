@@ -11,7 +11,10 @@ import works.windmill.gym.presentation.SetTarget
 data class CoachAttachment(val id: String, val mediaType: String, val width: Int, val height: Int, val bytes: Long)
 
 @Serializable
-data class CoachDraft(val text: String = "", val photo: CoachAttachment? = null)
+data class CoachDraft(val text: String = "", val photo: CoachAttachment? = null) {
+    // Spaces alone hold nothing: they make no row in History and date none.
+    val holdsSomething: Boolean get() = text.isNotBlank() || photo != null
+}
 
 @Serializable
 data class KeptCoachDraft(val id: String, val draft: CoachDraft)
