@@ -14,8 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import works.windmill.domain.kit.Id
 import works.windmill.gym.coach.onboarding.CoachImportOutcome
@@ -69,7 +67,6 @@ class CoachChats internal constructor(
     private val selected = mutableStateMapOf<String, String>()
     private val restoredOwners = mutableSetOf<String>()
     private val chatVersions = mutableMapOf<Pair<String, String>, Long>()
-    private val conversationWrite = Mutex()
     private val drafts = mutableMapOf<Pair<String, String>, CoachDraft>()
     private val unsavedDrafts = mutableSetOf<Pair<String, String>>()
     private var ownerRevision = 0L
@@ -258,8 +255,7 @@ class CoachChats internal constructor(
             admit(seat)
             localCoach?.select(seat, id)
         } catch (failure: Exception) {
-            telemetry.unexpected("gym.saveConversation", failure)
-            this.failure = "Your conversation couldn’t be saved. Try again."
+            conversationNotSaved(failure)
         }
         selected[seat] = id
         watchSelected()
@@ -273,9 +269,13 @@ class CoachChats internal constructor(
             localCoach?.saveChat(seat, chat, select)
             failure = null
         } catch (failure: Exception) {
-            telemetry.unexpected("gym.saveConversation", failure)
-            this.failure = "Your conversation couldn’t be saved. Try again."
+            conversationNotSaved(failure)
         }
+    }
+
+    private fun conversationNotSaved(failure: Exception) {
+        telemetry.unexpected("gym.saveConversation", failure)
+        this.failure = "Your conversation couldn’t be saved. Try again."
     }
 
     fun keepPosition(id: String, scroll: Int, followEnd: Boolean) {
@@ -358,8 +358,7 @@ class CoachChats internal constructor(
             true
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            telemetry.unexpected("gym.saveConversation", failure)
-            this.failure = "Your conversation couldn’t be saved. Try again."
+            conversationNotSaved(failure)
             false
         }
         chats[seat to id]?.let { chats[seat to id] = it.copy(conversation = thread, updatedAtMs = now()) }
@@ -416,7 +415,7 @@ class CoachChats internal constructor(
         val rows = conversations?.rows.orEmpty().map { row ->
             val chat = beside[row.id] ?: return@map row
             val held = draft(chat.id)
-            val drafted = if (held.text.isNotEmpty() || held.photo != null) chat.updatedAtMs else 0
+            val drafted = if (held.isEmpty) 0 else chat.updatedAtMs
             row.copy(id = chat.id, askedAtMs = maxOf(row.askedAtMs, drafted))
         }
         val listed = rows.map { it.id }.toSet()
@@ -424,7 +423,7 @@ class CoachChats internal constructor(
             val held = draft(chat.id)
             val answers = retained(seat, chat.id)
             val kept = localCoach?.keptDrafts(seat, chat.id).orEmpty()
-            if (held.text.isEmpty() && held.photo == null && answers.isEmpty() && kept.isEmpty()) return@mapNotNull null
+            if (held.isEmpty && answers.isEmpty() && kept.isEmpty()) return@mapNotNull null
             val title = listOfNotNull(answers.firstOrNull()?.request()?.text, held.text, kept.firstOrNull()?.draft?.text).firstOrNull { it.isNotEmpty() } ?: "Photo"
             ConversationRow(chat.id, title, chat.updatedAtMs, answerPreview = answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
         }
@@ -531,8 +530,7 @@ class CoachChats internal constructor(
         val disk = localCoach ?: return
         drafts[seat to key] = disk.draft(seat, key)
         unsavedDrafts.remove(seat to key)
-        val current = chats[seat to key] ?: disk.chat(seat, key)
-        if (current != null) chats[seat to key] = current.copy(updatedAtMs = now())
+        (chats[seat to key] ?: disk.chat(seat, key))?.let { chats[seat to key] = it.copy(updatedAtMs = now()) }
         draftVersion++
         failure = null
     }
@@ -625,44 +623,44 @@ class CoachChats internal constructor(
         val admission = runCatching { archive?.admit(seat) }
         val thread = chats[seat to id]?.conversation ?: id.takeIf { conversations?.holds(it) == true }
         return scope.async {
-            val result = conversationWrite.withLock {
-                val authority = admission.getOrElse { refusal ->
-                    if (refusal !is CancellationException) telemetry.unexpected("gym.deleteThread", refusal as Exception)
-                    return@withLock GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
-                }
-                if ((authority != null && archive?.current(authority) != true) || seat != archiveOwner)
-                    return@withLock GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
-                if (thread != null && thread == runningThread) return@withLock GymResult.Failed(WriteFailure.Refused(CoachTurnFault.busy.sentence))
-                try {
-                    if (thread != null && turns?.deleteConversation(Id(thread, CoachThread)) == false)
-                        return@withLock GymResult.Failed(WriteFailure.NoAnswer)
-                    // Once the thread has gone the conversation has: what this phone kept beside it is reported, and its row does not come back as "still here".
-                    try { archive?.clear(seat, id) }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (failure: Exception) {
-                        if (thread == null) throw failure
-                        telemetry.unexpected("gym.deleteThread", failure)
-                    }
-                    chats.remove(seat to id)
-                    chatVersions[seat to id] = (chatVersions[seat to id] ?: 0) + 1
-                    drafts.remove(seat to id)
-                    unsavedDrafts.remove(seat to id)
-                    if (selected[seat] == id) selected.remove(seat)
-                    if (seat == archiveOwner) watchSelected()
-                    conversations?.read()
-                    GymResult.Ok(Unit)
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) {
-                    telemetry.unexpected("gym.deleteThread", failure)
-                    GymResult.Failed(WriteFailure(failure))
-                }
-            }
+            val result = deleted(id, seat, archive, admission, thread)
             telemetry.event("gym_action", mapOf("screen" to "threads", "action" to "delete", "outcome" to when (result) {
                 is GymResult.Ok -> "ok"
                 is GymResult.Failed -> if (result.why is WriteFailure.Refused) "refused" else "failed"
             }))
             result
         }.await()
+    }
+
+    private suspend fun deleted(id: String, seat: String, archive: LocalCoach?, admission: Result<LocalCoach.Authority?>, thread: String?): GymResult<Unit> {
+        val authority = admission.getOrElse { refusal ->
+            if (refusal !is CancellationException) telemetry.unexpected("gym.deleteThread", refusal as Exception)
+            return GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
+        }
+        if ((authority != null && archive?.current(authority) != true) || seat != archiveOwner) return GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
+        if (thread != null && thread == runningThread) return GymResult.Failed(WriteFailure.Refused(CoachTurnFault.busy.sentence))
+        return try {
+            if (thread != null && turns?.deleteConversation(Id(thread, CoachThread)) == false) return GymResult.Failed(WriteFailure.NoAnswer)
+            // Once the thread has gone the conversation has: what this phone kept beside it is reported, and its row does not come back as "still here".
+            try { archive?.clear(seat, id) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (thread == null) throw failure
+                telemetry.unexpected("gym.deleteThread", failure)
+            }
+            chats.remove(seat to id)
+            chatVersions[seat to id] = (chatVersions[seat to id] ?: 0) + 1
+            drafts.remove(seat to id)
+            unsavedDrafts.remove(seat to id)
+            if (selected[seat] == id) selected.remove(seat)
+            if (seat == archiveOwner) watchSelected()
+            conversations?.read()
+            GymResult.Ok(Unit)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            telemetry.unexpected("gym.deleteThread", failure)
+            GymResult.Failed(WriteFailure(failure))
+        }
     }
 }
 

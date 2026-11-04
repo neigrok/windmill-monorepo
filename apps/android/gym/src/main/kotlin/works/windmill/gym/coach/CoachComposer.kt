@@ -81,7 +81,7 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
     LaunchedEffect(account, key) {
         if (store.accountKey != account) return@LaunchedEffect
         val current = store.draft(key)
-        if (current.text.isEmpty() && current.photo == null && seed.isNotEmpty()) {
+        if (current.isEmpty && seed.isNotEmpty()) {
             try { store.saveDraft(key, CoachDraft(seed)) }
             catch (_: Exception) { }
         }

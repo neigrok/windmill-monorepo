@@ -35,11 +35,9 @@ internal data class CoachDraftMove(val sourceOwner: String, val sourceChat: Stri
 internal class CoachDraftWriteFailure(cause: Exception) : Exception(cause)
 
 // What this phone keeps per owner beside the engine: chats, composer drafts, kept drafts, draft photos and the onboarding answers earlier versions stored. Owner epochs stop a late write reaching an owner erased since. Messages are the engine's, and the conversations, requests and confirmations earlier versions kept here are dropped at first load.
-class LocalCoach internal constructor(private val file: File, private val write: (File, String) -> Unit,
-    private val writesAllowed: () -> Boolean, private val now: () -> Long,
+class LocalCoach(private val file: File, private val writesAllowed: () -> Boolean = { true }, private val now: () -> Long = System::currentTimeMillis,
+    private val write: (File, String) -> Unit = AtomicDocument::write,
 ) {
-    constructor(file: File, writesAllowed: () -> Boolean = { true }, now: () -> Long = System::currentTimeMillis) : this(file, AtomicDocument::write, writesAllowed, now)
-    internal constructor(file: File, write: (File, String) -> Unit) : this(file, write, { true }, System::currentTimeMillis)
     companion object {
         const val fileName = "windmill-gym-coach.json"
         private val legacyKeys = setOf("chats", "pending", "snapshots", "confirmations", "choices")
@@ -56,7 +54,11 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val drafts: Map<String, Map<String, CoachDraft>> = emptyMap(),
         val keptDrafts: Map<String, Map<String, List<KeptCoachDraft>>> = emptyMap(),
         val onboarding: Map<String, Map<String, CoachOnboardingRecord>> = emptyMap(),
-    )
+    ) {
+        fun holding(owner: String, chat: LocalChat) = copy(localChats = localChats + (owner to (localChats[owner].orEmpty() + (chat.id to chat))))
+        fun holding(owner: String, chat: String, draft: CoachDraft) = copy(drafts = drafts + (owner to (drafts[owner].orEmpty() + (chat to draft))))
+        fun selecting(owner: String, chat: String) = copy(selected = selected + (owner to chat))
+    }
 
     // A document as it reads today: whatever an earlier version left keeps its drafts, kept drafts and retained answers, each under a chat stamped with the file's own time, and nothing else of what it held. The stamp holds across rereads because only a write moves it.
     private fun parsed(text: String): Document {
@@ -245,7 +247,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
         checkWritable(owner)
         require(document.localChats[owner]?.containsKey(id) == true)
         if (document.selected[owner] == id) return
-        publish(document.copy(selected = document.selected + (owner to id)))
+        publish(document.selecting(owner, id))
     }
 
     @Synchronized fun chats(owner: String): List<LocalChat> {
@@ -261,9 +263,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun saveChat(owner: String, chat: LocalChat, select: Boolean = false) {
         checkWritable(owner)
         if (document.localChats[owner]?.get(chat.id) == chat && (!select || document.selected[owner] == chat.id)) return
-        publish(document.copy(
-            selected = if (select) document.selected + (owner to chat.id) else document.selected,
-            localChats = document.localChats + (owner to (document.localChats[owner].orEmpty() + (chat.id to chat)))))
+        publish(document.holding(owner, chat).let { if (select) it.selecting(owner, chat.id) else it })
     }
 
     // The onboarding answers this chat holds from an earlier version: readable, and their drafts saveable.
@@ -291,8 +291,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun turnOpened(owner: String, chat: String, thread: String) {
         checkWritable(owner)
         val held = document.localChats[owner]?.get(chat) ?: LocalChat(chat, now())
-        publish(document.copy(
-            localChats = document.localChats + (owner to (document.localChats[owner].orEmpty() + (chat to held.copy(conversation = thread, updatedAtMs = now())))),
+        publish(document.holding(owner, held.copy(conversation = thread, updatedAtMs = now())).copy(
             drafts = (document.drafts + (owner to (document.drafts[owner].orEmpty() - chat))).filterValues { it.isNotEmpty() }))
         discardUnusedPhotos(owner)
     }
@@ -303,9 +302,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val photoId = draft.photo?.id
         if (photoId != null && photo != null) savePhoto(owner, photoId, photo)
         val held = document.localChats[owner]?.get(chat) ?: LocalChat(chat, now())
-        publish(document.copy(
-            localChats = document.localChats + (owner to (document.localChats[owner].orEmpty() + (chat to held.copy(conversation = conversation, updatedAtMs = now())))),
-            drafts = document.drafts + (owner to (document.drafts[owner].orEmpty() + (chat to draft)))))
+        publish(document.holding(owner, held.copy(conversation = conversation, updatedAtMs = now())).holding(owner, chat, draft))
     }
 
     @Synchronized fun draft(owner: String, key: String): CoachDraft = document.drafts[owner]?.get(key) ?: CoachDraft()
@@ -323,12 +320,10 @@ class LocalCoach internal constructor(private val file: File, private val write:
         if (index < 0) return false
         val previous = draft(owner, chatId)
         val remaining = held.toMutableList().apply {
-            if (previous.text.isNotEmpty() || previous.photo != null) set(index, held[index].copy(draft = previous)) else removeAt(index)
+            if (previous.isEmpty) removeAt(index) else set(index, held[index].copy(draft = previous))
         }
-        val next = document.copy(
-            localChats = document.localChats + (owner to (document.localChats[owner].orEmpty() + (chatId to chat.copy(updatedAtMs = now())))),
-            drafts = document.drafts + (owner to (document.drafts[owner].orEmpty() + (chatId to held[index].draft))),
-            keptDrafts = document.keptDrafts + (owner to (document.keptDrafts[owner].orEmpty() + (chatId to remaining))))
+        val next = document.holding(owner, chat.copy(updatedAtMs = now())).holding(owner, chatId, held[index].draft)
+            .copy(keptDrafts = document.keptDrafts + (owner to (document.keptDrafts[owner].orEmpty() + (chatId to remaining))))
         saveChange(owner, next, CoachDraftRecovery(owner, chatId, "continue_draft"), publishedFailure)
         return true
     }
@@ -341,7 +336,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val sourceId = document.selected[sourceOwner] ?: return null
         val source = document.localChats[sourceOwner]?.get(sourceId) ?: return null
         val original = draft(sourceOwner, sourceId)
-        if (original.text.isEmpty() && original.photo == null) return null
+        if (original.isEmpty) return null
         val selected = document.selected[targetOwner]
         val target = selected?.let { document.localChats[targetOwner]?.get(it) } ?: LocalChat(Ids.thread(), now(), setup = source.setup)
         val previous = draft(targetOwner, target.id)
@@ -359,15 +354,12 @@ class LocalCoach internal constructor(private val file: File, private val write:
                 moved = moved.copy(photo = photo.copy(id = id))
             }
             if (!current() || document.selected[targetOwner] != selected) return null
-            val occupied = previous.text.isNotEmpty() || previous.photo != null
+            val occupied = !previous.isEmpty
             val kept = keptDrafts(targetOwner, target.id) + if (occupied) listOf(KeptCoachDraft(Ids.thread(), moved)) else emptyList()
-            val next = document.copy(
-                selected = document.selected + (targetOwner to target.id),
-                localChats = document.localChats + (targetOwner to (document.localChats[targetOwner].orEmpty() +
-                    (target.id to target.copy(updatedAtMs = now())))),
-                drafts = document.drafts + (sourceOwner to (document.drafts[sourceOwner].orEmpty() - sourceId)) +
-                    (targetOwner to (document.drafts[targetOwner].orEmpty() + (target.id to if (occupied) previous else moved))),
-                keptDrafts = document.keptDrafts + (targetOwner to (document.keptDrafts[targetOwner].orEmpty() + (target.id to kept))))
+            val next = document.selecting(targetOwner, target.id).holding(targetOwner, target.copy(updatedAtMs = now())).copy(
+                drafts = document.drafts + (sourceOwner to (document.drafts[sourceOwner].orEmpty() - sourceId)),
+                keptDrafts = document.keptDrafts + (targetOwner to (document.keptDrafts[targetOwner].orEmpty() + (target.id to kept))),
+            ).holding(targetOwner, target.id, if (occupied) previous else moved)
             saveChange(targetOwner, next, CoachDraftRecovery(targetOwner, target.id, "adopt", source = sourceOwner to sourceId), publishedFailure)
             committed = true
             discardUnusedPhotos(sourceOwner)
@@ -383,9 +375,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
         if ((document.drafts[owner]?.get(key) ?: CoachDraft()) == draft) return
         val mine = document.drafts[owner].orEmpty() + (key to draft)
         val chat = document.localChats[owner]?.get(key) ?: LocalChat(key, now())
-        publish(document.copy(
-            localChats = document.localChats + (owner to (document.localChats[owner].orEmpty() + (key to chat.copy(updatedAtMs = now())))),
-            drafts = document.drafts + (owner to mine.filterValues { it.text.isNotEmpty() || it.photo != null })))
+        publish(document.holding(owner, chat.copy(updatedAtMs = now())).copy(drafts = document.drafts + (owner to mine.filterValues { !it.isEmpty })))
         discardUnusedPhotos(owner)
     }
 

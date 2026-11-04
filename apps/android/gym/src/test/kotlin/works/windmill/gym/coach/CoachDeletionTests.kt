@@ -86,10 +86,10 @@ class CoachDeletionTests {
     @Test fun committedThenThrownEraseAndReopenAreIdempotentWithoutRetiringNewAdmissions() {
         val file = File(tmp.root, "uncertain-owner-write")
         var fail = false
-        val disk = LocalCoach(file, { target, value ->
+        val disk = LocalCoach(file) { target, value ->
             AtomicDocument.write(target, value)
             if (fail) { fail = false; throw IOException("commit completed") }
-        })
+        }
         disk.saveChat("alice", LocalChat("old-chat", 1))
         val old = disk.admit("alice")
         fail = true; disk.eraseOwner("alice")
