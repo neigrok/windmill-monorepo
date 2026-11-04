@@ -1175,3 +1175,17 @@ F2's Target-summary layout remains deferred until board 02.26's spacing and read
 values are available. All set wording remains unchanged pending S1. Task
 [115](../../androidgym_tasks/115-faint-ink-and-sheet-width.md) holds the remaining cross-surface
 faint-ink drift and sheet-handle observations.
+
+## The phone Coach under a long history
+
+A long history costs the context reads on every turn. At 2,500 sessions and 5,025 sets on the SQLite store (JVM, CPU
+time): a full-log read 1.2 s, `open()` 3.6 s for its three of them, `get_stats` 1.3 s, a `writeText` 10 ms. The same
+reads on the memory store take a tenth of that, so the cost is the store's per-record read; the heap (512 MB against
+2 GB) changes nothing. On an API 34 emulator from a release build, on a host under a load of 900 and so an upper bound:
+`open()` 22-49 s, `get_stats` 10-15 s, `writeText` 83-452 ms.
+
+`Engine.activeReplica()`, `readRevision()` and `EngineTraining.mayWrite` answer without the lock; every other read
+waits for a running ability. On a Robolectric probe of the room over that log on an idle host, `get_stats` takes
+0.4-0.5 s and a main-thread read behind it 0.22-0.38 s, and under the load above 1.5-3 s. What waits on main is
+`TrainingStore.refreshEngine`'s own reads: `reconcileImports`, `HistoryReads.loadLog`, `RoutinesStore.readCatalogue` and
+`readReceipts`, and `WorkoutSession.drawFromControls`.

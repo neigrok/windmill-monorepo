@@ -215,7 +215,7 @@ through `GymRest`.
 `writable`'s one rule and holds to the replica and to whether it is anonymous, so a turn reads and writes nothing
 during a transition, under a sign-in's open decision, or under the seat that replaced its own: it waits out what can
 still be cancelled, and a change of the active replica or a rebind abandons it. The record takes the streamed text
-every 5 s, at each batch and at the end, and the room draws `CoachTurns.liveAnswer` meanwhile. `PictureFiles`
+every 5 s, at each batch, when the app stops and at the end, and the room draws `CoachTurns.liveAnswer` meanwhile. `PictureFiles`
 keeps a turn's originals and model copies in `noBackupFilesDir/coach-pictures`, with one metadata row per picture on
 the replica; the engine stays in `filesDir`, and neither rides a backup or a device transfer. `TurnLease` holds an
 expedited WorkManager job for the length of a turn on API 31 and above. WorkManager starts on demand
@@ -302,11 +302,25 @@ refused-import recovery. Log offline, restart, reconnect and verify the server r
 Add and Discard with data on both sides, and Keep at sign-out. A same-debug-key source upgrade
 does not establish published release signing.
 
-`CoachTurnsLiveWireTests` runs a turn on both seats against a local backend with `AI_ALLOWANCES_ENABLED`,
-`AI_INSTALLATIONS_ENABLED` and `COACH_ANTHROPIC_BASE_URL` at `tools/fake_coach_vendor.py`, on a fresh database and a
-fresh account: set `WM_ANDROID_TURN_WIRE_TEST=1`, `WM_WIRE_BASE`, `WM_WIRE_BEARER` and `WM_WIRE_EVIDENCE`.
+`CoachTurnsLiveWireTests` runs turns on both seats and lost opens over the real routes, on a fresh database and a
+fresh account. Start the vendor, `python3 tools/fake_coach_vendor.py <port>`, whose output names each model round.
+Start the backend with `AI_ALLOWANCES_ENABLED=true`, `AI_INSTALLATIONS_ENABLED=true`,
+`AI_INSTALLATION_PROXY_MODE=direct`, an `AI_INSTALLATION_IP_HMAC_KEY` of at least 32 bytes, `AI_ALLOWANCE_ALERT_EMAIL`
+naming one of `WINDMILL_OWNER_EMAILS`, any `RESEND_API_KEY`, `RESEND_FROM` and `ANTHROPIC_API_KEY`, and
+`COACH_ANTHROPIC_BASE_URL` at that port. `WM_WIRE_BASE` must be a loopback host, and `WM_WIRE_EVIDENCE` is the
+folder that takes the test's stores and pictures. Without `WM_ANDROID_TURN_WIRE_TEST=1` it skips:
 
-The live-wire suite requires a fresh local account credential and a single-use magic-link token
+```sh
+WM_ANDROID_TURN_WIRE_TEST=1 WM_WIRE_BASE=http://127.0.0.1:8096 \
+  WM_WIRE_BEARER="$WM_LOCAL_BEARER" WM_WIRE_EVIDENCE="$PWD/build/turn-wire" \
+  ./gradlew :gym:testDebugUnitTest --tests '*CoachTurnsLiveWireTests' --max-workers=4
+```
+
+No test covers: a real vendor round; an NFC or collation case on an old device, since the JVM that runs the corpus and
+the device hold different Unicode tables; a turn routed across server processes, since production runs one; whether
+the expedited job's quota holds in real use on Android 12 and later.
+
+The other live-wire suite requires a fresh local account credential and a single-use magic-link token
 issued against that backend; the runbook's direct-database development code uses the normal auth
 door. Keep credentials out of logs. Run each variant with:
 
@@ -320,6 +334,16 @@ WM_ANDROID_WIRE_TEST=1 WM_WIRE_BASE=http://127.0.0.1:8096 \
 Stop listeners by the selected port, drop the test database, stop the emulator and any ADB/Gradle
 daemon started for the check, and remove temporary credentials. Verification counts and installed
 app observations belong in the task report, rather than a lasting evidence file.
+
+## Writing Kotlin here
+
+- Every bound is UTF-8 bytes. `jcs` returns a `String`, so measure `encodeToByteArray()`, never `length`.
+- `CancellationException` extends `IllegalStateException`, so a broad catch rethrows it, or a teardown files a failure
+  that did not happen.
+- `WindmillJson` leaves `encodeDefaults` off, so a field equal to its declared default leaves the body. A wire type
+  declares no default on a field the server requires.
+- Whatever takes a clock reads only that clock. Robolectric cannot see a read of the ambient clock behind an injected
+  one, and CI's slower machines can.
 
 ## CI and releases
 
@@ -376,6 +400,9 @@ using the retained-key candidate with a version code above 277:
    answer and sign-out. Record any signed-in checks not run.
 7. Independently verify that a clean install opens empty Routines. On an emulator with TalkBack,
    also verify heading navigation reaches Movements, History and Performed.
+8. Across devices, on one account: a conversation started on iOS reads on Android and the reverse, a running turn
+   shows as answering on the other device, and a seat change interrupts it. The web stays on its own conversations
+   and shows neither phone's.
 
 The published [0.14.0/code277 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0)
 uses tag `android-v0.14.0` at `3b136a3dc6d0bb9092e4b5e48581435a8b2d2354`,
