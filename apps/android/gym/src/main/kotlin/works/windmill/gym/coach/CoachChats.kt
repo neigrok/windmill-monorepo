@@ -35,6 +35,8 @@ import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.WriteFailure
 import works.windmill.gym.store.unexpected
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.gym.telemetry.coachAction
+import works.windmill.gym.telemetry.coachSetupStep
 
 // The chats of the seat in hand: which one is on screen, what its composer holds, and the send that turns a draft into a turn. Messages are read from `conversations`; a turn runs in `turns`, which outlives every screen; this holds what the composer needs and what the seat's chats keep on this phone.
 class CoachChats internal constructor(
@@ -135,7 +137,7 @@ class CoachChats internal constructor(
         accessJob = scope.launch {
             val answered = access()
             if (owner == null) {
-                if (answered != anonymousAccess) telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "access", "outcome" to answered.name.lowercase()))
+                if (answered != anonymousAccess) telemetry.coachAction("access", answered.name.lowercase())
                 anonymousAccess = answered
             }
         }
@@ -237,7 +239,7 @@ class CoachChats internal constructor(
         selected[seat] = chat.id
         watchSelected()
         if (seed.isNotEmpty()) saveDraft(chat.id, CoachDraft(seed))
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "fresh_entry", "outcome" to "ok"))
+        telemetry.coachAction("fresh_entry")
         return chat.id
     }
 
@@ -247,9 +249,8 @@ class CoachChats internal constructor(
         restoreArchive(seat)
         val chat = chats[seat to id] ?: LocalChat(id, now(), conversation = id).also { keepChat(seat, it) }
         select(seat, chat.id)
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to action, "outcome" to "ok"))
-        if (draft(id).let { it.text.isNotEmpty() || it.photo != null })
-            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "draft_restored", "outcome" to "ok"))
+        telemetry.coachAction(action)
+        if (!draft(id).isEmpty) telemetry.coachAction("draft_restored")
     }
 
     private fun select(seat: String, id: String) {
@@ -512,8 +513,7 @@ class CoachChats internal constructor(
     private fun publishRecovery(recovered: CoachDraftRecovery) {
         recovered.source?.let { drafts.remove(it); unsavedDrafts.remove(it) }
         publishDraft(recovered.owner, recovered.chat)
-        if (recovered.action != "adopt") telemetry.event("gym_action",
-            mapOf("screen" to "coach", "action" to recovered.action, "outcome" to "ok"))
+        if (recovered.action != "adopt") telemetry.coachAction(recovered.action)
     }
 
     fun continueDraft(key: String, heldId: String): Boolean {
@@ -523,7 +523,7 @@ class CoachChats internal constructor(
         try { if (localCoach?.continueDraft(seat, key, heldId) { telemetry.unexpected("gym.saveDraft", it) } != true) return false }
         catch (failure: Exception) { telemetry.unexpected("gym.saveDraft", failure); throw failure }
         publishDraft(seat, key)
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "continue_draft", "outcome" to "ok"))
+        telemetry.coachAction("continue_draft")
         return true
     }
 
@@ -549,7 +549,7 @@ class CoachChats internal constructor(
         unsavedDrafts.remove(seat to key)
         draftVersion++
         chats[seat to key]?.let { chats[seat to key] = it.copy(updatedAtMs = now()) }
-        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "photo_removed"))
+        telemetry.coachSetupStep("photo_removed")
     }
 
     suspend fun importPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) {
@@ -584,7 +584,7 @@ class CoachChats internal constructor(
                 return@async
             }
             saveDraft(seat, key, draft(seat, key).copy(photo = photo))
-            telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "photo_selected"))
+            telemetry.coachSetupStep("photo_selected")
         }.await()
     }
 

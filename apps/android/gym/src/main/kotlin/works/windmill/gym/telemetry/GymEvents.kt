@@ -10,6 +10,11 @@ import works.windmill.gym.coach.turn.InterruptedCause
 import works.windmill.platform.telemetry.EventSchema
 import works.windmill.platform.telemetry.EventSchemas
 import works.windmill.platform.telemetry.LabelSchema
+import works.windmill.platform.telemetry.Telemetry
+
+// A step of the Coach room, under its one screen.
+internal fun Telemetry.coachAction(action: String, outcome: String = "ok") = event("gym_action", mapOf("screen" to "coach", "action" to action, "outcome" to outcome))
+internal fun Telemetry.coachSetupStep(action: String) = event("gym_setup_step", mapOf("screen" to "coach", "action" to action))
 
 // gym_action: each screen's actions with the outcomes each may report. An action that asks first also reports state=shown, without an outcome, when its question opens; the log's first_pull does so when its reading bar shows.
 object GymActions : EventSchema {

@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
 import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.gym.telemetry.coachAction
 
 // What an ended answer read, under it: a door to What Coach read while the turn ran anything to list (08.36).
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,7 +54,7 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, withDetails: 
         }.testTag("coach-read-sources")
         .clickable(pressing, indication = null, role = Role.Button, onClickLabel = Ask.sourcesTitle) {
             expanded = true
-            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
+            telemetry.coachAction("read_sources")
         }.padding(bottom = 8.dp), contentAlignment = Alignment.BottomStart,
     ) {
         Row(Modifier.indication(pressing, ripple()).padding(start = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {

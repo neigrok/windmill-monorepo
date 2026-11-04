@@ -78,6 +78,8 @@ import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.ui.DarkAndDaylight
 import works.windmill.gym.ui.GymPreview
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.gym.telemetry.coachAction
+import works.windmill.gym.telemetry.coachSetupStep
 
 // What a conversation draws: Coach's chats, and the training its answers name.
 @Stable
@@ -188,7 +190,7 @@ fun AskScreen(
     val telemetry = LocalTelemetry.current
     var greetingCounted by rememberSaveable(account, conversationId) { mutableStateOf(false) }
     LaunchedEffect(account, conversationId, greeting) {
-        if (greeting && !greetingCounted) telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "shown"))
+        if (greeting && !greetingCounted) telemetry.coachSetupStep("shown")
         greetingCounted = greeting
     }
     val web = LocalUriHandler.current
@@ -196,23 +198,22 @@ fun AskScreen(
     val reconnecting = asking && coach.conversations?.reconnecting == true
     val stopNotice = coach.fault?.takeIf { it in stopFaults }
     var stopNoticeClosed by remember(stopNotice) { mutableStateOf(false) }
-    LaunchedEffect(reconnecting) { if (reconnecting) telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "reconnecting", "outcome" to "ok")) }
-    LaunchedEffect(stopNotice) { if (stopNotice != null) telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "stop_notice", "outcome" to "ok")) }
+    LaunchedEffect(reconnecting) { if (reconnecting) telemetry.coachAction("reconnecting") }
+    LaunchedEffect(stopNotice) { if (stopNotice != null) telemetry.coachAction("stop_notice") }
     val signInForCall = onSignIn?.let { signIn -> {
-        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "sign_in"))
+        telemetry.coachSetupStep("sign_in")
         signIn()
     } }
     val keepRoutines = onSignIn?.let { signIn -> {
-        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "keep_routines"))
+        telemetry.coachSetupStep("keep_routines")
         signIn()
     } }
     val openRoutine = onOpenRoutine?.let { open -> { id: String ->
-        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "open_routine"))
+        telemetry.coachSetupStep("open_routine")
         open(id)
     } }
 
-    // Read back off the replica: an answer's receipt carries ids only. A proposal moves when anybody decides, and a
-    // decision taken in this room overrides the copy read here, so the card and the receipt agree.
+    // Read back off the replica: an answer's receipt carries ids only. A proposal moves when anybody decides, and a decision taken in this room overrides the copy read here, so the card and the receipt agree.
     val proposals = remember { AnsweredProposals(state, events, telemetry) }
     val minted = proposals.minted
     val waitedHere = remember { mutableSetOf<String>() }
@@ -243,10 +244,10 @@ fun AskScreen(
               ) {
                 if (greeting) CoachGreeting(!coach.anonymous, composerEnabled && !asking,
                     onScreenshot = {
-                        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "screenshot"))
+                        telemetry.coachSetupStep("screenshot")
                         photoRequest++
                     }, onBuild = {
-                        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "build_manually"))
+                        telemetry.coachSetupStep("build_manually")
                         onBuildRoutine?.invoke()
                     })
                 (draftFailure ?: coach.failure ?: coach.fault?.takeUnless { it in stopFaults }?.sentence)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
@@ -290,11 +291,8 @@ fun AskScreen(
                 }
                 (coach.tooLong(draftKey).takeIf { composerVisible } ?: refusal)?.let {
                     CoachRefusalNotice(it, anonymous = coach.anonymous,
-                        onSignIn = onSignIn?.let { signIn -> {
-                            telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "sign_in"))
-                            signIn()
-                        } }, onConnections = {
-                            telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "connect"))
+                        onSignIn = signInForCall, onConnections = {
+                            telemetry.coachSetupStep("connect")
                             if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
                                 .onFailure { failure -> telemetry.failure("gym.openConnections", failure) }
                         }, onTryAgain = {
@@ -307,7 +305,7 @@ fun AskScreen(
             }
             if (accountChangingAlone) CoachAccountChanging(alone = true, Modifier.align(Alignment.Center))
             if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) ElevatedButton(onClick = {
-                telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "jump_latest", "outcome" to "ok"))
+                telemetry.coachAction("jump_latest")
                 scope.launch { presentation.jumpToLatest() }
             }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).heightIn(min = 40.dp),
                 colors = ButtonDefaults.elevatedButtonColors(containerColor = colors.surfaceContainer, contentColor = colors.primary),
@@ -319,7 +317,7 @@ fun AskScreen(
         if (reconnecting) Band(Ask.reconnecting)
         else if (stopNotice != null && !stopNoticeClosed) Band(stopNotice.sentence, onClose = {
             stopNoticeClosed = true
-            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "stop_notice_closed", "outcome" to "ok"))
+            telemetry.coachAction("stop_notice_closed")
         })
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -420,13 +418,11 @@ private fun Answer(
             onSaveDrafts = if (canSave && retained != null) { { state.coach.saveRetainedDrafts(chat, retained.requestId) } } else null,
             onSignIn = onSignIn, onKeep = onKeep, saysWhatItRead = retained == null || answer.routines.isNotEmpty(),
             withDetails = { rows -> state.coach.conversations?.withDetails(answer.id, rows) ?: rows }, onSourcesTop = onSourcesTop)
-        // Drawn from the LOG's own copy and never from what the model said about it.
         AnswerProposals(answer, minted, state, nowMs, lookedAt, overWorkout, gone, onReview)
     }
 }
 
-// What the server said it did, the moment it said so. Not stored: reopening the thread does not
-// draw it again, and nothing here pretends otherwise.
+// What the server said it did, the moment it said so. Not stored: reopening the thread does not draw it again, and nothing here pretends otherwise.
 @Composable
 fun ReceiptLine(line: String) {
     val colors = MaterialTheme.colorScheme
@@ -441,11 +437,7 @@ private fun Trouble(said: String) {
     Text(said, style = GymType.quietParagraph, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
 }
 
-// The proposals a room's answers name, a routine's and a workout's alike. Coach can answer before its proposal reaches this phone, so an id not found is
-// read again each time the replica changes or a pull lands caught up. A proposal the phone holds a dead row of is gone at
-// once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at
-// or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The
-// wait's end asks for that pull once. One named by an answer this visit waited for and gone that way is reported once.
+// The proposals a room's answers name, a routine's and a workout's alike. Coach can answer before its proposal reaches this phone, so an id not found is read again each time the replica changes or a pull lands caught up. A proposal the phone holds a dead row of is gone at once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The wait's end asks for that pull once. One named by an answer this visit waited for and gone that way is reported once.
 internal class AnsweredProposals(private val state: AskState, private val events: AskEvents, private val telemetry: Telemetry) {
     data class Miss(val recorded: Boolean = false, val caughtUpAt: Long? = null, val readPast: Boolean = false,
         val waitedAt: Long? = null, val pulledPast: Boolean = false) {

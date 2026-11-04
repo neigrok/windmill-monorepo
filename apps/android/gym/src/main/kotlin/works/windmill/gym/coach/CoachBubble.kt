@@ -57,6 +57,7 @@ import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.gym.telemetry.coachAction
 
 internal enum class CoachGroup {
     Single, First, Middle, Last;
@@ -112,11 +113,11 @@ internal fun CoachBubble(
             catch (failure: Exception) {
                 currentCoroutineContext().ensureActive()
                 telemetry.failure("gym.copyMessage", failure)
-                telemetry.event("gym_action", mapOf("screen" to "coach", "action" to action, "outcome" to "failed"))
+                telemetry.coachAction(action, "failed")
                 return@launch
             }
             changeMenu(false)
-            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to action, "outcome" to "ok"))
+            telemetry.coachAction(action)
             copied = true
         }
         copied

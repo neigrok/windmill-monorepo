@@ -37,6 +37,7 @@ import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.open
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.gym.telemetry.coachAction
 
 @Composable
 fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null, bound: Boolean = false) {
@@ -92,7 +93,7 @@ internal fun CoachRefusalNotice(refusal: CoachTurnRefusal, anonymous: Boolean = 
     val uri = LocalUriHandler.current
     var updateFailure by rememberSaveable(refusal) { mutableStateOf<String?>(null) }
     if (refusal is CoachTurnRefusal.TooLong) LaunchedEffect(Unit) {
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "too_long", "outcome" to "shown"))
+        telemetry.coachAction("too_long", "shown")
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -127,7 +128,7 @@ private fun NoticeDoor(title: String, onClick: () -> Unit) {
 @Composable
 internal fun CoachAccountChanging(alone: Boolean, modifier: Modifier = Modifier) {
     val telemetry = LocalTelemetry.current
-    LaunchedEffect(Unit) { telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "account_changing", "outcome" to "shown")) }
+    LaunchedEffect(Unit) { telemetry.coachAction("account_changing", "shown") }
     Text(CoachTurnFault.accountChanging.sentence, style = if (alone) GymType.coachAccessNote else GymType.coachSupporting, color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth().padding(horizontal = if (alone) 32.dp else 0.dp, vertical = 8.dp))
 }
@@ -137,7 +138,7 @@ internal fun CoachAccountChanging(alone: Boolean, modifier: Modifier = Modifier)
 internal fun AnswerInProgress(pending: ConversationRow, onOpenChat: ((String) -> Unit)?) {
     val colors = MaterialTheme.colorScheme
     val telemetry = LocalTelemetry.current
-    LaunchedEffect(Unit) { telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "answer_in_progress", "outcome" to "shown")) }
+    LaunchedEffect(Unit) { telemetry.coachAction("answer_in_progress", "shown") }
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Answer in progress", style = GymType.coachTitle, color = colors.onSurface)

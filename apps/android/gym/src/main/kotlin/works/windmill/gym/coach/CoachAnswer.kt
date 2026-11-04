@@ -71,6 +71,7 @@ import works.windmill.gym.ui.GymType
 import works.windmill.platform.design.WindmillType
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.gym.telemetry.coachAction
 
 // An answer: its words as they stand, the step line while it works, what it wrote, how the turn ended when it ended short, and what it read. `onSignIn` is the door under an answer a call needed the account for; `onKeep` the one under the routines a signed-out turn created. A retained answer says what it read only where `saysWhatItRead`. `withDetails` fills What Coach read's rows when its sheet opens.
 @Composable
@@ -182,7 +183,7 @@ private fun CoachLine(said: String, tag: String) {
 private fun AnsweringElsewhere() {
     val colors = MaterialTheme.colorScheme
     val telemetry = LocalTelemetry.current
-    LaunchedEffect(Unit) { telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "answering_elsewhere", "outcome" to "ok")) }
+    LaunchedEffect(Unit) { telemetry.coachAction("answering_elsewhere") }
     Row(Modifier.fillMaxWidth().testTag("coach-answering-elsewhere"), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
         Icon(painterResource(R.drawable.gym_coach_phone), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
         Text(Ask.answeringElsewhere, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
@@ -428,7 +429,7 @@ internal class CoachLinkHandler(
             copyMenu.selected = bubbleIndex
             "failed"
         }
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "open_link", "outcome" to outcome))
+        telemetry.coachAction("open_link", outcome)
     }
 }
 

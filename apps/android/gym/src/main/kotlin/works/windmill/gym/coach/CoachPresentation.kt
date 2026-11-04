@@ -12,9 +12,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.layout.layout
 
-// The one owner of the conversation's scroll offset. Every correction lands in the layout phase,
-// after the scroller measured its content and before it places it, so text that grew this frame is
-// in view this frame: nothing animates after it and no frame shows it below the fold.
+// The one owner of the conversation's scroll offset. Every correction lands in the layout phase, after the scroller measured its content and before it places it, so text that grew this frame is in view this frame: nothing animates after it and no frame shows it below the fold.
 internal class CoachPresentation(initial: List<CoachExchange>, val scroll: ScrollState, initialFollowEnd: Boolean = true) {
     private var exchanges: List<CoachExchange> = emptyList()
     var keys: List<String> = emptyList()
@@ -38,10 +36,7 @@ internal class CoachPresentation(initial: List<CoachExchange>, val scroll: Scrol
         }
     }
 
-    // Sits before `verticalScroll` in the chain: this placement runs once the scroller has measured
-    // (`maxValue` is fresh) and before the scroller reads the offset it places its content at. The
-    // scroller observes that offset, so a correction makes it re-place once more next frame: one
-    // extra idempotent pass, never a loop.
+    // Sits before `verticalScroll` in the chain: this placement runs once the scroller has measured (`maxValue` is fresh) and before the scroller reads the offset it places its content at. The scroller observes that offset, so a correction makes it re-place once more next frame: one extra idempotent pass, never a loop.
     val anchoring: Modifier = Modifier.layout { measurable, constraints ->
         val scroller = measurable.measure(constraints)
         layout(scroller.width, scroller.height) {
@@ -79,8 +74,7 @@ internal class CoachPresentation(initial: List<CoachExchange>, val scroll: Scrol
         followEnd = true
     }
 
-    // ScrollState takes deltas and carries a fractional remainder from drags: the first delta clamps
-    // to the top and clears the remainder, the second walks the exact distance.
+    // ScrollState takes deltas and carries a fractional remainder from drags: the first delta clamps to the top and clears the remainder, the second walks the exact distance.
     private fun scrollTo(target: Int) {
         if (target == scroll.value) return
         scroll.dispatchRawDelta(-(scroll.value + 1).toFloat())
