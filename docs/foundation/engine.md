@@ -10,8 +10,8 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 I/O in `web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin (`apps/android/sync-*`).
 `windmill_server` serves the gym and
 journal composition on `/v1/sync`, and the engine is the only writer of their records: web (gym,
-journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, the Coach and gym's
-import door admit as the server (A.2). Production's gym and journal rows were adopted in place
+journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's Coach among them, and MCP,
+the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
 **Registry contract:** The composed source registry is version 12 with minimum version 11. Gym's
@@ -29,7 +29,7 @@ starts from empty stores.
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
 before authentication, parsing or data access, and [gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md)
-lists them. Journal has no REST page writer. Reads, shares, exports, the Coach, the import door,
+lists them. Journal has no REST page writer. Reads, shares, exports, the web's Coach, the import door,
 echoes and nudges stay REST. `/v1/sync` has its own `426 upgrade-required` minimum-schema refusal
 (§9.1).
 
@@ -2690,7 +2690,8 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 movement), `offer:<session>` (a pre-minted offer id) and `rack:<session>` (rack state); and the gym
 Coach's `runningTurn` (the id of the Coach message whose turn this device is running, gym Coach §4.5)
 and `picture:<id>` (a `localOnly` picture held on this phone, gym Coach §9.3).
-**Surfaces:** web, iOS, Android. MCP, the Coach and the import door write as the server (below).
+**Surfaces:** web, iOS, Android. A phone's Coach writes through its replica. MCP, the web's Coach and the
+import door write as the server (below).
 **Adoption:** production tables are adopted in place (Appendix C).
 
 Every minted type mints 16 base-62 characters and is seeded (D-8): a seed of at most 58 characters,
@@ -2766,8 +2767,8 @@ web, Swift and Kotlin domain suites claim them alongside training-rule regressio
 
 **Coach conversations** (gym Coach §9.1) are the engine records `thread` and `message` above, bound
 by the gym binding (§2.4) and stored in `gym_threads` and `gym_messages`. The server Coach's legacy
-conversations (`gym_ask_threads`, `gym_ask_turns`) are not adopted: they stay the server Coach's, and
-the web keeps writing them until it moves to the phone Coach. A proposal's `threadId` is a
+conversations (`gym_ask_threads`, `gym_ask_turns`) are not adopted: they stay the server Coach's, the web
+keeps writing them, and neither phone's source reads or writes them. A proposal's `threadId` is a
 plain string naming either kind of conversation. Deleting a legacy conversation first admits, as the
 server, `threadId = null` on every proposal and workout proposal that names it; a `thread` death does the same by
 consequence. On the web the gym room holds a legacy conversation delete for the same

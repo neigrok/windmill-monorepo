@@ -103,10 +103,10 @@ The installation-scoped API supports dialogue and routine drafts before sign-in.
 seed exercise catalog, makes one bounded model call, and returns an assistant message with optional
 validated routine drafts. It
 does not create an account, a Coach conversation, a server routine or a stored photo. Account Coach,
-history, attachments and account tools still require account authentication. No released client starts this
-installation-scoped dialogue any more: signed out, iOS and Android hold the whole conversation as phone turns
-([gym_coach.md](foundation/mobile/gym_coach.md)), and keep the onboarding answers earlier
-versions stored so that their drafts can still be saved.
+history, attachments and account tools still require account authentication. Neither phone's source starts
+this installation-scoped dialogue: signed out, iOS and Android hold the whole conversation as phone turns
+([gym_coach.md](foundation/mobile/gym_coach.md)), and keep the onboarding answers earlier builds stored so
+that their drafts can still be saved. The published Android 0.14.0 still starts it.
 
 Obtain a credential from `POST /v1/ai/installations` with `{}` and retain its opaque `credential`.
 Send it as `X-Windmill-Installation` on the following requests. Malformed or conflicting account
@@ -196,7 +196,7 @@ UTC day (`429 request_limit`); it does not renew the lifetime dollar allowance.
 
 The server retains validated result content for seven days. A compact request digest and terminal
 identity remain after expiry so an old request can never redispatch. No prompt or image is persisted.
-iOS retains those completed drafts for review. Only explicit Save atomically imports the selected
+iOS and Android retain those completed drafts for review. Only explicit Save atomically imports the selected
 result’s routines into the local engine together with a `resultId` replay receipt. A retained draft
 can also be saved after account adoption. They can start a workout before sign-in after saving. Keep/sign-in and the existing
 Add/Discard flow adopt those local records through sync. `POST /v1/ai/installations/bind` attributes

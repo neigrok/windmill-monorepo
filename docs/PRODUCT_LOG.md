@@ -58,10 +58,16 @@ Connected assistants can record supplied workout facts and create a requested ro
 an existing routine remain proposals until the lifter applies them. Coach keeps its conversation,
 read receipts and action results together; it can save a new user-supplied insight to Notes.
 
+Coach runs on the phone. On iOS and in Android's source its abilities run on the phone's own log, signed out or signed in
+and during a workout, and the server keeps the model, the prompt and the spending gate. A routine Coach makes lands at once
+with its card; a change to an existing routine or to the open workout stays a proposal the lifter decides. The web keeps the
+server's Coach. Android's phone Coach stands on its branch and is not released: the published Android 0.14.0 still asks the
+server's Coach, and the release is the owner's step.
+
 Gym activation means returning: at least two sessions of five sets within seven days of the first
 set. Useful measures are prefill acceptance, week-one and week-four return, and correction rate.
 A weight increased by one program step can be a successful prefill.
 
 Current data rules are in [gym architecture](../backend/products/gym/ARCHITECTURE.md),
-[Coach's wire contract](gym-coach-contract.md) and Gym's principles in
+[the phone Coach](foundation/mobile/gym_coach.md), [the web's Coach contract](gym-coach-contract.md) and Gym's principles in
 [brand foundations](design/brand-foundations.md).

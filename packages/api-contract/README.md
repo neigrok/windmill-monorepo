@@ -35,8 +35,8 @@ by side with catalog/2.
   `read`-level tool, a `remove` a `delete`-level one, and only a `propose_*` tool `proposes`.
   `propose_workout_change`'s set items list an empty `required`, so they are not among the open
   `input` objects.
-- `phrase` is the step-line text a Coach client prints for a call, the same words the web and Android
-  phrase tables hold today.
+- `phrase` is the step-line text a Coach client prints for a call. Both phones take it from this file, and the
+  web's `TOOL_PHRASE` holds the same words for the abilities it lists.
 
 Read as a test by `backend/test/products/gym/adapters/mcp/CatalogContractTest.cpp`, which embeds the
 file into `windmill_gym` at configure time (`catalogText()`). A change to this file or to a tool

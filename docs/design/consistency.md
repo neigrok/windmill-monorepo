@@ -152,15 +152,6 @@ first-run and account boards, and
 for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colour roles are
 [`ios/ios-redesign.md`](ios/ios-redesign.md) §2.
 
-- **6k · Backend: signed-out Coach.** Anonymous onboarding uses a separate installation boundary. The USD backend
-  implements anonymous $0.05 lifetime, verified free $0.25 per UTC month including associated
-  anonymous spend, and One $7 per funded period. Owner grants use calendar months. Free access
-  shares $100/month and $5/day; paid funding is isolated. The launch identity is a server-issued
-  installation credential with IP limits; it does not promise persistence across resets.
-  Onboarding creates bounded local routines from one model call. The broader phone tool-host
-  protocol remains separate work. Per-request input estimates are approximate and settle to actual usage. See
-  [the mobile specification](../foundation/mobile/gym_coach.md) and
-  [backend contract](../../backend/AI_ALLOWANCES.md).
 - **6u · USD allowance drawings.** Canonical Coach onboarding (`1081:565`) uses the $0.05 lifetime
   installation allowance and current free/funded policy. Account · Usage · Proposal and
   Roadmap · AI requests · Proposal still need the current policy, which `backend/AI_ALLOWANCES.md`
@@ -171,14 +162,6 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
-- **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
-  Signed out they must land on the phone with a stable, retry-safe identity and be adopted once on
-  sign-in under the sign-in rule (7d), without duplicates.
-- **6m · Backend: signed-out photos.** A sent photo is kept in private storage with the account's
-  conversation. Signed out it must be sent inline for Coach to read and not persisted server-side;
-  the phone keeps the only copy.
-- **6n · Backend: the conversation on sign-in.** A signed-out conversation must move to the account
-  on sign-in with the same identity, receipts included, so the chat continues where it stopped.
 - **6w · Keyboard bars on iOS 26.** The app avoids SwiftUI `.keyboard` toolbars because their
   retained layout can reduce later sheets' keyboard avoidance. Coach's *Done* is above its composer;
   the note editor has none. The combined routine movement editor uses `KeyboardBar` with *Next* and
@@ -263,7 +246,7 @@ and Android disagree.
   action is *Hide*, and Units go. Android builds this: the room gives You its *Notes* and
   *Connected log* rows (`GymRoom.kt:375-376`) beside *About Windmill* (`app/MainActivity.kt:282`),
   the workout's top bar trails *Hide workout* (`ui/LoggerScreen.kt:458-460`), no units control
-  remains, and Coach's top bar holds History and the account seat (`coach/AskScreen.kt:209-213`).
+  remains, and Coach's top bar holds History and the account seat (`CoachHead`, `coach/CoachAccess.kt`).
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
@@ -304,8 +287,8 @@ and Android disagree.
 - **10e · The Gym door's line.** The iOS build draws the *Where to start?* Gym door as *Log today's
   sets*, beside the Journal door's *Write tonight's page*, since the rack draws no *Last time* line. Check the first-run *Where to start?* boards and redraw any door that
   promises *last time*.
-- **10f · What Coach did, in iOS's words.** Web and Android put the phrase table's words in a step
-  list behind the read receipt. iOS draws no step list: the receipt row opens *What Coach read*
+- **10f · What Coach did, in iOS's words.** The web puts the phrase table's words in a step
+  list behind the read receipt. iOS and Android draw no step list: the receipt row opens *What Coach read*
   (board 08.5), and the table's words stand where iOS says what Coach did — the receipt's *Read your
   movement history* for a totals-only read and *Read nothing from your log*, *Also read your notes.*
   under *What Coach read*, and one row per act, *Open routine · Push A* and *Saved a note*, which iOS
@@ -319,8 +302,8 @@ and Android disagree.
   observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
   `ReadReceipt.cpp` each set's week. iOS counts weeks only from the workouts *What Coach read*
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
-  with no number; web and Android print the server's weeks (`coach.js` `readLine`,
-  `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
+  with no number; the web prints the server's weeks (`coach.js` `readLine`), and Android the weeks its own
+  receipt counts (`CoachReply.readLine`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
 - **10o · The page is the target.** The Gym iOS page holds the current target. 🚀 means the
   drawing matches verified implementation; 🔨 means implementation; ✅ means human-approved design
   ready for development; 🚧 means design or approval remains open and its caption names that work. The six flow
@@ -376,8 +359,8 @@ and Android disagree.
   bubbles of anchored capabilities. The iOS build draws the targets (`Coach/CoachMessages.swift`,
   `CoachTab.swift`): bubbles with tails, the lifter's in `gym/accent` set in `on-accent`, a sent photo
   as a 200 pt image bubble, timestamps, the typing bubble, Markdown in a full-width bubble, and the
-  round + outside the field with the send arrow that appears with text. Android (11g) and the web
-  still draw the older chat.
+  round + outside the field with the send arrow that appears with text. Android draws its own Material form of
+  them (`coach/CoachBubble.kt`); the web still draws the older chat.
 - **10s · Library swap (closed 2026-10-22).** The owner published the Design System additions; the Gym
   iOS and Components pages now use library symbols, the library keyboard (`delete.left`, and
   `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local
@@ -390,7 +373,7 @@ and Android disagree.
     `Proposal.kt` and its review actions and web `proposals.js` `receiptLine`; iOS says *Apply*,
     *Reject* and *Rejected* and asks nothing.
   - Drafts have Apply and Reject on one card on iOS (Reject drops them on the phone and leaves *Rejected · N
-    routines*); Android and the web still offer only Save. The card's loads read *60 kg* and *22 kg each*, the
+    routines*); the web and Android's retained onboarding answers still offer only Save. The card's loads read *60 kg* and *22 kg each*, the
     proposals' words, where 01.7 draws *60 kg total* and *22 kg, one dumbbell*.
   - Block order: 08.27 lists a rename, moves, changes, removals, then additions, as the shared
     `ProposalDiff` vectors order them; 08.2 and 08.3 draw Changed, Added, Removed, Changed, Moved. iOS
@@ -404,18 +387,23 @@ and Android disagree.
     added are built on iOS from the domain's `ProposalDiff`, whose vectors Android's and the web's
     domains also pass; no Android or web screen draws them yet.
   - 08.4 gives a conversation that proposed and created nothing a second line — *Changed a movement*, or the answer's
-    first words; iOS History draws such a row on one line unless its latest turn did not complete.
-  - iOS 08.31 still reads refused account calls or archived `needsAccount` answers. The anonymous
-    onboarding adapter produces typed `errorCode=account_required`, which Android maps to the Ready
-    fixed sentence and existing Sign in door. Android's mounted-route and native proof is pending;
-    the iOS onboarding projection has no corresponding typed-code mapping.
+    first words; iOS History draws such a row on one line unless its latest turn did not complete. Android 08.4's
+    *Changed a movement* cannot land: `update_exercise` is withheld (B-1).
+  - 08.31 (iOS `1217:8214`, Android `1254:38214`, both 🚀) draws *I need your account to change a routine. Sign in,
+    then ask again.* over one Sign in. The catalog gives a signed-out turn `create_routine`, `create_exercise` and every
+    `propose_*`; only `save_note`, `share_session`, `share_log` and `revoke_share` need an account. On a phone turn the
+    bubble is the model's words, and the product fixes only the Sign in under the answer, shown when a call is refused
+    `seat-required` (`coach/AskScreen.kt`, iOS `CoachMessages.swift`). The fixed sentence stands only over a retained
+    onboarding answer. For the owner: whether the board is redrawn, with a caption such as *Signed out, Coach reads,
+    creates routines and movements, and writes proposals on this phone. A saved note or a share needs an account: one
+    Sign in under the answer.*
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only.
   - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
     `Program.kt`, web `routines.js`), and web `coach.js` *Coach reads your log, so it needs you
     signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. Android's
-    task 36 access copy follows the Ready states and reads the 429's actual `retryAtMs` or received
-    `Retry-After`; web ignores those fields. iOS Coach's
+    refusals name a moment only where the server's `budgetResetsAtMs` names one
+    (`coach/turn/CoachTurnRefusal.kt`); web ignores the server's moments. iOS Coach's
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
@@ -832,7 +820,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Receipt and workout detail Discard | the receipt overflow's *Discard* (`ui/FinishScreen.kt:287`) and the detail's *Discard workout* (`ui/SessionScreen.kt:368`) both ask *Discard this workout?* | 03.14 `1283:41920`, 05.14b `1793:27005` | confirm once |
   | Bodyweight | `ui/BodyweightScreen.kt:355` and the log's weigh-in row (`ui/LogScreen.kt:222`), shared row; *Delete weigh-in* uses a durable hold of at least nine seconds | 06.2 `1254:32141`, 06.9 `1254:32246` | shared swipe, held delete and Undo |
   | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
-  | Coach History | `coach/ThreadsScreen.kt:135`, asks *Delete this conversation?* (`:175-193`), then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
+  | Coach History | `coach/ThreadsScreen.kt`, asks *Delete this conversation?*, then deletes | 08.4 `1253:28552`, 08.60 `1254:31663` | *Delete this conversation?* |
 
   The refusal notice's swipe (`ui/RefusalBanner.kt:53-78`) dismisses a notice, not a record, and
   keeps its *Dismiss*.
@@ -843,7 +831,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   *Discard* use them. Three destructive controls are still off the error role: the log row menu's
   *Discard workout* (`ui/LogScreen.kt:354`) and the receipt overflow's *Discard*
   (`ui/FinishScreen.kt:287`) draw in ink, and History's *Delete* confirm draws in `alarmInk`
-  (`coach/ThreadsScreen.kt:182`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
+  (`coach/ThreadsScreen.kt`). Boards 00.2 `1254:43776` and 00.4 `1254:38403`. *Sign out* stays ink.
 - **11d · Number entry is a stepper (owner ruling, 2026-10-22).** Load and reps are M3 icon buttons
   − / + (48 dp) around a numeric text field; tapping the value opens the decimal keyboard, − / +
   nudge by the movement's step, and the plate ladder stays for bigger jumps. Pressing shows the M3
@@ -885,22 +873,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   Boards 02.1 `1252:27415`, 02.7 `1252:30574`. *Weigh in*: 9q. The current Coach proposal card and
   Review destination remain while action appearance changes are deferred at the user's request; its words are set in
   Nunito, as 02.1 sets the row it stands for.
-- **11g · Coach chat in the Google Messages style (owner ruling, 2026-10-22).** Coach and lifter in
-  grouped Material bubbles with timestamps, a typing bubble while Coach thinks, the answer streaming
-  into its bubble, long Markdown at full width. Today the question is a raised bubble at 90 % width
-  and the answer unbubbled prose (`coach/CoachAnswer.kt:55-62,240-305`), with no timestamps or
-  grouping; waiting is the text *reading your log…* and, with the server polled at 1 Hz, the
-  answer lands whole. Boards 08.1 `1252:27790`, 08.10 `1254:30552`, 08.11 `1254:30653`, 08.32
-  `1254:31101`, 08.59 `1254:31296`, 01.6 `1253:30742`.
-- **11h · Coach-led setup on Android.** Journey 01 draws the iOS setup in Material form: the greeting
-  with its anchors (01.1 `1252:4776`, 01.2 `1253:28196`), photos (01.4, 01.5), drafts decided on
-  their card (01.7, 01.14, 01.15), receipts (01.8, 01.16), allowance used (01.10–01.12) and the
-  thread after sign-in (01.13). An empty Gym opens Routines and an empty Coach shows
-  nothing above the composer (`Ask.openers` is unused). Available anonymous installations use the
-  retained onboarding coordinator; unavailable/bound access uses the Ready task 36 stances. The
-  greeting, photo extras and allowance states remain separate tasks; action/draft card changes stay
-  postponed. The anonymous endpoint runs only with `AI_INSTALLATIONS_ENABLED` and
-  `AI_ALLOWANCES_ENABLED` (both default off).
+- **11h · Coach-led setup on Android.** Journey 01 draws the iOS setup in Material form. The build draws the greeting
+  with its anchors (01.1 `1252:4776`, 01.2 `1253:28196`), photos (01.4, 01.5), the signed-out answer (01.19), and the
+  routines a turn creates, landed at once with their card (01.8 `1902:34546`, 01.16 `1902:34644`). An unavailable or
+  bound installation takes the stances of 08.58 `1253:28737` and 08.58b `1489:49152`. What differs: a retained
+  onboarding answer's drafts, the only drafts a phone still holds, keep their Save (`coach/CoachAnswer.kt`), where 01.7,
+  01.14 and 01.15 draw Apply and Reject; allowance used is 11j.
 - **11j · The allowance-used copy.** Boards 01.10–01.12 say *You have used all of your AI
   allowance.*, a sentence no server sends (the nearest is *Your AI allowance is fully used or
   reserved.*, 10v); Android says it for `subject_exhausted` when the server's allowance read shows the
@@ -908,14 +886,16 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   that refused a round without being gone (`coach/turn/CoachTurnRefusal.kt`). It says when Coach
   comes back only of a paused pool (`free_month_exhausted`, `free_day_exhausted`), not of the seat's own
   allowance (01.11). Windmill One (01.12) ships only with checkout open.
-- **11k · Proposals decided on the card — postponed from this Android release.** Preserve the current
-  action cards, review route and outcome wording under the owner's 2026-10-25 scope decision.
+- **11k · Proposals decided on a sheet.** The owner keeps Android's action cards, review route and outcome wording.
   Android decides a proposal in a review sheet
-  (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm), its card
-  says *Review* under the promise line (`coach/CoachProposalCards.kt`, `Ask.promise`), and receipts
-  say *Turned down* (`presentation/Proposal.kt`). The boards decide on
-  the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
-  the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). 10v covers the words on every surface.
+  (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm; 08.55b `1901:33869` draws it
+  for a change to the open workout), its card says *Review*, the promise line stands once under the cards
+  (`coach/CoachProposalCards.kt`, `Ask.promise`), and receipts say *Turned down* (`presentation/Proposal.kt`). The boards
+  decide on the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
+  the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). A change to the open workout decides during the workout
+  (`WorkoutReviewBinding`). A routine's proposal does not: its card says *next time*, as 08.56 `1901:34078` draws, and its
+  sheet says *Finish this session* with no decision (`ReviewBinding`), where iOS applies it. For the owner: which holds.
+  10v covers the words on every surface.
 - **11l · Outside the app.** The native ongoing notification and promoted Live Update show a
   chronometer from the last visible workout set, or workout start before the first set. The silent
   DEFAULT channel preserves a user's existing block. The public lock-screen card contains only
@@ -956,8 +936,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | `android-gym-no-routine-picker-design` | 13 | Changes to the existing picker for an externally started workout without a routine. |
   | `android-gym-mcp-proposal-row-design` | 17, 29 | A proposal with no conversation; retain its existing review route until the replacement is approved. |
   | `android-coach-uncertain-apply-design` · deferred, unapproved | 34 | Excluded from this release with Coach action-presentation changes; the proposed awaiting-receipt states are not approved. |
-  | `android-coach-partial-drafts-design` · deferred, unapproved | 41, 42 | Excluded from this release with Coach action-presentation changes; the proposed mixed-result cards are not approved. |
-  | `android-coach-bound-installation-design` · access approved | 36, 38 | 08.58b Dark `1489:49152` / Daylight `1489:49306` are human-approved 2026-10-28 and 🚀 In production on the Android design page. History and Sign in remain available; anonymous Send is absent. The separate B.2 recovery card is unapproved. |
+  | `android-coach-bound-installation-design` · access approved | 36, 38 | 08.58b Dark `1489:49152` / Daylight `1489:49306` are human-approved 2026-10-28 and 🚀 In production on the Android design page. History and Sign in remain available; anonymous Send is absent. |
   | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is 🚀 In production, human-approved 2026-10-25; Android task 48 ships it in 0.14.0. |
   | `account-delete-reconciliation` · resolved | 48 | Backend account-scoped closure receipts and session-independent recovery are deployed in `ac1e0c75`; Android integration and acceptance remain task 48. |
 
@@ -978,6 +957,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | 06.3 · 06.4 · 06.5 | 06.9 · 06.10 · 06.11 | Correct a weigh-in · Native date picker · Date selected |
   | 07.4 · 07.5 | 07.11 · 07.12 | Sign-in decision · Discard 3 workouts? |
   | 08.6 · 08.6b · 08.33–08.36 | 08.58 · 08.58b · 08.59–08.62 | No seat · Signed out, earlier chats retained · Scroll · Delete a conversation · Another reply pending · Draft restored |
+
+  These Android-only boards take numbers free on both pages: 07.15 · 07.16 · 08.55b · 08.68 · 08.69 · 08.70, *Sign-in
+  decision, conversations only* · *Discard 2 conversations?* · *Review sheet, this workout* · *Send refused, the shared
+  free day* · *Ended, the Stop could not reach the server* · *A picture held on another phone*. The redraw of 08.58
+  `1898:33452` draws *account changing* under the number the no-seat original `1253:28737` still holds; the build draws
+  both, so the original takes a number of its own (designer).
 
   The task files, capture recipes and engineering docs use the new numbers; `routine-targets.json`
   captures the movement editor's discard dialog as 02.17. Flows drawn on both phones under
@@ -1066,10 +1051,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
     (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
     (`web/src/products/gym/log.js`).
-- **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** Coach can answer before its proposal
-  reaches the phone; until the miss settles, Android draws nothing in the card's place
-  (`coach/AskScreen.kt`). Board 08.63 (`1828:53638` · `1828:53718`) draws the waiting state: a
-  compact card in the card's place reading *Proposal arriving…* under a linear indicator. A miss settles 10 s after it,
+- **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
+  proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an
+  answer before its proposal. Android then says *Reading proposal…* until a read misses, and until the miss settles draws
+  nothing in a routine card's place and *Reading proposal…* in a workout change's (`coach/AskScreen.kt`,
+  `coach/CoachProposalCards.kt`). No board draws those words. Board 08.63 (`1828:53638` · `1828:53718`, 🚧) draws the waiting
+  state: a compact card in the card's place reading *Proposal arriving…* under a linear indicator. A miss settles 10 s after it,
   once the phone reads further into the account or a pull asked after its wait lands caught up; the
   wait's end asks for that pull, so an idle account settles too, and the place then reads *This
   proposal is no longer available.* `gym_proposal_missing` counts only answers this visit waited
@@ -1217,27 +1204,20 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   still asks *This permanently removes the copy saved on this phone.* as a dialog
   (`Recovery/WorkoutInspectScreen.swift`). A workout with no sets is not drawn either; iOS says *This
   deletes the workout. You can’t undo this.* Android asks nothing (11b).
-- **12h · Coach details follow iOS.** What Coach read is a sheet; a movement's details read *Weight
-  is · Total → Each dumbbell*; the day's cap uses the server's actual `retryAtMs`/`Retry-After`
-  with *Use your own AI agent*, and a nonnumeric fallback when timing is absent; *This Windmill
+- **12h · Coach details follow iOS.** What Coach read is a sheet; asked too often says *You can ask again later.* with
+  *Use your own AI agent* and names no wait (08.8 `1898:33373`); *This Windmill
   does not have Coach. You can still read your log.* with no doors;
-  *No conversations*; *New chat*; *Copy question* / *Copy answer*; no ⋮ More on Coach (Android 08.5
-  `1253:28654`, 08.7 `1253:28776`, 08.8 `1253:28820`, 08.26 `1254:37761`, 08.32 `1254:31101`, 08.60
-  `1254:31663`). Android's access and cap rendering lives in `coach/CoachAccess.kt`.
-  It prefers actual `retryAtMs`, resolves fallback `Retry-After` on receipt, persists the deadline
-  with the exchange and recomputes for clock/locale/timezone changes. Native task 36 acceptance
-  remains pending; no fixed hours are claimed when timing is unavailable.
-- **12i · Shipped iOS states, drawn on both pages.** Coach's choice chips (01.17), *Draft kept on this
-  phone* / *Continue saved draft* (01.18), the routine editor's History (02.13), *· yours* on a custom
-  movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a
-  device check; Android builds none (01.17 `1283:40111`, 01.18 `1283:40674`, 02.13 `1283:39087`).
+  *No conversations*; *New chat*; *Copy question* / *Copy answer*; no ⋮ More on Coach (Android 08.36
+  `1898:32999`, 08.7 `1253:28776`, 08.32 `1254:31101`, 08.60 `1254:31663`). Android's access stances live in
+  `coach/CoachAccess.kt`, and each refusal's words and door in `coach/turn/CoachTurnRefusal.kt`.
+- **12i · Shipped iOS states, drawn on both pages.** *Draft kept on this
+  phone* / *Continue saved draft* (01.18 `1283:40674`), the routine editor's History (02.13 `1283:39087`), *· yours* on a
+  custom movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a
+  device check. Neither phone draws Coach's choice chips and the catalog has no `ask_setup_details`, while 01.17 reads 🚀 on
+  both pages (iOS `1283:41514`, Android `1283:40111`): retire it.
 - **12k · No Erase data; Delete account removes the cloud copy.** No phone offers Erase data:
   removing the app erases its data. Delete account's first line says *This deletes your Windmill
   account and its copy in the cloud: your roadmaps, journal pages and gym log.* (12e).
-- **12l · The greeting's *Changes* line.** Both phones say *Changes — ask me, and I suggest changes to
-  your routines.*, because Coach proposes only inside a conversation the lifter starts
-  (`Proposal.h` `ProposalDoor`). The iOS build still says *as you train*
-  (`Gym/Coach/CoachSetup.swift:24` on branch `ios-gym-backlog`); Android has no greeting yet (11h).
 - **12m · Delete account with unsent changes (owner ruling, 2026-10-22).** They are deleted with the
   account, said plainly and with no extra choice: a fifth fact *3 changes on this phone haven’t been
   confirmed by your account. They are deleted too.* (Shell iOS 27f `91:5187`, 27g `91:5256`; Shell
@@ -1303,40 +1283,29 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 
 ### Coach on the client
 
-Spec: [Gym Coach on the client](../foundation/mobile/gym_coach.md), implemented on the backend and
-iOS. It and the product differ in these places.
+Spec: [Gym Coach on the client](../foundation/mobile/gym_coach.md), implemented on the backend, iOS and
+Android. It and the product differ in these places.
 
-- **6p · Android signed-out Coach.** Android composes the installation credential and durable
-  onboarding coordinator through the existing Coach store. Available anonymous access can send;
-  bound or unavailable access retains its local History without a composer. GET recovery remains
-  available for submitted work. The endpoint's deployed installation/allowance switches remain
-  off. Task 36 source and task 38 foundation await their owned live/native acceptance. The identity
-  is server-issued with IP/global budgets and does not guarantee protection against installation resets.
 - **6q · One agent rule per ability.** Coach never logs, fixes or deletes a set, finishes or
   discards a workout, or writes a bodyweight (`brand-foundations.md`, Gym). MCP runs
   `start_session`, `log_set`, `log_sets`, `finish_session`, `discard_session` and `import_session`.
   The spec gives each ability one agent rule for both doors and withholds these until the owner
   rules (its Appendix B-1).
-- **6r · Where a signed-out photo goes.** The anonymous caption identifies the AI provider as the
-  processing destination and limits the phone-only storage claim to Windmill. The application
-  server must not persist the image or input text. Native verification must cover draft retention,
-  inline submission, and the local history/photo ownership decision at sign-in.
-- **6s · Pasted programs.** The Coach contract and signed-in iOS setup accept 8,000 UTF-8 bytes.
-  Android's `Ask.maxTurnBytes` and web's `QUESTION_BYTES` remain at 1,000; the web textarea also
-  limits character count to 1,000. Align those clients when delivering their setup flow, preserving
-  the complete draft and a specific length refusal rather than silently truncating a pasted program.
-- **6t · Coach recovery proposals awaiting approval.** Android specimens for provider refusal,
-  truncated output and unavailable or invalid installation credentials are in
-  [Gym Proposals](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5069), with
-  [waiting/local saving](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5070)
-  and [bound pending-result recovery](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49219).
-  These recovery cards remain unapproved; local-save cards A2.3/A2.4 are postponed with tasks 41/42.
-  The access-only Android 08.58b pair is human-approved 2026-10-28 and on the Android design page:
-  [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) /
-  [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306).
-  Anonymous waiting and local saving are distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
-  anonymous and account allowance-exhaustion boards are 🚀 In production on Android; the Windmill One
-  variant remains excluded while checkout is closed.
+- **6r · The provider's retention over a picture (owner).** Gym Coach §9.3 asks the line over a sent picture to name the
+  vendor's retention as verified at release. Android says on both seats *A copy goes to Anthropic, our AI provider, to read
+  it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept
+  only on this phone.* (`coach/CoachPhotos.kt`), read from Anthropic's Privacy Center article on stored organization data
+  (last updated 2026-07-01, read 2026-11-03). Board 01.5 `1902:34450` names no provider and still carries the chip
+  *Placeholder: the AI provider’s retention, verified at release*, and iOS names no retention on either seat. For the
+  owner: confirm the sentence, and whether Windmill's account holds a zero-data-retention agreement, which would change it.
+- **6s · Pasted programs.** The Coach contract and both phones accept 8,000 UTF-8 bytes. The web's `QUESTION_BYTES`
+  remains at 1,000, and the web textarea also limits character count to 1,000. Align the web when delivering its setup
+  flow, preserving the complete draft and a specific length refusal rather than silently truncating a pasted program.
+- **6t · Coach recovery proposals to delete (designer).** Gym Proposals still holds
+  [A1](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5069),
+  [A2](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5070) and
+  [B.2](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49219), drawn for an onboarding client no phone's
+  source holds. 08.42, 08.43 and 08.46–08.48 draw what a phone turn says, and no request waits on anything.
 - **6v · Local Coach boards, 🚀 In production on iOS since 2026-10-29.** The Gym iOS page holds
   the states the local Coach adds (`gym_coach.md`, BUILD.md W4) as 🚀 In production Dark/Daylight
   pairs, each with a caption (Dark / Daylight / caption): 01.19 signed-out answer with its read
@@ -1365,7 +1334,8 @@ iOS. It and the product differ in these places.
   the drawings differ: the step line and the What Coach read rows take the catalog's own phrases
   (*read your program*, *wrote a proposal for one of your routines*) where 08.35 and 08.36 drew
   *read your routines* and *proposed a change*; 08.37 draws no receipt row, the build keeps it
-  (brand foundations: always visible); 08.49 and 08.50 draw a *Changed a movement* card, which no
+  (brand foundations: always visible); 08.35 and 08.36 omit the context reads the build lists; 08.55–08.57 draw *Read
+  this workout · 6 weeks*, where `CoachReading` prints a count; 08.49 and 08.50 draw a *Changed a movement* card, which no
   ability can land (`update_exercise` is withheld, B-1), so the build's landed write is *Made a
   movement*; 08.41's line counts UTF-8 bytes under the word *characters*, and its field grows to five
   lines with the pasted draft where the board draws one; 08.44's reset day comes from
@@ -1374,13 +1344,13 @@ iOS. It and the product differ in these places.
   `gym-coach-turn-allowance-reset`; production sends it once that node is done, and until then the line
   ends at *this month*. A refusal mid-turn names the same moment on its `error` frame, where iOS reads
   only `code`, so that line always ends at *this month*.
-- **6x · The sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
-  they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). The decision does
-  not say so: iOS `AdoptionQuestion.named` and Android `PhoneSignInCopy` list workouts, routines, weigh-ins, movements
-  and notes. A phone holding only conversations reads *N changes* on iOS and *training* on Android, and Discard deletes
-  them unnamed. For the designer: a conversation noun in the sign-in question and the discard confirmation on both
-  phones. Android reaches this state when its signed-out Coach moves to phone turns
-  ([plan](../engineering/android-phone-coach-plan.md) §5); iOS holds it now.
+- **6x · The iOS sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
+  they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). Android names them
+  (`PhoneSignInCopy`, 07.15 `1902:35369`, 07.16 `1902:35444`). iOS `AdoptionQuestion.named` lists workouts, routines,
+  weigh-ins, movements, notes and journal pages, so a phone holding only conversations reads *N changes* and Discard
+  deletes them unnamed. For iOS: `conversation` in `AdoptionQuestion.named`, which reads *This phone has 2 conversations
+  from before you signed in. Your account already has training. Add them, or discard them from this phone.* and *Discard 2
+  conversations?* / *They are deleted from this phone. You can’t undo this.*
 - **6y · Android's exchange against its boards.** Where the build and the drawings differ: 08.36's rows are no doors,
   so What Coach read opens no workout; 08.35 and 08.36 draw no card beside their *wrote a proposal* step, and the build
   draws the card when the call lands, as iOS does; 08.35 and 08.52 end their running words on an ellipsis, which the
@@ -1399,10 +1369,24 @@ iOS. It and the product differ in these places.
   01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out and *A copy goes to
   the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). 03.46 draws a
   set as *1*, a ladder of −5, −2.5, +2.5, +5 and the movement in Nunito, where the shipped rack draws *Set 1*, −2.5, −1,
-  +2.5, +5 and a sans name, and the rack stays as today (D5). No board draws `stopping`; a Stop refused for another
+  +2.5, +5 and a sans name, and the rack stays as today (D5). A proposal that only reorders a routine's movements counts a
+  change on its card and draws no row on the sheet, and no board draws one. Signed out, a sheet's Apply says *Sign in to
+  review this proposal.* with no door, and no board draws one there. A Stop refused for another
   reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
   already ended. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
   *Interrupted.*
+- **6z · The Android boards after the phone Coach (designer).** Once it ships, delete the originals it replaced, with their
+  Daylight pairs: 08.5 `1253:28654`, 08.8 `1253:28820`, 08.9 `1253:28915`, 08.26 `1254:37761`, 08.61 `1442:18583`, 01.5
+  `1253:30626`, 01.8 `1254:32583`, 01.16 `1254:32725`, 01.17 `1283:40111`. The originals of 01.8, 01.16, 08.9 and 08.26 still read
+  ✅, so a task links 01.8 and 01.16 by the redraw's id. 08.58's original and 08.58b stay, since the build draws them, and 01.7,
+  01.14 and 01.15 stand for retained onboarding answers alone. 08.63 stays 🚧 under a section header that reads ✅. The page's
+  Snackbar sets its words in Roboto (`1254:38382`), and `Android / Diff field`'s *Equipment* stands 78 px wide (08.26), which
+  the designer measures 6 px past its label column.
+- **6aa · Words the Android boards added, for the owner to check.** 08.41 *Too long by 1,400 bytes. The limit is 8,000 bytes.*
+  / *English letters take 1 byte each. Other letters and emoji take more.*; 08.70 *Held on the phone that sent it*; 08.55b
+  *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
+  specimens *I made 3 routines.* and *I made Incline Dumbbell Press, then*. 08.45 says Android's *Get the update*, not iOS's
+  *Update*. 08.68 offers *Use your own AI agent* on a shared free day, which iOS code does not (`CoachTurnRefusal.recovery`).
 
 ### Native and web differences
 

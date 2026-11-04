@@ -11,8 +11,9 @@ iOS and Android run every Coach turn, signed out and signed in, as the tool host
 web keeps the server Coach of [gym-coach-contract.md](../../gym-coach-contract.md): the server
 reads and writes the log itself. Anonymous onboarding (`POST /v1/gym/coach/onboarding`) is a
 separate, narrower route: one installation-authenticated request produces a bounded routine
-document for atomic local import. No phone calls it now: iOS and Android draw the onboarding answers
-earlier versions kept and import the routines they drafted. Installation identity follows §8.
+document for atomic local import. Neither phone's source calls it: iOS and Android draw the onboarding
+answers earlier builds kept and import the routines they drafted. The published Android 0.14.0 still sends it.
+Installation identity follows §8.
 
 Catalog version 2 adds `propose_workout_change`, the Coach's door to the open workout: the catalog
 declares it and its corpus holds the calls (§3.5), and engine A.2 binds its `workoutProposal`
@@ -65,7 +66,9 @@ list (every tool but the phone Coach's `propose_workout_change`), are written in
 byte-equal as JCS, and its class and agent rule against the tool's access level
 (`CatalogContractTest.cpp`). An ability the server declares no tool for is marked
 `"declared": false`. The Swift catalog, phrases included, is generated from it (`GymCatalogGen`)
-and pinned to the checked-in file by test (`GymCatalogGenTests`). Appendix C lists its abilities.
+and pinned to the checked-in file by test (`GymCatalogGenTests`). Android holds no generated copy: a Gradle
+task copies the file into `:gym`'s assets, and the kit's `Catalog` parses it at the first send. Appendix C
+lists its abilities.
 
 **D-3 Catalog version.** `catalog/N`. It increments when an ability's name, input, result, class,
 agent rule or rule changes. Model-facing descriptions and phrases change without an increment.
@@ -267,6 +270,9 @@ The model's reasoning and every assistant content block stay on the server.
    against `TOOL_RESULT_BYTES` before anything commits — a result over it refuses the call
    `result-too-large`, writes dropped, and the record carries no read or minted id — then commits
    the call's writes and records the call on the Coach message: name, minted ids and outcome.
+   A call delivered again under its `callId`, by a resume's `snapshot` of an unanswered batch, runs again.
+   Android keeps one record for it, in its place: this run's, holding every id either run created, and a
+   first record that answered stands only when this run was refused. iOS appends a record per run.
 3. The phone posts the batch's results in one request (§6.4).
 4. A batch unanswered for `CALL_RESULT_TIMEOUT` ends the turn `interrupted`.
 5. The shares (`share_session`, `share_log`, `revoke_share`) are server records. In a `bound` turn
@@ -278,7 +284,8 @@ The model's reasoning and every assistant content block stay on the server.
 - The terminal states are `completed`, `declined`, `failed`, `stopped` and `interrupted`.
 - The server sends `done`, keeps the turn's final state for `TURN_LINGER`, then drops the turn.
 - The phone writes the final state, answer text and receipt on the Coach message in one local
-  transaction.
+  transaction, which clears `runningTurn`: on iOS whatever the row names, on Android only when it names
+  this message.
 - Every terminal state keeps the partial text and every write that committed. Text reaches the record
   in coalesced commits, each syncing the whole text so far: iOS every 250 ms; Android every 5 s, at each
   batch, when the app stops and at the end, while its room draws the answer so far from the turn driver. A
@@ -313,7 +320,7 @@ The model's reasoning and every assistant content block stay on the server.
   land after it; that turn runs on the server, unheard, until it ends or a batch goes unanswered for
   `CALL_RESULT_TIMEOUT`.
 
-  iOS still resumes after any loss and withdraws only on a first attempt's refusal: an open that never landed
+  iOS resumes after any loss and withdraws only on a first attempt's refusal: an open that never landed
   meets `coach-turn-unknown`, and the turn ends `interrupted` with its question on the record. A Stop it
   cannot deliver ends the turn `stopped`.
 - **Resume.** After a reconnect once a frame has arrived, or a return to the foreground, the phone reads
@@ -322,9 +329,12 @@ The model's reasoning and every assistant content block stay on the server.
   whatever its `replica`: the death ended its stream, and the event that would have named it may have
   died with the process (engine §7.12).
 - **Background.** While a turn runs, the phone keeps its process alive within the platform
-  allowance: an iOS background task, an Android expedited job.
+  allowance: an iOS background task, an Android expedited job on API 31 and above. Below API 31 Android holds
+  no lease, and a killed turn ends `interrupted` at the next engine start.
 - **Lost turn.** A server restart drops running turns. A resume then answers
-  `coach-turn-unknown`, and the phone ends the turn `interrupted`.
+  `coach-turn-unknown`, and the phone ends the turn `interrupted`. When the server drops a turn (§4.4) whose
+  `bound` Coach message is still `running`, it MAY write `interrupted` on it, as a server-origin write that
+  sets only `state` (engine §6.3).
 - **Writer.** Only the replica named on the Coach message writes its state, text, receipt and
   calls; another device shows a running turn as answering on another device and never writes it. One
   write is excepted: the device whose active replica's id changed from the named one —
@@ -335,7 +345,7 @@ The model's reasoning and every assistant content block stay on the server.
   fire, and the seat has changed all the same (D-10). On Android the engine announces the rebind apart
   (engine §7.12) and a running `anon` turn ends `interrupted`, its code `seat_changed`; its reads and writes
   hold to the replica and to its seat, so nothing the account holds leaves under the `anon` seat. iOS has
-  no such signal or hold yet.
+  neither.
 - **A sign-in's decision.** While a sign-in waits on its decision (engine §7.10), a running turn's reads
   and writes wait with it on Android, and Send waits too, since each write would move what the decision
   counted, and a transition the lifter can still cancel, as the sign-out sheet, holds them the same way: Cancel
@@ -344,8 +354,6 @@ The model's reasoning and every assistant content block stay on the server.
 - **A record gone.** A Coach message removed under its running turn, as a conversation deleted on another
   phone, ends the turn on Android: `runningTurn` lets go of it, the server hears a Stop, and nothing is
   reported as a failure.
-  When the server drops a turn (§4.4) whose `bound` Coach message is still `running`, it MAY write
-  `interrupted` on it, as a server-origin write that sets only `state` (engine §6.3).
 
 ### §4.6 Web turn
 
@@ -625,9 +633,14 @@ physical phone. IP and global budgets bound that exposure.
 
 ### §8.3 Android
 
-Android Coach remains account-only. Delivering anonymous Android onboarding requires its own
-secure credential storage, local routine import and account-adoption integration. The shared
-installation policy does not imply Android delivery or reinstall-resistant identity.
+`AiInstallation` (`:platform`) seals the installation credential under the Android Keystore key, in a
+preferences file of its own beside the account's credentials, and keeps it through ordinary sign-out. App
+backup is off, so a reinstall starts a new installation. A missing credential on first use may acquire one,
+and a server answering 503 `anonymous_ai_unavailable` is asked again on the next UTC day or app version. An
+invalid existing credential is kept marked invalid and never silently replaced. At sign-in and at each restore
+of the session, a sealed binding intent is saved first, which closes anonymous admission, and the bind then
+runs in the background: account Coach does not wait for it. As on iOS, this is an installation allowance and
+not proof of a unique physical phone.
 
 ### §8.4 Failure and privacy
 
@@ -674,6 +687,7 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
   writer's terminal write, with its text, receipt and calls, is admitted over `interrupted`.
 - A lifter message carries `threadId`, `role`, `text`, `pictures` and `at` only.
 - `receipt` and `calls` are bounded in bytes of their JCS encoding.
+- On Android a call whose input holds U+0000, in a key or a value, records without its input.
 
 ### §9.2 Receipt
 
@@ -699,7 +713,9 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
   `pictures` entry is `localOnly: true`, and a later sign-in does not upload it. Another device
   draws it as a picture held on the phone that sent it.
 - A `pictures` entry is `{id, mediaType, localOnly?}`. Its `id` names the picture on the phone that
-  sent it, in that phone's `picture:<id>` device row.
+  sent it, in that phone's `picture:<id>` device row. On iOS the row holds the original and the model copy as
+  base64. On Android it holds their metadata, and the bytes are files in `noBackupFilesDir/coach-pictures`,
+  which no backup or device transfer carries.
 - Copy about a sent picture says that a copy goes to the model vendor to read for the answer, that
   Windmill stores none, and the vendor's retention as verified at release.
 
@@ -723,7 +739,9 @@ event per ability call it ran: the catalog name and the outcome (`ok` or the ref
 carries text, pictures, results or ids. iOS sends both
 ([IOS_OBSERVABILITY.md](../../IOS_OBSERVABILITY.md)): `coach_turn` with its ability calls,
 refusals and answer bytes as counts, and a `coach_ability` for every call its executor ran, the
-context reads included: the four list reads and, while a workout is open, its `get_session`. Android sends both ([ANDROID_OBSERVABILITY.md](../../ANDROID_OBSERVABILITY.md)). The server logs its own side of a turn
+context reads included: the four list reads and, while a workout is open, its `get_session`. Android
+sends both ([ANDROID_OBSERVABILITY.md](../../ANDROID_OBSERVABILITY.md)), under the same rule for the context
+reads, and no `coach_turn` for a turn withdrawn before any frame. The server logs its own side of a turn
 (`coach_turn` and `coach_batch` lines, `backend/OBSERVABILITY.md`), the calls a phone refused
 counted by code.
 
@@ -802,8 +820,6 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
   tools and images. Do not describe approximate admission as a hard spending ceiling. Original
   funding absorbs covered variance; unfunded overrun debt and ambiguous holds remain accounted
   for. The free pools and concurrency policy are set.
-- **B-4 Android delivery.** Implement and verify secure installation storage, local onboarding
-  import and account adoption before opening anonymous Coach on Android.
 - **B-5 Evaluation.** Signed-out conversations exist only on phones. Decide whether a lifter can
   send a conversation to Windmill for review.
 
