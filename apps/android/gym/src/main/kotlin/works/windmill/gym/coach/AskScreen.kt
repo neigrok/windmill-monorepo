@@ -228,18 +228,18 @@ fun AskScreen(
             .imePadding(),
       ) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned { viewportBottom = (it.positionOnScreen().y + it.size.height).roundToInt() }) {
-            Column(
+            // The thread's padding is the scroller's content, so what stands in it, the read line's touch among it, stands inside what scrolls.
+            val viewport = maxHeight
+            Box(Modifier.fillMaxSize().testTag("coach-thread").nestedScroll(presentation.gestures)
+                .then(if (greeting) Modifier else presentation.anchoring).verticalScroll(presentation.scroll)) {
+              Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp, if (greeting && !keyboardVisible) Alignment.Top else Alignment.Bottom),
                 modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("coach-thread")
-                    .nestedScroll(presentation.gestures)
-                    .then(if (greeting) Modifier else presentation.anchoring)
-                    .verticalScroll(presentation.scroll)
-                    .heightIn(min = maxHeight)
+                    .fillMaxWidth()
+                    .heightIn(min = viewport)
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 8.dp + sourcesSpace),
-            ) {
+              ) {
                 if (greeting) CoachGreeting(!coach.anonymous, composerEnabled && !asking,
                     onScreenshot = {
                         telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "screenshot"))
@@ -302,6 +302,7 @@ fun AskScreen(
                 }
                 if (coach.accountChanging && !accountChangingAlone) CoachAccountChanging(alone = false)
                 pending?.let { AnswerInProgress(it, onOpenChat) }
+              }
             }
             if (accountChangingAlone) CoachAccountChanging(alone = true, Modifier.align(Alignment.Center))
             if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) ElevatedButton(onClick = {

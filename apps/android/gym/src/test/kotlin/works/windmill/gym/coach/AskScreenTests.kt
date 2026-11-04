@@ -496,7 +496,7 @@ class AskScreenTests {
         room(signedIn(scope).store, thread = listOf(answer), refusal = null, doors = mutableListOf())
 
         compose.onNodeWithText("Read your movement history").assertDoesNotExist()
-        compose.onNodeWithText("Read 34 workouts · 12 weeks").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Read 34 workouts · 12 weeks").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Read your movement history").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Read your notes").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("2 notes").performScrollTo().assertIsDisplayed()
