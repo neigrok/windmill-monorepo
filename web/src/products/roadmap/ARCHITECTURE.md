@@ -378,8 +378,8 @@ link removal and multi-select surfaces.
 
 A roadmap keeps a root, by one rule for every door: `takesEveryRoot` in `board/acts.js`, which `deletable` builds on, asked of
 the tree a held delete leaves standing. A sole root, the last root under a hold and a select-all on a many-rooted roadmap all
-read the same. The desktop dock, the tablet panel and the selection bars stop offering Delete while they hold such a selection,
-the Graph's writes refuse it, and a Delete key on it does nothing.
+read the same. The desktop dock, the tablet panel, the selection bars and the phone Board's bulk bar stop offering Delete while
+they hold such a selection, the Graph's writes refuse it, and a Delete key on it does nothing.
 
 The owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order, including a one-step roadmap, and
 hides at zero. Picking a row selects and reveals that canvas step.
