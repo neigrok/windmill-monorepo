@@ -58,7 +58,7 @@ function start() {
           if (id === '\0report-failure-entry') return entry;
           if (id === '\0report-failure-beacon') return beacon;
           if (id === '\0report-failure-auth') return auth;
-          if (id === '\0report-failure-sentry') return 'export function captureError(kind, operation, stack, route) { window.issues.push({ operation, route }); }';
+          if (id === '\0report-failure-sentry') return 'export function captureError(kind, operation, stack, route) { window.issues.push({ operation, route }); (window.stacks ??= []).push(stack); }';
         },
         configureServer(vite) {
           vite.middlewares.use('/report-failure-test', (_request, response) => {
@@ -323,6 +323,17 @@ test('Export all whose download is refused reports roadmap-export and says it fa
       issues: [{ operation: 'roadmap-export', route: '#/settings' }],
       events: [{ name: 'roadmap_export', props: { outcome: 'failed', door: 'settings' } }],
     });
+  });
+});
+
+test('a report carries no line of the message, even one written like a stack frame', async () => {
+  await withDoor(null, {}, async (page) => {
+    const stack = await page.evaluate(() => {
+      window.reporting.reportRoadmapFailure('roadmap-load', new Error('CANARY\n    at CANARYFN (https://CANARYFILE/x.js:1:2)'));
+      return window.stacks[0];
+    });
+    assert.equal(stack.includes('CANARY'), false);
+    assert.match(stack, /^Error\n\s+at /);
   });
 });
 
