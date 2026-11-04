@@ -37,8 +37,8 @@ export const StepIcons = {
     </Glyph>
   ),
   statusUpNext: () => (
-    <Glyph size={20} strokeWidth={1.5}>
-      <circle cx="10" cy="10" r="6.66667" />
+    <Glyph size={18} strokeWidth={1.75}>
+      <circle cx="9" cy="9" r="7.125" />
     </Glyph>
   ),
   statusLocked: () => (

@@ -564,9 +564,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
   desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`graph/StepPanel.jsx`)
   fills the gauge and nothing else; no drawing covers the Graph.
-- **Board · where the modal's status row sits.** The step modal 03.01 (184:1693) draws *Up next* under
-  the step links' divider; the core-loop modals (02.01–02.04) and every phone step page draw the status
-  row under the description. `step/StepDetail.jsx` follows the core loop. Redraw 03.01 or rule.
 - **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
   prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
   lists it plainly. The build follows each drawing. Choose one.

@@ -317,6 +317,50 @@ test('Chromium: a locked step leads with what it still needs; on the phone each 
   }
 });
 
+// Every part of the overview as drawn, in order and relative to the modal's content.
+const modalOverview = (page) => page.evaluate(() => {
+  const content = document.querySelector('.st-board-step-modal-content').getBoundingClientRect();
+  const box = (element) => {
+    const rect = element.getBoundingClientRect();
+    return [Math.round(rect.left - content.left), Math.round(rect.top - content.top), Math.round(rect.width), Math.round(rect.height)];
+  };
+  const query = (selector) => document.querySelector(`.st-board-step-modal-content ${selector}`);
+  const glyph = query('.st-board-step-status-glyph svg');
+  const probe = document.createElement('i');
+  probe.style.color = 'var(--text-secondary)';
+  document.body.append(probe);
+  const secondary = getComputedStyle(probe).color;
+  probe.remove();
+  return {
+    order: [...document.querySelectorAll('.st-board-step-panel > *')].map((part) => part.className),
+    description: box(query('.st-board-step-description')),
+    status: box(query('.st-board-step-status-row')),
+    glyph: box(glyph),
+    glyphInSecondary: getComputedStyle(glyph).color === secondary,
+    label: box(query('.st-board-step-status-label')),
+    relations: [...document.querySelectorAll('.st-board-step-relations')].map((relation) => box(relation)),
+    headings: [...document.querySelectorAll('.st-board-step-relations .st-board-step-heading')].map((heading) => box(heading)),
+  };
+});
+
+test('Chromium: the modal draws an Up next step\'s status row under its description (03.01)', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    assert.deepEqual(await modalOverview(page), {
+      order: ['st-board-step-description', 'st-board-step-status st-board-step-status--upNext', 'st-board-step-links', 'st-board-step-relations', 'st-board-step-relations', 'st-board-step-explore'],
+      description: [0, 0, 720, 20], status: [0, 32, 720, 44], glyph: [0, 45, 18, 18], glyphInSecondary: true, label: [26, 44, 52, 20],
+      relations: [[0, 168, 720, 101], [0, 281, 720, 101]],
+      headings: [[0, 181, 720, 24], [0, 294, 720, 24]],
+    });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
 test('Chromium: on the phone a step is a pushed page, and Back returns to the same pane, scroll and card', async () => {
   await ready;
   const errors = [];

@@ -93,11 +93,18 @@
 .st-board-step-status--locked .st-board-step-status-label {
   color: var(--text-secondary);
 }
+.st-board-step-status--locked .st-board-step-status-row {
+  min-height: 24px;
+}
 .st-board-step-status-label {
   font-weight: 800;
   font-size: 14px;
   line-height: 20px;
   color: var(--text-primary);
+}
+.st-board-step-status--locked .st-board-step-status-label {
+  font-weight: 700;
+  line-height: 24px;
 }
 .st-board-step-status-dot {
   font-weight: 700;
@@ -143,9 +150,11 @@
 }
 .st-board-step-heading-count {
   font-weight: 600;
-  font-size: 13.5px;
-  line-height: 19px;
+  font-size: 13px;
   color: var(--text-secondary);
+}
+.st-board-step-relations .st-board-step-heading {
+  line-height: 24px;
 }
 .st-board-step-links {
   display: flex;
@@ -180,7 +189,7 @@
 .st-board-step-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   min-height: 52px;
   padding: 0;

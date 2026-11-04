@@ -50,3 +50,6 @@
 .st-board-step-modal .st-board-step-status-label {
   flex: none;
 }
+.st-board-step-modal .st-board-step-status--upNext .st-board-step-status-glyph {
+  color: var(--text-secondary);
+}
