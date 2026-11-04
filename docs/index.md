@@ -113,14 +113,14 @@ target ([consistency.md](design/consistency.md) 11a–11z, 12a–12s); build tas
 | Flow | Section | Entry → exit |
 |---|---|---|
 | 00 · The room — read me, map, anatomy | [`1224:13091`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13091) | Three tabs (Routines · The log · Coach) under one top app bar; colour roles, transient band, native parts, navigation motion and predictive back; the workout bar above the tabs while a workout runs; the rail from 600 dp (00.9–00.10) |
-| 01 · First open — Coach-led setup | [`1224:13095`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13095) | Empty Gym → Coach greeting → screenshot or talk → drafts applied or rejected on their card → Start (03); Build my own → 02 |
+| 01 · First open — Coach-led setup | [`1224:13095`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13095) | Empty Gym → Coach greeting → screenshot or talk → routines created at once, each on its card → Start (03); Build my own → 02 |
 | 02 · Routines | [`1224:13099`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13099) | Routines tab → summary → Start (03); FAB → editor → picker → targets |
 | 03 · Workout | [`1224:13103`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13103) | Start a routine (or the workout bar) → rack (steppers) → Fix set → Hide or Finish → receipt → workout detail (05) or Coach (08) |
 | 04 · Outside the app | [`1224:13107`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13107) | Quick Settings tile (opens Routines when no workout runs), ongoing notification, Live Update chip, lock screen → workout (03) |
 | 05 · The log, past workouts & progress | [`1224:13111`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13111) | The log tab → workout detail, share, discard (asks once); a movement or new-best moment → Record → Edit movement |
 | 06 · Bodyweight | [`1224:13115`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13115) | Weigh in, the Bodyweight row or a weigh-in moment on The log → weigh-in sheet (decimal keyboard); Bodyweight → correct or swipe-delete |
 | 07 · On this phone | [`1224:13119`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13119) | On this phone at the head of The log → list → Inspect → fix, retry, keep or discard; sign in with training on the phone → Add or Discard |
-| 08 · Coach | [`1224:13123`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13123) | Coach tab → conversation → proposal applied or rejected on its card; every change type and situation (08.15–08.31) |
+| 08 · Coach | [`1224:13123`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13123) | Coach tab → conversation → proposal opened from its card, applied or turned down on its review sheet; every change type and situation (08.15–08.31) |
 | 09 · Notes & Connected log | [`1224:13127`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13127) | You → Notes / Connected log |
 
 Sign in, You, sign out and Delete account: Shell file, page [Android](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-6), section `33:1568`; deletion recovery D1–D6, section `116:754`.
