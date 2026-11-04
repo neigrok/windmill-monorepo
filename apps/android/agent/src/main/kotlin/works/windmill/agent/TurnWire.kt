@@ -54,11 +54,15 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
         const val streamReplaced = "coach-stream-replaced"
         const val rateLimited = "coach-rate-limited"
         const val vendorError = "coach-vendor-error"
+        const val unreachable = "unreachable"
         private val installationCodes = setOf("device_bound", "invalid_installation")
         val allowanceCodes = setOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted",
             "funding_required", "debt_outstanding") + installationCodes
         val codes = allowanceCodes + setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown, turnOrder,
             "coach-turn-volume", rateLimited, "coach-replica-syncing", "coach-busy", vendorError, streamReplaced)
+
+        // No server said this: no attempt to open the turn reached one this phone could read, so it names no status, and the turn never began.
+        val unreached: TurnRefusal get() = TurnRefusal(0, unreachable, null)
 
         fun of(status: Int, body: ByteArray): TurnRefusal {
             val json = try { Json.parse(body) } catch (unreadable: JsonError) { null }
@@ -68,7 +72,7 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
     }
 }
 
-// No connection, or a stream that dropped before its terminal frame. It resumes, and it is never an Issue.
+// No connection, or a stream that dropped before its terminal frame. It reconnects, and it is never an Issue.
 class TurnConnectionLost(cause: Throwable?) : Exception(cause)
 
 // A frame or an answer that cannot be read, or a stream another stream of this turn took over.

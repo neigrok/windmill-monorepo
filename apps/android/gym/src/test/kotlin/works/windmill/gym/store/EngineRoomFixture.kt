@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import org.junit.Assert.*
 import works.windmill.gym.presentation.*
 import works.windmill.platform.Account
@@ -52,6 +54,7 @@ internal class EngineRoomFixture(
     private val coachImports: ((Engine) -> works.windmill.gym.coach.onboarding.CoachRoutineImports)? = null,
     private val coachAccess: suspend () -> works.windmill.gym.coach.AnonymousCoachAccess = { works.windmill.gym.coach.AnonymousCoachAccess.Unavailable },
     coachServer: works.windmill.agent.TurnTransport? = null,
+    coachBeat: Duration = 1.seconds,
     private val coachInstallation: works.windmill.platform.ai.AiInstallation? = null,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
@@ -103,7 +106,7 @@ internal class EngineRoomFixture(
     val coachTurns: CoachTurns? = coachServer?.let { server ->
         val dispatcher = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
         CoachTurns(training, server, coachInstallation ?: TurnPhoneInstallation.onMemory(), { "account-token".takeIf { selected != null } },
-            PictureFiles { File(directory, "coach-pictures") }, lazy { TurnPhone.catalog() }, telemetry, {}, "https://windmill.works", this.scope, dispatcher)
+            PictureFiles { File(directory, "coach-pictures") }, lazy { TurnPhone.catalog() }, telemetry, {}, "https://windmill.works", this.scope, dispatcher, coachBeat)
     }
     val controlsFile = File(directory, "control.json")
     val store = freshStore()

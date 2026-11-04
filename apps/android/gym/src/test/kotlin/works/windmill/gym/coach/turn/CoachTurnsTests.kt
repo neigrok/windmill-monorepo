@@ -795,16 +795,122 @@ class CoachTurnsTests {
 
     // A Stop the server cannot hear ends the turn on this phone alone, and the band says so.
     @Test fun aStopWithNoConnectionStopsOnThisPhoneAndSaysSo() = runTest {
-        val server = object : works.windmill.agent.TurnTransport by script("""[{"await":"stop"}]""") {
+        val server = object : works.windmill.agent.TurnTransport by script("""[{"event":"text","data":{"delta":"Par"}},{"await":"stop"}]""") {
             override suspend fun stop(turnId: String, seat: TurnSeat) { throw works.windmill.agent.TurnConnectionLost(null) }
         }
         TurnPhone(this, folder.newFolder(), server).use { phone ->
             val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
+            testScheduler.runCurrent()
             phone.turns.requestStop()
             advanceUntilIdle()
             assertEquals(MessageState.stopped, phone.message(turn.coach)?.state)
             assertEquals(CoachTurnFault.stoppedOffline, phone.turns.fault.value)
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+        }
+    }
+
+    // §4.5: no attempt to open reached a server and no frame came, so the turn never began. Nothing of it remains, the question returns with the words that say why, and lost network files nothing.
+    @Test fun everyOpenLostTakesTheTurnBackAndSaysNoConnection() = runTest {
+        val server = object : TurnTransport by script("[]") {
+            var opens = 0
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
+                opens += 1
+                throw works.windmill.agent.TurnConnectionLost(null)
+            }
+            var stops = 0
+            override suspend fun stop(turnId: String, seat: TurnSeat) {
+                stops += 1
+                throw works.windmill.agent.TurnConnectionLost(null)
+            }
+        }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            testScheduler.advanceTimeBy(1_500)
+            assertEquals(true, phone.turns.activity.value?.reconnecting)
+            assertEquals(listOf("Question", ""), phone.messages().map { it.text })
+            advanceUntilIdle()
+            assertEquals(5, server.opens)
+            assertEquals(1, server.stops)
+            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
+            assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
+            assertEquals("No connection. Your question is kept here.", phone.turns.refusal.value?.sentence)
+            assertEquals(CoachRecovery.tryAgain, phone.turns.refusal.value?.recovery(anonymous = true))
+            assertNull(phone.turns.fault.value)
+            assertNull(phone.turns.activity.value)
+            assertTrue(phone.turns.idle)
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+            assertEquals(emptyList<CoachThread>(), phone.threads())
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertEquals(listOf(mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "offline")), phone.telling.named("api_request_failed"))
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "15000")), phone.telling.named("gym_ask_outcome"))
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+        }
+    }
+
+    // The attempts take seconds, and the log syncs on its own through them: a turn taken back after its records reached the server leaves none there, and no notice here.
+    @Test fun aTurnTakenBackAfterItsRecordsSyncedLeavesNothingBehind() = runTest {
+        val log = EngineRoomFixture.server()
+        val server = object : TurnTransport by script("[]") {
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw works.windmill.agent.TurnConnectionLost(null) }
+        }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            phone.room.select("account-1")
+            phone.room.sync(log)
+            checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
+            testScheduler.advanceTimeBy(1_500)
+            phone.room.sync(log)
+            assertEquals(emptyList<Json>(), phone.room.outbox())
+            assertEquals(listOf("Question", ""), phone.messages().map { it.text })
+
+            advanceUntilIdle()
+            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+            phone.room.sync(log)
+            assertEquals(emptyList<Json>(), phone.room.outbox())
+            assertEquals(emptyList<Json>(), phone.room.notices())
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+            assertEquals(emptyList<CoachThread>(), phone.threads())
+            assertNull(phone.device(EndTurn.runningTurnKey))
+        }
+    }
+
+    // A captive portal's page: the same taking back at once, and the one report of a wire this phone could not read.
+    @Test fun aPageThatIsNoStreamTakesTheTurnBackAtOnceAndReportsDecode() = runTest {
+        val server = object : TurnTransport by script("[]") {
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw works.windmill.agent.TurnWireFault(works.windmill.agent.TurnWireFault.notAStream) }
+        }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceUntilIdle()
+            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
+            assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
+            assertEquals(listOf(mapOf("failure_kind" to "decode", "operation" to "gym.coachTurn")), phone.telling.failures)
+        }
+    }
+
+    // A Stop nobody heard, before any frame: the turn is not left running and the question is not left on a record that never reached Coach.
+    @Test fun aStopNobodyHeardBeforeAnyFrameTakesTheTurnBack() = runTest {
+        val server = object : TurnTransport by script("""[{"await":"stop"}]""") {
+            override suspend fun stop(turnId: String, seat: TurnSeat) { throw works.windmill.agent.TurnConnectionLost(null) }
+        }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceUntilIdle()
+            phone.turns.requestStop()
+            advanceUntilIdle()
+            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
+            assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
+            assertNull(phone.turns.fault.value)
+            assertTrue(phone.turns.idle)
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
         }
     }

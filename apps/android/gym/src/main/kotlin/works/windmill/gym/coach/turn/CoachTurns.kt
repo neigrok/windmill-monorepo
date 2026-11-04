@@ -77,7 +77,7 @@ import works.windmill.sync.schema.SyncSchema
 // The answer so far on the running Coach message, ahead of what its record holds.
 data class LiveAnswer(val message: Id<CoachMessage>, val text: String)
 
-// A turn the server refused before its stream: its records are gone, and this returns to the field. `thread` is null when the conversation went with the turn.
+// A turn that never began, refused before any frame or never reaching the server: its records are gone, and this returns to the field. `thread` is null when the conversation went with the turn.
 data class WithdrawnTurn(val question: String, val picture: ChosenPicture?, val thread: Id<CoachThread>?)
 
 // The phone's Coach turns: one per application, never bound to a screen. It admits a question (§4.1), records it, runs the turn through the driver on a host pinned to its replica, and ends what a process death or a seat change left running (§4.5). All of it runs off the caller's thread, and admission, the sweeps and a seat change take turns.
@@ -129,7 +129,7 @@ class CoachTurns(
     val refusal: StateFlow<CoachTurnRefusal?> = refused.asStateFlow()
     // A fault of this phone's own, said in the band.
     val fault: StateFlow<CoachTurnFault?> = faulted.asStateFlow()
-    // The last turn the server refused before its stream.
+    // The last turn that never began.
     val withdrawn: StateFlow<WithdrawnTurn?> = takenBack.asStateFlow()
 
     // At engine start: every change of the seat from here on, a rebind under the same id among them, with the subscriptions in place when this returns, and the sweep.
@@ -437,7 +437,7 @@ class CoachTurns(
     }
 }
 
-// A question one gesture may ask twice, across a recreation or a process death: the finish share. Its key and the turn it opened commit in one transaction in a device row, so no death between them can open a second turn. The row remembers the newest such question; a turn the server withdrew leaves no thread behind to find, and opens again.
+// A question one gesture may ask twice, across a recreation or a process death: the finish share. Its key and the turn it opened commit in one transaction in a device row, so no death between them can open a second turn. The row remembers the newest such question; a withdrawn turn leaves no thread behind to find, and opens again.
 internal class OpenTurnOnce(private val once: String, private val opening: OpenTurn) : Action<OpenTurnOnce.Loaded, OpenTurn.Turn, GymRefusal> {
     class Loaded(val opened: OpenTurn.Turn?, val inner: OpenTurn.Loaded)
 

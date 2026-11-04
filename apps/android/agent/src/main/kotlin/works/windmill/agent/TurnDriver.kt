@@ -59,7 +59,7 @@ class TurnDriver(
         }
     }
 
-    // §4.5: asked of the server, whose stream then ends the turn stopped; a server that cannot be told leaves the turn to stop on this phone alone.
+    // §4.5: asked of the server, whose stream then ends the turn stopped. A server that cannot be told leaves the turn to stop on this phone alone or, before any frame, to go back to the field.
     fun requestStop() {
         val turn = driving.get() ?: return
         if (!turn.stopAsked.compareAndSet(false, true)) return
@@ -76,7 +76,7 @@ class TurnDriver(
         live.value = null
         turn.publish { null }
         turn.work.cancel()
-        if (turn.stopAsked.compareAndSet(false, true)) tellServerToStop(turn) {}
+        turn.tellServerOnce()
     }
 
     private fun tellServerToStop(turn: DrivenTurn, unheard: (Exception) -> Unit) {
@@ -98,6 +98,7 @@ class TurnDriver(
 
         @Volatile private var following: Job? = null
         @Volatile private var stopFailure: Exception? = null
+        @Volatile private var frameArrived = false
 
         @Volatile private var streamed = ""
         private var committed = ""
@@ -115,6 +116,11 @@ class TurnDriver(
         fun stopHere(failure: Exception) {
             stopFailure = failure
             following?.cancel()
+        }
+
+        // One Stop reaches the server for a turn, whoever asks; whether it lands changes nothing here.
+        fun tellServerOnce() {
+            if (stopAsked.compareAndSet(false, true)) tellServerToStop(this) {}
         }
 
         // A lost connection and a 4xx say nothing is broken; a 5xx, a bad certificate or a wire fault do.
@@ -141,7 +147,8 @@ class TurnDriver(
             exit = when (close) {
                 is Ended -> end(close)
                 is Withdrawn -> withdraw(close.refusal)
-                StoppedHere -> {
+                // A Stop the server did not hear: a turn with no frame holds only its question, which goes back to the field; any other ends `stopped` on this phone.
+                StoppedHere -> if (!frameArrived) withdraw(TurnRefusal.unreached) else {
                     end(Ended(TurnState.stopped))
                     if (stopFailure is TurnConnectionLost) TurnExit.stoppedOffline else TurnExit.stopUnheard
                 }
@@ -170,20 +177,21 @@ class TurnDriver(
 
         // The server would hold a turn this phone left until it gave up on the batch, so it is told once; a turn it refused as out of order or unknown holds nothing.
         private fun interruptedHere(code: String): Ended {
-            if (code != TurnRefusal.turnOrder && code != TurnRefusal.turnUnknown && stopAsked.compareAndSet(false, true)) tellServerToStop(this) {}
+            if (code != TurnRefusal.turnOrder && code != TurnRefusal.turnUnknown) tellServerOnce()
             return Ended(TurnState.interrupted, code = code)
         }
 
+        // §4.5: until a frame arrives the server may never have heard of the turn, so a reconnect opens again, the same body under the same id, which attaches to a turn that did land. After a frame a reconnect reads, and so does one after a Stop, since an open then could begin what was stopped.
         private suspend fun follow(): Close {
             val open = onHost { host.open() }
             open.contextOutcomes.forEach(::tell)
-            var stream = transport.open(open, seat)
-            var opened = false
             var reconnects = 0
             while (true) {
+                val opening = !frameArrived && !stopAsked.get()
                 try {
+                    val stream = if (opening) transport.open(open, seat) else transport.resume(turnId, seat)
                     val close = stream.mapNotNull { event ->
-                        opened = true
+                        frameArrived = true
                         publish { it.copy(reconnecting = false) }
                         settle(event)
                     }.firstOrNull()
@@ -191,22 +199,28 @@ class TurnDriver(
                 } catch (interrupted: TurnInterrupted) {
                     throw interrupted
                 } catch (refusal: TurnRefusal) {
-                    if (!opened && reconnects == 0) return Withdrawn(refusal)
+                    // A refused open never began, though an earlier attempt's may have landed. A refused read says nothing of the open.
+                    if (opening && !frameArrived) {
+                        if (reconnects > 0) tellServerOnce()
+                        return Withdrawn(refusal)
+                    }
                     if (refusal.status >= 500) report(TurnFailure.http, refusal.status)
+                    if (!frameArrived) return Withdrawn(TurnRefusal.unreached)
                     throw TurnInterrupted(refusal.code)
                 } catch (failure: Exception) {
                     currentCoroutineContext().ensureActive()
-                    // §4.5: a dropped stream, or one another stream of this turn replaced, resumes after 1, 2, 4 and 8 beats; a fifth loss ends the turn.
+                    // §4.5: a dropped stream, or one another stream of this turn replaced, reconnects after 1, 2, 4 and 8 beats, and a fifth loss closes the turn. A frame that cannot be read closes it at once. With no frame the turn never began, as far as this phone can know, and the server is told in case it did.
                     val dropped = failure !is TurnWireFault || failure.kind == TurnWireFault.replaced
                     if (reconnects == 4 || !dropped) {
                         val kind = if (dropped) TurnFailure.transport else TurnFailure.decode
                         if (failure !is TurnConnectionLost) report(kind)
-                        throw TurnInterrupted(kind.name)
+                        if (frameArrived) throw TurnInterrupted(kind.name)
+                        tellServerOnce()
+                        return Withdrawn(TurnRefusal.unreached)
                     }
                     reconnects += 1
                     publish { it.copy(reconnecting = true) }
                     delay(beat * (1 shl (reconnects - 1)))
-                    stream = transport.resume(turnId, seat)
                 }
             }
         }
@@ -316,7 +330,7 @@ class TurnDriver(
             return TurnExit.ended
         }
 
-        // A refusal before the stream started never reached the agent: the host takes the turn's records back.
+        // A turn that never began, refused before any frame or never reaching a server: the host takes its records back.
         private suspend fun withdraw(refusal: TurnRefusal): TurnExit {
             quietly { host.withdraw(refusal) }
             if (refusal.status >= 500 && !refusal.capped) report(TurnFailure.http, refusal.status)

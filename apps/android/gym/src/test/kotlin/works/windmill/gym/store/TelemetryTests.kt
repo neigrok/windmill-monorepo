@@ -156,11 +156,26 @@ class TelemetryTests {
         }
         val told = asking(broken)
         assertEquals(listOf(started) + abilities + listOf(
-            "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "failed"),
-            "coach_turn" to mapOf("state" to "interrupted", "seat" to "bound", "ability_calls" to "4", "refusals" to "0", "answer_bytes" to "0", "code" to "transport")), told.timeless())
+            "api_request_failed" to mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "offline"),
+            "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "offline")), told.timeless())
         assertEquals(listOf("gym.coachTurn" to "transport"), told.failures.map { (operation, error) -> operation to error.message })
         assertEquals(listOf(mapOf("failure_kind" to "transport")), told.failureProperties)
         assertToldNothingSaid(told)
+
+        val brokenLater = object : TurnTransport by script("[]") {
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
+                emit(TurnEvent.Text("private answer"))
+                throw IllegalStateException("do not publish conversation content")
+            }
+            override fun resume(turnId: String, seat: TurnSeat): Flow<TurnEvent> = flow { throw IllegalStateException("do not publish conversation content") }
+        }
+        val toldLater = asking(brokenLater)
+        assertEquals(listOf(started) + abilities + listOf(
+            "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "failed"),
+            "coach_turn" to mapOf("state" to "interrupted", "seat" to "bound", "ability_calls" to "4", "refusals" to "0", "answer_bytes" to "14", "code" to "transport")), toldLater.timeless())
+        assertEquals(listOf("gym.coachTurn" to "transport"), toldLater.failures.map { (operation, error) -> operation to error.message })
+        assertEquals(listOf(mapOf("failure_kind" to "transport")), toldLater.failureProperties)
+        assertToldNothingSaid(toldLater)
 
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), work(), telemetry = telemetry, coachServer = script("""[{"await":"stop"}]""")).use { room ->
