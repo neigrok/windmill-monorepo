@@ -803,7 +803,7 @@ def start_emulator(sdk, output, port, stack, auth_code=None):
                 raise RuntimeError("Capture emulator must be API 36 or later.")
             device.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
             device.run("shell", "wm", "dismiss-keyguard")
-            device.run("shell", "settings", "put", "global", "hide_error_dialogs", "1")
+            device.run("shell", "settings", "put", "global", "hide_error_dialogs", "1", check=False)
             return device
         time.sleep(1)
     raise RuntimeError("The isolated emulator did not finish booting.")
