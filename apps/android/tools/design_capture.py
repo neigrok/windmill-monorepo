@@ -792,7 +792,7 @@ def start_emulator(sdk, output, port, stack, auth_code=None):
     stack.callback(stop, process)
     device = Device(sdk, port, auth_code)
     device.output = output
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError("The isolated emulator failed to boot; see emulator.log.")
