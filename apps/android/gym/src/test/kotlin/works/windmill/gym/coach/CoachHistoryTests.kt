@@ -183,19 +183,47 @@ class CoachHistoryTests {
         assertEquals(emptyList<String>(), failures.toList())
     }
 
+    // A recreated room hands the seat a new account object, so the seat forgets what it read: as a theme switch does with History open.
+    @Test fun aSeatConnectedAgainReadsHistoryAndTheTranscriptBackWithNoNewRevision() {
+        val fixture = answering()
+        val coach = fixture.store.coach
+        val chat = checkNotNull(coach.selectedChatId)
+        show(fixture)
+        compose.onNodeWithText("Private first question").assertIsDisplayed()
+        runBlocking { fixture.store.connect(fixture.account()) }
+        waitUntil { coach.history.isNotEmpty() && coach.exchanges(chat).isNotEmpty() }
+        compose.onNodeWithText("Private first question").assertIsDisplayed()
+        assertEquals(listOf("Private first question"), coach.exchanges(chat).map { it.question })
+    }
+
+    @Test fun anEmptyHistorySeatConnectedAgainStillSaysItIsEmpty() {
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = ScriptedTurns(emptyList()))
+        room = fixture
+        runBlocking { fixture.select(null) }
+        fixture.store.observeEngine()
+        val threads = ThreadsBinding(fixture.store.coach)
+        compose.setContent { GymMaterial { ThreadsScreen(threads, threads, "Coach", {}, {}, {}) } }
+        waitUntil { fixture.store.coach.conversations?.rows != null }
+        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+        runBlocking { fixture.store.connect(fixture.account()) }
+        waitUntil { fixture.store.coach.conversations?.rows != null }
+        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+    }
+
     @Test fun confirmationDeletesImmediatelyWithOneResultAndNoUndo() {
         val fixture = answering()
         show(fixture)
         requestDelete()
         compose.onNodeWithText("Delete").performClick()
         waitUntil { fixture.threads().isEmpty() && fixture.store.coach.history.isEmpty() && events.any { it.second["outcome"] == "ok" } }
-        compose.onNodeWithText("No conversations").assertIsDisplayed()
+        compose.onNodeWithText(Threads.none).assertIsDisplayed()
         compose.onNodeWithText("Undo").assertDoesNotExist()
         assertEquals(emptyList<CoachMessage>(), fixture.messages())
         assertEquals(emptyList<Any>(), fixture.store.held.withheld)
         assertEquals(listOf(
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "state" to "shown"),
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "ok"),
+            "gym_action" to mapOf("screen" to "threads", "action" to "empty", "outcome" to "shown"),
         ), events.toList())
         assertEquals(emptyList<String>(), failures.toList())
     }

@@ -69,7 +69,7 @@ class TrainingStore(
         accountOwner = { seat.owner },
         onProgramChanged = { scope.launch { seat.tried("gym.refreshWorkout") { routines.readProgram() } } },
         conversations = conversations, turns = coachTurns, localCoach = localCoach, imports = coachImports, access = coachAccess,
-        telemetry = telemetry, scope = scope, storageDispatcher = coachStorage, now = now, seatReplica = { seat.replica },
+        telemetry = telemetry, scope = scope, storageDispatcher = coachStorage, now = now, seatReplica = { seat.replica }, seatReady = { seat.accountReady && training.mayWriteOn(training.engine.activeReplica(), training.anonymous) },
     )
 
     private var connecting = false
@@ -181,6 +181,8 @@ class TrainingStore(
             workout.reconcileWorkoutTime()
             workout.drawFromControls()
             seat.isLoading = false
+            // The seat forgot what Coach had read, and nothing but a new revision would read it again.
+            conversations.read()
 
             val owner = seat.owner
             history.shelved = seat.tried("gym.loadLog") { history.refusedImports() } ?: return

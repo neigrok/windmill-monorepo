@@ -283,4 +283,15 @@ class OnThisPhoneScreenTests {
         assertEquals("This phone has 1 workout from before you signed in. Your account already has training. Add it, or discard it from this phone.", one.question)
         assertEquals("It is deleted from this phone. You can’t undo this.", one.discardBody)
     }
+
+    @Test fun aSignInHoldingOnlyConversationsNamesThemAndNotTheirMessages() {
+        val two = PhoneSignInCopy(mapOf("gym" to mapOf("thread" to 2, "message" to 6)))
+        assertEquals("This phone has 2 conversations from before you signed in. Your account already has training. Add them, or discard them from this phone.", two.question)
+        assertEquals("Discard 2 conversations?", two.discardTitle)
+        assertEquals("They are deleted from this phone. You can’t undo this.", two.discardBody)
+        val one = PhoneSignInCopy(mapOf("gym" to mapOf("thread" to 1, "message" to 2)))
+        assertEquals("This phone has 1 conversation from before you signed in. Your account already has training. Add it, or discard it from this phone.", one.question)
+        assertEquals("Discard 1 conversation?", one.discardTitle)
+        assertEquals("It is deleted from this phone. You can’t undo this.", one.discardBody)
+    }
 }

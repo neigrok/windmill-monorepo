@@ -475,7 +475,7 @@ class FinishSheetTests {
                 compose.onAllNodesWithText(CoachTurnFault.busy.sentence).fetchSemanticsNodes().isNotEmpty()
             }
             val share = compose.runOnIdle { room.store.coach.selectedChatId!! }
-            compose.onNodeWithText("Reply pending").assertIsDisplayed()
+            compose.onNodeWithText("Answer in progress").assertIsDisplayed()
             compose.onNodeWithText("What’s stalled?").assertIsDisplayed()
             compose.onNodeWithText("View chat").assertIsDisplayed()
             compose.runOnIdle {

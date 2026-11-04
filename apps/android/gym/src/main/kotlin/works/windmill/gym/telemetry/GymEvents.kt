@@ -50,8 +50,9 @@ object GymActions : EventSchema {
                 "copy" to setOf("ok", "failed"), "copy_link" to setOf("ok", "failed"),
                 "open_link" to setOf("ok", "unavailable", "failed"),
                 "access" to setOf("available", "bound", "unavailable"),
+                "too_long" to setOf("shown"), "account_changing" to setOf("shown"), "answer_in_progress" to setOf("shown"),
             ),
-        "threads" to mapOf("delete" to setOf("ok", "refused", "failed", "cancelled")),
+        "threads" to mapOf("delete" to setOf("ok", "refused", "failed", "cancelled"), "empty" to setOf("shown")),
         "notification" to mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused")),
         "workout_bar" to mapOf("open" to setOf("ok", "refused")),
         "workout" to mapOf(
@@ -88,7 +89,7 @@ object GymEvents {
             "gym_action" to GymActions,
             "gym_setup_step" to LabelSchema(mapOf(
                 "screen" to setOf("coach"),
-                "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in", "open_routine", "keep_routines"),
+                "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in", "open_routine", "keep_routines", "connect"),
             )),
             // Coach §10.2. `name` is a catalog name, which GymTurnTelemetry holds to the injected catalog; the rest are labels and counts.
             "coach_ability" to EventSchema { properties ->

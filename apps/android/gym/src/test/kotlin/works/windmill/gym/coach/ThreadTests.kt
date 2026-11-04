@@ -81,7 +81,7 @@ class ThreadTests {
     @Test
     fun theHistoryScreenSpeaksInItsOwnWordsAndNeverOfAnythingUnread() {
         val everything = listOf(Threads.title, Threads.open, Threads.conversation, Threads.none)
-        assertEquals(listOf("History", "New chat", "Conversation", "No conversations"), everything)
+        assertEquals(listOf("History", "New chat", "Conversation", "No conversations yet.\nWhat you ask Coach on this phone is listed here."), everything)
         assertTrue("nothing on this screen speaks of unread anything",
             everything.none { it.contains("unread", ignoreCase = true) || it.contains("new message", ignoreCase = true) })
         assertTrue("no member of Threads is named for an unread anything",

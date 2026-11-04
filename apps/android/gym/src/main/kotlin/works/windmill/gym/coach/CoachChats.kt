@@ -49,6 +49,7 @@ class CoachChats internal constructor(
     private val storageDispatcher: CoroutineDispatcher = Dispatchers.IO,
     val now: () -> Long = System::currentTimeMillis,
     private val seatReplica: () -> String? = { null },
+    private val seatReady: () -> Boolean = { true },
 ) {
     private class Sending(val chat: String, val owner: String, val question: String, val photo: CoachAttachment?, val atMs: Long)
     private class Sent(val chat: String, val authority: LocalCoach.Authority?)
@@ -82,6 +83,10 @@ class CoachChats internal constructor(
         private set
     var fault by mutableStateOf<CoachTurnFault?>(null)
         private set
+    // A send the account's change stopped, drawn apart from the band. Send waits only while the seat in hand may not write, so a seat that already may never strands the question it kept.
+    var accountChanging by mutableStateOf(false)
+        private set
+    val sendHeld: Boolean get() = accountChanging && !seatReady()
     var anonymousAccess by mutableStateOf(AnonymousCoachAccess.Checking)
         private set
     var draftVersion by mutableIntStateOf(0)
@@ -96,7 +101,10 @@ class CoachChats internal constructor(
                 settleSent()
             } }
             scope.launch(start = CoroutineStart.UNDISPATCHED) { live.withdrawn.collect { settleSent() } }
-            scope.launch(start = CoroutineStart.UNDISPATCHED) { live.fault.collect { fault = it } }
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { live.fault.collect { said ->
+                accountChanging = said == CoachTurnFault.accountChanging
+                fault = said.takeUnless { accountChanging }
+            } }
             scope.launch(start = CoroutineStart.UNDISPATCHED) { live.refusal.collect { refusal ->
                 refused = refusal
                 if (refusal != null) refusedSeat = archiveOwner
@@ -112,6 +120,12 @@ class CoachChats internal constructor(
     }
 
     val absent: Boolean get() = refused == CoachTurnRefusal.Absent
+
+    // A question past its bound as it is typed; the draft follows the field.
+    fun tooLong(key: String): CoachTurnRefusal.TooLong? {
+        draftVersion
+        return CoachTurnRefusal.TooLong.of(draft(key).text)
+    }
 
     fun refreshAnonymousAccess() {
         if (owner != null) {
@@ -273,7 +287,7 @@ class CoachChats internal constructor(
         restoreArchive(seat)
         val chat = chats[seat to id] ?: return false
         if (once != null && chat.conversation != null) return true
-        val question = text.trim()
+        val question = asked(text)
         if (question.encodeToByteArray().size > Ask.maxQuestionBytes || question.isEmpty() && photo == null) return false
         val atMs = now()
         val authority = admit(seat)
@@ -608,6 +622,19 @@ class CoachChats internal constructor(
             }))
             result
         }.await()
+    }
+}
+
+// A typed question as it is asked: trimmed, with the replacement character for each lone surrogate a paste left, since the engine's JSON cannot hold one.
+internal fun asked(typed: String): String {
+    val trimmed = typed.trim()
+    return buildString(trimmed.length) {
+        var at = 0
+        while (at < trimmed.length) {
+            val point = trimmed.codePointAt(at)
+            appendCodePoint(if (point in Char.MIN_SURROGATE.code..Char.MAX_SURROGATE.code) 0xFFFD else point)
+            at += Character.charCount(point)
+        }
     }
 }
 

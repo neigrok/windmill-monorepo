@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -31,7 +30,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -150,6 +148,9 @@ fun AskScreen(
     val account = coach.accountKey
     val keptDrafts = coach.keptDrafts(conversationId)
     val greeting = savedPosition?.setup == true && thread.isEmpty() && composerVisible && keptDrafts.isEmpty()
+    val draftKey = conversationId.ifEmpty { "new" }
+    val accountChangingAlone = coach.accountChanging && thread.isEmpty() && !greeting
+    val pending = coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }
     var syncDraft by remember(account, conversationId) { mutableStateOf<(() -> Boolean)?>(null) }
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var photoRequest by remember(account, conversationId) { mutableIntStateOf(0) }
@@ -283,19 +284,23 @@ fun AskScreen(
                         }
                     } }
                 }
-                refusal?.let {
+                (coach.tooLong(draftKey).takeIf { composerVisible } ?: refusal)?.let {
                     CoachRefusalNotice(it, anonymous = coach.anonymous,
                         onSignIn = onSignIn?.let { signIn -> {
                             telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "sign_in"))
                             signIn()
                         } }, onConnections = {
+                            telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "connect"))
                             if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
                                 .onFailure { failure -> telemetry.failure("gym.openConnections", failure) }
                         }, onTryAgain = {
-                            if (syncDraft?.invoke() != false) coach.draft(conversationId.ifEmpty { "new" }).let { draft -> onAsk(draft.text.trim(), draft.photo) }
+                            if (syncDraft?.invoke() != false) coach.draft(draftKey).let { draft -> onAsk(draft.text.trim(), draft.photo) }
                         })
                 }
+                if (coach.accountChanging && !accountChangingAlone) CoachAccountChanging(alone = false)
+                pending?.let { AnswerInProgress(it, onOpenChat) }
             }
+            if (accountChangingAlone) CoachAccountChanging(alone = true, Modifier.align(Alignment.Center))
             if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) ElevatedButton(onClick = {
                 telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "jump_latest", "outcome" to "ok"))
                 scope.launch { presentation.jumpToLatest() }
@@ -304,15 +309,6 @@ fun AskScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
                 Icon(painterResource(R.drawable.gym_coach_down), null, Modifier.size(20.dp))
                 Text("Jump to latest", style = GymType.coachStrong, modifier = Modifier.padding(start = 8.dp))
-            }
-        }
-        coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Reply pending", style = GymType.coachTitle, color = colors.onSurface)
-                    Text(pending.title, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
-                }
-                TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null) { Text("View chat") }
             }
         }
         if (reconnecting) Band(Ask.reconnecting)
@@ -325,8 +321,8 @@ fun AskScreen(
             modifier = Modifier
                 .fillMaxWidth(),
         ) {
-            if (composerVisible) CoachComposer(coach, conversationId.ifEmpty { "new" }, seed, asking,
-                onSend = onAsk, onStop = onStop, enabled = composerEnabled, photoRequest = photoRequest, onDraftSync = { syncDraft = it })
+            if (composerVisible) CoachComposer(coach, draftKey, seed, asking,
+                onSend = onAsk, onStop = onStop, enabled = composerEnabled, photoRequest = photoRequest, holdSend = coach.sendHeld || pending != null, onDraftSync = { syncDraft = it })
         }
       }
     }

@@ -13,13 +13,21 @@ import works.windmill.platform.telemetry.EventQueue
 @OptIn(ExperimentalCoroutinesApi::class)
 class GymEventsTests {
     @Test fun coachSetupKeepsBoundedActionsAndDropsDraftAndPhotoMetadata() {
-        for (action in listOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in")) {
+        for (action in listOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in", "connect")) {
             val labels = mapOf("screen" to "coach", "action" to action)
             assertEquals(labels, GymEvents.schemas.properties("gym_setup_step", labels + mapOf(
                 "question" to "private", "file_name" to "private", "photo_bytes" to "100", "operation" to "private")))
         }
         assertEquals(mapOf("screen" to "coach"), GymEvents.schemas.properties("gym_setup_step",
             mapOf("screen" to "coach", "action" to "private-draft-text")))
+    }
+
+    @Test fun theRoomsNoticesTellThatTheyWereShownAndNothingElse() {
+        for ((screen, action) in listOf("coach" to "too_long", "coach" to "account_changing", "coach" to "answer_in_progress", "threads" to "empty")) {
+            val labels = mapOf("screen" to screen, "action" to action, "outcome" to "shown")
+            assertEquals(labels, GymEvents.schemas.properties("gym_action", labels + mapOf("question" to "private", "over_bytes" to "1400", "title" to "private")))
+            assertEquals(emptyMap<String, String>(), GymEvents.schemas.properties("gym_action", labels + mapOf("outcome" to "private")))
+        }
     }
 
     @Test fun routineFormAndOuterSaveKeepOnlyBoundedOutcomes() {

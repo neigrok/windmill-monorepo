@@ -256,6 +256,10 @@ exact native input echo before sending or navigating; a partial fixture input fa
 precondition. Use two separate runs, each with a new output directory. The synthetic source workout has one set and
 400 kg volume; the previews are deterministic fixture answers.
 
+`capture-recipes/coach-notices.json` captures empty History (08.53) and a fresh chat waiting on an answer
+running in another (08.61). The other notices need a refusal from the server, no connection or a question
+past its bound, which these steps cannot make: Coach's notices test holds their words and doors.
+
 Recipes fail if their queued model responses were not consumed. A model-backed write recipe must
 assert its actual backend receipt as well as its UI result.
 

@@ -79,9 +79,4 @@ object Ask {
         if (standing == null && !known) return false
         return (standing ?: "") != saved
     }
-
-    fun sendable(typed: String): Boolean {
-        val asked = typed.trim()
-        return asked.isNotEmpty() && asked.encodeToByteArray().size <= maxQuestionBytes
-    }
 }

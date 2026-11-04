@@ -1,0 +1,88 @@
+[
+  {
+    "board": "08.53",
+    "name": "coach-history-empty",
+    "account": "empty",
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "wait": "No conversations yet.\nWhat you ask Coach on this phone is listed here."
+      }
+    ],
+    "after": [
+      {
+        "tap": "Back to Coach"
+      }
+    ]
+  },
+  {
+    "board": "08.61",
+    "name": "coach-answer-in-progress",
+    "account": "fixture",
+    "model_timing": {
+      "start_delay_ms": 10000
+    },
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is Push A still doing anything?"
+      },
+      {
+        "wait": "Is Push A still doing anything?"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Stop response"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "How was my week?"
+      },
+      {
+        "wait": "Answer in progress"
+      },
+      {
+        "keyboard": "hide"
+      }
+    ],
+    "after": [
+      {
+        "tap": "View chat"
+      },
+      {
+        "wait": "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times."
+      }
+    ]
+  }
+]

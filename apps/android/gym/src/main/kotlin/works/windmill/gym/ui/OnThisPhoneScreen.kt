@@ -88,7 +88,7 @@ class RecoveryBinding(private val recovery: RecoveryStore, private val routines:
 class PhoneSignInCopy(decisions: Map<String, Map<String, Int>>) {
     private val items = buildList {
         val gym = decisions["gym"].orEmpty()
-        for ((type, noun) in listOf("session" to "workout", "routine" to "routine", "weighin" to "weigh-in", "exercise" to "movement", "note" to "note")) {
+        for ((type, noun) in listOf("session" to "workout", "routine" to "routine", "weighin" to "weigh-in", "exercise" to "movement", "note" to "note", "thread" to "conversation")) {
             val count = gym[type] ?: 0
             if (count > 0) add(count to "$count $noun${if (count == 1) "" else "s"}")
         }

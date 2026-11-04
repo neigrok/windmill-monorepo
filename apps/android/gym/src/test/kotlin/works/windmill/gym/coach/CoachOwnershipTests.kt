@@ -92,7 +92,7 @@ class CoachOwnershipTests {
             delegate.dispatch(context, block)
             reading.await()
             assertEquals(emptyList<CoachThread>(), conversations.threads)
-            assertNull(conversations.rows)
+            assertEquals(emptyList<ConversationRow>(), conversations.rows)
             assertEquals(emptyList<CoachExchange>(), coach.exchanges(chat))
             assertEquals(emptyList<ConversationRow>(), coach.history)
             assertEquals(emptyList<LocalChat>(), disk.chats("b"))

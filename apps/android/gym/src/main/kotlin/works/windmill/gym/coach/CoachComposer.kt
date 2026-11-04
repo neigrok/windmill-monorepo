@@ -50,12 +50,14 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
+import works.windmill.gym.coach.turn.CoachTurnRefusal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking: Boolean,
     onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, enabled: Boolean = true,
     photoRequest: Int = 0,
+    holdSend: Boolean = false,
     onDraftSync: (((() -> Boolean)?) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -83,7 +85,7 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
         }
     }
     var preparing by remember(account, key) { mutableStateOf(false) }
-    fun canSend(next: CoachDraft) = next.text.trim().encodeToByteArray().size <= Ask.maxQuestionBytes && (Ask.sendable(next.text) || next.photo != null)
+    fun canSend(next: CoachDraft) = CoachTurnRefusal.TooLong.of(next.text) == null && (asked(next.text).isNotEmpty() || next.photo != null)
     var pickerOwner by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerChat by rememberSaveable { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -115,8 +117,8 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
         editor.draft.photo?.takeIf { !asking }?.let { photo ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "Saved only in this chat.",
-                    style = WindmillType.caption, color = colors.onSurfaceVariant,
+                Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "${CoachPhotos.whereItGoes} ${CoachPhotos.keptHere}",
+                    style = GymType.coachNote, color = colors.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
                     CoachPhoto(store, photo, Modifier.offset(y = 12.dp).size(72.dp))
@@ -156,7 +158,7 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
                         interactionSource = interaction, shape = RoundedCornerShape(28.dp), colors = fieldColors,
                         placeholder = { Text(Ask.placeholder, style = GymType.coachComposer) })
                 }, modifier = Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).semantics { contentDescription = "Question" })
-            val ready = enabled && !asking && !preparing && canSend(editor.draft.copy(text = editor.field.text.toString()))
+            val ready = enabled && !asking && !preparing && !holdSend && canSend(editor.draft.copy(text = editor.field.text.toString()))
             if (asking || editor.field.text.isNotEmpty() || editor.draft.photo != null) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     FilledIconButton(enabled = ready || (asking && onStop != null), modifier = Modifier.size(40.dp),

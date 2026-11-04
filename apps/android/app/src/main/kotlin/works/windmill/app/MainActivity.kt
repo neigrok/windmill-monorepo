@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -288,6 +290,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSession, auth: works.windmill.platform.auth.AuthStore,
     telemetry: works.windmill.platform.telemetry.Telemetry, onCancelSignIn: () -> Unit = {}) {
@@ -319,7 +322,7 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
     }
     session.decision?.let { decision ->
         var discardDecision by rememberSaveable { mutableStateOf<String?>(null) }
-        val copy = works.windmill.gym.ui.PhoneSignInCopy(decision.decisions.associate { it.product to it.count })
+        val copy = works.windmill.gym.ui.PhoneSignInCopy(session.decisionCounts)
         fun cancelDiscard() {
             if (session.decisionBusy) return
             telemetry.event("gym_sign_in_decision", mapOf("action" to "cancel", "state" to "discard_confirmation"))
@@ -347,13 +350,14 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
                 Text(copy.question)
                 session.decisionFailure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             } },
-            confirmButton = { TextButton(enabled = !session.decisionBusy, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text("Add") } },
-            dismissButton = { Row {
-                TextButton(enabled = !session.decisionBusy, onClick = ::cancelSignIn) { Text("Cancel sign-in") }
-                TextButton(enabled = !session.decisionBusy, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = {
+            confirmButton = { FlowRow(horizontalArrangement = Arrangement.End) {
+                val padding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = ::cancelSignIn) { Text("Cancel sign-in") }
+                TextButton(enabled = !session.decisionBusy, contentPadding = padding, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = {
                     telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "discard_confirmation"))
                     discardDecision = session.decisionKey
                 }) { Text("Discard") }
+                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text("Add") }
             } })
     }
 }
