@@ -133,7 +133,7 @@ class TurnDriver(
         fun reportStop(failure: Exception) {
             when (failure) {
                 is TurnConnectionLost -> return
-                is TurnRefusal -> if (failure.status >= 500) report(TurnFailure.http, failure.status)
+                is TurnRefusal -> report(failure)
                 is TurnWireFault -> report(TurnFailure.decode)
                 else -> report(TurnFailure.transport)
             }
@@ -217,7 +217,7 @@ class TurnDriver(
                         if (reconnects > 0) tellServerOnce()
                         return Withdrawn(refusal)
                     }
-                    if (refusal.status >= 500) report(TurnFailure.http, refusal.status)
+                    report(refusal)
                     if (!frameArrived) return Withdrawn(TurnRefusal.unreached)
                     throw TurnInterrupted(refusal.code)
                 } catch (failure: Exception) {
@@ -233,7 +233,7 @@ class TurnDriver(
                     }
                     reconnects += 1
                     publish { it.copy(reconnecting = true) }
-                    delay(beat * (1 shl (reconnects - 1)))
+                    backOff(reconnects)
                 }
             }
         }
@@ -285,7 +285,7 @@ class TurnDriver(
                     return
                 } catch (refusal: TurnRefusal) {
                     if (refusal.code == TurnRefusal.turnOrder && stopAsked.get()) return
-                    if (refusal.status >= 500) report(TurnFailure.http, refusal.status)
+                    report(refusal)
                     throw TurnInterrupted(refusal.code)
                 } catch (fault: TurnWireFault) {
                     report(TurnFailure.decode)
@@ -297,7 +297,7 @@ class TurnDriver(
                         throw TurnInterrupted(TurnFailure.transport.name)
                     }
                     attempts += 1
-                    delay(beat * (1 shl (attempts - 1)))
+                    backOff(attempts)
                 }
             }
         }
@@ -330,9 +330,17 @@ class TurnDriver(
             throw TurnInterrupted(TurnFailure.storage.name)
         }
 
+        // 1, 2, 4 and 8 beats, by the attempt.
+        private suspend fun backOff(attempt: Int) = delay(beat * (1 shl (attempt - 1)))
+
         // Once per turn and kind: a store that stays broken files one report, however long the stream runs.
         private fun report(kind: TurnFailure, status: Int? = null) {
             if (reported.add(kind)) telemetry.failure(kind, status)
+        }
+
+        // A server's own fault; a refusal below 500 is an answer.
+        private fun report(refusal: TurnRefusal) {
+            if (refusal.status >= 500) report(TurnFailure.http, refusal.status)
         }
 
         // §4.4: the terminal state and all the text in one write, then what the telemetry says of it.
@@ -346,7 +354,7 @@ class TurnDriver(
         // A turn that never began, refused before any frame or never reaching a server: the host takes its records back.
         private suspend fun withdraw(refusal: TurnRefusal): TurnExit {
             quietly { host.withdraw(refusal) }
-            if (refusal.status >= 500 && !refusal.capped) report(TurnFailure.http, refusal.status)
+            if (!refusal.capped) report(refusal)
             telemetry.withdrawn(refusal.status, TurnLabel.code(refusal.code), elapsedMs() - started)
             return TurnExit.withdrawn
         }
