@@ -647,11 +647,53 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithText(said).assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals(CoachTurnFault.stoppedOffline, coach.fault(chat))
+            assertNull(coach.fault(chat))
             assertTrue(telling.events.containsAll(listOf(
                 "gym_action" to mapOf("screen" to "coach", "action" to "stop_notice", "outcome" to "ok"),
                 "gym_action" to mapOf("screen" to "coach", "action" to "stop_notice_closed", "outcome" to "ok"))))
         }
+        scope.cancel()
+    }
+
+    // The room left and returned to with nothing new said: what the lifter closed stays closed, and the next stop that goes unheard says so again.
+    @Test
+    fun aClosedStopBandStaysClosedOnAReturn() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = object : TurnTransport by ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Par"}},{"await":"stop"},{"event":"text","data":{"delta":"Par"}},{"await":"stop"}]""").arr()) {
+            override suspend fun stop(turnId: String, seat: TurnSeat) { throw TurnConnectionLost(null) }
+        }
+        val room = turning(scope, server)
+        val coach = room.store.coach
+        val chat = compose.runOnIdle { coach.freshChat() }
+        val ask = AskBinding(room.store)
+        val telling = TellingRecorder()
+        var shown by mutableStateOf(true)
+        compose.setContent {
+            if (shown) CompositionLocalProvider(LocalTelemetry provides telling) {
+                AskScreen(ask, ask, coach.exchanges(chat), emptyList(), emptySet(), coach.isAsking(chat), null,
+                    onAsk = { _, _ -> }, onThreads = {}, onReview = {}, conversationId = chat, onStop = { coach.stop() })
+            }
+        }
+        val said = "Coach is stopped on this phone. Stopping it on the server needs a connection."
+        fun stopUnheard(question: String) {
+            compose.runOnIdle { assertTrue(coach.send(chat, question)) }
+            compose.waitUntil(20_000) { compose.onAllNodesWithText("Par", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() && compose.runOnIdle { coach.isAsking(chat) } }
+            compose.runOnIdle { coach.stop() }
+            waitForText(said)
+        }
+        stopUnheard("Question")
+        compose.onNodeWithContentDescription("Close").performClick()
+        compose.onNodeWithText(said).assertDoesNotExist()
+        compose.runOnIdle { shown = false }
+        compose.waitForIdle()
+        compose.runOnIdle { shown = true }
+        compose.waitForIdle()
+        compose.onNodeWithText(said).assertDoesNotExist()
+        assertEquals(1, telling.events.count { it.second["action"] == "stop_notice" })
+
+        stopUnheard("Again")
+        compose.onNodeWithText(said).assertIsDisplayed()
+        assertEquals(2, telling.events.count { it.second["action"] == "stop_notice" })
         scope.cancel()
     }
 

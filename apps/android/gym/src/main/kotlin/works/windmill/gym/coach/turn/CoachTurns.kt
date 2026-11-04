@@ -167,6 +167,8 @@ class CoachTurns(
         refused.value = refused.value.takeIf { it == CoachTurnRefusal.Absent }
     }
 
+    fun closeFault(fault: CoachTurnFault) { faulted.compareAndSet(fault, null) }
+
     // A send the room stopped on its way here ends in its one outcome as well.
     fun heldBack(fault: CoachTurnFault) = tells.heldBack(fault)
 

@@ -121,6 +121,12 @@ class CoachChats internal constructor(
         return fault.takeIf { it == CoachTurnFault.busy || askedChat == chat }
     }
 
+    // The lifter closed what a stop said: it does not come back with the room, and a fault said since is its own.
+    fun closeFault(fault: CoachTurnFault) {
+        turns?.closeFault(fault)
+        if (turnFault == fault) turnFault = null
+    }
+
     // A failure of this phone's own store, said in the room's line of the chat that met it. A draft that could not follow the account met no chat, and stands on each.
     fun failure(chat: String): String? = storeFailure?.takeIf { it.chat == null || it.chat == chat }?.said
 

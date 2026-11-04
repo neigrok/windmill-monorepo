@@ -192,7 +192,6 @@ fun AskScreen(
     val reconnecting = asking && coach.conversations?.reconnecting == true
     val fault = coach.fault(conversationId)
     val stopNotice = fault?.takeIf { it in stopFaults }
-    var stopNoticeClosed by remember(stopNotice) { mutableStateOf(false) }
     LaunchedEffect(reconnecting) { if (reconnecting) telemetry.coachAction("reconnecting") }
     LaunchedEffect(stopNotice) { if (stopNotice != null) telemetry.coachAction("stop_notice") }
     val signInForCall = onSignIn?.let { signIn -> {
@@ -309,8 +308,8 @@ fun AskScreen(
             }
         }
         if (reconnecting) Band(Ask.reconnecting)
-        else if (stopNotice != null && !stopNoticeClosed) Band(stopNotice.sentence, onClose = {
-            stopNoticeClosed = true
+        else if (stopNotice != null) Band(stopNotice.sentence, onClose = {
+            coach.closeFault(stopNotice)
             telemetry.coachAction("stop_notice_closed")
         })
         Column(
