@@ -159,7 +159,7 @@ class CoachComposerTests {
         scope.cancel()
     }
 
-    @Test fun attachedPhotoShowsItsAccountsCaptionAndCanBeSentWithoutTextThenRemoved() {
+    @Test fun attachedPhotoSaysWhereItGoesOnEitherSeatAndCanBeSentWithoutTextThenRemoved() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val disk = LocalCoach(File(tmp.root, "captions.json"))
         var owner by mutableStateOf<String?>(null)
@@ -168,22 +168,21 @@ class CoachComposerTests {
         store.freshChat(id = chat)
         var sent: Pair<String, CoachAttachment?>? = null
         compose.setContent { CoachComposer(store, chat, "", false, { text, photo -> sent = text to photo }, null) }
+        val line = "A copy goes to Anthropic, our AI provider, to read it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept only on this phone."
         compose.onNodeWithContentDescription("Send").assertDoesNotExist()
-        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        compose.onNodeWithText(line).assertDoesNotExist()
         val photo = CoachAttachment("attachment-caption", "image/png", 1, 1, 3)
         compose.runOnIdle { store.saveDraft(chat, CoachDraft(photo = photo)) }
-        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertIsDisplayed()
-        compose.onNodeWithText("A copy goes to Anthropic, our AI provider, to read it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept only on this phone.").assertDoesNotExist()
+        compose.onNodeWithText(line).assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
         assertEquals("" to photo, sent)
         compose.onNodeWithContentDescription("Remove photo").performClick()
-        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        compose.onNodeWithText(line).assertDoesNotExist()
         compose.onNodeWithContentDescription("Send").assertDoesNotExist()
         compose.runOnIdle { owner = "alice"; store.freshChat(id = chat); store.saveDraft(chat, CoachDraft("Caption", photo)) }
-        compose.onNodeWithText("A copy goes to Anthropic, our AI provider, to read it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept only on this phone.").assertIsDisplayed()
-        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        compose.onNodeWithText(line).assertIsDisplayed()
         compose.onNodeWithContentDescription("Remove photo").performClick()
-        compose.onNodeWithText("A copy goes to Anthropic, our AI provider, to read it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept only on this phone.").assertDoesNotExist()
+        compose.onNodeWithText(line).assertDoesNotExist()
         compose.onNodeWithContentDescription("Send").assertIsEnabled()
         assertEquals(CoachDraft("Caption"), store.draft(chat))
         scope.cancel()

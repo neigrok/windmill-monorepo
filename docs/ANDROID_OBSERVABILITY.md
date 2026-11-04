@@ -119,7 +119,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |
 | `gym.record` | gym | Reading a movement's record fails |
 | `gym.refreshConnectedLog` | gym | Refreshing the Connected log fails |
-| `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails |
+| `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails, or a `proposal` or `workoutProposal` record cannot be decoded: once per kind per process, naming the kind alone, and that record costs itself and never the workout or the program |
 | `gym.reorderMovements` | gym | Reordering the live workout's movements fails |
 | `gym.reorderNotes` | gym | Reordering notes fails |
 | `gym.rereadRow` | gym | Re-reading a workout row after a set deletion fails |

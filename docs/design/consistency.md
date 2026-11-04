@@ -1383,7 +1383,10 @@ iOS. It and the product differ in these places.
   card when the call lands, as iOS does; 08.69's close glyph is the kit's inverse-on-surface, which barely reads on its
   band, so the build draws it in text/secondary; 08.70 stands the read tally 16 dp under the answer where 01.19 and 08.36
   stand it 6 dp under, and the build holds the 6; the note card comes from 08.25, which draws one paragraph, so the build
-  shows the note's body and its title stands in What Coach read. No board draws `stopping`, or the words of a Stop refused
+  shows the note's body and its title stands in What Coach read. The composer's picture line is one sentence on both seats,
+  `CoachPhotos.whereItGoes` and `keptHere` as 01.5 draws them, since a picture goes to the provider from either seat
+  (`gym_coach.md` §9.3): board 01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out
+  and *A copy goes to the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). No board draws `stopping`, or the words of a Stop refused
   for another reason (`stopUnheard`, said in 08.69's band, whose *Try again* names a turn already ended).
 
 ### Native and web differences

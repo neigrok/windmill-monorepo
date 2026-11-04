@@ -57,6 +57,17 @@ import works.windmill.gym.domain.sync.Proposal as EngineProposal
 import works.windmill.gym.domain.sync.Routine as EngineRoutine
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
+import works.windmill.gym.coach.turn.TellingRecorder
+import works.windmill.gym.domain.sync.ProposeWorkout
+import works.windmill.gym.domain.sync.WorkoutProposal
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.Gym
+import works.windmill.gym.domain.sync.Session as EngineSession
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TrainingStoreTests {
@@ -474,6 +485,61 @@ class TrainingStoreTests {
             assertEquals("A comes back to their own bar", "session01", room.store.workout.session?.id)
             assertEquals(listOf(100.0), room.store.workout.sets.map { it.weightKg })
             runCurrent()
+        }
+    }
+
+    private suspend fun openWorkout(room: EngineRoomFixture): String {
+        room.select("alice")
+        room.pull(EngineRoomFixture.server())
+        val draft = listOf("bench-press", "overhead-press").fold(RoutineDraft(name = "Push A")) { held, movement -> held.adding(movement, List(3) { SetTarget(8) }) }
+        val routine = (room.store.routines.saveRoutine(draft.capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
+        assertTrue(room.store.workout.start(routine.id) is GymResult.Ok)
+        return routine.id
+    }
+
+    private fun EngineRoomFixture.plantUnreadable(type: String, id: String, parent: Pair<String, String>) = assertTrue(engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.create(type, NewID.Given(RecordID(id)),
+        mapOf(parent.first to Json.of(parent.second), "summary" to Json.of(""), "changes" to Json.parse("""[{"kind":"kept"}]"""), "door" to Json.of("ask"), "connection" to Json.of(""), "agent" to Json.of("")))))) is CommitOutcome.Committed)
+
+    // A connect turns what it did not expect into a refused workout, and a refresh stops at it: one record this build cannot decode costs that record, each kind reported once, whatever reads it again.
+    @Test fun anUnreadableWorkoutProposalCostsThatProposalAndTheWorkoutStands() = runTest {
+        val telling = TellingRecorder()
+        EngineRoomFixture(tmp.newFolder(), work(), telemetry = telling).use { room ->
+            openWorkout(room)
+            val session = checkNotNull(room.store.workout.session).id
+            val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+            assertTrue(runner.run(ProposeWorkout(Id("wp000000000000001", WorkoutProposal), Id(session, EngineSession),
+                listOf(EngineEntry(Id("bench-press", EngineExercise), List(3) { EngineTarget(8) })), "")) is Outcome.Committed)
+            room.plantUnreadable(Gym.Types.workoutProposal, "wp000000000000bad", "sessionId" to session)
+            telling.failures.clear()
+
+            val reopened = room.freshStore()
+            reopened.connect(room.account("alice"))
+            advanceUntilIdle()
+            assertNull(reopened.workout.workoutFailure)
+            assertEquals(session, reopened.workout.session?.id)
+            assertEquals(setOf("wp000000000000001"), reopened.workoutProposals.held.keys)
+            reopened.refreshEngine()
+            reopened.refreshEngine()
+            assertEquals(setOf("wp000000000000001"), reopened.workoutProposals.held.keys)
+            assertEquals(listOf(mapOf("operation" to "gym.refreshWorkout")), telling.failures)
+        }
+    }
+
+    @Test fun anUnreadableRoutineProposalCostsThatProposalAndTheProgramStands() = runTest {
+        val telling = TellingRecorder()
+        EngineRoomFixture(tmp.newFolder(), work(), telemetry = telling).use { room ->
+            val routine = openWorkout(room)
+            room.plantUnreadable(Gym.Types.proposal, "pr000000000000bad", "routineId" to routine)
+            telling.failures.clear()
+
+            val reopened = room.freshStore()
+            reopened.connect(room.account("alice"))
+            advanceUntilIdle()
+            assertNull(reopened.workout.workoutFailure)
+            assertEquals(listOf("Push A"), reopened.routines.all.map { it.name })
+            assertEquals(emptySet<String>(), reopened.routines.outOfDateProposals)
+            reopened.refreshEngine()
+            assertEquals(listOf(mapOf("operation" to "gym.refreshWorkout")), telling.failures)
         }
     }
 }

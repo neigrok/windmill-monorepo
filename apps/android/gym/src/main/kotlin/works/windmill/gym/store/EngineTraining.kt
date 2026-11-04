@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import java.util.concurrent.ConcurrentHashMap
 import works.windmill.domain.kit.*
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.domain.sync.*
@@ -57,6 +58,7 @@ import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.IntentResultDeviceWrites
 import works.windmill.sync.api.Replica
 import works.windmill.sync.api.ScopeReader
+import works.windmill.sync.api.Record
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.DeviceValueRewrite
@@ -81,6 +83,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         val details: List<SessionDetail>, val openId: String?, val lastTrainedAt: Map<String, Long>,
         val staleSessions: Set<String>, val pendingSetIds: Set<String>)
     private var parsedLog: ParsedLog? = null
+    // The kinds of record a read met one of that this build cannot decode. That record costs itself alone, and the seat says so once.
+    private val undecodedKinds = ConcurrentHashMap.newKeySet<String>()
+    internal val undecoded: Set<String> get() = undecodedKinds
     private val removalReceipts = RemovalReceipts(engine, writeAuthority)
     fun removalReceipts(): Map<String, Proposal> = removalReceipts.confirmed()
     fun removalProposals(): Map<String, Proposal> = removalReceipts.proposals()
@@ -143,6 +148,17 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 
     private fun <T> read(body: (Reader) -> T): T = reader.read(EngineSession.scope, body)
+    private fun <E : Entity<E>> decoded(type: EntityType<E>, record: Record): E? = try {
+        type.decode(Fields(record))
+    } catch (_: DecodeError) {
+        undecodedKinds += type.type
+        null
+    } catch (_: JsonError) {
+        undecodedKinds += type.type
+        null
+    }
+    private fun <E : Entity<E>> Reader.readable(type: EntityType<E>): List<E> =
+        Repository.ordered(type, source.drawn(type.type).filter { it.isVisible }).mapNotNull { decoded(type, it) }
     // Coach's read models over the same scope, for the seat's guarded read.
     fun <T> reading(body: (Reader) -> T): T = read(body)
     private suspend fun <T> writing(replica: Replica = writable, body: (ActionRunner) -> T): T = withGymActionContext { context ->
@@ -459,9 +475,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         val lastTrainedAt = requireNotNull(parsedLog).lastTrainedAt
         val decisions = reader.commands().filter { it.command.name in setOf(Gym.Commands.applyProposal, Gym.Commands.dismissProposal) }
             .mapNotNull { it.command.args["proposalId"]?.str() }.toSet()
-        val proposals = reader.repository(EngineProposal).all(ViewMode.drawn).map { proposal ->
+        val proposals = reader.readable(EngineProposal).map { proposal ->
             if (proposal.id.text !in decisions) proposal else reader.confirmed(EngineProposal, proposal.id)
-                ?.takeIf { it.isVisible }?.let { EngineProposal.decode(Fields(it)) } ?: proposal
+                ?.takeIf { it.isVisible }?.let { decoded(EngineProposal, it) } ?: proposal
         }
         val decisionRoutines = proposals.filter { it.id.text in decisions }.map { it.routineId }.toSet()
         val drawnRoutines = reader.repository(EngineRoutine).all(ViewMode.drawn)
@@ -597,7 +613,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     fun proposalRecorded(id: String): Boolean = read { reader -> reader.repository(EngineProposal).record(Id(id, EngineProposal), ViewMode.drawn) != null }
     // The proposals the log would refuse to apply, decided against the routine as the engine holds and confirms it.
     fun outOfDateProposals(): Set<String> = read { reader ->
-        reader.repository(EngineProposal).all(ViewMode.drawn).filter { EngineProposalState(reader, it.id).outOfDate }.mapTo(mutableSetOf()) { it.id.text }
+        reader.readable(EngineProposal).filter { EngineProposalState(reader, it.id).outOfDate }.mapTo(mutableSetOf()) { it.id.text }
     }
     suspend fun applyProposal(id: String) = decideProposal(id, applying = true)
     suspend fun dismissProposal(id: String) = decideProposal(id, applying = false)
@@ -648,7 +664,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         } ?: throw TrainingUnanswered
     }
     // Coach's changes to the open workout as this phone draws them. A decision stands as soon as it is made: Apply rewrites the running plan at once and the log confirms it, offline too.
-    fun workoutProposals(): List<Proposal> = read { reader -> reader.repository(EngineWorkoutProposal).all(ViewMode.drawn).map { it.ui(reader) } }
+    fun workoutProposals(): List<Proposal> = read { reader -> reader.readable(EngineWorkoutProposal).map { it.ui(reader) } }
     suspend fun decideWorkoutProposal(id: String, applying: Boolean) {
         if (anonymous || engine.status.state.value.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
         val identity = Id(id, EngineWorkoutProposal)

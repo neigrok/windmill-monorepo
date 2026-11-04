@@ -128,7 +128,7 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
         editor.draft.photo?.takeIf { !asking }?.let { photo ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "${CoachPhotos.whereItGoes} ${CoachPhotos.keptHere}",
+                Text("${CoachPhotos.whereItGoes} ${CoachPhotos.keptHere}",
                     style = GymType.coachNote, color = colors.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
