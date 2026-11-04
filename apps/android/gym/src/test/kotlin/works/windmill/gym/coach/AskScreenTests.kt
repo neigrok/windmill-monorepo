@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.SemanticsActions
@@ -29,6 +30,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import kotlinx.coroutines.CoroutineScope
@@ -267,6 +269,23 @@ class AskScreenTests {
         compose.waitForIdle()
         assertTrue(file.isDirectory)
         assertEquals(CoachDraft("Phone draft"), LocalCoach(published).draft("u1", "account-chat"))
+    }
+
+    @Test fun theReadLineTakesFortyEightDpOfTouchInTheThreadBetweenItsBubbleAndTheClip() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val reply = coachReply("Prose the line stands under.", read = ReadTally(1, 1, 1), calls = listOf(coachCall("list_sessions", "read your recent workouts")))
+        room(signedIn(scope).store, thread = listOf(CoachExchange("request-a", "Question", 0, answer = reply)), refusal = null, doors = mutableListOf())
+        val target = compose.onNodeWithTag("coach-read-sources")
+        val bounds = target.getUnclippedBoundsInRoot()
+        assertEquals(48.dp, bounds.bottom - bounds.top)
+        val reached = (-6..53).filter { dp ->
+            target.performTouchInput { click(Offset(center.x, dp.dp.toPx() + 0.5f)) }
+            val opened = compose.onAllNodesWithText("What Coach read").fetchSemanticsNodes().isNotEmpty()
+            if (opened) compose.onNodeWithText("Close").performScrollTo().performClick()
+            compose.waitForIdle()
+            opened
+        }
+        assertEquals((0..47).toList(), reached)
     }
 
     @Test fun anEmptyPendingMessagePacesBothTheFirstChunkAndItsTerminalTextInsideTheBubble() {
