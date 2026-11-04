@@ -2760,10 +2760,10 @@ web, Swift and Kotlin domain suites claim them alongside training-rule regressio
 **Coach conversations** (gym Coach §9.1) are the engine records `thread` and `message` above, bound
 by the gym binding (§2.4) and stored in `gym_threads` and `gym_messages`. The server Coach's legacy
 conversations (`gym_ask_threads`, `gym_ask_turns`) are not adopted: they stay the server Coach's, and
-web and Android keep writing them until they move to the phone Coach. A proposal's `threadId` is a
+the web keeps writing them until it moves to the phone Coach. A proposal's `threadId` is a
 plain string naming either kind of conversation. Deleting a legacy conversation first admits, as the
 server, `threadId = null` on every proposal and workout proposal that names it; a `thread` death does the same by
-consequence. On Android and the web the gym room holds a legacy conversation delete for the same
+consequence. On the web the gym room holds a legacy conversation delete for the same
 window as the **Held** gestures, on the room's own clock rather than the engine's.
 
 **Cross-record checks** read stored records with the intent’s joined records and earlier staged

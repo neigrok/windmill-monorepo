@@ -6,14 +6,13 @@ code can cite them.
 
 ## §0 Status and scope
 
-**Status:** Implemented on the backend and iOS. The backend serves the turn routes (§6.1), and
-iOS runs every Coach turn, signed out and signed in, as the tool host over its replica. Android and
-the web keep the server Coach of [gym-coach-contract.md](../../gym-coach-contract.md): the server
+**Status:** Implemented on the backend, iOS and Android. The backend serves the turn routes (§6.1), and
+iOS and Android run every Coach turn, signed out and signed in, as the tool host over their replica. The
+web keeps the server Coach of [gym-coach-contract.md](../../gym-coach-contract.md): the server
 reads and writes the log itself. Anonymous onboarding (`POST /v1/gym/coach/onboarding`) is a
 separate, narrower route: one installation-authenticated request produces a bounded routine
-document for atomic local import. Android's nonvisual onboarding client retains installation access,
-original-chat requests and per-result import receipts; its visible signed-out flow is separate from this foundation.
-iOS draws the onboarding answers earlier versions kept and imports the routines they drafted. Installation identity follows §8.
+document for atomic local import. No phone calls it now: iOS and Android draw the onboarding answers
+earlier versions kept and import the routines they drafted. Installation identity follows §8.
 
 Catalog version 2 adds `propose_workout_change`, the Coach's door to the open workout: the catalog
 declares it and its corpus holds the calls (§3.5), and engine A.2 binds its `workoutProposal`
@@ -27,7 +26,7 @@ answers during a workout, reads the open workout (§4.1), and its replica execut
 
 | Surface | Signed out | Signed in |
 |---|---|---|
-| Android | no | no |
+| Android | yes | yes |
 | iOS | yes | yes |
 | Web | — | no |
 | MCP (generated catalog) | — | no |

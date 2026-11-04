@@ -33,8 +33,8 @@ Screens read colour from `MaterialTheme.colorScheme` and the room's own `Materia
 Dynamic colour is off: the brand palette is fixed.
 The app is portrait-only. Shared gym rules live in
 [backend architecture](../../backend/products/gym/ARCHITECTURE.md), UI rules in
-[brand foundations](../../docs/design/brand-foundations.md) and the Gym Figma file, and Coach's retry/stream/image rules in
-[the conversation contract](../../docs/gym-coach-contract.md).
+[brand foundations](../../docs/design/brand-foundations.md) and the Gym Figma file, and Coach's turn, wire and picture rules in
+[Gym Coach on the client](../../docs/foundation/mobile/gym_coach.md).
 
 ## Build
 
@@ -140,7 +140,7 @@ workout already on the log), `HistoryReads` (log pages and foot, opened details,
 history, progress), `RoutinesStore` (routines, movement catalogue, proposals), `RecoveryStore`
 (imports and On this phone), `DeletionsStore` (withheld deletes and their Undo), `BodyweightStore`,
 `NotesStore` and `SharingStore` (connected log and share links). `HeldDeletes` holds the weigh-in holds and
-the room's settled set deletes: weigh-in lists read the first and set lists the second. `TrainingStore` composes them with `CoachStore` and moves them together on a
+the room's settled set deletes: weigh-in lists read the first and set lists the second. `TrainingStore` composes them with `CoachChats` and moves them together on a
 change of account, an engine refresh, a restore and an account transition. Screens take a narrow
 state interface and an events interface, bound to the stores by a `…Binding` class beside each
 screen; previews draw each screen's main states in Dark and Daylight. The stores run training reads
@@ -207,9 +207,9 @@ content would clip, retaining the chosen text size, side controls and native hor
 
 App workouts start from a saved routine. Workouts received from another surface without a routine
 retain their movement picker and read as **Free workout**. Receipts do not create routines.
-The bundled movement catalogue uses backend seed identities. Only Coach
-threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
-`coach/turn/` is the phone Coach, which no screen sends yet: `CoachTurns` (one per application, handed out by
+The bundled movement catalogue uses backend seed identities. Only shares and connected-log credentials use REST,
+through `GymRest`.
+`coach/turn/` is the phone Coach: `CoachTurns` (one per application, handed out by
 `TrainingStore.coachTurns`) admits a question, records it and runs the turn through `:agent`'s driver;
 `GymTurnHost` runs each step on the replica the turn opened on, through `EngineTraining.pinnedOn`, which keeps
 `writable`'s one rule, so a turn writes nothing during a transition or onto the replica that replaced its own: it
@@ -222,39 +222,36 @@ initializer, its foreground service and the permissions it asks for beyond what 
 new process finds no turn and ends. The ability catalog is the contract's own `gym/catalog.json`, copied into `:gym`'s
 generated assets by a Gradle task and parsed at the first send.
 
-`coach/` groups conversation models, storage, photos and screens. `CoachStore` owns chat selection,
-thread reads, retries, streaming and confirmed conversation deletion in the application scope;
-`TrainingStore` composes it with the seat's account and the routines' refresh. `LocalCoach` atomically
-retains stable chat identities, selected chat, drafts, prepared photos, turns, request identities,
-confirmations and scroll position. An upload cancellation retires automatic resume and keeps its
-draft for explicit Retry. Request callbacks and Stop replies remain bound to their admitted attempt,
-including a retry with the same request identity. A deliberate Coach entry or New chat creates a fresh identity;
-History, sheets and recreation restore the selected identity. A pending reply stays in its originating
-chat while other chats remain available. Retry retains identity and Stop preserves completed work.
-Signed-out History reads only the stable anonymous owner's local archive and calls no server History
-endpoint. Signed-in archives remain retained and become visible only to that same authenticated owner;
-account and anonymous archives are never silently copied or merged. Read-only receipts use What Coach
-read; replies containing proposals, writes, routine drafts/results or unknown tools retain their
-existing receipt/control presentation and wording. Ordinary messages use native chat bubbles and
-Nunito typography; a long press opens the message's Copy action. Finished http(s) links open in a
-Custom Tab, and Copy answer keeps their URLs. Long press also offers Copy link when the full answer
-has exactly one distinct link. Markdown tables keep structured cells and tab-joined copy.
-The reveal stays mounted from the empty pending message through its
-terminal answer; Stop exposes all received text. Material3 decorates the existing state input, so
-selection and draft ownership remain in one place. An available anonymous installation can ask in its original local chat. Bound or unavailable
-installations retain History and drafts without an anonymous composer; submitted work can recover
-by GET. Typed account-required replies use the fixed Sign in state. Daily caps retain the composer
-and persist the server retry deadline; expiration never sends automatically.
+`coach/` groups conversation models, storage, photos and screens. A conversation is the engine's `thread` and
+`message` records, on both seats. `CoachConversations` reads them off the main thread through the seat's guarded read,
+again on each revision of the engine: the chat on screen on every revision, every thread's title, and History's rows
+only while History is up. `CoachExchange` and `CoachReply` are what a screen draws of them. `CoachChats` holds what the
+composer needs for the seat in hand and starts turns; `TrainingStore` composes it with the seat's account.
+`LocalCoach` atomically retains what is no engine record: the chats (the composer's identity before a turn opens a
+thread, then the thread it opened, and the reader's place), composer drafts, kept drafts and draft photos, under owner
+epochs that reject a late write after an account's cleanup. It also retains the onboarding answers earlier versions
+stored, readable and with their drafts saveable through `CoachRoutineImports` on the replica they were had on. It drops
+the conversations, requests and confirmations earlier versions kept at first load, keeping every draft, and removes the
+photos only they named; their conversations stay on the server and on the web, and History starts empty.
+A send goes through `CoachTurns` on both seats and its draft stays until the turn is recorded: a refusal keeps it, and a
+turn withdrawn before its stream returns the question and its photo to the field. Stop asks the driver. Nothing resumes
+per chat, since `CoachTurns` owns the one running turn and it survives every screen. A repeated finish share opens one
+turn: its key and its turn commit in one transaction in a `rack:` device row (`OpenTurnOnce`), so a death before the chat
+holds its thread finds the first turn again. A deliberate Coach entry or New chat creates a fresh identity; History,
+sheets and recreation restore the selected identity. A running turn stays in its own chat while other chats remain
+available. Signed-out conversations join the account through the engine's signed-out decision, so no transcript moves
+by hand; a signed-out draft moves into the account's chat. An available anonymous installation can ask; bound or
+unavailable installations keep History and drafts without an anonymous composer. A routine Coach creates lands at once,
+with its card. Ordinary messages use native chat bubbles and Nunito typography; a long press opens the message's Copy
+action. Finished http(s) links open in a Custom Tab, and Copy answer keeps their URLs. Long press also offers Copy link
+when the full answer has exactly one distinct link. Markdown tables keep structured cells and tab-joined copy. The reveal
+stays mounted from the empty pending message through its terminal answer; Stop exposes all received text. Material3
+decorates the existing state input, so selection and draft ownership remain in one place.
 After successful owned routine and workout reads, an empty Gym initially opens Coach when Coach can
 answer: signed in, or signed out while this phone's anonymous access is available. Otherwise it opens
 Routines; an account waits for its first pull. Saved or deliberately chosen navigation wins. Setup chats retain two local
 greeting bubbles until their first accepted message, with the native photo picker and new-routine
 editor doors. Ordinary fresh chats keep the empty composer.
-Every ask declares `routineReview`, and new Coach routines
-remain drafts until **Save routine**. Review shows movements, targets, equipment and whether loads are total, per
-dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the
-server no longer holds or cannot write loses its Save. Confirmation receipts survive relaunch under their account,
-retries retain the same server operation, and a draft reads as saved when the thread or this phone's receipt says so.
 Equipment metadata resolves through the current catalogue for history and training receipts; set volume
 counts one or two dumbbells while estimates keep the entered weight unit. Shared HTTP framing lives in `net/GymHttp.kt`.
 `sharing/` owns public workout links and their card; sharing a workout does not involve a Coach conversation.
