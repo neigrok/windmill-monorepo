@@ -1,10 +1,11 @@
 name: Web Smoke
 
-# A signed-out reader's walk through the demo, a public roadmap and the landings at 390, 744 and 1440. Read-only: it never
-# signs in, never writes, and blocks the event intake and Sentry at the network layer. Results stay in this log.
+# A signed-out reader's walk through the demo, a public roadmap and the landings at 390, 744 and 1440, and one returning visit
+# through the service worker. Read-only: it never signs in, never writes, and blocks the event intake and Sentry at the network
+# layer. Results stay in this log. A deploy of either half walks the site: a run that deployed nothing concludes `skipped`.
 on:
   workflow_run:
-    workflows: [Web Deploy]
+    workflows: [Web Deploy, Deploy to VPS]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -31,6 +32,9 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Under workflow_run, checkout defaults to the branch head, not the deployed commit.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v5
         with:

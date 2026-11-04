@@ -16,7 +16,7 @@ import { RoadmapIdentity, RoadmapIdentityFallback } from './identity/RoadmapIden
 import { StepComposer } from './step/StepComposer.jsx';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
-import { deletable, holdsSoleRoot } from './board/acts.js';
+import { deletable, takesEveryRoot } from './board/acts.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, LOAD_ERROR, forkedToast } from './copy.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
@@ -66,7 +66,7 @@ import { frontierTarget } from './graph/viewport.js';
 
 const handle = () => ({ current: null });
 // What the seams reach for after render: the live objects, the chrome's DOM, and what the camera has been asked to frame.
-const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
+const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
 const chromeAnchors = () => ({ canvasRef: handle(), rootRef: handle(), identityRef: handle(), boardLayerRef: handle(), legendDockRef: handle() });
 const cameraFraming = () => ({ insetsRef: handle(), firstFrameRef: handle(), graphRevealRef: handle() });
 
@@ -83,11 +83,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { canvasRef, rootRef, identityRef, boardLayerRef, legendDockRef } = anchors;
 
   // Who is looking, and what this device keeps for them.
-  const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, room });
+  const knownReaderRef = useRef(false);
+  const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
   const placeKept = !shared && breakpoint === 'desktop';
-  const desktopEditor = placeKept && !demotion;
-  const desktopEditorRef = useRef(desktopEditor);
-  desktopEditorRef.current = desktopEditor;
+  const desktopEditorRef = useRef(false);
   const phone = breakpoint === 'phone';
 
   // What the room holds and does, whichever view it stands on.
@@ -126,6 +125,12 @@ export function SkillTreeView({ treeId, demo = false }) {
     },
   });
   const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine } = load;
+  // A roadmap that loaded as someone else's reads as a share does, whichever address opened it.
+  const knownReader = !loading && Boolean(tree) && !treeMine;
+  knownReaderRef.current = knownReader;
+  const desktopEditor = placeKept && !demotion && !knownReader;
+  desktopEditorRef.current = desktopEditor;
+  useEffect(() => { if (knownReader) sceneRef.current?.setReadOnly?.(); }, [knownReader, scene]);
   const states = useMemo(() => (tree ? UnlockRules.derive(tree, { completed }) : new Map()), [tree, completed]);
   useEffect(() => { sceneRef.current?.applyStates(states); }, [states]);
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
@@ -199,6 +204,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     track, emit, report: reportRoadmapFailure,
   });
   const boardTree = useMemo(() => (boardHeld && tree ? boardHeld.projected(tree) : tree), [boardHeld, tree]);
+  room.standingTreeRef.current = boardTree;
   const heldGraphModel = useMemo(() => {
     if (!canvasView || !boardHeld || !boardTree || !renderModel) return renderModel;
     const positions = new Map(renderModel.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
@@ -525,6 +531,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         top={geometry.dockTop}
         canvasView={canvasView}
         tree={tree}
+        standingTree={boardTree}
         states={states}
         selection={selection}
         selectedNode={selectedNode}
@@ -545,7 +552,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             parse={editing.draftParse}
             planting={false}
             onClose={closeComposer}
-            onPlant={graftImported}
+            onPlant={(parse) => graftImported(parse, canvasView ? 'graph' : 'board')}
           />
         ) : null}
         activity={activity}
@@ -611,7 +618,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onMarkDone={() => progressActs.markDone(selectedIdsRef.current)}
           onPreviewDelete={() => sceneRef.current?.previewDeleteCostSet([...selectedIdsRef.current])}
           onClearDelete={() => sceneRef.current?.clearDeleteCost()}
-          onDelete={holdsSoleRoot(tree, [...selectedIds]) ? null : bulkDelete}
+          onDelete={takesEveryRoot(boardTree, [...selectedIds]) ? null : bulkDelete}
         />
       )}
 

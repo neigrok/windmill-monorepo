@@ -124,3 +124,18 @@ test('Activity hands desktop Board to Graph, preserves the tablet Board, and nev
     assert.deepEqual(calls, []);
   }
 });
+
+test('deleting the open roadmap closes its session only once the server took it, and before its blob goes', async () => {
+  const run = async (deleteTree) => {
+    const calls = [];
+    const onDelete = verbs.property('onDelete', {
+      treeId: 'sail', sessionRef: { current: { close: () => calls.push('close') } },
+      deleteTree: async () => { calls.push('server'); await deleteTree(); },
+      deleteLocalTree: async () => calls.push('blob'),
+    });
+    await onDelete('sail').catch(() => calls.push('refused'));
+    return calls;
+  };
+  assert.deepEqual(await run(async () => {}), ['server', 'close', 'blob']);
+  assert.deepEqual(await run(async () => { throw new Error('refused'); }), ['server', 'refused']);
+});

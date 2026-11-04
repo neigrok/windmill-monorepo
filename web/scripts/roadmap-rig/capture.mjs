@@ -411,7 +411,7 @@ try {
   await cdp.send('Network.setCookie', { name: 'wm_session', value: cookie, domain: 'localhost', path: '/' });
 
   // Load the app route once (a real document load from about:blank), write the per-tree view
-  // preference so the phone opens the canvas rather than the owner's default list, clear any saved
+  // preference so the phone opens the canvas rather than the owner's default Board, clear any saved
   // camera, then reload so the route decides with those prefs in place. The profile is fresh, so
   // there is no saved place to begin with; the removeItem is belt and braces.
   const appUrl = `${origin}/${layoutName ? `?layout=${encodeURIComponent(layoutName)}` : ''}#/app/${treeId}`;

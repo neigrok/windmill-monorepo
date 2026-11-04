@@ -134,10 +134,10 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
       if (id === treeId && sessionRef.current?.renameTree(title)) return undefined;
       return local ? renameLocalTree(id, title) : renameTree(id, title);
     },
-    // Deleting the open tree must close the session FIRST, or its pagehide flush resurrects the blob.
+    // The server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
     onDelete: async (id, { local = false } = {}) => {
-      if (id === treeId) sessionRef.current?.close();
       if (!local) await deleteTree(id);
+      if (id === treeId) sessionRef.current?.close();
       await deleteLocalTree(id);
     },
   };

@@ -51,4 +51,9 @@ export function graftPlan({ parse, targetId, reservedNodeIds, liveKinds }) {
   return { nodes, edges, kinds };
 }
 
+// How many steps the graft adds: the synthesized root never lands.
+export function graftedStepCount(parse) {
+  return parse.nodes.length - (parse.missingRoot ? 1 : 0);
+}
+
 export default graftPlan;

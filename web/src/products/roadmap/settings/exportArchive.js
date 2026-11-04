@@ -6,7 +6,7 @@ import { ProgressLattice } from '../sync/progressLattice.js';
 import { SyncStore } from '../sync/SyncStore.js';
 import { TreeLattice } from '../sync/lattice.js';
 import { serializePlan } from '../paste/planGrammar.js';
-import { captureError } from '../../../telemetry/sentry.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -26,19 +26,31 @@ const LOCAL_HEADER = 30;
 const CENTRAL_HEADER = 46;
 const END_RECORD = 22;
 
+// The zip of every roadmap that could be read, and how many were asked for. Nothing to put in it downloads nothing.
 export async function buildExportArchive() {
   const trees = await listAllTrees();
   const files = [];
   for (const tree of trees) {
-    const loaded = tree.origin === 'server' ? await loadServerTree(tree.id) : await loadDeviceTree(tree.id);
+    const loaded = await loadForExport(tree);
     if (!loaded) continue;
     const markdown = serializePlan(loaded.treeData, loaded.treeData.kinds, loaded.progress);
     files.push({ name: fileNameFor(loaded.treeData, tree.id), text: markdown });
   }
+  if (files.length > 0) downloadExport({ name: 'windmill-export.zip', bytes: storeZip(files), type: 'application/zip' });
+  return { count: files.length, total: trees.length };
+}
 
-  const bytes = storeZip(files);
-  downloadExport({ name: 'windmill-export.zip', bytes, type: 'application/zip' });
-  return { count: files.length };
+async function loadForExport(tree) {
+  try {
+    return await (tree.origin === 'server' ? loadServerTree(tree.id) : loadDeviceTree(tree.id));
+  } catch (error) {
+    reportExportFailure('roadmap-export-load', error);
+    return null;
+  }
+}
+
+export function reportExportFailure(operation, error) {
+  reportRoadmapFailure(operation, error, undefined, '#/settings');
 }
 
 export function buildRoadmapExport(treeData, progress) {
@@ -62,13 +74,13 @@ export function downloadExport({ name, text, bytes, type = 'text/markdown;charse
   }
 }
 
-// The progress overlay already falls back to the document's seed statuses. Its reads report as the export's, so a failed
-// export never reads as a roadmap that would not open.
+// Its reads report as the export's, so a failed export never reads as a roadmap that would not open. A roadmap whose marks
+// can't be read stays out of the zip rather than going in with the wrong ones.
 async function loadServerTree(treeId) {
   const repository = new HttpTreeRepository({
     treeId,
     operation: 'roadmap-export-load',
-    reportFailure: (operation) => captureError('roadmap', operation, new Error(operation).stack, '#/settings'),
+    reportFailure: (operation) => reportExportFailure(operation),
   });
   const treeData = await repository.loadTree().catch(() => null);
   if (!treeData) return null;

@@ -79,6 +79,33 @@ hostTest('Chromium: a pasted plan\'s Undo removes its steps and keeps a later li
   } finally { await page.close(); }
 });
 
+hostTest('Chromium: a plan pasted on the Board counts what it adds, shows its toast and Undo on the Board, and the Undo removes its steps', async () => {
+  const { page, errors } = await openHost({ width: 1440, surface: 'board', broad: true });
+  try {
+    await page.locator('.st-board-card').first().waitFor();
+    const before = await steps(page);
+    await page.evaluate(() => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', '- Rent a boat\n- Find a crew');
+      window.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+    });
+    assert.equal(await page.locator('.pc-readout').textContent(), '2 steps');
+    await page.locator('.pc-plant').click();
+    const toast = page.locator('.st-view-layer--board .st-board-toast');
+    await toast.waitFor();
+    assert.equal(await toast.locator('.st-board-toast-message').textContent(), 'Added 2 steps under “Choose a course”');
+    assert.equal(Object.keys(await steps(page)).length, 7);
+    await toast.getByRole('button', { name: LABELS.undo, exact: true }).click();
+    await page.waitForFunction(() => window.session.lattice.toTreeData().nodes.length === 5);
+    assert.deepEqual(await steps(page), before);
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_board_undo' || (name === 'roadmap_board_create' && props.step === 'saved'))), [
+      { name: 'roadmap_board_create', props: { step: 'saved', door: 'paste', view: 'board', count: '2-5' } },
+      { name: 'roadmap_board_undo', props: { act: 'graft' } },
+    ]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
 hostTest('Chromium: a tablet add, rename, recolor, link and link removal each offer an Undo for their own act', async () => {
   const { page, errors } = await openHost({ width: 744, broad: true });
   try {

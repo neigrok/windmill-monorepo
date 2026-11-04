@@ -40,7 +40,7 @@ point for the component showcase.
 | Role | Who | Can |
 |---|---|---|
 | `owner` | The account that owns the roadmap, on an app address | Everything |
-| `reader` | Anyone on a shared address, or a demoted owner | Read both views and the step page; Share copies the link; Fork |
+| `reader` | Anyone on a shared address, anyone an app address loaded someone else's roadmap for, or a demoted owner | Read both views and the step page; Share copies the link; Fork |
 | `demo` | The sample roadmap at `#/demo` | The reader's verbs, the sample byline and a coached completion |
 
 `initialView` in `persistence/ViewPrefs.js` chooses the view and returns `{ view, door }`, so the opening
@@ -80,6 +80,11 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 `SkillTree`, derives progress through `UnlockRules`, runs layout and installs the render model in
 `SkillTreeScene`. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
 engines, labels.
+
+The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A server tree whose marks can't be
+read reports `roadmap-progress-load` and stops the load, so the room shows the load error and Try again rather than a false
+count. A failed activity read reports `roadmap-activity-load` and costs only the feed. A device tree's reads report nothing and
+it keeps its seeds: the tree's own read has already told what the server is doing.
 
 After load, `SyncSession` owns the durable lattice. Local gestures and remote frames both produce a projection
 through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
@@ -134,7 +139,9 @@ equivalent from 744px and owns rename and delete.
 `<!-- windmill:roadmap -->` marker: its title is metadata, and every step, including each root, is a list item
 with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
 Markdown viewers. Indentation preserves primary prerequisites; additional prerequisites become `needs also`
-notes. Kind descriptions and link labels are outside the paste format. Settings exports all roadmaps as a zip.
+notes. Kind descriptions and link labels are outside the paste format. Settings exports all roadmaps as a zip. A roadmap it
+can't read stays out, marks included, and the line says *Exported 1 of 2 roadmaps.*; with none read nothing downloads and the
+line is the export's error.
 
 **The device line.** The host derives an anonymous or lapsed line: the Shell carries it from 744px, and both
 phone views receive the tappable `DeviceLine`.
@@ -290,7 +297,7 @@ it.
 
 The ⋯ menu copies the step's link (the roadmap's share address plus its step) only while the roadmap is public
 or unlisted, opens the step in the Graph when it stands over the Board, and offers Delete to an owner unless
-the step is the roadmap's sole root. With nothing to offer the menu hides. The owner's up next and done steps offer View branch. A visitor gets the overview and the menu without
+deleting the step would leave the roadmap no root. With nothing to offer the menu hides. The owner's up next and done steps offer View branch. A visitor gets the overview and the menu without
 Delete. Owners get Edit step beside Complete or Reset, or alone while locked; the phone Workspace action is
 Add note or Edit note.
 
@@ -366,9 +373,10 @@ phone camera controls sit beneath the measured row. From 744px the selected-step
 measured identity and any refusal banner, so neither is covered. The tablet Graph keeps its panel editor, aim,
 link removal and multi-select surfaces.
 
-A roadmap keeps its sole root, by one rule for every door: `holdsSoleRoot` in `board/acts.js`, which `deletable` builds on. The
-desktop dock, the tablet panel and the selection bars stop offering Delete while they hold that step, the Graph's writes refuse
-it, and a Delete key on it does nothing.
+A roadmap keeps a root, by one rule for every door: `takesEveryRoot` in `board/acts.js`, which `deletable` builds on, asked of
+the tree a held delete leaves standing. A sole root, the last root under a hold and a select-all on a many-rooted roadmap all
+read the same. The desktop dock, the tablet panel and the selection bars stop offering Delete while they hold such a selection,
+the Graph's writes refuse it, and a Delete key on it does nothing.
 
 The owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order, including a one-step roadmap, and
 hides at zero. Picking a row selects and reveals that canvas step.
@@ -394,7 +402,8 @@ Fork pill and selected-step bar.
 `useRoadmapToast` is the room's one toast slot, with one hold that starts when a toast is first shown; a newer toast
 replaces the older, with no coalescing. `toastSeat` says where a toast stands: a Board toast inside `BoardView`,
 where it waits out the regroup; a Graph toast over the canvas, leaving with it; anything else over whatever is
-showing. `BoardToast` renders them all but Ask AI's answers, which keep `tending/TendToast.jsx` and its Why?.
+showing. `BoardToast` renders them all but Ask AI's answers, which keep `tending/TendToast.jsx` and its Why?. A plan pasted with
+⌘V announces on whichever view took it, so its toast and Undo stand there, and the composer's count is what the graft adds.
 Complete, Create and Recolor hold six seconds and Delete nine. Remote completions keep their announcements.
 
 Complete toast text reveals the single newly Up next step, or the completed step when zero or several unlock;

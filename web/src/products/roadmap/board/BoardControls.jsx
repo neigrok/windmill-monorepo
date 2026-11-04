@@ -141,10 +141,12 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
           <span>{BULK.recolor}</span>
           {open && <ChevronDown size={16} aria-hidden />}
         </button>
-        <button type="button" className="st-board-bulk-delete" onClick={onDelete}>
-          <Trash2 size={16} aria-hidden />
-          <span>{deleteStepsAction({ count })}</span>
-        </button>
+        {onDelete && (
+          <button type="button" className="st-board-bulk-delete" onClick={onDelete}>
+            <Trash2 size={16} aria-hidden />
+            <span>{deleteStepsAction({ count })}</span>
+          </button>
+        )}
       </div>
     </div>
   );

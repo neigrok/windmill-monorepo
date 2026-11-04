@@ -104,15 +104,17 @@ The Board is the only path into a roadmap and nothing stands in front of it: eve
 in production for whichever reader and band reach its step. Properties are allowlisted, bounded labels: no title, step or
 roadmap id, kind name, search text, email or server sentence enters them. Three rows are the exceptions, and none carries
 what a person wrote: `demo_open`'s `treeId` is the one constant the bundle ships, `birth`'s `quest` is an authored id, and
-`birth` and `claim` carry a raw count.
+`claim` carries a raw count.
 
-`test/products/roadmap/observability.test.mjs` fails when a roadmap event name or Sentry operation in the code is missing
-from these tables, or a name in the tables is missing from the code.
+`test/products/roadmap/observability.test.mjs` reads the code's syntax tree. It fails when a roadmap event name or Sentry
+operation in the code is missing from these tables or a name in the tables is missing from the code, when an event's props
+fit no row of its event or a value reads a content field such as a title or an email, when a count goes around `countBucket`,
+and when a report's operation is not a literal or its error message is built at run time.
 
 ### Events
 
 Each row is one exact shape: `key: a/b/c` allows those values, `key?:` may be absent, and — means no properties. A count
-named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
+goes through `countBucket`: `0/1/2-5/6-20/21+`.
 
 | Step | Event | Allowlisted props |
 |---|---|---|
@@ -138,7 +140,7 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Reset from the Graph's dock or tablet panel | `roadmap_board_step_action` | `surface: dock/panel`, `action: reset` |
 | Complete by swipe, C, the dock, the tablet panel or the demo's coach | `roadmap_board_complete` | `door: swipe/key/dock/panel/coach` |
 | Complete from the Graph's selection bar | `roadmap_board_complete` | `door: bulk`, `count: 0/1/2-5/6-20/21+` |
-| Board toast's Undo; ⌘Z and ⇧⌘Z pressed | `roadmap_board_undo` | `act: complete/create/delete/recolor/undoKey/redoKey` |
+| Board toast's Undo; ⌘Z and ⇧⌘Z pressed | `roadmap_board_undo` | `act: complete/create/delete/recolor/graft/undoKey/redoKey` |
 | Tap a completion or creation toast's text | `roadmap_board_toast_reveal` | `act: complete/create`, `view?: graph` |
 | Graph toast shown or undone | `roadmap_graph_toast` | `act: complete/create/delete/recolor/rename/add/link_add/link_remove/graft`, `step: shown/undo` |
 | Undo on an Ask AI answer | `roadmap_graph_toast` | `act: tend`, `step: undo` |
@@ -148,8 +150,9 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Pasted plan opens its composer | `roadmap_board_create` | `step: open`, `door: paste`, `view: graph` |
 | Create saved | `roadmap_board_create` | `step: saved`, `column: locked/upNext`, `filterCleared: true/false` |
 | Create on the canvas, the tablet panel or the empty Graph | `roadmap_board_create` | `step: saved`, `door: canvas/empty`, `view: graph` |
-| Plant a pasted plan | `roadmap_board_create` | `step: saved`, `door: paste`, `view: graph`, `count: 0/1/2-5/6-20/21+` |
+| Add a pasted plan to the roadmap | `roadmap_board_create` | `step: saved`, `door: paste`, `view: board/graph`, `count: 0/1/2-5/6-20/21+` |
 | Composer's other outcomes | `roadmap_board_create` | `step: failed/retry/discard/cancel` |
+| Planting a new roadmap failed | `roadmap_board_create` | `step: failed`, `door: blank/import/quest` |
 | Edit saved in the composer | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
 | Edit composer's other outcomes | `roadmap_board_edit` | `step: failed/retry/discard/cancel/unchanged` |
 | Rename, recolor, link, unlink, reconnect or reorder on the Graph | `roadmap_board_edit` | `step: saved`, `view: graph`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false`, `order: true/false` |
@@ -187,13 +190,16 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Roadmap sheet | `roadmap_sheet` | `step: open/switch/search/browse` |
 | Roadmap sheet's New roadmap | `roadmap_sheet` | `step: new`, `door?: search` |
 | Roadmap sheet closed | `roadmap_sheet` | `step: close`, `via: close/escape/scrim` |
-| Tablet and desktop roadmap switcher | `roadmap_sheet` | `step: open/switch/new/browse/rename/delete`, `door: switcher` |
+| Tablet and desktop roadmap switcher; a rename or a delete once the request succeeded | `roadmap_sheet` | `step: open/switch/new/browse/rename/delete`, `door: switcher` |
+| The switcher's rename or delete failed | `roadmap_sheet` | `step: rename/delete`, `door: switcher`, `outcome: failed` |
 | What's next | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
 | Export this roadmap | `roadmap_export` | `outcome: done/failed`, `door: more/sheet` |
+| Settings' Export all | `roadmap_export` | `outcome: done/partial/failed`, `door: settings` |
 | Shortcut help | `roadmap_shortcuts_open` | `view: board/graph` |
 | Fork submitted | `fork_attempt` | `mode: email/instant/browse` |
 | Fork's email answered with a refusal or a failure | `fork_attempt` | `mode: email`, `outcome: invalid/rate_limited/failed` |
 | Instant Fork failed | `fork_attempt` | `mode: instant`, `outcome: unauthenticated/failed` |
+| Gallery Fork failed | `fork_attempt` | `mode: browse`, `outcome: unauthenticated/failed` |
 | Fork landed | `fork_claim` | `mode: email/instant/browse` |
 | Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
 | Refusal shown, retried or discarded | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
@@ -201,8 +207,8 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
 | WebGL2 unavailable | `webgl_init_fail` | — |
-| A roadmap planted from a quest | `birth` | `quest: <authored quest id>`, `steps: <count>`, `local?: true` |
-| A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: <count>`, `local?: true` |
+| A roadmap planted from a quest | `birth` | `quest: <authored quest id>`, `steps: 0/1/2-5/6-20/21+`, `local?: true` |
+| A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: 0/1/2-5/6-20/21+`, `local?: true` |
 | Device roadmaps claimed at sign-in | `claim` | `treeCount: <count>` |
 | Roadmap landing opened | `land` | `signedIn: true/false` |
 
@@ -219,7 +225,8 @@ A step is a thing a reader did or was told. These emit nothing:
   a clean Save, which writes nothing and emits `unchanged` from the edit composer alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
-- A Delete key on a roadmap's sole root, on either view: Delete is not offered, so nothing happened.
+- A Delete key on a selection that takes every root a roadmap has left, on either view: Delete is not offered, so nothing
+  happened.
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
 - The camera, the minimap, the legend's highlight and folding, selecting one step, hovering and focus moves.
 
@@ -244,12 +251,18 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step page's inline offer | The offer leaves |
 | `roadmap-graph-undo` | A Graph toast's Undo reverting its receipt | The toast closes |
 | `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |
-| `roadmap-export` | Building or downloading this roadmap's export | `roadmap_export` `failed`, no file |
-| `roadmap-export-load` | Settings' Export all reading a roadmap | That roadmap's failure, by the rules of `roadmap-tree-load` |
+| `roadmap-export` | Building or downloading an export | `roadmap_export` `failed`, no file |
+| `roadmap-export-load` | Settings' Export all reading a roadmap or its marks, by the rules of `roadmap-tree-load` | *Exported 1 of 2 roadmaps.*, or the export's error when none could be read |
 | `roadmap-tree-load` | The server answering 5xx or 200 with no tree, or a request lost while visible, online and still wanted | The load error |
+| `roadmap-progress-load` | A server tree's marks, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The load error and Try again, never a false count |
+| `roadmap-activity-load` | A server tree's activity, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The room opens with an empty feed |
 | `roadmap-load` | Anything else stopping a load, except a tree neither the server nor this device has | The load error |
-| `roadmap-fork` | Fork: a server failure, or a request lost online | Fork's own error |
-| `roadmap-share` | Publishing or making private: a server failure, or a request lost online | The dialog's own error |
+| `roadmap-fork` | Fork, from a roadmap or the gallery: a server failure, or a request lost while visible and online | Fork's own error |
+| `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online | The dialog's own error |
+| `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
+| `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
+| `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception | The door's own error, or a device roadmap when the server can't be reached |
+| `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer |
 | `roadmap-sync-notify` | Notifying after a local write, a server frame, an epoch change or a discard projection | The write's receipt stays |
 | `roadmap-sync-persist` | Storing a local write or mark on a database that opened | The receipt stays; durability is at risk |
 | `roadmap-sync-send` | Sending a local write, including the IndexedDB epoch check on a database that opened | The pending bank stays and the refused card says so; durability is at risk |
@@ -269,4 +282,5 @@ A render failure with no boundary of its own, an uncaught error and an unhandled
 sends `client_error` with `kind`, `route` and scrubbed `message` and `stack`, and a Sentry report of that `kind` with the
 scrubbed message. These carry the exception's own text, and on `#/app/<id>` the roadmap's id in `route`.
 
-`scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer.
+`scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer. Any Sentry attempt or
+`client_error` beacon it blocks fails its walk.

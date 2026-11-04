@@ -22,6 +22,7 @@ function room(t) {
   const projectionRef = { current: session.lattice.toTreeData() };
   session.onTreeChanged((data) => { projectionRef.current = data; });
   const treeRef = { current: null };
+  const standingTreeRef = { current: null };
   const toasts = [];
   const selectedIdRef = { current: null };
   const scene = {
@@ -34,7 +35,7 @@ function room(t) {
     setSelectedId: (id) => { selectedIdRef.current = id; }, leaveMulti() {}, enterMulti() {}, toggleMember() {}, multiMode: false,
   };
   const editing = renderHook(t, () => useGraphEditing({
-    room: { sessionRef: { current: session }, projectionRef, sceneRef: { current: scene }, treeRef },
+    room: { sessionRef: { current: session }, projectionRef, sceneRef: { current: scene }, treeRef, standingTreeRef },
     legendRef: { current: [] }, desktopEditorRef: { current: true }, selection, emit() {},
     showToast: (message, options) => toasts.push({ message, ...options }),
   }));
@@ -42,7 +43,7 @@ function room(t) {
     tabletEditor: true, scene, tree: new SkillTree(session.lattice.toTreeData()),
     nodesById: new Map(session.lattice.toTreeData().nodes.map((node) => [node.id, node])), selectedNode: null, projectionRef, selection, editing: editing.tree,
   }));
-  return { session, editing, tablet, scene, selection, toasts, treeRef };
+  return { session, editing, tablet, scene, selection, toasts, treeRef, standingTreeRef };
 }
 
 const steps = (session) => Object.fromEntries(session.lattice.toTreeData().nodes.map(({ id, label, color, prerequisites }) => [id, { label, color, prerequisites: [...prerequisites] }]));
@@ -76,6 +77,43 @@ const ACTS = [
     scene.tap(0, 0, 'dock');
   }],
 ];
+
+test('a plan pasted on the Board puts its toast and Undo on the Board, and the Undo takes back only the graft', (t) => {
+  const { session, editing, toasts } = room(t);
+  const before = steps(session);
+  editing.tree.graftImported(parsePlan('- Rent a boat\n- Find a crew', [], { bindOnly: true }), 'board');
+  assert.notDeepEqual(steps(session), before);
+  const { action, ...options } = toasts[0];
+  assert.deepEqual(options, { message: 'Added 2 steps under “Choose a course”', surface: 'board', act: 'graft' });
+  action.run();
+  assert.deepEqual(steps(session), before);
+});
+
+test('the Graph refuses a delete that takes the last root a hold leaves standing, from either door', (t) => {
+  const { session, editing, toasts, standingTreeRef } = room(t);
+  session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 });
+  const tree = new SkillTree(session.lattice.toTreeData());
+  assert.deepEqual(tree.roots().map((root) => root.id).sort(), ['course', 'solo']);
+  const before = steps(session);
+  standingTreeRef.current = tree.without(['solo']);
+  editing.tree.deleteNodeAt('course');
+  assert.deepEqual(steps(session), before);
+  assert.deepEqual(toasts, []);
+  standingTreeRef.current = tree;
+  editing.tree.deleteNodeAt('course');
+  assert.notDeepEqual(steps(session), before);
+});
+
+test('select-all then Delete on a many-rooted roadmap is refused like the sole root', (t) => {
+  const { session, editing, selection, toasts, standingTreeRef } = room(t);
+  session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 });
+  standingTreeRef.current = new SkillTree(session.lattice.toTreeData());
+  const before = steps(session);
+  selection.selectedIdsRef.current = new Set(Object.keys(before));
+  editing.tree.bulkDelete();
+  assert.deepEqual(steps(session), before);
+  assert.deepEqual(toasts, []);
+});
 
 for (const [name, act, message, perform] of ACTS) {
   test(`${name}: its toast Undo after a later gesture reverts only its own act`, (t) => {
@@ -194,8 +232,8 @@ test('Ask AI: an Undo the session cannot take claims nothing', async (t) => {
 });
 
 test('the Graph\'s writes keep the sole root: a step alone, or anywhere in a selection, and what is left stays standing', (t) => {
-  const { session, editing, selection, toasts, treeRef } = room(t);
-  treeRef.current = new SkillTree(session.lattice.toTreeData());
+  const { session, editing, selection, toasts, standingTreeRef } = room(t);
+  standingTreeRef.current = new SkillTree(session.lattice.toTreeData());
   const before = steps(session);
   editing.tree.deleteNodeAt('course');
   selection.selectedIdsRef.current = new Set(['course', 'wind']);

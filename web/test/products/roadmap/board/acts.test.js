@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { Board, BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
-import { HeldDelete, StepSelection, deletable, holdsSoleRoot, editGesture, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
+import { HeldDelete, StepSelection, deletable, takesEveryRoot, editGesture, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -95,7 +95,7 @@ test('StepSelection toggles immutably and prunes to the pane order after filteri
   assert.ok(Object.isFrozen(selected.ids));
 });
 
-test('holdsSoleRoot asks only whether the ids take the one root a roadmap has', () => {
+test('takesEveryRoot asks only whether the ids take every root a roadmap has', () => {
   const sole = new SkillTree({ id: 'sole', title: 'Sole', nodes: [
     { id: 'root', label: 'Root', prerequisites: [] },
     { id: 'leaf', label: 'Leaf', prerequisites: ['root'] },
@@ -105,9 +105,10 @@ test('holdsSoleRoot asks only whether the ids take the one root a roadmap has', 
     { id: 'other', label: 'Other', prerequisites: [] },
   ] });
   assert.deepEqual([
-    holdsSoleRoot(sole, ['root']), holdsSoleRoot(sole, ['leaf', 'root']), holdsSoleRoot(sole, ['leaf']), holdsSoleRoot(sole, []),
-    holdsSoleRoot(sole, ['gone']), holdsSoleRoot(twoRoots, ['root']), holdsSoleRoot(null, ['root']),
-  ], [true, true, false, false, false, false, false]);
+    takesEveryRoot(sole, ['root']), takesEveryRoot(sole, ['leaf', 'root']), takesEveryRoot(sole, ['leaf']), takesEveryRoot(sole, []),
+    takesEveryRoot(sole, ['gone']), takesEveryRoot(twoRoots, ['root']), takesEveryRoot(null, ['root']),
+    takesEveryRoot(twoRoots, ['root', 'other']),
+  ], [true, true, false, false, false, false, false, true]);
 });
 
 test('deletable excludes the sole root, absent ids and empty selections', () => {
@@ -119,6 +120,13 @@ test('deletable excludes the sole root, absent ids and empty selections', () => 
   assert.equal(deletable(tree, ['missing']), false);
   assert.equal(deletable(null, ['dock']), false);
   assert.equal(deletable(treeOf([wind, { ...dock, prerequisites: [] }]), ['wind']), true);
+  assert.equal(deletable(treeOf([wind, { ...dock, prerequisites: [] }]), ['wind', 'dock']), false);
+});
+
+test('under a hold the rule reads what the hold leaves: the last root standing is the sole root', () => {
+  const tree = treeOf([wind, { ...dock, prerequisites: [] }]);
+  assert.equal(deletable(tree, ['wind']), true);
+  assert.equal(deletable(new HeldDelete(['dock'], 'Leave').projected(tree), ['wind']), false);
 });
 
 test('editGesture diffs each field and prerequisite membership without treating order as a write', () => {
