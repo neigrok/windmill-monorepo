@@ -175,8 +175,8 @@ wrote them; `$now` is the run's clock and `$stamp` its write stamp.
 With `--fresh-mode-fixture`, `--scenarios apps/android/tools/capture-recipes/coach-exchange.json` captures the
 signed-in phone turn's states against the seeded account. `coach-exchange-signed-out.json`, with `--capture-only
 --fixture apps/android/tools/capture-recipes/coach-setup-fixture.json`, captures the signed-out answer and the routines
-a turn created. It reads nothing from a log, so 01.19's receipt says so where its board's specimen counts two
-workouts. No recipe sends a picture from the phone, so 01.8 and 01.16 stand without the screenshot their boards draw;
+a turn created. Its log is empty, so 01.19's receipt names the reads the turn ran where its board's specimen counts
+two workouts. No recipe sends a picture from the phone, so 01.8 and 01.16 stand without the screenshot their boards draw;
 08.70's picture is a row planted as another phone's.
 
 Canonical board IDs such as

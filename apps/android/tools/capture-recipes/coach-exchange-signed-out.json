@@ -34,7 +34,7 @@
         "wait_contains": "You squatted 40 kg"
       },
       {
-        "wait": "Read nothing from your log"
+        "wait_contains": "read your program"
       }
     ]
   },
@@ -242,7 +242,7 @@
         "wait_contains": "I made 3 routines"
       },
       {
-        "wait": "Read nothing from your log"
+        "wait_contains": "read your program"
       }
     ]
   }
