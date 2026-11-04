@@ -202,6 +202,8 @@ export function FindStep({ query, onQuery, phone = false, folded = false, toolti
   }, []);
   const [expanded, setExpanded] = useState(false);
   const committed = useRef('');
+  const pressing = useRef(false);
+  const closeOnRelease = useRef(false);
   const typed = query.search !== '';
 
   useLayoutEffect(() => {
@@ -209,6 +211,24 @@ export function FindStep({ query, onQuery, phone = false, folded = false, toolti
     focusExpanded.current = false;
     input.current.focus();
   }, [folded, expanded, typed]);
+
+  // A press that takes the focus lands before a folded field closes: closing under it would move the row out from under the press.
+  useEffect(() => {
+    if (!folded) return undefined;
+    const press = () => { pressing.current = true; };
+    const release = () => {
+      pressing.current = false;
+      if (!closeOnRelease.current) return;
+      closeOnRelease.current = false;
+      setTimeout(() => { if (document.activeElement !== input.current) setExpanded(false); });
+    };
+    window.addEventListener('mousedown', press, true);
+    window.addEventListener('mouseup', release, true);
+    return () => {
+      window.removeEventListener('mousedown', press, true);
+      window.removeEventListener('mouseup', release, true);
+    };
+  }, [folded]);
 
   const commit = () => {
     const asked = query.search.trim();
@@ -276,10 +296,14 @@ export function FindStep({ query, onQuery, phone = false, folded = false, toolti
         spellCheck={false}
         onChange={(event) => onQuery((current) => current.searchingFor(event.target.value))}
         onKeyDown={onKeyDown}
-        onFocus={() => setExpanded(true)}
+        onFocus={() => {
+          closeOnRelease.current = false;
+          setExpanded(true);
+        }}
         onBlur={() => {
           commit();
-          setExpanded(false);
+          if (pressing.current) closeOnRelease.current = true;
+          else setExpanded(false);
         }}
       />
       {typed && (

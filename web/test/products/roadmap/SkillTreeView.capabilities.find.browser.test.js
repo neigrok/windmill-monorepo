@@ -64,3 +64,39 @@ for (const width of everyWidth) {
     });
   }
 }
+
+for (const width of [744, 1024]) {
+  for (const touch of [false, true]) {
+    hostTest(`A press on the view switch lands with the folded Find open at ${width}px, ${touch ? 'by touch' : 'by mouse'}, and the field then folds`, async () => {
+      const { page, errors } = await openHost({ width, surface: 'board', touch, longTitle: true });
+      const press = async (selector) => {
+        const target = page.locator(selector);
+        if (!touch) { await target.click(); return; }
+        const box = await target.boundingBox();
+        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      };
+      try {
+        await press('.st-board-find-toggle');
+        await page.getByRole('searchbox', { name: LABELS.findStep }).waitFor();
+        await press('.st-roadmap-identity button[aria-label="Graph"]');
+        await page.locator('.st-roadmap-identity[data-view="tree"]').waitFor();
+        await page.locator('.st-board-find-toggle').waitFor();
+        assert.equal(await page.getByRole('searchbox', { name: LABELS.findStep }).count(), 0);
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+}
+
+hostTest('Clearing a folded Find with its × keeps the field open and focused', async () => {
+  const { page, errors } = await openHost({ width: 744, surface: 'board' });
+  try {
+    await page.locator('.st-board-find-toggle').click();
+    const field = page.getByRole('searchbox', { name: LABELS.findStep });
+    await field.fill('wind');
+    await page.locator('.st-board-find-clear').click();
+    await page.waitForTimeout(100);
+    assert.equal(await field.evaluate((element) => element === document.activeElement), true);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

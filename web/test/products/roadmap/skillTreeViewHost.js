@@ -36,6 +36,7 @@ import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
 window.fixture = ${JSON.stringify(treeData)};
+if (params.has('longTitle')) window.fixture.title = 'Learn to sail across the whole of the North Atlantic and back again';
 if (params.has('milestone')) window.fixture.nodes[1].status = 'complete';
 if (params.has('single')) window.fixture.nodes = [{ ...window.fixture.nodes[0], status: 'none' }];
 if (params.has('large')) window.fixture.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
@@ -240,7 +241,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false } = {}) {
   await ready;
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -295,7 +296,7 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', su
   });
   const params = new URLSearchParams({ role, surface });
   if (role === 'reader' && !appUrl) params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle })) {
     if (enabled) params.set(name, '1');
   }
   await page.goto(`${origin}/roadmap-host-test?${params}${pathOnly ? '' : '#/app/t_sail'}`);

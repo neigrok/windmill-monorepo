@@ -111,6 +111,8 @@ and shortcuts.
 | 744–1023px | Ask AI and Share move into More |
 | Below 744px | Owners open the roadmap sheet from the title |
 
+A folded *Find a step* closes once the press that took its focus has landed, so closing never moves a control out from under that press.
+
 **Keys.** From 744px `/` focuses *Find a step* on either view, and G switches Board and Graph for owners and
 readers. A non-empty Graph search hands off to the Board with its query and field focus kept. ⌘K is Ask AI. A
 opens Activity from 744px; on phones it does nothing. `boardKey` in `shortcuts/shortcutMap.js` owns the
