@@ -186,7 +186,7 @@ const boardCards = (page) => page.locator('.st-view-layer--board.is-active .st-b
 const stepDialog = (page) => page.locator('.st-board-step-layer [role="dialog"]');
 
 async function paintedShare(page) {
-  const shot = await page.locator('canvas.st-canvas').screenshot({ style: CANVAS_ONLY, animations: 'allow' });
+  const shot = await page.locator('canvas.st-canvas').screenshot({ style: CANVAS_ONLY, animations: 'allow', scale: 'css' });
   const blank = await page.context().newPage();
   const share = await blank.evaluate(async ({ png, groundDistance }) => {
     const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
