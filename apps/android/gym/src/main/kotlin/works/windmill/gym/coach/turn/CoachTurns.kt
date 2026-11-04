@@ -162,6 +162,15 @@ class CoachTurns(
 
     fun requestStop() = driver.requestStop()
 
+    // A new seat hears nothing of the last one's sends, and the same words said to it again are news. A deployment without Coach is no seat's, and stays said.
+    fun forgetSeat() {
+        faulted.value = null
+        refused.value = refused.value.takeIf { it == CoachTurnRefusal.Absent }
+    }
+
+    // A send the room stopped on its way here ends in its one outcome as well.
+    fun heldBack(fault: CoachTurnFault) = tells.heldBack(fault)
+
     // A conversation deleted from History; its pictures' files go after the commit. A conversation with a turn running stays.
     suspend fun deleteConversation(thread: Id<CoachThread>): Boolean = withContext(storage) {
         admitting.withLock {
@@ -194,7 +203,6 @@ class CoachTurns(
             currentCoroutineContext().ensureActive()
             val answered = seatRefusal(failure)
             if (answered != null) return refusing(answered)
-            tells.refused()
             return said(CoachTurnFault.noAnswer)
         }
         if (!training.mayWriteOn(replica, anonymous)) return said(CoachTurnFault.accountChanging)
@@ -424,6 +432,7 @@ class CoachTurns(
 
     private fun said(fault: CoachTurnFault): OpenTurn.Turn? {
         faulted.value = fault
+        tells.heldBack(fault)
         return null
     }
 

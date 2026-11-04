@@ -67,8 +67,9 @@ class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: La
         asked(outcome, cap, null)
     }
 
-    fun refused() {
-        asked("refused", null, null)
+    // A send this phone held back for a fault of its own.
+    fun heldBack(fault: CoachTurnFault) {
+        asked(fault.askOutcome, null, null)
     }
 
     // A turn that ended with no driver to say so: the seat changed under it, or the process died under it. The record tells what it held, when the record is still on this replica, and how it ended if a writer's commit outlived the cancellation.

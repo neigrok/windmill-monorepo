@@ -75,17 +75,17 @@ class CoachChats internal constructor(
     private var runningThread by mutableStateOf<String?>(null)
     private var refused by mutableStateOf<CoachTurnRefusal?>(null)
     private var refusedChat: String? = null
-    private var refusedSeat: String? = null
+    // The seat the last send was asked under: what the turns answer of it stands on that seat alone.
+    private var askedSeat: String? = null
+    private var turnFault by mutableStateOf<CoachTurnFault?>(null)
     private var accessJob: Job? = null
 
     // A failure of this phone's own store, said in the room's line.
     var failure by mutableStateOf<String?>(null)
         private set
-    var fault by mutableStateOf<CoachTurnFault?>(null)
-        private set
+    val fault: CoachTurnFault? get() = turnFault?.takeIf { it != CoachTurnFault.accountChanging && askedSeat == archiveOwner }
     // A send the account's change stopped, drawn apart from the band. Send waits only while the seat in hand may not write, so a seat that already may never strands the question it kept.
-    var accountChanging by mutableStateOf(false)
-        private set
+    val accountChanging: Boolean get() = turnFault == CoachTurnFault.accountChanging && askedSeat == archiveOwner
     val sendHeld: Boolean get() = accountChanging && !seatReady()
     var anonymousAccess by mutableStateOf(AnonymousCoachAccess.Checking)
         private set
@@ -101,21 +101,15 @@ class CoachChats internal constructor(
                 settleSent()
             } }
             scope.launch(start = CoroutineStart.UNDISPATCHED) { live.withdrawn.collect { settleSent() } }
-            scope.launch(start = CoroutineStart.UNDISPATCHED) { live.fault.collect { said ->
-                accountChanging = said == CoachTurnFault.accountChanging
-                fault = said.takeUnless { accountChanging }
-            } }
-            scope.launch(start = CoroutineStart.UNDISPATCHED) { live.refusal.collect { refusal ->
-                refused = refusal
-                if (refusal != null) refusedSeat = archiveOwner
-            } }
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { live.fault.collect { said -> turnFault = said } }
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { live.refusal.collect { refusal -> refused = refusal } }
         }
     }
 
     // A cap the server refills and a deployment without Coach stand on every chat; anything else on the chat that met it.
     fun refusal(chat: String): CoachTurnRefusal? {
         val refusal = refused ?: return null
-        if (refusedSeat != archiveOwner) return null
+        if (askedSeat != archiveOwner) return null
         return refusal.takeIf { it.capped || refusedChat == chat }
     }
 
@@ -158,9 +152,13 @@ class CoachChats internal constructor(
         restoredOwners.remove(seat)
     }
 
-    // Another seat's turn is that seat's: what the composer holds and what the room reads start over under the seat now in hand.
+    // Another seat's turn is that seat's: what the composer holds, what the room reads and what it said start over under the seat now in hand. A deployment without Coach is no seat's, and stays said.
     internal fun forgetSeat() {
         ownerRevision++
+        turns?.forgetSeat()
+        turnFault = null
+        refused = refused.takeIf { it == CoachTurnRefusal.Absent }
+        failure = null
         conversations?.forgetSeat()
         if (restoredOwners.isNotEmpty()) watchSelected()
     }
@@ -294,14 +292,22 @@ class CoachChats internal constructor(
         val replica = seatReplica()
         sending = Sending(id, seat, question, photo, atMs)
         refusedChat = id
+        askedSeat = seat
         scope.launch {
             try {
                 val bytes = try { photo?.let { withContext(storageDispatcher) { localCoach?.photoFile(seat, it.id)?.readBytes() } } }
-                    catch (_: IOException) { failure = CoachTurnFault.pictureUnavailable.sentence; return@launch }
-                if (photo != null && bytes == null) { failure = CoachTurnFault.pictureUnavailable.sentence; return@launch }
+                    catch (_: IOException) { null }
+                if (photo != null && bytes == null) {
+                    failure = CoachTurnFault.pictureUnavailable.sentence
+                    live.heldBack(CoachTurnFault.pictureUnavailable)
+                    return@launch
+                }
                 val thread = chat.conversation?.takeIf { conversations?.holds(it) == true }
                 // A question asked under one seat is that seat's: if the seat changed on the way here, it stays in its draft.
-                if (seat != archiveOwner) return@launch
+                if (seat != archiveOwner) {
+                    live.heldBack(CoachTurnFault.accountChanging)
+                    return@launch
+                }
                 val turn = live.send(question, photo?.let { ChosenPicture(it, requireNotNull(bytes)) }, thread?.let { Id(it, CoachThread) }, anonymous, once, on = replica) ?: return@launch
                 failure = null
                 // The chat takes its thread first, so a withdrawal already on its way finds it there and its restore comes after.
@@ -309,7 +315,10 @@ class CoachChats internal constructor(
                 sent = Sent(id, authority)
                 settleSent()
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { telemetry.unexpected("gym.saveConversation", failure) }
+            catch (failure: Exception) {
+                telemetry.unexpected("gym.saveConversation", failure)
+                live.heldBack(CoachTurnFault.unsaved)
+            }
             finally { sending = null }
         }
         return true

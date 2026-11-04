@@ -191,8 +191,9 @@ class TelemetryTests {
             assertEquals("a question the store could not keep stays with the lifter", CoachDraft("private question"), room.store.coach.draft(chat))
             assertNull(room.store.coach.chat(chat)?.conversation)
             assertEquals(listOf("gym.coachTurn" to "storage"), telemetry.failures.map { (operation, error) -> operation to error.message })
-            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
+            assertEquals(listOf("gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "failed")), telemetry.events)
             telemetry.failures.clear()
+            telemetry.events.clear()
 
             assertTrue(room.store.coach.send(chat, "private question"))
             advanceUntilIdle()

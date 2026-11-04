@@ -8,11 +8,15 @@ import java.io.IOException
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,6 +49,10 @@ import works.windmill.sync.api.RecordRef
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.engine.Reply
+import works.windmill.sync.engine.SessionTokens
+import works.windmill.sync.engine.SyncRuntime
+import works.windmill.sync.engine.SyncTransport
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
 import works.windmill.sync.schema.Gym
@@ -328,6 +336,118 @@ class CoachChatsTests {
             assertNull(coach.fault)
             assertEquals(CoachDraft("Alice's question"), coach.draft(chat))
             assertNull(coach.chat(chat)?.conversation)
+        }
+    }
+
+    // A sign-out with a turn running or a send refused: what the room said goes with the seat it said it to.
+    @Test fun whatTheRoomSaidGoesWithItsSeat() = runTest {
+        room(holdsOpen).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            assertTrue(coach.send(coach.freshChat(), "First"))
+            advanceUntilIdle()
+            val second = coach.freshChat()
+            coach.saveDraft(second, CoachDraft("Second"))
+            assertTrue(coach.send(second, "Second"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.busy, coach.fault)
+
+            room.select(null)
+            advanceUntilIdle()
+            assertNull(coach.fault)
+            assertFalse(coach.accountChanging)
+            assertFalse(coach.sendHeld)
+            assertNull(coach.failure)
+        }
+    }
+
+    // StateFlow says nothing of a value it already holds, so the next seat's Offline is its own news.
+    @Test fun theSameRefusalUnderTheNextSeatIsSaid() = runTest {
+        room(answers("Hi")).use { room ->
+            val coach = room.store.coach
+            val runtime = SyncRuntime(room.engine, object : SyncTransport {
+                override suspend fun hello(token: String?) = Reply.Unreachable
+                override suspend fun push(request: Json, token: String) = Reply.Unreachable
+                override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
+                override suspend fun openLive(token: String) = Reply.Unreachable
+            }, object : SessionTokens {
+                override fun token(account: String) = null
+                override fun save(account: String, token: String) = Unit
+                override fun delete(account: String) = Unit
+                override fun accounts() = emptySet<String>()
+            }, "test")
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            runtime.connectivity(false)
+            withContext(Dispatchers.Default) { withTimeout(30_000) { room.engine.status.state.first { !it.online } } }
+            val aliceChat = coach.freshChat()
+            assertTrue(coach.send(aliceChat, "Q"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.Offline, coach.refusal(aliceChat))
+
+            room.select(null)
+            advanceUntilIdle()
+            withContext(Dispatchers.Default) { withTimeout(30_000) { room.engine.status.state.first { !it.online } } }
+            val anonChat = coach.freshChat()
+            assertNull(coach.refusal(anonChat))
+            assertTrue(coach.send(anonChat, "Q2"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.Offline, coach.refusal(anonChat))
+            runtime.close()
+        }
+    }
+
+    // A send the last seat left on its way answers after the seat has gone: its sentence stays with that seat, and Send with this one.
+    @Test fun anAnswerToAnEarlierSeatsSendStandsOnNoOtherSeat() = runTest {
+        room(answers("Hi")).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            val turns = checkNotNull(room.coachTurns)
+            assertTrue(coach.send(coach.freshChat(), "First"))
+            advanceUntilIdle()
+            room.select(null)
+            advanceUntilIdle()
+
+            assertNull(turns.send("Racing", null, null, anonymous = false, on = "a-replica-gone"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.accountChanging, turns.fault.value)
+            assertFalse(coach.accountChanging)
+            assertFalse(coach.sendHeld)
+            assertNull(coach.fault)
+        }
+    }
+
+    // Every send the room takes up ends in one `gym_ask_outcome`, the ones this phone holds back among them.
+    @Test fun aSendThePhoneHoldsBackEndsInItsOneOutcome() = runTest {
+        val telling = TellingRecorder()
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        room(holdsOpen, file, telling).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            assertTrue(coach.send(coach.freshChat(), "First"))
+            advanceUntilIdle()
+            assertEquals(emptyList<Map<String, String>>(), telling.named("gym_ask_outcome"))
+
+            val second = coach.freshChat()
+            coach.saveDraft(second, CoachDraft("Second"))
+            assertTrue(coach.send(second, "Second"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.busy, coach.fault)
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused")), telling.named("gym_ask_outcome"))
+
+            val photo = CoachAttachment("photo-never-written", "image/jpeg", 1, 1, 1)
+            val third = coach.freshChat()
+            assertTrue(coach.send(third, "Third", photo))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure)
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused"), mapOf("screen" to "coach", "outcome" to "failed")), telling.named("gym_ask_outcome"))
         }
     }
 
