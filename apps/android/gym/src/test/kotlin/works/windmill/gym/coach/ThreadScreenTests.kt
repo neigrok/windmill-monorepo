@@ -1,6 +1,7 @@
 package works.windmill.gym.coach
 
 import android.os.Looper
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -9,6 +10,8 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -45,6 +48,7 @@ import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Instant
 import works.windmill.domain.kit.Repository
 import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachThread
@@ -63,6 +67,7 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
+import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
 import works.windmill.sync.api.Gesture
@@ -261,14 +266,128 @@ class ThreadScreenTests {
         val opened = mutableListOf<String>()
         val ask = AskBinding(room.store)
         compose.setContent { ThreadScreen(ask, ask, empty, emptyList(), emptySet(), "History", {}, {}, {}, onOpenChat = { opened += it }) }
-        read("Reply pending").assertIsDisplayed()
+        read("Answer in progress").assertIsDisplayed()
         compose.onNodeWithText("Plan my week").assertIsDisplayed()
         compose.onNodeWithText("View chat").performClick()
         compose.runOnIdle {
             assertEquals(listOf(running), opened)
             coach.stop()
         }
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Reply pending").fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Answer in progress").fetchSemanticsNodes().isEmpty() }
+        scope.cancel()
+    }
+
+    @Test
+    fun aFreshChatWaitsOnTheAnswerRunningInAnotherAndSendComesBackWhenItEnds() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val turns = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""").arr())
+        val room = signedIn(scope, turns)
+        room.sync(EngineRoomFixture.server())
+        room.store.observeEngine()
+        val coach = room.store.coach
+        assertTrue(coach.send(coach.freshChat(), "Is Push A still doing anything?"))
+        val fresh = coach.freshChat()
+        coach.saveDraft(fresh, CoachDraft("How was my week?"))
+        val telling = TellingRecorder()
+        val ask = AskBinding(room.store)
+        compose.setContent { CompositionLocalProvider(LocalTelemetry provides telling) { ThreadScreen(ask, ask, fresh, emptyList(), emptySet(), "History", {}, {}, {}, onOpenChat = {}) } }
+        read("Answer in progress").assertIsDisplayed()
+        compose.onNodeWithText("Is Push A still doing anything?").assertIsDisplayed()
+        compose.onNodeWithText("View chat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        assertEquals(CoachDraft("How was my week?"), coach.draft(fresh))
+        assertEquals(listOf(mapOf("screen" to "coach", "action" to "answer_in_progress", "outcome" to "shown")),
+            telling.named("gym_action").filter { it["action"] == "answer_in_progress" })
+        compose.runOnIdle { coach.stop() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Answer in progress").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        scope.cancel()
+    }
+
+    @Test
+    fun aQuestionPastItsBoundSaysHowFarInTheRoomHoldsItsTextAndSendAndComesBackWithinIt() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val room = signedIn(scope, ScriptedTurns(emptyList()))
+        val coach = room.store.coach
+        val chat = coach.freshChat()
+        coach.saveDraft(chat, CoachDraft("x".repeat(9_400)))
+        val ask = AskBinding(room.store)
+        compose.setContent { ThreadScreen(ask, ask, chat, emptyList(), emptySet(), "History", {}, {}, {}) }
+        val words = "Too long by 1,400 bytes. The limit is 8,000 bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more."
+        read(words).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Back within it")
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(words).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        assertEquals(CoachDraft("Back within it"), coach.draft(chat))
+        scope.cancel()
+    }
+
+    @Test
+    fun aPastedLoneSurrogateSendsFromTheComposerWithItsReplacementAndNothingThrows() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val turns = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Noted"}},{"event":"done","data":{"state":"completed"}}]""").arr())
+        val telling = TellingRecorder()
+        val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telling, coachServer = turns, localCoach = LocalCoach(File(tmp.newFolder(), LocalCoach.fileName))).also { rooms += it }
+        runBlocking { room.select("u1") }
+        room.sync(EngineRoomFixture.server())
+        room.store.observeEngine()
+        val coach = room.store.coach
+        val chat = coach.freshChat()
+        val ask = AskBinding(room.store)
+        compose.setContent { ThreadScreen(ask, ask, chat, emptyList(), emptySet(), "History", {}, {}, {}) }
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Bench \uD83D press")
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        compose.waitUntil(5_000) { compose.runOnIdle { turns.opened.isNotEmpty() } }
+        assertEquals(listOf("Bench \uFFFD press"), turns.opened.map { it.question })
+        compose.waitUntil(5_000) { compose.runOnIdle { !coach.isAsking(chat) } }
+        assertEquals(null, coach.fault)
+        assertEquals(emptyList<Map<String, String>>(), telling.failures)
+        scope.cancel()
+    }
+
+    @Test
+    fun aSendTheAccountsChangeStoppedSaysSoAloneSendWaitsForTheSeatAndTheSentenceGoesWithTheChange() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telling = TellingRecorder()
+        var writable = true
+        val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telling, workoutAuthority = { writable }, writeAuthority = { writable }, coachServer = ScriptedTurns(emptyList())).also { rooms += it }
+        runBlocking { room.select("account-1") }
+        room.sync(EngineRoomFixture.server())
+        val coach = room.store.coach
+        val chat = coach.freshChat()
+        coach.saveDraft(chat, CoachDraft("What should Thursday look like?"))
+        writable = false
+        assertTrue(coach.send(chat, "What should Thursday look like?"))
+        val ask = AskBinding(room.store)
+        compose.setContent { CompositionLocalProvider(LocalTelemetry provides telling) { ThreadScreen(ask, ask, chat, emptyList(), emptySet(), "History", {}, {}, {}) } }
+        read("Your account is changing. Your question is kept here.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        assertEquals(CoachDraft("What should Thursday look like?"), coach.draft(chat))
+        assertEquals(listOf(mapOf("screen" to "coach", "action" to "account_changing", "outcome" to "shown")),
+            telling.named("gym_action").filter { it["action"] == "account_changing" })
+        compose.runOnIdle { writable = true; room.coachTurns?.sweep() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Your account is changing. Your question is kept here.").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        scope.cancel()
+    }
+
+    @Test
+    fun aSeatAlreadySettledNeverStrandsTheQuestionASendsChangeKept() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        var writable = true
+        val room = EngineRoomFixture(tmp.newFolder(), scope, writeAuthority = { writable }, coachServer = ScriptedTurns(emptyList())).also { rooms += it }
+        runBlocking { room.select("account-1") }
+        room.sync(EngineRoomFixture.server())
+        val coach = room.store.coach
+        val chat = coach.freshChat()
+        coach.saveDraft(chat, CoachDraft("What should Thursday look like?"))
+        writable = false
+        assertTrue(coach.send(chat, "What should Thursday look like?"))
+        val ask = AskBinding(room.store)
+        compose.setContent { ThreadScreen(ask, ask, chat, emptyList(), emptySet(), "History", {}, {}, {}) }
+        read("Your account is changing. Your question is kept here.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
         scope.cancel()
     }
 

@@ -189,13 +189,14 @@ class CoachHistoryTests {
         requestDelete()
         compose.onNodeWithText("Delete").performClick()
         waitUntil { fixture.threads().isEmpty() && fixture.store.coach.history.isEmpty() && events.any { it.second["outcome"] == "ok" } }
-        compose.onNodeWithText("No conversations").assertIsDisplayed()
+        compose.onNodeWithText(Threads.none).assertIsDisplayed()
         compose.onNodeWithText("Undo").assertDoesNotExist()
         assertEquals(emptyList<CoachMessage>(), fixture.messages())
         assertEquals(emptyList<Any>(), fixture.store.held.withheld)
         assertEquals(listOf(
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "state" to "shown"),
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "ok"),
+            "gym_action" to mapOf("screen" to "threads", "action" to "empty", "outcome" to "shown"),
         ), events.toList())
         assertEquals(emptyList<String>(), failures.toList())
     }

@@ -29,7 +29,6 @@ import org.robolectric.annotation.GraphicsMode
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
 import works.windmill.domain.kit.AbilityClass
-import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.OpenTurnOnce
 import works.windmill.gym.coach.turn.ScriptedTurns
@@ -228,6 +227,29 @@ class CoachChatsTests {
         }
     }
 
+    // 08.40 at a finish share: the chat it opened stands empty over the kept question, which the next Send asks.
+    @Test fun aShareBeforeTheFirstPullIsRefusedAndOnlyItsQuestionStaysForTheNextSend() = runTest {
+        val server = answers("Looks strong.")
+        room(server).use { room ->
+            val coach = room.store.coach
+            room.select("account-1")
+            val request = "share-request"
+            val chat = coach.freshChat("Check my last workout.", id = request)
+            assertTrue(coach.send(chat, "Check my last workout.", once = request))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.LogArriving, coach.refusal(chat))
+            assertEquals(CoachDraft("Check my last workout."), coach.draft(chat))
+            assertEquals(emptyList<CoachExchange>(), coach.exchanges(chat))
+            assertNull(coach.chat(chat)?.conversation)
+            assertEquals(emptyList<TurnOpen>(), server.opened)
+            room.sync(EngineRoomFixture.server())
+            assertTrue(coach.send(chat, "Check my last workout."))
+            advanceUntilIdle()
+            assertEquals(listOf("Check my last workout."), server.opened.map { it.question })
+            assertNull(coach.refusal(chat))
+        }
+    }
+
     @Test fun aRepeatedShareOpensOneTurnAndADeathBeforeItsMappingFindsTheFirstAgain() = runTest {
         val server = answers("Looks strong")
         val file = File(folder.newFolder(), LocalCoach.fileName)
@@ -300,9 +322,40 @@ class CoachChatsTests {
             assertEquals(emptyList<CoachMessage>(), room.messages())
             assertEquals(emptyList<CoachThread>(), room.threads())
             assertEquals(emptyList<TurnOpen>(), server.opened)
-            assertEquals(CoachTurnFault.accountChanging, coach.fault)
+            assertTrue(coach.accountChanging)
+            assertNull(coach.fault)
             assertEquals(CoachDraft("Alice's question"), coach.draft(chat))
             assertNull(coach.chat(chat)?.conversation)
+        }
+    }
+
+    @Test fun aPastedLoneSurrogateSendsWithItsReplacementAndNothingThrows() = runTest {
+        val server = answers("Noted")
+        val telling = TellingRecorder()
+        room(server, telling = telling).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            coach.saveDraft(chat, CoachDraft("Bench \uD83D press \uDE00 and \uD83D\uDE00"))
+            assertTrue(coach.send(chat, "Bench \uD83D press \uDE00 and \uD83D\uDE00"))
+            advanceUntilIdle()
+            assertEquals(listOf("Bench \uFFFD press \uFFFD and \uD83D\uDE00"), server.opened.map { it.question })
+            assertEquals(listOf("Bench \uFFFD press \uFFFD and \uD83D\uDE00"), room.threads().map { it.title })
+            assertNull(coach.fault)
+            assertFalse(coach.accountChanging)
+            assertEquals(emptyList<Map<String, String>>(), telling.failures)
+        }
+    }
+
+    @Test fun aQuestionPastItsBoundSaysHowFarAsItIsTypedAndWithinItSaysNothing() = runTest {
+        room(answers("Noted")).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            coach.saveDraft(chat, CoachDraft("x".repeat(9_400)))
+            assertEquals(CoachTurnRefusal.TooLong(1_400), coach.tooLong(chat))
+            coach.saveDraft(chat, CoachDraft("é".repeat(4_001)))
+            assertEquals(CoachTurnRefusal.TooLong(2), coach.tooLong(chat))
+            coach.saveDraft(chat, CoachDraft("  " + "x".repeat(8_000) + "  "))
+            assertNull(coach.tooLong(chat))
         }
     }
 

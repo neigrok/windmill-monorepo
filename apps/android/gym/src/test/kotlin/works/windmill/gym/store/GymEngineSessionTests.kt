@@ -20,6 +20,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
 import works.windmill.gym.telemetry.GymEvents
+import works.windmill.gym.ui.PhoneSignInCopy
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthSignOutChoice
 import works.windmill.platform.net.WindmillApiException
@@ -93,6 +94,26 @@ class GymEngineSessionTests {
         room.training.startSession(SessionStart("remote01", room.now - 10_000))
         room.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 60.0, 5, room.now - 9_000))
         room.sync(server)
+    }
+
+    @Test fun theSignInQuestionCountsTheConversationsTheReplicaStillDraws(): Unit = runBlocking {
+        val engine = Engine.memory(SyncSchema.registry)
+        for (thread in listOf("kept-one", "kept-two", "deleted")) engine.commit(gym) {
+            Gesture(listOf(Change.create(Gym.Types.thread, NewID.Given(RecordID(thread)), mapOf("title" to Json.of("A question"))))) to Unit
+        }
+        engine.commit(gym) { Gesture(listOf(Change.delete(Gym.Types.thread, RecordID("deleted")))) to Unit }
+        engine.releaseHeld(true)
+        val tokens = Tokens()
+        GymEngineSession(engine, SyncRuntime(engine, transport(true), tokens, "test", activityAllowed = { false })).use { session ->
+            val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
+            val decision = decision(session)
+            assertEquals(mapOf("thread" to 3), decision.decisions.single().count)
+            assertEquals(mapOf("gym" to mapOf("thread" to 2)), session.decisionCounts)
+            assertEquals("This phone has 2 conversations from before you signed in. Your account already has training. Add them, or discard them from this phone.",
+                PhoneSignInCopy(session.decisionCounts).question)
+            session.cancel()
+            assertThrows(CancellationException::class.java) { runBlocking { signingIn.await() } }
+        }
     }
 
     @Test fun deletionRecoveryDiscardsOnlyThePinnedReplicaAndRecognizesAlreadyFinished() = runBlocking {

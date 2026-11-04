@@ -171,6 +171,21 @@ class CoachTurnsTests {
         }
     }
 
+    @Test fun theSentenceAnAccountsChangeLeftGoesWhenTheSeatMayWriteAgain() = runTest {
+        var writable = false
+        TurnPhone(this, folder.newFolder(), script("[]"), writable = { writable }).use { phone ->
+            assertNull(phone.turns.send("Private question", null, null, anonymous = true))
+            assertEquals(CoachTurnFault.accountChanging, phone.turns.fault.value)
+            phone.turns.sweep()
+            advanceUntilIdle()
+            assertEquals("the change has not ended", CoachTurnFault.accountChanging, phone.turns.fault.value)
+            writable = true
+            phone.turns.sweep()
+            advanceUntilIdle()
+            assertNull(phone.turns.fault.value)
+        }
+    }
+
     @Test fun anAccountNotWritableRefusesASend() = runTest {
         TurnPhone(this, folder.newFolder(), script("[]"), writable = { false }).use { phone ->
             assertNull(phone.turns.send("Private question", null, null, anonymous = true))
