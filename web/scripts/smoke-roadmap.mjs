@@ -37,7 +37,7 @@ const ROADMAP_LANDING_APP = '.beats';
 // Every element but the canvas hides for the Graph's shot, so its pixels are what WebGL drew and no caption or chrome.
 const CANVAS_ONLY = '* { visibility: hidden !important; } canvas.st-canvas { visibility: visible !important; }';
 const GROUND_DISTANCE = 24;
-// The share of the shot far from its commonest colour. A blank canvas reads 0; the smallest healthy roadmap walked reads 1.4%.
+// The share of the canvas far from its commonest colour. A blank one reads 0; the smallest healthy roadmap walked reads 1.4%.
 const PAINTED_SHARE = 0.002;
 
 function argumentsOf(argv) {
@@ -178,7 +178,7 @@ const boardCards = (page) => page.locator('.st-view-layer--board.is-active .st-b
 const stepDialog = (page) => page.locator('.st-board-step-layer [role="dialog"]');
 
 async function paintedShare(page) {
-  const shot = await page.screenshot({ style: CANVAS_ONLY, animations: 'allow' });
+  const shot = await page.locator('canvas.st-canvas').screenshot({ style: CANVAS_ONLY, animations: 'allow' });
   const blank = await page.context().newPage();
   const share = await blank.evaluate(async ({ png, groundDistance }) => {
     const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
