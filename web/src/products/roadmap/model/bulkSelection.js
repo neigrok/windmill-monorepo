@@ -1,5 +1,5 @@
-import { DEFAULT_NODE_COLOR, NODE_COLOR_NAMES } from '../theme.js';
-import { kindOptionsForHues } from './Legend.js';
+import { DEFAULT_NODE_COLOR } from '../theme.js';
+import { kindChoices } from './Legend.js';
 
 export function isGrouped(size) {
   return size >= 2;
@@ -18,7 +18,7 @@ export function sharedKind(tree, ids) {
   return steps.every((step) => (step.color ?? DEFAULT_NODE_COLOR) === kind) ? kind : null;
 }
 
-// What every bulk bar offers and rings: the whole palette, named by the legend where it can be, and the kind the selection shares.
+// What every bulk bar offers and rings: the six kind choices and the kind the selection shares.
 export function bulkKindChoice(tree, ids, legend) {
-  return { kinds: kindOptionsForHues(NODE_COLOR_NAMES, legend), shared: sharedKind(tree, ids) };
+  return { kinds: kindChoices(legend), shared: sharedKind(tree, ids) };
 }

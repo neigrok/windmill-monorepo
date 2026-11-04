@@ -25,6 +25,7 @@ const legend = [
   { hue: 'terracotta', label: 'Build' },
   { hue: 'olive', label: 'Learn' },
   { hue: 'gold', label: 'Milestone' },
+  { hue: 'plum', label: '' },
 ];
 const fixtureNodes = ${fixtureNodes.toString()};
 window.mount = ({ empty = false, total = 1, shell = false, editing = null, unnamed = false } = {}) => {
@@ -160,6 +161,14 @@ test('Composer fixture transforms its complete entry and imports the real action
   assert.deepEqual(Object.keys(stub).sort(), Object.keys(actualBeacon).sort());
   const acts = await server.ssrLoadModule('/src/products/roadmap/board/acts.js');
   assert.deepEqual([0, 1, 2, 6, 21].map(acts.countBucket), ['0', '1', '2-5', '6-20', '21+']);
+});
+
+test('Chromium: the composer offers what the legend names, then the unnamed hues in palette order, wherever a worn hue was derived', async () => {
+  const { page, errors } = await open(1440);
+  try {
+    assert.deepEqual(await page.getByRole('radio').allTextContents(), ['Build', 'Learn', 'Milestone', 'Brick', 'Sky', 'Plum']);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
 });
 
 for (const width of [390, 1440]) {

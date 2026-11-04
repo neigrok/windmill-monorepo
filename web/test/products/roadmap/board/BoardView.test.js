@@ -100,6 +100,7 @@ const legend = [
   { id: 'build', hue: 'terracotta', label: 'Build' },
   { id: 'learn', hue: 'olive', label: 'Learn' },
   { id: 'milestone', hue: 'gold', label: 'Milestone' },
+  { id: 'derived-plum', hue: 'plum', label: '', description: '' },
 ];
 
 window.openBoard = (nodes, completed, breakpoint) => {

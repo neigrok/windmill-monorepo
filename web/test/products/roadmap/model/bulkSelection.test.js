@@ -56,15 +56,14 @@ test('sharedKind — a selection shares a kind only when every step wears it and
   assert.equal(sharedKind(tree, ['wind', 'missing']), null);
 });
 
-test('bulkKindChoice — every bar offers the whole palette: the legend first under its names, the other hues under theirs', () => {
+test('bulkKindChoice — every bar offers the six choices: what the legend names first, then the unnamed hues in palette order, wherever a worn hue was derived', () => {
   const legend = [{ id: 'k-learn', hue: 'sky', label: 'Learn' }, { id: 'k-ship', hue: 'gold', label: '' }, { id: 'k-twin', hue: 'sky', label: 'Twin' }];
   const choice = bulkKindChoice(tree, ['wind', 'dock'], legend);
   assert.deepEqual(choice, {
     shared: 'sky',
     kinds: [
       { id: 'k-learn', hue: 'sky', label: 'Learn' },
-      { id: 'k-ship', hue: 'gold', label: 'Gold' },
-      ...NODE_COLOR_NAMES.filter((hue) => hue !== 'sky' && hue !== 'gold').map((hue) => ({ id: hue, hue, label: `${hue[0].toUpperCase()}${hue.slice(1)}` })),
+      ...NODE_COLOR_NAMES.filter((hue) => hue !== 'sky').map((hue) => ({ id: hue, hue, label: `${hue[0].toUpperCase()}${hue.slice(1)}` })),
     ],
   });
   assert.equal(bulkKindChoice(tree, [], []).shared, null);
