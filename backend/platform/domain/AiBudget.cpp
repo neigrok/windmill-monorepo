@@ -273,6 +273,13 @@ AiBudgetResult planAiBudget(const AiBudgetRequest& request, const AiBudgetLimits
   return {AiBudgetCode::Ok, std::move(reservation)};
 }
 
+std::optional<long long> aiBudgetReturnsAt(std::string_view code, std::optional<long long> subjectResetsAtMs, long long atMs) {
+  if (code == aiBudgetCodeName(AiBudgetCode::FreeDayExhausted)) return AiBudgetPeriod::dayAt(atMs)->endMs;
+  if (code == aiBudgetCodeName(AiBudgetCode::FreeMonthExhausted)) return AiBudgetPeriod::at(atMs)->endMs;
+  if (code == aiBudgetCodeName(AiBudgetCode::SubjectExhausted)) return subjectResetsAtMs;
+  return std::nullopt;
+}
+
 AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
                          const AiBudgetLimits& limits, const AiBudgetSnapshot& snapshot) {
   AiBudgetView view;
@@ -281,8 +288,9 @@ AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
   const AiBudgetRequest request{"view", principal, 1, atMs};
   view.code = admitAiBudget(request, limits, snapshot);
   if (view.code == AiBudgetCode::Invalid || !request.valid() || !limits.valid()) return view;
-  if (view.code == AiBudgetCode::FreeDayExhausted) view.budgetResetsAtMs = AiBudgetPeriod::dayAt(atMs)->endMs;
-  if (view.code == AiBudgetCode::FreeMonthExhausted) view.budgetResetsAtMs = AiBudgetPeriod::at(atMs)->endMs;
+  std::optional<long long> periodEndMs;
+  if (snapshot.window != AiBudgetWindow::Lifetime) periodEndMs = snapshot.period.endMs;
+  view.budgetResetsAtMs = aiBudgetReturnsAt(aiBudgetCodeName(view.code), periodEndMs, atMs);
   if (principal.tier == AiBudgetTier::WindmillOne) {
     if (view.code == AiBudgetCode::FundingRequired || !snapshot.grant) return view;
     view.limitNanos = snapshot.grant->amountNanos;
@@ -290,8 +298,7 @@ AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
     view.limitNanos = principal.tier == AiBudgetTier::Anonymous ? limits.anonymousLifetimeNanos : limits.loggedInMonthlyNanos;
   }
   view.configured = true;
-  if (snapshot.window != AiBudgetWindow::Lifetime) view.resetsAtMs = snapshot.period.endMs;
-  if (view.code == AiBudgetCode::SubjectExhausted) view.budgetResetsAtMs = view.resetsAtMs;
+  view.resetsAtMs = periodEndMs;
   view.usedNanos = snapshot.subject.spentNanos;
   view.heldNanos = snapshot.subject.heldNanos;
   view.remainingNanos = snapshot.subject.remainingNanos(*view.limitNanos);

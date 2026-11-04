@@ -65,16 +65,6 @@ std::string tally(const std::map<std::string, int>& counts) {
   return out.empty() ? "-" : out;
 }
 
-// §6.3: the moment the budget a refusal names returns, never another budget's. A shared free pool
-// returns at the end of its UTC day or month and the seat's own allowance at the end of its period;
-// a lifetime allowance, and every other code, name no moment.
-std::optional<long long> budgetResetOf(const std::string& code, const std::optional<AiBudgetView>& seat, long long nowMs) {
-  if (code == aiBudgetCodeName(AiBudgetCode::FreeDayExhausted)) return AiBudgetPeriod::dayAt(nowMs)->endMs;
-  if (code == aiBudgetCodeName(AiBudgetCode::FreeMonthExhausted)) return AiBudgetPeriod::at(nowMs)->endMs;
-  if (code == aiBudgetCodeName(AiBudgetCode::SubjectExhausted) && seat) return seat->resetsAtMs;
-  return std::nullopt;
-}
-
 }  // namespace
 
 TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server,
@@ -296,7 +286,7 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
   }
   --live_;  // the turn leaves the count before the stream hears the end, so a waiting open finds room
   const std::uint64_t endedAt = clock_.nowMs();
-  if (state == TurnState::failed) turn->fail(errorCode, budgetResetOf(errorCode, seat, endedAt), endedAt);
+  if (state == TurnState::failed) turn->fail(errorCode, aiBudgetReturnsAt(errorCode, seat ? seat->resetsAtMs : std::nullopt, endedAt), endedAt);
   else turn->end(state, truncated, seat ? aiAllowanceJson(*seat) : Json::Value(), endedAt);
 
   const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);

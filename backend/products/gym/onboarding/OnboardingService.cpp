@@ -82,11 +82,7 @@ AiBudgetView OnboardingService::allowance(const AiInstallationPrincipal& install
                          AiBudgetCode::Unconfigured}) {
     if (record->errorCode != aiBudgetCodeName(code)) continue;
     view.code = code;
-    view.budgetResetsAtMs.reset();
-    if (code == AiBudgetCode::FreeDayExhausted)
-      view.budgetResetsAtMs = AiBudgetPeriod::dayAt(record->terminalAtMs)->endMs;
-    if (code == AiBudgetCode::FreeMonthExhausted)
-      view.budgetResetsAtMs = AiBudgetPeriod::at(record->terminalAtMs)->endMs;
+    view.budgetResetsAtMs = aiBudgetReturnsAt(record->errorCode, view.resetsAtMs, record->terminalAtMs);
     return view;
   }
   return view;

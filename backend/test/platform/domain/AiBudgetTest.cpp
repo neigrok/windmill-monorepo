@@ -188,6 +188,16 @@ TEST(ai_budget_free_account_spend_and_holds_are_checked_with_both_shared_pools) 
   CHECK_EQ(month.budgetResetsAtMs, month.resetsAtMs);
 }
 
+TEST(ai_budget_a_refusal_names_when_its_own_budget_returns_and_any_other_code_names_no_moment) {
+  const std::optional<long long> period{2'678'400'000};
+  CHECK_EQ(aiBudgetReturnsAt("free_day_exhausted", period, 1), std::optional<long long>{86'400'000});
+  CHECK_EQ(aiBudgetReturnsAt("free_month_exhausted", std::nullopt, 1), std::optional<long long>{2'678'400'000});
+  CHECK_EQ(aiBudgetReturnsAt("subject_exhausted", period, 1), period);
+  CHECK_EQ(aiBudgetReturnsAt("subject_exhausted", std::nullopt, 1), std::optional<long long>{});
+  CHECK_EQ(aiBudgetReturnsAt("concurrency_exhausted", period, 1), std::optional<long long>{});
+  CHECK_EQ(aiBudgetReturnsAt("coach-vendor-error", period, 1), std::optional<long long>{});
+}
+
 TEST(ai_budget_request_that_cannot_fit_personal_allowance_does_not_blame_shared_pools) {
   const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
   AiBudgetSnapshot snapshot;
