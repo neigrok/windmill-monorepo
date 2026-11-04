@@ -86,8 +86,8 @@ switched-to state.
   Workspace, History. Actions are pinned at the bottom.
 - Overview: description, status row with a leading glyph, step links, Prerequisites (*1 / 1*),
   Unlocks, *View branch*.
-- Up next: *Edit step* and the primary **Complete**. Locked: *Locked · 1 to go*, the unfinished
-  prerequisite row marked with its state, *Edit step* only. Done: *Edit step* and a secondary
+- Up next: *Edit step* and the primary **Complete**. Locked: *Locked · 1 to go*, each unfinished
+  prerequisite on a sunken row marked with its column, on the page and in the modal, *Edit step* only. Done: *Edit step* and a secondary
   **Reset**.
 - **Complete and Reset stay in place.** The status row flips with an inline **Undo** that lasts the
   hold window; a secondary line names the outcome. No toast from a page or a modal. Reset is always

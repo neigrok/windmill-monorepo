@@ -296,7 +296,6 @@ export function StepDetail({
           <Overview
             facts={facts}
             outcome={outcome}
-            marksNeeds={surface === 'page'}
             onUndo={undo}
             onOpenStep={onOpenStep}
             onViewBranch={editable && facts.column !== 'locked' ? () => { act('viewBranch'); onViewBranch(id); } : null}
@@ -384,12 +383,12 @@ function StepIdentity({ step, titleId, compact = false }) {
   );
 }
 
-// The page marks a locked step's unmet needs with their column (01.07); the modal lists them plainly (03.07).
+// A locked step marks each unmet need on a sunken row with its column, on the page and in the modal (01.07, 03.07).
 // View branch closes the step and scopes the Board to it (11.01); the owner's up next and done steps offer it.
-function Overview({ facts, outcome, marksNeeds, onUndo, onOpenStep, onViewBranch }) {
+function Overview({ facts, outcome, onUndo, onOpenStep, onViewBranch }) {
   const description = facts.step.description?.trim() ?? '';
   const links = (facts.step.links ?? []).filter((link) => SAFE_URL.test(link.url));
-  const needing = marksNeeds && facts.column === 'locked';
+  const needing = facts.column === 'locked';
   return (
     <>
       {description && <p className="st-board-step-description">{description}</p>}

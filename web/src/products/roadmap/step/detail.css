@@ -232,6 +232,13 @@
   flex-shrink: 0;
   color: var(--text-secondary);
 }
+.st-board-step-row--need {
+  padding: 0 12px;
+  background: var(--surface-sunken);
+}
+.st-board-step-row--need .st-board-step-row-glyph {
+  color: var(--text-primary);
+}
 
 /* ---- Sections: three equal tabs on the sunken track, the shown one on the card surface. ---- */
 .st-board-step-sections {

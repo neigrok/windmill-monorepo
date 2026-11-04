@@ -564,9 +564,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
   desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`graph/StepPanel.jsx`)
   fills the gauge and nothing else; no drawing covers the Graph.
-- **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
-  prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
-  lists it plainly. The build follows each drawing. Choose one.
 - **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
   **Retry** (phone 25.01–25.02, desktop 15.01–15.02).

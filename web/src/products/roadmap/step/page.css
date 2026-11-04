@@ -95,13 +95,6 @@
 .st-board-step-page .st-board-step-outcome {
   font-size: 13px;
 }
-.st-board-step-page .st-board-step-row--need {
-  padding: 0 12px;
-  background: var(--surface-sunken);
-}
-.st-board-step-page .st-board-step-row--need .st-board-step-row-glyph {
-  color: var(--text-primary);
-}
 .st-board-step-page .st-board-step-buttons {
   justify-content: stretch;
   gap: 8px;
