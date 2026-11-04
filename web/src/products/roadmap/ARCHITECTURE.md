@@ -347,9 +347,10 @@ below that it replaces the form, as a page in the 600px dialog from 744px and a 
 `StepComposer` owns picker selection and query, so resizing keeps them. With zero candidates the Prerequisites
 row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots start in the first legend
 kind. `composerFocus.js` owns shared layer focus, viewport hooks and `coverBeneath`. The shared `KindChoice`
-lives in `BoardControls.jsx`. The Graph's dock and tablet panel offer the same six kinds through it with
-`follow={false}`: arrow keys only move focus, a press saves at once, and the kind in force writes nothing. The dock
-previews a hovered kind on the node and adds Manage kinds beside the heading, which opens the legend.
+lives in `BoardControls.jsx`. The Graph's dock and tablet panel offer the same six kinds through it, from
+`kindChoices` in `model/Legend.js`, with `follow={false}`: arrow keys only move focus, a press saves at once, the kind
+in force writes nothing, and a choice never reorders the row. The dock previews a hovered kind on the node and adds
+Manage kinds beside the heading, which opens the legend.
 
 ## The Graph
 

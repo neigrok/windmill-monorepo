@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { KindChoice } from '../board/BoardControls.jsx';
 import { COLUMN_TITLES, COMPOSER, LABELS, unlocksWhen } from '../copy.js';
-import { kindOptionsForHues } from '../model/Legend.js';
+import { kindChoices } from '../model/Legend.js';
 
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
 const noop = () => {};
@@ -247,7 +247,7 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
           <button type="button" className="st-step-manage-kinds" onClick={() => onOpenLegend()}>{LABELS.manageKinds}</button>
         </div>
         <KindChoice
-          kinds={kindOptionsForHues(NODE_COLOR_NAMES, legend)}
+          kinds={kindChoices(legend)}
           value={currentKind}
           label={COMPOSER.kind}
           follow={false}

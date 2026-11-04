@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
 import { KindChoice } from '../../board/BoardControls.jsx';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { COMPOSER, deleteCostLine } from '../../copy.js';
-import { kindOptionsForHues } from '../../model/Legend.js';
+import { kindChoices } from '../../model/Legend.js';
 
 const verbBase = {
   display: 'flex',
@@ -139,7 +139,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
 
       <div className="st-step-kind">
         <KindChoice
-          kinds={kindOptionsForHues(NODE_COLOR_NAMES, legend)}
+          kinds={kindChoices(legend)}
           value={currentKind}
           label={COMPOSER.kind}
           follow={false}
