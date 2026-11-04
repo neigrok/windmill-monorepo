@@ -243,7 +243,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-identity` | The identity row's render | `ViewSwitch` at the row's position |
 | `roadmap-board-step` | The step page or modal's render | The step closes |
 | `roadmap-board-composer` | The composer's render | The composer closes |
-| `roadmap-board-create` | A create exception, or no session on an editable surface | The draft and its Retry stay |
+| `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface | The draft and its Retry stay; the failed Undo's toast closes |
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
