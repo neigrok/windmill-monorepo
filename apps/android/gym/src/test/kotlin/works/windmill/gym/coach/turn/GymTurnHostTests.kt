@@ -73,7 +73,7 @@ class GymTurnHostTests(private val name: String) {
                 phone.turns.requestStop()
                 advanceUntilIdle()
             }
-            assertTrue(phone.turns.idle)
+            assertEquals(null, phone.turns.turn.value)
 
             val answer = checkNotNull(phone.message(turn.coach))
             val lifter = checkNotNull(phone.message(turn.lifter))

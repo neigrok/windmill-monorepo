@@ -263,7 +263,7 @@ class TrainingStoreTests {
             assertTrue(room.store.coach.send(chat, "what's stalled?"))
             advanceUntilIdle()
             room.store.conversations.read()
-            assertEquals(CoachReceipt(ReadTally(sessions = 1, weeks = 1), truncated = false, created = emptyList()),
+            assertEquals(CoachReceipt(ReadTally(sessions = 1, weeks = 1), emptyList()),
                 room.store.coach.exchanges(chat).single().answer?.receipt)
         }
     }

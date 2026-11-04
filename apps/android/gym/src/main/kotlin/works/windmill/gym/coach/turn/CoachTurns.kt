@@ -71,7 +71,6 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.JsonError
 import works.windmill.sync.core.MeasureUnit
 import works.windmill.sync.core.RecordID
-import works.windmill.sync.engine.ActiveReplicaChange
 import works.windmill.sync.schema.SyncSchema
 
 // The answer so far on the running Coach message, ahead of what its record holds.
@@ -121,7 +120,6 @@ class CoachTurns(
     val activity: StateFlow<TurnActivity?> get() = driver.activity
     // The one turn running on this phone, whichever chat it belongs to.
     val turn: StateFlow<OpenTurn.Turn?> = runningTurn.asStateFlow()
-    internal val idle: Boolean get() = running == null
     // What the room draws on the running message. Its record takes the text every `recordEvery`, at each batch and at the end, since each commit syncs the whole text so far.
     val liveAnswer: StateFlow<LiveAnswer?> = driver.liveText.map { text -> if (text == null) null else running?.let { LiveAnswer(it.turn.coach, text) } }
         .stateIn(turnScope, SharingStarted.Eagerly, null)

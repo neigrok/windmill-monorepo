@@ -127,7 +127,7 @@ class CoachTurnsLiveWireTests {
     }
 
     private suspend fun TurnsOn.settled(turn: OpenTurn.Turn): CoachMessage = withTimeout(30_000) {
-        while (!turns.idle) delay(20)
+        while (turns.turn.value != null) delay(20)
         message(turn)
     }
 
@@ -232,7 +232,7 @@ class CoachTurnsLiveWireTests {
 
                     door.loss = LossyDoor.Loss.always
                     val gone = phone.send("wire every-attempt-lost", anonymous = true)
-                    withTimeout(30_000) { while (!phone.turns.idle) delay(20) }
+                    withTimeout(30_000) { while (phone.turns.turn.value != null) delay(20) }
                     assertEquals(WithdrawnTurn("wire every-attempt-lost", null, null), phone.turns.withdrawn.value)
                     assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
                     assertEquals(false, engine.read(scope) { read -> Repository.decode(CoachMessage, read.drawn(CoachMessage.type)) }.any { it.id == gone.coach })

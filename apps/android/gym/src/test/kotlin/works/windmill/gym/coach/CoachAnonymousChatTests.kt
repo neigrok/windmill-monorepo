@@ -1,6 +1,5 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.coach.turn.CoachTurnFault
 import java.io.File
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CompletableDeferred

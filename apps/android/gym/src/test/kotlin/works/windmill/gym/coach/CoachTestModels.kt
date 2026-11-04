@@ -24,11 +24,11 @@ import works.windmill.sync.schema.Gym
 internal fun coachReply(text: String = "", state: MessageState = MessageState.completed, id: String = "coach-message", calls: List<CoachCall> = emptyList(),
     read: ReadTally = ReadTally(), created: List<RecordRef> = emptyList(), routines: List<CreatedRoutine> = emptyList(), truncated: Boolean = false, onThisPhone: Boolean = true,
     savedNotes: List<SavedNote> = emptyList(), madeMovements: List<MadeMovement> = emptyList(), logStood: Boolean = true) =
-    CoachReply(id, text, state, truncated, onThisPhone, calls, CoachReceipt(read, truncated = false, created = created), routines, savedNotes, madeMovements, logStood)
+    CoachReply(id, text, state, truncated, onThisPhone, calls, CoachReceipt(read, created), routines, savedNotes, madeMovements, logStood)
 
 internal fun coachCall(name: String, phrase: String? = name, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok,
-    read: RecordedRead = RecordedRead.Ids(ReadServed.none), created: List<RecordRef> = emptyList(), detail: String? = null) =
-    CoachCall(name, phrase, outcome, read, created, TurnPhone.catalog().ability(name)?.kind == AbilityClass.read, name, detail)
+    read: RecordedRead = RecordedRead.Ids(ReadServed.none), detail: String? = null) =
+    CoachCall(name, phrase, outcome, read, TurnPhone.catalog().ability(name)?.kind == AbilityClass.read, name, detail)
 
 // A conversation the engine holds, as a turn that ended whole left it: its thread's id.
 internal fun EngineRoomFixture.heldConversation(question: String, answer: String = "An answer"): String {

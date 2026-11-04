@@ -60,7 +60,7 @@ import works.windmill.sync.schema.Gym
 data class SentPicture(val photo: CoachAttachment, val onThisPhone: Boolean)
 
 // One ability call as the room says it: `phrase` is the catalog's, absent for a name this build's catalog does not hold, and `reads` says the catalog holds it as a read. `detail` is what the call served or wrote: a transcript's calls hold none, and What Coach read's rows take theirs from `CoachConversations.withDetails`.
-data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead, val created: List<RecordRef>,
+data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead,
     val reads: Boolean = false, val callId: String = name, val detail: String? = null) {
     val ran: Boolean get() = outcome == AbilityCall.Outcome.Ok
     // One of the reads the phone runs as a turn opens, which Coach did not choose.
@@ -77,11 +77,11 @@ data class CoachCall(val name: String, val phrase: String?, val outcome: Ability
     }
 }
 
-// What a turn did (Coach §9.2): the log rows it read, by count, whether some were held as counts alone, and the records it created.
-data class CoachReceipt(val read: ReadTally, val truncated: Boolean, val created: List<RecordRef>) {
+// What a turn did (Coach §9.2): the log rows it read, by count, and the records it created.
+data class CoachReceipt(val read: ReadTally, val created: List<RecordRef>) {
     constructor(calls: List<AbilityCall>) : this(AbilityCall.receipt(calls))
 
-    private constructor(json: Json) : this(ReadTally.decode(json.member("read")), json["truncated"]?.bool() == true,
+    private constructor(json: Json) : this(ReadTally.decode(json.member("read")),
         json.member("results").arr().map { RecordRef(it.member("t").str(), RecordID(it.member("id"))) })
 }
 
@@ -110,10 +110,8 @@ data class CoachReply(
     val running: Boolean get() = state == MessageState.running
     // A running answer another device writes: this phone never writes it (Coach §4.5).
     val elsewhere: Boolean get() = running && !onThisPhone
-    // The catalog's phrases of the calls so far, in order.
-    val steps: List<String> get() = calls.filter { it.ran }.mapNotNull { it.phrase }
-    // What the turn has done so far, under an answer on its way.
-    val stepLine: String? get() = steps.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    // What the turn has done so far, under an answer on its way: the catalog's phrases of the calls, in order.
+    val stepLine: String? get() = calls.filter { it.ran }.mapNotNull { it.phrase }.joinToString(" · ").ifEmpty { null }
     // The rows of What Coach read.
     val readRows: List<CoachCall> get() = calls.filter { it.ran && it.title != null }
     // The receipt under an ended answer, by the first that holds: the workouts it read by identity; its movement history; that it read nothing, when no read ran, or only the phone's own reads ran and no log stood for them to read; the catalog's phrases of the reads it ran.
@@ -151,12 +149,12 @@ data class CoachExchange(
 data class ConversationRow(val id: String, val title: String, val askedAtMs: Long, val answering: Boolean = false, val answerPreview: String = "") {
     fun day(nowMs: Long): String? {
         if (askedAtMs <= 0) return null
-        val zone = java.time.ZoneId.systemDefault()
-        val day = java.time.Instant.ofEpochMilli(askedAtMs).atZone(zone).toLocalDate()
-        val today = java.time.Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
+        val zone = ZoneId.systemDefault()
+        val day = Instant.ofEpochMilli(askedAtMs).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
         if (day == today) return "Today"
         if (day == today.minusDays(1)) return "Yesterday"
-        return day.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+        return dayLabel(askedAtMs)
     }
 }
 
@@ -295,10 +293,10 @@ class CoachConversations(
 
     private fun reply(message: CoachMessage, id: String, replica: String, named: Named, born: Stamp?): CoachReply {
         val receipt = CoachReceipt(message.calls)
-        val routines = receipt.created.mapNotNull { ref -> named.routine(ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
-        val notes = receipt.created.mapNotNull { ref -> named.note(ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
-        val movements = receipt.created.mapNotNull { ref -> named.movement(ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, Readout.equipment(it.equipment, it.loadCount), it.stepKg) } }
-        val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, call.created, reads(call.name), call.callId) }
+        val routines = receipt.created.mapNotNull { ref -> named.held(Routine, ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
+        val notes = receipt.created.mapNotNull { ref -> named.held(Note, ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
+        val movements = receipt.created.mapNotNull { ref -> named.held(Exercise, ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, Readout.equipment(it.equipment, it.loadCount), it.stepKg) } }
+        val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, reads(call.name), call.callId) }
         return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements,
             named.logStood(born, message.calls.flatMap { it.created }))
     }
@@ -315,11 +313,7 @@ class CoachConversations(
         // Whether a note or a routine stood by a message's moment, past what its own turn made. The seeded movement list is a catalog, so it is no part of this.
         fun logStood(born: Stamp?, made: List<RecordRef>): Boolean = log.any { record -> stoodBy(record, born) && RecordRef(record.type, record.id) !in made }
 
-        fun routine(ref: RecordRef): Routine? = held(Routine, ref)
-        fun note(ref: RecordRef): Note? = held(Note, ref)
-        fun movement(ref: RecordRef): Exercise? = held(Exercise, ref)
-
-        private fun <E : Entity<E>> held(type: EntityType<E>, ref: RecordRef): E? {
+        fun <E : Entity<E>> held(type: EntityType<E>, ref: RecordRef): E? {
             if (ref.type != type.type) return null
             return reader.source.drawn(type.type, ref.id)?.let { decoded(type, listOf(it)).singleOrNull() }
         }
@@ -360,9 +354,9 @@ class CoachConversations(
         })
 
         private fun named(ref: RecordRef): String? = when (ref.type) {
-            Routine.type -> routine(ref)?.name
-            Note.type -> note(ref)?.title
-            Exercise.type -> movement(ref)?.name
+            Routine.type -> held(Routine, ref)?.name
+            Note.type -> held(Note, ref)?.title
+            Exercise.type -> held(Exercise, ref)?.name
             Proposal.type -> held(Proposal, ref)?.let(::proposalTitle)
             WorkoutProposal.type -> held(WorkoutProposal, ref)?.let { "This workout · ${Readout.changeCount(it.changes.size)}" }
             else -> null
@@ -405,9 +399,7 @@ internal class CoachRecordUnreadable : Exception("coach-record-unreadable")
 
 private const val previewCodePoints = 240
 
-private val dayFormat = DateTimeFormatter.ofPattern("MMM d")
-
-private fun dayLabel(ms: Long): String = dayFormat.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+private fun dayLabel(ms: Long): String = DateTimeFormatter.ofPattern("MMM d").format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 
 // What a History row says of a message, off its record: a message's calls, receipt and pictures stay undecoded, since History reads every message on every revision.
 private class MessageLine(f: Fields) {

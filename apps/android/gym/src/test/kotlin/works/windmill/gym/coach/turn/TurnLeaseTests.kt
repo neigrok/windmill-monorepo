@@ -8,10 +8,10 @@ import androidx.work.WorkManager
 import androidx.work.impl.WorkManagerImpl
 import androidx.work.testing.TestListenableWorkerBuilder
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -72,8 +72,7 @@ class TurnLeaseTests {
         val turn = CompletableDeferred<Unit>()
         application.turnLease.hold(turn)
         val worker = TestListenableWorkerBuilder<TurnLeaseWorker>(application).build()
-        val working = async(Dispatchers.IO) { worker.doWork() }
-        delay(50)
+        val working = async(start = CoroutineStart.UNDISPATCHED) { worker.doWork() }
         assertFalse(working.isCompleted)
         turn.complete(Unit)
         assertEquals(ListenableWorker.Result.success(), withTimeout(5_000) { working.await() })

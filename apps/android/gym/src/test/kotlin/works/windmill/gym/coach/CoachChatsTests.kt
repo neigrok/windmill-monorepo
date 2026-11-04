@@ -33,7 +33,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
-import works.windmill.domain.kit.AbilityClass
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.OpenTurnOnce
@@ -121,12 +120,10 @@ class CoachChatsTests {
             assertEquals(MessageState.completed, reply.state)
             assertFalse(reply.truncated)
             assertTrue(reply.onThisPhone)
-            val created = reply.calls.single { it.name == "create_routine" }
-            assertEquals(AbilityCall.Outcome.Ok, created.outcome)
-            assertEquals(listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009"))), created.created)
+            assertEquals(AbilityCall.Outcome.Ok, reply.calls.single { it.name == "create_routine" }.outcome)
             assertEquals(listOf("list_sessions", "list_notes", "list_exercises", "list_routines", "create_routine"), reply.calls.map { it.name })
-            assertEquals(reply.calls.map { works.windmill.gym.coach.turn.TurnPhone.catalog().ability(it.name)?.phrase }, reply.steps)
-            assertEquals(CoachReceipt(ReadTally(), truncated = false, created = listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009")))), reply.receipt)
+            assertEquals(reply.calls.mapNotNull { works.windmill.gym.coach.turn.TurnPhone.catalog().ability(it.name)?.phrase }.joinToString(" · "), reply.stepLine)
+            assertEquals(CoachReceipt(ReadTally(), listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009")))), reply.receipt)
             assertEquals(listOf(CreatedRoutine("rt_00000009", "Day 1", movements = 1)), reply.routines)
             assertEquals("a real turn's context reads are the phone's own", "Read nothing from your log", reply.readLine)
             assertEquals("the program it read before making Day 1 did not hold Day 1", listOf("Read your recent workouts" to null, "Read your notes" to null, "Read your movement list" to null, "Read your program" to null, "Created a routine" to "Day 1"),

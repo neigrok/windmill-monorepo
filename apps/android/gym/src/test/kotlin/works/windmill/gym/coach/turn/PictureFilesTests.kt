@@ -232,7 +232,7 @@ class PictureFilesTests {
             val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
             assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true), mapOf("gym" to "discard"), pins).member("complete").bool())
             advanceUntilIdle()
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
             assertEquals(1, phone.server.stops)
             assertEquals(emptyList<Any>(), phone.messages())
             assertEquals(emptySet<String>(), phone.pictures.held())

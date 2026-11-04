@@ -99,8 +99,8 @@ class AskTests {
     @Test
     fun aStepIsSaidInTheLiftersWordsFromTheCatalog() {
         assertEquals(
-            listOf("read your recent workouts", "read your movement history", "read your notes", "saved a note", "read your bodyweight", "updated a movement", "created a routine"),
-            coachReply(calls = listOf("list_sessions", "get_stats", "list_notes", "save_note", "list_bodyweight", "update_exercise", "create_routine").map { said(it) }).steps,
+            "read your recent workouts · read your movement history · read your notes · saved a note · read your bodyweight · updated a movement · created a routine",
+            coachReply(calls = listOf("list_sessions", "get_stats", "list_notes", "save_note", "list_bodyweight", "update_exercise", "create_routine").map { said(it) }).stepLine,
         )
     }
 
@@ -125,7 +125,7 @@ class AskTests {
     fun aToolThisBuildCannotNameOrThatWasRefusedPrintsNothingAndTheRestStillDo() {
         val reply = coachReply(calls = listOf(said("list_routines"), said("summon_lightning"),
             said("save_note", AbilityCall.Outcome.Refused(AbilityRefusal.refused)), said("get_stats")))
-        assertEquals(listOf("read your program", "read your movement history"), reply.steps)
+        assertEquals("read your program · read your movement history", reply.stepLine)
         assertEquals(null, said("summon_lightning").phrase)
         assertTrue(reply.calls.none { it.seatRefused })
         assertTrue(said("save_note", AbilityCall.Outcome.Refused(AbilityRefusal.seatRequired)).seatRefused)
@@ -138,13 +138,13 @@ class AskTests {
             AbilityCall("toolu_$name", name, null, outcome, created, read)
         }
         val served = ReadServed.decode(Json.objectOf("sessions" to Json.Arr(listOf(Json.of("session01"))), "sets" to Json.Arr(emptyList()), "weeks" to Json.Arr(listOf(Json.of(1_785_000_000_000L)))))
-        assertEquals(CoachReceipt(ReadTally(sets = 3, sessions = 1, weeks = 1), truncated = true, created = listOf(routine)), CoachReceipt(listOf(
+        assertEquals(CoachReceipt(ReadTally(sets = 3, sessions = 1, weeks = 1), listOf(routine)), CoachReceipt(listOf(
             call("get_session", AbilityCall.Outcome.Ok, RecordedRead.Ids(served), emptyList()),
             call("list_sessions", AbilityCall.Outcome.Ok, RecordedRead.Counts(ReadTally(sets = 3)), emptyList()),
             call("create_routine", AbilityCall.Outcome.Ok, RecordedRead.Ids(ReadServed.none), listOf(routine)),
             call("get_stats", AbilityCall.Outcome.Refused(AbilityRefusal.refused), RecordedRead.Counts(ReadTally(sets = 9)), emptyList()),
         )))
-        assertEquals(CoachReceipt(ReadTally(), truncated = false, created = emptyList()), CoachReceipt(emptyList()))
+        assertEquals(CoachReceipt(ReadTally(), emptyList()), CoachReceipt(emptyList()))
     }
 
     @Test

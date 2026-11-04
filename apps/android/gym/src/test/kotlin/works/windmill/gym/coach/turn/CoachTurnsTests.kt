@@ -215,7 +215,7 @@ class CoachTurnsTests {
             advanceUntilIdle()
             assertEquals(MessageState.stopped, phone.message(turn.coach)?.state)
             assertNull(phone.turns.activity.value)
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
         }
     }
 
@@ -397,7 +397,7 @@ class CoachTurnsTests {
             assertEquals(1, phone.server.stops)
             assertEquals(emptyList<Json>(), phone.server.posted)
             assertNull(phone.turns.activity.value)
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "anon", "code" to "seat_changed", "ability_calls" to "5", "refusals" to "0", "answer_bytes" to "0", "duration_ms" to "0")),
                 phone.telling.named("coach_turn"))
@@ -424,7 +424,7 @@ class CoachTurnsTests {
             assertNull(phone.device(EndTurn.runningTurnKey))
             assertEquals(1, phone.server.stops)
             assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "bound", "code" to "seat_changed", "duration_ms" to "0")), phone.telling.named("coach_turn"))
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
 
             assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true)).member("complete").bool())
             advanceUntilIdle()
@@ -470,7 +470,7 @@ class CoachTurnsTests {
             assertEquals(MessageState.completed, phone.message(turn.coach)?.state)
             assertEquals(listOf("completed"), phone.telling.named("coach_turn").map { it["state"] })
             assertEquals(listOf("answered"), phone.telling.named("gym_ask_outcome").map { it["outcome"] })
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
         }
     }
 
@@ -513,7 +513,7 @@ class CoachTurnsTests {
             assertFalse(server.posted.any { "Push A" in it.jcs })
             assertEquals(1, server.stops)
             assertNull(phone.device(EndTurn.runningTurnKey))
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "anon", "code" to "seat_changed", "ability_calls" to "5", "refusals" to "0", "answer_bytes" to "0", "duration_ms" to "0")),
                 phone.telling.named("coach_turn"))
@@ -584,7 +584,7 @@ class CoachTurnsTests {
             assertEquals(MessageState.interrupted, phone.message(bound.coach)?.state)
             assertEquals(MessageState.interrupted, phone.message(anon.coach)?.state)
             assertNull(phone.device(EndTurn.runningTurnKey))
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
             assertEquals(listOf("seat_changed", "seat_changed"), phone.telling.named("coach_turn").map { it["code"] })
         }
     }
@@ -628,7 +628,7 @@ class CoachTurnsTests {
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             assertNull(phone.device(EndTurn.runningTurnKey))
             assertEquals(1, server.stops)
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
             assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "anon", "ability_calls" to "4", "refusals" to "0", "answer_bytes" to "5", "code" to "gone", "duration_ms" to "5000")), phone.telling.named("coach_turn"))
         }
     }
@@ -716,7 +716,7 @@ class CoachTurnsTests {
         }
     }
 
-    // The room draws every delta; the record takes the text every five seconds, at each batch and at the end. The reviewer's answer: 9.6 KB in 240 deltas over a minute.
+    // The room draws every delta; the record takes the text every five seconds, at each batch and at the end. A 9.6 KB answer in 240 deltas over a minute.
     @Test fun aStreamedAnswerReachesTheRoomAtEveryDeltaAndTheRecordEveryFiveSeconds() = runTest {
         val log = EngineRoomFixture.server()
         val delta = "word ".repeat(8)
@@ -805,7 +805,7 @@ class CoachTurnsTests {
             assertEquals(null, phone.message(turn.coach))
             assertEquals(1, phone.server.stops)
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
         }
     }
 
@@ -853,7 +853,7 @@ class CoachTurnsTests {
             assertEquals(CoachRecovery.tryAgain, phone.turns.refusal.value?.recovery(anonymous = true))
             assertNull(phone.turns.fault.value)
             assertNull(phone.turns.activity.value)
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
             assertEquals(emptyList<CoachMessage>(), phone.messages())
             assertEquals(emptyList<CoachThread>(), phone.threads())
             assertNull(phone.device(EndTurn.runningTurnKey))
@@ -922,7 +922,7 @@ class CoachTurnsTests {
             assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
             assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
             assertNull(phone.turns.fault.value)
-            assertTrue(phone.turns.idle)
+            assertNull(phone.turns.turn.value)
             assertEquals(emptyList<CoachMessage>(), phone.messages())
             assertNull(phone.device(EndTurn.runningTurnKey))
             assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))

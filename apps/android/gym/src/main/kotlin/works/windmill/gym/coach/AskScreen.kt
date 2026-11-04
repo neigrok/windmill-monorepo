@@ -530,7 +530,7 @@ private fun AskPreview(setup: Boolean, thread: List<CoachExchange>) {
 }
 
 private fun previewAnswer(id: String, text: String, read: ReadTally = ReadTally()) = CoachReply(id, text, MessageState.completed, truncated = false, onThisPhone = true,
-    calls = emptyList(), receipt = CoachReceipt(read, truncated = false, created = emptyList()), routines = emptyList())
+    calls = emptyList(), receipt = CoachReceipt(read, created = emptyList()), routines = emptyList())
 
 private val previewConversation: List<CoachExchange> get() {
     val now = System.currentTimeMillis()
