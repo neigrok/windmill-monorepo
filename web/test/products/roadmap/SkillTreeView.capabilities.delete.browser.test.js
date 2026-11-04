@@ -186,6 +186,22 @@ hostTest('§2.5 Delete: the desktop dock offers Delete for a step the roadmap ca
   } finally { await page.close(); }
 });
 
+hostTest('§2.5 Delete: under a hold the tablet\'s bulk bar holding the last root standing does not offer Delete', async () => {
+  const { page, errors } = await openHost({ width: 744 });
+  try {
+    await page.evaluate(() => window.session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 }));
+    await page.evaluate(() => { window.location.hash = `${window.location.hash.split('?')[0]}?step=solo`; });
+    await page.locator('.st-board-step-layer').getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete step' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: DELETE_CONFIRM.delete, exact: true }).click();
+    await page.locator('.st-graph-toast .st-board-toast').waitFor();
+    await page.evaluate(() => window.longPress('course'));
+    await page.getByRole('group', { name: '1 selected', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Delete 1 step', exact: true }).count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
 for (const [held, offered] of [['course', 0], ['wind', 1]]) {
   hostTest(`§2.5 Delete: the tablet's bulk bar holding ${held} ${offered ? 'offers' : 'does not offer'} Delete`, async () => {
     const { page, errors } = await openHost({ width: 744 });

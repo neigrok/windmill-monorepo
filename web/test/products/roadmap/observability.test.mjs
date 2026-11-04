@@ -83,6 +83,7 @@ const CONTENT_MEMBERS = new Set(['label', 'title', 'name', 'email', 'description
 const CONTENT_VARIABLES = new Set(['label', 'title', 'email', 'description', 'text', 'note', 'message', 'body', 'prompt', 'answer', 'token']);
 // The two ids an event may carry, each documented as a constant or an authored id.
 const AUTHORED_IDS = { demo_open: 'treeId', birth: 'quest' };
+const AUTHORED_QUEST_ID = '<authored quest id>';
 
 function readsContent(value, event, key) {
   let found = false;
@@ -129,7 +130,7 @@ function bucketNames(ast) {
 function fitsRow(shape, row, { partial, buckets }) {
   for (const [key, prop] of shape.keys) {
     if (!row[key]) return false;
-    if (prop.values && !prop.values.every((value) => row[key].values.includes(value) || row[key].values[0].startsWith('<'))) return false;
+    if (prop.values && !prop.values.every((value) => row[key].values.includes(value) || row[key].values[0] === AUTHORED_QUEST_ID)) return false;
     if (prop.opaque && row[key].values.includes('2-5') && isUnboundedCount(prop.value, buckets)) return false;
   }
   if (partial) return true;

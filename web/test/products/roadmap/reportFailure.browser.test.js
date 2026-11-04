@@ -201,8 +201,11 @@ test("Add to tree wears Plant's style in a room with no birth page mounted", asy
     await plant.waitFor();
     assert.deepEqual(await plant.evaluate((button) => {
       const style = getComputedStyle(button);
-      return { padding: style.padding, radius: style.borderRadius !== '0px', font: style.fontWeight, border: style.borderStyle };
-    }), { padding: '10px 20px', radius: true, font: '800', border: 'none' });
+      const brand = document.body.appendChild(Object.assign(document.createElement('i'), { style: 'background: var(--color-brand)' }));
+      const wears = style.backgroundColor === getComputedStyle(brand).backgroundColor;
+      brand.remove();
+      return { padding: style.padding, radius: style.borderRadius !== '0px', font: style.fontWeight, border: style.borderStyle, brand: wears };
+    }), { padding: '10px 20px', radius: true, font: '800', border: 'none', brand: true });
   });
 });
 
