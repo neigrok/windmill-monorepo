@@ -3,12 +3,16 @@ import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parsePlan } from '../paste/planGrammar.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
-import { countBucket, holdsSoleRoot, receiptUndo } from '../board/acts.js';
+import { countBucket, receiptUndo, takesEveryRoot } from '../board/acts.js';
 import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const NEW_NODE_ICON = 'sparkles';
+
+function undoOf({ session, receipt }, onReverted) {
+  return receiptUndo({ session, receipt, onReverted, onFailure: (error) => reportRoadmapFailure('roadmap-graph-undo', error) });
+}
 
 // The canvas, the dock and the tablet panel have no form to report from, so each write names what it changed.
 function trackEdit(changed) {
@@ -17,7 +21,7 @@ function trackEdit(changed) {
 
 // Every write the Graph's own surfaces make; a write returns what `announce` needs for its own Undo, or null when nothing took.
 export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, emit, showToast }) {
-  const { sessionRef, projectionRef, sceneRef, treeRef } = room;
+  const { sessionRef, projectionRef, sceneRef, treeRef, standingTreeRef } = room;
   const { selectedId, selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
   const [autoFocusNameId, setAutoFocusNameId] = useState(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -55,14 +59,9 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (!written) return;
     showToast(message, {
       surface: 'graph', act,
-      action: receiptUndo({
-        session: written.session,
-        receipt: written.receipt,
-        onReverted: () => {
-          onReverted?.();
-          track('roadmap_graph_toast', { act, step: 'undo' });
-        },
-        onFailure: (error) => reportRoadmapFailure('roadmap-graph-undo', error),
+      action: undoOf(written, () => {
+        onReverted?.();
+        track('roadmap_graph_toast', { act, step: 'undo' });
       }),
     });
     track('roadmap_graph_toast', { act, step: 'shown' });
@@ -113,7 +112,7 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
 
   const deleteNodeAt = useCallback((id) => {
     const node = projectionRef.current?.nodes.find((n) => n.id === id);
-    if (!node || holdsSoleRoot(treeRef.current, [id])) return;
+    if (!node || takesEveryRoot(standingTreeRef.current, [id])) return;
     const written = write({ kind: 'DeleteNode', id });
     if (!written) return;
     if (selectedIdRef.current === id) setSelectedId(null);
@@ -127,7 +126,7 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
   const bulkDelete = useCallback(() => {
     const ids = [...selectedIdsRef.current];
     const edges = [...selectedEdgesRef.current].map(parseEdgeKey); // {from,to}
-    if ((!ids.length && !edges.length) || holdsSoleRoot(treeRef.current, ids)) return;
+    if ((!ids.length && !edges.length) || takesEveryRoot(standingTreeRef.current, ids)) return;
     const nodes = projectionRef.current?.nodes ?? [];
     const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
     const written = write({ kind: 'BulkDelete', nodeIds: ids, edges });
@@ -166,8 +165,9 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (written) track('roadmap_board_bulk', { step: 'recolor', count: countBucket(ids.length), view: 'graph' });
   }, [announce]);
 
-  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed.
-  const graftImported = useCallback((parse) => {
+  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed. The toast and its Undo stand on
+  // whichever view took the plan.
+  const graftImported = useCallback((parse, view = 'graph') => {
     const nodes = projectionRef.current?.nodes;
     const session = sessionRef.current;
     if (!nodes || !session) return;
@@ -194,10 +194,12 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
       sceneRef.current?.pulseNode(grafted.id);
     }
     const under = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
-    announce(written, 'graft', graftedToast({ count: graft.nodes.length, under }));
-    track('roadmap_board_create', { step: 'saved', door: 'paste', view: 'graph', count: countBucket(graft.nodes.length) });
+    const message = graftedToast({ count: graft.nodes.length, under });
+    if (view === 'board') showToast(message, { surface: 'board', act: 'graft', action: undoOf(written, () => track('roadmap_board_undo', { act: 'graft' })) });
+    else announce(written, 'graft', message);
+    track('roadmap_board_create', { step: 'saved', door: 'paste', view, count: countBucket(graft.nodes.length) });
     setComposerOpen(false);
-  }, [emit, announce]);
+  }, [emit, announce, showToast]);
 
   return {
     autoFocusNameId, composerOpen, draft, setDraft, draftKinds, setDraftKinds, draftParse, closeComposer, openComposer,

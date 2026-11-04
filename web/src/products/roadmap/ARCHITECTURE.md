@@ -290,7 +290,7 @@ it.
 
 The ⋯ menu copies the step's link (the roadmap's share address plus its step) only while the roadmap is public
 or unlisted, opens the step in the Graph when it stands over the Board, and offers Delete to an owner unless
-the step is the roadmap's sole root. With nothing to offer the menu hides. The owner's up next and done steps offer View branch. A visitor gets the overview and the menu without
+deleting the step would leave the roadmap no root. With nothing to offer the menu hides. The owner's up next and done steps offer View branch. A visitor gets the overview and the menu without
 Delete. Owners get Edit step beside Complete or Reset, or alone while locked; the phone Workspace action is
 Add note or Edit note.
 
@@ -356,9 +356,10 @@ phone camera controls sit beneath the measured row. From 744px the selected-step
 measured identity and any refusal banner, so neither is covered. The tablet Graph keeps its panel editor, aim,
 link removal and multi-select surfaces.
 
-A roadmap keeps its sole root, by one rule for every door: `holdsSoleRoot` in `board/acts.js`, which `deletable` builds on. The
-desktop dock, the tablet panel and the selection bars stop offering Delete while they hold that step, the Graph's writes refuse
-it, and a Delete key on it does nothing.
+A roadmap keeps a root, by one rule for every door: `takesEveryRoot` in `board/acts.js`, which `deletable` builds on, asked of
+the tree a held delete leaves standing. A sole root, the last root under a hold and a select-all on a many-rooted roadmap all
+read the same. The desktop dock, the tablet panel and the selection bars stop offering Delete while they hold such a selection,
+the Graph's writes refuse it, and a Delete key on it does nothing.
 
 The owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order, including a one-step roadmap, and
 hides at zero. Picking a row selects and reveals that canvas step.

@@ -2025,6 +2025,26 @@
   --nd-glow: var(--kind-gold-glow);
   animation: wm-soft-pulse var(--duration-glow) var(--ease-glow) infinite;
 }
+.birth-plant {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-sm);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.birth-plant:hover { background: var(--color-brand-hover); }
+.birth-plant:disabled { opacity: 0.5; cursor: default; }
+.birth-plant:disabled:hover { background: var(--color-brand); }
+
 .pc-plant {
   width: 100%;
   gap: var(--space-2);

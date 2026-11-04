@@ -42,15 +42,16 @@ export function receiptUndo({ session, receipt, before, onReverted, onFailure })
   };
 }
 
-// A roadmap keeps its sole root: the one rule every door into a delete asks, on both views and every band.
-export function holdsSoleRoot(tree, ids) {
+// A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves
+// standing. A delete that takes every root it has is refused.
+export function takesEveryRoot(tree, ids) {
   const roots = tree?.roots() ?? [];
-  return roots.length === 1 && ids.includes(roots[0].id);
+  return roots.length > 0 && roots.every((root) => ids.includes(root.id));
 }
 
 export function deletable(tree, ids) {
   if (!tree || ids.length === 0 || ids.some((id) => !tree.nodesById.has(id))) return false;
-  return !holdsSoleRoot(tree, ids);
+  return !takesEveryRoot(tree, ids);
 }
 
 export function editGesture(tree, request) {

@@ -1,14 +1,27 @@
 import { captureError } from '../../telemetry/sentry.js';
 
+// A failure its boundary has already judged, reported or not: a catch further up passes it on without a second Issue.
+export class BoundaryFailure extends Error {}
+
 // A static operation name and stack frames, never a message.
-export function reportRoadmapFailure(operation, error, tags) {
+export function reportRoadmapFailure(operation, error, tags, route = '#/app') {
+  if (error instanceof BoundaryFailure) return;
   const stack = typeof error?.stack === 'string' && error.stack.trim() ? error.stack : new Error(operation).stack;
-  captureError('roadmap', operation, stack, '#/app', tags);
+  captureError('roadmap', operation, stack, route, tags);
 }
 
-// A refusal and a request lost offline are expected answers; a server failure or a lost request while online is not.
+// Whether a lost request had anyone waiting on it: offline or behind a hidden page, losing one is expected.
+export function pageWatching() {
+  return globalThis.document?.visibilityState === 'visible' && globalThis.navigator?.onLine !== false;
+}
+
+const STORAGE_REFUSALS = new Set(['SecurityError', 'QuotaExceededError']);
+
+// A refusal, a request nobody was waiting on and a browser refusing storage are expected answers; a server failure, a
+// request lost while someone watched and any other exception are not.
 export function reportUnexpectedFailure(operation, error) {
-  const lostOnline = error?.status === 0 && navigator.onLine !== false;
-  if (error?.status < 500 && !lostOnline) return;
+  if (STORAGE_REFUSALS.has(error?.name)) return;
+  if (error?.status === 0 && !pageWatching()) return;
+  if (error?.status > 0 && error.status < 500) return;
   reportRoadmapFailure(operation, error);
 }

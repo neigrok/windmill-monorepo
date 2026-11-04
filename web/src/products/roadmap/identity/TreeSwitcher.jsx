@@ -3,6 +3,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
+import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { dismissOverlayOutside } from '../board/BoardControls.jsx';
@@ -146,11 +147,14 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       return;
     }
     if (next === before.trim()) return void onPreviewTitle?.(id, before);
-    track('roadmap_sheet', { step: 'rename', door: 'switcher' });
     setTrees((prev) => (Array.isArray(prev) ? prev.map((r) => (r.id === id ? { ...r, title: next } : r)) : prev));
     // Local rows route to the local seams by tag — they never PATCH the server.
     const seam = seamOf(rows.find((r) => r.id === id) ?? {});
-    Promise.resolve(onRename?.(id, next, { local: seam === 'local' })).catch(() => {
+    new Promise((resolve) => resolve(onRename?.(id, next, { local: seam === 'local' }))).then(() => {
+      track('roadmap_sheet', { step: 'rename', door: 'switcher' });
+    }, (error) => {
+      reportUnexpectedFailure('roadmap-switcher-rename', error);
+      track('roadmap_sheet', { step: 'rename', door: 'switcher', outcome: 'failed' });
       onPreviewTitle?.(id, before);
       listTrees().then((fresh) => setTrees(fresh));
     });
@@ -167,7 +171,13 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   const confirmDelete = async (t) => {
     setConfirmId(null);
-    try { await onDelete?.(t.id, { local: seamOf(t) === 'local' }); } catch { return; } // a refusal leaves the row standing
+    try {
+      await onDelete?.(t.id, { local: seamOf(t) === 'local' });
+    } catch (error) {
+      reportUnexpectedFailure('roadmap-switcher-delete', error);
+      track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed' });
+      return; // a refusal leaves the row standing
+    }
     track('roadmap_sheet', { step: 'delete', door: 'switcher' });
     const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== t.id);
     setTrees(remaining);

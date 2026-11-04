@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { ActivityFeed } from '../activity/ActivityFeed.jsx';
-import { deletable, holdsSoleRoot } from '../board/acts.js';
+import { deletable, takesEveryRoot } from '../board/acts.js';
 import { emptyWorkspace } from '../model/NodeWorkspace.js';
 import { GraphDock } from './GraphChrome.jsx';
 import { StepPanel } from './StepPanel.jsx';
@@ -15,7 +15,7 @@ function relatedStep(node, states) {
 }
 
 export function GraphDocks({
-  who, open, top, canvasView, tree, states, selection, selectedNode, selectedState, progress, legend, editing, progressActs, tablet, bulkChoice,
+  who, open, top, canvasView, tree, standingTree, states, selection, selectedNode, selectedState, progress, legend, editing, progressActs, tablet, bulkChoice,
   composer, activity, onCloseActivity, workspaceByNode, workspaceActions, onJump, sceneRef, hoveredId, onLegendPicker,
 }) {
   const { desktopEditor, tabletEditor, phone, demo, breakpoint } = who;
@@ -30,7 +30,7 @@ export function GraphDocks({
     : []), [selectedNode, tree, states]);
 
   const autoFocusName = selectedId !== null && selectedId === editing.autoFocusNameId;
-  const stepDeletable = selectedNode !== null && deletable(tree, [selectedNode.id]);
+  const stepDeletable = selectedNode !== null && deletable(standingTree, [selectedNode.id]);
   const stepFacts = {
     node: selectedNode,
     state: selectedState,
@@ -119,7 +119,7 @@ export function GraphDocks({
           selectedCount={selectedIds.size}
           bulkChoice={bulkChoice}
           onBulkRecolor={editing.bulkRecolor}
-          onBulkDelete={holdsSoleRoot(tree, [...selectedIds]) ? null : editing.bulkDelete}
+          onBulkDelete={takesEveryRoot(standingTree, [...selectedIds]) ? null : editing.bulkDelete}
           onBulkDone={leaveMulti}
         />
       )}

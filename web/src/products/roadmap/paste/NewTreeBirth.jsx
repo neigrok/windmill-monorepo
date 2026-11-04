@@ -11,6 +11,8 @@ import { useViewMode } from '../room/useViewMode.js';
 import { DOCK_WIDTH } from '../graph/viewport.js';
 import { stampBorn } from '../persistence/ViewPrefs.js';
 import { prefersReducedMotion } from '../theme.js';
+import { countBucket } from '../board/acts.js';
+import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 
 
@@ -102,6 +104,7 @@ export function NewTreeBirth() {
       }
       openBorn(await plantLocally(title));
     } catch (err) {
+      reportUnexpectedFailure('roadmap-plant', err);
       // A signed-in plant the server refuses for want of a session falls back to the local birth.
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
@@ -109,6 +112,7 @@ export function NewTreeBirth() {
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
+      track('roadmap_board_create', { step: 'failed', door: 'blank' });
       setPhase('error');
     }
   }
@@ -119,18 +123,20 @@ export function NewTreeBirth() {
     try {
       if (status === 'signed-in') {
         const { treeId } = await createTree({ ...(plan.title ? { title: plan.title } : {}), nodes: plan.nodes, kinds: plan.kinds });
-        track('birth', { import: true, steps: plan.nodes.length });
+        track('birth', { import: true, steps: countBucket(plan.nodes.length) });
         openBorn(treeId);
         return;
       }
       openBorn(await plantImportedLocally(plan));
     } catch (err) {
+      reportUnexpectedFailure('roadmap-plant', err);
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
           openBorn(await plantImportedLocally(plan));
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
+      track('roadmap_board_create', { step: 'failed', door: 'import' });
       setPhase('error');
     }
   }
@@ -236,7 +242,7 @@ async function plantLocally(title) {
 
 async function plantImportedLocally(plan) {
   const treeId = await bearImportedTree(plan);
-  track('birth', { import: true, steps: plan.nodes.length, local: true });
+  track('birth', { import: true, steps: countBucket(plan.nodes.length), local: true });
   return treeId;
 }
 
@@ -261,13 +267,6 @@ const CSS = `
                transition:background 280ms var(--ease-standard), border-color 280ms var(--ease-standard), box-shadow 280ms var(--ease-standard); }
   @keyframes birth-wake { 0% { transform:scale(.82); opacity:0; } 55% { transform:scale(1.04); opacity:1; } 100% { transform:scale(1); } }
   @keyframes birth-breathe { 0%,100% { box-shadow:0 0 0 3px rgba(188,108,66,.14); } 50% { box-shadow:0 0 0 5px rgba(188,108,66,.24), 0 0 22px 4px rgba(188,108,66,.22); } }
-  .birth-plant { display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
-                 font-family:var(--font-body); font-size:var(--text-sm); font-weight:800; padding:10px 20px;
-                 border:none; border-radius:var(--radius-full); background:var(--color-brand); color:var(--text-on-accent);
-                 box-shadow:var(--shadow-sm); transition:background var(--duration-fast) var(--ease-standard); }
-  .birth-plant:hover { background:var(--color-brand-hover); }
-  .birth-plant:disabled { opacity:.5; cursor:default; }
-  .birth-plant:disabled:hover { background:var(--color-brand); }
   .birth-paste-door { border:none; background:none; padding:0; cursor:pointer; font-family:inherit;
                       font-size:inherit; font-weight:700; color:var(--text-secondary); }
   .birth-paste-door:hover { color:var(--text-primary); }

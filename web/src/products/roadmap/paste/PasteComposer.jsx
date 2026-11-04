@@ -8,6 +8,7 @@ import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind 
 import { KIND_CSS } from '../theme.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { readComposeStream, shapeFailureLabels } from './composeStream.js';
+import { graftedStepCount } from './graftPlan.js';
 import { reportError } from '../../../telemetry/beacon.js';
 import { kindName } from '../model/Legend.js';
 
@@ -306,7 +307,8 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     shape(source);
   };
 
-  const readout = [`${parse.readout.steps} step${parse.readout.steps === 1 ? '' : 's'}`];
+  const steps = append ? graftedStepCount(parse) : parse.readout.steps;
+  const readout = [`${steps} step${steps === 1 ? '' : 's'}`];
   if (parse.readout.branches > 0) readout.push(`${parse.readout.branches} branch${parse.readout.branches === 1 ? '' : 'es'}`);
   if (parse.readout.done > 0) readout.push(`${parse.readout.done} already done`);
 

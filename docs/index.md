@@ -35,7 +35,7 @@ remain on Proposals. Account, sign-in, appearance and shared settings belong to
 [Shell](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf); landing pages belong to
 [Marketing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81).
 
-### Board view · ✅ Ready for dev
+### Board view · 🚀 In production
 
 Separate [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) and
 [✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) pages.

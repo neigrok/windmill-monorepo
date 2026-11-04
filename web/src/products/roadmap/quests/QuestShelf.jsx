@@ -4,6 +4,8 @@ import { createTree } from '../persistence/TreeRegistry.js';
 import { notePlantedQuest, stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
 import { useViewMode } from '../room/useViewMode.js';
+import { countBucket } from '../board/acts.js';
+import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR, prefersReducedMotion } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';
@@ -33,14 +35,14 @@ export function QuestShelf() {
     if (status === 'signed-in') {
       try {
         const { treeId } = await createTree({ title: plan.title, nodes: plan.nodes, kinds: plan.kinds });
-        track('birth', { quest: quest.id, steps: plan.nodes.length });
+        track('birth', { quest: quest.id, steps: countBucket(plan.nodes.length) });
         return treeId;
       } catch (err) {
         if (err.code !== 'unauthenticated' && err.code !== 'unreachable') throw err;
       }
     }
     const treeId = await bearImportedTree(plan);
-    track('birth', { quest: quest.id, steps: plan.nodes.length, local: true });
+    track('birth', { quest: quest.id, steps: countBucket(plan.nodes.length), local: true });
     return treeId;
   }
 
@@ -70,7 +72,9 @@ export function QuestShelf() {
       notePlantedQuest();
       stampBorn(treeId); // a quest's first open is the canvas
       window.location.hash = `#/app/${treeId}`;
-    } catch {
+    } catch (error) {
+      reportUnexpectedFailure('roadmap-plant', error);
+      track('roadmap_board_create', { step: 'failed', door: 'quest' });
       setSeed(null);
       setPickedId(null);
       pickingRef.current = false;

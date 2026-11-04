@@ -2,8 +2,22 @@
 
 import React, { useState } from 'react';
 import { Button } from '../../../design-system';
-import { buildExportArchive } from './exportArchive.js';
+import { buildExportArchive, reportExportFailure } from './exportArchive.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
+import { track } from '../../../telemetry/beacon.js';
+
+const EXPORT_FAILED = "Couldn't build your export just now — try again.";
+
+function exportOutcome(count, total) {
+  if (count === total) return 'done';
+  return count === 0 ? 'failed' : 'partial';
+}
+
+function exportedLine(count, total) {
+  if (total === 0) return 'No roadmaps to export yet.';
+  if (count < total) return `Exported ${count} of ${total} roadmaps.`;
+  return `Exported ${count} roadmap${count === 1 ? '' : 's'}.`;
+}
 
 export function YourDataSection() {
   const [exportPhase, setExportPhase] = useState('idle'); // idle | working | done | error
@@ -13,12 +27,16 @@ export function YourDataSection() {
     setExportPhase('working');
     setExportNote('');
     try {
-      const { count } = await buildExportArchive();
-      setExportPhase('done');
-      setExportNote(count === 0 ? 'No roadmaps to export yet.' : `Exported ${count} roadmap${count === 1 ? '' : 's'}.`);
-    } catch {
+      const { count, total } = await buildExportArchive();
+      const outcome = exportOutcome(count, total);
+      track('roadmap_export', { outcome, door: 'settings' });
+      setExportPhase(outcome === 'done' ? 'done' : 'error');
+      setExportNote(outcome === 'failed' ? EXPORT_FAILED : exportedLine(count, total));
+    } catch (error) {
+      reportExportFailure('roadmap-export', error);
+      track('roadmap_export', { outcome: 'failed', door: 'settings' });
       setExportPhase('error');
-      setExportNote("Couldn't build your export just now — try again.");
+      setExportNote(EXPORT_FAILED);
     }
   };
 
