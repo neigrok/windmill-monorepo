@@ -48,7 +48,7 @@ class TurnDriver(
         val turn = DrivenTurn(turnId, seat, host)
         turn.work = launch(start = CoroutineStart.LAZY) { turn.drive() }
         check(driving.compareAndSet(null, turn)) { "A driver runs one turn at a time" }
-        published.value = TurnActivity(turnId, stopping = false, reconnecting = false)
+        published.value = TurnActivity(turnId, reconnecting = false)
         live.value = ""
         try {
             turn.work.join()
@@ -63,7 +63,6 @@ class TurnDriver(
     fun requestStop() {
         val turn = driving.get() ?: return
         if (!turn.stopAsked.compareAndSet(false, true)) return
-        turn.publish { it.copy(stopping = true) }
         tellServerToStop(turn) { failure ->
             turn.reportStop(failure)
             if (driving.get() === turn) turn.stopHere(failure)

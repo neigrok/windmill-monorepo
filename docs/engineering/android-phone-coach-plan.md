@@ -112,7 +112,7 @@ interface TurnTransport {
 }
 
 class TurnDriver(transport: TurnTransport, telemetry: TurnTelemetry, beat: Duration) {
-    val activity: StateFlow<TurnActivity>             // idle, or running with turnId, stopping, reconnecting
+    val activity: StateFlow<TurnActivity>             // idle, or running with turnId, reconnecting
     suspend fun run(turnId: String, seat: TurnSeat, host: TurnHost)
     fun requestStop()
 }

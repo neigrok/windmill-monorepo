@@ -981,7 +981,7 @@ are nonempty 96 × 96 assets. The capture recipe targets the approved five-set, 
 Paired Dark/Daylight detail, bottom actions and the five-set confirmation are accepted on frozen source `8d844b43`. The displayed total is 2,455 kg across five sets and three movements; all rows and actions are complete. The preserved first-party intake contains session views and discard shown/cancelled/ok steps. The recipe commits the 80 kg load through IME Done before changing reps, matching the number-entry contract that plain blur cancels an uncommitted edit.
 
 The shared read still has a separate top-set representation: Kotlin
-`gym/domain/…/sync/TrainingHistory.kt`'s local `best`, Swift
+`gym/domain/…/sync/TrainingReads.kt`'s `effort`, Swift
 `apps/ios/Domain/Sources/GymDomain/TrainingHistory.swift`'s `best`, and backend
 `backend/products/gym/domain/Review.cpp`'s `topSetOf` count sets at the top load.
 `apps/ios/App/Sources/Gym/Workout/WorkoutReceipt.swift`'s `Effort.reading` renders the scalar tuple.

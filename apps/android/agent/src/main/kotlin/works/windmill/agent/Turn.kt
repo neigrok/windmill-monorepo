@@ -57,7 +57,7 @@ data class TurnOpen(
 // `budgetResetsAtMs` is the moment a shared pool refills, when a failed turn's closing frame names it.
 data class TurnEnd(val state: TurnState, val text: String, val truncated: Boolean, val code: String?, val budgetResetsAtMs: Long?)
 
-data class TurnActivity(val turnId: String, val stopping: Boolean, val reconnecting: Boolean)
+data class TurnActivity(val turnId: String, val reconnecting: Boolean)
 
 // How `run` came back. `abandoned` was cancelled before it could say how the turn ended, and a write in flight can outlive that, so the caller re-reads the record before deciding it. The two stops ended the turn `stopped` on this phone alone, because the server never heard: `stoppedOffline` for want of a connection, `stopUnheard` for any other reason.
 enum class TurnExit { ended, withdrawn, abandoned, stoppedOffline, stopUnheard }
