@@ -147,8 +147,7 @@ class LargestTypeTests {
                         state = ask, events = ask,
                         thread = listOf(CoachExchange("exchange-1", "what’s stalled?", room.now)),
                         receipts = emptyList(), lookedAt = emptySet(), asking = false,
-                        refusal = refusal, onAsk = { _, _ -> }, seed = "",
-                        origin = "https://windmill.works",
+                        refusal = refusal, onAsk = { _, _ -> },
                         onThreads = {}, onReview = {},
                     )
                 }

@@ -4,7 +4,6 @@ import works.windmill.platform.design.WindmillType
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.GymScreen
-import works.windmill.gym.ui.YouSeat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -50,7 +49,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import kotlin.math.roundToInt
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -62,7 +60,6 @@ import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.ReadTally
-import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.HistoryReads
@@ -138,12 +135,10 @@ fun AskScreen(
     asking: Boolean,
     refusal: CoachTurnRefusal?,
     onAsk: (String, CoachAttachment?) -> Unit,
-    seed: String,
-    origin: String,
     seat: String? = null,
     onThreads: () -> Unit,
     onReview: (Proposal) -> Unit,
-    onConnections: (() -> Unit)? = null,
+    onConnections: () -> Unit = {},
     conversationId: String = "",
     onOpenRoutine: ((String) -> Unit)? = null,
     onStop: (() -> Unit)? = null,
@@ -193,7 +188,6 @@ fun AskScreen(
         if (greeting && !greetingCounted) telemetry.coachSetupStep("shown")
         greetingCounted = greeting
     }
-    val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
     val reconnecting = asking && coach.conversations?.reconnecting == true
     val stopNotice = coach.fault?.takeIf { it in stopFaults }
@@ -293,8 +287,7 @@ fun AskScreen(
                     CoachRefusalNotice(it, anonymous = coach.anonymous,
                         onSignIn = signInForCall, onConnections = {
                             telemetry.coachSetupStep("connect")
-                            if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
-                                .onFailure { failure -> telemetry.failure("gym.openConnections", failure) }
+                            onConnections()
                         }, onTryAgain = {
                             if (syncDraft?.invoke() != false) coach.draft(draftKey).let { draft -> onAsk(draft.text.trim(), draft.photo) }
                         })
@@ -325,7 +318,7 @@ fun AskScreen(
                 .fillMaxWidth()
                 .padding(top = if (overWorkout) 12.dp else 0.dp),
         ) {
-            if (composerVisible) CoachComposer(coach, draftKey, seed, asking,
+            if (composerVisible) CoachComposer(coach, draftKey, asking,
                 onSend = onAsk, onStop = onStop, enabled = composerEnabled, photoRequest = photoRequest, holdSend = coach.sendHeld || pending != null, onDraftSync = { syncDraft = it })
         }
       }
@@ -379,16 +372,7 @@ private fun AskFrame(overWorkout: Boolean, fresh: Boolean, seat: String?, onThre
         CoachSheetFrame(fresh, onThreads, content)
         return
     }
-    GymScreen(
-        title = Ask.title,
-        actions = {
-            IconButton(onClick = onThreads, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_history), "History", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
-            }
-            seat?.let { YouSeat(it) }
-        },
-        content = content,
-    )
+    GymScreen(title = Ask.title, actions = { CoachHead(seat, onThreads) }, content = content)
 }
 
 // An answer as it stands this moment. It reads the running words itself, so only this answer draws again at every delta. Drawn from the LOG's own copy and never from what the model said about it, its proposals follow what it read.
@@ -516,7 +500,7 @@ private fun AskPreview(setup: Boolean, thread: List<CoachExchange>) {
     }
     GymPreview {
         AskScreen(PreviewAsk(coach), PreviewAskEvents, thread, receipts = emptyList(), lookedAt = emptySet(), asking = false,
-            refusal = null, onAsk = { _, _ -> }, seed = "", origin = "https://windmill.works", seat = "M",
+            refusal = null, onAsk = { _, _ -> }, seat = "M",
             onThreads = {}, onReview = {}, conversationId = "preview-chat")
     }
 }

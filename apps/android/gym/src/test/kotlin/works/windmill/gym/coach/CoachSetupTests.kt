@@ -83,7 +83,7 @@ class CoachSetupTests {
             var thread by mutableStateOf(emptyList<CoachExchange>())
             val ask = AskBinding(room.store)
             compose.setContent { GymMaterial { AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null,
-                { _, _ -> }, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = id,
+                { _, _ -> }, onThreads = {}, onReview = {}, conversationId = id,
                 onBuildRoutine = {}) } }
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
             compose.runOnIdle { thread = listOf(CoachExchange("accepted", "A real question", 1)) }
@@ -107,7 +107,7 @@ class CoachSetupTests {
             val restore = StateRestorationTester(compose)
             val ask = AskBinding(room.store)
             restore.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { GymMaterial {
-                AskScreen(ask, ask, emptyList(), emptyList(), emptySet(), false, null, { _, _ -> }, "", "http://localhost",
+                AskScreen(ask, ask, emptyList(), emptyList(), emptySet(), false, null, { _, _ -> },
                     onThreads = {}, onReview = {}, conversationId = id, onBuildRoutine = {})
             } } }
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()

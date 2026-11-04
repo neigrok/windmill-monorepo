@@ -104,7 +104,7 @@ class CoachComposerTests {
         val held = local.keptDrafts("user-a", "account-chat").single()
         val store = signedIn(scope, local).store.coach
         var shown by mutableStateOf(true)
-        compose.setContent { if (shown) CoachComposer(store, "account-chat", "", false, { _, _ -> }, null) }
+        compose.setContent { if (shown) CoachComposer(store, "account-chat", false, { _, _ -> }, null) }
         compose.runOnIdle {
             unreadable = true
             org.junit.Assert.assertThrows(IOException::class.java) { store.continueDraft("account-chat", held.id) }
@@ -142,7 +142,7 @@ class CoachComposerTests {
         file.outputStream().use { Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
         compose.setContent {
             CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
-                CoachComposer(store, chat, "", false, { _, _ -> }, null)
+                CoachComposer(store, chat, false, { _, _ -> }, null)
             }
         }
         compose.onNodeWithContentDescription("Add photo").performClick()
@@ -167,7 +167,7 @@ class CoachComposerTests {
         val chat = "caption-chat"
         store.freshChat(id = chat)
         var sent: Pair<String, CoachAttachment?>? = null
-        compose.setContent { CoachComposer(store, chat, "", false, { text, photo -> sent = text to photo }, null) }
+        compose.setContent { CoachComposer(store, chat, false, { text, photo -> sent = text to photo }, null) }
         val line = "A copy goes to Anthropic, our AI provider, to read it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept only on this phone."
         compose.onNodeWithContentDescription("Send").assertDoesNotExist()
         compose.onNodeWithText(line).assertDoesNotExist()
@@ -193,7 +193,7 @@ class CoachComposerTests {
         var owner by mutableStateOf<String?>(null)
         val store = CoachChats({ owner }, {}, null, null, LocalCoach(File(tmp.root, "bound.json")), null, { AnonymousCoachAccess.Unavailable }, Telemetry.None, scope)
         val chat = store.freshChat()
-        compose.setContent { CoachComposer(store, chat, "", false, { _, _ -> error("No automatic Send") }, null) }
+        compose.setContent { CoachComposer(store, chat, false, { _, _ -> error("No automatic Send") }, null) }
         val field = compose.onNodeWithContentDescription("Question")
         repeat(2) {
             field.performTextReplacement("x".repeat(8_001))
@@ -213,7 +213,7 @@ class CoachComposerTests {
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         val draft = CoachDraft("Retained draft", photo)
         store.coach.saveDraft("thread-a", draft)
-        compose.setContent { CoachComposer(store.coach, "thread-a", "", false, { _, _ -> error("Read-only history sent a message") }, null, enabled = false) }
+        compose.setContent { CoachComposer(store.coach, "thread-a", false, { _, _ -> error("Read-only history sent a message") }, null, enabled = false) }
         compose.onNodeWithContentDescription("Question").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Add photo").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
@@ -231,7 +231,7 @@ class CoachComposerTests {
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         store.coach.saveDraft("thread-a", draft)
         compose.setContent {
-            CoachComposer(store.coach, "thread-a", "", false, { _, _ -> }, null)
+            CoachComposer(store.coach, "thread-a", false, { _, _ -> }, null)
         }
         val field = compose.onNodeWithContentDescription("Question")
         field.performClick()
@@ -271,7 +271,7 @@ class CoachComposerTests {
         }
         val coach = room.store.coach
         val chat = coach.freshChat()
-        compose.setContent { CoachComposer(coach, chat, "", coach.isAsking(chat), onSend = { question, photo -> coach.send(chat, question, photo) }, onStop = { coach.stop() }) }
+        compose.setContent { CoachComposer(coach, chat, coach.isAsking(chat), onSend = { question, photo -> coach.send(chat, question, photo) }, onStop = { coach.stop() }) }
         compose.onNodeWithContentDescription("Question").performTextReplacement("Double tapped question")
         compose.waitForIdle()
         compose.onNodeWithContentDescription("Send").performTouchInput { doubleClick() }
@@ -296,7 +296,7 @@ class CoachComposerTests {
         var busy by mutableStateOf(false)
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
-            CoachComposer(store.coach, "thread-a", "", busy,
+            CoachComposer(store.coach, "thread-a", busy,
                 onSend = { text, attachment -> sent += CoachDraft(text, attachment); busy = true },
                 onStop = { busy = false })
         }
@@ -329,7 +329,7 @@ class CoachComposerTests {
         var account by mutableStateOf("user-a")
         compose.setContent {
             key(account) {
-                CoachComposer(store.coach, thread, "", false, { _, _ -> }, null)
+                CoachComposer(store.coach, thread, false, { _, _ -> }, null)
             }
         }
         val field = compose.onNodeWithContentDescription("Question")
@@ -365,7 +365,7 @@ class CoachComposerTests {
         val store = signedIn(scope, localCoach).store
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
-            CoachComposer(store.coach, "thread-a", "", false,
+            CoachComposer(store.coach, "thread-a", false,
                 { text, photo -> sent += CoachDraft(text, photo) }, null)
         }
         val field = compose.onNodeWithContentDescription("Question")
@@ -396,7 +396,7 @@ class CoachComposerTests {
         store.coach.saveDraft("thread-a", CoachDraft("First question"))
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
-            CoachComposer(store.coach, "thread-a", "", false,
+            CoachComposer(store.coach, "thread-a", false,
                 { text, photo -> sent += CoachDraft(text, photo) }, null)
         }
         val field = compose.onNodeWithContentDescription("Question")

@@ -742,10 +742,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     composerEnabled = !overWorkout || coachOffered,
                     onSignIn = { door(shell.openSignIn) },
                     onBuildRoutine = { door { building = RoutineDraft(position = store.routines.all.size) } },
-                    seed = "",
                     onThreads = { door { look(Away.Threads) } },
                     onConnections = { door { look(Away.Connections) } },
-                    origin = origin,
                     onReview = { reviewFlow.open(it, Reviewing.coach) },
                     overWorkout = overWorkout,
                 )
@@ -884,7 +882,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
                             onSignIn = shell.openSignIn,
                             onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
-                            origin = origin,
                             onThreads = { look(Away.Threads) },
                             onConnections = { look(Away.Connections) },
                             onOpenRoutine = { selectedRoutineId = it },

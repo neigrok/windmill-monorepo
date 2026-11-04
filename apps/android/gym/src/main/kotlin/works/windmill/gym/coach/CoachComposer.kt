@@ -56,7 +56,7 @@ import works.windmill.gym.coach.turn.CoachTurnRefusal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking: Boolean,
+internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
     onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, enabled: Boolean = true,
     photoRequest: Int = 0,
     holdSend: Boolean = false,
@@ -77,14 +77,6 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
     LaunchedEffect(editor) {
         snapshotFlow { Triple(editor.field.text.toString(), store.draftVersion, hidden) }
             .collect { editor.sync(hidden) }
-    }
-    LaunchedEffect(account, key) {
-        if (store.accountKey != account) return@LaunchedEffect
-        val current = store.draft(key)
-        if (current.isEmpty && seed.isNotEmpty()) {
-            try { store.saveDraft(key, CoachDraft(seed)) }
-            catch (_: Exception) { }
-        }
     }
     var preparing by remember(account, key) { mutableStateOf(false) }
     // The one button turns from Send to Stop under the finger, so the gesture that sent gives Stop no tap.

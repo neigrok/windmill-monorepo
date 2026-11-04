@@ -39,15 +39,19 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.telemetry.coachAction
 
+// The head of the Coach tab: the door to History, and the seat.
+@Composable
+internal fun CoachHead(seat: String?, onThreads: (() -> Unit)?) {
+    onThreads?.let { history -> IconButton(onClick = history, modifier = Modifier.size(48.dp)) {
+        Icon(painterResource(R.drawable.gym_coach_history), "History", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+    } }
+    seat?.let { YouSeat(it) }
+}
+
 @Composable
 fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null, bound: Boolean = false) {
     val colors = MaterialTheme.colorScheme
-    GymScreen(title = Ask.title, actions = {
-        onThreads?.let { history -> IconButton(onClick = history, modifier = Modifier.size(48.dp)) {
-            Icon(painterResource(R.drawable.gym_coach_history), "History", tint = colors.onSurface, modifier = Modifier.size(24.dp))
-        } }
-        YouSeat(seat)
-    }) {
+    GymScreen(title = Ask.title, actions = { CoachHead(seat, onThreads) }) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(vertical = if (bound) 20.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (bound) {
@@ -70,12 +74,7 @@ fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit
 @Composable
 fun AskAbsentStance(seat: String, onThreads: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
-    GymScreen(title = Ask.title, actions = {
-        onThreads?.let { history -> IconButton(onClick = history, modifier = Modifier.size(48.dp)) {
-            Icon(painterResource(R.drawable.gym_coach_history), "History", tint = colors.onSurface, modifier = Modifier.size(24.dp))
-        } }
-        YouSeat(seat)
-    }) {
+    GymScreen(title = Ask.title, actions = { CoachHead(seat, onThreads) }) {
         Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
             Icon(painterResource(R.drawable.gym_coach_error), null, tint = colors.onSurfaceVariant, modifier = Modifier.size(32.dp))
