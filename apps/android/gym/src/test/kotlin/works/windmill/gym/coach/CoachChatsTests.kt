@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -31,8 +32,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.agent.TurnConnectionLost
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
+import works.windmill.agent.TurnSeat
+import works.windmill.agent.TurnTransport
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.domain.coach.OpenTurnOnce
@@ -88,7 +92,7 @@ class CoachChatsTests {
     // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
     private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
 
-    private fun TestScope.room(server: ScriptedTurns, file: File = File(folder.newFolder(), LocalCoach.fileName), telling: TellingRecorder = TellingRecorder()) =
+    private fun TestScope.room(server: TurnTransport, file: File = File(folder.newFolder(), LocalCoach.fileName), telling: TellingRecorder = TellingRecorder()) =
         EngineRoomFixture(folder.newFolder(), work(), telemetry = telling, localCoach = LocalCoach(file), coachServer = server)
 
     private fun EngineRoomFixture.thread(chat: String): String = checkNotNull(store.coach.chat(chat)?.conversation) 
@@ -336,7 +340,7 @@ class CoachChatsTests {
             assertEquals(emptyList<CoachThread>(), room.threads())
             assertEquals(emptyList<TurnOpen>(), server.opened)
             assertTrue(coach.accountChanging)
-            assertNull(coach.fault)
+            assertNull(coach.fault(chat))
             assertEquals(CoachDraft("Alice's question"), coach.draft(chat))
             assertNull(coach.chat(chat)?.conversation)
         }
@@ -355,14 +359,14 @@ class CoachChatsTests {
             coach.saveDraft(second, CoachDraft("Second"))
             assertTrue(coach.send(second, "Second"))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.busy, coach.fault)
+            assertEquals(CoachTurnFault.busy, coach.fault(second))
 
             room.select(null)
             advanceUntilIdle()
-            assertNull(coach.fault)
+            assertNull(coach.fault(second))
             assertFalse(coach.accountChanging)
             assertFalse(coach.sendHeld)
-            assertNull(coach.failure)
+            assertNull(coach.failure(second))
         }
     }
 
@@ -411,7 +415,8 @@ class CoachChatsTests {
             advanceUntilIdle()
             val coach = room.store.coach
             val turns = checkNotNull(room.coachTurns)
-            assertTrue(coach.send(coach.freshChat(), "First"))
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "First"))
             advanceUntilIdle()
             room.select(null)
             advanceUntilIdle()
@@ -421,7 +426,51 @@ class CoachChatsTests {
             assertEquals(CoachTurnFault.accountChanging, turns.fault.value)
             assertFalse(coach.accountChanging)
             assertFalse(coach.sendHeld)
-            assertNull(coach.fault)
+            assertNull(coach.fault(chat))
+        }
+    }
+
+    // A photo gone from chat A is chat A's line: a chat opened from History asked nothing, and A says it again on the way back.
+    @Test fun aStoreFailureStaysOnTheChatThatMetIt() = runTest {
+        room(script("[]")).use { room ->
+            val coach = room.store.coach
+            val first = coach.freshChat()
+            val second = coach.freshChat()
+            coach.selectChat(first)
+            assertTrue(coach.send(first, "With a picture that is gone", CoachAttachment("photo0001", "image/jpeg", 2, 2, 3)))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(first))
+            assertNull(coach.failure(second))
+
+            coach.selectChat(second)
+            advanceUntilIdle()
+            assertNull(coach.failure(second))
+            coach.selectChat(first)
+            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(first))
+        }
+    }
+
+    // A stop that went unheard is the band of the chat that stopped, past the turn that met it. Being busy is the one turn, and stands on every chat. A second chat told it is busy leaves the turn's end with the chat that asked.
+    @Test fun aFaultStaysOnTheChatThatMetItAndBusyStandsOnEach() = runTest {
+        val server = object : TurnTransport by script("""[{"event":"text","data":{"delta":"Par"}},{"await":"stop"}]""") {
+            override suspend fun stop(turnId: String, seat: TurnSeat) { throw TurnConnectionLost(null) }
+        }
+        room(server).use { room ->
+            val coach = room.store.coach
+            val first = coach.freshChat()
+            val second = coach.freshChat()
+            assertTrue(coach.send(first, "Question"))
+            advanceTimeBy(1_000)
+            assertTrue(coach.send(second, "Another"))
+            advanceTimeBy(1_000)
+            assertEquals(CoachTurnFault.busy, coach.fault(first))
+            assertEquals(CoachTurnFault.busy, coach.fault(second))
+
+            coach.stop()
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.stoppedOffline, coach.fault(first))
+            assertNull(coach.fault(second))
+            assertNull(coach.fault("a-chat-opened-from-history"))
         }
     }
 
@@ -444,7 +493,7 @@ class CoachChatsTests {
             assertNull(coach.refusal(second))
             assertTrue(coach.send(second, "Another", CoachAttachment("attachment-missing", "image/jpeg", 8, 8, 3)))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure)
+            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(second))
             assertNull(coach.refusal(second))
             assertEquals(said, coach.refusal(first))
 
@@ -540,14 +589,14 @@ class CoachChatsTests {
             coach.saveDraft(second, CoachDraft("Second"))
             assertTrue(coach.send(second, "Second"))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.busy, coach.fault)
+            assertEquals(CoachTurnFault.busy, coach.fault(second))
             assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused")), telling.named("gym_ask_outcome"))
 
             val photo = CoachAttachment("photo-never-written", "image/jpeg", 1, 1, 1)
             val third = coach.freshChat()
             assertTrue(coach.send(third, "Third", photo))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure)
+            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(third))
             assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused"), mapOf("screen" to "coach", "outcome" to "failed")), telling.named("gym_ask_outcome"))
         }
     }
@@ -563,7 +612,7 @@ class CoachChatsTests {
             advanceUntilIdle()
             assertEquals(listOf("Bench \uFFFD press \uFFFD and \uD83D\uDE00"), server.opened.map { it.question })
             assertEquals(listOf("Bench \uFFFD press \uFFFD and \uD83D\uDE00"), room.threads().map { it.title })
-            assertNull(coach.fault)
+            assertNull(coach.fault(chat))
             assertFalse(coach.accountChanging)
             assertEquals(emptyList<Map<String, String>>(), telling.failures)
         }
@@ -890,7 +939,7 @@ class CoachChatsTests {
             assertEquals(LocalChat(thread, checkNotNull(coach.chat(thread)).createdAtMs, conversation = thread), coach.chat(thread))
             assertEquals(thread, coach.selectedChatId)
             assertEquals(listOf("Question"), coach.exchanges(thread).map { it.question })
-            assertNull(coach.failure)
+            assertNull(coach.failure(thread))
 
             assertEquals(GymResult.Ok(Unit), coach.deleteThread(thread))
             advanceUntilIdle()

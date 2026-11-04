@@ -473,7 +473,7 @@ class CoachChatTests {
             assertEquals(room.threads().single().id.record.string, coach.chat(chat)?.conversation)
             assertEquals(listOf("Question" to "Final answer"), coach.exchanges(chat).map { it.question to it.answer?.text })
             assertEquals(CoachDraft(), coach.draft(chat))
-            assertEquals("Your conversation couldn’t be saved. Try again.", coach.failure)
+            assertEquals("Your conversation couldn’t be saved. Try again.", coach.failure(chat))
             assertEquals(listOf(mapOf("operation" to "gym.saveConversation")), telling.failures)
             assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "answered")), telling.named("gym_ask_outcome").map { it - "duration_ms" })
         }

@@ -54,6 +54,7 @@ class CoachChats internal constructor(
 ) {
     private class Sending(val chat: String, val owner: String, val question: String, val photo: CoachAttachment?, val atMs: Long)
     private class Sent(val chat: String, val authority: LocalCoach.Authority?)
+    private class StoreFailure(val chat: String?, val said: String)
 
     private val owner: String? get() = accountOwner()
     private val anonymousOwner by lazy {
@@ -74,7 +75,8 @@ class CoachChats internal constructor(
     private var sent: Sent? = null
     private var runningThread by mutableStateOf<String?>(null)
     private var refused by mutableStateOf<CoachTurnRefusal?>(null)
-    private var refusedChat: String? = null
+    // The chat the turns' answers stand on: the one whose send they answer.
+    private var askedChat: String? = null
     // The seat the last send was asked under: what the turns answer of it stands on that seat alone.
     private var askedSeat: String? = null
     private var turnFault by mutableStateOf<CoachTurnFault?>(null)
@@ -82,10 +84,7 @@ class CoachChats internal constructor(
     private var archiveReported = false
     private var retainedReported = false
 
-    // A failure of this phone's own store, said in the room's line.
-    var failure by mutableStateOf<String?>(null)
-        private set
-    val fault: CoachTurnFault? get() = turnFault?.takeIf { it != CoachTurnFault.accountChanging && askedSeat == archiveOwner }
+    private var storeFailure by mutableStateOf<StoreFailure?>(null)
     // A send the account's change stopped, drawn apart from the band. Send waits only while the seat in hand may not write, so a seat that already may never strands the question it kept.
     val accountChanging: Boolean get() = turnFault == CoachTurnFault.accountChanging && askedSeat == archiveOwner
     val sendHeld: Boolean get() = accountChanging && !seatReady()
@@ -112,7 +111,21 @@ class CoachChats internal constructor(
     fun refusal(chat: String): CoachTurnRefusal? {
         val refusal = refused ?: return null
         if (sending != null || askedSeat != archiveOwner) return null
-        return refusal.takeIf { it.capped || refusedChat == chat }
+        return refusal.takeIf { it.capped || askedChat == chat }
+    }
+
+    // The one running turn every chat waits on stands on each; any other fault on the chat that met it. An account's change is drawn apart, by `accountChanging`.
+    fun fault(chat: String): CoachTurnFault? {
+        val fault = turnFault ?: return null
+        if (sending != null || askedSeat != archiveOwner || fault == CoachTurnFault.accountChanging) return null
+        return fault.takeIf { it == CoachTurnFault.busy || askedChat == chat }
+    }
+
+    // A failure of this phone's own store, said in the room's line of the chat that met it. A draft that could not follow the account met no chat, and stands on each.
+    fun failure(chat: String): String? = storeFailure?.takeIf { it.chat == null || it.chat == chat }?.said
+
+    private fun failureOver(chat: String) {
+        storeFailure = storeFailure?.takeUnless { it.chat == null || it.chat == chat }
     }
 
     val absent: Boolean get() = refused == CoachTurnRefusal.Absent
@@ -179,7 +192,7 @@ class CoachChats internal constructor(
         turns?.forgetSeat()
         turnFault = null
         refused = refused.takeIf { it == CoachTurnRefusal.Absent }
-        failure = null
+        storeFailure = null
         conversations?.forgetSeat()
         if (restoredOwners.isNotEmpty()) watchSelected()
     }
@@ -255,7 +268,7 @@ class CoachChats internal constructor(
             admit(seat)
             localCoach?.select(seat, id)
         } catch (failure: Exception) {
-            conversationNotSaved(failure)
+            conversationNotSaved(id, failure)
         }
         selected[seat] = id
         watchSelected()
@@ -267,15 +280,15 @@ class CoachChats internal constructor(
         try {
             admit(seat)
             localCoach?.saveChat(seat, chat, select)
-            failure = null
+            failureOver(chat.id)
         } catch (failure: Exception) {
-            conversationNotSaved(failure)
+            conversationNotSaved(chat.id, failure)
         }
     }
 
-    private fun conversationNotSaved(failure: Exception) {
+    private fun conversationNotSaved(chat: String, failure: Exception) {
         telemetry.unexpected("gym.saveConversation", failure)
-        this.failure = "Your conversation couldn’t be saved. Try again."
+        storeFailure = StoreFailure(chat, "Your conversation couldn’t be saved. Try again.")
     }
 
     fun keepPosition(id: String, scroll: Int, followEnd: Boolean) {
@@ -321,7 +334,7 @@ class CoachChats internal constructor(
                 val bytes = try { photo?.let { withContext(storageDispatcher) { localCoach?.photoFile(seat, it.id)?.readBytes() } } }
                     catch (_: IOException) { null }
                 if (photo != null && bytes == null) {
-                    failure = CoachTurnFault.pictureUnavailable.sentence
+                    storeFailure = StoreFailure(id, CoachTurnFault.pictureUnavailable.sentence)
                     live.heldBack(CoachTurnFault.pictureUnavailable)
                     return@launch
                 }
@@ -331,10 +344,10 @@ class CoachChats internal constructor(
                     live.heldBack(CoachTurnFault.accountChanging)
                     return@launch
                 }
-                // What the turns answer from here is this chat's; a send stopped before here leaves the last refusal with the chat that met it.
-                refusedChat = id
+                // What the turns answer from here is this chat's, unless a turn runs: its end stays its own chat's, and this send is told Coach is busy, which stands on every chat. A send stopped before here leaves what was last said with the chat that met it.
+                if (live.turn.value == null) askedChat = id
                 val turn = live.send(question, photo?.let { ChosenPicture(it, requireNotNull(bytes)) }, thread?.let { Id(it, CoachThread) }, anonymous, once, on = replica) ?: return@launch
-                failure = null
+                failureOver(id)
                 // The chat takes its thread first, so a withdrawal already on its way finds it there and its restore comes after.
                 opened(seat, id, authority, turn)
                 sent = Sent(id, authority)
@@ -358,7 +371,7 @@ class CoachChats internal constructor(
             true
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            conversationNotSaved(failure)
+            conversationNotSaved(id, failure)
             false
         }
         chats[seat to id]?.let { chats[seat to id] = it.copy(conversation = thread, updatedAtMs = now()) }
@@ -495,7 +508,7 @@ class CoachChats internal constructor(
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             telemetry.unexpected("gym.adoptCoachDraft", failure)
-            if (owner == account) this.failure = "Your draft couldn’t be saved. Try again."
+            if (owner == account) storeFailure = StoreFailure(null, "Your draft couldn’t be saved. Try again.")
         } finally { adoptingDraft = false }
     }
 
@@ -503,7 +516,7 @@ class CoachChats internal constructor(
         val seat = archiveOwner
         if (localCoach?.writable(seat) == false) return false
         val recovered = try { localCoach?.reconcileDraftChange(seat, key) }
-        catch (_: Exception) { failure = "Your draft couldn’t be saved. Try again."; return false }
+        catch (_: Exception) { storeFailure = StoreFailure(key, "Your draft couldn’t be saved. Try again."); return false }
         if (recovered == null) return true
         publishRecovery(recovered)
         return false
@@ -532,7 +545,7 @@ class CoachChats internal constructor(
         unsavedDrafts.remove(seat to key)
         (chats[seat to key] ?: disk.chat(seat, key))?.let { chats[seat to key] = it.copy(updatedAtMs = now()) }
         draftVersion++
-        failure = null
+        failureOver(key)
     }
 
     fun removePhoto(key: String) {

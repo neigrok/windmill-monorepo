@@ -336,7 +336,7 @@ class ThreadScreenTests {
         compose.waitUntil(5_000) { compose.runOnIdle { turns.opened.isNotEmpty() } }
         assertEquals(listOf("Bench \uFFFD press"), turns.opened.map { it.question })
         compose.waitUntil(5_000) { compose.runOnIdle { !coach.isAsking(chat) } }
-        assertEquals(null, coach.fault)
+        assertEquals(null, coach.fault(chat))
         assertEquals(emptyList<Map<String, String>>(), telling.failures)
         scope.cancel()
     }

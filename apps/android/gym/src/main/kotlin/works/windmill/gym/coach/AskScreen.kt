@@ -190,7 +190,8 @@ fun AskScreen(
     }
     var draftFailure by remember { mutableStateOf<String?>(null) }
     val reconnecting = asking && coach.conversations?.reconnecting == true
-    val stopNotice = coach.fault?.takeIf { it in stopFaults }
+    val fault = coach.fault(conversationId)
+    val stopNotice = fault?.takeIf { it in stopFaults }
     var stopNoticeClosed by remember(stopNotice) { mutableStateOf(false) }
     LaunchedEffect(reconnecting) { if (reconnecting) telemetry.coachAction("reconnecting") }
     LaunchedEffect(stopNotice) { if (stopNotice != null) telemetry.coachAction("stop_notice") }
@@ -244,7 +245,7 @@ fun AskScreen(
                         telemetry.coachSetupStep("build_manually")
                         onBuildRoutine?.invoke()
                     })
-                (draftFailure ?: coach.failure ?: coach.fault?.takeUnless { it in stopFaults }?.sentence)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
+                (draftFailure ?: coach.failure(draftKey) ?: fault?.takeUnless { it in stopFaults }?.sentence)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                 thread.forEachIndexed { index, exchange ->
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {

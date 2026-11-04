@@ -187,7 +187,7 @@ class TelemetryTests {
             room.engine.failNextCommit()
             assertTrue(room.store.coach.send(chat, "private question"))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.unsaved, room.store.coach.fault)
+            assertEquals(CoachTurnFault.unsaved, room.store.coach.fault(chat))
             assertEquals("a question the store could not keep stays with the lifter", CoachDraft("private question"), room.store.coach.draft(chat))
             assertNull(room.store.coach.chat(chat)?.conversation)
             assertEquals(listOf("gym.coachTurn" to "storage"), telemetry.failures.map { (operation, error) -> operation to error.message })

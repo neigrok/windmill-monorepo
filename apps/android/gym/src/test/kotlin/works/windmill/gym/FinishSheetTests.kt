@@ -1000,7 +1000,7 @@ class FinishSheetTests {
             compose.runOnIdle {
                 assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
                 assertTrue(room.store.coach.isAsking(request))
-                assertEquals("the second asking finds its turn and is never told Coach is busy", null, room.store.coach.fault)
+                assertEquals("the second asking finds its turn and is never told Coach is busy", null, room.store.coach.fault(request))
                 assertEquals(CoachDraft("Keep typing"), room.store.coach.draft(other))
                 assertEquals(listOf(FinishCoach.question), room.store.coach.exchanges(request).map { it.question })
                 room.store.coach.stop()

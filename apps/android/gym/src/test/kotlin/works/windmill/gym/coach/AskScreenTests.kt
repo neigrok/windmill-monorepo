@@ -647,7 +647,7 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithText(said).assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals(CoachTurnFault.stoppedOffline, coach.fault)
+            assertEquals(CoachTurnFault.stoppedOffline, coach.fault(chat))
             assertTrue(telling.events.containsAll(listOf(
                 "gym_action" to mapOf("screen" to "coach", "action" to "stop_notice", "outcome" to "ok"),
                 "gym_action" to mapOf("screen" to "coach", "action" to "stop_notice_closed", "outcome" to "ok"))))
