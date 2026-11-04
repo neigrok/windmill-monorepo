@@ -528,6 +528,8 @@ durability is gone. A database that opens later in the document takes those reco
 opened means the send cannot be made: the bank stays, `roadmap-sync-send` reports, and the lane stands the existing refused card
 with Retry and Discard. A signed-out plant has nowhere else to stand: `bearLocalTree` and `bearImportedTree` throw a `SecurityError`
 unless the device index takes a write and the database opens, and a save that fails takes its index row back.
+The new-roadmap door asks `deviceKeepsTrees` first: short of a signed-in account, a browser that will not keep a plan says
+*Couldn't open this device's saved work* and offers no field.
 
 **Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo
 and tree rename, contains notification, persistence and transport failures after the lattice join. Applied

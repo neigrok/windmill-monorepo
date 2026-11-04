@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
-import { bearLocalTree, bearImportedTree } from '../sync/localTrees.js';
+import { bearLocalTree, bearImportedTree, deviceKeepsTrees } from '../sync/localTrees.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
 import { parsePlan } from './planGrammar.js';
 import { PasteComposer } from './PasteComposer.jsx';
@@ -11,6 +11,7 @@ import { useViewMode } from '../room/useViewMode.js';
 import { DOCK_WIDTH } from '../graph/viewport.js';
 import { stampBorn } from '../persistence/ViewPrefs.js';
 import { prefersReducedMotion } from '../theme.js';
+import { DEVICE_REFUSED } from '../copy.js';
 import { countBucket } from '../board/acts.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -33,9 +34,21 @@ export function NewTreeBirth() {
   const [composerOpen, setComposerOpen] = useState(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.hash.split('?')[1] ?? '').has('compose'));
   const [dropHot, setDropHot] = useState(false);
+  const [deviceRefused, setDeviceRefused] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Short of a signed-in account a plan lives only on this device: a browser that will not keep one is told before anyone types.
+  useEffect(() => {
+    if (status === 'signed-in') {
+      setDeviceRefused(false);
+      return undefined;
+    }
+    let current = true;
+    deviceKeepsTrees().then((keeps) => { if (current) setDeviceRefused(!keeps); });
+    return () => { current = false; };
+  }, [status]);
 
   const parse = useMemo(
     () => (composerOpen ? parsePlan(draft, draftKinds) : null),
@@ -147,9 +160,10 @@ export function NewTreeBirth() {
   };
 
   const planting = phase === 'planting';
+  const composing = composerOpen && !deviceRefused;
   const plaqueName = name.trim() || 'Untitled roadmap';
 
-  const composer = composerOpen && parse && (
+  const composer = composing && parse && (
     <PasteComposer
       text={draft}
       onTextChange={setDraft}
@@ -179,9 +193,14 @@ export function NewTreeBirth() {
       </div>
 
       <div style={stage}>
-        <span className={`birth-bud ${planting ? 'is-planting' : ''} ${prefersReducedMotion() ? '' : 'is-wake'} ${composerOpen ? 'is-dimmed' : ''}`} />
+        <span className={`birth-bud ${planting ? 'is-planting' : ''} ${prefersReducedMotion() ? '' : 'is-wake'} ${composing ? 'is-dimmed' : ''}`} />
 
-        {phase === 'error' ? (
+        {deviceRefused ? (
+          <div role="alert" style={{ display: 'contents' }}>
+            <div style={title}>{DEVICE_REFUSED.title}</div>
+            <p style={sub}>{DEVICE_REFUSED.body}</p>
+          </div>
+        ) : phase === 'error' ? (
           <>
             <div style={title}>Couldn’t plant it just now</div>
             <p style={sub}>Nothing was created. Try again in a moment.</p>
@@ -214,13 +233,13 @@ export function NewTreeBirth() {
         )}
       </div>
 
-      {composerOpen && parse && breakpoint !== 'phone' && (
+      {composing && parse && breakpoint !== 'phone' && (
         <div className={`birth-ghost-stage${breakpoint === 'desktop' ? '' : ' birth-ghost-stage--wide'}`}>
           <GhostSkeleton nodes={parse.nodes} />
         </div>
       )}
 
-      {composerOpen && parse && (breakpoint === 'desktop' ? (
+      {composing && parse && (breakpoint === 'desktop' ? (
         <aside className="birth-composer" style={{ width: DOCK_WIDTH }}>{composer}</aside>
       ) : (
         <BottomSheet open onDismiss={() => setComposerOpen(false)}>{composer}</BottomSheet>
