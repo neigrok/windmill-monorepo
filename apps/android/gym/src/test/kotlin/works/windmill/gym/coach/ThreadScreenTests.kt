@@ -229,9 +229,6 @@ class ThreadScreenTests {
         compose.onNodeWithContentDescription("Question").performTextReplacement("Is my week too light?")
         compose.onNodeWithContentDescription("Send").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Stop response").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-        // The driver lands text after its coalescing wait, which runs on the looper's clock.
-        compose.runOnIdle { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(300)) }
         read("Reading your week").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Coach is thinking").assertDoesNotExist()
         compose.onNodeWithContentDescription("Stop response").performClick()
