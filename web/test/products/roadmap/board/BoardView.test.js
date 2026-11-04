@@ -212,6 +212,9 @@ window.openSelectionBoard = (nodes, options = {}) => {
     const { held, acts } = useBoardActs({
       tree, treeId: tree.treeId, owner, active, query, progress, now: Date.now,
       session: {
+        ready: session.ready,
+        holdAct: (cancel) => session.holdAct(cancel),
+        endHeldAct: () => session.endHeldAct(),
         dispatch: (gesture, options) => {
           window.selectionAttempts.push(gesture);
           if (window.refuseSelectionWrites) return null;

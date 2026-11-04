@@ -217,10 +217,14 @@ export class SyncSession {
     return result.status === 'replaced';
   }
 
+  laneFrames(lane) {
+    return lane === 'structure'
+      ? { frame: this.lattice.toFrame(), confirmed: this.confirmedStructure.toFrame() }
+      : { frame: this.progress.toFrame(), confirmed: this.confirmedProgress.toFrame() };
+  }
+
   unconfirmedWrites(lane) {
-    const [frame, confirmed] = lane === 'structure'
-      ? [this.lattice.toFrame(), this.confirmedStructure.toFrame()]
-      : [this.progress.toFrame(), this.confirmedProgress.toFrame()];
+    const { frame, confirmed } = this.laneFrames(lane);
     return unconfirmedStamps(writeStamps(frame), writeStamps(confirmed));
   }
 
@@ -228,7 +232,7 @@ export class SyncSession {
   ownUnsentWrites(lane) {
     const unsent = this.unconfirmedWrites(lane);
     const own = (key, stamp) => unsent[key] === stamp && parseHlc(stamp).actor === this.actor;
-    return frameWrites(lane === 'structure' ? this.lattice.toFrame() : this.progress.toFrame(), own);
+    return frameWrites(this.laneFrames(lane).frame, own);
   }
 
   adoptEpochs(value, { discarding = false } = {}) {
@@ -265,9 +269,7 @@ export class SyncSession {
         this.progressWrites.clear();
         this.progressInFlight.clear();
       }
-      const [frame, confirmed] = lane === 'structure'
-        ? [this.lattice.toFrame(), this.confirmedStructure.toFrame()]
-        : [this.progress.toFrame(), this.confirmedProgress.toFrame()];
+      const { frame, confirmed } = this.laneFrames(lane);
       this.gestures[lane] = pendingGestures(frame, confirmed);
     }
     this.undoStack = [];
@@ -754,7 +756,7 @@ export class SyncSession {
   }
 
   pendingProgressCount() {
-    return pendingRecordCount(unconfirmedStamps(writeStamps(this.progress.toFrame()), writeStamps(this.confirmedProgress.toFrame())));
+    return pendingRecordCount(this.unconfirmedWrites('progress'));
   }
 
   // Everything the server does not yet cover — the outbox, derived not queued.

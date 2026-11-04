@@ -229,7 +229,7 @@ window.openDeleteBoard = (owner = true) => {
     const [covered, setCovered] = useState(false);
     const { held, acts } = useBoardActs({
       tree, treeId: 'sail', active: true, owner, query, progress, now: Date.now,
-      session: { dispatch: (gesture, options) => { window.deleteCalls.push(['dispatch', gesture, options]); return {}; } },
+      session: { ready: true, holdAct: () => {}, endHeldAct: () => {}, dispatch: (gesture, options) => { window.deleteCalls.push(['dispatch', gesture, options]); return {}; } },
       showToast: (message, options) => setToast({ message, ...options }),
       track: (name, properties) => window.deleteCalls.push(['event', name, properties]),
       report: (operation) => window.deleteCalls.push(['report', operation]),
