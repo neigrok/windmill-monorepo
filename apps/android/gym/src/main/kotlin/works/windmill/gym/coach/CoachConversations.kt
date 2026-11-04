@@ -427,7 +427,7 @@ private class MessageLine(f: Fields) {
     val coach = when (f.string("role")) {
         CoachMessage.Role.coach.name -> true
         CoachMessage.Role.lifter.name -> false
-        else -> throw f.failure("role", "not a role")
+        else -> throw DecodeError(CoachMessage.type, "role", "not a role")
     }
     val state = MessageState.entries.firstOrNull { it.name == f.string("state", MessageState.running.name) } ?: MessageState.running
     val at = f.instant("at")
