@@ -26,6 +26,7 @@ import works.windmill.gym.presentation.ProposalTargets
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
+import works.windmill.gym.presentation.SetWrite
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
@@ -216,6 +217,38 @@ class WorkoutProposalsStoreTests {
 
             assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             assertEquals(listOf(mapOf("target" to "workout", "action" to "apply", "outcome" to "moved")), telling.outcomes())
+            assertEquals(emptyList<String>(), telling.failures)
+            finishing()
+        }
+    }
+
+    // Another phone logged the movement before this one's Apply reached the log: the decision comes back, and the plan and the walk with it.
+    @Test
+    fun aDecisionTheLogRefusesComesBackWithThePlanAndTheWalk() = runTest {
+        val server = EngineRoomFixture.server()
+        val telling = Telling()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telling).use { room ->
+            open(room, server)
+            coachProposes(room, swapped)
+            room.sync(server); room.store.refreshEngine()
+            val session = room.store.workout.session!!.id
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+                other.now = room.now
+                other.select("alice"); other.pull(server)
+                other.training.appendSet(session, SetWrite("set_other_phone1", "incline-dumbbell-press", 20.0, 8, room.now - 1_000))
+                other.sync(server)
+            }
+
+            assertTrue(room.store.workoutProposals.apply("wp000000000000001") is ProposalOutcome.Decided)
+            assertEquals("dumbbell-bench-press", room.store.workout.order[2])
+
+            room.sync(server); room.store.refreshEngine()
+
+            assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
+            assertEquals(pushA, room.store.workout.order)
+            assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.",
+                room.store.workoutProposals.held.getValue("wp000000000000001").outOfDate)
+            assertEquals(listOf(mapOf("target" to "workout", "action" to "apply", "outcome" to "failed")), telling.outcomes())
             assertEquals(emptyList<String>(), telling.failures)
             finishing()
         }

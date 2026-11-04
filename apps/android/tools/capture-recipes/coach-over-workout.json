@@ -30,10 +30,10 @@
         "tap": "Question"
       },
       {
-        "text": "Is Push A still useful?"
+        "text": "Is Push A still useful"
       },
       {
-        "wait": "Is Push A still useful?"
+        "wait": "Is Push A still useful"
       },
       {
         "tap": "Send"
@@ -525,10 +525,10 @@
         "tap": "Question"
       },
       {
-        "text": "My shoulder is sore. What should I change?"
+        "text": "My shoulder is sore. What should I change"
       },
       {
-        "wait": "My shoulder is sore. What should I change?"
+        "wait": "My shoulder is sore. What should I change"
       },
       {
         "tap": "Send"

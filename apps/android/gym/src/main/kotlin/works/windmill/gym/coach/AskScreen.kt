@@ -109,7 +109,7 @@ class AskBinding(
     private val routines: RoutinesStore,
     private val history: HistoryReads,
     private val workout: WorkoutSession,
-    private val proposalsToWorkout: WorkoutProposalsStore,
+    private val proposals: WorkoutProposalsStore,
 ) : AskState, AskEvents {
     constructor(store: TrainingStore) : this(store.coach, store.seat, store.routines, store.history, store.workout, store.workoutProposals)
 
@@ -120,7 +120,7 @@ class AskBinding(
     override val caughtUpTo: Long? get() = routines.caughtUpTo
     override val pulled: Pulls get() = history.pulled
     override fun proposalRecorded(id: String): Boolean = routines.proposalRecorded(id)
-    override val workoutProposals: Map<String, Proposal> get() = proposalsToWorkout.held
+    override val workoutProposals: Map<String, Proposal> get() = proposals.held
     override val workoutOpen: Boolean get() = workout.session != null
     override suspend fun proposal(id: String): ProposalRead = routines.proposal(id)
     override suspend fun pullAgain(): Boolean = history.pullAgain()

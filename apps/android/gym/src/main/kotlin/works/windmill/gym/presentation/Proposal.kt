@@ -8,8 +8,7 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-// Every type here is read-only on the wire: nothing on this phone mints a proposal, and one does
-// nothing until the lifter taps Apply.
+// A proposal does nothing until the lifter taps Apply.
 
 @Serializable(with = ProposalIntentSerializer::class)
 enum class ProposalIntent(val wire: String) {
