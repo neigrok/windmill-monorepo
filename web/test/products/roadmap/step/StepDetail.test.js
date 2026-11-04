@@ -86,7 +86,12 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         onClose: () => { const origin = address.trail[0]; address.close(); setSelectedId(origin); },
         onComplete: (id) => { call('complete ' + id); mark(id, 'complete'); },
         onReset: (id) => { call('reset ' + id); mark(id, 'none'); },
-        onRestore: (id, snapshot) => { call('restore ' + id); setQuiet((current) => current + 1); mark(id, snapshot.completed.has(id) ? 'complete' : 'none'); },
+        onRestore: (id, snapshot) => {
+          if (window.restoreFails) throw new Error('private content');
+          call('restore ' + id);
+          setQuiet((current) => current + 1);
+          mark(id, snapshot.completed.has(id) ? 'complete' : 'none');
+        },
         onOpenInGraph: (id) => call('graph ' + id),
         onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
         onDelete: (id) => { call('delete ' + id); address.close(); setSteps((current) => without(current, id)); },
@@ -116,12 +121,17 @@ const ready = (async () => {
       resolveId(id) {
         if (id === '/step-detail-entry.js') return '\0step-detail-entry';
         if (id.endsWith('/telemetry/beacon.js')) return '\0step-detail-beacon';
+        if (id.endsWith('/reportFailure.js')) return '\0step-detail-report';
       },
       load(id) {
         if (id === '\0step-detail-entry') return entry;
         if (id === '\0step-detail-beacon') {
           return 'export function track(name, props) { (window.events ??= []).push(`${name} ${JSON.stringify(props)}`); }\n'
             + 'export function reportError() {}\nexport function routeFamily(route) { return route; }';
+        }
+        if (id === '\0step-detail-report') {
+          return 'export function reportRoadmapFailure(operation) { (window.reports ??= []).push(operation); }\n'
+            + 'export function reportUnexpectedFailure(operation) { (window.reports ??= []).push(operation); }';
         }
       },
       configureServer(server) {
@@ -221,6 +231,24 @@ test('Chromium: from 744px the modal takes the 696px form, 24px in from the wind
     await card(page, 'Read the wind').click();
     const box = await page.locator('.st-board-step-modal').boundingBox();
     assert.deepEqual([box.x, box.y, box.width, box.height], [24, 80, 696, 800]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: an inline Undo that throws reports its static operation and its offer leaves, with no event claiming it worked', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await waitForColumn(page, 'upNext', ['Leave the dock', 'Tie a bowline']);
+    await page.evaluate(() => { window.restoreFails = true; window.events = []; });
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await page.getByRole('button', { name: 'Undo' }).waitFor({ state: 'detached' });
+    assert.deepEqual(await page.evaluate(() => [window.reports, window.events]), [['roadmap-step-restore'], []]);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();

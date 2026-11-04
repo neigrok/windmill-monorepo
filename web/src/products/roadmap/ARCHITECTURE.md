@@ -113,7 +113,7 @@ Board's keys and their shared typing and covered-layer refusal: a step open over
 composer prevents them acting. C completes a focused Up next card; Backspace and Delete start a nine-second
 held delete on a deletable owner card, with no confirm. Graph selection shortcuts do not act on the Board. The
 host refuses paste, global Undo and Redo and shortcut help while a layer covers it, the composer's picker
-included.
+included; in a text field ⌘Z and ⇧⌘Z belong to the field.
 
 **Focus.** Each surface restores its own opener: Dialog and the Ask AI and Fork sheets share `useDialogFocus`;
 the composer uses `useComposerFocus`. `design-system/feedback/dialogFocus.js` owns focusable elements and Tab
@@ -311,8 +311,18 @@ into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `resplic
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one held
 delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner loss, unmount or
-pagehide. Undo cancels it without sending. An already-absent step or a not-ready session is an expected no-op;
-an unexpected release error restores the projection silently and reports `roadmap-board-delete`.
+pagehide. The toast's Undo and ⌘Z cancel it without sending.
+
+A release while the roadmap changes reaches the server first: a closing session's socket waits for the sends already
+on their way. A release as the page goes turns the session synchronous first (`SyncSession.leavePage`): the session
+sends without its epoch read, and the store puts the whole record from the last one it saw and calls `commit()`, because
+no read or callback will run again. The record is read afresh when a hold starts, so what it can overwrite is only another
+tab's save made during those nine seconds.
+
+An already-absent step is a quiet no-op. A session not ready at the start says *Couldn't delete Rig the boat* with Retry
+at once and holds nothing, which logs a line and files no Issue. A release that fails on its timer brings the step back and
+says the same; an unexpected error also reports `roadmap-board-delete`. Retry runs the delete again, hold included. A
+release that fails as its toast is replaced or left emits the event and says nothing over what took its place.
 
 ### States
 
@@ -398,12 +408,16 @@ switch.
 **Toast Undo is targeted; ⌘Z is global.** A toast's Undo reverts its own act and later unrelated gestures stand.
 Complete restores that step's progress and a held delete cancels. Every other write holds its session receipt:
 `SyncSession.dispatch(gesture)` returns an opaque receipt or null when nothing applies, and `receiptUndo` calls
-`revert(receipt)`, which restamps that captured inverse once and removes it from the stack. A write the session
-refused says nothing happened. Ask AI wrote on the server, so its Undo deletes exactly what the run says it planted.
+`revert(receipt)`, which restamps that captured inverse once, leaving alone any field written since the receipt by this
+person or a peer, and removes it from the stack. A write the session refused says nothing happened. Ask AI wrote on the
+server, so its Undo deletes exactly what the run says it planted.
 
-⌘Z and ⇧⌘Z walk the session's global structural stack across both views, refused under a covering layer. A
-successful discard invalidates session Undo and Redo and captured receipts, and dismisses only toasts backed by those
-receipts.
+⌘Z and ⇧⌘Z walk the session's global structural stack across both views, refused under a covering layer and in a text
+field. A held delete is the last act though it is not on the stack: ⌘Z during a hold cancels it as the toast's Undo does,
+and touches nothing on the stack (`SyncSession.holdAct`). ⌘Z and ⇧⌘Z bump the session's `receiptVersion`, so a toast
+backed by a receipt leaves: no Undo offer stands once there may be nothing to undo. A later write with no toast of its own
+takes an earlier receipt's toast with it when ⌘Z undoes that write. A successful discard invalidates session Undo and Redo
+and captured receipts, and dismisses only toasts backed by those receipts.
 
 ## Domain and shared geometry
 
@@ -495,10 +509,22 @@ masked work.
 the ledgers. Each reaches the browser's storage through `browserStorage.js`, so a browser that refuses storage leaves a room
 that opens and remembers nothing, with nothing reported.
 
+**A write acknowledged is a write kept or a write that says so.** A browser that refuses the sync database leaves the same
+records in the document's memory (`SyncStore`, one console warning, no Issue). The epoch check, saves and Discard run as ever,
+a signed-in owner's writes reach the server, an unsent write survives a roadmap switch in that document, and only offline
+durability is gone. A database that opens later in the document takes those records back. A read that fails on a database that
+opened means the send cannot be made: the bank stays, `roadmap-sync-send` reports, and the lane stands the existing refused card
+with Retry and Discard. A signed-out plant has nowhere else to stand: `bearLocalTree` and `bearImportedTree` throw `DeviceRefused`
+unless the device index takes a write and the database opens, and a save that fails takes its index row back.
+
 **Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo
 and tree rename, contains notification, persistence and transport failures after the lattice join. Applied
 dispatches keep their receipt, and persistence or transport failures mark durability at risk. Pre-apply
-failures still throw. The receive path keeps its server-durable save policy.
+failures still throw. A progress mark's save reports the same way. The receive path keeps its server-durable save policy.
+A server frame whose notification fails reports `roadmap-sync-notify`; one that cannot be parsed or joined reports
+`roadmap-sync-frame` once per session; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft
+fills it. A socket with no inbound frame for ten seconds, online and in view, reports `roadmap-sync-socket` once; any frame
+clears the count, including a refusal, so a signed-out device tree stays quiet.
 
 **Status.** `SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' unconfirmed user writes,
 pending gestures, unconfirmed in-flight frames, socket phase, browser connectivity and the current refusal.
@@ -539,7 +565,9 @@ the shared `RefusedSync` on both views. The notice owns capacity-specific Retry 
 refused-lane count for its message and Discard label. The Graph measures its notice into the camera's usable
 viewport and clears the selected-step dock from 744px; on the phone Graph the refusal card clears the
 selected-step bar or the reader's Fork pill. Retry clears the refusal and reconnects through the existing
-graft and flush path. Phone toasts hide while a refusal stands so Retry and Discard stay reachable.
+graft and flush path. Phone toasts wait while a refusal stands so Retry and Discard stay reachable, except a held delete and
+its failure: a hold must run and its Undo stay reachable, so that toast stands above the refused card, as the bar's stacking in
+03.13 does, with no overlap at 390 or 320.
 Progress-based completion Undo stays available during a structure-only replacement and rebaseline, its durable
 save waiting for the replacement's new epoch. Structure edits stay blocked during rebaselining, a
 progress-lane replacement blocks progress editing, and the composer keeps its draft with saving disabled. An
@@ -556,16 +584,19 @@ the exact retained sent writes after their acknowledgement; local pending writes
 legacy record starts at epoch zero with unknown confirmed baselines.
 
 Every save carries the epochs its writer loaded. Its transaction joins only matching lanes and returns a typed
-stale result for any older epoch; an unaffected lane can still save. Discard atomically restores the refused
-lane's confirmed baseline and increments only that lane's epoch. The current session projects the confirmed
-lane immediately, without waiting for storage or a server reply; a failed replacement restores the pending
+stale result for any older epoch; an unaffected lane can still save. Discard atomically takes the registers its tab
+showed out of the refused lane, over the confirmed baseline, and increments only that lane's epoch; another writer's unsent
+registers stay in the record, and the discarding tab flushes them with its next graft. The current session projects the
+confirmed lane immediately, without waiting for storage or a server reply; a failed replacement restores the pending
 projection. The Board skips regroup animation for the replacement. An offline reload opens the stored
 confirmed roadmap. Discard prevents stale saves and re-sends after the atomic epoch bump; it cannot retract
 frames already sent before that commit or undo writes the server has accepted.
 
-Epoch notifications tell live tabs to adopt the stored lane and reconnect. Every structure or progress write
+Epoch notifications tell live tabs to adopt the stored lane and reconnect. An adopting tab keeps the writes its own
+replica stamped and the server does not hold, stores them and sends them after its graft, so a discard elsewhere takes only what
+that tab showed; it blocks new edits until the graft, as the discarding tab does. Every structure or progress write
 send checks its epoch inside an IndexedDB read transaction, and a read failure keeps the pending bank; a
-delayed epoch notification cannot bypass the check. Epoch subscriptions close with the session. Renaming a
+delayed epoch notification cannot bypass the check. A closing session's socket waits for sends that have begun. Epoch subscriptions close with the session. Renaming a
 device tree carries the loaded epochs and retries a stale result; moving one keeps its source if the
 destination rejects an epoch. Saves are serialized, expose their transaction result to the caller, and keep
 the queue usable after failure. An in-memory edit alone is not confirmed durable.

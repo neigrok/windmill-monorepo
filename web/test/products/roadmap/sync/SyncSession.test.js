@@ -581,10 +581,10 @@ test('refusal-only subscribers add no full status computation or pending-delta s
   let pendingReads = 0;
   let deltaReads = 0;
   const statusSnapshot = session.statusSnapshot.bind(session);
-  const pendingEditCount = session.pendingEditCount.bind(session);
+  const pendingStructureCount = session.pendingStructureCount.bind(session);
   const deltaSince = session.lattice.deltaSince.bind(session.lattice);
   t.mock.method(session, 'statusSnapshot', () => { snapshots += 1; return statusSnapshot(); });
-  t.mock.method(session, 'pendingEditCount', () => { pendingReads += 1; return pendingEditCount(); });
+  t.mock.method(session, 'pendingStructureCount', () => { pendingReads += 1; return pendingStructureCount(); });
   t.mock.method(session.lattice, 'deltaSince', (vector) => {
     if (vector != null) deltaReads += 1;
     return deltaSince(vector);

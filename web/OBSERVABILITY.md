@@ -159,6 +159,8 @@ named `count` or `pending` goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Delete's confirmation | `roadmap_board_delete` | `step: confirm/cancel`, `view: board/graph` |
 | Delete held for nine seconds | `roadmap_board_delete` | `step: held`, `door: menu/key/bulk`, `view: board/graph` |
 | Held delete released | `roadmap_board_delete` | `step: sent`, `via: timer/replaced/left`, `view: board/graph` |
+| A delete that could not land, at its start or at its release | `roadmap_board_delete` | `step: failed`, `outcome: not_ready/error`, `view: board/graph` |
+| Retry on that delete's toast | `roadmap_board_delete` | `step: retry`, `view: board/graph` |
 | Delete from the dock, the tablet panel or the canvas | `roadmap_board_delete` | `step: sent`, `via: direct`, `view: graph` |
 | Phone selection starts | `roadmap_board_select` | `step: start` |
 | Phone selection ends | `roadmap_board_select` | `step: end`, `via: done/back/acted/emptied/left` |
@@ -238,8 +240,8 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-board-create` | A create exception, or no session on an editable surface | The draft and its Retry stay |
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
-| `roadmap-board-delete` | An unexpected held-delete release | The step returns, silently |
-| `roadmap-step-restore` | A Graph completion's Undo | The toast closes |
+| `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
+| `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step page's inline offer | The offer leaves |
 | `roadmap-graph-undo` | A Graph toast's Undo reverting its receipt | The toast closes |
 | `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |
 | `roadmap-export` | Building or downloading this roadmap's export | `roadmap_export` `failed`, no file |
@@ -248,15 +250,19 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-load` | Anything else stopping a load, except a tree neither the server nor this device has | The load error |
 | `roadmap-fork` | Fork: a server failure, or a request lost online | Fork's own error |
 | `roadmap-share` | Publishing or making private: a server failure, or a request lost online | The dialog's own error |
-| `roadmap-sync-notify` | Notifying after a local write, an epoch change or a discard projection | The write's receipt stays |
-| `roadmap-sync-persist` | Storing a local write | The receipt stays; durability is at risk |
-| `roadmap-sync-send` | Sending a local write, including the IndexedDB epoch check | The pending bank stays; durability is at risk |
+| `roadmap-sync-notify` | Notifying after a local write, a server frame, an epoch change or a discard projection | The write's receipt stays |
+| `roadmap-sync-persist` | Storing a local write or mark on a database that opened | The receipt stays; durability is at risk |
+| `roadmap-sync-send` | Sending a local write, including the IndexedDB epoch check on a database that opened | The pending bank stays and the refused card says so; durability is at risk |
+| `roadmap-sync-restore` | A stored lane or record that cannot be read, once per session | That lane stays out until the server's graft fills it |
+| `roadmap-sync-socket` | A socket with no inbound frame for ten seconds while online and in view, once per session | The Shell's sync status; reconnects keep trying |
+| `roadmap-sync-frame` | A server frame that cannot be parsed or joined, once per session | The frame is dropped; a lane frame resubscribes |
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
-refusal, a refused clipboard, a browser refusing storage, a 4xx, a load aborted because the roadmap was left, a request lost offline or behind a hidden
+refusal, a refused clipboard, a browser refusing storage (one `[sync]` console warning per document, and writes still reach
+the server), a socket unanswered while offline or hidden, a 4xx, a load aborted because the roadmap was left, a request lost offline or behind a hidden
 page. Session expiry, including the 20-second account poll, keeps device work and reaches the lapsed line.
 
 A render failure with no boundary of its own, an uncaught error and an unhandled rejection go through `reportError`: it
