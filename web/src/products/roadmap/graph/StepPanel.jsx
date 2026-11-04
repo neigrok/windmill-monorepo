@@ -171,7 +171,6 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
             </span>
             <Button
               variant={state === 'complete' ? 'ghost' : 'primary'}
-              aria-label={state === 'complete' ? 'Reset step' : 'Complete step'}
               onClick={state === 'complete' ? () => onReset(node.id) : onMarkComplete}
               icon={<Icon name={state === 'complete' ? 'rotate-ccw' : 'check'} />}
             >
