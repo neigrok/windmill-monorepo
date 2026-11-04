@@ -659,6 +659,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   reader. The build gives a reader the overview alone, the ⋯ menu and no *View branch*.
 - **Graph · dock header.** 08.11 (523:32253) and Web 04.01 (33:105) draw a centred title and *Not started*. `graph/StepPanel.jsx` draws
   the title at the start and says *Up next*, the Board's word.
+- **Graph · ticker over the selection bar.** Web 16's ticker and the selection bar share the bottom of the canvas with no drawn
+  stacking. A rename on the dock followed by a selection inside the ticker's 4.5 seconds lays the ticker across the bar; presses pass
+  through it to the bar. Draw where the ticker stands while a selection bar is up.
 - **Board · Shell from 744.** Every role's frames from 744 ([04.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12955),
   [04.06](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12775), 04.09 · 744) draw the Shared Shell's
   room links from the left edge, with no mark and no fill on the active room. The built head keeps the mark, fills the
