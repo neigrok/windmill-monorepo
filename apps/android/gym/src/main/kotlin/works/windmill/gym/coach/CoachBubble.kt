@@ -175,7 +175,7 @@ internal fun CoachPictureElsewhere(group: CoachGroup) {
         verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
         modifier = Modifier.size(200.dp, 180.dp).clip(group.shape(fromLifter = true)).background(colors.surfaceContainerHighest).padding(horizontal = 16.dp),
     ) {
-        Icon(painterResource(R.drawable.gym_coach_image), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+        Icon(painterResource(R.drawable.gym_coach_image_held), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
         Text(Ask.pictureElsewhere, style = GymType.coachSourceLine, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
