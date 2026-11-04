@@ -235,7 +235,8 @@ fixture connection without a transport log.
 With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-over-workout-fixture.json`,
 `capture-recipes/coach-over-workout.json` captures Coach raised over an open workout: the fresh sheet
 (08.54) and the same sheet over the keyboard, a change to this workout (08.55), its review (08.55b), applied (08.65), the
-rack on what replaced a movement (03.46), one answer with both kinds (08.56) and a card gone out of date (08.57). In a
+rack on what replaced a movement (03.46), one answer with both kinds (08.56), a card gone out of date (08.57) and what
+Coach read for one movement (08.64). In a
 response `$session` is the workout the app has open, read from the log as the recipe starts. A recipe's optional
 `logged_elsewhere` is a set the log takes through its MCP door into that workout before the recipe's steps, as another
 device would. In a `sync` row `$account` is the account's own short name, since a record's id is taken across accounts.
