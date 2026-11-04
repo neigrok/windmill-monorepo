@@ -1,5 +1,4 @@
-// The browser's storage, or one that holds nothing where the browser refuses it: merely reaching for `localStorage` throws
-// in a blocked context, before any store's own guard runs. A store built on this fails closed and the room still opens.
+// The browser's storage, or one that holds nothing where merely reaching for it throws: a store fails closed, the room opens.
 
 const HOLDS_NOTHING = Object.freeze({ getItem: () => null, setItem: () => {}, removeItem: () => {} });
 

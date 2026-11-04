@@ -83,7 +83,7 @@ function activeLabel(page) {
 }
 
 for (const [name, options] of [['an owner', {}], ['a reader', { role: 'reader' }], ['the demo', { role: 'reader', demo: true }]]) {
-  hostTest(`Chromium: where the browser refuses storage the room still opens for ${name}, and keeps nothing`, async () => {
+  hostTest(`Chromium: where the browser refuses storage the room still opens for ${name}`, async () => {
     const { page, errors } = await openHost({ ...options, storageRefused: true });
     try {
       await page.locator('.st-roadmap-identity').waitFor();

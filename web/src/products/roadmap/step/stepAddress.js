@@ -15,8 +15,7 @@ export function hashWithStep(hash, id) {
   return `#${path}${parts.length > 0 ? `?${parts.join('&')}` : ''}`;
 }
 
-// The roadmap a view stands on: the path and the hash before its query. A hash holding only a query names no route, so
-// /t/id and /t/id#?step=x stand on the same roadmap.
+// The roadmap a view stands on: the path and the hash's route; a hash holding only a query names none.
 function routeOf() {
   const hashRoute = window.location.hash.split('?')[0];
   return `${window.location.pathname}${hashRoute === '#' ? '' : hashRoute}`;
