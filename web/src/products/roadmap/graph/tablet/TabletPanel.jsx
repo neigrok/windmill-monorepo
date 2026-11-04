@@ -210,15 +210,17 @@ function BulkBar({ count, choice, onRecolor, onDelete, onDone }) {
         ))}
       </div>
 
-      <button type="button" style={deleteButton} onClick={onDelete}>
-        <Icon name="trash-2" size={16} color="var(--surface-card)" />
-        Delete {count} step{plural}
-      </button>
+      {onDelete && (
+        <button type="button" style={deleteButton} onClick={onDelete}>
+          <Icon name="trash-2" size={16} color="var(--surface-card)" />
+          Delete {count} step{plural}
+        </button>
+      )}
     </div>
   );
 }
 
-export function TabletPanel({ tablet, open, top, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, kinds, autoFocusName, isRoot, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, bulkChoice, onBulkRecolor, onBulkDelete, onBulkDone }) {
+export function TabletPanel({ tablet, open, top, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, kinds, autoFocusName, deletable, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, bulkChoice, onBulkRecolor, onBulkDelete, onBulkDone }) {
   const { surface, aim } = tablet;
   return (
     <GraphDock open={open} top={top} tablet tenant={surface === 'editor' ? selectedNode.id : surface}>
@@ -247,7 +249,7 @@ export function TabletPanel({ tablet, open, top, selectedNode, selectedState, no
           onUnmarkDone={onUnmarkDone}
           onDelete={onDelete}
           onJump={onJump}
-          isRoot={isRoot}
+          deletable={deletable}
         />
       )}
     </GraphDock>

@@ -3,7 +3,7 @@ import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parsePlan } from '../paste/planGrammar.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
-import { countBucket, receiptUndo } from '../board/acts.js';
+import { countBucket, holdsSoleRoot, receiptUndo } from '../board/acts.js';
 import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -113,7 +113,7 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
 
   const deleteNodeAt = useCallback((id) => {
     const node = projectionRef.current?.nodes.find((n) => n.id === id);
-    if (!node) return;
+    if (!node || holdsSoleRoot(treeRef.current, [id])) return;
     const written = write({ kind: 'DeleteNode', id });
     if (!written) return;
     if (selectedIdRef.current === id) setSelectedId(null);
@@ -127,7 +127,7 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
   const bulkDelete = useCallback(() => {
     const ids = [...selectedIdsRef.current];
     const edges = [...selectedEdgesRef.current].map(parseEdgeKey); // {from,to}
-    if (!ids.length && !edges.length) return;
+    if ((!ids.length && !edges.length) || holdsSoleRoot(treeRef.current, ids)) return;
     const nodes = projectionRef.current?.nodes ?? [];
     const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
     const written = write({ kind: 'BulkDelete', nodeIds: ids, edges });

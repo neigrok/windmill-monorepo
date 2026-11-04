@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { ActivityFeed } from '../activity/ActivityFeed.jsx';
-import { deletable } from '../board/acts.js';
+import { deletable, holdsSoleRoot } from '../board/acts.js';
 import { emptyWorkspace } from '../model/NodeWorkspace.js';
 import { GraphDock } from './GraphChrome.jsx';
 import { StepPanel } from './StepPanel.jsx';
@@ -30,6 +30,7 @@ export function GraphDocks({
     : []), [selectedNode, tree, states]);
 
   const autoFocusName = selectedId !== null && selectedId === editing.autoFocusNameId;
+  const stepDeletable = selectedNode !== null && deletable(tree, [selectedNode.id]);
   const stepFacts = {
     node: selectedNode,
     state: selectedState,
@@ -66,6 +67,7 @@ export function GraphDocks({
                 track('roadmap_board_step_action', { surface: 'dock', action: 'reset' });
                 progressActs.reset(id);
               }}
+              deletable={stepDeletable}
               onDelete={editing.deleteNodeAt}
               onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
               onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
@@ -103,7 +105,7 @@ export function GraphDocks({
           completedAt={progress.completedAt[selectedId]}
           kinds={legend}
           autoFocusName={autoFocusName}
-          isRoot={selectedNode !== null && !deletable(tree, [selectedNode.id])}
+          deletable={stepDeletable}
           onMarkDone={(id) => {
             track('roadmap_board_complete', { door: 'panel' });
             progressActs.complete(id);
@@ -117,7 +119,7 @@ export function GraphDocks({
           selectedCount={selectedIds.size}
           bulkChoice={bulkChoice}
           onBulkRecolor={editing.bulkRecolor}
-          onBulkDelete={editing.bulkDelete}
+          onBulkDelete={holdsSoleRoot(tree, [...selectedIds]) ? null : editing.bulkDelete}
           onBulkDone={leaveMulti}
         />
       )}

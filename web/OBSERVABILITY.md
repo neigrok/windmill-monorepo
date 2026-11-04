@@ -198,6 +198,7 @@ A step is a thing a reader did or was told. These emit nothing:
   a clean Save, which writes nothing and emits `unchanged` from the edit composer alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
+- A Delete key on a roadmap's sole root, on either view: Delete is not offered, so nothing happened.
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
 - The camera, the minimap, the legend's highlight and folding, selecting one step, hovering and focus moves.
 

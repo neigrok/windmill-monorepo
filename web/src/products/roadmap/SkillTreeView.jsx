@@ -16,7 +16,7 @@ import { RoadmapIdentity, RoadmapIdentityFallback } from './identity/RoadmapIden
 import { StepComposer } from './step/StepComposer.jsx';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
-import { deletable } from './board/acts.js';
+import { deletable, holdsSoleRoot } from './board/acts.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, LOAD_ERROR, forkedToast } from './copy.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
@@ -611,7 +611,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onMarkDone={() => progressActs.markDone(selectedIdsRef.current)}
           onPreviewDelete={() => sceneRef.current?.previewDeleteCostSet([...selectedIdsRef.current])}
           onClearDelete={() => sceneRef.current?.clearDeleteCost()}
-          onDelete={bulkDelete}
+          onDelete={holdsSoleRoot(tree, [...selectedIds]) ? null : bulkDelete}
         />
       )}
 

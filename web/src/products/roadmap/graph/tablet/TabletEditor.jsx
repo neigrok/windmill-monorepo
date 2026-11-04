@@ -35,7 +35,7 @@ export function progressVerb(state) {
   return 'complete';
 }
 
-export function TabletEditor({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, isRoot = false, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete, onJump }) {
+export function TabletEditor({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, deletable = true, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete, onJump }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -159,7 +159,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
         ))}
       </div>
 
-      {!isRoot && (
+      {deletable && (
         <button
           type="button"
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)', width: '100%', minHeight: 44, padding: '0 var(--space-3)', border: 0, borderRadius: 'var(--radius-md)', background: 'none', fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-bark)', cursor: 'pointer' }}

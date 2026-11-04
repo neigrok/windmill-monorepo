@@ -84,7 +84,7 @@ export function StepPanel(props) {
   return <EditorStep {...props} />;
 }
 
-function EditorStep({ node, state, prerequisites, completedAt, history = [], workspace = EMPTY_WORKSPACE, kinds = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onMarkComplete, onReset, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
+function EditorStep({ node, state, prerequisites, completedAt, history = [], workspace = EMPTY_WORKSPACE, kinds = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onMarkComplete, onReset, onReveal, deletable = true, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -269,18 +269,20 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
         </div>
       </div>
 
-      <div className="st-step-danger" style={{ marginTop: 'auto' }}>
-        <button
-          type="button"
-          className="st-step-delete"
-          onPointerEnter={() => onPreviewDeleteCost(node.id)}
-          onPointerLeave={() => onClearDeleteCost()}
-          onClick={() => { onClearDeleteCost(); onDelete(node.id); }}
-        >
-          <Icon name="trash-2" size={16} />
-          Delete step
-        </button>
-      </div>
+      {deletable && (
+        <div className="st-step-danger" style={{ marginTop: 'auto' }}>
+          <button
+            type="button"
+            className="st-step-delete"
+            onPointerEnter={() => onPreviewDeleteCost(node.id)}
+            onPointerLeave={() => onClearDeleteCost()}
+            onClick={() => { onClearDeleteCost(); onDelete(node.id); }}
+          >
+            <Icon name="trash-2" size={16} />
+            Delete step
+          </button>
+        </div>
+      )}
       </div>
     </Card>
   );

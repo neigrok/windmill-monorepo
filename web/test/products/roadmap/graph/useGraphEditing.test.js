@@ -21,6 +21,7 @@ function room(t) {
   session.seed(SAIL);
   const projectionRef = { current: session.lattice.toTreeData() };
   session.onTreeChanged((data) => { projectionRef.current = data; });
+  const treeRef = { current: null };
   const toasts = [];
   const selectedIdRef = { current: null };
   const scene = {
@@ -33,7 +34,7 @@ function room(t) {
     setSelectedId: (id) => { selectedIdRef.current = id; }, leaveMulti() {}, enterMulti() {}, toggleMember() {}, multiMode: false,
   };
   const editing = renderHook(t, () => useGraphEditing({
-    room: { sessionRef: { current: session }, projectionRef, sceneRef: { current: scene }, treeRef: { current: null } },
+    room: { sessionRef: { current: session }, projectionRef, sceneRef: { current: scene }, treeRef },
     legendRef: { current: [] }, desktopEditorRef: { current: true }, selection, emit() {},
     showToast: (message, options) => toasts.push({ message, ...options }),
   }));
@@ -41,7 +42,7 @@ function room(t) {
     tabletEditor: true, scene, tree: new SkillTree(session.lattice.toTreeData()),
     nodesById: new Map(session.lattice.toTreeData().nodes.map((node) => [node.id, node])), selectedNode: null, projectionRef, selection, editing: editing.tree,
   }));
-  return { session, editing, tablet, scene, selection, toasts };
+  return { session, editing, tablet, scene, selection, toasts, treeRef };
 }
 
 const steps = (session) => Object.fromEntries(session.lattice.toTreeData().nodes.map(({ id, label, color, prerequisites }) => [id, { label, color, prerequisites: [...prerequisites] }]));
@@ -190,4 +191,20 @@ test('Ask AI: an Undo the session cannot take claims nothing', async (t) => {
   await tend.tree.submitTend('Add a step');
   toasts[0].action.run();
   assert.equal(toasts.length, 1);
+});
+
+test('the Graph\'s writes keep the sole root: a step alone, or anywhere in a selection, and what is left stays standing', (t) => {
+  const { session, editing, selection, toasts, treeRef } = room(t);
+  treeRef.current = new SkillTree(session.lattice.toTreeData());
+  const before = steps(session);
+  editing.tree.deleteNodeAt('course');
+  selection.selectedIdsRef.current = new Set(['course', 'wind']);
+  selection.selectedEdgesRef.current = new Set([edgeKey('course', 'knots')]);
+  editing.tree.bulkDelete();
+  assert.deepEqual([steps(session), toasts], [before, []]);
+
+  selection.selectedIdsRef.current = new Set(['knots']);
+  selection.selectedEdgesRef.current = new Set();
+  editing.tree.bulkDelete();
+  assert.deepEqual(Object.keys(steps(session)).sort(), ['course', 'dock', 'wind']);
 });

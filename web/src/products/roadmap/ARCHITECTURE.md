@@ -356,6 +356,10 @@ phone camera controls sit beneath the measured row. From 744px the selected-step
 measured identity and any refusal banner, so neither is covered. The tablet Graph keeps its panel editor, aim,
 link removal and multi-select surfaces.
 
+A roadmap keeps its sole root, by one rule for every door: `holdsSoleRoot` in `board/acts.js`, which `deletable` builds on. The
+desktop dock, the tablet panel and the selection bars stop offering Delete while they hold that step, the Graph's writes refuse
+it, and a Delete key on it does nothing.
+
 The owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order, including a one-step roadmap, and
 hides at zero. Picking a row selects and reveals that canvas step.
 

@@ -229,9 +229,11 @@ export function GraphSelectionBar({ stepCount, linkCount, choice, onPreviewKind,
       {stepCount > 0 && (
         <button type="button" className="st-selection-done" onClick={onMarkDone}>Mark all done</button>
       )}
-      <span className="st-selection-delete" onPointerEnter={onPreviewDelete} onPointerLeave={onClearDelete}>
-        <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
-      </span>
+      {onDelete && (
+        <span className="st-selection-delete" onPointerEnter={onPreviewDelete} onPointerLeave={onClearDelete}>
+          <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+        </span>
+      )}
     </div>
   );
 }

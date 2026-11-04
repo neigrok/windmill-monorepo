@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { Board, BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
-import { HeldDelete, StepSelection, deletable, editGesture, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
+import { HeldDelete, StepSelection, deletable, holdsSoleRoot, editGesture, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -93,6 +93,21 @@ test('StepSelection toggles immutably and prunes to the pane order after filteri
   assert.deepEqual(selected.prune(board, 'upNext').ids, []);
   assert.ok(Object.isFrozen(selected));
   assert.ok(Object.isFrozen(selected.ids));
+});
+
+test('holdsSoleRoot asks only whether the ids take the one root a roadmap has', () => {
+  const sole = new SkillTree({ id: 'sole', title: 'Sole', nodes: [
+    { id: 'root', label: 'Root', prerequisites: [] },
+    { id: 'leaf', label: 'Leaf', prerequisites: ['root'] },
+  ] });
+  const twoRoots = new SkillTree({ id: 'two', title: 'Two', nodes: [
+    { id: 'root', label: 'Root', prerequisites: [] },
+    { id: 'other', label: 'Other', prerequisites: [] },
+  ] });
+  assert.deepEqual([
+    holdsSoleRoot(sole, ['root']), holdsSoleRoot(sole, ['leaf', 'root']), holdsSoleRoot(sole, ['leaf']), holdsSoleRoot(sole, []),
+    holdsSoleRoot(sole, ['gone']), holdsSoleRoot(twoRoots, ['root']), holdsSoleRoot(null, ['root']),
+  ], [true, true, false, false, false, false, false]);
 });
 
 test('deletable excludes the sole root, absent ids and empty selections', () => {

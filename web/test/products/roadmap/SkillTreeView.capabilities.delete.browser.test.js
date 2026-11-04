@@ -86,3 +86,63 @@ for (const width of everyWidth) {
     } finally { await page.close(); }
   });
 }
+
+hostTest('§2.5 Delete: the desktop Graph keeps the sole root at every door and offers Delete for everything else', async () => {
+  const { page, errors } = await openHost({ width: 1440 });
+  try {
+    const steps = () => page.evaluate(() => window.session.lattice.toTreeData().nodes.map(({ id }) => id).sort());
+    const deletes = () => page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_delete' || name === 'roadmap_board_bulk'));
+    const pressDelete = async () => {
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press('Delete');
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+    };
+
+    await page.evaluate(() => window.scene.select('course'));
+    await page.locator('.st-detail-panel--open .st-step-name', { hasText: 'Choose a course' }).waitFor();
+    assert.equal(await page.locator('.st-step-delete').count(), 0);
+    await pressDelete();
+    assert.deepEqual(await steps(), ['course', 'dock', 'wind']);
+
+    await page.evaluate(() => window.scene.options.onSelectionToggle('wind'));
+    await page.locator('.st-selection-bar').waitFor();
+    assert.equal(await page.locator('.st-selection-delete').count(), 0);
+    await pressDelete();
+    assert.deepEqual([await steps(), await deletes()], [['course', 'dock', 'wind'], []]);
+
+    await page.evaluate(() => window.scene.options.onSelectionToggle('course'));
+    await page.evaluate(() => window.scene.options.onSelectionToggle('dock'));
+    await page.locator('.st-selection-delete').getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.waitForFunction(() => window.session.lattice.toTreeData().nodes.length === 1);
+    assert.deepEqual([await steps(), await deletes()], [['course'], [{ name: 'roadmap_board_bulk', props: { step: 'delete', count: '2-5', view: 'graph' } }]]);
+
+    await page.evaluate(() => window.scene.select('course'));
+    await page.locator('.st-detail-panel--open .st-step-name', { hasText: 'Choose a course' }).waitFor();
+    assert.equal(await page.locator('.st-step-delete').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('§2.5 Delete: the desktop dock offers Delete for a step the roadmap can lose', async () => {
+  const { page, errors } = await openHost({ width: 1440 });
+  try {
+    await page.evaluate(() => window.scene.select('dock'));
+    await page.locator('.st-step-delete').click();
+    await page.waitForFunction(() => window.session.lattice.toTreeData().nodes.length === 2);
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_delete')),
+      [{ name: 'roadmap_board_delete', props: { step: 'sent', via: 'direct', view: 'graph' } }]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const [held, offered] of [['course', 0], ['wind', 1]]) {
+  hostTest(`§2.5 Delete: the tablet's bulk bar holding ${held} ${offered ? 'offers' : 'does not offer'} Delete`, async () => {
+    const { page, errors } = await openHost({ width: 744 });
+    try {
+      await page.evaluate((id) => window.longPress(id), held);
+      await page.getByRole('group', { name: '1 selected', exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Delete 1 step', exact: true }).count(), offered);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
