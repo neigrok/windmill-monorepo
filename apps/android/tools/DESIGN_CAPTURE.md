@@ -238,7 +238,7 @@ With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-over-workout-fi
 rack on what replaced a movement (03.46), one answer with both kinds (08.56) and a card gone out of date (08.57). In a
 response `$session` is the workout the app has open, read from the log as the recipe starts. A recipe's optional
 `logged_elsewhere` is a set the log takes through its MCP door into that workout before the recipe's steps, as another
-device would.
+device would. In a `sync` row `$account` is the account's own short name, since a record's id is taken across accounts.
 
 With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-history-fixture.json`,
 `capture-recipes/coach-messages.json` captures empty Coach, Markdown, thinking and streaming;

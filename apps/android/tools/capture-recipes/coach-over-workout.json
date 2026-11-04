@@ -40,7 +40,7 @@
     "sync": [
       {
         "t": "thread",
-        "id": "thr_capture_0864",
+        "id": "thr_$account",
         "life": [
           "alive",
           "$stamp"
@@ -55,7 +55,7 @@
       },
       {
         "t": "message",
-        "id": "msg_capture_0864_q",
+        "id": "msg_$account_q",
         "life": [
           "alive",
           "$stamp"
@@ -63,7 +63,7 @@
         "born": "$stamp",
         "f": {
           "threadId": [
-            "thr_capture_0864",
+            "thr_$account",
             "$stamp"
           ],
           "role": [
@@ -82,7 +82,7 @@
       },
       {
         "t": "message",
-        "id": "msg_capture_0864_a",
+        "id": "msg_$account_a",
         "life": [
           "alive",
           "$stamp"
@@ -90,7 +90,7 @@
         "born": "$stamp",
         "f": {
           "threadId": [
-            "thr_capture_0864",
+            "thr_$account",
             "$stamp"
           ],
           "role": [

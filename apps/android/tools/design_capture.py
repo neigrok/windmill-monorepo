@@ -968,6 +968,9 @@ def main():
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
+                        # A record's id is taken across accounts, so a planted row names the account it was planted for.
+                        if "sync" in scenario:
+                            scenario = {**scenario, "sync": json.loads(json.dumps(scenario["sync"]).replace("$account", fixture.account.replace("-", "")[:12]))}
                         if "logged_elsewhere" in scenario:
                             fixture.mcp("gym_log_set", {**scenario["logged_elsewhere"], "sessionId": fixture.open_session(),
                                 "id": "set_capture" + secrets.token_hex(6), "completedAt": int(time.time() * 1000)})
