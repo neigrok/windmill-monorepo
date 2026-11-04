@@ -83,7 +83,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { canvasRef, rootRef, identityRef, boardLayerRef, legendDockRef } = anchors;
 
   // Who is looking, and what this device keeps for them.
-  const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, room });
+  const knownReaderRef = useRef(false);
+  const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
   const placeKept = !shared && breakpoint === 'desktop';
   const desktopEditorRef = useRef(false);
   const phone = breakpoint === 'phone';
@@ -126,6 +127,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine } = load;
   // A roadmap that loaded as someone else's reads as a share does, whichever address opened it.
   const knownReader = !loading && Boolean(tree) && !treeMine;
+  knownReaderRef.current = knownReader;
   const desktopEditor = placeKept && !demotion && !knownReader;
   desktopEditorRef.current = desktopEditor;
   useEffect(() => { if (knownReader) sceneRef.current?.setReadOnly?.(); }, [knownReader, scene]);

@@ -4,7 +4,8 @@ import { claimLocalTrees } from '../sync/claimLocalTrees.js';
 import { isOwnershipRefusal, isSessionRefusal } from '../sync/refusals.js';
 
 // Who holds this room: the session's lapse, the claim of device trees at sign-in, and the demotion an ownership refusal forces.
-export function useRoomAuthority({ treeId, status, account, refresh, room: { sessionRef, sceneRef } }) {
+// Signing in on a roadmap that loaded as someone else's loads it again, as a demotion does: it may be theirs.
+export function useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room: { sessionRef, sceneRef } }) {
   const [lapsed, setLapsed] = useState(false);
   const [demotion, setDemotion] = useState(null); // { edits, cardOpen } | null
   const prevAuthRef = useRef(status);
@@ -32,7 +33,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, room: { ses
     prevAuthRef.current = status;
     if (prev === status) return;
     if (status === 'signed-in') {
-      if (demotedRef.current) { window.location.reload(); return; }
+      if (demotedRef.current || (prev === 'ghost' && knownReaderRef.current)) { window.location.reload(); return; }
       setLapsed(false);
     }
     if (prev === 'loading' && status === 'signed-in') {

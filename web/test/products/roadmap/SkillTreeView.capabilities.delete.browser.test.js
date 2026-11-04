@@ -162,6 +162,18 @@ hostTest('§2.5 Delete: a signed-in reader at the app address gets a reader\'s d
   } finally { await page.close(); }
 });
 
+hostTest('§2.5 Delete: signing in on a roadmap that loaded as someone else\'s loads it again, since it may be theirs', async () => {
+  const { page, errors } = await openHost({ width: 1440, role: 'reader', appUrl: true });
+  try {
+    await page.evaluate(() => { window.stayed = true; });
+    const reloaded = page.waitForEvent('load');
+    await page.evaluate(() => window.setFixtureAuth('signed-in'));
+    await reloaded;
+    assert.equal(await page.evaluate(() => window.stayed), undefined);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
 hostTest('§2.5 Delete: the desktop dock offers Delete for a step the roadmap can lose', async () => {
   const { page, errors } = await openHost({ width: 1440 });
   try {
