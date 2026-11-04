@@ -39,9 +39,6 @@
         "tap": "Send"
       },
       {
-        "keyboard": "hide"
-      },
-      {
         "wait": "Read your movement history"
       },
       {
@@ -235,9 +232,6 @@
       },
       {
         "tap": "Send"
-      },
-      {
-        "keyboard": "hide"
       },
       {
         "wait": "Review"
@@ -534,9 +528,6 @@
         "tap": "Send"
       },
       {
-        "keyboard": "hide"
-      },
-      {
         "wait": "Proposal \u00b7 Push A \u00b7 next time"
       },
       {
@@ -699,9 +690,6 @@
       },
       {
         "tap": "Send"
-      },
-      {
-        "keyboard": "hide"
       },
       {
         "wait": "Proposal \u00b7 This workout"

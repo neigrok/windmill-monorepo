@@ -199,8 +199,8 @@ internal class CoachSheetFlow(
 
     fun show() { open = true }
 
-    // A close by hand or by a door: what the door does next waits for the sheet to be off.
-    fun close(then: () -> Unit = {}) {
+    // What a door does next waits for the sheet to be off.
+    fun close(then: () -> Unit) {
         if (!open) { then(); return }
         scope.launch { sheet.hide() }.invokeOnCompletion { cause ->
             open = false
