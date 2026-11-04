@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('focus');
+startRoadmapHost();
 
 hostTest('Chromium: Graph Find hands off without replacing the row or losing input focus; G keeps switch focus', async () => {
   const { page, errors } = await openHost();

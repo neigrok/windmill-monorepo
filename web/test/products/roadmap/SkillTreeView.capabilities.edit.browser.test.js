@@ -1,10 +1,10 @@
-// §2.5 of the wave-8 architecture: editing a step, on the List and the phone Graph, has its Board home.
+// §2.5 of the wave-8 architecture: every way to edit a step has its Board home.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { COMPOSER, EDIT_STEP, LABELS, PICKER, STEP_DETAIL } from '../../../src/products/roadmap/board/copy.js';
+import { COMPOSER, EDIT_STEP, LABELS, PICKER, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost('capabilitiesEdit');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 

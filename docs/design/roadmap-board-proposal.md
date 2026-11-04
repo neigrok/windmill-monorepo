@@ -1,22 +1,22 @@
 # Roadmap Board proposal
 
 Status: ✅ Ready for dev, owner approved 2026-10-31. The build is tracked under dogfood node
-`roadmap-board-web-build`. The production Graph and List canon stays on the Roadmap file's Web and
-Web Mobile pages until the Board ships. The [review](roadmap-board-review.md)
-holds the rulings, the findings and the limits.
+`roadmap-board-web-build`. The Board and the Graph are the only views. The Graph's flows also stand on the
+Roadmap file's Web and Web Mobile pages, beside the List boards the designer deletes in the 🚀 pass. The
+[review](roadmap-board-review.md) holds the rulings, the findings and the limits.
 
 Drawn on two pages of the Roadmap file:
 [✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) (below
 744px) and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 (744px and up). Start at the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433)
 and the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-Every first-wave board carries ✅; the *Later · Activity overlay* sections stay 💡. Desktop boards come in light and dark pairs; phone dark specimens sit in
+Boards carry ✅ or 🔨; proposals awaiting the owner sit in the 💡 *Finishing states* sections. Desktop boards come in light and dark pairs; phone dark specimens sit in
 their sections and in section 19.
 
 ## The idea
 
 A board for doing, a graph for seeing. The Board answers *what can I do right now*; the Graph shows
-shape and distance. Both read one roadmap and one model. On phones the Board replaces the List.
+shape and distance. Both read one roadmap and one model.
 
 ## Model
 
@@ -92,7 +92,7 @@ switched-to state.
   hold window; a secondary line names the outcome. No toast from a page or a modal. Reset is always
   secondary and quiet.
 - The `…` menu holds the same three verbs on both pages: *Copy link · Open in Graph · Delete step*.
-- **Delete step:** a confirm with the cost line from `board/copy.js`
+- **Delete step:** a confirm with the cost line from `copy.js`
   (*Removes this step · 1 branch resplices*), then a delete held for nine seconds with Undo, as
   `guidelines/system-architecture.md` §3 requires on the web, then the regrouped Board.
 - A step pushed from a step names the previous screen in its back label.
@@ -127,8 +127,8 @@ completes the focused Up next card, and focus follows it to Done; C does nothing
 ⌘K stays Ask AI. Locked and Done cards stay focusable.
 
 **Motion.** Complete is a full bloom; the newly up-next step wakes; the toast speaks last, 120ms
-after the last beat, and holds 6s with Undo. A second completion inside the hold coalesces into one
-toast. Downward changes are a silent 280ms dim with no toast. The live region announces the done
+after the last beat, and holds 6s with Undo. A second completion inside the hold replaces the older toast;
+Undo covers only the step the new toast names. Downward changes are a silent 280ms dim with no toast. The live region announces the done
 step and how many steps are up next.
 
 ## Find, filter and sort
@@ -290,9 +290,8 @@ Web Mobile ([page](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1
 | [19 · Dark and 320px · new states](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=383-18664) | [01.05 · Step page · done · dark](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=383-18665) |
 | [20 · Delete a step](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=397-28207) | [20.01 · Rig the boat · step menu](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=397-28208) |
 | [21 · Select several steps](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-28881) | [21.01 · Long-press selects](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-28882) |
-| [Later · Activity overlay](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=360-10601) | Out of the first wave; nothing routes into it |
 
-Phone components: [Board · Proposal components](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-906),
+Phone components: [Board · Core components](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-906),
 [Shared Shell](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=290-7056),
 [Kind choice](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=306-4751),
 [Note editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=321-5044),
@@ -314,6 +313,5 @@ Web ([page](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 | [09 · Create steps](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-1086) | [09.01 · Empty roadmap](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-1688) |
 | [10 · Keyboard](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=386-13311) | [10.01 · Focus traversal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=386-13312) |
 | [11 · Explore a branch](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-8978) | [11.01 · Branch board · Read the wind](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-8979) |
-| [Later · Activity overlay](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-3690) | Out of the first wave; nothing routes into it |
 
 Desktop components: [Board · Desktop components](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=367-10089).

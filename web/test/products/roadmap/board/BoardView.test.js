@@ -86,14 +86,14 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
-import { coverBeneath } from '/src/products/roadmap/board/composerFocus.js';
+import { coverBeneath } from '/src/products/roadmap/step/composerFocus.js';
 import { boardFocusTarget } from '/src/products/roadmap/board/traversal.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { StepCard } from '/src/products/roadmap/board/StepCard.jsx';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
-import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
-import { useRoadmapToast } from '/src/products/roadmap/board/useRoadmapToast.js';
+import { useStepAddress } from '/src/products/roadmap/step/stepAddress.js';
+import { useRoadmapToast } from '/src/products/roadmap/room/useRoadmapToast.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 
 const legend = [
@@ -205,7 +205,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
     const [revision, setRevision] = useState(0);
     const address = useStepAddress();
     const progress = useMemo(() => ({ completed: new Set(options.completed ?? ['course', 'parts', 'rig']), completedAt: { course: 1, parts: 2, rig: 3 } }), []);
-    const { toast, showToast, dismissToast, boardToastShown } = useRoadmapToast();
+    const { toast, showToast, dismissToast, toastShown } = useRoadmapToast();
     session.onTreeChanged((data) => setTree(new SkillTree(data)));
     window.writes ??= [];
     window.selectionAttempts ??= [];
@@ -243,7 +243,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
         onNewStep: () => {},
         onComplete: (id, door) => acts.complete(id, door),
         onRecolor: (ids, hue) => acts.recolor(ids, hue), onDelete: (ids, door) => acts.delete(ids, door),
-        toast, onToastShown: boardToastShown,
+        toast, onToastShown: toastShown,
         onToastUndo: () => { toast.action.run(); dismissToast(); },
       }));
   }

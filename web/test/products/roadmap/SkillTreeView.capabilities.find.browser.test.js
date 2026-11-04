@@ -1,10 +1,10 @@
-// §2.5 of the wave-8 architecture: every way the List found a step has its Board home.
+// §2.5 of the wave-8 architecture: every way to find a step has its Board home.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { LABELS, removeChip } from '../../../src/products/roadmap/board/copy.js';
+import { LABELS, removeChip } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost('capabilitiesFind');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const bothRoles = ['owner', 'reader'];

@@ -1,4 +1,4 @@
-import { ACTIVITY } from '../board/copy.js';
+import { ACTIVITY } from '../copy.js';
 import React from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { EventRow } from './EventRow.jsx';

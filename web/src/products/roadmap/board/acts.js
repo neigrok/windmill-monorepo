@@ -1,8 +1,8 @@
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
-import { blockedPrerequisites } from './StepDraft.js';
-import { completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from './copy.js';
+import { blockedPrerequisites } from '../step/StepDraft.js';
+import { LABELS, completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from '../copy.js';
 
 export class StepSelection {
   constructor(ids = []) {
@@ -24,14 +24,22 @@ export class StepSelection {
     if (ids.length === this.ids.length && ids.every((id, index) => id === this.ids[index])) return this;
     return new StepSelection(ids);
   }
+}
 
-  sharedKind(tree) {
-    if (this.count === 0) return null;
-    const steps = this.ids.map((id) => tree.nodesById.get(id));
-    if (steps.some((step) => !step)) return null;
-    const color = steps[0].color ?? DEFAULT_NODE_COLOR;
-    return steps.every((step) => (step.color ?? DEFAULT_NODE_COLOR) === color) ? color : null;
-  }
+// A toast's Undo reverts the act it names and leaves everything later standing; a spent receipt reverts nothing.
+export function receiptUndo({ session, receipt, before, onReverted, onFailure }) {
+  return {
+    label: LABELS.undo,
+    receipt: true,
+    run: () => {
+      try {
+        before?.();
+        if (session.revert(receipt)) onReverted?.();
+      } catch (error) {
+        onFailure(error);
+      }
+    },
+  };
 }
 
 export function deletable(tree, ids) {

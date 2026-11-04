@@ -1,0 +1,50 @@
+name: Web Smoke
+
+# A signed-out reader's walk through the demo, a public roadmap and the landings at 390, 744 and 1440. Read-only: it never
+# signs in, never writes, and blocks the event intake and Sentry at the network layer. Results stay in this log.
+on:
+  workflow_run:
+    workflows: [Web Deploy]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Site to walk
+        default: https://windmill.works
+        required: true
+      roadmap_id:
+        # The default is the roadmap the public gallery lists. Any public roadmap with a step will do.
+        description: Public roadmap id
+        default: t_9e407a96b5330ebe
+        required: true
+
+jobs:
+  smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: node scripts/install-sync-browser.mjs
+
+      - name: Walk the site
+        env:
+          SMOKE_BASE_URL: ${{ inputs.base_url || 'https://windmill.works' }}
+          SMOKE_ROADMAP_ID: ${{ inputs.roadmap_id || 't_9e407a96b5330ebe' }}
+        run: node scripts/smoke-roadmap.mjs

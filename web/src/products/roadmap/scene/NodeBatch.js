@@ -1,7 +1,7 @@
 // One instanced draw for every node; per-instance attributes carry position/color/tier/glow/icon. Tier: 0 unavailable, 1 available, 2 complete.
 import { createProgram, uniformLocations } from './glcore.js';
 import { NODE_COLOR_NAMES, nodeTier, NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, SELECTED_SCALE, MIN_BODY_PX, MIN_ROOT_BODY_PX } from '../theme.js';
-import { isGrouped } from '../selection/bulkSelection.js';
+import { isGrouped } from '../model/bulkSelection.js';
 
 const QUAD_PADDING = 1.9;
 const NC = NODE_COLOR_NAMES.length;

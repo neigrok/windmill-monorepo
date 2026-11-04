@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { SYNC_STATUS, ANONYMOUS_OWNER, LAPSED_SESSION } from '../../../src/products/roadmap/board/copy.js';
+import { SYNC_STATUS, ANONYMOUS_OWNER, LAPSED_SESSION } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost('sync');
+startRoadmapHost();
 
 hostTest('Chromium: the device-only Graph keeps its Shell honesty line and sign-in reachable at 744px', async () => {
   const { page, errors } = await openHost({ width: 744, role: 'ghost', shell: true });

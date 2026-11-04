@@ -8,11 +8,11 @@ import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
-import { KIND_CSS, hueOf } from '../theme.js';
+import { KIND_CSS, hueOf, prefersReducedMotion } from '../theme.js';
 import { focusableElements, wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
-} from './copy.js';
+} from '../copy.js';
 
 const MENU_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const RECOLOR_PULSE_MS = 120;
@@ -115,7 +115,7 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
 
   const choose = (hue) => {
     if (applying.current !== null) return;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = prefersReducedMotion();
     const chip = bar.current.querySelectorAll('[role="radio"]')[kinds.findIndex((kind) => kind.hue === hue)];
     const duration = reduced ? RECOLOR_FADE_MS : RECOLOR_PULSE_MS;
     chip.animate(reduced

@@ -1,10 +1,10 @@
-// §2.5 of the wave-8 architecture: what the List showed about a roadmap has its Board home.
+// §2.5 of the wave-8 architecture: what a roadmap shows lives in its columns.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { backTo, roadmapComplete } from '../../../src/products/roadmap/board/copy.js';
+import { backTo, roadmapComplete } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost('capabilitiesColumns');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const bothRoles = ['owner', 'reader'];

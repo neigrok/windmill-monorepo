@@ -27,15 +27,15 @@ prerequisites and ledger drift below are build work.
 2. **Step, not node,** in every control and string.
 3. **Kind colour is a 4px rail on the card's leading edge**, the element the step identity already
    uses (306:4743). Borders are neutral; the locked tier is dimmed.
-4. **The Activity overlay leaves the first wave.** The step's History tab covers the owner case.
-   Workspace stays; it is a shipped feature.
+4. **The Activity overlay is dropped.** The step's History tab covers the owner case; Activity opens from More and the
+   roadmap sheet. Workspace stays; it is a shipped feature.
 5. **Where the phone's control band lives on native** stays open (below).
 
 2026-10-31:
 
 1. **Counts** sit on the column headings and the segments; Done collapses above 12 cards.
 2. **Desktop columns run in flow order,** Locked · Up next · Done, with Up next weighted.
-3. **The Board replaces the List on phones.**
+3. **The Board is the phone's working view.** The List is gone.
 4. **Locked distance is steps left:** the unfinished steps in the transitive prerequisite closure,
    written *N to go*. The page and modal use the same number.
 5. **Phone multi-select carries over:** long-press enters selection; the bottom bar recolours and
@@ -85,7 +85,7 @@ prerequisites and ledger drift below are build work.
 | Search had no clear or recovery | Clear in the field; **No steps match** with **Clear search** and owner **New step** | Desktop 07.04–07.05; phone 03.06 |
 | Empty roadmap kept a full band; no roadmap-complete state | Band hidden, **New step** pinned in reach; *All 8 steps done* | Phone 03.01, 03.08; desktop 09.01, 09.11 |
 | Back label always named the roadmap | Back names the previous screen | Phone 01.08 |
-| Activity sheet closed three ways | Activity is out of the first wave | Later · Activity overlay sections |
+| Activity sheet closed three ways | The overlay is gone; Activity opens from More and the roadmap sheet | Desktop 08.07–08.09, 08.13–08.14; phone 09.12, 09.18–09.20 |
 | Delete and multi-select were undrawn | Step menu, cost line, held delete, regroup; long-press, bar, recolour, delete | Phone 01.09, 20.01–20.03, 21.01–21.04; desktop 03.02–03.06 |
 | No sync or session states | *Saving…* → *Saved*, offline, refused sync, lapsed session | Phone 03.09–03.12, 04.11; desktop 02.11–02.13, 02.16, 04.07 |
 
@@ -130,5 +130,4 @@ on the roadmap's night.
 The pages are static drawings. They do not establish browser focus order or focus restoration,
 screen-reader announcements, gesture arbitration between the card swipe, vertical scroll and the
 system edges, or 5,000-step performance; those are implementation validation. Prototype route
-destinations were scanned on both pages (none cross from dark to light, none reach the Later
-sections); the journeys were not walked end to end.
+destinations were scanned on both pages (none cross from dark to light); the journeys were not walked end to end.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { registerRoomStatus } from '../../../shell/roomStatus.js';
 import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
-import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_OFFLINE_SHORT, SYNC_STATUS } from '../board/copy.js';
+import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_OFFLINE_SHORT, SYNC_STATUS } from '../copy.js';
 import { refusalEventCode } from './refusals.js';
 import { deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from './status.js';
 

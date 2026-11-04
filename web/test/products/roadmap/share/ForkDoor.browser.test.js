@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { parse } from 'acorn';
-import { beacon, withBrowserErrors } from '../board/composerFixture.js';
+import { beacon, withBrowserErrors } from '../browserFixture.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -140,6 +140,11 @@ for (const presentation of ['sheet', 'dialog']) {
         assert.deepEqual(await page.evaluate(() => window.events), [{ name: 'fork_attempt', props: { mode: 'email' } }]);
         await page.evaluate((code) => window.finishEmail(code), code);
         await page.getByRole('heading', { name: title, exact: true }).waitFor();
+        const outcome = { rate_limited: 'rate_limited', unreachable: 'failed' }[code];
+        assert.deepEqual(await page.evaluate(() => window.events), [
+          { name: 'fork_attempt', props: { mode: 'email' } },
+          ...(outcome ? [{ name: 'fork_attempt', props: { mode: 'email', outcome } }] : []),
+        ]);
         const heading = page.getByRole('heading', { name: title, exact: true });
         assert.equal(await heading.getAttribute('id'), titleId);
         const surface = page.getByRole('dialog', { name: title, exact: true });
@@ -177,6 +182,12 @@ for (const presentation of ['sheet', 'dialog']) {
       await busy.waitFor();
       await page.evaluate(() => window.finishFork('unauthenticated'));
       await page.getByText('Your session expired — the email door still works.', { exact: true }).waitFor();
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'fork_attempt', props: { mode: 'instant' } },
+        { name: 'fork_attempt', props: { mode: 'instant', outcome: 'failed' } },
+        { name: 'fork_attempt', props: { mode: 'instant' } },
+        { name: 'fork_attempt', props: { mode: 'instant', outcome: 'unauthenticated' } },
+      ]);
       assert.equal(await page.getByRole('button', { name: 'Email me a link', exact: true }).count(), 1);
       await page.keyboard.press('Escape');
       await page.getByRole('heading', { name: 'Make it yours', exact: true }).waitFor({ state: 'detached' });

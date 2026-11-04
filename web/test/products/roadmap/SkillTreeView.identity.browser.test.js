@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ROADMAP_VERBS } from '../../../src/products/roadmap/board/copy.js';
+import { ROADMAP_VERBS } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost('identity');
+startRoadmapHost();
 
 for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1024, 'desktop'], [1440, 'desktop']]) {
   for (const role of ['owner', 'reader']) {

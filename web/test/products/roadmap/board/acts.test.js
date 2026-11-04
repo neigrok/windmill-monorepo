@@ -95,15 +95,6 @@ test('StepSelection toggles immutably and prunes to the pane order after filteri
   assert.ok(Object.isFrozen(selected.ids));
 });
 
-test('StepSelection shared kind is the common effective color, otherwise null', () => {
-  const tree = treeOf([wind, { ...dock, color: 'sky' }, { id: 'solo', label: 'Solo', prerequisites: ['wind'] }]);
-  assert.equal(new StepSelection(['wind', 'dock']).sharedKind(tree), 'sky');
-  assert.equal(new StepSelection(['dock', 'solo']).sharedKind(tree), null);
-  assert.equal(new StepSelection(['solo']).sharedKind(tree), 'terracotta');
-  assert.equal(new StepSelection().sharedKind(tree), null);
-  assert.equal(new StepSelection(['missing']).sharedKind(tree), null);
-});
-
 test('deletable excludes the sole root, absent ids and empty selections', () => {
   const tree = treeOf([wind, dock]);
   assert.equal(deletable(tree, ['wind']), false);

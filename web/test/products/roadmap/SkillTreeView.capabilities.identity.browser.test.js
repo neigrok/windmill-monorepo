@@ -1,9 +1,9 @@
-// §2.5 of the wave-8 architecture: the Tree / List pill and the plaque have their homes in the identity row.
+// §2.5 of the wave-8 architecture: the row names the roadmap and its progress for every role.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('capabilitiesIdentity');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const bothRoles = ['owner', 'reader'];

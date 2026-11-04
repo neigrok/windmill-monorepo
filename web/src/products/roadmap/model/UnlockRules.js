@@ -1,6 +1,9 @@
 // The only place that derives NodeState; nothing else may hand-set a node state. The questions
 // below read those derived states: what a step still owes, and what finishing it would open.
 
+// The Board column each derived state stands in.
+export const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete: 'done' };
+
 export class UnlockRules {
   static derive(tree, progress) {
     const states = new Map();

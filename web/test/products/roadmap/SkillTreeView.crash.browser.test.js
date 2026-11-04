@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('crash');
+startRoadmapHost();
 
 const everyWidth = [390, 744, 1440];
 

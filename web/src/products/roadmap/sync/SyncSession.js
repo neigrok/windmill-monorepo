@@ -8,7 +8,7 @@
 //    malformed frame forces a resubscribe.
 //  - live sends fire only in the `live` phase; graft replies may also flush the outbox.
 
-import { captureError } from '../../../telemetry/sentry.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
 import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
@@ -40,8 +40,7 @@ function frameFrontier(writes) {
 
 export class SyncSession {
   constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
-    reportFailure = (operation, error) => captureError('roadmap', operation,
-      typeof error?.stack === 'string' && error.stack ? error.stack : new Error(operation).stack, '#/app') } = {}) {
+    reportFailure = reportRoadmapFailure } = {}) {
     this.url = url;
     this.reportFailure = reportFailure;
     this.treeId = treeId;

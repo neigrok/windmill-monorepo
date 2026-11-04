@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ACTIVITY, LABELS, ROADMAP_SHEET, ROADMAP_VERBS } from '../../../src/products/roadmap/board/copy.js';
+import { ACTIVITY, LABELS, ROADMAP_SHEET, ROADMAP_VERBS } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost('activity');
+startRoadmapHost();
 
 for (const width of [744, 1024, 1440]) {
   for (const surface of ['board', 'tree']) {

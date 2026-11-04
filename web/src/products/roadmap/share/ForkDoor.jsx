@@ -6,16 +6,15 @@ import { Button, Input, Dialog } from '../../../design-system';
 import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
 import { requestMagicLink } from '../../../shell/auth/AuthClient.js';
 import { forkTree } from '../persistence/TreeRegistry.js';
-import { FORKED_FROM_DEMO_KEY } from '../demo/demoStage.js';
+import { reportUnexpectedFailure } from '../reportFailure.js';
+import { noteForked } from '../persistence/ViewPrefs.js';
+import { prefersReducedMotion } from '../theme.js';
 import { track } from '../../../telemetry/beacon.js';
 import './fork-door.css';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null }) {
+export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = false, onClose, onSubmit, stepCount = null }) {
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | rate_limited | unreachable
   const [typo, setTypo] = useState(false);
@@ -72,11 +71,15 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
       onSubmit?.();
     } catch (err) {
       if (err?.code === 'invalid_email') {
+        track('fork_attempt', { mode: 'email', outcome: 'invalid' });
         setPhase('idle');
         setTypo(true);
       } else if (err?.code === 'rate_limited') {
+        track('fork_attempt', { mode: 'email', outcome: 'rate_limited' });
         setPhase('rate_limited');
       } else {
+        track('fork_attempt', { mode: 'email', outcome: 'failed' });
+        reportUnexpectedFailure('roadmap-fork', err);
         setPhase('unreachable');
       }
     } finally {
@@ -92,8 +95,7 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
     forkTree(treeId)
       .then(({ treeId: forkedId }) => {
         track('fork_claim', { mode: 'instant' });
-        // Leave a one-shot note so the fresh copy's arrival re-plant speaks "Forked — n steps planted".
-        if (demo) { try { sessionStorage.setItem(FORKED_FROM_DEMO_KEY, '1'); } catch { /* ignore */ } }
+        noteForked();
         // Rewrite the URL to the hash route, then reload: a /t/:id pathname would stay pinned read-only,
         // and the scene must be born in editor mode.
         window.history.replaceState(null, '', `/#/app/${forkedId}`);
@@ -101,7 +103,10 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
       })
       .catch((err) => {
         setBusy(false);
-        setForkError(err?.code === 'unauthenticated' ? 'unauthenticated' : 'failed');
+        const unauthenticated = err?.code === 'unauthenticated';
+        track('fork_attempt', { mode: 'instant', outcome: unauthenticated ? 'unauthenticated' : 'failed' });
+        if (!unauthenticated) reportUnexpectedFailure('roadmap-fork', err);
+        setForkError(unauthenticated ? 'unauthenticated' : 'failed');
       });
   }
 

@@ -4,7 +4,7 @@
 // docs/design/consistency.md, and owed a redraw from the boards.
 
 import { KIND_CSS, isNightFor, sceneTheme } from '../theme.js';
-import { completedToast, upNextCount } from '../board/copy.js';
+import { completedToast, upNextCount } from '../copy.js';
 
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // A node carries its kind as --kind-* tokens and follows the room by itself. An edge is an SVG stroke

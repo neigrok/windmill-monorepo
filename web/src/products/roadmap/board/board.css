@@ -350,7 +350,8 @@
   box-shadow: var(--shadow-lg);
   animation: st-board-toast-enter var(--duration-base) var(--ease-soft) both;
 }
-.st-board-toast--delete {
+.st-board-toast--delete,
+.st-board-toast--notice {
   border-left-color: var(--text-secondary);
 }
 .st-board-toast.is-leaving {

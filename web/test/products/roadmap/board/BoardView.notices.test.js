@@ -4,14 +4,14 @@ import { register } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { beacon, boardEvents, learnToSailNodes, withBrowserErrors } from './composerFixture.js';
+import { beacon, boardEvents, learnToSailNodes, withBrowserErrors } from '../browserFixture.js';
 
 register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: BoardView } = await import('../../../../src/products/roadmap/board/BoardView.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
-const { ANONYMOUS_OWNER, createdToast } = await import('../../../../src/products/roadmap/board/copy.js');
+const { ANONYMOUS_OWNER, createdToast } = await import('../../../../src/products/roadmap/copy.js');
 
 for (const breakpoint of ['desktop', 'tablet', 'phone']) {
   test(`BoardView notices: ${breakpoint} keeps the device line and Fork offer on phones`, () => {
@@ -53,10 +53,10 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
-import { StepDetail } from '/src/products/roadmap/board/StepDetail.jsx';
+import { StepDetail } from '/src/products/roadmap/step/StepDetail.jsx';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
-import { ANONYMOUS_OWNER } from '/src/products/roadmap/board/copy.js';
+import { ANONYMOUS_OWNER } from '/src/products/roadmap/copy.js';
 
 window.openRoom = (nodes, options = {}) => {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });

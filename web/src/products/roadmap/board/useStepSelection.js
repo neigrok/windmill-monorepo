@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { StepSelection, deletable } from './acts.js';
-import { stepOf } from './stepAddress.js';
+import { stepOf } from '../step/stepAddress.js';
 import { boardFocusTarget } from './traversal.js';
 
 const IDLE = { phase: 'idle', visit: null, ids: [], focus: null };

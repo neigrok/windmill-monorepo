@@ -1,9 +1,9 @@
-// §2.5 of the wave-8 architecture: what ControlBar carried has its home in the row's switcher and the camera.
+// §2.5 of the wave-8 architecture: the row carries the switch, the camera and the verbs.
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('capabilitiesChrome');
+startRoadmapHost();
 
 const everyWidth = [320, 390, 744, 1440];
 const phones = [320, 390];

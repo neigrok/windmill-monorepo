@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, recolorOutcome } from './acts.js';
+import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, receiptUndo, recolorOutcome } from './acts.js';
+import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
-import { LABELS } from './copy.js';
+import { LABELS } from '../copy.js';
 import { BoardQuery } from './Board.js';
 
 export class BoardComposer {
@@ -49,7 +50,7 @@ export class BoardActs {
     if (!c.active || !c.owner || !c.tree) return { ok: false };
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     const selection = new StepSelection(ids.filter((id) => tree.nodesById.has(id)));
-    if (selection.count === 0 || selection.sharedKind(tree) === hue) return { ok: true, changed: false };
+    if (selection.count === 0 || sharedKind(tree, selection.ids) === hue) return { ok: true, changed: false };
     if (!c.session) {
       c.report('roadmap-board-recolor', new Error('Missing Board session'));
       return { ok: false };
@@ -65,16 +66,12 @@ export class BoardActs {
     const outcome = recolorOutcome(selection.ids);
     c.showToast(outcome.message, {
       surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
-      action: { label: LABELS.undo, receipt: true, run: () => {
-        const current = this.collaborators;
-        try {
-          current.onQuiet();
-          if (!c.session.revert(receipt)) return;
-          current.track('roadmap_board_undo', { act: 'recolor' });
-        } catch (error) {
-          current.report('roadmap-board-recolor', error);
-        }
-      } },
+      action: receiptUndo({
+        session: c.session, receipt,
+        before: () => this.collaborators.onQuiet(),
+        onReverted: () => this.collaborators.track('roadmap_board_undo', { act: 'recolor' }),
+        onFailure: (error) => this.collaborators.report('roadmap-board-recolor', error),
+      }),
     });
     c.track('roadmap_board_bulk', { step: 'recolor', count: countBucket(selection.count) });
     return { ok: true, changed: true };
@@ -168,20 +165,16 @@ export class BoardActs {
     c.showToast(outcome.message, {
       surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
       ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
-      action: { label: LABELS.undo, receipt: true, run: () => {
-        const current = this.collaborators;
-        try {
-          if (!c.session.revert(receipt)) return;
+      action: receiptUndo({
+        session: c.session, receipt,
+        onReverted: () => {
+          const current = this.collaborators;
           current.onQuiet();
-          if (graph) {
-            current.track('roadmap_graph_toast', { act: 'create', step: 'undo' });
-            return;
-          }
-          current.track('roadmap_board_undo', { act: 'create' });
-        } catch (error) {
-          current.report('roadmap-board-create', error);
-        }
-      } },
+          if (graph) current.track('roadmap_graph_toast', { act: 'create', step: 'undo' });
+          else current.track('roadmap_board_undo', { act: 'create' });
+        },
+        onFailure: (error) => this.collaborators.report('roadmap-board-create', error),
+      }),
     });
     if (graph) c.track('roadmap_graph_toast', { act: 'create', step: 'shown' });
     c.track('roadmap_board_create', { step: 'saved', column: outcome.column, filterCleared: outcome.filterCleared });

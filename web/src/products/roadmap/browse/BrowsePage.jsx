@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
-import { useViewMode } from '../ui/useViewMode.js';
+import { useViewMode } from '../room/useViewMode.js';
 import { forkTree } from '../persistence/TreeRegistry.js';
 import { GalleryCard, GALLERY_CARD_CSS } from '../share/GalleryCard.jsx';
 import { ForkDoor } from '../share/ForkDoor.jsx';

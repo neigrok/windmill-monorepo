@@ -2,10 +2,10 @@
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ACTIVITY, FORK_OFFER, ROADMAP_SHEET, ROADMAP_VERBS } from '../../../src/products/roadmap/board/copy.js';
+import { ACTIVITY, FORK_OFFER, ROADMAP_SHEET, ROADMAP_VERBS } from '../../../src/products/roadmap/copy.js';
 import { DEMO_COPY } from '../../../src/products/roadmap/demo/demoStage.js';
 
-startRoadmapHost('capabilitiesForkActivity');
+startRoadmapHost();
 
 const phones = [320, 390];
 const wide = [744, 1440];

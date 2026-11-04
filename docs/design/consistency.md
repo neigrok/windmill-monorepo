@@ -562,133 +562,104 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   their own values.
 - **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
   legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
-  384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six
+  384:19561). The shipped `graph/StepPanel.jsx` offers only the legend's kinds, falling back to the six
   hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
 - **Board · no Complete offer after the last subtask in the Graph.** The Board's step page and modal
   offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
-  desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`ui/StepPanel.jsx`)
+  desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`graph/StepPanel.jsx`)
   fills the gauge and nothing else; no drawing covers the Graph.
-- **Board · the Step workspace note says the last subtask completes the step.** The Step workspace
-  component description (228:911) says *Last completion marks the step complete after 600ms*.
-  Canon and the build say subtasks never complete a step; correct the description.
 - **Board · where the modal's status row sits.** The step modal 03.01 (184:1693) draws *Up next* under
   the step links' divider; the core-loop modals (02.01–02.04) and every phone step page draw the status
-  row under the description. `board/StepDetail.jsx` follows the core loop. Redraw 03.01 or rule.
+  row under the description. `step/StepDetail.jsx` follows the core loop. Redraw 03.01 or rule.
 - **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
   prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
   lists it plainly. The build follows each drawing. Choose one.
 - **Board · two names for the checklist.** The Board's step workspace says *Subtasks* and *Add subtask*
-  (07.01, 03.08); the Graph's step panel (`ui/StepPanel.jsx` through `ui/tree/Checklist.jsx`) says
+  (07.01, 03.08); the Graph's step panel (`graph/StepPanel.jsx` through `graph/tree/Checklist.jsx`) says
   *Checklist* and *Add a sub-task*, and its add menu *Sub-task*. Choose one name for both views.
-- **Board · a failed Copy link says nothing.** The step menu's Copy link (01.09, 03.02) draws only
-  *Link copied*. When the browser refuses the clipboard write the build shows nothing, since no drawing
-  covers it; the Share dialog's inline *Could not copy the link* has no menu equivalent. Draw the
-  failure.
-- **Board · Shell at 200% text.** The 200%-text Board specimen (phone 18.05 380:18803) leaves out
-  the Shared Shell: neither the proposal's Shell component (290:7085) nor the shipped
-  `web/src/shell/chrome/chrome.css` (room-switcher pills at a fixed 30px height with
-  `white-space: nowrap`, 32px grid gutters) defines a reflow. The Shell owner draws and builds it at
-  320px with 200% text.
-- **Board · the step card's note says "steps away".** The Step card component description (351:5672)
-  words the Locked reason as *Needs <step> · <longest chain> steps away*. The owner ruling,
-  `board/copy.js` and the card state sheets (353:5571, 353:5686, 353:5801) say *Needs Read the wind ·
-  1 to go*. Correct the description.
+- **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
+  build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
+  **Retry** (phone 25.01–25.02, desktop 15.01–15.02).
+- **Board · Shell at 200% text.** The Shell defines no reflow: `web/src/shell/chrome/chrome.css` keeps room-switcher pills at a
+  fixed 30px height with `white-space: nowrap` and 32px grid gutters, and the 18.05 specimen (380:18803) leaves the Shell out.
+  Proposed, awaiting the owner: the pills fold into one current-room menu by em width (phone 25.23–25.24). The Shell owner draws it
+  in the Shell file and builds it.
 - **Board · two pairs of view glyphs.** The phone identity row (258:1397) draws Board as three
   outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
-  strokes and Graph as a branching tree. `board/ViewSwitch.jsx` follows each band: phones draw the
+  strokes and Graph as a branching tree. `identity/ViewSwitch.jsx` follows each band: phones draw the
   icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
 - **Board · two skeleton cards.** The desktop Skeleton card (369:4027) breathes opacity 1 → .6 over
   1200ms ease-glow for as long as the roadmap loads; the phone Skeleton card (369:10026) holds still,
   and the motion canon reserves endless breathing for the crowned root (`tokens/motion.css`).
   `board/states.css` follows each drawing. Choose one.
-- **Board · Roadmap complete for a reader.** The roadmap-complete frames (desktop 385:13038, phone
-  377:6685) draw only the owner. The Board shows a reader the title alone: *Add a step whenever
-  you're ready.* invites something a reader cannot do. Draw the reader's state.
-- **Board · states at 744px.** The loading, load-error and empty frames are drawn at
-  1440 and on phones; 744–1023px uses the desktop frames, with the three skeleton columns side by side
-  rather than the tablet's rail. Draw the tablet states.
-- **Board · New step on an empty phone roadmap.** An owner’s empty
-  roadmap reaches the Board on phone, tablet and desktop. Its New step opens the composer (185:2149,
-  226:1055); the tablet uses the desktop empty-state structure pending the 744px drawing above.
-- **Board · completion toast replacement.** The swipe spec (379:17279) says completions coalesce.
-  The pinned wave-4 ruling replaces the older toast and gives Undo only the step named in the new
-  toast. Correct the spec; there is no multi-completion copy or combined Undo.
-- **Board · a held delete that cannot send.** The delete frames (03.05, 20.03) have no failed-release
-  state. An unexpected failed release restores the step silently and reports `roadmap-board-delete`
-  with stack frames. An already-absent step or not-ready session is an expected no-op, not an Issue.
-  Draw the recovery; *Couldn't sync this change* belongs to `rb-refused-sync`.
+- **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
+  phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
+  (25.03, 15.03).
+- **Board · states at 744px.** At 744–1023px the build uses the desktop loading, load-error and empty frames, with three skeleton
+  columns side by side rather than the tablet's rail. Proposed, awaiting the owner: 15.04–15.06; load error and empty have no columns,
+  so no rail.
+- **Board · New step on an empty phone roadmap.** An owner's empty roadmap reaches the Board on phone, tablet and desktop. Its New
+  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending 15.06.
+- **Board · a held delete that cannot send.** An unexpected failed release restores the step silently and reports
+  `roadmap-board-delete` with stack frames. An already-absent step or not-ready session is an expected no-op, not an Issue. Proposed,
+  awaiting the owner: toast *Couldn't delete Rig the boat* · **Retry** (25.04, 15.07). *Couldn't sync this change* belongs to
+  `rb-refused-sync`.
 - **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
   the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
   and Apply. The implementation uses this page layout. The canon is ✅ 744 09.02–09.04: 470:23411,
   475:23809 and 470:23621, with darks 470:23881, 475:24021 and 470:24091.
-- **Board · picker at 1024–1439px.** The picker opens as a page inside the composer because the
-  anchored panel cannot fit beside the centred dialog. From 1440px it opens beside the form. Draw
-  the intermediate widths; the page uses the approved 744px structure.
-- **Board · empty-roadmap Prerequisites row.** With zero candidates, the row remains focusable
-  and shows *Prerequisites · None*, but is non-interactive (`aria-disabled`) and cannot open the
-  picker. Its empty-roadmap treatment is undrawn: pin whether the chevron remains and whether the
-  row is disabled or hidden.
+- **Board · picker at 1024–1439px.** The picker opens as a page inside the composer because the anchored panel cannot fit beside the
+  centred dialog. From 1440px it opens beside the form. Proposed, awaiting the owner: 15.10.
+- **Board · empty-roadmap Prerequisites row.** With zero candidates the row stays focusable and shows *Prerequisites · None*, but is
+  non-interactive (`aria-disabled`) and cannot open the picker. Proposed, awaiting the owner: hide the row (25.13, 15.13, recommended) or
+  keep it as plain text with no chevron and no focus (25.14, 15.14).
 - **Board · default kind across surfaces.** The composer defaults to Sky, as the blank composer
   frames show. The Graph plants new roots in the first legend kind (Terracotta if none exists),
   and children inherit their parent’s kind. Sky is the Board default; when no legend kind names
   that hue, the choice correctly uses its hue name.
-- **Board · large-picker context at 744px.** On phones, `pickerFor` adds *· N steps* above eight
-  candidates. That suffix is undrawn at 744px; the composer page currently uses lowercase
-  *for <draft>* without a total. Pin the large-roadmap context for that page.
-- **Board · picker without a draft name or with a removed prerequisite.** With no draft name the
-  phone and composer-page headers show only *Prerequisites*, without a For line. A prerequisite deleted remotely is
-  dropped silently from the draft and selection, and placement recomputes. Draw these states; 10.11
-  Selection revalidated is Edit copy.
-- **Board · phone large-picker dark and unreachable states.** Phone 10.x has no dark frames; dark
-  uses the existing tokens with the light structure. Search runs synchronously in memory, so 10.09
-  Searching and 10.10 Search unavailable are not reachable. Draw dark 10.x and align the search flows.
-- **Board · shared Undo.** Backspace and Delete on an owner Board card start the nine-second held
-  delete directly; the hold is its safety (wave-5 G10). On an uncovered Board, Command-Z still uses
-  the global structural Undo stack; the composer and picker block the host shortcut. `rb-simplify`
-  owns reconciling that path with targeted Board toast Undo.
-- **Board · multi-select entry for keyboard and screen readers.** Phone multi-select starts only
-  through a touch hold (wave-5 G14). Draw a keyboard and screen-reader entry before exposing one;
-  the orchestrator owns its follow-up node.
-- **Board · phone Edit step field copy.** The edit page inherits the composer fields and placement
-  preview (wave-5 G5). Align [02.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1675):
-  its *Step name* label and count-only prerequisites row differ from *Name* and the selected step names.
-- **Board · blocked prerequisite reasons.** Both bands name blocked rows *Comes after this step*
-  and the edited step *This step* (wave-5 G6). Align desktop
-  [09.09](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=384-20365), which says
-  *Unlocked by this step* and omits the edited step.
-- **Board · edit placement preview.** Keep *Prerequisites done: lands in Up next.* (wave-5 G7).
-  Align [02.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=403-34462), which names
-  one completed prerequisite in its preview instead.
-- **Board · shortcut annotations.** 10.03's orange row bullets and stray *f* by Delete are drawing
-  annotations, not UI (G15b). Remove them from the production specimen.
-- **Board · the topbar before a roadmap loads.** Desktop 02.09 (374:5067) and 02.10 (374:5202) draw the roadmap's
-  name with its switcher chevron and the Board/Graph switch, and no Share. Before the load answers, or after it
-  fails, the build knows no name, so it shows none rather than *Untitled roadmap*, and it offers no Share. It shows
-  the switch while loading, but not after a failed load: the Graph's load error veils the topbar, so the switch would
-  lead where a pointer cannot come back from. Draw what the topbar names before the name is known, and say whether
-  the switch belongs on 02.10 once the Graph's load error leaves the topbar reachable.
-- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and
-  field focus. G4 retains the phone Graph camera group under the row and needs its dedicated drawing.
-- **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's
-  read-only step page, with Fork remaining primary. The approved
-  [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343)
-  has no visual tap affordance on that title. Draw the interactive title treatment.
+- **Board · large-picker context at 744px.** On phones `pickerFor` adds *· N steps* above eight candidates. The composer page uses
+  lowercase *for <draft>* and carries the total in its count line. Proposed, awaiting the owner: *for Passage plan · 5,000 steps* with
+  the count line reduced to *4 matches* (15.11).
+- **Board · picker without a draft name or with a removed prerequisite.** With no draft name the phone and composer-page headers show
+  only *Prerequisites*, without a For line (drawn in 25.15, 15.12). A prerequisite deleted remotely is dropped silently from the draft
+  and selection, and placement recomputes. Proposed, awaiting the owner: *Read the wind was deleted, so it left your selection.* in the
+  picker (25.16, 15.15), and the placement preview naming the loss in the form (25.17, 15.16). 10.11 Selection revalidated is Edit copy.
+- **Board · phone large-picker dark.** Phone 10.x dark uses the existing tokens with the light structure. Proposed, awaiting the owner:
+  the 11 dark frames in section 539:16665, beside 10.05 dark (383:19007).
+- **Board · shared Undo.** Backspace and Delete on an owner Board card start the nine-second held delete directly; the hold is its
+  safety (wave-5 G10). A toast's Undo reverts its own act. Command-Z walks the session's global structural stack across both views and is
+  refused under a covering layer.
+- **Board · multi-select entry for keyboard and screen readers.** Phone multi-select starts only through a touch hold (wave-5 G14).
+  Proposed, awaiting the owner: *Select* in the step menu, *Select steps* in the roadmap sheet, a selection state with none chosen and
+  the accessible bulk bar (25.18–25.22). The follow-up node is `rb-multi-select-keyboard`.
+- **Board · the topbar before a roadmap loads.** Before the load answers, or after it fails, the build knows no name, so it shows none
+  rather than *Untitled roadmap*, and it offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
+  load error veils the topbar, so the switch would lead where a pointer cannot come back from. Proposed, awaiting the owner: a still name
+  skeleton with no chevron while loading (15.08), and *Your roadmaps* with its chevron after a failed load (15.09). The switch returns to
+  the load error once the Graph's load error leaves the topbar reachable.
+- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
+  camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
+- **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's read-only step page, with Fork
+  remaining primary. The approved [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343) has no visual tap
+  affordance on that title. Proposed, awaiting the owner: a 44px title row with a chevron (25.10).
 - **Board · filter strip at 744.** The built strip ends at y=172; 08.13 draws it ending at y=160.
   The tablet Activity panel keeps the drawn 12px gap beneath the strip, so on the Board it stands at
   y=184 where [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws
   y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
-- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph.
-  The Board shortcuts dialog does not list A because its approved specimen has no Activity row.
-  Draw that row before adding it to `BOARD_SHORTCUT_GROUPS`; A does nothing on phones.
+- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph. The Board shortcuts dialog does not list A.
+  Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.
+  A does nothing on phones.
 - **Board · dock beneath the row.** The step dock from 744px starts 8px
   below the measured identity row and clears any Graph refusal banner, so an open step never
   covers Share, Next, New step, More or refusal actions.
   Owner-approved ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the desktop Graph with a step
   in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
-- **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file
-  in the paste format, with the browser download as feedback; Settings retains the all-roadmaps
-  zip. G24 copies the reader's roadmap link and uses the existing *Link copied* toast. Draw these
-  outcomes before replacing the approved interims.
+- **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file in the paste format, with the browser
+  download as feedback; Settings retains the all-roadmaps zip. G24 copies the reader's roadmap link and uses the existing *Link copied*
+  toast; a refused clipboard shows nothing. Proposed, awaiting the owner: *Learn to sail exported* and *Couldn't export this roadmap* ·
+  **Retry** (25.05–25.06, 15.18–15.19), and reader Share copied, failed and link shown (25.07–25.09, 15.20–15.22).
+- **Board · phone twin status.** 02.03 (375:11884 🔨, 383:18901 ✅), 03.01 (185:2149 🔨, 383:18926 ✅) and 10.05 (381:9227 🔨, 383:19007 ✅)
+  disagree between light and dark. The build owner aligns them when the frames move to 🚀.
 - **Board · device-only status.** The host carries the anonymous or lapsed line in the Shell
   from 744px and in the tappable Device note below the identity on both phone views. The phone
   Graph camera clears the measured note.
@@ -696,20 +667,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   notice. The global notice yields to any room registered for status, idle or device-only included, so
   a device-only room shows no Offline signal while offline. Readers, the demo and rooms without a
   publisher retain the global notice.
-- **Board · the drawings of what the lift retired.** The List, the phone editor sheet, the phone aim, remove-link and
-  bulk bars, ControlBar and the Next up shelf left the product with the Board's lift. Their Web Mobile and Web boards
-  (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*, *List vocabulary*, and the Next up states
-  in *05 · Progress and feedback*) still stand in Figma. Delete them and their index rows when the lift ships.
+- **Board · the drawings of what the lift retired.** The product has no List, phone editor sheet, phone aim, remove-link and bulk bars,
+  ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
+  *List vocabulary*, and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
+  index rows in the 🚀 pass.
 - **Board · Shell from 744.** Every role's frames from 744 ([04.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12955),
   [04.06](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12775), 04.09 · 744) draw the Shared Shell's
   room links from the left edge, with no mark and no fill on the active room. The built head keeps the mark, fills the
   active room and centres the links beside the mark and seat, so a room registered for status holds them further left
   than a reader's or the demo's. Journal, gym and Home share that head. Rule whether roadmap takes the drawn head from
   744 alone. Phones already wear it in every roadmap room; journal, gym and Home keep the mark there.
-- **Board · arrival toast.** [Motion language](guidelines/motion-language.md) §7 ends the paste arrival on "Roadmap
-  planted · N steps". An owner's fresh tree opens on the frontier, which skips the arrival, so that sentence never
-  plays on a plant from the paste door. Readers and owners reloading on the Graph play the arrival without it. Rule
-  whether a fresh plant plays the arrival.
 - **Demo · coach card on a phone.** [P4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=64-2) draws the
   card beside its step with an arrow. At phone width neither side fits, so the card seats under its step, or over it
   near the bottom and clear of the Fork pill and selected-step bar, with no arrow. Draw the phone seat.

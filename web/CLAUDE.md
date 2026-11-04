@@ -70,6 +70,12 @@ this only for preview builds.
 land before backend deployment because the embedder mounts weights from the web directory.
 See [embedder operations](../services/embedder/README.md).
 
+`.github/workflows/web-smoke.yml` runs `scripts/smoke-roadmap.mjs` after every successful deploy on main, and by hand with a
+base URL and a public roadmap id. It walks the demo, a public roadmap and the landings as a signed-out reader at 390, 744 and
+1440, read-only, with the event intake and Sentry blocked, and fails on a page error, a console error or a failed same-origin
+request other than the anonymous `/v1/me` 401. `scripts/benchmark-board.mjs` measures the Board under CPU throttling; it is a
+measuring tool, not a gate.
+
 ## Offline rooms and browser replicas
 
 The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
