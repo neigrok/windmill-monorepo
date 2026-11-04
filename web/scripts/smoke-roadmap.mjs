@@ -184,6 +184,8 @@ async function publicRoadmapWalk(page, { site }) {
     if (await stepDialog(page).getByRole('button', { name: action, exact: true }).count()) throw new Error(`a reader's step offers ${action}`);
   }
   await closeWithBack(page);
+  await reopenWithForward(page);
+  await closeWithBack(page);
 }
 
 async function stepLinkWalk(page, { site }) {
@@ -207,7 +209,7 @@ function landingWalk(path) {
 
 const WALKS = [
   ['the demo lands on the Graph, its Board opens a step, Back returns, Fork opens and closes', demoWalk],
-  ['a public roadmap lands on the Graph and its Board reads read-only', publicRoadmapWalk],
+  ['a public roadmap lands on the Graph, its Board reads read-only, and Back and Forward walk its step', publicRoadmapWalk],
   ['a step link lands on its step', stepLinkWalk],
   ['/roadmap renders', landingWalk('/roadmap')],
   ['/ renders', landingWalk('/')],

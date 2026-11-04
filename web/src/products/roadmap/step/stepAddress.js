@@ -15,9 +15,11 @@ export function hashWithStep(hash, id) {
   return `#${path}${parts.length > 0 ? `?${parts.join('&')}` : ''}`;
 }
 
-// The roadmap a view stands on: the path and the hash before its query.
+// The roadmap a view stands on: the path and the hash before its query. A hash holding only a query names no route, so
+// /t/id and /t/id#?step=x stand on the same roadmap.
 function routeOf() {
-  return `${window.location.pathname}${window.location.hash.split('?')[0]}`;
+  const hashRoute = window.location.hash.split('?')[0];
+  return `${window.location.pathname}${hashRoute === '#' ? '' : hashRoute}`;
 }
 
 // The open step and how the reader reached it: `trail` lists the steps of this visit, oldest first, and `door` says

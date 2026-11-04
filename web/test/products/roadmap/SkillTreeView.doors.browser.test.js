@@ -119,3 +119,28 @@ hostTest('Chromium: the host 744 Ask AI overlay follows the measured row and Boa
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const [name, pathOnly] of [['a path-only address', true], ['a hash route', false]]) {
+  hostTest(`Chromium: on ${name} Back closes a step and Forward reopens it, with the address and the page agreeing`, async () => {
+    const { page, errors } = await openHost({ surface: 'board', pathOnly });
+    try {
+      const address = () => page.evaluate(() => location.pathname + location.hash);
+      const route = pathOnly ? '/roadmap-host-test' : '/roadmap-host-test#/app/t_sail';
+      const step = pathOnly ? '/roadmap-host-test#?step=wind' : '/roadmap-host-test#/app/t_sail?step=wind';
+      const dialog = page.getByRole('dialog', { name: 'Read the wind', exact: true });
+      await page.locator('.st-board-card[data-step-id="wind"]').click();
+      await dialog.waitFor();
+      assert.equal(await address(), step);
+      await page.goBack();
+      await dialog.waitFor({ state: 'detached' });
+      assert.equal(await address(), route);
+      await page.goForward();
+      await dialog.waitFor();
+      assert.equal(await address(), step);
+      await page.goBack();
+      await dialog.waitFor({ state: 'detached' });
+      assert.equal(await address(), route);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

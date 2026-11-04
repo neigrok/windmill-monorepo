@@ -240,7 +240,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false } = {}) {
   await ready;
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -291,7 +291,7 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', su
   for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached })) {
     if (enabled) params.set(name, '1');
   }
-  await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
+  await page.goto(`${origin}/roadmap-host-test?${params}${pathOnly ? '' : '#/app/t_sail'}`);
   await page.waitForFunction(() => !!window.session?.ready, null, { timeout: 30000 });
   if (!crash && !demo) await page.locator('.st-roadmap-progress').waitFor({ timeout: 30000 });
   if (role === 'reader' && surface === 'board' && !crash) await page.getByRole('button', { name: 'Board', exact: true }).click();
