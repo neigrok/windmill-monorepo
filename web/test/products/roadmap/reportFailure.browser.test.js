@@ -11,6 +11,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
+import '/src/products/roadmap/skilltree.css';
 import { BrowsePage } from '/src/products/roadmap/browse/BrowsePage.jsx';
 import { TreeSwitcher } from '/src/products/roadmap/identity/TreeSwitcher.jsx';
 import { NewTreeBirth } from '/src/products/roadmap/paste/NewTreeBirth.jsx';
@@ -188,6 +189,18 @@ for (const [verb, act] of [
     });
   }
 }
+
+test("Plant wears its style wherever the composer stands", async () => {
+  await withDoor('birth', {}, async (page) => {
+    await page.getByRole('button', { name: 'paste a plan' }).click();
+    const plant = page.locator('.pc-plant');
+    await plant.waitFor();
+    assert.deepEqual(await plant.evaluate((button) => {
+      const style = getComputedStyle(button);
+      return { padding: style.padding, radius: style.borderRadius !== '0px', font: style.fontWeight, border: style.borderStyle };
+    }), { padding: '10px 20px', radius: true, font: '800', border: 'none' });
+  });
+});
 
 test('a blank plant the server fails reports roadmap-plant, emits its failure and shows its error face', async () => {
   await withDoor('birth', { 'POST /v1/trees': json({ error: 'boom' }, 500) }, async (page) => {

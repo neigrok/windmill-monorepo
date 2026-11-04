@@ -124,6 +124,44 @@ hostTest('§2.5 Delete: the desktop Graph keeps the sole root at every door and 
   } finally { await page.close(); }
 });
 
+hostTest('§2.5 Delete: under a hold the Graph refuses the last root standing, and the hold keeps its toast', async () => {
+  const { page, errors } = await openHost({ width: 1440 });
+  try {
+    await page.evaluate(() => window.session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 }));
+    await page.evaluate(() => { window.location.hash = `${window.location.hash.split('?')[0]}?step=solo`; });
+    const layer = page.locator('.st-board-step-layer');
+    await layer.getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete step' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: DELETE_CONFIRM.delete, exact: true }).click();
+    const toast = page.locator('.st-graph-toast .st-board-toast');
+    await toast.waitFor();
+    await page.evaluate(() => window.scene.select('course'));
+    await page.locator('.st-detail-panel--open .st-step-name', { hasText: 'Choose a course' }).waitFor();
+    assert.equal(await page.locator('.st-step-delete').count(), 0);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Delete');
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.equal(await toast.locator('.st-board-toast-message').textContent(), deletedToast({ step: 'Sail solo' }));
+    assert.deepEqual(await page.evaluate(() => window.session.lattice.toTreeData().nodes.map(({ id }) => id).sort()), ['course', 'dock', 'solo', 'wind']);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('§2.5 Delete: a signed-in reader at the app address gets a reader\'s dock, and Delete writes nothing', async () => {
+  const { page, errors } = await openHost({ width: 1440, role: 'reader', appUrl: true });
+  try {
+    await page.evaluate(() => window.scene.select('dock'));
+    await page.locator('.st-detail-panel--open', { hasText: 'Leave the dock' }).waitFor();
+    assert.equal(await page.locator('.st-step-delete').count(), 0);
+    assert.equal(await page.locator('.st-detail-panel--open').getByRole('textbox').count(), 0);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Delete');
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.deepEqual(await page.evaluate(() => window.session.lattice.toTreeData().nodes.map(({ id }) => id).sort()), ['course', 'dock', 'wind']);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
 hostTest('§2.5 Delete: the desktop dock offers Delete for a step the roadmap can lose', async () => {
   const { page, errors } = await openHost({ width: 1440 });
   try {
