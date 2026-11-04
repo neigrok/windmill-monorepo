@@ -31,6 +31,8 @@ answers during a workout, reads the open workout (§4.1), and its replica execut
 | Web | — | no |
 | MCP (generated catalog) | — | no |
 
+iOS and Android differ on an open that may never have reached the server: §4.5 says how.
+
 **§0.1 In this spec:**
 - the ability catalog every door shares, and its conformance corpora;
 - the Coach turn: the model loop on the server, and every ability run by the turn's tool host;
@@ -206,7 +208,7 @@ executors claim every case of the `abilities/` files, catalog/2's `propose_worko
 they check as refused on the phone. The Swift, Kotlin and web domain suites claim
 `rules/bodyweight.json`; the Swift and Kotlin suites claim `rules/collation.json`, the order `list_exercises` reads on a
 phone, and the Kotlin suite reads `catalog.json` through the kit's `Catalog`. The server loop, the iOS turn driver and the
-Android turn driver and gym host (no Android screen sends a turn yet) replay `turns/`.
+Android turn driver and gym host replay `turns/`.
 
 ---
 
@@ -232,7 +234,7 @@ Android turn driver and gym host (no Android screen sends a turn yet) replay `tu
    `CONTEXT_TURNS` turns and `CONTEXT_BYTES` bytes.
 5. **Pictures.** Attach the model copies (§9.3) of the current message's picture and the previous
    lifter message's picture, at most `CONTEXT_PICTURES`.
-6. **Send** the open request (§6.2).
+6. **Send** the open request (§6.2). Until a frame arrives, §4.5 **Before any frame** governs.
 
 ### §4.2 The loop (server)
 
@@ -288,8 +290,30 @@ The model's reasoning and every assistant content block stay on the server.
   settles at its actual usage. A round that ends talking completes the turn.
 - **Disconnect.** The server keeps running the current model call and buffers its text. A pending
   batch waits up to `CALL_RESULT_TIMEOUT`.
-- **Resume.** After a reconnect or a return to the foreground, the phone reads the turn stream
-  (§6.1). It starts with a `snapshot` of the text so far, the state and any unanswered batch. At
+- **Before any frame.** On Android, until a turn's first frame arrives the phone cannot know the server
+  heard of it, so a reconnect sends the open again: the same body under the same `turnId`, after 1, 2,
+  4 and 8 beats, which attaches to a turn that did land (§6.2 step 3). The driver's activity says it is
+  reconnecting throughout. A turn that never began withdraws rather than ends `interrupted`: its records
+  go, and its question and picture return to the field. It withdraws when:
+  - an open is refused, on any attempt, under that refusal;
+  - every attempt is lost, under the refusal that says there is no connection, with nothing filed for lost
+    network;
+  - an answer the phone cannot read comes back, as a captive portal's page, at once and under the same
+    refusal, with one `decode` report.
+
+  An attempt that was lost or unreadable may have landed, so a turn withdrawn after one tells the server one
+  Stop, best effort. Stop before any frame sends no further open, since one could begin what was stopped:
+  a reconnect reads instead. A Stop the server heard ends the turn `stopped` through the stream that read
+  finds. A Stop it did not hear, lost or refused, withdraws the turn at once, and so does a refused read or
+  a fifth loss, under the same no-connection refusal. An open already on its way when that Stop goes out can
+  land after it; that turn runs on the server, unheard, until it ends or a batch goes unanswered for
+  `CALL_RESULT_TIMEOUT`.
+
+  iOS still resumes after any loss and withdraws only on a first attempt's refusal: an open that never landed
+  meets `coach-turn-unknown`, and the turn ends `interrupted` with its question on the record. A Stop it
+  cannot deliver ends the turn `stopped`.
+- **Resume.** After a reconnect once a frame has arrived, or a return to the foreground, the phone reads
+  the turn stream (§6.1). It starts with a `snapshot` of the text so far, the state and any unanswered batch. At
   engine start, a `running` Coach message the device row `runningTurn` names ends `interrupted`,
   whatever its `replica`: the death ended its stream, and the event that would have named it may have
   died with the process (engine §7.12).
@@ -687,7 +711,7 @@ event per ability call it ran: the catalog name and the outcome (`ok` or the ref
 carries text, pictures, results or ids. iOS sends both
 ([IOS_OBSERVABILITY.md](../../IOS_OBSERVABILITY.md)): `coach_turn` with its ability calls,
 refusals and answer bytes as counts, and a `coach_ability` for every call its executor ran, the
-context reads included: the four list reads and, while a workout is open, its `get_session`. Android sends neither. The server logs its own side of a turn
+context reads included: the four list reads and, while a workout is open, its `get_session`. Android sends both ([ANDROID_OBSERVABILITY.md](../../ANDROID_OBSERVABILITY.md)). The server logs its own side of a turn
 (`coach_turn` and `coach_batch` lines, `backend/OBSERVABILITY.md`), the calls a phone refused
 counted by code.
 

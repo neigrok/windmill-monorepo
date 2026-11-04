@@ -9,6 +9,8 @@ import java.io.File
 import java.io.IOException
 import java.util.Random
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
@@ -23,7 +25,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.agent.TurnConnectionLost
+import works.windmill.agent.TurnEvent
+import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
+import works.windmill.agent.TurnSeat
+import works.windmill.agent.TurnTransport
 import works.windmill.domain.kit.Catalog
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
@@ -172,6 +179,32 @@ class PictureFilesTests {
             assertTrue(phone.turns.send(back.question, back.picture, back.thread, anonymous = true) != null)
             advanceUntilIdle()
             assertEquals(setOf("picture-1"), phone.pictures.held())
+            assertNull(phone.turns.withdrawn.value)
+        }
+    }
+
+    // An open every attempt lost takes the picture back the same way, and asking again carries it.
+    @Test fun anOpenEveryAttemptLostReturnsThePicture() = runTest {
+        val server = script("""[{"event":"done","data":{"state":"completed"}}]""")
+        var reachable = false
+        val flaky = object : TurnTransport by server {
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = if (reachable) server.open(open, seat) else flow { throw TurnConnectionLost(null) }
+        }
+        TurnPhone(this, folder.newFolder(), flaky).use { phone ->
+            val picture = small()
+            checkNotNull(phone.turns.send("Look at this", picture, null, anonymous = true))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
+            assertEquals(WithdrawnTurn("Look at this", picture, null), phone.turns.withdrawn.value)
+            assertEquals(emptyList<Any>(), phone.messages())
+            assertNull(phone.device(CoachPictureRow.key("picture-1")))
+            assertEquals(emptySet<String>(), phone.pictures.held())
+
+            reachable = true
+            val back = checkNotNull(phone.turns.withdrawn.value)
+            assertTrue(phone.turns.send(back.question, back.picture, back.thread, anonymous = true) != null)
+            advanceUntilIdle()
+            assertEquals(listOf(listOf("picture-1")), server.opened.map { open -> open.pictures.map { it.id } })
             assertNull(phone.turns.withdrawn.value)
         }
     }

@@ -74,6 +74,7 @@ sealed interface CoachTurnRefusal {
 
     companion object {
         fun of(code: String, status: Int? = null, resetsAtMs: Long? = null): CoachTurnRefusal = when {
+            code == TurnRefusal.unreachable -> Offline
             code == "free_month_exhausted" -> FreeMonthExhausted(resetsAtMs)
             code == "invalid_installation" || code == "installation_bound" || code == "device_bound" -> Installation(code)
             code in TurnRefusal.allowanceCodes -> Allowance(code)

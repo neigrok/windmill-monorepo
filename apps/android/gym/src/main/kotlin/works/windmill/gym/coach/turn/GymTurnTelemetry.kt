@@ -42,9 +42,10 @@ class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: La
     }
 
     override fun withdrawn(status: Int, code: TurnLabel, durationMs: Long) {
-        val (outcome, cap) = CoachTurnRefusal.of(code.value, status).askOutcome
-        telemetry.event("api_request_failed", mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST",
-            "failure_kind" to "http", "status" to status.toString()))
+        val refusal = CoachTurnRefusal.of(code.value, status)
+        val (outcome, cap) = refusal.askOutcome
+        val failed = if (refusal == CoachTurnRefusal.Offline) mapOf("failure_kind" to "offline") else mapOf("failure_kind" to "http", "status" to status.toString())
+        telemetry.event("api_request_failed", mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST") + failed)
         asked(if (outcome == "refused" && status >= 500) "failed" else outcome, cap, durationMs)
     }
 
