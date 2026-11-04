@@ -17,7 +17,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.testTag
@@ -27,13 +26,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
 import works.windmill.platform.telemetry.LocalTelemetry
-
-// The line stands 22 dp in the column, 4 of them above its words, and its touch target is the platform's 48 dp, reaching over what is around it.
-private fun Modifier.readLineTarget(): Modifier = layout { measurable, constraints ->
-    val target = measurable.measure(constraints.copy(minHeight = 48.dp.roundToPx()))
-    val stands = 22.dp.roundToPx()
-    layout(target.width, stands) { target.place(0, 4.dp.roundToPx() + (18.dp.roundToPx() - target.height) / 2) }
-}
 
 // What an ended answer read, under it: a door to What Coach read while the turn ran anything to list (08.36).
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,11 +39,12 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (
     }
     var expanded by remember { mutableStateOf(false) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // The line stands 22 dp as drawn; Compose widens a smaller pointer target to the platform's 48 dp, and anything drawn there keeps its own touches.
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier.readLineTarget().testTag("coach-read-sources").clickable(role = Role.Button, onClickLabel = Ask.sourcesTitle) {
+        modifier = Modifier.testTag("coach-read-sources").clickable(role = Role.Button, onClickLabel = Ask.sourcesTitle) {
             expanded = true
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
-        }.padding(start = 12.dp),
+        }.padding(start = 12.dp, top = 4.dp),
     ) {
         Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
         Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)

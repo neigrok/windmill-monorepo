@@ -102,6 +102,7 @@ class CoachConversationsTests {
 
     @Test fun whatACallServedOrWroteIsReadFromTheRecordsNow() = runTest {
         EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
             val session = room.workout()
             val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
             val turn = (runner.run(OpenTurn(null, "Question")) as Outcome.Committed).result
@@ -126,7 +127,7 @@ class CoachConversationsTests {
             conversations.read()
 
             val reply = checkNotNull(conversations.exchanges("chat").single().answer)
-            val day = DateTimeFormatter.ofPattern("MMM d").format(Instant.ofEpochMilli(session.startedAt.ms).atZone(ZoneId.systemDefault()))
+            val day = DateTimeFormatter.ofPattern("MMM d").format(Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()))
             assertEquals(listOf(
                 "Read 1 workout" to "1 week · $day",
                 "Saved a note" to "Shoulder",

@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
@@ -133,7 +134,7 @@ class CoachAnswerTests {
     @Test
     fun ordinaryMarkdownUsesSixteenDpGuttersAndTheReadLineStandsOnItsMarginWithAFullTarget() {
         val answer = "## Thursday\n\nA complete paragraph."
-        compose.setContent { GymMaterial { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             CoachAnswer(answer, coachReply(answer, read = ReadTally(1, 1, 1), calls = listOf(coachCall("list_sessions", "read your recent workouts"))), emptyList())
         } } }
         val bubble = compose.onNodeWithText("Thursday").getUnclippedBoundsInRoot()
@@ -141,9 +142,11 @@ class CoachAnswerTests {
         assertEquals(396.dp, bubble.right)
         val line = compose.onNodeWithText("Read 1 workout · 1 week", useUnmergedTree = true).getUnclippedBoundsInRoot()
         assertEquals(28.dp, line.left)
-        val target = compose.onNodeWithTag("coach-read-sources").assertHasClickAction().getUnclippedBoundsInRoot()
-        assertEquals("What Coach read is a 48 dp target", 48.dp, target.bottom - target.top)
         assertEquals("the line stands 6 dp under its bubble, as drawn", 6f, (line.top - bubble.bottom).value, 1f)
+        val target = compose.onNodeWithTag("coach-read-sources").assertHasClickAction()
+        assertEquals("the line stands 22 dp in the column", 22f, target.getUnclippedBoundsInRoot().let { it.bottom - it.top }.value, 1f)
+        target.performTouchInput { click(Offset(center.x, height + 10.dp.toPx())) }
+        compose.onNodeWithText("What Coach read").assertIsDisplayed()
     }
 
     @Test
