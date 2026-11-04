@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -62,6 +63,7 @@ import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalChange
 import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalSource
+import works.windmill.gym.presentation.ProposalTarget
 import works.windmill.gym.presentation.ProposalTargets
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SetTarget
@@ -71,6 +73,7 @@ import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WorkoutProposalsStore
 import works.windmill.gym.store.WorkoutSession
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -80,8 +83,9 @@ import works.windmill.platform.design.WindmillSpace
 interface ReviewState {
     val catalog: List<Exercise>
     val settledProposals: Map<String, Proposal>
-    val outOfDateProposals: Set<String>
-    // A workout is open: no proposal is decided until it is finished.
+    // Why this proposal can no longer be applied, said on the sheet; absent while it can.
+    fun outOfDateLine(id: String): String?
+    // A workout is open and this proposal is not about it: it waits until that workout is finished.
     val workoutOpen: Boolean
     val accountKey: String
 }
@@ -95,17 +99,20 @@ interface ReviewEvents {
     fun proposalReceiptShown(proposal: Proposal, seatKey: String)
 }
 
-// The review over the room's stores.
+// One proposal's review over the room's stores.
+interface ProposalReview : ReviewState, ReviewEvents
+
+// A routine's proposal, over the routines' store.
 class ReviewBinding(
     private val seat: TrainingSeat,
     private val routines: RoutinesStore,
     private val workout: WorkoutSession,
-) : ReviewState, ReviewEvents {
+) : ProposalReview {
     constructor(store: TrainingStore) : this(store.seat, store.routines, store.workout)
 
     override val catalog: List<Exercise> get() = routines.catalog
     override val settledProposals: Map<String, Proposal> get() = routines.settledProposals
-    override val outOfDateProposals: Set<String> get() = routines.outOfDateProposals
+    override fun outOfDateLine(id: String): String? = supersededLine.takeIf { id in routines.outOfDateProposals }
     override val workoutOpen: Boolean get() = workout.session != null
     override val accountKey: String get() = seat.accountKey
     override suspend fun proposal(id: String): ProposalRead = routines.proposal(id)
@@ -113,6 +120,26 @@ class ReviewBinding(
     override suspend fun dismissProposal(id: String): ProposalOutcome = routines.dismissProposal(id)
     override fun removalPending(id: String): Boolean = routines.removalPending(id)
     override fun proposalReceiptShown(proposal: Proposal, seatKey: String) = routines.proposalReceiptShown(proposal, seatKey)
+}
+
+// A change to the open workout, over its own store. No workout gate stands over it: the workout is what it changes.
+class WorkoutReviewBinding(
+    private val seat: TrainingSeat,
+    private val routines: RoutinesStore,
+    private val proposals: WorkoutProposalsStore,
+) : ProposalReview {
+    constructor(store: TrainingStore) : this(store.seat, store.routines, store.workoutProposals)
+
+    override val catalog: List<Exercise> get() = routines.catalog
+    override val settledProposals: Map<String, Proposal> get() = proposals.held
+    override fun outOfDateLine(id: String): String? = proposals.held[id]?.outOfDate
+    override val workoutOpen: Boolean get() = false
+    override val accountKey: String get() = seat.accountKey
+    override suspend fun proposal(id: String): ProposalRead = proposals.proposal(id)
+    override suspend fun applyProposal(id: String): ProposalOutcome = proposals.apply(id)
+    override suspend fun dismissProposal(id: String): ProposalOutcome = proposals.dismiss(id)
+    override fun removalPending(id: String): Boolean = false
+    override fun proposalReceiptShown(proposal: Proposal, seatKey: String) = Unit
 }
 
 // The review, drawn INSIDE a modal bottom sheet over the conversation or the routines home — never a
@@ -169,8 +196,8 @@ fun ReviewSheet(
     // routine moved on the log, was edited here and not yet confirmed, or left sight, and the log
     // will refuse the tap. A window taking the row off the routines home changes none of it.
     val standing = proposal
-    val outOfDate = proposalId in state.outOfDateProposals
-    val decidable = standing != null && standing.isPending && !outOfDate && !overtaken && !state.workoutOpen
+    val outOfDate = state.outOfDateLine(proposalId)
+    val decidable = standing != null && standing.isPending && outOfDate == null && !overtaken && !state.workoutOpen
 
     fun decide(apply: Boolean) {
         val open = proposal ?: return
@@ -260,7 +287,7 @@ fun ReviewSheet(
             LaunchedEffect(proposal, receiptVisible, lifecycle, seat) {
                 if (receiptVisible && lifecycle == Lifecycle.State.RESUMED) events.proposalReceiptShown(proposal, seat)
             }
-            Foot(proposal, decidable, deciding, seen, said, onDecide = ::decide,
+            Foot(proposal, decidable, deciding, seen, said.takeUnless { it == outOfDate }, onDecide = ::decide,
                 receiptModifier = Modifier.onGloballyPositioned { receiptVisible = !it.boundsInWindow().isEmpty })
         }
     }
@@ -269,18 +296,20 @@ fun ReviewSheet(
 @Composable
 private fun Head(proposal: Proposal?) {
     val colors = MaterialTheme.colorScheme
-    Text(proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
-        style = GymType.proposalTitle, color = colors.onSurface,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp))
+    val workout = proposal?.target == ProposalTarget.Workout
+    Text(proposal?.let { "Proposal · ${it.subject}" } ?: "Proposal",
+        style = if (workout) GymType.coachSourcesTitle else GymType.proposalTitle, color = colors.onSurface,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp, bottom = if (workout) 12.dp else 16.dp))
 }
 
 @Composable
 private fun Body(
     proposal: Proposal,
     catalog: List<Exercise>,
-    outOfDate: Boolean,
+    outOfDate: String?,
 ) {
     val colors = MaterialTheme.colorScheme
+    val workout = proposal.target == ProposalTarget.Workout
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (proposal.summary.isNotBlank()) Text(proposal.kicker, style = WindmillType.kicker, color = colors.onSurfaceVariant)
         Text(proposal.summaryLine(proposal.routineName), style = WindmillType.paragraph, color = colors.onSurface)
@@ -292,10 +321,10 @@ private fun Body(
                 style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
         }
     } else {
-        proposal.document.forEach { row ->
+        (if (workout) proposal.changesFirst else proposal.document).forEach { row ->
             when (row) {
                 is DocumentRow.Changed -> ChangeRow(proposal, row.change, catalog)
-                is DocumentRow.Unchanged -> KeptRun(row, catalog)
+                is DocumentRow.Unchanged -> KeptRun(row, catalog, if (workout) 0.dp else GymLayout.rowInset)
             }
         }
         if (proposal.renames) ChangeCard() {
@@ -303,7 +332,7 @@ private fun Body(
             MoveLine("", proposal.baseName, proposal.name)
         }
     }
-    val note = if (outOfDate && proposal.isPending) supersededLine else null
+    val note = outOfDate?.takeIf { proposal.isPending || workout }
     note?.let {
         Text(
             it,
@@ -323,7 +352,7 @@ private const val supersededLine =
 // A run of kept rows, collapsed to its count where it stands and expanded in place: the position is
 // the document.
 @Composable
-private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
+private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>, inset: Dp) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     var open by remember(row) { mutableStateOf(false) }
@@ -336,7 +365,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 .heightIn(min = GymTap.minimum)
                 .semantics { stateDescription = if (open) "expanded" else "collapsed" }
                 .clickable(role = Role.Button) { open = !open }
-                .padding(horizontal = GymLayout.rowInset),
+                .padding(horizontal = inset),
         ) {
             Text(row.label, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
             Icon(
@@ -350,7 +379,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
             row.kept.forEach { change ->
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = GymLayout.rowInset),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = inset),
                 ) {
                     Text(
                         Readout.movement(change.exerciseId, catalog),
@@ -373,7 +402,8 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
 private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<Exercise>) {
     val colors = MaterialTheme.colorScheme
     val name = Readout.movement(change.exerciseId, catalog)
-    ChangeCard() {
+    val workout = proposal.target == ProposalTarget.Workout
+    ChangeCard(tight = workout) {
         val title = when (change.kind) {
             ChangeKind.Added -> "Add $name"
             ChangeKind.Removed -> "Remove $name"
@@ -382,11 +412,13 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
         Text(title, style = WindmillType.labelParagraph, color = colors.onSurface)
         when (change.kind) {
             ChangeKind.Added -> {
-                val target = change.after?.let { Readout.targetWithUnit(it.sets) } ?: Readout.openTarget
-                val after = proposal.landsAfter(change)?.let { "after ${Readout.movement(it, catalog)}" } ?: "first in the routine"
+                val target = change.after?.let { after ->
+                    if (workout) Readout.targetWithUnit(after.sets, catalog.firstOrNull { it.id == change.exerciseId }) else Readout.targetWithUnit(after.sets)
+                } ?: Readout.openTarget
+                val after = proposal.landsAfter(change)?.let { "after ${Readout.movement(it, catalog)}" } ?: "first in ${proposal.within}"
                 Text("$target · $after", style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
             }
-            ChangeKind.Removed -> Text(change.removedLine, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
+            ChangeKind.Removed -> Text(change.removedLine(proposal.within), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
             else -> {
                 val before = change.before
                 val after = change.after
@@ -438,11 +470,12 @@ private fun MoveLine(label: String, before: String, after: String, modifier: Mod
         modifier = modifier.semantics(mergeDescendants = true) {})
 }
 
+// `tight` is a workout's row: the sheet's own gap stands above it (08.55b).
 @Composable
-private fun ChangeCard(content: @Composable () -> Unit) {
+private fun ChangeCard(tight: Boolean = false, content: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().heightIn(min = 70.dp).padding(vertical = 12.dp),
+        Column(Modifier.fillMaxWidth().heightIn(min = if (tight) 0.dp else 70.dp).padding(top = if (tight) 0.dp else 12.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
         Box(Modifier.fillMaxWidth().heightIn(min = 1.dp).background(colors.outlineVariant))
     }
@@ -536,17 +569,24 @@ private fun Foot(
     }
 }
 
-// The card: the summary, the counted changes, and one affordance. Nothing on it decides anything.
+// A proposal's card, addressed by what it changes. While a workout is open a routine's change waits for that routine's next workout, never this one (08.56).
 @Composable
 fun ProposalCard(
     proposal: Proposal,
     routineName: String,
     nowMs: Long,
     stillWaiting: Boolean,
+    nextTime: Boolean = false,
     onReview: () -> Unit,
 ) {
-    CoachProposalCard(routineName, proposal.summaryLine(routineName),
-        proposal.counted + if (stillWaiting && proposal.isPending) " · ${Proposal.stillWaiting}" else "", onReview)
+    val waiting = proposal.isPending && proposal.outOfDate == null
+    val kicker = listOfNotNull(
+        if (proposal.target == ProposalTarget.Workout) proposal.subject else routineName,
+        Proposal.nextTime.takeIf { nextTime && waiting && proposal.target == ProposalTarget.Routine },
+        Proposal.outOfDateWord.takeIf { proposal.outOfDate != null },
+    ).joinToString(" · ")
+    CoachProposalCard("Proposal · $kicker", proposal.summaryLine(routineName),
+        proposal.counted + if (stillWaiting && waiting) " · ${Proposal.stillWaiting}" else "", proposal.outOfDate, onReview)
 }
 
 @Composable
@@ -568,10 +608,11 @@ fun ProposalChip(onReview: () -> Unit) {
 private data class PreviewReviewState(
     override val catalog: List<Exercise> = TheSix.movements,
     override val settledProposals: Map<String, Proposal> = emptyMap(),
-    override val outOfDateProposals: Set<String> = emptySet(),
     override val workoutOpen: Boolean = false,
     override val accountKey: String = "preview",
-) : ReviewState
+) : ReviewState {
+    override fun outOfDateLine(id: String): String? = null
+}
 
 // Reads the one proposal it holds; no decision answers.
 private class PreviewReviewEvents(private val pending: Proposal) : ReviewEvents {

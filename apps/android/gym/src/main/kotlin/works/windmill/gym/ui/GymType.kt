@@ -201,6 +201,7 @@ object GymType {
     val coachBubbleLabel = nunito(12, FontWeight.Bold, leading = 16)
     val coachCode = WindmillFont.mono(15)
     val coachSourcesTitle = nunito(28, FontWeight.ExtraBold, leading = 36)
+    val coachSheetTitle = nunito(28, FontWeight.Bold, leading = 36)
     val coachSourceTitle = nunito(15, FontWeight.Bold, leading = 20)
     val coachSourceLine = nunito(13, leading = 18)
     val coachAccessTitle = nunito(22, FontWeight.ExtraBold, leading = 28)

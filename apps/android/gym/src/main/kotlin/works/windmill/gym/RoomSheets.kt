@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -36,8 +37,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import works.windmill.gym.presentation.Ids
+import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalState
+import works.windmill.gym.presentation.ProposalTarget
 import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.Seat
@@ -45,8 +48,10 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
+import works.windmill.gym.ui.ProposalReview
 import works.windmill.gym.ui.ReviewBinding
 import works.windmill.gym.ui.ReviewSheet
+import works.windmill.gym.ui.WorkoutReviewBinding
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.design.WindmillSheet
@@ -54,9 +59,9 @@ import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
 
 // The review sheet and the door it opened from, which is where its receipt lands: the live
-// conversation, a stored thread, or the routines home. The proposal carries the routine the diff was
-// written against.
-internal data class Reviewing(val proposalId: String, val routineId: String, val door: String) {
+// conversation, a stored thread, or the routines home. A change to the open workout keeps its receipt
+// on its own card.
+internal data class Reviewing(val proposalId: String, val target: ProposalTarget, val door: String) {
     companion object {
         const val coach = "coach"
         const val routines = "routines"
@@ -85,8 +90,8 @@ internal class ReviewFlow(
     fun receiptsAt(door: String): List<String> = receipts[door].orEmpty()
 
     // Opened over whatever is standing; the door is where the receipt will land.
-    fun open(proposalId: String, routineId: String, door: String) {
-        reviewing = Reviewing(proposalId, routineId, door)
+    fun open(proposal: Proposal, door: String) {
+        reviewing = Reviewing(proposal.id, proposal.target, door)
     }
 
     fun close() {
@@ -116,6 +121,7 @@ internal class ReviewFlow(
     fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, say: (String) -> Unit) {
         val colors = MaterialTheme.colorScheme
         reviewing?.let { open ->
+            val workout = open.target == ProposalTarget.Workout
             WindmillSheet(
                 onDismissRequest = {
                     if (busy) return@WindmillSheet
@@ -125,15 +131,16 @@ internal class ReviewFlow(
                 sheetState = sheet,
                 containerColor = colors.surfaceContainer,
                 scrimColor = colors.scrim,
+                dragHandle = if (workout) { { SheetHandle() } } else { { BottomSheetDefaults.DragHandle() } },
             ) {
                 BackHandler(enabled = busy) {}
-                val proposalReview = remember(store) { ReviewBinding(store) }
+                val proposalReview: ProposalReview = remember(store, workout) { if (workout) WorkoutReviewBinding(store) else ReviewBinding(store) }
                 ReviewSheet(
                     onBusy = { busy = it },
                     proposalId = open.proposalId,
                     state = proposalReview,
                     events = proposalReview,
-                    onAsk = if (onAsk == null) null else { about ->
+                    onAsk = if (onAsk == null || workout) null else { about ->
                         close()
                         onAsk(about)
                     },
@@ -141,7 +148,7 @@ internal class ReviewFlow(
                         if (settled.intent != ProposalIntent.Remove || settled.state != ProposalState.Applied) {
                             // The server's reply, never the model's prose. From the routines home there is no
                             // thread to land in, so the room's own line carries it until the next move.
-                            settled.receipt?.let { line ->
+                            settled.receipt?.takeUnless { workout }?.let { line ->
                                 if (open.door == Reviewing.routines) say(line)
                                 else receipts = receipts + (open.door to receipts[open.door].orEmpty() + line)
                             }
@@ -169,6 +176,63 @@ internal fun rememberReviewFlow(): ReviewFlow {
     // The room keeps shown receipts with their doors; unseen removal receipts live in the replica.
     val receipts = remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     return remember(scope, sheet) { ReviewFlow(scope, sheet, reviewing, busy, lookedAt, receipts) }
+}
+
+// A sheet's drag handle in its 24 dp strip.
+@Composable
+private fun SheetHandle() {
+    Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(32.dp, 4.dp).background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(2.dp)))
+    }
+}
+
+// Coach over the open workout (08.54): the conversation raised over the rack, which it leaves as it was. A door to the rest of the room closes it first; a review opens over it.
+@OptIn(ExperimentalMaterial3Api::class)
+@Stable
+internal class CoachSheetFlow(
+    private val scope: CoroutineScope,
+    private val sheet: SheetState,
+    openState: MutableState<Boolean>,
+) {
+    var open by openState
+        private set
+
+    fun show() { open = true }
+
+    // A close by hand or by a door: what the door does next waits for the sheet to be off.
+    fun close(then: () -> Unit = {}) {
+        if (!open) { then(); return }
+        scope.launch { sheet.hide() }.invokeOnCompletion { cause ->
+            open = false
+            if (cause == null) then()
+        }
+    }
+
+    // It belongs to the workout and the seat it was opened on.
+    fun forget() { open = false }
+
+    @Composable
+    fun Sheet(content: @Composable () -> Unit) {
+        val colors = MaterialTheme.colorScheme
+        if (!open) return
+        WindmillSheet(
+            onDismissRequest = { open = false },
+            sheetState = sheet,
+            containerColor = colors.surface,
+            scrimColor = colors.scrim,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = { SheetHandle() },
+        ) { content() }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun rememberCoachSheetFlow(): CoachSheetFlow {
+    val scope = rememberCoroutineScope()
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val open = rememberSaveable { mutableStateOf(false) }
+    return remember(scope, sheet) { CoachSheetFlow(scope, sheet, open) }
 }
 
 // The finish receipt over the room, and the Share with Coach request it queues under its own saved

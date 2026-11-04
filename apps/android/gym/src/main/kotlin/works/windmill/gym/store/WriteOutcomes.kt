@@ -61,6 +61,16 @@ sealed interface ProposalOutcome {
     data class Refused(val said: String) : ProposalOutcome
     data class Gone(val said: String) : ProposalOutcome
     data class Failed(val why: WriteFailure) : ProposalOutcome
+
+    // The event's bounded word for it.
+    val label: String get() = when (this) {
+        is Decided -> "decided"
+        is Moved -> "moved"
+        is Gone -> "gone"
+        is Settled -> "settled"
+        is Refused -> "refused"
+        is Failed -> "failed"
+    }
 }
 
 sealed interface ProposalRead {

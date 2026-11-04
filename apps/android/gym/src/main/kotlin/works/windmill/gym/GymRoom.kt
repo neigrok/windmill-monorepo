@@ -163,6 +163,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
     var pushedDraftOpen by remember { mutableStateOf(false) }
     val reviewFlow = rememberReviewFlow()
+    val coachSheet = rememberCoachSheetFlow()
     val conversationId = store.coach.selectedChatId.orEmpty()
     val conversation = store.coach.exchanges(conversationId)
     val asking = store.coach.isAsking(conversationId)
@@ -209,15 +210,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         reviewFlow.pruneReceipts(navigator.away.lastOrNull())
     }
 
-    fun review(proposalId: String, routineId: String, door: String) {
-        if (store.workout.session != null) { note = "Finish this session"; return }
-        reviewFlow.open(proposalId, routineId, door)
-    }
-
     val workout = store.workout.notification.collectAsState().value
     val liveSession = store.workout.session
     val live = liveSession != null
     val loggerShown = live && !store.workout.loggerHidden
+    // Coach is offered over the workout where its own tab would answer: an account, or a phone Coach may answer signed out, and a deployment that has it.
+    val coachOffered = !askAbsent && (account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available)
     // Asks of the workout open at the moment of the act.
     fun showLogger(shown: Boolean, screen: String, action: String) {
         val result = store.workout.notification.value?.key?.let { store.workout.setLoggerHidden(it, !shown) }
@@ -230,6 +228,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val screen = when {
         store.recovery.fixDraft != null -> "workout_fix"
         reviewFlow.reviewing != null -> "proposal"
+        coachSheet.open -> "coach"
         finishFlow.finished != null -> "finish"
         building != null -> "routine_editor"
         selectedRoutineId != null -> "routine"
@@ -297,6 +296,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (Ask.handedOver(seat, standing, seatRead) || (standing == null && seat.isNotEmpty())) {
             seat = standing ?: ""
             reviewFlow.forget()
+            coachSheet.forget()
             finishFlow.forget()
             discardPrompt = null
             building = null
@@ -401,6 +401,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
         lifecycleOwner.lifecycle.addObserver(watcher)
         onDispose { lifecycleOwner.lifecycle.removeObserver(watcher) }
+    }
+
+    // Coach over the workout goes with the workout it was raised over.
+    LaunchedEffect(loggerShown, account.resolved, store.seat.accountReady) {
+        if (!loggerShown && account.resolved && store.seat.accountReady) coachSheet.forget()
     }
 
     // The visible logger keeps the screen on.
@@ -521,6 +526,16 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         try { store.coach.freshChat(draft) }
         catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
         enterCoach()
+        // The logger stands over the tabs, so a new question it was opened over takes the sheet.
+        if (loggerShown) coachSheet.show()
+    }
+
+    // A deliberate entry, so it opens on a fresh chat; closing it leaves the rack as it was.
+    fun coachOverWorkout() {
+        try { store.coach.freshChat() }
+        catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
+        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "open_coach", "outcome" to "ok"))
+        coachSheet.show()
     }
 
     finishFlow.CarryShareToCoach(store, account, onCoach = ::enterCoach, say = { note = it })
@@ -630,8 +645,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             }
 
             reviewFlow.Sheet(store,
-                // Offered only where Coach itself is: an account, and a deployment that has one.
-                onAsk = if (account.isSignedIn && !askAbsent) {
+                // Offered only where Coach itself is: an account, and a deployment that has one; over the workout's Coach the door would lead back to it.
+                onAsk = if (account.isSignedIn && !askAbsent && !coachSheet.open) {
                     { about -> look(Away.Coach("What would this change to $about do?")) }
                 } else {
                     null
@@ -712,29 +727,37 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 else -> otherwise()
             }
 
+            // Over the workout every door to the rest of the room closes the sheet first; a review opens over it.
             @Composable
-            fun Conversation() = remember(store) { AskBinding(store) }.let { ask -> AskScreen(
-                state = ask, events = ask,
-                seat = youInitial,
-                thread = conversation,
-                conversationId = conversationId,
-                onOpenRoutine = { selectedRoutineId = it },
-                onOpenWorkout = ::openCoachWorkout,
-                onOpenChat = { openCoachChat(it, "reply_open") },
-                receipts = reviewFlow.receiptsAt(Reviewing.coach),
-                lookedAt = lookedAtIds,
-                asking = asking,
-                refusal = refusal,
-                onAsk = ::ask,
-                onStop = { store.coach.stop() },
-                onSignIn = shell.openSignIn,
-                onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
-                seed = "",
-                onThreads = { look(Away.Threads) },
-                onConnections = { look(Away.Connections) },
-                origin = origin,
-                onReview = { review(it.id, it.routineId, Reviewing.coach) },
-            ) }
+            fun Conversation(overWorkout: Boolean = false) = remember(store) { AskBinding(store) }.let { ask ->
+                fun door(through: () -> Unit) = if (overWorkout) coachSheet.close(through) else through()
+                AskScreen(
+                    state = ask, events = ask,
+                    seat = youInitial.takeUnless { overWorkout },
+                    thread = conversation,
+                    conversationId = conversationId,
+                    onOpenRoutine = { id -> door { selectedRoutineId = id } },
+                    onOpenWorkout = { id -> door { openCoachWorkout(id) } },
+                    onOpenChat = { id -> door { openCoachChat(id, "reply_open") } },
+                    receipts = reviewFlow.receiptsAt(Reviewing.coach),
+                    lookedAt = lookedAtIds,
+                    asking = asking,
+                    refusal = refusal,
+                    onAsk = ::ask,
+                    onStop = { store.coach.stop() },
+                    composerEnabled = !overWorkout || coachOffered,
+                    onSignIn = { door(shell.openSignIn) },
+                    onBuildRoutine = { door { building = RoutineDraft(position = store.routines.all.size) } },
+                    seed = "",
+                    onThreads = { door { look(Away.Threads) } },
+                    onConnections = { door { look(Away.Connections) } },
+                    origin = origin,
+                    onReview = { reviewFlow.open(it, Reviewing.coach) },
+                    overWorkout = overWorkout,
+                )
+            }
+
+            if (loggerShown) coachSheet.Sheet { Conversation(overWorkout = true) }
 
             @Composable
             fun TabScreen(tab: Tab, transient: SnackbarHostState? = null) = when (tab) {
@@ -761,7 +784,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     onBuild = { building = it },
                     onOpenRoutine = { selectedRoutineId = it },
                     onDeleteRoutine = { destroy(it) },
-                    onReview = { review(it.id, it.routineId, Reviewing.routines) },
+                    onReview = { reviewFlow.open(it, Reviewing.routines) },
                     transient = transient,
                 )
             }
@@ -872,7 +895,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         lookedAt = lookedAtIds,
                         backTo = backTo,
                         onBack = { back() },
-                        onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
+                        onReview = { reviewFlow.open(it, Reviewing.thread(standing.threadId)) },
                         say = { note = it },
                     ) }
                 }
@@ -909,6 +932,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 say = { note = it },
                                 onFinish = { close() },
                                 onHide = ::hideWorkout,
+                                onCoach = if (coachOffered) ::coachOverWorkout else null,
                                 transient = screenTransient,
                             ) }
                             // A day being built outranks a tab and nothing else, and it covers the rail.

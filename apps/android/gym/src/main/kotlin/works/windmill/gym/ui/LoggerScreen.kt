@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -278,6 +279,8 @@ fun LoggerScreen(
     // The transient overlays the ledger without covering the rack.
     transient: SnackbarHostState? = null,
     onHide: () -> Unit = {},
+    // Coach over this workout, where Coach is offered.
+    onCoach: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val notification = state.notification.collectAsState().value
@@ -458,10 +461,19 @@ fun LoggerScreen(
     GymScreen(
         title = title,
         titleAlignment = TextAlign.Center,
-        navigation = { TopAction("Finish", enabled = state.canFinish, onClick = { entry.leave(); onFinish() }) },
-        actions = { IconButton(onClick = ::hide) {
-            Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = colors.onSurfaceVariant)
+        navigation = { Row {
+            TopAction("Finish", enabled = state.canFinish, onClick = { entry.leave(); onFinish() })
+            // Finish beside this balances the two actions across the bar, so the title stays centred.
+            if (onCoach != null) Spacer(Modifier.width(24.dp))
         } },
+        actions = {
+            onCoach?.let { open -> IconButton(onClick = { entry.leave(); open() }) {
+                Icon(painterResource(R.drawable.gym_coach_open), "Coach", tint = colors.onSurface)
+            } }
+            IconButton(onClick = ::hide) {
+                Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = if (onCoach != null) colors.onSurface else colors.onSurfaceVariant)
+            }
+        },
     ) {
       Column(Modifier.fillMaxSize().imePadding()
           .scrollable(

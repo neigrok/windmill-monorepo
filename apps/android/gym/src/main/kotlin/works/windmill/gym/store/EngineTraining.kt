@@ -29,6 +29,7 @@ import works.windmill.gym.domain.sync.Session as EngineSession
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
 import works.windmill.gym.domain.sync.TrainingSet as EngineSet
 import works.windmill.gym.domain.sync.WeighIn as EngineWeighIn
+import works.windmill.gym.domain.sync.WorkoutProposal as EngineWorkoutProposal
 import works.windmill.gym.presentation.*
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.Exercise
@@ -646,6 +647,18 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             @Suppress("UNREACHABLE_CODE") error("The receipt loop returns or is cancelled.")
         } ?: throw TrainingUnanswered
     }
+    // Coach's changes to the open workout as this phone draws them. A decision stands as soon as it is made: Apply rewrites the running plan at once and the log confirms it, offline too.
+    fun workoutProposals(): List<Proposal> = read { reader -> reader.repository(EngineWorkoutProposal).all(ViewMode.drawn).map { it.ui(reader) } }
+    suspend fun decideWorkoutProposal(id: String, applying: Boolean) {
+        if (anonymous || engine.status.state.value.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
+        val identity = Id(id, EngineWorkoutProposal)
+        if (applying) apply(ApplyWorkoutProposal(identity)) else apply(DismissWorkoutProposal(identity))
+    }
+    // The workout proposals whose decision still waits on the log.
+    fun workoutDecisionsWaiting(): Set<String> = read { reader ->
+        reader.commands().filter { it.command.name in setOf(Gym.Commands.applyWorkoutProposal, Gym.Commands.dismissWorkoutProposal) }
+            .mapNotNullTo(mutableSetOf()) { it.command.args["proposalId"]?.str() }
+    }
     fun progress(): StatsProgress = read {
         val refused = imports.refusals().filter { it.session != null }.mapTo(mutableSetOf()) { it.id }
         StatsProgress.of(details().filterNot { it.session.id in refused }, engine.physNow(), complete = anonymous || firstPullComplete)
@@ -948,10 +961,23 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     private fun proposalCreatedAt(proposal: EngineProposal, reader: Reader): Long = reader.repository(EngineProposal).record(proposal.id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0
     private fun EngineProposal.ui(reader: Reader): Proposal = Proposal(id.text, routineId.text, ProposalIntent.parse(intent), ProposalState.parse(state), summary,
         changeCount ?: changes.count { it.kind != "kept" }, proposalCreatedAt(this, reader), settledAt?.ms, ProposalSource(door, connection, agent, threadId), baseRevision, baseName.orEmpty(), proposedName,
-        changes.mapIndexed { index, change -> ProposalChange(index + 1, ChangeKind.parse(change.kind), change.exerciseId.text,
+        changes.ui { TrainingLog(reader).sets.count { set -> set.exerciseId == it } })
+    private fun List<RoutineChange>.ui(logged: (Id<EngineExercise>) -> Int): List<ProposalChange> = mapIndexed { index, change ->
+        ProposalChange(index + 1, ChangeKind.parse(change.kind), change.exerciseId.text,
             change.before?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
             change.after?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
-            if (change.kind == "removed") TrainingLog(reader).sets.count { it.exerciseId == change.exerciseId } else null) })
+            if (change.kind == "removed") logged(change.exerciseId) else null)
+    }
+    private fun EngineWorkoutProposal.ui(reader: Reader): Proposal {
+        val standing = WorkoutProposalState(reader, id)
+        val workout = standing.workout
+        val line = standing.outOfDate?.let { Proposal.outOfDateLine(it.reason, it.exerciseId?.let { movement -> workout?.catalogue?.find(movement)?.name }) }
+        return Proposal(id.text, sessionId.text, state = ProposalState.parse(state), summary = summary,
+            changeCount = changeCount ?: workout?.session?.plan?.let { RoutineChange.count(it.entries, changes) } ?: changes.count { it.kind != "kept" },
+            createdAtMs = reader.repository(EngineWorkoutProposal).record(id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0,
+            settledAtMs = settledAt?.ms, source = ProposalSource(door, connection, agent, threadId), baseRevision = baseRevision, baseName = Proposal.workoutWord,
+            changes = changes.ui { movement -> workout?.sets.orEmpty().count { it.exerciseId == movement } }, target = ProposalTarget.Workout, outOfDate = line)
+    }
     private fun missing(message: String) = TrainingRefused("unknown-record", message)
     private fun refusal(refusal: GymRefusal): TrainingRefused {
         val (code, message) = when (refusal) {

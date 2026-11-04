@@ -56,7 +56,7 @@ object GymActions : EventSchema {
         "workout_bar" to mapOf("open" to setOf("ok", "refused")),
         "workout" to mapOf(
             "hide" to setOf("ok", "refused"), "show_notification" to setOf("ok", "refused"),
-            "movement_switch" to setOf("ok"), "open_workout" to setOf("ok"),
+            "movement_switch" to setOf("ok"), "open_workout" to setOf("ok"), "open_coach" to setOf("ok"),
             "remove" to setOf("ok", "refused", "failed"), "reorder" to setOf("ok", "failed"),
             "picker_open" to setOf("ok"), "picker_cancel" to setOf("ok"), "picker_add" to setOf("ok", "refused"),
             "fix" to setOf("ok", "refused", "failed"),
@@ -101,7 +101,7 @@ object GymEvents {
             ), counts = setOf("ability_calls", "refusals", "answer_bytes", "duration_ms")),
             "gym_coach_import" to LabelSchema(mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed"))),
             "gym_proposal_outcome" to LabelSchema(mapOf(
-                "action" to setOf("apply", "dismiss"), "outcome" to setOf("decided", "moved", "gone", "settled", "refused", "failed"),
+                "target" to setOf("workout"), "action" to setOf("apply", "dismiss"), "outcome" to setOf("decided", "moved", "gone", "settled", "refused", "failed"),
             )),
             "gym_sign_out" to LabelSchema(mapOf(
                 "state" to setOf("shown"), "action" to setOf("keep", "discard", "cancel"), "outcome" to setOf("completed", "failed"),

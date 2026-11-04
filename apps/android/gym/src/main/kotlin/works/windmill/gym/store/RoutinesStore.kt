@@ -197,19 +197,7 @@ class RoutinesStore(
                 if (owner != seat.owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
                 refused(refusing)
             }
-        }.also { reportProposal(if (applying) "apply" else "dismiss", it) }
-    }
-
-    private fun reportProposal(action: String, outcome: ProposalOutcome) {
-        val result = when (outcome) {
-            is ProposalOutcome.Decided -> "decided"
-            is ProposalOutcome.Moved -> "moved"
-            is ProposalOutcome.Gone -> "gone"
-            is ProposalOutcome.Settled -> "settled"
-            is ProposalOutcome.Refused -> "refused"
-            is ProposalOutcome.Failed -> "failed"
-        }
-        telemetry.event("gym_proposal_outcome", mapOf("action" to action, "outcome" to result))
+        }.also { telemetry.event("gym_proposal_outcome", mapOf("action" to if (applying) "apply" else "dismiss", "outcome" to it.label)) }
     }
 
     // Drawn from the log's own receipt and never from the request. The card is dropped BY ID rather

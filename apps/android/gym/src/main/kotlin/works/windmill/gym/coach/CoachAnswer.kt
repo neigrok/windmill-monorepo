@@ -337,20 +337,3 @@ internal fun CoachAction(label: String, onClick: () -> Unit, primary: Boolean = 
         Text(label, style = WindmillType.label, color = if (primary) colors.onPrimary else colors.onSurface)
     }
 }
-
-@Composable
-internal fun CoachProposalCard(routine: String, summary: String, count: String, onReview: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp),
-    ) {
-        Text("Proposal · $routine", style = WindmillType.kicker, color = colors.onSurfaceVariant)
-        Text(summary, style = GymType.proposalSummary, color = colors.onSurface)
-        Text(count, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onReview).padding(12.dp),
-        ) { Text("Review", style = WindmillType.label, color = colors.onSurface) }
-    }
-}
