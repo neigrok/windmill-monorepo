@@ -42,6 +42,7 @@ for (const width of everyWidth) {
       await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
       await page.getByRole('dialog', { name: 'Read gusts', exact: true }).waitFor();
       assert.deepEqual(await savedStep(page, 'wind'), { label: 'Read gusts', description: 'Watch the water.', color: 'sky', prerequisites: ['course'] });
+      assert.equal(await page.locator('.st-ticker').count(), 0);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });
@@ -87,3 +88,19 @@ for (const width of everyWidth) {
     } finally { await page.close(); }
   });
 }
+
+hostTest('A rename on the Graph\'s dock announces on the ticker, and the ticker stands only over the Graph', async () => {
+  const { page, errors } = await openHost({ surface: 'tree' });
+  try {
+    await page.evaluate(() => window.scene.select('wind'));
+    await page.locator('.st-detail-panel--open .st-step-name').click();
+    const name = page.locator('.st-step-name-input');
+    await name.fill('Read gusts');
+    await name.press('Enter');
+    await page.locator('.st-ticker').waitFor();
+    await page.getByRole('radio', { name: 'Board', exact: true }).or(page.getByRole('button', { name: 'Board', exact: true })).first().click();
+    await page.locator('.st-roadmap-identity[data-view="board"]').waitFor();
+    assert.equal(await page.locator('.st-ticker').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

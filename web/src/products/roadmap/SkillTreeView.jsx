@@ -634,7 +634,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onShown={toastShown} onPause={pauseToast} onAct={() => runToastAction(toast)} />
       )}
 
-      {ticker.length > 0 && (
+      {canvasView && ticker.length > 0 && (
         <div className="st-ticker" role="status" aria-live="polite">
           {ticker.map((event) => (
             <div className="st-ticker-item" key={event.id}>

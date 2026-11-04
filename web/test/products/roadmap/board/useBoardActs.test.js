@@ -534,14 +534,14 @@ test('edit diffs, marks quiet before one contained write, emits rename and bound
   const options = [];
   const dispatch = c.session.dispatch;
   c.session.dispatch = (gesture, capture) => { options.push(capture); return dispatch(gesture); };
-  c.emit = (event) => calls.push(['activity', event]);
+  c.emit = (event, emitted) => calls.push(['activity', event, emitted]);
   assert.deepEqual(acts.edit(editRequest), { ok: true });
   assert.deepEqual(options, [undefined]);
   assert.equal(c.toast, undefined);
   assert.deepEqual(calls, [
     ['quiet'],
     ['dispatch', { kind: 'EditNode', id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', addPrerequisites: [], removePrerequisites: ['wind'] }],
-    ['activity', { verb: 'renamed', nodeId: 'dock', label: 'Leave the harbor', kind: 'gold' }],
+    ['activity', { verb: 'renamed', nodeId: 'dock', label: 'Leave the harbor', kind: 'gold' }, { silent: true }],
     ['event', 'roadmap_board_edit', { step: 'saved', name: true, description: true, kind: true, prerequisites: true }],
   ]);
 });

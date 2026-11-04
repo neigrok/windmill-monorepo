@@ -100,7 +100,7 @@ export class BoardActs {
     if (!receipt) return { ok: false };
     if ('label' in gesture) {
       try {
-        c.emit({ verb: 'renamed', nodeId: request.id, label: request.label, kind: request.color });
+        c.emit({ verb: 'renamed', nodeId: request.id, label: request.label, kind: request.color }, { silent: true });
       } catch (error) {
         c.report('roadmap-board-edit', error);
       }
