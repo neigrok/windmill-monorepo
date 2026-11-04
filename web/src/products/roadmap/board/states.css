@@ -5,7 +5,7 @@
   outline: none;
 }
 
-/* ---- Skeleton card: from 744px the sunken ground breathes; on the phone a still card outline. ---- */
+/* ---- Skeleton card: a still card outline, with no motion, at the desktop's card radius from 744px. ---- */
 .st-board-skeleton-card {
   flex-shrink: 0;
   display: flex;
@@ -34,38 +34,6 @@
 }
 .st-board-skeleton-line:first-child {
   height: 14px;
-}
-
-.st-board-skeleton-card--columns {
-  height: 76px;
-  border-radius: 20px;
-  background: var(--surface-sunken);
-  animation: st-board-skeleton-breathe 1200ms var(--ease-glow) infinite alternate;
-}
-.st-board-skeleton-card--columns .st-board-skeleton-rail {
-  height: 52px;
-  background: var(--border-default);
-}
-.st-board-skeleton-card--columns .st-board-skeleton-lines {
-  gap: 10px;
-  padding: var(--space-1) 0;
-}
-.st-board-skeleton-card--columns .st-board-skeleton-line {
-  width: 100%;
-  background: var(--border-default);
-}
-.st-board-skeleton-card--columns .st-board-skeleton-line:first-child {
-  width: 180px;
-  border-radius: 7px;
-}
-@keyframes st-board-skeleton-breathe {
-  from { opacity: 1; }
-  to { opacity: 0.6; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .st-board-skeleton-card--columns {
-    animation: none;
-  }
 }
 
 .st-board-skeleton-card--reason,
@@ -100,6 +68,13 @@
 .st-board-skeleton-card--reason .st-board-skeleton-line:nth-child(3) { width: 260px; }
 .st-board-skeleton-card--plain .st-board-skeleton-line:nth-child(1) { width: 180px; }
 .st-board-skeleton-card--plain .st-board-skeleton-line:nth-child(2) { width: 240px; }
+.st-board-columns .st-board-skeleton-card--plain {
+  border-radius: 20px;
+}
+.st-board-columns .st-board-skeleton-card--plain .st-board-skeleton-line:nth-child(2) {
+  width: 100%;
+  max-width: 240px;
+}
 
 /* ---- The phone's band with nothing to pick yet: drawn, never pressed. ---- */
 .st-board-quiet-band {

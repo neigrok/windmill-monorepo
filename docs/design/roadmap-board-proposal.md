@@ -10,7 +10,7 @@ Drawn on two pages of the Roadmap file:
 744px) and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 (744px and up). Start at the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433)
 and the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-Boards carry ✅ or 🔨; proposals awaiting the owner sit in the 💡 *Finishing states* sections. Desktop boards come in light and dark pairs; phone dark specimens sit in
+Boards carry ✅ or 🔨; proposals awaiting the owner sit in the 💡 *Finishing states* sections, beside the ✅ held-delete frames 25.04 and 15.07. Desktop boards come in light and dark pairs; phone dark specimens sit in
 their sections and in section 19.
 
 ## The idea
@@ -78,6 +78,7 @@ switched-to state.
   truncation specimen (353:5801). Focus is a 2px `:focus-visible` ring with 2px offset in the brand colour.
 - Accessible names: the view switch is a two-option group named *View* with `aria-pressed` on the
   active option; *3/8* reads *3 of 8 steps done*; a heading reads *Up next, 2 steps*.
+- The view glyphs are one pair on every band: three outlined columns for Board, a branching tree for Graph (01.02).
 
 ## Step page and modal
 
@@ -85,8 +86,8 @@ switched-to state.
   Workspace, History. Actions are pinned at the bottom.
 - Overview: description, status row with a leading glyph, step links, Prerequisites (*1 / 1*),
   Unlocks, *View branch*.
-- Up next: *Edit step* and the primary **Complete**. Locked: *Locked · 1 to go*, the unfinished
-  prerequisite row marked with its state, *Edit step* only. Done: *Edit step* and a secondary
+- Up next: *Edit step* and the primary **Complete**. Locked: *Locked · 1 to go*, each unfinished
+  prerequisite on a sunken row marked with its column, on the page and in the modal, *Edit step* only. Done: *Edit step* and a secondary
   **Reset**.
 - **Complete and Reset stay in place.** The status row flips with an inline **Undo** that lasts the
   hold window; a secondary line names the outcome. No toast from a page or a modal. Reset is always
@@ -157,6 +158,7 @@ step and how many steps are up next.
   **Save**; Cancel.
 - Kind offers six choices inline: the legend kinds by name and the unnamed hues by hue name (Build,
   Learn, Milestone, Brick, Sky, Plum). A choice changes only the draft.
+- The Graph's step panel offers the same six choices. A choice saves at once and hovering previews it on the node. The desktop dock adds *Manage kinds* beside them; the tablet panel has no link, because the legend is read-only there.
 - The prerequisite picker shows each candidate's state, groups steps that cannot be prerequisites
   (*Comes after this step*), keeps the selection across queries in a chip strip, and enables Apply
   only when the draft changes. It writes nothing; the form's commit does. Phone: search sits above
@@ -196,13 +198,14 @@ One string per event.
 | Reset preview before tapping | *Reset returns 2 steps to Locked* |
 | Create | *Reefing basics added · Locked* · **Undo**; when a filter clears: *Reefing basics added · filter cleared* · **Undo** |
 | Delete (held) | *Rig the boat deleted* · **Undo**; the confirm's cost line carries the resplice count |
+| Delete fails on release | *Couldn't delete Rig the boat* · **Retry** |
 | Bulk | *3 steps recolored* · **Undo** / *3 steps deleted* · **Undo** |
-| Checklist item | *Try a small turn checked* · **Undo** |
+| Subtask | *Try a small turn checked* · **Undo** |
 | Copy link | *Link copied* |
 | Not-done precondition | *Read the wind isn't done* |
 | Empty roadmap | **Your first step** / *Give your roadmap a place to start.* / **New step** |
 | Roadmap complete | **All 8 steps done** / *Add a step whenever you're ready.* / owner secondary **Share it** |
-| Loading | Skeletons, no copy |
+| Loading | Still skeletons, no motion, no copy |
 | Load error | **Couldn't load this roadmap** / *It may have moved, or the server is unreachable.* / **Try again** |
 | Save failure | *Couldn't save. Your draft is kept.* / **Retry** · **Keep editing** |
 | Discard confirm | **Discard draft?** / *Your changes will be lost.* / **Keep editing** · **Discard** |

@@ -14,6 +14,7 @@ import {
   removeKind,
   recolorKind,
   kindOptions,
+  kindChoices,
   kindOptionsForHues,
 } from '../../../../src/products/roadmap/model/Legend.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
@@ -361,4 +362,24 @@ test('kindOptionsForHues shares legend ordering, first names and palette fallbac
   assert.deepEqual(kindOptionsForHues(['sky'], legend), [{ id: 'first', hue: 'sky', label: 'Practice' }]);
   assert.deepEqual(kindOptions(tree([node('one', [], { color: 'sky' })]), legend), []);
   assert.deepEqual(kindOptionsForHues([], legend), []);
+});
+
+test('kindChoices — the legend\'s names, then the unnamed hues in palette order, wherever a worn hue was derived into the legend', () => {
+  const named = [
+    { id: 'build', hue: 'terracotta', label: 'Build' },
+    { id: 'learn', hue: 'olive', label: 'Learn' },
+    { id: 'milestone', hue: 'gold', label: 'Milestone' },
+  ];
+  const expected = [
+    { id: 'build', hue: 'terracotta', label: 'Build' },
+    { id: 'learn', hue: 'olive', label: 'Learn' },
+    { id: 'milestone', hue: 'gold', label: 'Milestone' },
+    { id: 'brick', hue: 'brick', label: 'Brick' },
+    { id: 'sky', hue: 'sky', label: 'Sky' },
+    { id: 'plum', hue: 'plum', label: 'Plum' },
+  ];
+  assert.deepEqual(kindChoices(named), expected);
+  assert.deepEqual(kindChoices([...named, { id: 'k_plum', hue: 'plum', label: '', description: '' }, { id: 'k_sky', hue: 'sky', label: '', description: '' }]), expected);
+  assert.deepEqual(kindChoices().map((kind) => kind.label), ['Terracotta', 'Olive', 'Gold', 'Brick', 'Sky', 'Plum']);
+  assert.deepEqual(kindChoices(null).map((kind) => kind.label), ['Terracotta', 'Olive', 'Gold', 'Brick', 'Sky', 'Plum']);
 });

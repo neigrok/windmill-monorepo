@@ -45,7 +45,8 @@ export function handleMenuKey(event, { root, selector = '[role="menuitem"]', onE
   options[(current + direction + options.length) % options.length]?.focus();
 }
 
-export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
+export function KindChoice({ kinds, value, onChoose, label, follow = true, onPreview, onRestore }) {
+  const tabStop = kinds.some((kind) => kind.hue === value) ? value : kinds[0]?.hue;
   return (
     <div role="radiogroup" aria-label={label}>
       {kinds.map((kind, index) => (
@@ -54,10 +55,12 @@ export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
           type="button"
           role="radio"
           aria-checked={value === kind.hue}
-          tabIndex={value === kind.hue || (value === null && index === 0) ? 0 : -1}
+          tabIndex={kind.hue === tabStop ? 0 : -1}
           className="st-board-draft-kind-choice"
           style={{ '--draft-kind': KIND_CSS[kind.hue].base, '--draft-kind-ring': KIND_CSS[kind.hue].ring }}
           onClick={() => onChoose(kind.hue)}
+          onPointerEnter={onPreview && (() => onPreview(kind.hue))}
+          onPointerLeave={onRestore}
           onKeyDown={(event) => {
             const direction = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
             if (!direction) return;

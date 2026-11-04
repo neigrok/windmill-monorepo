@@ -72,6 +72,12 @@ export function kindOptionsForHues(available, legend = []) {
   }));
 }
 
+// The Graph editors' six choices: what the legend names, then the unnamed hues in palette order. A worn hue the legend only
+// derived keeps its palette place, so a choice that saves at once never reorders the choices under the pointer.
+export function kindChoices(legend = []) {
+  return kindOptionsForHues(NODE_COLOR_NAMES, (legend ?? []).filter((kind) => kind.label));
+}
+
 // null once all six palette hues are taken.
 export function freeHue(legend) {
   const taken = new Set(legend.map((kind) => kind.hue));

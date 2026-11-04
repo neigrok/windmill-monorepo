@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 register('../../../../jsxLoader.mjs', import.meta.url);
 const { NodeWorkspace, renderMarkdown, SAFE_URL } = await import('../../../../../src/products/roadmap/graph/tree/NodeWorkspace.jsx');
+const { Checklist } = await import('../../../../../src/products/roadmap/graph/tree/Checklist.jsx');
 const { Icon } = await import('../../../../../src/design-system/Icon.jsx');
 
 const note = '**Read** the *wind*\nUse [charts](https://example.test/chart?x=1&y=2) and [email](mailto:coach@example.test).\n\n- Watch <water>\n- [Blocked](javascript:alert)\n\n[Relative](/local) [Data](data:text/html,unsafe) [HTTP](HTTP://example.test)';
@@ -40,4 +41,22 @@ test('an empty Graph workspace offers its bootstrap', () => {
     nodeId: 'wind', workspace: { note: '', subtasks: [], links: [] }, hue: 'sky',
   })), addMarkup);
   assert.equal(renderToStaticMarkup(React.createElement(React.Fragment, null, renderMarkdown(''))), '');
+});
+
+test('the Graph workspace names its list Subtasks, tallies it and offers Add subtask (04.05, 13:6)', () => {
+  const icon = (name, size) => renderToStaticMarkup(React.createElement(Icon, { name, size }));
+  const markup = renderToStaticMarkup(React.createElement(Checklist, {
+    items: [{ id: 'halyard', label: 'Identify the halyard', done: true }, { id: 'sheets', label: 'Name the sheets', done: false }],
+    hue: { base: 'var(--kind-sky)', ring: 'var(--kind-sky-ring)' },
+  }));
+  assert.equal(markup, [
+    '<div><div class="st-check-head"><span class="st-step-heading">Subtasks</span><span class="st-check-count">1 of 2</span></div>',
+    '<div class="st-check-list" style="--chk-base:var(--kind-sky);--chk-ring:var(--kind-sky-ring)">',
+    `<div class="st-check-row"><span class="st-check-box st-check-box--done">${icon('check', 12).replace('stroke="currentColor"', 'stroke="#fff"')}</span>`,
+    '<span class="st-check-label st-check-label--done">Identify the halyard</span>',
+    `<button type="button" class="st-check-del" aria-label="Remove subtask">${icon('x', 13)}</button></div>`,
+    '<div class="st-check-row"><span class="st-check-box "></span><span class="st-check-label ">Name the sheets</span>',
+    `<button type="button" class="st-check-del" aria-label="Remove subtask">${icon('x', 13)}</button></div>`,
+    `<button type="button" class="st-check-add">${icon('plus', 13)}Add subtask</button></div></div>`,
+  ].join(''));
 });

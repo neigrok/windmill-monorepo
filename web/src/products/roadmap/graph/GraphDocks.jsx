@@ -38,7 +38,7 @@ export function GraphDocks({
     completedAt: progress.completedAt[selectedId],
     history: activity.selectedHistory,
     workspace: workspaceByNode[selectedId] ?? emptyWorkspace(),
-    kinds: legend,
+    legend,
     onReveal: (id) => sceneRef.current?.revealNode(id),
     onClose: () => setSelectedId(null),
   };
@@ -103,7 +103,7 @@ export function GraphDocks({
           prerequisites={prerequisites}
           unlocks={unlocks}
           completedAt={progress.completedAt[selectedId]}
-          kinds={legend}
+          legend={legend}
           autoFocusName={autoFocusName}
           deletable={stepDeletable}
           onMarkDone={(id) => {

@@ -46,7 +46,7 @@ test('boardFrame — a failure, then a roadmap still loading, then one with no s
 });
 
 test('BoardStates — from 744px the skeleton holds the three columns with their titles, no counts and no spinner', () => {
-  const card = '<span class="st-board-skeleton-card st-board-skeleton-card--columns" aria-hidden="true"><span class="st-board-skeleton-rail"></span>'
+  const card = '<span class="st-board-skeleton-card st-board-skeleton-card--plain" aria-hidden="true"><span class="st-board-skeleton-rail"></span>'
     + '<span class="st-board-skeleton-lines"><span class="st-board-skeleton-line"></span><span class="st-board-skeleton-line"></span></span></span>';
   assert.equal(frame({ loading: true }), [
     '<div class="st-board-columns" aria-busy="true" tabindex="-1">',

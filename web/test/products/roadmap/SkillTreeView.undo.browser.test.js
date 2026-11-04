@@ -123,7 +123,7 @@ hostTest('Chromium: a tablet add, rename, recolor, link and link removal each of
     assert.deepEqual(Object.keys(await steps(page)).sort(), Object.keys(before).sort());
 
     await page.evaluate(() => window.editTap(0, 0, 'wind'));
-    await editor.getByRole('button', { name: 'Set kind to Sky', exact: true }).click();
+    await editor.getByRole('radio', { name: 'Sky', exact: true }).click();
     await undoAfterLaterLink('Recolored');
     assert.equal((await steps(page)).wind.color, before.wind.color);
 

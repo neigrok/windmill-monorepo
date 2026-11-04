@@ -560,23 +560,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
   Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
   their own values.
-- **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
-  legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
-  384:19561). The shipped `graph/StepPanel.jsx` offers only the legend's kinds, falling back to the six
-  hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
 - **Board · no Complete offer after the last subtask in the Graph.** The Board's step page and modal
   offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
   desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`graph/StepPanel.jsx`)
   fills the gauge and nothing else; no drawing covers the Graph.
-- **Board · where the modal's status row sits.** The step modal 03.01 (184:1693) draws *Up next* under
-  the step links' divider; the core-loop modals (02.01–02.04) and every phone step page draw the status
-  row under the description. `step/StepDetail.jsx` follows the core loop. Redraw 03.01 or rule.
-- **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
-  prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
-  lists it plainly. The build follows each drawing. Choose one.
-- **Board · two names for the checklist.** The Board's step workspace says *Subtasks* and *Add subtask*
-  (07.01, 03.08); the Graph's step panel (`graph/StepPanel.jsx` through `graph/tree/Checklist.jsx`) says
-  *Checklist* and *Add a sub-task*, and its add menu *Sub-task*. Choose one name for both views.
 - **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
   **Retry** (phone 25.01–25.02, desktop 15.01–15.02).
@@ -584,14 +571,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   fixed 30px height with `white-space: nowrap` and 32px grid gutters, and the 18.05 specimen (380:18803) leaves the Shell out.
   Proposed, awaiting the owner: the pills fold into one current-room menu by em width (phone 25.23–25.24). The Shell owner draws it
   in the Shell file and builds it.
-- **Board · two pairs of view glyphs.** The phone identity row (258:1397) draws Board as three
-  outlined bars and Graph as four joined nodes; the desktop View switch (369:3967) draws Board as three
-  strokes and Graph as a branching tree. `identity/ViewSwitch.jsx` follows each band: phones draw the
-  icon pair wherever the switch sits, 744px and up the segmented control. Choose one pair.
-- **Board · two skeleton cards.** The desktop Skeleton card (369:4027) breathes opacity 1 → .6 over
-  1200ms ease-glow for as long as the roadmap loads; the phone Skeleton card (369:10026) holds still,
-  and the motion canon reserves endless breathing for the crowned root (`tokens/motion.css`).
-  `board/states.css` follows each drawing. Choose one.
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
@@ -668,8 +647,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   publisher retain the global notice.
 - **Board · the drawings of what the lift retired.** The product has no List, phone editor sheet, phone aim, remove-link and bulk bars,
   ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
-  *List vocabulary*, and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
+  *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
   index rows in the 🚀 pass.
+- **Board · loading strip.** 02.09 (374:5067) draws five sunken chip placeholders between the identity row and the columns. The build
+  draws none, so its columns start higher.
+- **Board · modal and the Shell.** The step modal frames (03.01 184:1693, 03.07 379:18290, 05.06 399:37361) draw the scrim over the Shared
+  Shell and centre the modal on the whole viewport, 80px from the top. The build leaves the Shell clear and centres the modal beneath it,
+  106px from the top.
+- **Board · a reader's step modal.** 04.05 (376:13291) draws Overview and History sections, a Copy link icon and *View branch* for a
+  reader. The build gives a reader the overview alone, the ⋯ menu and no *View branch*.
+- **Graph · dock header.** 08.11 (523:32253) and Web 04.01 (33:105) draw a centred title and *Not started*. `graph/StepPanel.jsx` draws
+  the title at the start and says *Up next*, the Board's word.
 - **Board · Shell from 744.** Every role's frames from 744 ([04.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12955),
   [04.06](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12775), 04.09 · 744) draw the Shared Shell's
   room links from the left edge, with no mark and no fill on the active room. The built head keeps the mark, fills the

@@ -20,7 +20,7 @@ human approval or claim every branch was exercised. Native graph lighting is a s
 | 01 · Start a roadmap | [131:5](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-5) | [170:5](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-5) | Quest shelf → blank birth or paste → tree |
 | 02 · Find and edit in List | — | [131:3](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-3) | Retired: the product has no List; the board goes in the 🚀 pass |
 | 03 · Navigate the tree | [131:4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-4) | [170:8](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-8) | Focus / All steps, switcher, kinds; visitor chrome; loading/error/desktop empty |
-| 04 · Edit and complete steps | [160:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-10) | [170:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-10) | Select → owner sheet or desktop inspector → completion, workspace or multi-select |
+| 04 · Edit and complete steps | [160:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-10) | [170:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-10) | Select → tablet panel or desktop inspector → completion, workspace or multi-select. ✅ six Kind choices and Subtasks: Web 04.01, 04.03, 04.05, 04.06; Web Mobile 04.07, 04.11 |
 | 05 · Progress and feedback | [162:323](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-323) | [170:12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-12) | Blocked/fully grown; toast and activity feedback. The Next up states are retired and go in the 🚀 pass |
 | 06 · Publish, browse and fork | [131:14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-14) | [183:210](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-210) | Publish and copy → public gallery or visitor → fork; Make private |
 | 07 · Roadmap settings | [162:282](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-282) | — | Shared product specimens: export, gated reminders and AI assistance |
@@ -28,9 +28,9 @@ human approval or claim every branch was exercised. Native graph lighting is a s
 | 09 · Settings branches | [184:1307](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1307) | [185:1359](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1359) | Reminder schedule/suppression and AI allowance/history; conditional gates |
 | 10 · Keyboard shortcuts | [185:2501](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2501) | [188:662](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-662) | Mac/Windows; owner/reader; current responsive layout |
 
-The [mobile owner editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=158-121)
-and [List vocabulary](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=16-3) on Components
-draw retired surfaces and go in the 🚀 pass. [AI review proposals](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-45)
+[List vocabulary](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=16-3) on Components
+draws a retired surface and goes in the 🚀 pass. The [mobile owner editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=158-121)
+draws the tablet panel, 04.07 and 04.11, and stays. [AI review proposals](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-45)
 remain on Proposals. Account, sign-in, appearance and shared settings belong to
 [Shell](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf); landing pages belong to
 [Marketing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81).
@@ -54,6 +54,7 @@ approved 2026-10-31; the build is dogfood node `roadmap-board-web-build`.
 | Large roadmaps | [379:8923](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=379-8923) | [379:18852](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=379-18852) | 5,000 steps: counts, per-column scroll, Done collapse |
 | Find, filter and sort | [387:26773](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=387-26773) | [209:2396](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=209-2396) | Find a step, filter by kind, Roadmap order or Created |
 | Roadmap verbs | [260:5150](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5150) | [258:4895](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-4895) | Verbs row on Board and Graph; phone title-tap sheet |
+| View glyphs | [569:57568](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=569-57568) | [258:1397](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-1397) | One pair on every band: Board's outlined columns, Graph's branching tree |
 | Create a step | [232:1086](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-1086) | [226:602](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=226-602) · [258:4749](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-4749) | New step → prerequisites picker → revealed in its column |
 | Keyboard and gestures | [386:13311](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=386-13311) | [378:16260](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=378-16260) · [398:28881](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-28881) | Roving focus and C; swipe to complete; long-press multi-select |
 | Explore a branch | [294:8978](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-8978) | [292:8701](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-8701) | View branch → scoped Board → Graph and back |
@@ -61,7 +62,7 @@ approved 2026-10-31; the build is dogfood node `roadmap-board-web-build`.
 | Activity | [260:5150](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5150) · [527:48637](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48637) | [487:12770](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=487-12770) · [527:16010](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-16010) | More or roadmap sheet → Activity → step |
 | Waves 6–8 states | [481:23657](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=481-23657) | [487:12770](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=487-12770) | Sync states at 744, readers and Fork, Graph row and What's next, roadmap sheet, Ask AI, demo byline |
 | Wave 7 sync states | [517:30937](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=517-30937) | [519:15146](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=519-15146) | Couldn't sync on Graph, at its limit, several changes, offline |
-| 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; not ready for dev |
+| 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; ✅ 15.07 and 25.04, the held delete that fails, are ready for dev |
 
 ## Gym · iOS
 

@@ -54,7 +54,7 @@ export function BoardSkeleton({ phone }) {
             {column === 'upNext' && <span className="st-board-columns-accent" aria-hidden />}
             <span className="st-board-columns-title">{COLUMN_TITLES[column]}</span>
           </h2>
-          {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="columns" />)}
+          {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="plain" />)}
         </section>
       ))}
     </div>

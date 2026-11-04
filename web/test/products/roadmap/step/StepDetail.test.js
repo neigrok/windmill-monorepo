@@ -309,7 +309,7 @@ test('Chromium: Undo lasts the hold window, then goes; the outcome line and Rese
   }
 });
 
-test('Chromium: a locked step leads with what it still needs; on the phone each unmet need names its column and opens it', async () => {
+test('Chromium: a locked step leads with what it still needs; on both surfaces each unmet need names its column and opens it', async () => {
   await ready;
   const errors = [];
   const desktop = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
@@ -320,7 +320,7 @@ test('Chromium: a locked step leads with what it still needs; on the phone each 
     assert.deepEqual([await overview(desktop), await desktop.locator('.st-board-step-modal-actions').count()], [[
       'Cast off safely and steer clear of the dock.',
       'Locked · 1 to go',
-      'Prerequisites | 1 / 2 | Rig the boat | Read the wind',
+      'Prerequisites | 1 / 2 | Rig the boat | Read the wind | Up next',
       'Unlocks | 1 | Sail a triangle',
     ], 0]);
 
@@ -342,6 +342,94 @@ test('Chromium: a locked step leads with what it still needs; on the phone each 
   } finally {
     await desktop.context().close();
     await phone.context().close();
+  }
+});
+
+// Every part of the overview as drawn, in order and relative to the modal's content.
+const modalOverview = (page) => page.evaluate(() => {
+  const content = document.querySelector('.st-board-step-modal-content').getBoundingClientRect();
+  const box = (element) => {
+    const rect = element.getBoundingClientRect();
+    return [Math.round(rect.left - content.left), Math.round(rect.top - content.top), Math.round(rect.width), Math.round(rect.height)];
+  };
+  const query = (selector) => document.querySelector(`.st-board-step-modal-content ${selector}`);
+  const glyph = query('.st-board-step-status-glyph svg');
+  const probe = document.createElement('i');
+  probe.style.color = 'var(--text-secondary)';
+  document.body.append(probe);
+  const secondary = getComputedStyle(probe).color;
+  probe.remove();
+  return {
+    order: [...document.querySelectorAll('.st-board-step-panel > *')].map((part) => part.className),
+    description: box(query('.st-board-step-description')),
+    status: box(query('.st-board-step-status-row')),
+    glyph: box(glyph),
+    glyphInSecondary: getComputedStyle(glyph).color === secondary,
+    label: box(query('.st-board-step-status-label')),
+    relations: [...document.querySelectorAll('.st-board-step-relations')].map((relation) => box(relation)),
+    headings: [...document.querySelectorAll('.st-board-step-relations .st-board-step-heading')].map((heading) => box(heading)),
+  };
+});
+
+test('Chromium: the modal draws an Up next step\'s status row under its description (03.01)', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    await card(page, 'Read the wind').click();
+    assert.deepEqual(await modalOverview(page), {
+      order: ['st-board-step-description', 'st-board-step-status st-board-step-status--upNext', 'st-board-step-links', 'st-board-step-relations', 'st-board-step-relations', 'st-board-step-explore'],
+      description: [0, 0, 720, 20], status: [0, 32, 720, 44], glyph: [0, 45, 18, 18], glyphInSecondary: true, label: [26, 44, 52, 20],
+      relations: [[0, 168, 720, 101], [0, 281, 720, 101]],
+      headings: [[0, 181, 720, 24], [0, 294, 720, 24]],
+    });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Chromium: the modal draws a locked step\'s status on 24px and its unmet need on a sunken row with its column (03.07)', async () => {
+  await ready;
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
+  try {
+    await card(page, 'Leave the dock').click();
+    assert.deepEqual(await modalOverview(page), {
+      order: ['st-board-step-description', 'st-board-step-status st-board-step-status--locked', 'st-board-step-relations', 'st-board-step-relations'],
+      description: [0, 0, 720, 20], status: [0, 32, 720, 24], glyph: [0, 34, 20, 20], glyphInSecondary: true, label: [28, 32, 103, 24],
+      relations: [[0, 68, 720, 165], [0, 245, 720, 101]],
+      headings: [[0, 81, 720, 24], [0, 258, 720, 24]],
+    });
+    assert.deepEqual(await page.evaluate(() => {
+      const content = document.querySelector('.st-board-step-modal-content').getBoundingClientRect();
+      const row = document.querySelector('.st-board-step-modal-content .st-board-step-row--need');
+      const box = (selector) => {
+        const rect = row.querySelector(selector).getBoundingClientRect();
+        return [Math.round(rect.left - content.left), Math.round(rect.top - content.top), Math.round(rect.width), Math.round(rect.height)];
+      };
+      const whole = row.getBoundingClientRect();
+      const probe = document.createElement('i');
+      probe.style.background = 'var(--surface-sunken)';
+      document.body.append(probe);
+      const sunken = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return {
+        count: document.querySelectorAll('.st-board-step-row--need').length,
+        text: row.innerText,
+        row: [Math.round(whole.left - content.left), Math.round(whole.top - content.top), Math.round(whole.width), Math.round(whole.height)],
+        glyph: box('.st-board-step-row-glyph svg'),
+        state: box('.st-board-step-row-state'),
+        chevron: box('.st-board-step-row-chevron svg'),
+        sunken: getComputedStyle(row).backgroundColor === sunken,
+        radius: getComputedStyle(row).borderRadius,
+      };
+    }), {
+      count: 1, text: 'Read the wind\nUp next', row: [0, 181, 720, 52], glyph: [12, 198, 18, 18], state: [635, 198, 47, 18], chevron: [690, 198, 18, 18], sunken: true, radius: '12px',
+    });
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.context().close();
   }
 });
 

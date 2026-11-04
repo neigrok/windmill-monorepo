@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
 import { track } from '../../../../telemetry/beacon.js';
 import { Checklist } from './Checklist.jsx';
+import { WORKSPACE } from '../../copy.js';
 
 // Note dialect: **bold**, *italic*, [text](url), "- " lists. Link hrefs are kept to safe schemes
 // so a note can't smuggle in a javascript: URL.
@@ -145,7 +146,7 @@ export function renderMarkdown(md, { sourceMap = false } = {}) {
 }
 
 const ADD_CHOICES = [
-  { kind: 'subtask', label: 'Sub-task', icon: 'clipboard-check' },
+  { kind: 'subtask', label: WORKSPACE.subtask, icon: 'clipboard-check' },
   { kind: 'note', label: 'Note', icon: 'pencil' },
   { kind: 'link', label: 'Link', icon: 'external-link' },
 ];

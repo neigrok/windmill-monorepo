@@ -9,6 +9,9 @@ const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const entry = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import '/src/styles/fonts.js';
+import '/src/styles/global.css';
+import '/src/products/roadmap/skilltree.css';
 import { TabletEditor } from '/src/products/roadmap/graph/tablet/TabletEditor.jsx';
 const noop = () => {};
 function Room() {
@@ -17,7 +20,9 @@ function Room() {
     node: { id: 'wind', label: 'Read the wind', color: 'sky' }, state,
     onMarkDone: (id) => { window.calls.push(['complete', id]); setState('complete'); },
     onUnmarkDone: (id) => { window.calls.push(['reset', id]); setState('available'); },
-    onRename: noop, onAddStep: noop, onConnect: noop, onSetKind: noop, onDelete: noop,
+    legend: [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }, { id: 'milestone', hue: 'gold', label: 'Milestone' }],
+    onRename: noop, onAddStep: noop, onConnect: noop, onDelete: noop,
+    onSetKind: (id, hue) => window.calls.push(['kind', id, hue]),
   });
 }
 window.openSheet = () => {
@@ -92,6 +97,36 @@ test('Chromium: completion and reset preserve the focused editor action node', a
     } finally {
       await page.close();
     }
+});
+
+test('Chromium: the tablet panel offers the six choices with no link; arrow keys move focus and only a press saves', async () => {
+  await start();
+  const page = await browser.newPage({ viewport: { width: 744, height: 900 } });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.goto(`${origin}/mobile-editor-test`);
+      await page.waitForFunction(() => window.entryReady);
+      await page.evaluate(() => window.openSheet());
+      const group = page.getByRole('radiogroup', { name: 'Kind', exact: true });
+      await group.waitFor();
+      const radios = group.getByRole('radio');
+      assert.deepEqual(await radios.evaluateAll((elements) => elements.map((element) => [element.textContent, element.getAttribute('aria-checked'), element.tabIndex])), [
+        ['Build', 'false', -1], ['Learn', 'false', -1], ['Milestone', 'false', -1], ['Brick', 'false', -1], ['Sky', 'true', 0], ['Plum', 'false', -1],
+      ]);
+      assert.equal(await page.getByRole('button', { name: 'Manage kinds', exact: true }).count(), 0);
+      await group.getByRole('radio', { name: 'Sky', exact: true }).focus();
+      await page.keyboard.press('ArrowRight');
+      assert.deepEqual(await page.evaluate(() => [document.activeElement.textContent, window.calls]), ['Plum', []]);
+      await page.keyboard.press('ArrowLeft');
+      await page.keyboard.press('Enter');
+      assert.deepEqual(await page.evaluate(() => window.calls), []);
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Enter');
+      assert.deepEqual(await page.evaluate(() => window.calls), [['kind', 'wind', 'plum']]);
+    });
+  } finally {
+    await page.close();
+  }
 });
 
 for (const [state, verb] of [['available', 'complete'], ['complete', 'uncomplete'], ['locked', null]]) {

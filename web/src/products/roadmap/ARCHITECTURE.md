@@ -333,8 +333,8 @@ release that fails as its toast is replaced or left emits the event and says not
 
 ### States
 
-`BoardStates.jsx` draws them. While the roadmap loads, skeleton cards hold the columns under the identity row
-and band, with no counts and no spinner. A failed load says *Couldn't load this roadmap* with Try again, which
+`BoardStates.jsx` draws them. While the roadmap loads, still skeleton cards hold the columns under the identity row
+and band, with no counts, no spinner and no motion. A failed load says *Couldn't load this roadmap* with Try again, which
 reruns the load. An owner's empty roadmap shows *Your first step* and New step on every band. Once every step
 is done, Up next rests on Roadmap complete: the owner gets its body line, Share it and New step; a reader gets
 the title alone.
@@ -364,7 +364,10 @@ below that it replaces the form, as a page in the 600px dialog from 744px and a 
 `StepComposer` owns picker selection and query, so resizing keeps them. With zero candidates the Prerequisites
 row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots start in the first legend
 kind. `composerFocus.js` owns shared layer focus, viewport hooks and `coverBeneath`. The shared `KindChoice`
-lives in `BoardControls.jsx`.
+lives in `BoardControls.jsx`. The Graph's dock and tablet panel offer the same six kinds through it, from
+`kindChoices` in `model/Legend.js`, with `follow={false}`: arrow keys only move focus, a press saves at once, the kind
+in force writes nothing, and a choice never reorders the row. The dock previews a hovered kind on the node and adds
+Manage kinds beside the heading, which opens the legend.
 
 ## The Graph
 

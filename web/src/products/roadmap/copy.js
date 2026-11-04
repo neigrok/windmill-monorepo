@@ -15,6 +15,7 @@ export const LABELS = {
   columns: 'Columns',
   findStep: 'Find a step',
   filterByKind: 'Filter by kind',
+  manageKinds: 'Manage kinds',
   allKinds: 'All',
   newStep: 'New step',
   recolor: 'Recolor',
@@ -95,6 +96,7 @@ export const PICKER = {
   nowComesAfter: 'Now comes after this step',
 };
 export const WORKSPACE = {
+  subtask: 'Subtask',
   subtasks: 'Subtasks',
   addSubtask: 'Add subtask',
   note: 'Note',

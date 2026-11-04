@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
-import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
-import { COLUMN_TITLES, unlocksWhen } from '../copy.js';
-import { kindName } from '../model/Legend.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
+import { KindChoice } from '../board/BoardControls.jsx';
+import { COLUMN_TITLES, COMPOSER, LABELS, unlocksWhen } from '../copy.js';
+import { kindChoices } from '../model/Legend.js';
 
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
 const noop = () => {};
@@ -84,7 +85,7 @@ export function StepPanel(props) {
   return <EditorStep {...props} />;
 }
 
-function EditorStep({ node, state, prerequisites, completedAt, history = [], workspace = EMPTY_WORKSPACE, kinds = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onMarkComplete, onReset, onReveal, deletable = true, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
+function EditorStep({ node, state, prerequisites, completedAt, history = [], workspace = EMPTY_WORKSPACE, legend = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onMarkComplete, onReset, onReveal, deletable = true, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -100,7 +101,6 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
 
   const now = Date.now();
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
-  const legendKinds = kinds.length > 0 ? kinds : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
   const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   const lockedBy = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
 
@@ -241,32 +241,20 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
         </div>
       )}
 
-      <div>
-        <div className="st-step-heading">Kind</div>
-        <div className="st-step-kinds">
-          {legendKinds.map((kind) => (
-            <button
-              key={kind.id}
-              type="button"
-              className={`st-step-swatch ${kind.hue === currentKind ? 'st-step-swatch--current' : ''}`}
-              style={{ background: KIND_CSS[kind.hue].base }}
-              title={kindName(kind)}
-              aria-label={`Set kind to ${kindName(kind)}`}
-              onPointerEnter={() => onPreviewKind(node.id, kind.hue)}
-              onPointerLeave={() => onRestoreKind(node.id)}
-              onClick={() => onSetKind(node.id, kind.hue)}
-            />
-          ))}
-          <button
-            type="button"
-            className="st-step-swatch st-step-swatch--add"
-            title="Manage kinds"
-            aria-label="Manage kinds"
-            onClick={() => onOpenLegend()}
-          >
-            +
-          </button>
+      <div className="st-step-kind">
+        <div className="st-step-kind-heading">
+          <div className="st-step-heading">{COMPOSER.kind}</div>
+          <button type="button" className="st-step-manage-kinds" onClick={() => onOpenLegend()}>{LABELS.manageKinds}</button>
         </div>
+        <KindChoice
+          kinds={kindChoices(legend)}
+          value={currentKind}
+          label={COMPOSER.kind}
+          follow={false}
+          onChoose={(choice) => { if (choice !== currentKind) onSetKind(node.id, choice); }}
+          onPreview={(choice) => onPreviewKind(node.id, choice)}
+          onRestore={() => onRestoreKind(node.id)}
+        />
       </div>
 
       {deletable && (

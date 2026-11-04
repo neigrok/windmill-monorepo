@@ -245,7 +245,7 @@
   color: var(--text-tertiary);
 }
 
-/* Kind: one round swatch per category hue; hover previews, ring marks the current */
+/* The selection bar's recolor: one round swatch per category hue; hover previews, ring marks the current */
 .st-step-kinds {
   display: flex;
   gap: var(--space-2);
@@ -268,23 +268,44 @@
 .st-step-swatch--current:hover {
   box-shadow: 0 0 0 2px var(--text-primary);
 }
-/* The ghost "+" swatch: opens the legend */
-.st-step-swatch--add {
-  border: 1.5px dashed var(--neutral-400);
-  box-shadow: none;
-  background: transparent;
-  color: var(--text-tertiary);
+/* Kind in the dock and the tablet panel: the six choices wrap to the panel, and the dock's heading row opens the legend. */
+.st-step-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.st-step-kind [role="radiogroup"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.st-step-kind button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.st-step-kind-heading {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: var(--text-sm);
-  font-weight: 800;
-  line-height: 1;
+  justify-content: space-between;
+  line-height: 18px;
 }
-.st-step-swatch--add:hover {
-  border-color: var(--text-secondary);
-  color: var(--text-secondary);
-  box-shadow: none;
+.st-step-kind-heading .st-step-heading {
+  margin-bottom: 0;
+}
+.st-step-manage-kinds {
+  margin: -3px 0;
+  padding: 3px 0;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--color-brand);
+  cursor: pointer;
+}
+.st-step-manage-kinds:hover {
+  color: var(--color-brand-hover);
 }
 
 /* Delete: isolated at the very bottom */
@@ -1238,7 +1259,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Checklist: round kind-hued checkboxes on a single/double-click grammar ---- */
+/* ---- Subtasks: round kind-hued checkboxes on a single/double-click grammar ---- */
 .st-check-head {
   display: flex;
   align-items: center;
