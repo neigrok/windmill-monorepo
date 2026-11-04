@@ -1380,18 +1380,24 @@ iOS. It and the product differ in these places.
   phones. Android reaches this state when its signed-out Coach moves to phone turns
   ([plan](../engineering/android-phone-coach-plan.md) §5); iOS holds it now.
 - **6y · Android's exchange against its boards.** Where the build and the drawings differ: 08.36's rows are no doors,
-  so What Coach read opens no workout; 08.35 draws no card beside its *wrote a proposal* step, and the build draws the
-  card when the call lands, as iOS does; 08.69's close glyph is the kit's inverse-on-surface, which barely reads on its
-  band, so the build draws it in text/secondary; 08.70 stands the read tally 16 dp under the answer where 01.19 and 08.36
-  stand it 6 dp under, and the build holds the 6; the note card comes from 08.25, which draws one paragraph, so the build
-  shows the note's body and its title stands in What Coach read. An answer that read no workout and no movement history says the
-  catalog's phrases of the reads it ran, joined as the step line joins them, over What Coach read; no board draws that line. The composer's picture line is one sentence on both seats,
-  `CoachPhotos.whereItGoes` and `keptHere` as 01.5 draws them, since a picture goes to the provider from either seat
-  (`gym_coach.md` §9.3): board 01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out
-  and *A copy goes to the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). 03.46 draws
-  a set as *1*, a ladder of −5, −2.5, +2.5, +5 and the movement in Nunito, where the shipped rack draws *Set 1*, −2.5, −1, +2.5, +5 and a
-  sans name, and the rack stays as today (D5). No board draws `stopping`; a Stop refused for another reason (`stopUnheard`) says the first
-  sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has already ended.
+  so What Coach read opens no workout; 08.35 and 08.36 draw no card beside their *wrote a proposal* step, and the build
+  draws the card when the call lands, as iOS does; 08.35 and 08.52 end their running words on an ellipsis, which the
+  build leaves out, as iOS does; What Coach read stands 502 dp where 08.36 draws 496, because a single line of Nunito
+  keeps its font's height under a smaller leading (the title 38 dp against 36, a row's title 20.5 against 20) and the
+  gaps round to whole pixels; 08.69's close glyph is the kit's inverse-on-surface, which barely reads on its band, so
+  the build draws it in text/secondary; 08.70 stands the read tally 16 dp under the answer where 01.19 and 08.36 stand
+  it 6 dp under, and the build holds the 6; the note card comes from 08.25, which draws one paragraph, so the build
+  shows the note's body and its title stands in What Coach read; every board stands the rail's icons and labels 6 dp
+  above where Material's NavigationBar lays them, and the build keeps Material's. An answer that read no workout and no
+  movement history says the catalog's phrases of the reads it ran, joined as the step line joins them, over What Coach
+  read; no board draws that line. The composer's picture line is one sentence on both seats, `CoachPhotos.whereItGoes`
+  and `keptHere` as 01.5 draws them, since a picture goes to the provider from either seat (`gym_coach.md` §9.3): board
+  01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out and *A copy goes to
+  the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). 03.46 draws a
+  set as *1*, a ladder of −5, −2.5, +2.5, +5 and the movement in Nunito, where the shipped rack draws *Set 1*, −2.5, −1,
+  +2.5, +5 and a sans name, and the rack stays as today (D5). No board draws `stopping`; a Stop refused for another
+  reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
+  already ended.
 
 ### Native and web differences
 

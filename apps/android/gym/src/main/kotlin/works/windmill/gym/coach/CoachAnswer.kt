@@ -62,6 +62,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
@@ -169,10 +170,10 @@ internal fun CoachAnswer(
     }
 }
 
-// A line under an answer, on the receipt's margin: the step line and how the turn ended.
+// A line under an answer, on the receipt's margin: the step line and how the turn ended. It stands over the receipt, whose touch reaches up across it and would hide it from the accessibility tree.
 @Composable
 private fun CoachLine(said: String, tag: String) {
-    Text(said, style = GymType.coachSourceLine, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp, top = 4.dp).testTag(tag))
+    Text(said, style = GymType.coachSourceLine, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.zIndex(1f).padding(start = 12.dp, top = 4.dp).testTag(tag))
 }
 
 // A running answer another device writes (Coach §4.5).

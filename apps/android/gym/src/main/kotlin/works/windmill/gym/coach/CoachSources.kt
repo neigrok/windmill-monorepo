@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -14,9 +16,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.testTag
@@ -39,15 +43,23 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (
     }
     var expanded by remember { mutableStateOf(false) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    // The line stands 22 dp as drawn; Compose widens a smaller pointer target to the platform's 48 dp, and anything drawn there keeps its own touches.
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier.testTag("coach-read-sources").clickable(role = Role.Button, onClickLabel = Ask.sourcesTitle) {
+    val pressing = remember { MutableInteractionSource() }
+    // The line stands as drawn in its column with a touch of 48 dp or more around it. The touch ends in the 8 dp the thread keeps under its last line, which is all the thread's clip leaves, and reaches up over what stands above, which is drawn first and so yields.
+    Box(Modifier.layout { measurable, constraints ->
+            val touch = measurable.minIntrinsicHeight(constraints.maxWidth)
+            val height = maxOf(touch, 48.dp.roundToPx())
+            val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+            layout(placeable.width, touch - 8.dp.roundToPx()) { placeable.place(0, touch - height) }
+        }.testTag("coach-read-sources")
+        .clickable(pressing, indication = null, role = Role.Button, onClickLabel = Ask.sourcesTitle) {
             expanded = true
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
-        }.padding(start = 12.dp, top = 4.dp),
+        }.padding(bottom = 8.dp), contentAlignment = Alignment.BottomStart,
     ) {
-        Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
-        Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+        Row(Modifier.indication(pressing, ripple()).padding(start = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+            Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+        }
     }
     if (!expanded) return
     DisposableEffect(Unit) { onDispose { onSheetTop(null) } }
@@ -59,9 +71,12 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (
                 Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
             }
         },
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
+        // The board's 24 dp under Close holds the gesture bar; a taller bar takes what it needs.
+        val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().coerceAtLeast(24.dp)
         Column(Modifier.fillMaxWidth()
-            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp),
+            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = bottom),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(Ask.sourcesTitle, style = GymType.coachSourcesTitle, color = colors.onSurface)

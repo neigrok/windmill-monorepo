@@ -2,12 +2,14 @@ package works.windmill.gym.coach
 
 import android.app.Application
 import android.content.Intent
+import android.view.View
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -15,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assert
@@ -44,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.ViewCompat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -54,6 +58,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.AbilityRefusal
 import works.windmill.gym.domain.coach.MessageState
@@ -136,6 +141,7 @@ class CoachAnswerTests {
         val answer = "## Thursday\n\nA complete paragraph."
         compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             CoachAnswer(answer, coachReply(answer, read = ReadTally(1, 1, 1), calls = listOf(coachCall("list_sessions", "read your recent workouts"))), emptyList())
+            Text("Under the answer")
         } } }
         val bubble = compose.onNodeWithText("Thursday").getUnclippedBoundsInRoot()
         assertEquals(16.dp, bubble.left)
@@ -144,8 +150,10 @@ class CoachAnswerTests {
         assertEquals(28.dp, line.left)
         assertEquals("the line stands 6 dp under its bubble, as drawn", 6f, (line.top - bubble.bottom).value, 1f)
         val target = compose.onNodeWithTag("coach-read-sources").assertHasClickAction()
-        assertEquals("the line stands 22 dp in the column", 22f, target.getUnclippedBoundsInRoot().let { it.bottom - it.top }.value, 1f)
-        target.performTouchInput { click(Offset(center.x, height + 10.dp.toPx())) }
+        assertEquals(48.dp, target.getUnclippedBoundsInRoot().let { it.bottom - it.top })
+        val under = compose.onNodeWithText("Under the answer").getUnclippedBoundsInRoot()
+        assertEquals("the line stands 22 dp in the column", 22f, (under.top - bubble.bottom - 2.dp).value, 1f)
+        target.performTouchInput { click(Offset(center.x, 1f)) }
         compose.onNodeWithText("What Coach read").assertIsDisplayed()
     }
 
@@ -391,6 +399,19 @@ class CoachAnswerTests {
             val under = compose.onNodeWithText("Read 18 workouts · 6 weeks", useUnmergedTree = true).getUnclippedBoundsInRoot().top
             assertEquals("the receipt stands 4 dp under the line", 4f, (under - bottom).value, 1f)
         }
+    }
+
+    // The tree reads what stands uncovered through a real Region, which only native graphics has.
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE) fun theLineOverWhatItReadStaysInTheAccessibilityTreeUnderItsTouch() {
+        lateinit var view: View
+        val reply = coachReply("Thursday is still a Push day.", truncated = true, read = ReadTally(40, 18, 6), calls = listOf(coachCall("list_sessions", "read your recent workouts")))
+        compose.setContent { GymMaterial {
+            view = LocalView.current
+            CoachAnswer(reply.text, reply, emptyList())
+        } }
+        val line = compose.onNodeWithTag("coach-ending").fetchSemanticsNode()
+        val tree = compose.runOnIdle { ViewCompat.getAccessibilityDelegate(view)!!.getAccessibilityNodeProvider(view)!! }
+        assertEquals("Cut short. Ask Coach to go on.", compose.runOnIdle { tree.createAccessibilityNodeInfo(line.id)?.text?.toString() })
     }
 
     @Test fun aRunningAnswerAnotherDeviceWritesSaysOnlyThat() {

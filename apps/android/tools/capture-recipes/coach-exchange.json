@@ -10,7 +10,7 @@
           "id": "toolu_prop",
           "name": "propose_routine_change",
           "input": {
-            "id": "pr_capture0001",
+            "id": "pr_$account_1",
             "routineId": "$routine0",
             "summary": "Heavier triples.",
             "entries": [
@@ -81,7 +81,7 @@
     "settle": false,
     "model_timing": {
       "chunk_chars": 8,
-      "chunk_delay_ms": 400
+      "chunk_delay_ms": 1000
     },
     "responses": [
       [
@@ -90,7 +90,7 @@
           "id": "toolu_prop",
           "name": "propose_routine_change",
           "input": {
-            "id": "pr_capture0002",
+            "id": "pr_$account_2",
             "routineId": "$routine0",
             "summary": "Heavier triples.",
             "entries": [
@@ -167,7 +167,7 @@
     "settle": false,
     "model_timing": {
       "chunk_chars": 8,
-      "chunk_delay_ms": 400
+      "chunk_delay_ms": 1000
     },
     "responses": [
       [
@@ -232,7 +232,7 @@
           "id": "toolu_move",
           "name": "create_exercise",
           "input": {
-            "id": "ex_inclinedbpress",
+            "id": "ex_$account_a",
             "name": "Incline Dumbbell Press",
             "pattern": "press",
             "equipment": "dumbbell",
@@ -404,7 +404,7 @@
     "name": "coach-stopped",
     "account": "fixture",
     "model_timing": {
-      "start_delay_ms": 3000
+      "start_delay_ms": 10000
     },
     "responses": [
       [
@@ -417,7 +417,7 @@
           "id": "toolu_move",
           "name": "create_exercise",
           "input": {
-            "id": "ex_inclinedbpress2",
+            "id": "ex_$account_b",
             "name": "Incline Dumbbell Press B",
             "pattern": "press",
             "equipment": "dumbbell",
@@ -430,14 +430,6 @@
           "type": "tool_use",
           "id": "toolu_notes",
           "name": "list_notes",
-          "input": {}
-        }
-      ],
-      [
-        {
-          "type": "tool_use",
-          "id": "toolu_routines",
-          "name": "list_routines",
           "input": {}
         }
       ]
@@ -486,7 +478,7 @@
     "name": "coach-stop-not-reached",
     "account": "fixture",
     "model_timing": {
-      "start_delay_ms": 3000
+      "start_delay_ms": 10000
     },
     "responses": [
       [
@@ -499,7 +491,7 @@
           "id": "toolu_move",
           "name": "create_exercise",
           "input": {
-            "id": "ex_inclinedbpress3",
+            "id": "ex_$account_c",
             "name": "Incline Dumbbell Press C",
             "pattern": "press",
             "equipment": "dumbbell",
@@ -560,7 +552,7 @@
     "name": "coach-interrupted",
     "account": "fixture",
     "model_timing": {
-      "start_delay_ms": 3000
+      "start_delay_ms": 10000
     },
     "responses": [
       [
@@ -573,7 +565,7 @@
           "id": "toolu_move",
           "name": "create_exercise",
           "input": {
-            "id": "ex_inclinedbpress4",
+            "id": "ex_$account_d",
             "name": "Incline Dumbbell Press D",
             "pattern": "press",
             "equipment": "dumbbell",
@@ -617,6 +609,12 @@
         "tap": "Coach"
       },
       {
+        "tap": "History"
+      },
+      {
+        "tap": "What should Thursday look like"
+      },
+      {
         "wait": "Interrupted. What arrived is kept."
       }
     ]
@@ -628,7 +626,7 @@
     "sync": [
       {
         "t": "thread",
-        "id": "thr_capture_else",
+        "id": "thr_$account_else",
         "life": [
           "alive",
           "$stamp"
@@ -643,7 +641,7 @@
       },
       {
         "t": "message",
-        "id": "msg_capture_else_q",
+        "id": "msg_$account_else_q",
         "life": [
           "alive",
           "$stamp"
@@ -651,7 +649,7 @@
         "born": "$stamp",
         "f": {
           "threadId": [
-            "thr_capture_else",
+            "thr_$account_else",
             "$stamp"
           ],
           "role": [
@@ -670,7 +668,7 @@
       },
       {
         "t": "message",
-        "id": "msg_capture_else_a",
+        "id": "msg_$account_else_a",
         "life": [
           "alive",
           "$stamp"
@@ -678,7 +676,7 @@
         "born": "$stamp",
         "f": {
           "threadId": [
-            "thr_capture_else",
+            "thr_$account_else",
             "$stamp"
           ],
           "role": [
@@ -694,7 +692,7 @@
             "$stamp"
           ],
           "replica": [
-            "rp_anotherdevice",
+            "rp_0123456789abcdef0123456789abcdef",
             "$stamp"
           ],
           "state": [
@@ -742,7 +740,7 @@
     "sync": [
       {
         "t": "thread",
-        "id": "thr_capture_pic",
+        "id": "thr_$account_pic",
         "life": [
           "alive",
           "$stamp"
@@ -757,7 +755,7 @@
       },
       {
         "t": "message",
-        "id": "msg_capture_pic_q",
+        "id": "msg_$account_pic_q",
         "life": [
           "alive",
           "$stamp"
@@ -765,7 +763,7 @@
         "born": "$stamp",
         "f": {
           "threadId": [
-            "thr_capture_pic",
+            "thr_$account_pic",
             "$stamp"
           ],
           "role": [
@@ -783,7 +781,7 @@
           "pictures": [
             [
               {
-                "id": "pic_capture0001",
+                "id": "pic_$account",
                 "mediaType": "image/jpeg",
                 "localOnly": true
               }
@@ -794,7 +792,7 @@
       },
       {
         "t": "message",
-        "id": "msg_capture_pic_a",
+        "id": "msg_$account_pic_a",
         "life": [
           "alive",
           "$stamp"
@@ -802,7 +800,7 @@
         "born": "$stamp",
         "f": {
           "threadId": [
-            "thr_capture_pic",
+            "thr_$account_pic",
             "$stamp"
           ],
           "role": [
@@ -818,7 +816,7 @@
             "$stamp"
           ],
           "replica": [
-            "rp_anotherdevice",
+            "rp_0123456789abcdef0123456789abcdef",
             "$stamp"
           ],
           "state": [
@@ -830,7 +828,21 @@
             "$stamp"
           ],
           "calls": [
-            [],
+            [
+              {
+                "callId": "toolu_read",
+                "name": "list_sessions",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sets": 54,
+                  "sessions": 18,
+                  "weeks": 6
+                },
+                "readTruncated": true
+              }
+            ],
             "$stamp"
           ]
         }

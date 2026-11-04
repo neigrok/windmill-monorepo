@@ -49,7 +49,7 @@
           "id": "toolu_A",
           "name": "create_routine",
           "input": {
-            "id": "rt_captureA",
+            "id": "rt_$account_a",
             "name": "Full body A",
             "position": 10,
             "entries": [
@@ -70,7 +70,7 @@
           "id": "toolu_B",
           "name": "create_routine",
           "input": {
-            "id": "rt_captureB",
+            "id": "rt_$account_b",
             "name": "Full body B",
             "position": 11,
             "entries": [
@@ -91,7 +91,7 @@
           "id": "toolu_C",
           "name": "create_routine",
           "input": {
-            "id": "rt_captureC",
+            "id": "rt_$account_c",
             "name": "Full body C",
             "position": 12,
             "entries": [
@@ -153,7 +153,7 @@
           "id": "toolu_A",
           "name": "create_routine",
           "input": {
-            "id": "rt_captureAs",
+            "id": "rt_$account_as",
             "name": "Full body A",
             "position": 10,
             "entries": [
@@ -174,7 +174,7 @@
           "id": "toolu_B",
           "name": "create_routine",
           "input": {
-            "id": "rt_captureBs",
+            "id": "rt_$account_bs",
             "name": "Full body B",
             "position": 11,
             "entries": [
@@ -195,7 +195,7 @@
           "id": "toolu_C",
           "name": "create_routine",
           "input": {
-            "id": "rt_captureCs",
+            "id": "rt_$account_cs",
             "name": "Full body C",
             "position": 12,
             "entries": [

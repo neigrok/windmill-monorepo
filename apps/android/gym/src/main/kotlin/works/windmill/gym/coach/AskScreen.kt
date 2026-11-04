@@ -339,8 +339,9 @@ private val stopFaults = setOf(CoachTurnFault.stoppedOffline, CoachTurnFault.sto
 @Composable
 private fun Band(said: String, onClose: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
+    // Material's snackbar fills its width by itself; a fixed width reaches its close button too and stands it over the words.
     Snackbar(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 4.dp).testTag("coach-band"),
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp).testTag("coach-band"),
         shape = RoundedCornerShape(4.dp),
         containerColor = colors.surfaceContainerHighest,
         contentColor = colors.onSurface,
