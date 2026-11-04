@@ -91,7 +91,7 @@ export function handleRoomPaste(event, room) {
   if (pasted.trim() === '') return;
   event.preventDefault();
   room.openComposer(pasted);
-  track('roadmap_board_create', { step: 'open', door: 'paste', view: 'graph' });
+  track('roadmap_board_create', { step: 'open', door: 'paste', view: room.boardActive ? 'board' : 'graph' });
 }
 
 // The room's window-level keys: Ask AI, the editor's chords, the Board's letters and pasted plans.

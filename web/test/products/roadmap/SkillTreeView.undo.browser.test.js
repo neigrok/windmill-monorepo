@@ -98,7 +98,8 @@ hostTest('Chromium: a plan pasted on the Board counts what it adds, shows its to
     await toast.getByRole('button', { name: LABELS.undo, exact: true }).click();
     await page.waitForFunction(() => window.session.lattice.toTreeData().nodes.length === 5);
     assert.deepEqual(await steps(page), before);
-    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_board_undo' || (name === 'roadmap_board_create' && props.step === 'saved'))), [
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_undo' || name === 'roadmap_board_create')), [
+      { name: 'roadmap_board_create', props: { step: 'open', door: 'paste', view: 'board' } },
       { name: 'roadmap_board_create', props: { step: 'saved', door: 'paste', view: 'board', count: '2-5' } },
       { name: 'roadmap_board_undo', props: { act: 'graft' } },
     ]);

@@ -102,9 +102,8 @@ conversation, question, identifier or server text is reported.
 
 The Board is the only path into a roadmap and nothing stands in front of it: every event and Sentry operation below fires
 in production for whichever reader and band reach its step. Properties are allowlisted, bounded labels: no title, step or
-roadmap id, kind name, search text, email or server sentence enters them. Three rows are the exceptions, and none carries
-what a person wrote: `demo_open`'s `treeId` is the one constant the bundle ships, `birth`'s `quest` is an authored id, and
-`claim` carries a raw count.
+roadmap id, kind name, search text, email or server sentence enters them. Two rows are the exceptions, and neither carries
+what a person wrote: `demo_open`'s `treeId` is the one constant the bundle ships, and `birth`'s `quest` is an authored id.
 
 `test/products/roadmap/observability.test.mjs` reads the code's syntax tree. It fails when a roadmap event name or Sentry
 operation in the code is missing from these tables or a name in the tables is missing from the code, when an event's props
@@ -147,7 +146,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Reader's Share copied its link | `roadmap_graph_toast` | `act: link`, `step: shown` |
 | Reader's Share refused by the clipboard | `roadmap_graph_toast` | `act: link`, `outcome: failed` |
 | Open the composer | `roadmap_board_create` | `step: open`, `door: verbs/band/empty/complete`, `view: board/graph` |
-| Pasted plan opens its composer | `roadmap_board_create` | `step: open`, `door: paste`, `view: graph` |
+| Pasted plan opens its composer | `roadmap_board_create` | `step: open`, `door: paste`, `view: board/graph` |
 | Create saved | `roadmap_board_create` | `step: saved`, `column: locked/upNext`, `filterCleared: true/false` |
 | Create on the canvas, the tablet panel or the empty Graph | `roadmap_board_create` | `step: saved`, `door: canvas/empty`, `view: graph` |
 | Add a pasted plan to the roadmap | `roadmap_board_create` | `step: saved`, `door: paste`, `view: board/graph`, `count: 0/1/2-5/6-20/21+` |
@@ -209,7 +208,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | WebGL2 unavailable | `webgl_init_fail` | — |
 | A roadmap planted from a quest | `birth` | `quest: <authored quest id>`, `steps: 0/1/2-5/6-20/21+`, `local?: true` |
 | A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: 0/1/2-5/6-20/21+`, `local?: true` |
-| Device roadmaps claimed at sign-in | `claim` | `treeCount: <count>` |
+| Device roadmaps claimed at sign-in | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
 | Roadmap landing opened | `land` | `signedIn: true/false` |
 
 `demo_open` fires alongside `roadmap_view_open`. `fork_claim` with `mode: email` comes from `shell/auth/AuthLanding.jsx`, once

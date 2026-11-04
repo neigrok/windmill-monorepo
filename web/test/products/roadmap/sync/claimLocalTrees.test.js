@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { claimLocalTrees } from '../../../../src/products/roadmap/sync/claimLocalTrees.js';
+import { track } from '../../../../src/telemetry/beacon.js';
 
 const BASE = 'http://localhost:8088';
 const INDEX = 'windmill:device-trees';
@@ -225,6 +226,21 @@ test('an unclaimed row stamped for another account is not adopted — only the a
     { type: 'wm-tree-claimed', detail: { treeId: 't_anon' } },
     { type: 'wm-claim-done', detail: { claimed: 1, pending: 1 } },
   ]);
+});
+
+test('a claim names how many trees it took as a bucket, never the count itself', async () => {
+  browserWith({ t_anon: { title: 'Learn to sail', updatedAt: 20, claimed: false, owner: null } });
+  const calls = serverThat(planted('t_anon'));
+  // The beacon sends its queue at twenty events: this empties what earlier tests left, and later sends what the claim added.
+  const sendQueue = () => { for (let queued = 0; queued < 20; queued += 1) track('filler'); };
+  sendQueue();
+  calls.length = 0;
+
+  await claimLocalTrees({ openTreeId: 't_anon', openSession: () => openSessionFor('t_anon') });
+  sendQueue();
+
+  const sent = calls.filter((call) => call.url === `${BASE}/v1/events`).flatMap((call) => call.body.events);
+  assert.deepEqual(sent.filter((event) => event.name === 'claim').map((event) => event.props), [{ treeCount: '1' }]);
 });
 
 test('a ghost claims nothing — the marker is not an account, and no tree is planted', async () => {
