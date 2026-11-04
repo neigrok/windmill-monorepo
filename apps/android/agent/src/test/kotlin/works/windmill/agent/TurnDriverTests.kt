@@ -194,7 +194,7 @@ class TurnExchangeTests(private val name: String) {
     }
 
     @Test fun replaysThroughTheDriver() = runTest {
-        assertEquals(15, exchanges().size)
+        assertEquals(16, exchanges().size)
         val vector = Json.parse(File(contract, "gym/turns/$name.json").readBytes())
         val body = vector.member("open")
         val events = vector.member("events").arr()

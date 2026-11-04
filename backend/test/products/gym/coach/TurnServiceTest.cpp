@@ -645,22 +645,24 @@ TEST(coach_turn_logs_count_the_phone_refusals_by_code_and_a_batch_refused_whole_
 }
 
 // §6.3: an `error` frame names when the budget its code names returns and no other moment: a shared
-// free pool's UTC day or month, nothing for a lifetime allowance or a code no period ends. An expected
-// refusal is a `coach_turn` line with its code and never an Issue; a vendor failure stays one.
+// free pool's UTC day or month, nothing for a lifetime allowance or a code no period ends. An allowance
+// code carries the seat's read, here a positive balance the round did not fit, and no other code does.
+// An expected refusal is a `coach_turn` line with its code and never an Issue; a vendor failure stays one.
 TEST(coach_turn_error_frame_names_when_the_refused_budget_returns_and_only_a_failure_files_an_issue) {
   struct Case {
     const char* reply;
     const char* code;
-    const char* frame;
+    std::string frame;
     std::vector<std::string> issues;
   };
+  const std::string read = R"("allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.050000000","period":"lifetime","remaining":"0.050000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.000000000"})";
   const std::vector<Case> cases{
-      {R"({"refused":"free_day_exhausted"})", "free_day_exhausted", R"({"budgetResetsAtMs":1793059200000,"code":"free_day_exhausted"})", {}},
-      {R"({"refused":"free_month_exhausted"})", "free_month_exhausted", R"({"budgetResetsAtMs":1793491200000,"code":"free_month_exhausted"})", {}},
-      {R"({"refused":"subject_exhausted"})", "subject_exhausted", R"({"code":"subject_exhausted"})", {}},
-      {R"({"refused":"concurrency_exhausted"})", "concurrency_exhausted", R"({"code":"concurrency_exhausted"})", {}},
-      {R"({"refused":"funding_required"})", "funding_required", R"({"code":"funding_required"})", {}},
-      {R"({"refused":"debt_outstanding"})", "debt_outstanding", R"({"code":"debt_outstanding"})", {}},
+      {R"({"refused":"free_day_exhausted"})", "free_day_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793059200000,"code":"free_day_exhausted"})", {}},
+      {R"({"refused":"free_month_exhausted"})", "free_month_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793491200000,"code":"free_month_exhausted"})", {}},
+      {R"({"refused":"subject_exhausted"})", "subject_exhausted", "{" + read + R"(,"code":"subject_exhausted"})", {}},
+      {R"({"refused":"concurrency_exhausted"})", "concurrency_exhausted", "{" + read + R"(,"code":"concurrency_exhausted"})", {}},
+      {R"({"refused":"funding_required"})", "funding_required", "{" + read + R"(,"code":"funding_required"})", {}},
+      {R"({"refused":"debt_outstanding"})", "debt_outstanding", "{" + read + R"(,"code":"debt_outstanding"})", {}},
       {R"({"refused":"coach-busy"})", "coach-busy", R"({"code":"coach-busy"})", {}},
       {R"({"refused":"coach-rate-limited"})", "coach-rate-limited", R"({"code":"coach-rate-limited"})", {}},
       {"null", "coach-vendor-error", R"({"code":"coach-vendor-error"})", {"gym:coach_turn.loop:the model loop failed"}}};
@@ -697,12 +699,30 @@ TEST(coach_turn_error_frame_on_a_bound_seat_names_the_end_of_its_own_period) {
   h.model->start();
   REQUIRE(recorder->waitFor(1));
   h.service->stop();
-  CHECK_EQ(Replay::dumpAll(recorder->snapshot()),
-           std::string(R"([{"data":{"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"}])"));
+  const std::string frame = R"({"data":{"allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.250000000","period":"calendar_month_utc","remaining":"0.250000000","reserved":"0.000000000","resetsAtMs":1793491200000,"tier":"logged_in","used":"0.000000000"},"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"})";
+  CHECK_EQ(Replay::dumpAll(recorder->snapshot()), "[" + frame + "]");
   auto resumed = std::make_shared<Recorder>();
   admission.turn->attach(resumed, true);
-  CHECK_EQ(Replay::dumpAll(resumed->snapshot()),
-           std::string(R"([{"data":{"state":"failed","text":""},"event":"snapshot"},{"data":{"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"}])"));
+  CHECK_EQ(Replay::dumpAll(resumed->snapshot()), R"([{"data":{"state":"failed","text":""},"event":"snapshot"},)" + frame + "]");
+  CHECK(h.failures->reports.empty());
+}
+
+// §7.1: a phone tells a balance that is gone from a round that did not fit by this read, so a seat the
+// round found spent says so: nothing remaining, nothing reserved.
+TEST(coach_turn_error_frame_reads_a_balance_the_round_found_gone) {
+  Harness h;
+  h.clock.now = 1'793'000'000'000;
+  h.model->replies = parse(R"([{"refused":"subject_exhausted"}])");
+  h.model->beforeReply = [&h](int) { h.budgetRepository.totals.subject.spentNanos = 50'000'000; };
+  const TurnAdmission admission = h.service->open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000004","question":"Hi"})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(1));
+  h.service->stop();
+  CHECK_EQ(Replay::dumpAll(recorder->snapshot()),
+           std::string(R"([{"data":{"allowance":{"budgetResetsAtMs":null,"code":"subject_exhausted","configured":true,"currency":"USD","limit":"0.050000000","period":"lifetime","remaining":"0.000000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.050000000"},"code":"subject_exhausted"},"event":"error"}])"));
   CHECK(h.failures->reports.empty());
 }
 

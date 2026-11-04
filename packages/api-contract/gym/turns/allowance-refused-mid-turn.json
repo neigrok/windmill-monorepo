@@ -19,7 +19,7 @@
   "events": [
     {"event": "calls", "data": {"batch": 1, "calls": [{"callId": "toolu_1", "name": "list_routines", "input": {}}]}},
     {"await": "results", "batch": 1},
-    {"event": "error", "data": {"code": "free_month_exhausted", "budgetResetsAtMs": 1793491200000}}
+    {"event": "error", "data": {"code": "free_month_exhausted", "budgetResetsAtMs": 1793491200000, "allowance": {"code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true, "limit": "0.050000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.050000000", "resetsAtMs": null, "budgetResetsAtMs": null}}}
   ],
   "results": [
     {"batch": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"routines": []}}]}

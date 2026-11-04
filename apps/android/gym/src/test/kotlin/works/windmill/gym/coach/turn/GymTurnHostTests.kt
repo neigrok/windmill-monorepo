@@ -40,7 +40,7 @@ class GymTurnHostTests(private val name: String) {
     }
 
     @Test fun replaysAsThePhone() = runTest {
-        assertEquals(15, exchanges().size)
+        assertEquals(16, exchanges().size)
         val vector = Json.parse(File(root, "$name.json").readBytes())
         val body = vector.member("open")
         val end = vector.member("end")

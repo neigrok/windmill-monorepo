@@ -444,7 +444,7 @@ Admission, in order:
 | `text` | `{delta}`: visible answer text, in order. |
 | `calls` | `{batch, calls: [{callId, name, input}]}` |
 | `done` | `{state, truncated?, allowance}`; allowance follows the shared USD read contract |
-| `error` | `{code, budgetResetsAtMs?}`; §6.5 says which codes name a moment |
+| `error` | `{code, budgetResetsAtMs?, allowance?}`; §6.5 says which codes name a moment and carry an allowance |
 
 Heartbeat comments keep an idle stream open. A refusal before the stream starts is an HTTP error
 with a JSON body `{error, code}`, plus `allowance` in the shared USD read contract when the allowance
@@ -493,6 +493,9 @@ The allowance codes are `subject_exhausted`, `free_day_exhausted`, `free_month_e
 `429`: an expected refusal, never a failure of the server. `coach-busy` and `coach-vendor-error` answer
 `503`. The moment a code names is `budgetResetsAtMs`, read from the refusal's `allowance` before the
 stream, where it is null if the code names none, and from the `error` event after it, which omits it then.
+An `error` event with an allowance code carries `allowance` in the shared USD read contract when the
+seat's allowance could be read; its `code` is the read's own, which can be `ok` on a positive balance
+the round did not fit.
 
 ---
 
