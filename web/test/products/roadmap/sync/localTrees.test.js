@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
-import { DeviceRefused, bearImportedTree, bearLocalTree, deviceKeepsTrees, renameLocalTree, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
+import { bearImportedTree, bearLocalTree, deviceKeepsTrees, renameLocalTree, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
 import { LocalTreeRegistry } from '../../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 
 const frame = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
@@ -136,8 +136,8 @@ for (const [refusal, refuse] of [
     const { registry } = device(t);
     refuse(t, registry);
     assert.equal(await deviceKeepsTrees(), false);
-    await assert.rejects(bearImportedTree(plan), DeviceRefused);
-    await assert.rejects(bearLocalTree({ title: 'Pottery' }), DeviceRefused);
+    await assert.rejects(bearImportedTree(plan), { name: 'SecurityError' });
+    await assert.rejects(bearLocalTree({ title: 'Pottery' }), { name: 'SecurityError' });
     assert.deepEqual(Object.keys(registry.entries()), ['source']);
   });
 }
@@ -147,6 +147,6 @@ test('a lattice the store refuses to take leaves no index row behind: the plant 
   const put = IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put = () => { throw new DOMException('full', 'QuotaExceededError'); };
   t.after(() => { IDBObjectStore.prototype.put = put; });
-  await assert.rejects(bearImportedTree(plan), DeviceRefused);
+  await assert.rejects(bearImportedTree(plan), { name: 'SecurityError' });
   assert.deepEqual(Object.keys(registry.entries()), ['source']);
 });

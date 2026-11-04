@@ -514,7 +514,7 @@ records in the document's memory (`SyncStore`, one console warning, no Issue). T
 a signed-in owner's writes reach the server, an unsent write survives a roadmap switch in that document, and only offline
 durability is gone. A database that opens later in the document takes those records back. A read that fails on a database that
 opened means the send cannot be made: the bank stays, `roadmap-sync-send` reports, and the lane stands the existing refused card
-with Retry and Discard. A signed-out plant has nowhere else to stand: `bearLocalTree` and `bearImportedTree` throw `DeviceRefused`
+with Retry and Discard. A signed-out plant has nowhere else to stand: `bearLocalTree` and `bearImportedTree` throw a `SecurityError`
 unless the device index takes a write and the database opens, and a save that fails takes its index row back.
 
 **Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo

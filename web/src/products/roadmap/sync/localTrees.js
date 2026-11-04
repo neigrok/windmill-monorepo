@@ -32,22 +32,18 @@ function ownerForBirth() {
   ]);
 }
 
-// This browser will not keep a tree planted on it: nothing was accepted.
-export class DeviceRefused extends Error {
-  constructor() {
-    super('this device refuses to keep a roadmap');
-  }
-}
-
 // Whether a tree planted here outlives this document: its index row and its lattice both have somewhere to stay.
 export async function deviceKeepsTrees() {
   return new LocalTreeRegistry().keeps() && new SyncStore().holdsOnDevice();
 }
 
+// This browser will not keep a tree planted on it, the browser's own refusal: nothing was accepted, and no Issue is owed.
+const deviceRefused = () => new DOMException('This device refuses to keep a roadmap', 'SecurityError');
+
 // The registry entry first, then the lattice, seeded with the default legend at genesis so it converges with the server's
 // claim-create. A plant is accepted only once it is kept; a save that fails takes its row back with it.
 async function bear(title, plant) {
-  if (!await deviceKeepsTrees()) throw new DeviceRefused();
+  if (!await deviceKeepsTrees()) throw deviceRefused();
   const treeId = mintTreeId();
   const registry = new LocalTreeRegistry();
   // The owner is asked of the server, never of a remembered marker.
@@ -60,7 +56,7 @@ async function bear(title, plant) {
   session.close();
   if (kept) return treeId;
   registry.remove(treeId);
-  throw new DeviceRefused();
+  throw deviceRefused();
 }
 
 // The named root as a stamped write.
