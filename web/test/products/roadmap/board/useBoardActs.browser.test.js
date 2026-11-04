@@ -82,10 +82,16 @@ function Room() {
   };
   const { held, acts } = useBoardActs({
     tree, treeId, active, owner, query, progress, now: Date.now,
-    session: { dispatch: (gesture) => {
-      window.calls.push(['dispatch', treeId, gesture]);
-      return session.dispatch(gesture);
-    } },
+    session: {
+      ready: session.ready,
+      holdAct: (cancel) => session.holdAct(cancel),
+      endHeldAct: () => session.endHeldAct(),
+      leavePage: () => session.leavePage(),
+      dispatch: (gesture) => {
+        window.calls.push(['dispatch', treeId, gesture]);
+        return session.dispatch(gesture);
+      },
+    },
     showToast,
     clearBoardToast: () => dismissToastIf(() => true),
     emit: () => {},

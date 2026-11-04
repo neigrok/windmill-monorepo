@@ -211,7 +211,7 @@ export class SyncSession {
       if (!this.closed) this.scheduleReconnect();
       return false;
     }
-    this.adoptEpochs(result.value, { discarding: true });
+    this.adoptEpochs(result.value, { discarding: result.status === 'replaced' });
     if (result.notificationError) this.reportFailure('roadmap-sync-notify', result.notificationError);
     await this.persistDeferred();
     return result.status === 'replaced';
@@ -347,7 +347,7 @@ export class SyncSession {
       this.lastSeq = saved.lastSeq ?? 0;
       this.lattice.seedClock(this.clock);
       this.ready = true;
-      this.emitTree();
+      this.emitProjection('structure');
     }
     restored(this.progress, saved?.progress);
     this.gestures.structure = pendingGestures(saved?.gestures?.structure ? {} : this.lattice.toFrame(), this.confirmedStructure.toFrame(), saved?.gestures?.structure);
@@ -356,7 +356,7 @@ export class SyncSession {
     this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), saved?.gestures?.progress);
     if (this.progress.marks.size) {
       this.progress.seedClock(this.clock);
-      this.progressHandler?.(this.progress.overlay());
+      this.emitProjection('progress');
     }
     this.store.requestPersistent().then((granted) => { if (!granted) this.durabilityAtRisk = true; });
     this.online = typeof navigator === 'undefined' || navigator.onLine !== false;

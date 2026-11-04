@@ -619,3 +619,22 @@ test('a hold reads the record ahead, so leaving keeps what another tab stored be
   const after = await env.store().load('tree');
   assert.deepEqual(after.frame.nodes.map(({ id, label }) => [id, label]), [['root', 'Left'], ['closed', 'From a closed tab']]);
 });
+
+test('a discard that finds another tab got there first takes nothing of its own: its writes stay and the refused card can come back', async (t) => {
+  const env = environment(t);
+  const storeA = env.store();
+  const storeB = env.store();
+  const tabA = await liveTab(env, storeA);
+  const tabB = await liveTab(env, storeB);
+  tabA.dispatch({ kind: 'RenameNode', id: 'root', label: 'A refused' });
+  tabB.dispatch({ kind: 'CreateNode', id: 'bs', label: 'B refused', prerequisites: ['root'] });
+  await settle([storeA, storeB]);
+  tabA.receiveReject({ t: 'reject', frameId: [...tabA.inFlight.keys()].at(-1), code: 'server-error' });
+  tabB.receiveReject({ t: 'reject', frameId: [...tabB.inFlight.keys()].at(-1), code: 'server-error' });
+  assert.equal(await tabB.discard(), true);
+  assert.equal(await tabA.discard(), false);
+  Channel.deliver();
+  await settle([storeA, storeB]);
+  assert.equal(labels(tabA).root, 'A refused');
+  assert.equal(tabA.pendingEditCount(), 1);
+});

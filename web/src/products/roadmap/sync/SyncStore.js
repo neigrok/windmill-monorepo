@@ -77,8 +77,8 @@ class DocumentRecords {
 const THIS_DOCUMENT = new DocumentRecords();
 
 export class SyncStore {
-  constructor({ refused = THIS_DOCUMENT } = {}) {
-    this.refused = refused;
+  constructor() {
+    this.refused = THIS_DOCUMENT;
     this.dbPromise = null;
     this.opened = null;
     this.latest = new Map();
