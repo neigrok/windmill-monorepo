@@ -66,8 +66,20 @@ class AskTests {
             MessageState.declined to "Coach declined to answer this.",
             MessageState.failed to "Coach couldn’t finish. Ask again.",
             MessageState.interrupted to "Interrupted. What arrived is kept.",
-        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false) })
-        assertEquals("Cut short. Ask Coach to go on.", Ask.ending(MessageState.completed, truncated = true))
+        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = true) })
+        assertEquals("Cut short. Ask Coach to go on.", Ask.ending(MessageState.completed, truncated = true, wordsArrived = true))
+    }
+
+    @Test
+    fun anAnswerWithNoWordsSaysHowItEndedAndAnInterruptionClaimsNothingArrived() {
+        assertEquals(mapOf(
+            MessageState.running to null,
+            MessageState.completed to null,
+            MessageState.stopped to "Stopped.",
+            MessageState.declined to "Coach declined to answer this.",
+            MessageState.failed to "Coach couldn’t finish. Ask again.",
+            MessageState.interrupted to "Interrupted.",
+        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = false) })
     }
 
     private fun said(name: String, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok): CoachCall {

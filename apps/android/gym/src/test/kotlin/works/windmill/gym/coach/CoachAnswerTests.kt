@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.ViewCompat
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -274,6 +275,44 @@ class CoachAnswerTests {
         compose.runOnIdle { assertEquals(listOf("gym_action" to mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok")), events) }
     }
 
+    // The sheet reads as it opens, not for a revision of the answer and not again until it opens again. Until the read lands a row is its title, and what lands moves nothing beyond what its line takes.
+    @Test
+    fun whatCoachReadReadsOnceAsItOpensAndADetailOnlyAddsItsLine() {
+        var reads = 0
+        val landing = CompletableDeferred<Unit>()
+        val calls = listOf(coachCall("list_notes", "read your notes"), coachCall("list_routines", "read your program"))
+        val reply = mutableStateOf(coachReply("Prose.", calls = calls))
+        compose.setContent { GymMaterial { CoachAnswer(reply.value.text, reply.value, emptyList(), withDetails = { rows ->
+            reads++
+            landing.await()
+            rows.map { row -> if (row.name == "list_notes") row.copy(detail = "2 notes") else row }
+        }) } }
+        fun gaps() = listOf("What Coach read", "What Coach used, in order", "Read your notes", "Read your program", "A workout read twice counts once.", "Close")
+            .map { compose.onNodeWithText(it).getUnclippedBoundsInRoot().top.value }.zipWithNext { above, below -> below - above }
+        compose.waitForIdle()
+        assertEquals("a closed sheet reads nothing", 0, reads)
+        compose.onNodeWithTag("coach-read-sources").performClick()
+        compose.onNodeWithText("Read your notes").assertIsDisplayed()
+        compose.onNodeWithText("2 notes").assertDoesNotExist()
+        val titlesAlone = gaps()
+        compose.runOnIdle { reply.value = coachReply("Prose, and more of it.", calls = calls) }
+        compose.waitForIdle()
+        assertEquals("a revision of the answer asks nothing", 1, reads)
+        landing.complete(Unit)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("2 notes").fetchSemanticsNodes().isNotEmpty() }
+        val line = compose.onNodeWithText("2 notes").getUnclippedBoundsInRoot()
+        assertEquals(titlesAlone.mapIndexed { at, gap -> if (at == 2) gap + (line.bottom - line.top).value + 2f else gap }, gaps())
+        compose.runOnIdle { reply.value = coachReply("Prose, and still more of it.", calls = calls) }
+        compose.onNodeWithText("2 notes").assertIsDisplayed()
+        assertEquals(1, reads)
+        compose.onNodeWithText("Close").performClick()
+        compose.waitForIdle()
+        assertEquals("closing reads nothing", 1, reads)
+        compose.onNodeWithTag("coach-read-sources").performClick()
+        compose.onNodeWithText("2 notes").assertIsDisplayed()
+        assertEquals("opening again reads again", 2, reads)
+    }
+
     @Test
     fun anAnswerNeverTreatsItsProseAsFactsAndSaysWhatItReadOnlyOnceItEnds() {
         val reply = mutableStateOf(coachReply("Nine sets, 2700kg, 48 minutes.", MessageState.running))
@@ -402,6 +441,32 @@ class CoachAnswerTests {
             val under = compose.onNodeWithText("Read 18 workouts · 6 weeks", useUnmergedTree = true).getUnclippedBoundsInRoot().top
             assertEquals("the receipt stands 4 dp under the line", 4f, (under - bottom).value, 1f)
         }
+    }
+
+    // Text wraps only under native graphics. Two phrases do not fit beside the chevron at 380 dp, so the words wrap and the chevron keeps its 18 dp at the column's end, inside the same touch.
+    @Test @Config(qualifiers = "w380dp-h800dp-xhdpi") @GraphicsMode(GraphicsMode.Mode.NATIVE) fun aReadLineOfTwoPhrasesWrapsBesideAChevronThatKeepsItsWidth() {
+        val reply = coachReply("Prose.", calls = listOf(coachCall("get_last_times", "read the last time you trained each movement"), coachCall("list_sessions", "read your recent workouts")))
+        compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) { CoachAnswer("Prose.", reply, emptyList()) } } }
+        val words = compose.onNodeWithText("read the last time you trained each movement · read your recent workouts", useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        words.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        assertEquals(2, layouts.single().lineCount)
+        val line = words.getUnclippedBoundsInRoot()
+        val chevron = compose.onNodeWithTag("coach-read-chevron", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals(listOf(28.dp, 344.dp), listOf(line.left, line.right))
+        assertEquals(listOf(346.dp, 364.dp, 18.dp), listOf(chevron.left, chevron.right, chevron.bottom - chevron.top))
+        val target = compose.onNodeWithTag("coach-read-sources").assertHasClickAction().getUnclippedBoundsInRoot()
+        assertEquals(48.dp, target.bottom - target.top)
+    }
+
+    @Test fun anInterruptionSaysWhatArrivedIsKeptOnlyOverWordsThatArrived() {
+        val reply = mutableStateOf(coachReply("Thursday is still a Push day.", MessageState.interrupted))
+        compose.setContent { GymMaterial { CoachAnswer(reply.value.text, reply.value, emptyList()) } }
+        compose.onNodeWithTag("coach-ending").assertTextEquals("Interrupted. What arrived is kept.")
+        compose.runOnIdle { reply.value = coachReply("", MessageState.interrupted) }
+        compose.onNodeWithTag("coach-ending").assertTextEquals("Interrupted.")
+        compose.runOnIdle { reply.value = coachReply(" \n", MessageState.interrupted) }
+        compose.onNodeWithTag("coach-ending").assertTextEquals("Interrupted.")
     }
 
     // The tree reads what stands uncovered through a real Region, which only native graphics has.

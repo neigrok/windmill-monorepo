@@ -125,8 +125,8 @@ class GymEngineSessionTests {
         }
     }
 
-    // Nothing the person would see is left, so there is nothing to ask: what they deleted stays off the account, and the sign-in completes.
-    @Test fun aPhoneHoldingOnlyWhatItDeletedIsNotAskedAndAddsNothing(): Unit = runBlocking {
+    // Engine §7.10 asks for an explicit add or discard of the work it counted, deleted or not: the question falls back to "training", nothing moves until it is answered, and the answer is the person's.
+    @Test fun aPhoneHoldingOnlyWhatItDeletedIsStillAskedAndMovesNothingUntilItAnswers(): Unit = runBlocking {
         val engine = Engine.memory(SyncSchema.registry)
         engine.made(Gym.Types.thread, "gone-thread", mapOf("title" to Json.of("A private question")))
         engine.deleted(Gym.Types.thread, "gone-thread")
@@ -137,11 +137,25 @@ class GymEngineSessionTests {
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
         }
         GymEngineSession(engine, SyncRuntime(engine, transport(true), Tokens(), "test", activityAllowed = { false }), telemetry).use { session ->
-            session.signedIn(User("A", "a@example.com"), "token-A", false)
+            val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
+            val asked = decision(session)
+            assertEquals(mapOf("thread" to 1), asked.decisions.single().count)
+            assertEquals(mapOf("gym" to emptyMap<String, Int>()), session.decisionCounts)
+            val copy = PhoneSignInCopy(session.decisionCounts)
+            assertEquals("This phone has training from before you signed in. Your account already has training. Add it, or discard it from this phone.", copy.question)
+            assertEquals("Discard this phone’s training?", copy.discardTitle)
+            assertEquals("It is deleted from this phone. You can’t undo this.", copy.discardBody)
+            assertEquals("anon", active(engine).member("meta").member("state").str())
+            assertEquals(listOf("gym_sign_in_decision" to mapOf("state" to "shown")), events.filter { it.first == "gym_sign_in_decision" })
+            session.decide(LineageAnswer.discard)
+            signingIn.await()
             assertNull(session.decision)
             assertEquals("A", active(engine).member("meta").member("account").str())
             assertEquals(emptyList<Json>(), active(engine)["outbox"]?.arr().orEmpty())
-            assertEquals(listOf("gym_sign_in_decision" to mapOf("action" to "discard", "state" to "nothing_left", "outcome" to "completed")), events.filter { it.first == "gym_sign_in_decision" })
+            assertEquals(listOf(
+                "gym_sign_in_decision" to mapOf("state" to "shown"),
+                "gym_sign_in_decision" to mapOf("action" to "discard", "outcome" to "completed"),
+            ), events.filter { it.first == "gym_sign_in_decision" })
         }
     }
 

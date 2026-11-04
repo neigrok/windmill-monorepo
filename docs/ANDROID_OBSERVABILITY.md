@@ -112,7 +112,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.openLink` | gym | Opening a Coach answer's link fails unexpectedly; a missing browser sends only `open_link` / `unavailable`, never an Issue |
 | `gym.prepareAdoption` | gym | Preparing an anonymous workout fails and retains that item locally for retry; an outer preparation failure retains the anonymous replica without blocking sign-in |
 | `gym.preparePhoto` | gym | Preparing a Coach photo fails |
-| `gym.readConversation` | gym | Reading a Coach conversation or History off the replica fails, or a `thread` or `message` record cannot be read: once per process, the record costs itself and never its conversation |
+| `gym.readConversation` | gym | Reading a Coach conversation or History off the replica fails; What Coach read's details fail to read, once per opening of the sheet, whose rows keep their titles; or a `thread` or `message` record cannot be read: once per process, the record costs itself and never its conversation |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
 | `gym.readNotes` | gym | Reading the notes list, or re-reading it after an unconfirmed note deletion, fails |
 | `gym.readProgram` | gym | Re-reading the program after an unconfirmed routine deletion fails |
@@ -226,7 +226,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_session_started` | gym | none |
 | `gym_set_logged` | gym | none |
 | `gym_setup_step` | gym | `screen`: `coach`; `action`: `shown`, `screenshot`, `build_manually`, `photo_selected`, `photo_removed`, `sign_in`, `open_routine`, `keep_routines`, `connect` (a refusal's Use your own AI agent door) |
-| `gym_sign_in_decision` | gym, app | `state`: `shown`, `discard_confirmation`, `nothing_left` (all the work counted was deleted on this phone, so it is discarded with no question); `action`: `add`, `discard`, `cancel`; `outcome`: `completed`, `cancelled`, `changed` or the engine's error code |
+| `gym_sign_in_decision` | gym, app | `state`: `shown`, `discard_confirmation`; `action`: `add`, `discard`, `cancel`; `outcome`: `completed`, `cancelled`, `changed` or the engine's error code |
 | `gym_sign_out` | gym | `state`: `shown`; `action`: `keep`, `discard`, `cancel`; `outcome`: `completed`, `failed`. Keep and Discard send their outcome signed out, under the phone's device id, so it cannot be joined to `shown` per user. A sign-out nobody was asked about (an expired session, account deletion) sends none |
 | `onboarding_action` | gym | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `action`: `next`, `back`, `swipe`, `adjust` |
 | `onboarding_exited` | gym, app | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `outcome`: `skipped`, `completed`, `back`, `closed` |

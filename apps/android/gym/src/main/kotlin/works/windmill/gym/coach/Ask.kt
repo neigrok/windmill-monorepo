@@ -64,14 +64,14 @@ object Ask {
     const val sourcesLead = "What Coach used, in order"
     const val sourcesFoot = "A workout read twice counts once."
 
-    // How a turn ended short of a whole answer, under what arrived.
-    fun ending(state: MessageState, truncated: Boolean): String? = when (state) {
+    // How a turn ended short of a whole answer, under what arrived: an interruption speaks of what arrived only when words did.
+    fun ending(state: MessageState, truncated: Boolean, wordsArrived: Boolean): String? = when (state) {
         MessageState.running -> null
         MessageState.completed -> if (truncated) "Cut short. Ask Coach to go on." else null
         MessageState.stopped -> stopped
         MessageState.declined -> "Coach declined to answer this."
         MessageState.failed -> "Coach couldn’t finish. Ask again."
-        MessageState.interrupted -> "Interrupted. What arrived is kept."
+        MessageState.interrupted -> if (wordsArrived) "Interrupted. What arrived is kept." else "Interrupted."
     }
 
     // `standing` null means unknown, not nobody: only a seat the room has read may take a thread.

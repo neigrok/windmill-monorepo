@@ -242,14 +242,12 @@ class CoachConversationsTests {
         return turn
     }
 
-    private suspend fun TestScope.rows(room: EngineRoomFixture, turn: OpenTurn.Turn): List<Pair<String?, String?>> {
+    private suspend fun rows(room: EngineRoomFixture, turn: OpenTurn.Turn): List<Pair<String?, String?>> {
         val conversations = room.store.conversations
         conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
         conversations.read()
         val reply = checkNotNull(conversations.exchanges("chat").first().answer)
-        reply.readRows.forEach { it.detail }
-        advanceUntilIdle()
-        return reply.readRows.map { it.title to it.detail }
+        return conversations.withDetails(reply.id, reply.readRows).map { it.title to it.detail }
     }
 
     // A turn over the program and the notes read something: the line says what, and the sheet it opens does not contradict it.
@@ -295,8 +293,8 @@ class CoachConversationsTests {
         }
     }
 
-    // A revision reads the transcript: What Coach read waits for its sheet, reads once however many rows ask, and keeps what it read across every read after.
-    @Test fun whatCoachReadWaitsForItsSheetAndStandsAcrossRevisions() = runTest {
+    // A revision reads the transcript and no detail: its rows hold their titles alone, an unchanged answer reads equal, and only the sheet's read says what a call did.
+    @Test fun aTranscriptReadHoldsNoDetailsAndTheSheetsReadSaysThem() = runTest {
         EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
             room.select("u1")
             val turn = room.turn(null, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""")
@@ -304,13 +302,28 @@ class CoachConversationsTests {
             conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
             conversations.read()
             val reply = checkNotNull(conversations.exchanges("chat").single().answer)
-            val row = reply.readRows.single()
-            assertEquals(null, row.detail)
-            advanceUntilIdle()
-            assertEquals("Shoulder", row.detail)
+            assertEquals(listOf("Saved a note" to null), reply.readRows.map { it.title to it.detail })
+            assertEquals(listOf("Saved a note" to "Shoulder"), conversations.withDetails(reply.id, reply.readRows).map { it.title to it.detail })
             conversations.read()
-            assertEquals("the next read's row says it at once", "Shoulder", checkNotNull(conversations.exchanges("chat").single().answer).readRows.single().detail)
             assertEquals("an unchanged answer reads equal, so nothing draws again", reply, conversations.exchanges("chat").single().answer)
+        }
+    }
+
+    // One failed read is one report under the static name, carrying nothing said, and the rows keep their titles. An answer the records do not hold is no failure.
+    @Test fun aDetailReadThatFailsLeavesTheRowsTheirTitlesAndReportsOnce() = runTest {
+        val telling = TellingRecorder()
+        EngineRoomFixture(folder.newFolder(), work(), telemetry = telling, coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            val turn = room.turn(null, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""")
+            val conversations = room.store.conversations
+            conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
+            conversations.read()
+            val reply = checkNotNull(conversations.exchanges("chat").single().answer)
+            assertEquals(reply.readRows, conversations.withDetails("no-such-answer", reply.readRows))
+            assertEquals(emptyList<Map<String, String>>(), telling.failures)
+            room.engine.close()
+            assertEquals(reply.readRows, conversations.withDetails(reply.id, reply.readRows))
+            assertEquals(listOf(mapOf("operation" to "gym.readConversation")), telling.failures)
         }
     }
 
@@ -342,8 +355,7 @@ class CoachConversationsTests {
 
             val reply = checkNotNull(conversations.exchanges("chat").single().answer)
             val day = DateTimeFormatter.ofPattern("MMM d").format(Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()))
-            assertEquals("no revision pays for what the sheet says", null, reply.readRows.first().detail)
-            advanceUntilIdle()
+            assertEquals("no revision pays for what the sheet says", listOf(null), reply.readRows.map { it.detail }.distinct())
             assertEquals(listOf(
                 "Read 1 workout" to "1 week · $day",
                 "Saved a note" to "Shoulder",
@@ -352,7 +364,7 @@ class CoachConversationsTests {
                 "Wrote a proposal for one of your routines" to "Push A · 2 changes",
                 "Read your notes" to "1 note",
                 "Read your program" to "Push A",
-            ), reply.readRows.map { it.title to it.detail })
+            ), conversations.withDetails(reply.id, reply.readRows).map { it.title to it.detail })
             assertEquals(listOf(CreatedRoutine("rt_00000001", "Push A", movements = 2)), reply.routines)
             assertEquals(listOf(SavedNote("note00000001", "Left shoulder hurts on wide-grip bench.")), reply.savedNotes)
             assertEquals(listOf(MadeMovement("ex_00000001", "Incline Dumbbell Press", "Dumbbells", 2.5)), reply.madeMovements)

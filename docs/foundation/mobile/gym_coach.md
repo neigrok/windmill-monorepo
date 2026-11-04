@@ -283,7 +283,8 @@ The model's reasoning and every assistant content block stay on the server.
   in coalesced commits, each syncing the whole text so far: iOS every 250 ms; Android every 5 s, at each
   batch, when the app stops and at the end, while its room draws the answer so far from the turn driver. A
   process death loses what the last commit had not taken. With nothing committed, the question stands over an
-  `interrupted` answer with no words.
+  `interrupted` answer with no words: Android says *Interrupted.* alone, the first sentence of board 08.50's line,
+  and iOS says the whole line.
 
 ### §4.5 Stop, disconnect and resume
 

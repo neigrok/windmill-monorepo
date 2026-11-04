@@ -72,7 +72,7 @@ import works.windmill.platform.design.WindmillType
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 
-// An answer: its words as they stand, the step line while it works, what it wrote, how the turn ended when it ended short, and what it read. `onSignIn` is the door under an answer a call needed the account for; `onKeep` the one under the routines a signed-out turn created. A retained answer says what it read only where `saysWhatItRead`.
+// An answer: its words as they stand, the step line while it works, what it wrote, how the turn ended when it ended short, and what it read. `onSignIn` is the door under an answer a call needed the account for; `onKeep` the one under the routines a signed-out turn created. A retained answer says what it read only where `saysWhatItRead`. `withDetails` fills What Coach read's rows when its sheet opens.
 @Composable
 internal fun CoachAnswer(
     text: String,
@@ -84,12 +84,13 @@ internal fun CoachAnswer(
     onSignIn: (() -> Unit)? = null,
     onKeep: (() -> Unit)? = null,
     saysWhatItRead: Boolean = true,
+    withDetails: suspend (List<CoachCall>) -> List<CoachCall> = { it },
     onSourcesTop: (Int?) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val copyMenu = remember { CoachCopyMenu() }
     val ended = reply.state.isTerminal
-    val ending = Ask.ending(reply.state, reply.truncated)
+    val ending = Ask.ending(reply.state, reply.truncated, wordsArrived = reply.text.isNotBlank())
     val seatDoor = onSignIn.takeIf { ended && reply.calls.any { it.seatRefused } }
     val readLine = reply.readLine.takeIf { ended && saysWhatItRead }
     val wrote = routineDrafts.isNotEmpty() || reply.routines.isNotEmpty() || reply.savedNotes.isNotEmpty() || reply.madeMovements.isNotEmpty()
@@ -101,7 +102,7 @@ internal fun CoachAnswer(
             CoachText(text, reply.text, copyMenu)
             if (reply.elsewhere) AnsweringElsewhere()
             else if (!ended) reply.stepLine?.let { CoachLine(it, "coach-step-line") }
-            readUnderWords?.let { CoachReadSources(it, reply.readRows, onSourcesTop) }
+            readUnderWords?.let { CoachReadSources(it, reply.readRows, withDetails, onSourcesTop) }
         }
         seatDoor?.let { CoachAction("Sign in", it, primary = true) }
         if (routineDrafts.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
@@ -165,7 +166,7 @@ internal fun CoachAnswer(
         reply.madeMovements.forEach { movement -> key(movement.id) { MadeMovementCard(movement) } }
         if (readUnderWords == null && (ending != null || readLine != null)) Column(Modifier.fillMaxWidth()) {
             ending?.let { CoachLine(it, "coach-ending") }
-            readLine?.let { CoachReadSources(it, reply.readRows, onSourcesTop) }
+            readLine?.let { CoachReadSources(it, reply.readRows, withDetails, onSourcesTop) }
         }
     }
 }
