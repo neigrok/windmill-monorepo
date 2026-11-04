@@ -54,10 +54,15 @@ the current address: `/`, `/app`, `/app/roadmap`, `/app/gym`, `/app/journal`, `/
 `/app/connect`, `/t`, `/demo`, `/browse`, `/gym/shared`, `/auth`, `/oauth/authorize`, `/showcase`,
 `/roadmap`, `/gym` or `/journal`. Anything these sets do not name reads `other`, including product error
 classes and thrown non-errors. No exception message, stack, identifier, token, date or query enters the
-event. The same failure reports to Sentry with `kind` as its type and tag, `route` as its request URL,
-and the exception message and stack frames with share addresses, `token=` and `code=` values struck
-out. This is the one web Sentry report that carries an exception message, and that message can hold
-user text.
+event. The same failure reports to Sentry under the static message `client-error`, with `kind` as its
+type and tag, `failure_kind` as a tag, `route` as its request URL, and its stack frames (file, line,
+column and function name only). The exception message reaches neither: the stack's head line, where V8
+repeats it, is cut before the frames are read, frames are only the last unbroken run of frame lines,
+and share addresses, `token=` and `code=` values are struck out of them. A rejected non-error has no
+frames. A failed paste shape adds the Sentry tags `reason` (`unavailable`, `unreachable`, `failed`,
+`no-first-word` or `stopped-mid-plan`) and `size` (`under-1kb`, `1-8kb` or `over-8kb`), and no text,
+status or count. Sentry collapses a repeat of one kind, operation, route, tags and crashing frame
+within ten seconds.
 
 Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
 REST transport failures using static `journal-*` Sentry operation names. Migration and recovery

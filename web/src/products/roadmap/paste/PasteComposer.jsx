@@ -7,7 +7,7 @@ import { KindLegend } from '../ui/tree/KindLegend.jsx';
 import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind } from '../model/Legend.js';
 import { KIND_CSS } from '../theme.js';
 import { API_BASE } from '../../../shell/apiBase.js';
-import { readComposeStream } from './composeStream.js';
+import { readComposeStream, shapeFailureLabels } from './composeStream.js';
 import { reportError } from '../../../telemetry/beacon.js';
 
 const PLACEHOLDER = 'Paste anything — a to-do list, an outline, markdown checkboxes.';
@@ -189,9 +189,9 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       signal: controller.signal,
     });
 
-    // A report carries the reason and the attempt's size only: the text must never reach a tracker.
+    // A report carries a closed reason and a size bucket only: the text must never reach a tracker.
     const reportShapeFailure = (reason) =>
-      reportError(new Error(`shape ${reason} (${new TextEncoder().encode(prior).length}B)`), 'shape');
+      reportError(new Error('shape'), 'shape', shapeFailureLabels(reason, new TextEncoder().encode(prior).length));
 
     const settleUndo = () => {
       setAi({ phase: 'undo', prior });
@@ -223,7 +223,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         settleAi('long');
         return;
       }
-      reportShapeFailure(response ? `failed (${response.status})` : 'unreachable');
+      reportShapeFailure(response ? 'failed' : 'unreachable');
       settleAi('fail');
     };
 
@@ -260,7 +260,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
 
       if (streamed === '') {
         if (outcome === 'fail') {
-          reportShapeFailure('failed before its first word');
+          reportShapeFailure('no-first-word');
           settleAi('fail'); // the model stopped before its first word — the text is untouched
           return;
         }
@@ -279,7 +279,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         settleUndo();
         return;
       }
-      reportShapeFailure(`stopped mid-plan after ${streamed.length} chars`);
+      reportShapeFailure('stopped-mid-plan');
       setAi({ phase: 'stopped', prior }); // the partial plan is kept; the handle itself is the undo
     } finally {
       clearTimeout(deadline);

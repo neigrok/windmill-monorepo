@@ -61,14 +61,17 @@ export function track(name, props) {
 }
 
 // A crash beacons once and flushes NOW, because the page may reload before the debounce fires. The
-// event carries labels only; the message and the stack go to Sentry alone.
-export function reportError(error, kind) {
+// message leaves in neither report: the event carries labels only, and Sentry gets a static message,
+// the same labels and the frames. V8 repeats the message whole at the head of the stack, so it is cut
+// from there first. `labels` are what a caller adds for Sentry, bounded labels and nothing else.
+export function reportError(error, kind, labels = {}) {
   if (typeof window === 'undefined') return;
   const route = routeFamily(window.location);
-  track('client_error', { kind: labelIn(REPORT_KINDS, kind), failure_kind: labelIn(FAILURE_KINDS, error?.constructor?.name), route });
-  const message = scrubbed(String(error?.message ?? error ?? 'unknown'));
-  const stack = scrubbed(String(error?.stack ?? ''));
-  captureError(kind, message, stack, route); // no-op without a DSN
+  const reportKind = labelIn(REPORT_KINDS, kind);
+  const failureKind = labelIn(FAILURE_KINDS, error?.constructor?.name);
+  track('client_error', { kind: reportKind, failure_kind: failureKind, route });
+  const stack = scrubbed(String(error?.stack ?? '').replace(`: ${error?.message}`, ''));
+  captureError(reportKind, 'client-error', stack, route, { ...labels, failure_kind: failureKind }); // no-op without a DSN
   flush('beacon');
 }
 
@@ -83,8 +86,8 @@ export function routeFamily({ hash, pathname }) {
   return family ? family[1] : OTHER;
 }
 
-// A secret can ride a message or a stack on its way to Sentry, so every address that is a capability
-// is struck out wherever it appears, plus the `code=` an OAuth error carries.
+// A frame's file can be the page's own address, so every address that is a capability is struck out
+// of the stack wherever it appears, with `token=` and `code=` values.
 function scrubbed(text) {
   return text
     .replace(/token=[^&\s'"]+/gi, 'token=*')

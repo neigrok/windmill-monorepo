@@ -62,50 +62,94 @@ test('reportError — a thrown error on a roadmap leaves as labels, with no step
   assert.equal(wire.includes('t_abc123'), false);
 });
 
-test('reportError — the failure the event leaves out still reaches Sentry, under the same family', async () => {
+test('reportError — Sentry gets a static message, the exception type and the frames, never the step title', async () => {
   const wired = await reporterWithSentry();
   sent.length = 0;
   at('#/app/t_abc123', '/app/roadmap');
-  const error = new TypeError("Cannot save step 'Rig the boat'");
-  error.stack = "TypeError: Cannot save step 'Rig the boat'\n    at save (https://windmill.works/assets/app.js:12:4)";
+  const error = thrown(new TypeError("Cannot save step 'Rig the boat'"));
+  assert.equal(error.stack.startsWith("TypeError: Cannot save step 'Rig the boat'\n    at "), true);
 
   wired.reportError(error, 'window');
 
   const event = wired.envelopes[0];
+  const frames = event.exception.values[0].stacktrace.frames;
   assert.deepEqual(wired.envelopes, [{
     event_id: event.event_id, timestamp: event.timestamp,
     platform: 'javascript', level: 'error', logger: 'windmill-web', environment: 'production',
-    tags: { kind: 'window' }, request: { url: '/app/roadmap' },
-    exception: { values: [{ type: 'window', value: "Cannot save step 'Rig the boat'", stacktrace: { frames: [
-      { filename: 'https://windmill.works/assets/app.js', lineno: 12, colno: 4, function: 'save', in_app: true },
-    ] } }] },
+    tags: { failure_kind: 'TypeError', kind: 'window' }, request: { url: '/app/roadmap' },
+    exception: { values: [{ type: 'window', value: 'client-error', stacktrace: { frames } }] },
   }]);
+  assert.equal(frames.at(-1).filename, import.meta.url);
+  const wire = JSON.stringify(wired.envelopes);
+  assert.equal(wire.includes('Rig the boat'), false);
+  assert.equal(wire.includes('t_abc123'), false);
   assert.deepEqual(JSON.parse(await sent[0].text()).events[0].props, { kind: 'window', failure_kind: 'TypeError', route: '/app/roadmap' });
 });
 
-test('reportError — a capability in a message is struck out before it reaches Sentry', async () => {
+test('reportError — a message of many lines leaves nothing behind, even lines written like frames', async () => {
   const wired = await reporterWithSentry();
   at('#/journal/2026-07-14', '/app/journal');
-  const messages = {
-    'verify failed for /v1/auth/verify?token=SECRETMAGICLINK': 'verify failed for /v1/auth/verify?token=*',
-    'exchange failed: code=AUTHZ_CODE_SECRET&state=x': 'exchange failed: code=*&state=x',
-    'crash at http://localhost:5152/#/t/t_sharedtreeid': 'crash at http://localhost:5152/#/t/*',
-    'crash at https://windmill.works/t/t_sharedtreeid': 'crash at https://windmill.works/t/*',
-    'crash at /gym/shared/cst_live_token': 'crash at /gym/shared/*',
-    'crash at #/gym/shared-log/cst_live_token': 'crash at #/gym/shared-log/*',
-  };
+  const manyLines = thrown(new Error('Rig the boat\nnote at 12:30:45\nmeet at home (harbour:3:4)\n    at dock (marina.js:5:6)'));
+  const reworded = thrown(new Error('Rig the boat\nnote at 12:30:45\nmeet at home (harbour:3:4)\nwhile at sea'));
+  reworded.message = 'could not save';
 
-  for (const message of Object.keys(messages)) wired.reportError(new Error(message), 'promise');
+  wired.reportError(manyLines, 'promise');
+  wired.reportError(reworded, 'window');
 
-  assert.deepEqual(wired.envelopes.map((event) => event.exception.values[0].value), Object.values(messages));
-  assert.deepEqual([...new Set(wired.envelopes.map((event) => event.request.url))], ['/app/journal']);
+  assert.deepEqual(wired.envelopes.map((event) => event.exception.values[0].value), ['client-error', 'client-error']);
+  for (const event of wired.envelopes) {
+    assert.equal(event.exception.values[0].stacktrace.frames.at(-1).filename, import.meta.url);
+  }
+  const wire = JSON.stringify(wired.envelopes);
+  for (const text of ['Rig the boat', '12:30:45', 'harbour', 'marina', 'dock', 'while at sea', 'could not save']) {
+    assert.equal(wire.includes(text), false, text);
+  }
 });
 
-test('reportError — a frame naming a capability address never reaches Sentry, and the frames around it do', async () => {
+test('reportError — a rejected string or an object of text reaches Sentry with no frames and no text', async () => {
+  const wired = await reporterWithSentry();
+  at('#/app/t_abc123', '/app/roadmap');
+
+  wired.reportError('refused Rig the boat', 'promise');
+  wired.reportError({ message: 'refused Trim the sail', stack: 'refused Trim the sail' }, 'window');
+
+  assert.deepEqual(wired.envelopes.map(({ tags, request, exception }) => ({ tags, request, exception })), [
+    {
+      tags: { failure_kind: 'other', kind: 'promise' }, request: { url: '/app/roadmap' },
+      exception: { values: [{ type: 'promise', value: 'client-error', stacktrace: { frames: [] } }] },
+    },
+    {
+      tags: { failure_kind: 'other', kind: 'window' }, request: { url: '/app/roadmap' },
+      exception: { values: [{ type: 'window', value: 'client-error', stacktrace: { frames: [] } }] },
+    },
+  ]);
+});
+
+test('reportError — a caller adds bounded labels to the Sentry report, and the event stays at its three', async () => {
+  const wired = await reporterWithSentry();
+  sent.length = 0;
+  at('#/app/new', '/app/roadmap');
+
+  wired.reportError(new Error('shape'), 'shape', { reason: 'unavailable', size: 'under-1kb' });
+
+  assert.deepEqual(wired.envelopes[0].tags, { failure_kind: 'Error', kind: 'shape', reason: 'unavailable', size: 'under-1kb' });
+  assert.equal(wired.envelopes[0].exception.values[0].value, 'client-error');
+  assert.deepEqual(JSON.parse(await sent[0].text()).events[0].props, { kind: 'shape', failure_kind: 'Error', route: '/app/roadmap' });
+});
+
+test('reportError — a frame naming a capability never reaches Sentry, and the frames around it do', async () => {
   const wired = await reporterWithSentry();
   at('#/gym/shared/cst_live_token');
   const error = new Error('share page failed');
-  error.stack = 'Error: share page failed\n    at load (https://windmill.works/#/gym/shared/cst_live_token:2:2)\n    at render (https://windmill.works/assets/app.js:1:1)';
+  error.stack = [
+    'Error: share page failed',
+    '    at shared (https://windmill.works/#/gym/shared/cst_live_token:2:2)',
+    '    at sharedLog (https://windmill.works/#/gym/shared-log/cst_live_token:3:3)',
+    '    at sharedTree (https://windmill.works/t/t_sharedtreeid:4:4)',
+    '    at signIn (https://windmill.works/auth?token=SECRETMAGICLINK:5:5)',
+    '    at consent (https://windmill.works/oauth?code=AUTHZ_CODE_SECRET:6:6)',
+    '    at render (https://windmill.works/assets/app.js:1:1)',
+  ].join('\n');
 
   wired.reportError(error, 'render');
 
@@ -113,7 +157,10 @@ test('reportError — a frame naming a capability address never reaches Sentry, 
   assert.deepEqual(wired.envelopes[0].exception.values[0].stacktrace.frames, [
     { filename: 'https://windmill.works/assets/app.js', lineno: 1, colno: 1, function: 'render', in_app: true },
   ]);
-  assert.equal(JSON.stringify(wired.envelopes).includes('cst_live_token'), false);
+  const wire = JSON.stringify(wired.envelopes);
+  for (const secret of ['cst_live_token', 't_sharedtreeid', 'SECRETMAGICLINK', 'AUTHZ_CODE_SECRET']) {
+    assert.equal(wire.includes(secret), false, secret);
+  }
 });
 
 test('reportError — a kind or an error outside the closed sets reads other', async () => {

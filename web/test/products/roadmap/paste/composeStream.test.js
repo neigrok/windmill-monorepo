@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSseFrames, readComposeStream } from '../../../../src/products/roadmap/paste/composeStream.js';
+import { parseSseFrames, readComposeStream, shapeFailureLabels } from '../../../../src/products/roadmap/paste/composeStream.js';
 
 const body = (...chunks) => {
   const queue = chunks.map((chunk) => (typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk));
@@ -84,4 +84,22 @@ test('readComposeStream ignores unknown events and malformed delta payloads', as
   );
   assert.deepStrictEqual(deltas, ['ok']);
   assert.strictEqual(outcome, 'done');
+});
+
+test('shapeFailureLabels keeps a closed reason and a coarse size, so no text, status or count can leave', () => {
+  const labels = [
+    ['unavailable', 0], ['unreachable', 1023], ['failed', 1024], ['no-first-word', 8191], ['stopped-mid-plan', 8192],
+    ['failed (503)', 24576], ['stopped mid-plan after 312 chars', 12], ['Rig the boat', 12],
+  ].map(([reason, bytes]) => shapeFailureLabels(reason, bytes));
+
+  assert.deepStrictEqual(labels, [
+    { reason: 'unavailable', size: 'under-1kb' },
+    { reason: 'unreachable', size: 'under-1kb' },
+    { reason: 'failed', size: '1-8kb' },
+    { reason: 'no-first-word', size: '1-8kb' },
+    { reason: 'stopped-mid-plan', size: 'over-8kb' },
+    { reason: 'other', size: 'over-8kb' },
+    { reason: 'other', size: 'under-1kb' },
+    { reason: 'other', size: 'under-1kb' },
+  ]);
 });
