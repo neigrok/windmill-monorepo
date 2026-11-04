@@ -172,16 +172,14 @@ function readParsedEvents(parsedSources) {
   return found;
 }
 
-async function parsedSources() {
-  return Promise.all(sources.map(async ({ path, text }) => {
-    const { code: plain } = await transformWithEsbuild(text, path, { loader: 'jsx' });
-    return { path, ast: parse(plain, { ecmaVersion: 'latest', sourceType: 'module' }) };
-  }));
-}
+const parsedSources = Promise.all(sources.map(async ({ path, text }) => {
+  const { code: plain } = await transformWithEsbuild(text, path, { loader: 'jsx' });
+  return { path, ast: parse(plain, { ecmaVersion: 'latest', sourceType: 'module' }) };
+}));
 
 test('every prop of every event fits one row of its event in OBSERVABILITY.md, and none reads what someone wrote', async () => {
   const rows = documentedRows();
-  const { calls, problems } = readParsedEvents(await parsedSources());
+  const { calls, problems } = readParsedEvents(await parsedSources);
   assert.ok(calls.length > 150, `read ${calls.length} events`);
   for (const { path, events, props, partial } of calls) {
     const shape = propsOf(props, events[0]);
@@ -199,23 +197,26 @@ test('every prop of every event fits one row of its event in OBSERVABILITY.md, a
 const REPORTERS = new Set(['reportRoadmapFailure', 'reportUnexpectedFailure', 'report', 'reportFailure']);
 const OPERATION = /^roadmap-[a-z]+(?:-[a-z]+)*$/;
 
-// A literal operation, or the name `operation` standing for one written literally where it is given.
+// A literal operation, none at all, or the name `operation` standing for one written literally where it is given.
 function isStaticOperation(node) {
-  if (node.type === 'Literal') return OPERATION.test(String(node.value));
+  if (node.type === 'Literal') return node.value === null || OPERATION.test(String(node.value));
   if (node.type === 'Identifier') return node.name === 'operation';
   if (node.type === 'MemberExpression') return node.property.name === 'operation';
   if (node.type === 'LogicalExpression') return isStaticOperation(node.left) && isStaticOperation(node.right);
+  if (node.type === 'ConditionalExpression') return isStaticOperation(node.consequent) && isStaticOperation(node.alternate);
   return false;
 }
 
 test('every Sentry report names a static operation and builds no message from what someone wrote', async () => {
   const problems = [];
-  for (const { path, ast } of await parsedSources()) {
+  for (const { path, ast } of await parsedSources) {
     walk(ast, (node) => {
-      const given = node.type === 'Property' && !node.computed && node.key.name === 'operation' && node.value.type !== 'AssignmentPattern';
-      if (given && !isStaticOperation(node.value)) problems.push(`${path}: an operation that is not a literal`);
-      const defaulted = node.type === 'AssignmentPattern' && node.left.name === 'operation' && node.right.value !== null;
-      if (defaulted && !isStaticOperation(node.right)) problems.push(`${path}: an operation default that is not a literal`);
+      const given = [
+        node.type === 'Property' && !node.computed && node.key.name === 'operation' && node.value.type !== 'AssignmentPattern' && node.value,
+        node.type === 'AssignmentPattern' && node.left.name === 'operation' && node.right,
+        node.type === 'VariableDeclarator' && node.id.name === 'operation' && node.init,
+      ].find(Boolean);
+      if (given && !isStaticOperation(given)) problems.push(`${path}: an operation that is not a literal`);
       if (node.type !== 'CallExpression' || !REPORTERS.has(calleeName(node)) || node.arguments.length === 0) return;
       const [operation, error] = node.arguments;
       if (!isStaticOperation(operation)) problems.push(`${path}: an operation that is not a literal`);
