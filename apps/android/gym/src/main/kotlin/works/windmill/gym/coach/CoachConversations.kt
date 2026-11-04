@@ -7,8 +7,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
-import works.windmill.domain.kit.Ability
-import works.windmill.domain.kit.AbilityClass
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.coroutineScope
 import works.windmill.domain.kit.DecodeError
 import works.windmill.domain.kit.Entity
 import works.windmill.domain.kit.EntityType
@@ -18,7 +21,8 @@ import works.windmill.domain.kit.Reader
 import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.coach.turn.CoachTurnRefusal
-import works.windmill.gym.coach.turn.contextCallPrefix
+import works.windmill.gym.coach.turn.CoachTurns
+import works.windmill.gym.coach.turn.LiveAnswer
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.AbilityRefusal
 import works.windmill.gym.domain.coach.CoachMessage
@@ -30,7 +34,13 @@ import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.domain.coach.RecordedRead
 import works.windmill.gym.domain.coach.inOrder
 import works.windmill.gym.domain.sync.CoachImportReceipt
+import works.windmill.gym.domain.sync.Exercise
+import works.windmill.gym.domain.sync.Note
+import works.windmill.gym.domain.sync.Proposal
 import works.windmill.gym.domain.sync.Routine
+import works.windmill.gym.domain.sync.Session
+import works.windmill.gym.domain.sync.WorkoutProposal
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.platform.telemetry.Telemetry
@@ -45,10 +55,19 @@ import works.windmill.sync.schema.Gym
 // A picture on a message. `onThisPhone` says this phone holds its file: a picture stays on the phone that sent it (Coach §9.3).
 data class SentPicture(val photo: CoachAttachment, val onThisPhone: Boolean)
 
-// One ability call as the room says it: `phrase` and `kind` are the catalog's, absent for a name this build's catalog does not hold. `context` is a read the turn made of itself at its opening rather than one the model asked for.
-data class CoachCall(val name: String, val phrase: String?, val kind: AbilityClass?, val outcome: AbilityCall.Outcome, val read: RecordedRead, val created: List<RecordRef>, val context: Boolean = false) {
+// One ability call as the room says it: `phrase` is the catalog's, absent for a name this build's catalog does not hold. `detail` is what the call served or wrote, read from the records when the conversation was read.
+data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead, val created: List<RecordRef>, val detail: String? = null) {
     val ran: Boolean get() = outcome == AbilityCall.Outcome.Ok
     val seatRefused: Boolean get() = (outcome as? AbilityCall.Outcome.Refused)?.code == AbilityRefusal.seatRequired
+    // Its row in What Coach read: a read that served workouts says how many, every other call its phrase.
+    val title: String? get() {
+        val workouts = when (read) {
+            is RecordedRead.Ids -> read.served.sessions.size
+            is RecordedRead.Counts -> read.tally.sessions
+        }
+        if (workouts > 0) return "Read ${Readout.sessionCount(workouts)}"
+        return phrase?.replaceFirstChar { it.uppercase() }
+    }
 }
 
 // What a turn did (Coach §9.2): the log rows it read, by count, whether some were held as counts alone, and the records it created.
@@ -59,9 +78,15 @@ data class CoachReceipt(val read: ReadTally, val truncated: Boolean, val created
         json.member("results").arr().map { RecordRef(it.member("t").str(), RecordID(it.member("id"))) })
 }
 
-data class CreatedRoutine(val id: String, val name: String)
+data class CreatedRoutine(val id: String, val name: String, val movements: Int)
 
-// Coach's answer as its message holds it. `onThisPhone` says the replica writing it is this phone's, so a running answer that is not stands on another device (Coach §4.5). `routines` are the created routines the replica still holds, with their names read now.
+// A note a turn saved, as its record holds it.
+data class SavedNote(val id: String, val text: String)
+
+// A movement a turn made, as its record holds it.
+data class MadeMovement(val id: String, val name: String, val equipment: String, val stepKg: Double)
+
+// Coach's answer as its message holds it. `onThisPhone` says the replica writing it is this phone's. `routines`, `savedNotes` and `madeMovements` are what the turn created and the replica still holds, read now.
 data class CoachReply(
     val id: String,
     val text: String,
@@ -71,17 +96,28 @@ data class CoachReply(
     val calls: List<CoachCall>,
     val receipt: CoachReceipt,
     val routines: List<CreatedRoutine>,
+    val savedNotes: List<SavedNote> = emptyList(),
+    val madeMovements: List<MadeMovement> = emptyList(),
 ) {
     val running: Boolean get() = state == MessageState.running
-    // The catalog's phrases of the calls so far, in order: the step line under an answer on its way.
+    // A running answer another device writes: this phone never writes it (Coach §4.5).
+    val elsewhere: Boolean get() = running && !onThisPhone
+    // The catalog's phrases of the calls so far, in order.
     val steps: List<String> get() = calls.filter { it.ran }.mapNotNull { it.phrase }
+    // What the turn has done so far, under an answer on its way.
+    val stepLine: String? get() = steps.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    // The rows of What Coach read.
+    val readRows: List<CoachCall> get() = calls.filter { it.ran && it.title != null }
+    // The receipt under an ended answer: the workouts it read by identity, else what it read in words with no number, and none when it read what no line can say.
+    val readLine: String? get() = when {
+        receipt.read.sessions > 0 -> "Read ${Readout.sessionCount(receipt.read.sessions)} · ${Readout.weekCount(receipt.read.weeks)}"
+        receipt.read == ReadTally() -> Ask.readNothing
+        calls.any { it.ran && it.name == "get_stats" } -> Ask.readMovementHistory
+        else -> null
+    }
     // The routine proposals this answer minted, in the order it minted them.
     val proposals: List<String> get() = receipt.created.filter { it.type == Gym.Types.proposal }.mapNotNull { it.id.string }
     val workoutProposals: List<String> get() = receipt.created.filter { it.type == Gym.Types.workoutProposal }.mapNotNull { it.id.string }
-    val notes: List<String> get() = receipt.created.filter { it.type == Gym.Types.note }.mapNotNull { it.id.string }
-    val movements: List<String> get() = receipt.created.filter { it.type == Gym.Types.exercise }.mapNotNull { it.id.string }
-    // The workouts this answer read by identity, in the order it read them.
-    val workoutsRead: List<String> get() = calls.filter { it.ran }.flatMap { (it.read as? RecordedRead.Ids)?.served?.sessions.orEmpty() }.distinct().mapNotNull { it.record.string }
 }
 
 // An answer earlier versions kept on this phone: the line it ended on, and the drafts it holds until they are saved.
@@ -118,7 +154,7 @@ class CoachConversations(
     private val seat: TrainingSeat,
     private val training: EngineTraining,
     private val telemetry: Telemetry,
-    private val ability: (String) -> Ability?,
+    private val turns: CoachTurns?,
 ) {
     private data class Watched(val chat: String? = null, val thread: String? = null, val retained: List<CoachOnboardingRecord> = emptyList(), val history: Boolean = false)
     private data class Transcript(val chat: String, val exchanges: List<CoachExchange>)
@@ -128,7 +164,11 @@ class CoachConversations(
     private val watched = MutableStateFlow<Watched?>(null)
     private var open by mutableStateOf<Transcript?>(null)
     private var undecodedReported = false
+    private var live by mutableStateOf<LiveAnswer?>(null)
 
+    // Whether this phone's turn has lost its stream and is finding it again.
+    var reconnecting by mutableStateOf(false)
+        private set
     // Every thread the seat holds, cheap enough to read on each revision of a streaming turn.
     var threads by mutableStateOf<List<CoachThread>>(emptyList())
         private set
@@ -146,15 +186,33 @@ class CoachConversations(
         watched.update { (it ?: Watched()).copy(history = on) }
     }
 
+    // An answer as it stands this moment. A running message this phone writes carries the words so far, which its record takes only every few seconds. An ended message is its record's alone.
+    fun standing(reply: CoachReply): CoachReply {
+        val words = live?.takeIf { reply.running && it.message.record.string == reply.id } ?: return reply
+        return reply.copy(text = words.text)
+    }
+
     fun forgetSeat() {
+        live = null
+        reconnecting = false
         open = null
         threads = emptyList()
         rows = null
     }
 
     // Runs for the application's life: a read on every revision and on every change of what is watched; a newer one replaces a read still under way.
-    suspend fun observe() {
+    suspend fun observe() = coroutineScope {
+        turns?.let { running ->
+            launch { running.liveAnswer.collect { answer -> follow(answer) } }
+            launch { running.activity.collect { reconnecting = it?.reconnecting == true } }
+        }
         combine(training.engine.revisions(), watched) { revision, wanted -> revision to wanted }.collectLatest { read() }
+    }
+
+    // A turn's end has committed by the time its words go, so what it left is read first and the answer never shows an older commit on its way to the final text.
+    private suspend fun follow(answer: LiveAnswer?) {
+        if (answer == null && live != null) read()
+        live = answer
     }
 
     suspend fun read() {
@@ -194,13 +252,14 @@ class CoachConversations(
     // The conversation's messages in the order they were said, each answer under its question. An answer whose question has not arrived, as a pull page can leave it, stands alone.
     private fun exchanges(messages: List<CoachMessage>, reader: Reader, replica: String): List<CoachExchange> {
         val exchanges = mutableListOf<CoachExchange>()
+        val named = Named(reader)
         for (message in messages.inOrder) {
             val id = checkNotNull(message.id.record.string) { "a message's id is a string" }
             if (message.role == CoachMessage.Role.lifter) {
                 exchanges += CoachExchange(id, message.text, message.at.ms, message.pictures.map { sent(it, reader) })
                 continue
             }
-            val reply = reply(message, id, reader, replica)
+            val reply = reply(message, id, replica, named)
             val last = exchanges.lastOrNull()
             if (last != null && last.answer == null) exchanges[exchanges.lastIndex] = last.copy(answer = reply)
             else exchanges += CoachExchange(id, "", message.at.ms, answer = reply)
@@ -208,14 +267,61 @@ class CoachConversations(
         return exchanges
     }
 
-    private fun reply(message: CoachMessage, id: String, reader: Reader, replica: String): CoachReply {
+    private fun reply(message: CoachMessage, id: String, replica: String, named: Named): CoachReply {
         val receipt = CoachReceipt(message.calls)
-        val routines = receipt.created.filter { it.type == Routine.type }.mapNotNull { ref ->
-            val held = reader.source.drawn(Routine.type, ref.id)?.takeIf { it.isVisible } ?: return@mapNotNull null
-            decoded(Routine, listOf(held)).singleOrNull()?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name) }
+        val routines = receipt.created.mapNotNull { ref -> named.routine(ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
+        val notes = receipt.created.mapNotNull { ref -> named.note(ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
+        val movements = receipt.created.mapNotNull { ref -> named.movement(ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, Readout.equipment(it.equipment, it.loadCount), it.stepKg) } }
+        val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, call.created, named.detail(call)) }
+        return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements)
+    }
+
+    private fun phrase(name: String): String? = turns?.catalog?.value?.ability(name)?.phrase
+
+    // What an answer's calls name, read from the records now, as What Coach read says it. The lists read once however many calls ask.
+    private inner class Named(private val reader: Reader) {
+        private val routines by lazy { Routine.ordered(decoded(Routine, reader.source.drawn(Routine.type))) }
+        private val notes by lazy { decoded(Note, reader.source.drawn(Note.type)) }
+
+        fun routine(ref: RecordRef): Routine? = held(Routine, ref)
+        fun note(ref: RecordRef): Note? = held(Note, ref)
+        fun movement(ref: RecordRef): Exercise? = held(Exercise, ref)
+
+        private fun <E : Entity<E>> held(type: EntityType<E>, ref: RecordRef): E? {
+            if (ref.type != type.type) return null
+            return reader.source.drawn(type.type, ref.id)?.let { decoded(type, listOf(it)).singleOrNull() }
         }
-        return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica,
-            message.calls.map { call -> ability(call.name).let { CoachCall(call.name, it?.phrase, it?.kind, call.outcome, call.read, call.created, call.callId.startsWith(contextCallPrefix)) } }, receipt, routines)
+
+        // A read that served workouts says over which weeks and days; every other call what the records it read or wrote hold now.
+        fun detail(call: AbilityCall): String? {
+            val served = (call.read as? RecordedRead.Ids)?.served
+            val counted = (call.read as? RecordedRead.Counts)?.tally
+            if ((served?.sessions?.size ?: counted?.sessions ?: 0) > 0) {
+                val days = served?.sessions.orEmpty().mapNotNull { held(Session, RecordRef(Session.type, it.record))?.startedAt?.ms }.sorted().map(::dayLabel)
+                val span = if (days.firstOrNull() != days.lastOrNull()) listOf("${days.first()} – ${days.last()}") else days.take(1)
+                return (listOf(Readout.weekCount(served?.weeks?.size ?: counted?.weeks ?: 0)) + span).joinToString(" · ")
+            }
+            return when (call.name) {
+                "list_notes" -> notes.size.takeIf { it > 0 }?.let(Readout::noteCount)
+                "list_routines" -> routines.takeIf { it.isNotEmpty() }?.joinToString(" · ") { it.name }
+                else -> call.created.mapNotNull(::named).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+            }
+        }
+
+        private fun named(ref: RecordRef): String? = when (ref.type) {
+            Routine.type -> routine(ref)?.name
+            Note.type -> note(ref)?.title
+            Exercise.type -> movement(ref)?.name
+            Proposal.type -> held(Proposal, ref)?.let(::proposalTitle)
+            WorkoutProposal.type -> held(WorkoutProposal, ref)?.let { "This workout · ${Readout.changeCount(it.changes.size)}" }
+            else -> null
+        }
+
+        private fun proposalTitle(proposal: Proposal): String {
+            val routine = held(Routine, RecordRef(Routine.type, proposal.routineId.record))
+            val what = if (proposal.intent == "remove") "a removal" else Readout.changeCount(routine?.let { proposal.changeCount(it) } ?: proposal.changeCount ?: proposal.changes.size)
+            return listOfNotNull(proposal.baseName ?: routine?.name, what).joinToString(" · ")
+        }
     }
 
     private fun sent(picture: Picture, reader: Reader): SentPicture {
@@ -246,6 +352,10 @@ private class CoachRecordUnreadable : Exception("coach-record-unreadable")
 
 private const val previewCodePoints = 240
 
+private val dayFormat = DateTimeFormatter.ofPattern("MMM d")
+
+private fun dayLabel(ms: Long): String = dayFormat.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+
 private fun ConversationRow(thread: CoachThread, messages: List<CoachMessage>): ConversationRow {
     val said = messages.inOrder
     val newest = said.lastOrNull()
@@ -261,7 +371,7 @@ private fun CoachExchange(record: CoachOnboardingRecord, saved: CoachImportRecei
     val code = response?.errorCode ?: record.refusalCode
     val answered = response?.status == "completed"
     val routines = if (saved == null) emptyList() else saved.routines.zip(response?.routines.orEmpty()).mapNotNull { (id, routine) ->
-        id.record.string?.let { CreatedRoutine(it, routine.name) }
+        id.record.string?.let { CreatedRoutine(it, routine.name, routine.entries.size) }
     }
     val line = when {
         answered || code == "account_required" -> null

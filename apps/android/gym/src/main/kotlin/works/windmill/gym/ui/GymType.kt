@@ -193,6 +193,8 @@ object GymType {
     val coachDraft = nunito(16, leading = 24)
     val coachComposer = nunito(16, leading = 24, tracking = .5)
     val coachSupporting = nunito(14, leading = 20)
+    val coachDetail = nunito(14, leading = 20, tracking = .25)
+    val coachReceiptTitle = nunito(16, FontWeight.Bold, leading = 24, tracking = .5)
     val coachStrong = nunito(14, FontWeight.Bold, leading = 20)
     val coachAction = nunito(14, FontWeight.Bold, leading = 20, tracking = .1)
     val coachLine = nunito(14)

@@ -487,19 +487,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         look(Away.Thread(id))
     }
 
-    fun openCoachWorkout(id: String) {
-        val owner = store.seat.accountKey
-        scope.launch {
-            when (val read = store.history.sessionDetail(id)) {
-                is GymResult.Ok -> if (owner == store.seat.accountKey) {
-                    val detail = read.value
-                    look(Away.Session(SessionSummary(detail.session, detail.sets, store.routines.catalog), detail))
-                }
-                is GymResult.Failed -> if (owner == store.seat.accountKey) note = read.why.line("that workout didn’t open")
-            }
-        }
-    }
-
     // A question typed before any chat stood takes its draft into the chat it opens.
     fun ask(question: String, photo: CoachAttachment?) {
         val id = store.coach.selectedChatId ?: try {
@@ -719,7 +706,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 thread = conversation,
                 conversationId = conversationId,
                 onOpenRoutine = { selectedRoutineId = it },
-                onOpenWorkout = ::openCoachWorkout,
                 onOpenChat = { openCoachChat(it, "reply_open") },
                 receipts = reviewFlow.receiptsAt(Reviewing.coach),
                 lookedAt = lookedAtIds,
@@ -866,8 +852,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         onThreads = { look(Away.Threads) },
                         onConnections = { look(Away.Connections) },
                         onOpenRoutine = { selectedRoutineId = it },
-                        onOpenWorkout = ::openCoachWorkout,
-                        onOpenChat = { openCoachChat(it, "reply_open") },
+                                onOpenChat = { openCoachChat(it, "reply_open") },
                         receipts = reviewFlow.receiptsAt(Reviewing.thread(standing.threadId)),
                         lookedAt = lookedAtIds,
                         backTo = backTo,

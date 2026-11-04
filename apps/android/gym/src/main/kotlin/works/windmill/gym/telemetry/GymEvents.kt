@@ -45,7 +45,7 @@ object GymActions : EventSchema {
             "cancel" to setOf("rewritten"),
             "calendar_open" to setOf("ok"), "calendar_confirm" to setOf("ok"), "calendar_cancel" to setOf("ok"),
         ),
-        "coach" to listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "continue_draft", "jump_latest")
+        "coach" to listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "continue_draft", "jump_latest", "reconnecting", "answering_elsewhere", "stop_notice", "stop_notice_closed")
             .associateWith { setOf("ok") } + mapOf(
                 "copy" to setOf("ok", "failed"), "copy_link" to setOf("ok", "failed"),
                 "open_link" to setOf("ok", "unavailable", "failed"),
@@ -88,7 +88,7 @@ object GymEvents {
             "gym_action" to GymActions,
             "gym_setup_step" to LabelSchema(mapOf(
                 "screen" to setOf("coach"),
-                "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in"),
+                "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in", "open_routine", "keep_routines"),
             )),
             // Coach §10.2. `name` is a catalog name, which GymTurnTelemetry holds to the injected catalog; the rest are labels and counts.
             "coach_ability" to EventSchema { properties ->

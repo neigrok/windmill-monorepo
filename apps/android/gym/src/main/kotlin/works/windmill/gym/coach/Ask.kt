@@ -2,11 +2,8 @@ package works.windmill.gym.coach
 
 import kotlinx.serialization.Serializable
 import works.windmill.gym.coach.onboarding.CoachOnboardingResponse
-import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.domain.coach.CoachRules
 import works.windmill.gym.domain.coach.MessageState
-import works.windmill.gym.domain.coach.ReadTally
-import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineEntry
 import works.windmill.gym.presentation.SetTarget
 
@@ -41,7 +38,6 @@ object Ask {
     const val draftInvalid = "This draft can’t be saved. Ask Coach for a new one."
     const val draftRetry = "Couldn’t save the routine. Try again."
 
-    const val stopped = "Response stopped."
     const val couldNotTake = "Coach couldn’t take that one"
 
     const val accessNeedsSignIn = "Coach needs your workout log. Please sign in."
@@ -49,12 +45,32 @@ object Ask {
     const val notHere = "This Windmill does not have Coach. You can still read your log."
     const val accountRequired = "I need your account to change a routine. Sign in, then ask again."
 
+    // The line under a running answer another device writes.
+    const val answeringElsewhere = "Answering on another device"
+    // The band while this phone's turn finds its stream again.
+    const val reconnecting = "Reconnecting…"
+    // Where a sent picture stands on a phone that does not hold it (Coach §9.3).
+    const val pictureElsewhere = "Held on the phone\nthat sent it"
+
+    // Under the routines a signed-out turn created: they live on this phone until the lifter keeps them with an account.
+    const val onlyOnThisPhone = "Only on this phone ·"
+    const val keepIt = "Keep it"
+
+    const val readNothing = "Read nothing from your log"
+    const val readMovementHistory = "Read your movement history"
+
+    const val sourcesTitle = "What Coach read"
+    const val sourcesLead = "What Coach used, in order"
+    const val sourcesFoot = "A workout read twice counts once."
+
     // How a turn ended short of a whole answer, under what arrived.
-    fun ending(state: MessageState): String? = when (state) {
-        MessageState.running, MessageState.completed -> null
-        MessageState.stopped -> stopped
-        MessageState.declined -> couldNotTake
-        MessageState.failed, MessageState.interrupted -> CoachTurnFault.noAnswer.sentence
+    fun ending(state: MessageState, truncated: Boolean): String? = when (state) {
+        MessageState.running -> null
+        MessageState.completed -> if (truncated) "Cut short. Ask Coach to go on." else null
+        MessageState.stopped -> "Stopped."
+        MessageState.declined -> "Coach declined to answer this."
+        MessageState.failed -> "Coach couldn’t finish. Ask again."
+        MessageState.interrupted -> "Interrupted. What arrived is kept."
     }
 
     // `standing` null means unknown, not nobody: only a seat the room has read may take a thread.
@@ -66,15 +82,5 @@ object Ask {
     fun sendable(typed: String): Boolean {
         val asked = typed.trim()
         return asked.isNotEmpty() && asked.encodeToByteArray().size <= maxQuestionBytes
-    }
-
-    fun receipt(read: ReadTally): String {
-        val parts = buildList {
-            if (read.sets > 0) add(Readout.setCount(read.sets))
-            if (read.weeks > 0) add(Readout.weekCount(read.weeks))
-            if (read.sessions > 0) add(if (read.sessions == 1) "1 session" else "${read.sessions} sessions")
-        }
-        if (parts.isEmpty()) return "read nothing from your log"
-        return "read ${parts.joinToString(" · ")}"
     }
 }

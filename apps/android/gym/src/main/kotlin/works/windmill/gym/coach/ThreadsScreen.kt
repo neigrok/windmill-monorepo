@@ -194,7 +194,6 @@ fun ThreadScreen(
     onThreads: () -> Unit = onBack,
     onConnections: (() -> Unit)? = null,
     onOpenRoutine: ((String) -> Unit)? = null,
-    onOpenWorkout: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
     seat: String? = null,
     composerEnabled: Boolean = true,
@@ -225,7 +224,7 @@ fun ThreadScreen(
         onSignIn = onSignIn,
         onBuildRoutine = onBuildRoutine,
         onThreads = onThreads, onConnections = onConnections, onOpenRoutine = onOpenRoutine,
-        onOpenWorkout = onOpenWorkout, onOpenChat = onOpenChat,
+        onOpenChat = onOpenChat,
         onReview = onReview,
     )
 }

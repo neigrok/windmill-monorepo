@@ -11,15 +11,18 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,6 +44,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.ZoneId
@@ -54,7 +58,21 @@ import works.windmill.gym.R
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 
-internal enum class CoachGroup { Single, First, Middle, Last }
+internal enum class CoachGroup {
+    Single, First, Middle, Last;
+
+    // 20 dp outside and 4 dp on the side that meets the next of the group, on the speaker's edge.
+    fun shape(fromLifter: Boolean): RoundedCornerShape {
+        val above = this == First || this == Middle
+        val below = this == Last || this == Middle
+        return RoundedCornerShape(
+            topStart = if (!fromLifter && below) 4.dp else 20.dp,
+            topEnd = if (fromLifter && below) 4.dp else 20.dp,
+            bottomEnd = if (fromLifter && above) 4.dp else 20.dp,
+            bottomStart = if (!fromLifter && above) 4.dp else 20.dp,
+        )
+    }
+}
 
 internal class CoachCopyMenu { var selected by mutableStateOf<Int?>(null) }
 
@@ -103,14 +121,7 @@ internal fun CoachBubble(
         }
         copied
     }
-    val first = group == CoachGroup.First || group == CoachGroup.Middle
-    val last = group == CoachGroup.Last || group == CoachGroup.Middle
-    val shape = RoundedCornerShape(
-        topStart = if (!fromLifter && last) 4.dp else 20.dp,
-        topEnd = if (fromLifter && last) 4.dp else 20.dp,
-        bottomEnd = if (fromLifter && first) 4.dp else 20.dp,
-        bottomStart = if (!fromLifter && first) 4.dp else 20.dp,
-    )
+    val shape = group.shape(fromLifter)
     Box(if (fullWidth) Modifier.fillMaxWidth() else Modifier.widthIn(max = 321.dp)) {
         Box(Modifier.clip(shape).background(if (fromLifter) colors.primary else colors.surfaceContainer)
             .background(if (menu) colors.onSurface.copy(alpha = 0.16f) else Color.Transparent)
@@ -152,6 +163,20 @@ internal fun CoachQuestion(question: String, group: CoachGroup = CoachGroup.Sing
         CoachBubble(fromLifter = true, group = group, copyText = { question }) {
             Text(question, style = GymType.coachParagraph, color = MaterialTheme.colorScheme.onPrimary)
         }
+    }
+}
+
+// A sent picture on a phone that does not hold it: its place in the lifter's group (Coach §9.3).
+@Composable
+internal fun CoachPictureElsewhere(group: CoachGroup) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+        modifier = Modifier.size(200.dp, 180.dp).clip(group.shape(fromLifter = true)).background(colors.surfaceContainerHighest).padding(horizontal = 16.dp),
+    ) {
+        Icon(painterResource(R.drawable.gym_coach_image), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+        Text(Ask.pictureElsewhere, style = GymType.coachSourceLine, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
 

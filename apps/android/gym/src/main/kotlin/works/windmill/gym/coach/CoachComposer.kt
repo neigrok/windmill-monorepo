@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextFieldDefaults
@@ -238,15 +239,14 @@ private class CoachDraftEditor(private val store: CoachChats, private val key: S
 }
 
 @Composable
-internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Modifier = Modifier, onThisPhone: Boolean = true) {
+internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(12.dp)) {
     val colors = MaterialTheme.colorScheme
     var bitmap by remember(store.accountKey, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var failure by remember(store.accountKey, photo.id) { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(store.accountKey, photo.id, attempt, onThisPhone) {
+    LaunchedEffect(store.accountKey, photo.id, attempt) {
         failure = false
-        if (!onThisPhone) return@LaunchedEffect
         try {
             val bytes = store.photo(photo.id)
             bitmap = withContext(Dispatchers.Default) {
@@ -258,7 +258,7 @@ internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Mod
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { failure = true }
     }
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainer)
+    Box(modifier.clip(shape).background(colors.surfaceContainer)
         .clickable(role = Role.Button, onClickLabel = if (failure) "Retry photo" else "View photo") {
             if (failure) attempt++ else expanded = true
         }.semantics { contentDescription = if (failure) "Photo unavailable. Retry photo" else "Attached photo" }, contentAlignment = Alignment.Center) {

@@ -30,6 +30,7 @@ import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,13 +60,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.drop
 import works.windmill.gym.R
+import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Proposal
-import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.RoutinesStore
@@ -83,7 +84,6 @@ import works.windmill.platform.design.WindmillSpace
 interface AskState {
     val coach: CoachChats
     val catalog: List<Exercise>
-    fun workout(id: String): SessionSummary?
     val settledProposals: Map<String, Proposal>
     val replicaReadRevision: Long
     val caughtUpTo: Long?
@@ -107,7 +107,6 @@ class AskBinding(
     constructor(store: TrainingStore) : this(store.coach, store.seat, store.routines, store.history)
 
     override val catalog: List<Exercise> get() = routines.catalog
-    override fun workout(id: String): SessionSummary? = history.allSessions.firstOrNull { it.id == id }
     override val settledProposals: Map<String, Proposal> get() = routines.settledProposals
     override val replicaReadRevision: Long get() = seat.replicaReadRevision
     override val caughtUpTo: Long? get() = routines.caughtUpTo
@@ -138,7 +137,6 @@ fun AskScreen(
     conversationId: String = "",
     onOpenRoutine: ((String) -> Unit)? = null,
     onStop: (() -> Unit)? = null,
-    onOpenWorkout: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
     composerEnabled: Boolean = true,
     composerVisible: Boolean = true,
@@ -182,6 +180,23 @@ fun AskScreen(
     }
     val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
+    val reconnecting = asking && coach.conversations?.reconnecting == true
+    val stopNotice = coach.fault?.takeIf { it in stopFaults }
+    var stopNoticeClosed by remember(stopNotice) { mutableStateOf(false) }
+    LaunchedEffect(reconnecting) { if (reconnecting) telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "reconnecting", "outcome" to "ok")) }
+    LaunchedEffect(stopNotice) { if (stopNotice != null) telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "stop_notice", "outcome" to "ok")) }
+    val signInForCall = onSignIn?.let { signIn -> {
+        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "sign_in"))
+        signIn()
+    } }
+    val keepRoutines = onSignIn?.let { signIn -> {
+        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "keep_routines"))
+        signIn()
+    } }
+    val openRoutine = onOpenRoutine?.let { open -> { id: String ->
+        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "open_routine"))
+        open(id)
+    } }
 
     // Read back off the replica: an answer's receipt carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.
@@ -229,27 +244,20 @@ fun AskScreen(
                         telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "build_manually"))
                         onBuildRoutine?.invoke()
                     })
-                (draftFailure ?: coach.failure ?: coach.fault?.sentence)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
+                (draftFailure ?: coach.failure ?: coach.fault?.takeUnless { it in stopFaults }?.sentence)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                 thread.forEachIndexed { index, exchange ->
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             ChatTimestamp(exchange.atMs, nowMs)
-                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                exchange.pictures.forEach { CoachPhoto(coach, it.photo, Modifier.size(160.dp), it.onThisPhone) }
-                                if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question, if (exchange.pictures.isEmpty()) CoachGroup.Single else CoachGroup.Last)
-                            }
-                            val reply = exchange.answer
-                            val text = rememberRevealedText(messageKeys[index], reply?.text.orEmpty(), reply?.state?.let { it.isTerminal && it != MessageState.completed } == true)
-                            if (exchange.waiting && text.isEmpty()) CoachTyping()
-                            reply?.let { answer ->
-                                Answer(answer, exchange.retained, text, minted + state.settledProposals, state, nowMs, lookedAt, onReview, onOpenRoutine, conversationId, !asking, onOpenWorkout) { sourcesTop = it }
+                            if (exchange.question.isNotEmpty() || exchange.pictures.isNotEmpty()) LifterGroup(coach, exchange)
+                            if (exchange.sending) CoachTyping()
+                            exchange.answer?.let { answer ->
+                                Answer(answer, exchange.retained, minted + state.settledProposals, state, nowMs, lookedAt, onReview, openRoutine, conversationId, !asking,
+                                    onSignIn = signInForCall.takeIf { coach.anonymous && index == thread.lastIndex }, onKeep = keepRoutines.takeIf { coach.anonymous }) { sourcesTop = it }
                                 answer.proposals.filter { it !in minted && it !in state.settledProposals }.forEach { id ->
                                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line)
                                     else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillType.supporting, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
-                                Ask.ending(answer.state)?.let { Trouble(it) }
-                                if (coach.anonymous && answer.state.isTerminal && index == thread.lastIndex && answer.calls.any { it.seatRefused })
-                                    onSignIn?.let { CoachAction("Sign in", it, primary = true) }
                             }
                             exchange.retained?.let { held ->
                                 if (held.accountRequired) {
@@ -307,6 +315,11 @@ fun AskScreen(
                 TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null) { Text("View chat") }
             }
         }
+        if (reconnecting) Band(Ask.reconnecting)
+        else if (stopNotice != null && !stopNoticeClosed) Band(stopNotice.sentence, onClose = {
+            stopNoticeClosed = true
+            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "stop_notice_closed", "outcome" to "ok"))
+        })
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
@@ -319,11 +332,50 @@ fun AskScreen(
     }
 }
 
+// A Stop that never reached the server, which the band says with the turn already ended on this phone.
+private val stopFaults = setOf(CoachTurnFault.stoppedOffline, CoachTurnFault.stopUnheard)
+
+// The band over the composer, on the platform's snackbar: what this phone's own turn is doing or did.
+@Composable
+private fun Band(said: String, onClose: (() -> Unit)? = null) {
+    val colors = MaterialTheme.colorScheme
+    Snackbar(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 4.dp).testTag("coach-band"),
+        shape = RoundedCornerShape(4.dp),
+        containerColor = colors.surfaceContainerHighest,
+        contentColor = colors.onSurface,
+        dismissAction = onClose?.let { close -> {
+            IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.gym_coach_close), "Close", Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+            }
+        } },
+    ) { Text(said, style = GymType.coachDetail) }
+}
+
+// The lifter's turn: each picture its own bubble, then the words in the bubble that closes the group, at the trailing edge.
+@Composable
+private fun LifterGroup(coach: CoachChats, exchange: CoachExchange) {
+    val count = exchange.pictures.size + if (exchange.question.isNotEmpty()) 1 else 0
+    fun group(index: Int) = when {
+        count == 1 -> CoachGroup.Single
+        index == 0 -> CoachGroup.First
+        index == count - 1 -> CoachGroup.Last
+        else -> CoachGroup.Middle
+    }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        exchange.pictures.forEachIndexed { index, picture ->
+            if (picture.onThisPhone) CoachPhoto(coach, picture.photo, Modifier.size(200.dp, 180.dp), group(index).shape(fromLifter = true))
+            else CoachPictureElsewhere(group(index))
+        }
+        if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question, group(count - 1))
+    }
+}
+
+// An answer as it stands this moment. It reads the running words itself, so only this answer draws again at every delta. Drawn from the LOG's own copy and never from what the model said about it, its proposals follow what it read.
 @Composable
 private fun Answer(
-    answer: CoachReply,
+    record: CoachReply,
     retained: RetainedAnswer?,
-    text: String,
     minted: Map<String, Proposal>,
     state: AskState,
     nowMs: Long,
@@ -332,15 +384,17 @@ private fun Answer(
     onOpenRoutine: ((String) -> Unit)?,
     chat: String,
     canSave: Boolean,
-    onOpenWorkout: ((String) -> Unit)?,
+    onSignIn: (() -> Unit)?,
+    onKeep: (() -> Unit)?,
     onSourcesTop: (Int?) -> Unit,
 ) {
+    val answer = state.coach.conversations?.standing(record) ?: record
+    val text = rememberRevealedText(answer.id, answer.text, answer.state.isTerminal && answer.state != MessageState.completed)
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-        CoachAnswer(text, answer, state.catalog, state::workout, onOpenRoutine,
+        CoachAnswer(text, answer, state.catalog, onOpenRoutine,
             routineDrafts = retained?.drafts.orEmpty(),
             onSaveDrafts = if (canSave && retained != null) { { state.coach.saveRetainedDrafts(chat, retained.requestId) } } else null,
-            onOpenWorkout = onOpenWorkout, receiptInset = 4.dp, onSourcesTop = onSourcesTop)
-        // Drawn from the LOG's own copy and never from what the model said about it.
+            onSignIn = onSignIn, onKeep = onKeep, saysWhatItRead = retained == null || answer.routines.isNotEmpty(), onSourcesTop = onSourcesTop)
         answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
             Minted(proposal, nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
         }
@@ -438,7 +492,6 @@ private data class PreviewAsk(
     override val caughtUpTo: Long? = null,
     override val pulled: Pulls = Pulls(),
 ) : AskState {
-    override fun workout(id: String): SessionSummary? = null
     override fun proposalRecorded(id: String): Boolean = false
 }
 
