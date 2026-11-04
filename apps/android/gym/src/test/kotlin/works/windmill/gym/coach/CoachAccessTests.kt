@@ -77,7 +77,7 @@ class CoachAccessTests {
     @Test fun aSpentAllowanceAsksASignedOutPhoneToSignInAndOffersASignedInOneNothing() {
         var anonymous by mutableStateOf(true)
         var signIns = 0
-        compose.setContent { CoachRefusalNotice(CoachTurnRefusal.Allowance("subject_exhausted"), anonymous, { signIns++ }, {}, {}) }
+        compose.setContent { CoachRefusalNotice(CoachTurnRefusal.Allowance("subject_exhausted", spent = true), anonymous, { signIns++ }, {}, {}) }
         compose.onNodeWithText("You have used all of your AI allowance.\nSign in to continue.").assertIsDisplayed()
         compose.onNodeWithText("Sign in").performClick()
         compose.runOnIdle { assertEquals(1, signIns); anonymous = false }
@@ -118,6 +118,10 @@ class CoachAccessTests {
             Board(CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns), true, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00 AM.", own),
             Board(CoachTurnRefusal.of("free_day_exhausted", 429), false, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", own),
             Board(CoachTurnRefusal.of(TurnRefusal.rateLimited, 429), false, "You can ask again later.", own),
+            Board(CoachTurnRefusal.of("subject_exhausted", 429, spent = true), true, "You have used all of your AI allowance.\nSign in to continue.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.of("subject_exhausted", 429, spent = true), false, "You have used all of your AI allowance.", null),
+            Board(CoachTurnRefusal.of("subject_exhausted", 429), true, "Coach’s AI allowance is unavailable right now.\nSign in to continue.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.of("subject_exhausted", 429), false, "Coach’s AI allowance is unavailable right now.", null),
         )) {
             assertEquals(board.words, board.refusal.notice(board.anonymous, clock24 = false, zone = utc))
             assertEquals(board.words, board.door, board.refusal.recovery(board.anonymous))

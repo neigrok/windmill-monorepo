@@ -229,12 +229,13 @@ void Turn::end(TurnState state, bool truncated, Json::Value allowance, std::uint
   close(endedAtMs);
 }
 
-void Turn::fail(std::string code, std::optional<long long> budgetResetsAtMs, std::uint64_t endedAtMs) {
+void Turn::fail(std::string code, std::optional<long long> budgetResetsAtMs, Json::Value allowance, std::uint64_t endedAtMs) {
   std::lock_guard lock(mutex_);
   if (terminal(state_)) return;
   state_ = TurnState::failed;
   errorCode_ = std::move(code);
   budgetResetsAtMs_ = budgetResetsAtMs;
+  allowance_ = std::move(allowance);
   close(endedAtMs);
 }
 
@@ -331,6 +332,7 @@ Json::Value Turn::terminalData() const {
   if (state_ == TurnState::failed) {
     data["code"] = errorCode_;
     if (budgetResetsAtMs_) data["budgetResetsAtMs"] = Json::Int64(*budgetResetsAtMs_);
+    if (!allowance_.isNull()) data["allowance"] = allowance_;
     return data;
   }
   data["state"] = std::string(nameOf(state_));

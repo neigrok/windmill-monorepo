@@ -444,7 +444,7 @@ Admission, in order:
 | `text` | `{delta}`: visible answer text, in order. |
 | `calls` | `{batch, calls: [{callId, name, input}]}` |
 | `done` | `{state, truncated?, allowance}`; allowance follows the shared USD read contract |
-| `error` | `{code, budgetResetsAtMs?}`; §6.5 says which codes name a moment |
+| `error` | `{code, budgetResetsAtMs?, allowance?}`; §6.5 says which codes name a moment and carry an allowance |
 
 Heartbeat comments keep an idle stream open. A refusal before the stream starts is an HTTP error
 with a JSON body `{error, code}`, plus `allowance` in the shared USD read contract when the allowance
@@ -493,6 +493,9 @@ The allowance codes are `subject_exhausted`, `free_day_exhausted`, `free_month_e
 `429`: an expected refusal, never a failure of the server. `coach-busy` and `coach-vendor-error` answer
 `503`. The moment a code names is `budgetResetsAtMs`, read from the refusal's `allowance` before the
 stream, where it is null if the code names none, and from the `error` event after it, which omits it then.
+An `error` event with an allowance code carries `allowance` in the shared USD read contract when the
+seat's allowance could be read; its `code` is the read's own, which can be `ok` on a positive balance
+the round did not fit.
 
 ---
 
@@ -537,7 +540,11 @@ debt remain effective after a period ends.
 `done.allowance` carries exact decimal USD limit, used, reserved and remaining; its period;
 individual `resetsAtMs`; and the constrained scope's `budgetResetsAtMs`. Lifetime reset is null.
 A free daily pause must identify the daily boundary rather than the individual monthly reset.
-A positive balance does not promise that a particular request can fit its reservation.
+A positive balance does not promise that a particular request can fit its reservation, so
+`subject_exhausted` alone does not say a balance is gone: only a read with nothing remaining and
+nothing reserved does. Android says "You have used all of your AI allowance." only then, and otherwise
+"Coach’s AI allowance is unavailable right now.", with the same recovery. iOS still says the first
+sentence for every `subject_exhausted` a turn meets.
 
 ### §7.2 Metering and implementation boundary
 

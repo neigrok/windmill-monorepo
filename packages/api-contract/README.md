@@ -125,7 +125,7 @@ turn driver replays the same file against a fake server that emits `events` and 
 | `clockMs` | Server side only: the server's clock through the exchange, where a frame names a moment derived from it. |
 | `open` | The §6.2 body, verbatim. |
 | `model` | Server side only: the vendor's reply per model call — `{stop_reason, content}`, `null` for a transport failure, `{"refused": code}` for a round the allowance refused. |
-| `events` | The frames the server sends, in order, heartbeats aside. A `done` frame's `allowance` is omitted: it belongs to the environment, and the comparison drops it. `{"await": …}` entries are not frames: they mark where the server waits for the phone — `results` of a `batch`, `stop`, `resume`, or the `timeout` of a silent phone. |
+| `events` | The frames the server sends, in order, heartbeats aside. A `done` frame's `allowance` is omitted: it belongs to the environment, and the comparison drops it. An `error` frame's `allowance` is the script's: what the phone says depends on it, and the server's read of a seat with nothing spent is what the comparison expects. `{"await": …}` entries are not frames: they mark where the server waits for the phone — `results` of a `batch`, `stop`, `resume`, or the `timeout` of a silent phone. |
 | `results` | The bodies the phone posts, in order, each on the `calls` frame of its `batch` — or of `on`, when a probe answers another batch on purpose. `expect` is `accepted` (the default, 200), `replay` (204) or `coach-turn-order` (409). |
 | `stop` | `{"afterModelCall": n}`: Stop is requested as soon as the n-th model call returns, before its batch. |
 | `resume` | `{"onBatch": n}`: the phone reconnects on that `calls` frame, before answering, and reads a `snapshot`. |
@@ -136,7 +136,7 @@ turn driver replays the same file against a fake server that emits `events` and 
 | `serverCalls` | Server side only: the calls the server executor ran (ruling R2). |
 | `end` | The terminal `state`, `truncated` where set, and the `code` of a `failed` turn. |
 
-A `failed` turn ends with an `error {code}` frame, every other terminal state with `done {state, truncated?, allowance}`.
+A `failed` turn ends with an `error {code, budgetResetsAtMs?, allowance?}` frame, every other terminal state with `done {state, truncated?, allowance}`.
 
 ## `gym-history.md`
 

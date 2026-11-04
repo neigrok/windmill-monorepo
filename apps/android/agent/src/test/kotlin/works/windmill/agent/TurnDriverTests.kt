@@ -194,7 +194,7 @@ class TurnExchangeTests(private val name: String) {
     }
 
     @Test fun replaysThroughTheDriver() = runTest {
-        assertEquals(15, exchanges().size)
+        assertEquals(16, exchanges().size)
         val vector = Json.parse(File(contract, "gym/turns/$name.json").readBytes())
         val body = vector.member("open")
         val events = vector.member("events").arr()
@@ -244,8 +244,10 @@ class TurnExchangeTests(private val name: String) {
         val silent = vector["phone"]?.str() == "silent"
         val code = end["code"]?.str() ?: if (silent) TurnRefusal.turnOrder else null
         val state = end.member("state").str()
-        val reset = events.lastOrNull { it["event"]?.str() == "error" }?.member("data")?.get("budgetResetsAtMs")?.long()
-        assertEquals(listOf(TurnEnd(TurnState.valueOf(state), text, end["truncated"]?.bool() ?: false, code, reset)), host.ends)
+        val closing = events.lastOrNull { it["event"]?.str() == "error" }?.member("data")
+        val reset = closing?.get("budgetResetsAtMs")?.long()
+        val spent = closing?.get("allowance")?.member("remaining")?.str() == "0.000000000"
+        assertEquals(listOf(TurnEnd(TurnState.valueOf(state), text, end["truncated"]?.bool() ?: false, code, reset, spent)), host.ends)
 
         assertEquals(listOf(body.obj().toMutableMap().apply { put("catalog", Json.of("catalog/2")) }.let { fields -> Json.Obj(fields.toList()) }), server.opened.map { it.json })
         assertEquals(setOf(seat), server.seats.toSet())
@@ -574,7 +576,9 @@ class TurnDriverTests {
             TurnRefusal(429, "free_month_exhausted", 1_793_000_000_000) to emptyList(),
             TurnRefusal(503, "free_month_exhausted", 1_793_000_000_000) to emptyList(),
             TurnRefusal(503, "coach-rate-limited", null) to emptyList(),
-            TurnRefusal(503, "coach-busy", null) to listOf("failure http 503"),
+            TurnRefusal(503, "coach-busy", null) to emptyList(),
+            TurnRefusal(503, TurnRefusal.vendorError, null) to listOf("failure http 503"),
+            TurnRefusal(500, "an unknown thing", null) to listOf("failure http 500"),
         )) {
             val server = server().apply { streams += flow<TurnEvent> { throw refusal } }
             val host = EchoHost()
@@ -624,7 +628,8 @@ class TurnDriverTests {
             TurnRefusal(426, "client-update-required", null) to emptyList(),
             TurnRefusal(429, "subject_exhausted", 1_793_000_000_000) to emptyList(),
             TurnRefusal(503, "free_month_exhausted", 1_793_000_000_000) to emptyList(),
-            TurnRefusal(503, "coach-busy", null) to listOf("failure http 503"),
+            TurnRefusal(503, "coach-busy", null) to emptyList(),
+            TurnRefusal(503, TurnRefusal.vendorError, null) to listOf("failure http 503"),
         )) {
             val server = server().apply { repeat(2) { streams += lost }; streams += flow<TurnEvent> { throw refusal } }
             val host = EchoHost()
@@ -655,15 +660,28 @@ class TurnDriverTests {
         assertEquals(listOf("failure http 500", "ended interrupted bound other calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
     }
 
-    @Test fun anErrorFrameEndsFailedAndCarriesTheResetToTheHost() = runTest {
-        val server = server().apply { streams += flowOf(TurnEvent.Text("A"), TurnEvent.Error("free_month_exhausted", 1_793_000_000_000)) }
+    @Test fun aLaterBusyServerIsNotAFailure() = runTest {
+        val server = server().apply { streams += flow { emit(TurnEvent.Text("A")); throw TurnRefusal(503, "coach-busy", null) } }
         val host = EchoHost()
         val telemetry = RecordingTelemetry()
         val run = async { driver(server, telemetry).run("tn_1", seat, host) }
         advanceUntilIdle()
         run.await()
-        assertEquals(listOf(TurnEnd(TurnState.failed, "A", false, "free_month_exhausted", 1_793_000_000_000)), host.ends)
-        assertEquals(listOf("ended failed bound free_month_exhausted calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
+        assertEquals(listOf(TurnEnd(TurnState.interrupted, "A", false, "coach-busy", null)), host.ends)
+        assertEquals(listOf("ended interrupted bound coach-busy calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
+    }
+
+    @Test fun anErrorFrameEndsFailedAndCarriesTheResetAndTheBalanceToTheHost() = runTest {
+        for (spent in listOf(false, true)) {
+            val server = server().apply { streams += flowOf(TurnEvent.Text("A"), TurnEvent.Error("free_month_exhausted", 1_793_000_000_000, spent)) }
+            val host = EchoHost()
+            val telemetry = RecordingTelemetry()
+            val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+            advanceUntilIdle()
+            run.await()
+            assertEquals(listOf(TurnEnd(TurnState.failed, "A", false, "free_month_exhausted", 1_793_000_000_000, spent)), host.ends)
+            assertEquals(listOf("ended failed bound free_month_exhausted calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
+        }
     }
 
     @Test fun theResultsAreAskedAgainWithTheSameBodyAfterALostAnswer() = runTest {
@@ -709,7 +727,7 @@ class TurnDriverTests {
     }
 
     @Test fun refusedResultsAreNotAskedAgain() = runTest {
-        for ((refusal, failures) in listOf(TurnRefusal(409, TurnRefusal.turnOrder, null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
+        for ((refusal, failures) in listOf(TurnRefusal(409, TurnRefusal.turnOrder, null) to emptyList(), TurnRefusal(503, "coach-busy", null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
             val server = server().apply { streams += flow { emit(calls(1, call("a"))); awaitCancellation() }; answers.addLast { throw refusal } }
             val host = EchoHost()
             val telemetry = RecordingTelemetry()
@@ -778,7 +796,8 @@ class TurnDriverTests {
         val cases = listOf<Pair<Exception, List<String>>>(
             TurnConnectionLost(null) to emptyList(),
             TurnRefusal(404, TurnRefusal.turnUnknown, null) to emptyList(),
-            TurnRefusal(503, "coach-busy", null) to listOf("failure http 503"),
+            TurnRefusal(503, "coach-busy", null) to emptyList(),
+            TurnRefusal(503, TurnRefusal.vendorError, null) to listOf("failure http 503"),
             IOException("Certificate pinning failure") to listOf("failure transport -"),
             TurnWireFault(TurnWireFault.notAStream) to listOf("failure decode -"),
         )
@@ -850,7 +869,7 @@ class TurnDriverTests {
 
     // A read refused while the Stop is on its way says nothing of the open: the question returns under no connection, whatever its code, and a 5xx stays reported.
     @Test fun aReadRefusedAfterAStopBeforeAnyFrameWithdraws() = runTest {
-        for ((refusal, reports) in listOf(TurnRefusal(404, TurnRefusal.turnUnknown, null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
+        for ((refusal, reports) in listOf(TurnRefusal(404, TurnRefusal.turnUnknown, null) to emptyList(), TurnRefusal(503, "coach-busy", null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
             val heard = CompletableDeferred<Unit>()
             val server = server().apply {
                 streams += lost
@@ -1040,7 +1059,8 @@ class TurnDriverTests {
         val cases = listOf<Triple<Exception, TurnExit, List<String>>>(
             Triple(TurnConnectionLost(null), TurnExit.stoppedOffline, emptyList()),
             Triple(TurnRefusal(404, TurnRefusal.turnUnknown, null), TurnExit.stopUnheard, emptyList()),
-            Triple(TurnRefusal(503, "coach-busy", null), TurnExit.stopUnheard, listOf("failure http 503")),
+            Triple(TurnRefusal(503, "coach-busy", null), TurnExit.stopUnheard, emptyList()),
+            Triple(TurnRefusal(503, TurnRefusal.vendorError, null), TurnExit.stopUnheard, listOf("failure http 503")),
             Triple(IOException("Certificate pinning failure"), TurnExit.stopUnheard, listOf("failure transport -")),
             Triple(TurnWireFault(TurnWireFault.badAddress), TurnExit.stopUnheard, listOf("failure decode -")),
         )

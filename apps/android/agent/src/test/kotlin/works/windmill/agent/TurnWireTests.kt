@@ -25,6 +25,32 @@ class TurnWireTests {
         assertEquals(TurnEvent.Error("free_month_exhausted", 1_793_491_200_000), TurnEvent.of("error", data("""{"code":"free_month_exhausted","budgetResetsAtMs":1793491200000}""")))
         assertEquals(TurnEvent.Error("free_month_exhausted", null), TurnEvent.of("error", data("""{"code":"free_month_exhausted","budgetResetsAtMs":null}""")))
         assertEquals(TurnEvent.Error("free_month_exhausted", null), TurnEvent.of("error", data("""{"code":"free_month_exhausted","budgetResetsAtMs":1.5}""")))
+        assertEquals(TurnEvent.Error("subject_exhausted", null, spent = true), TurnEvent.of("error", data("""{"code":"subject_exhausted","allowance":{"remaining":"0.000000000","reserved":"0.000000000"}}""")))
+    }
+
+    // §7.1: a balance is gone only when the read says nothing remains and nothing is held, in a frame or a refusal's body. Any other read, or none, says nothing of it.
+    @Test fun anAllowanceReadSaysABalanceIsGoneOnlyWhenNothingRemainsOrIsHeld() {
+        for ((allowance, spent) in listOf(
+            """{"remaining":"0.000000000","reserved":"0.000000000"}""" to true,
+            """{"remaining":"0","reserved":"0"}""" to true,
+            """{"remaining":"0.007075000","reserved":"0.000000000"}""" to false,
+            """{"remaining":"0.000000001","reserved":"0.000000000"}""" to false,
+            """{"remaining":"0.000000000","reserved":"0.040775000"}""" to false,
+            """{"remaining":"0.000000000"}""" to false,
+            """{"reserved":"0.000000000"}""" to false,
+            """{"remaining":0,"reserved":0}""" to false,
+            """{"remaining":"none","reserved":"0"}""" to false,
+            """{"remaining":null,"reserved":null}""" to false,
+            """[]""" to false,
+            """"none"""" to false,
+            "null" to false,
+        )) {
+            val body = """{"code":"subject_exhausted","allowance":$allowance}"""
+            assertEquals(allowance, TurnEvent.Error("subject_exhausted", null, spent), TurnEvent.of("error", data(body)))
+            assertEquals(allowance, TurnRefusal(429, "subject_exhausted", null, spent), TurnRefusal.of(429, body.encodeToByteArray()))
+        }
+        assertEquals(TurnEvent.Error("subject_exhausted", null, false), TurnEvent.of("error", data("""{"code":"subject_exhausted"}""")))
+        assertEquals(TurnRefusal(429, "subject_exhausted", null, false), TurnRefusal.of(429, """{"code":"subject_exhausted"}""".encodeToByteArray()))
     }
 
     @Test fun aFrameThatCannotBeReadIsAFault() {
@@ -117,6 +143,14 @@ class TurnWireTests {
         assertEquals(listOf(true, true, true, true, true, true, true),
             listOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "funding_required", "debt_outstanding", "coach-rate-limited").map(::capped))
         assertEquals(listOf(false, false, false, false), listOf("device_bound", "invalid_installation", "coach-busy", "coach-vendor-error").map(::capped))
+    }
+
+    @Test fun onlyA5xxTheServerDidNotMeanIsItsFault() {
+        fun fault(status: Int, code: String) = TurnRefusal(status, code, null).serverFault
+        assertEquals(listOf(true, true, true, true),
+            listOf(fault(503, TurnRefusal.vendorError), fault(500, TurnRefusal.vendorError), fault(500, "an unknown thing"), fault(502, "unavailable")))
+        assertEquals(listOf(false, false, false, false, false),
+            listOf(fault(503, TurnRefusal.busy), fault(503, "subject_exhausted"), fault(503, TurnRefusal.rateLimited), fault(429, TurnRefusal.vendorError), fault(404, TurnRefusal.turnUnknown)))
     }
 
     @Test fun theBodiesAreTheWireShapeInCanonicalForm() {

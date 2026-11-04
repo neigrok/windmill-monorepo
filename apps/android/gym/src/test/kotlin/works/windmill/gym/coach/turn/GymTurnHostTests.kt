@@ -41,7 +41,7 @@ class GymTurnHostTests(private val name: String) {
     }
 
     @Test fun replaysAsThePhone() = runTest {
-        assertEquals(15, exchanges().size)
+        assertEquals(16, exchanges().size)
         val vector = Json.parse(File(root, "$name.json").readBytes())
         val body = vector.member("open")
         val end = vector.member("end")
@@ -119,7 +119,9 @@ class GymTurnHostTests(private val name: String) {
 
             val silent = vector["phone"]?.str() == "silent"
             val code = end["code"]?.str() ?: if (silent) "coach-turn-order" else null
-            val refused = if (state == "failed") code?.let { CoachTurnRefusal.of(it, resetsAtMs = events.last()["data"]?.get("budgetResetsAtMs")?.long()) } else null
+            val closing = events.last()["data"]
+            val spent = closing?.get("allowance")?.member("remaining")?.str() == "0.000000000"
+            val refused = if (state == "failed") code?.let { CoachTurnRefusal.of(it, resetsAtMs = closing?.get("budgetResetsAtMs")?.long(), spent = spent) } else null
             assertEquals(refused.takeUnless { it == CoachTurnRefusal.Unanswered }, phone.turns.refusal.value)
             assertNull(phone.turns.fault.value)
             assertNull(phone.turns.withdrawn.value)

@@ -292,14 +292,14 @@ class CoachTurns(
                 val end = checkNotNull(host.ending)
                 val code = end.code
                 if (code != null) installationAnswered(code)
-                val answer = if (end.state == TurnState.failed) code?.let { CoachTurnRefusal.of(it, resetsAtMs = end.budgetResetsAtMs) } else null
+                val answer = if (end.state == TurnState.failed) code?.let { CoachTurnRefusal.of(it, resetsAtMs = end.budgetResetsAtMs, spent = end.spent) } else null
                 refused.value = answer.takeUnless { it == CoachTurnRefusal.Unanswered }
                 faulted.value = null
             }
             TurnExit.withdrawn -> {
                 val refusal = checkNotNull(host.withdrawal)
                 installationAnswered(refusal.code)
-                refused.value = CoachTurnRefusal.of(refusal.code, refusal.status, refusal.budgetResetsAtMs)
+                refused.value = CoachTurnRefusal.of(refusal.code, refusal.status, refusal.budgetResetsAtMs, refusal.spent)
                 faulted.value = null
                 takenBack.value = WithdrawnTurn(live.question, live.picture, live.turn.thread.takeIf { host.threadStands })
             }

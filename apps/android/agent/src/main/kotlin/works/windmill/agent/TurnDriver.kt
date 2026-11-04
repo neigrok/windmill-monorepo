@@ -128,7 +128,7 @@ class TurnDriver(
             if (stopAsked.compareAndSet(false, true)) tellServerToStop(this) {}
         }
 
-        // A lost connection and a 4xx say nothing is broken; a 5xx, a bad certificate or a wire fault do.
+        // A lost connection, a 4xx and a refusal the server meant say nothing is broken; any other 5xx, a bad certificate or a wire fault do.
         fun reportStop(failure: Exception) {
             when (failure) {
                 is TurnConnectionLost -> return
@@ -259,7 +259,7 @@ class TurnDriver(
             is TurnEvent.Done -> Ended(event.state, event.truncated)
             is TurnEvent.Error -> {
                 if (event.code == TurnRefusal.streamReplaced) throw TurnWireFault(TurnWireFault.replaced)
-                Ended(TurnState.failed, code = event.code, budgetResetsAtMs = event.budgetResetsAtMs)
+                Ended(TurnState.failed, code = event.code, budgetResetsAtMs = event.budgetResetsAtMs, spent = event.spent)
             }
         }
 
@@ -337,15 +337,15 @@ class TurnDriver(
             if (reported.add(kind)) telemetry.failure(kind, status)
         }
 
-        // A server's own fault; a refusal below 500 is an answer.
+        // A server's own fault; any other refusal is an answer.
         private fun report(refusal: TurnRefusal) {
-            if (refusal.status >= 500) report(TurnFailure.http, refusal.status)
+            if (refusal.serverFault) report(TurnFailure.http, refusal.status)
         }
 
         // §4.4: the terminal state and all the text in one write, then what the telemetry says of it.
         private suspend fun end(close: Ended): TurnExit {
             val text = streamed
-            quietly { host.end(TurnEnd(close.state, text, close.truncated, close.code, close.budgetResetsAtMs)) }
+            quietly { host.end(TurnEnd(close.state, text, close.truncated, close.code, close.budgetResetsAtMs, close.spent)) }
             telemetry.ended(close.state, seat.kind, close.code?.let(TurnLabel::code), TurnTally(calls, refusals, text.encodeToByteArray().size), elapsedMs() - started)
             return TurnExit.ended
         }
@@ -353,7 +353,7 @@ class TurnDriver(
         // A turn that never began, refused before any frame or never reaching a server: the host takes its records back.
         private suspend fun withdraw(refusal: TurnRefusal): TurnExit {
             quietly { host.withdraw(refusal) }
-            if (!refusal.capped) report(refusal)
+            report(refusal)
             telemetry.withdrawn(refusal.status, TurnLabel.code(refusal.code), elapsedMs() - started)
             return TurnExit.withdrawn
         }
@@ -375,7 +375,7 @@ class TurnDriver(
 }
 
 private sealed interface Close
-private data class Ended(val state: TurnState, val truncated: Boolean = false, val code: String? = null, val budgetResetsAtMs: Long? = null) : Close
+private data class Ended(val state: TurnState, val truncated: Boolean = false, val code: String? = null, val budgetResetsAtMs: Long? = null, val spent: Boolean = false) : Close
 private data class Withdrawn(val refusal: TurnRefusal) : Close
 private data object StoppedHere : Close
 

@@ -903,7 +903,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   `AI_ALLOWANCES_ENABLED` (both default off).
 - **11j · The allowance-used copy.** Boards 01.10–01.12 say *You have used all of your AI
   allowance.*, a sentence no server sends (the nearest is *Your AI allowance is fully used or
-  reserved.*, 10v); Android says it for `subject_exhausted` (`coach/turn/CoachTurnRefusal.kt`). It says when Coach
+  reserved.*, 10v); Android says it for `subject_exhausted` when the server's allowance read shows the
+  balance gone, and *Coach’s AI allowance is unavailable right now.*, which no board draws, on a balance
+  that refused a round without being gone (`coach/turn/CoachTurnRefusal.kt`). It says when Coach
   comes back only of a paused pool (`free_month_exhausted`, `free_day_exhausted`), not of the seat's own
   allowance (01.11). Windmill One (01.12) ships only with checkout open.
 - **11k · Proposals decided on the card — postponed from this Android release.** Preserve the current

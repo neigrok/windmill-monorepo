@@ -237,7 +237,9 @@ an individual monthly reset. It does not guarantee that unresolved holds will be
 Neither endpoint nor telemetry exposes aggregate budget amounts.
 
 Coach JSON and SSE preserve expected allowance refusal codes and metadata. A request too large
-for positive remaining capacity is distinguished from a fully used allowance. Stored generations
+for positive remaining capacity is distinguished from a fully used allowance by the allowance
+object: a turn's refusal body and the `error` frame of a turn an allowance code ended both carry it,
+with the frame's budget code and the object's own read code side by side. Stored generations
 carry `allowanceRefusal` as a historical refusal snapshot; an accepted retry clears it, while a
 refused retry updates it. The same failed request id may retry after capacity recovers.
 

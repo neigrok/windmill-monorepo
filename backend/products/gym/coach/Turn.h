@@ -167,9 +167,10 @@ public:
   // results come back in the batch's call order. Nullopt is a timeout or a Stop.
   std::optional<std::vector<TurnCallResult>> awaitResults(std::chrono::milliseconds timeout);
   // §6.3: the turn's one terminal frame. `end` closes with `done`, naming the seat's allowance; `fail`
-  // closes with `error`, naming the §6.5 code and the moment the budget an allowance refusal names returns.
+  // closes with `error`, naming the §6.5 code, the moment the budget an allowance refusal names returns,
+  // and for an allowance code the seat's allowance; a null `allowance` adds nothing to the frame.
   void end(TurnState state, bool truncated, Json::Value allowance, std::uint64_t endedAtMs);
-  void fail(std::string code, std::optional<long long> budgetResetsAtMs, std::uint64_t endedAtMs);
+  void fail(std::string code, std::optional<long long> budgetResetsAtMs, Json::Value allowance, std::uint64_t endedAtMs);
 
   // The phone's side.
   ResultsAnswer answer(int batch, std::vector<TurnCallResult> results, const std::string& bodyDigest);

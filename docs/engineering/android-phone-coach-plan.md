@@ -32,7 +32,7 @@ Established by reading the code at `812698048`, except the two production probes
 |---|---|---|---|
 | Turn routes | Live: production answers `401` on `POST /v1/gym/coach/turns` with `Sync-Schema: 12`, `404` on an unknown sibling | speaks them | none |
 | Catalog | `gym/catalog.json`, catalog/2: 37 abilities, 18 offered, of which the phone runs 16 (`share_session` and `revoke_share` run on the server) | generated Swift | none; `CorpusTests.kt:30` marks it not applicable |
-| Conformance | `abilities/` 18 files, 68 cases; `turns/` 15 exchanges | claims both | marks both not applicable |
+| Conformance | `abilities/` 18 files, 68 cases; `turns/` 16 exchanges | claims both | marks both not applicable |
 | Registry | v12: `thread`, `message`, `workoutProposal`, device rows `runningTurn`, `picture:<id>` | uses them | generated and modelled in `GymServerRules.kt`; no production code uses `thread` or `message` |
 | Executor | n/a | `GymDomain/Coach/` | none |
 | Driver and wire | n/a | `Gym/Coach/Turn/` | none |
@@ -240,14 +240,14 @@ the 5 share cases refused on the phone (`share_session` 3, `revoke_share` 2).
 - `TurnDriver`, `TurnEvent`, `TurnSse`, `TurnRefusal`, the ports.
 - `platform/agent/TurnHttp.kt`: `Sync-Schema` on every request (without it `GymRoutes` answers `426`
   `client-update-required`), a 60 s idle timeout, one credential per seat, host pinned to the configured base.
-- **Tests:** the 15 `turns/` exchanges replayed through the real driver against a fake transport, with a fake
+- **Tests:** the 16 `turns/` exchanges replayed through the real driver against a fake transport, with a fake
   echo host in `:agent`'s tests that proves the driver has no gym in it; `TurnHttp` against MockWebServer. This
   proves the protocol only: an echo host cannot check records, so W4 replays the exchanges again on a real engine.
 - **Backend, small:** node `gym-coach-turn-allowance-reset`. A refusal before the stream and an `error` frame carry
   no `budgetResetsAtMs` (`done`'s allowance does), and `free_month_exhausted` answers 503 by `statusOf`'s default,
   so board 08.44 cannot say when capacity returns on either phone.
 
-**Exit:** 15 of 15 exchanges pass.
+**Exit:** 16 of 16 exchanges pass.
 
 ### W4 · Gym as the host, dark (`:gym`) · ~600
 
@@ -263,7 +263,7 @@ the 5 share cases refused on the phone (`share_session` 3, `revoke_share` 2).
 - `TurnLease`: an expedited WorkManager job (§4.5) that awaits the driver's work. WorkManager is a new
   dependency. Below API 31 an expedited job needs a foreground notification, which is visible and has no
   board, so API 26-30 takes no lease; there a killed turn ends `interrupted` at the next engine start.
-- **Tests:** the 15 `turns/` exchanges again, through `GymTurnHost` on a real engine, asserting calls, receipt, state
+- **Tests:** the 16 `turns/` exchanges again, through `GymTurnHost` on a real engine, asserting calls, receipt, state
   and text as `CoachTurnTests.swift:96-129` does; `CorpusTests.kt`'s not-applicable reason for `gym/turns/` updated. A
   Kotlin test pins `firstPullComplete` true on an `anon` replica: the code gives it (`Subscriptions.kt:8`,
   `Engine.kt:330`), and if it changed, signed-out Coach would refuse forever. A live-wire JVM test against the local

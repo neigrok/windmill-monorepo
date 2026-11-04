@@ -65,6 +65,15 @@ std::string tally(const std::map<std::string, int>& counts) {
   return out.empty() ? "-" : out;
 }
 
+// §6.5's allowance codes: the `error` frames that carry the seat's allowance, so a phone can tell a
+// balance that is gone from a round that did not fit a positive one (§7.1).
+bool isAllowanceCode(const std::string& code) {
+  for (const AiBudgetCode allowance : {AiBudgetCode::SubjectExhausted, AiBudgetCode::FreeDayExhausted, AiBudgetCode::FreeMonthExhausted,
+                                       AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::FundingRequired, AiBudgetCode::DebtOutstanding})
+    if (code == aiBudgetCodeName(allowance)) return true;
+  return false;
+}
+
 }  // namespace
 
 TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server,
@@ -286,7 +295,7 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
   }
   --live_;  // the turn leaves the count before the stream hears the end, so a waiting open finds room
   const std::uint64_t endedAt = clock_.nowMs();
-  if (state == TurnState::failed) turn->fail(errorCode, aiBudgetReturnsAt(errorCode, seat ? seat->resetsAtMs : std::nullopt, endedAt), endedAt);
+  if (state == TurnState::failed) turn->fail(errorCode, aiBudgetReturnsAt(errorCode, seat ? seat->resetsAtMs : std::nullopt, endedAt), seat && isAllowanceCode(errorCode) ? aiAllowanceJson(*seat) : Json::Value(), endedAt);
   else turn->end(state, truncated, seat ? aiAllowanceJson(*seat) : Json::Value(), endedAt);
 
   const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);

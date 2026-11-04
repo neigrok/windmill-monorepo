@@ -247,7 +247,7 @@ class CoachChats internal constructor(
         val chat = chats[seat to id] ?: LocalChat(id, now(), conversation = id).also { keepChat(seat, it) }
         select(seat, chat.id)
         telemetry.coachAction(action)
-        if (!draft(id).isEmpty) telemetry.coachAction("draft_restored")
+        if (draft(id).holdsSomething) telemetry.coachAction("draft_restored")
     }
 
     private fun select(seat: String, id: String) {
@@ -415,16 +415,16 @@ class CoachChats internal constructor(
         val rows = conversations?.rows.orEmpty().map { row ->
             val chat = beside[row.id] ?: return@map row
             val held = draft(chat.id)
-            val drafted = if (held.isEmpty) 0 else chat.updatedAtMs
+            val drafted = if (held.holdsSomething) chat.updatedAtMs else 0
             row.copy(id = chat.id, askedAtMs = maxOf(row.askedAtMs, drafted))
         }
         val listed = rows.map { it.id }.toSet()
         val local = mine.filter { it.id !in listed }.mapNotNull { chat ->
             val held = draft(chat.id)
             val answers = retained(seat, chat.id)
-            val kept = localCoach?.keptDrafts(seat, chat.id).orEmpty()
-            if (held.isEmpty && answers.isEmpty() && kept.isEmpty()) return@mapNotNull null
-            val title = listOfNotNull(answers.firstOrNull()?.question, held.text, kept.firstOrNull()?.draft?.text).firstOrNull { it.isNotEmpty() } ?: "Photo"
+            val kept = localCoach?.keptDrafts(seat, chat.id).orEmpty().filter { it.draft.holdsSomething }
+            if (!held.holdsSomething && answers.isEmpty() && kept.isEmpty()) return@mapNotNull null
+            val title = listOfNotNull(answers.firstOrNull()?.question, held.text, kept.firstOrNull()?.draft?.text).firstOrNull { it.isNotBlank() } ?: "Photo"
             ConversationRow(chat.id, title, chat.updatedAtMs, answerPreview = answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
         }
         return (rows + local).sortedByDescending { it.askedAtMs }

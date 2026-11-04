@@ -13,6 +13,8 @@ data class CoachAttachment(val id: String, val mediaType: String, val width: Int
 @Serializable
 data class CoachDraft(val text: String = "", val photo: CoachAttachment? = null) {
     val isEmpty: Boolean get() = text.isEmpty() && photo == null
+    // Spaces alone hold nothing: they make no row in History and date none.
+    val holdsSomething: Boolean get() = text.isNotBlank() || photo != null
 }
 
 @Serializable

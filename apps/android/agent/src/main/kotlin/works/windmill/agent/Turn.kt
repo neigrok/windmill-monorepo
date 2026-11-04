@@ -54,8 +54,8 @@ data class TurnOpen(
     val contextOutcomes: List<ToolOutcome>,
 )
 
-// `budgetResetsAtMs` is the moment a shared pool refills, when a failed turn's closing frame names it.
-data class TurnEnd(val state: TurnState, val text: String, val truncated: Boolean, val code: String?, val budgetResetsAtMs: Long?)
+// `budgetResetsAtMs` is the moment a shared pool refills, when a failed turn's closing frame names it; `spent`, that the same frame's allowance read says the balance is gone.
+data class TurnEnd(val state: TurnState, val text: String, val truncated: Boolean, val code: String?, val budgetResetsAtMs: Long?, val spent: Boolean = false)
 
 data class TurnActivity(val turnId: String, val reconnecting: Boolean)
 
