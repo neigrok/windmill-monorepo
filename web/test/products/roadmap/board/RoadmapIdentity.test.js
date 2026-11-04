@@ -544,7 +544,7 @@ for (const view of ['board', 'tree']) {
         await page.keyboard.press('Escape');
         assert.deepEqual([await more.getAttribute('aria-pressed'), await more.getAttribute('aria-expanded')], ['true', 'false']);
         await page.evaluate(() => window.patch({ activityOpen: false }));
-        assert.equal(await more.getAttribute('aria-pressed'), 'false');
+        await page.locator('button.st-roadmap-icon[aria-haspopup="menu"][aria-pressed="false"]').waitFor();
       });
     } finally { await page.close(); }
   });

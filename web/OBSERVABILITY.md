@@ -45,6 +45,25 @@ one that reopens the same account. Closure refuses an unavailable session identi
 Offline copy identifies the REST features that need a connection.
 No account identifier or decision content is included.
 
+The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
+rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste
+shapes. Each emits one `client_error` with only `kind` (`window`, `promise`, `render` or `shape`),
+`failure_kind` (the error's constructor name: `Error`, `TypeError`, `RangeError`, `ReferenceError`,
+`SyntaxError`, `URIError`, `EvalError`, `AggregateError` or `DOMException`) and `route`, the family of
+the current address: `/`, `/app`, `/app/roadmap`, `/app/gym`, `/app/journal`, `/app/settings`,
+`/app/connect`, `/t`, `/demo`, `/browse`, `/gym/shared`, `/auth`, `/oauth/authorize`, `/showcase`,
+`/roadmap`, `/gym` or `/journal`. Anything these sets do not name reads `other`, including product error
+classes and thrown non-errors. No exception message, stack, identifier, token, date or query enters the
+event. The same failure reports to Sentry under the static message `client-error`, with `kind` as its
+type and tag, `failure_kind` as a tag, `route` as its request URL, and its stack frames (file, line,
+column and function name only). The exception message reaches neither: the stack's head line, where V8
+repeats it, is cut before the frames are read, frames are only the last unbroken run of frame lines,
+and share addresses, `token=` and `code=` values are struck out of them. A rejected non-error has no
+frames. A failed paste shape adds the Sentry tags `reason` (`unavailable`, `unreachable`, `failed`,
+`no-first-word` or `stopped-mid-plan`) and `size` (`under-1kb`, `1-8kb` or `over-8kb`), and no text,
+status or count. Sentry collapses a repeat of one kind, operation, route, tags and crashing frame
+within ten seconds.
+
 Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
 REST transport failures using static `journal-*` Sentry operation names. Migration and recovery
 emit `sync_commit` with bounded outcome labels; claim/save and first-run retirements use the engine's

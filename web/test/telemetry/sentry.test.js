@@ -49,3 +49,40 @@ test('Sentry rejects unbounded tag syntax and preserves its reserved kind tag', 
   });
   assert.deepEqual(events().map(({ tags }) => tags), [{ code: 'other', kind: 'roadmap' }]);
 });
+
+test('Sentry takes frames from the last unbroken run, so no line of a message becomes a frame', () => {
+  const { capture, events } = reporter();
+  capture('roadmap', 'boundary', [
+    "Error: Rig the boat at home (harbour:3:4)",
+    'note at 12:30:45',
+    'sam@example.com',
+    '    at dock (marina.js:5:6)',
+    'while at sea',
+    '    at save (https://windmill.works/assets/app.js:12:4)',
+    '    at Array.map (<anonymous>)',
+    '    at boot (https://windmill.works/assets/app.js:1:1)',
+  ].join('\n'), '#/app');
+  assert.deepEqual(events()[0].exception.values[0].stacktrace.frames.map((frame) => ({ ...frame })), [
+    { filename: 'https://windmill.works/assets/app.js', lineno: 1, colno: 1, function: 'boot', in_app: true },
+    { filename: 'https://windmill.works/assets/app.js', lineno: 12, colno: 4, function: 'save', in_app: true },
+  ]);
+});
+
+test('Sentry reads a Safari or Firefox stack, which has no head and can end in a newline', () => {
+  const { capture, events } = reporter();
+  capture('roadmap', 'boundary', 'save@https://windmill.works/assets/app.js:12:4\nmap@[native code]\nglobal code@https://windmill.works/assets/app.js:1:1\n', '#/app');
+  assert.deepEqual(events()[0].exception.values[0].stacktrace.frames.map((frame) => ({ ...frame })), [
+    { filename: 'code@https://windmill.works/assets/app.js', lineno: 1, colno: 1, function: '?', in_app: true },
+    { filename: 'save@https://windmill.works/assets/app.js', lineno: 12, colno: 4, function: '?', in_app: true },
+  ]);
+});
+
+test('Sentry collapses a repeat of one crash but keeps different crashes under one static operation', () => {
+  const { capture, events } = reporter();
+  const crashAt = (line) => `Error\n    at save (https://windmill.works/assets/app.js:${line}:4)`;
+  for (const line of [12, 30, 12]) capture('window', 'client-error', crashAt(line), '/app/roadmap', { failure_kind: 'TypeError' });
+  assert.deepEqual(events().map(({ tags, exception }) => ({ tags: { ...tags }, line: exception.values[0].stacktrace.frames[0].lineno })), [
+    { tags: { failure_kind: 'TypeError', kind: 'window' }, line: 12 },
+    { tags: { failure_kind: 'TypeError', kind: 'window' }, line: 30 },
+  ]);
+});

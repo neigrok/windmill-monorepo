@@ -11,6 +11,41 @@ const FLUSH_AT = 20;
 const FLUSH_AFTER_MS = 5000;
 const MAX_EVENTS_PER_SEND = 50;
 
+// client_error carries only labels from these closed sets; anything they do not name reads `other`.
+const REPORT_KINDS = new Set(['window', 'promise', 'render', 'shape']);
+const FAILURE_KINDS = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError', 'DOMException']);
+const OTHER = 'other';
+
+// An address and the family it reports as, first match wins. A family is a literal from this table,
+// so an id, token or date in a URL cannot leave the page and a new route reads `other` until named.
+const ROUTE_FAMILIES = [
+  ['#/', '/'],
+  ['#/app', '/app/roadmap'],
+  ['#/t', '/t'],
+  ['#/demo', '/demo'],
+  ['#/browse', '/browse'],
+  ['#/gym/shared', '/gym/shared'],
+  ['#/gym/shared-log', '/gym/shared'],
+  ['#/gym', '/app/gym'],
+  ['#/journal', '/app/journal'],
+  ['#/settings', '/app/settings'],
+  ['#/connect', '/app/connect'],
+  ['#/auth', '/auth'],
+  ['#/oauth/authorize', '/oauth/authorize'],
+  ['#/showcase', '/showcase'],
+  ['/', '/'],
+  ['/app/roadmap', '/app/roadmap'],
+  ['/app/gym', '/app/gym'],
+  ['/app/journal', '/app/journal'],
+  ['/app/settings', '/app/settings'],
+  ['/app/connect', '/app/connect'],
+  ['/app', '/app'],
+  ['/t', '/t'],
+  ['/roadmap', '/roadmap'],
+  ['/gym', '/gym'],
+  ['/journal', '/journal'],
+];
+
 const queue = [];
 let flushTimer = null;
 let mintedKey = null;
@@ -25,35 +60,40 @@ export function track(name, props) {
   if (flushTimer === null) flushTimer = window.setTimeout(() => flush('fetch'), FLUSH_AFTER_MS);
 }
 
-// A crash beacons once and flushes NOW, because the page may reload before the debounce fires.
-// The props stay a flat object under the endpoint's 1KB budget.
-export function reportError(error, kind = 'error') {
+// A crash beacons once and flushes NOW, because the page may reload before the debounce fires. The
+// message leaves in neither report: the event carries labels only, and Sentry gets a static message,
+// the same labels and the frames. V8 repeats the message whole at the head of the stack, so it is cut
+// from there first. `labels` are what a caller adds for Sentry, bounded labels and nothing else.
+export function reportError(error, kind, labels = {}) {
   if (typeof window === 'undefined') return;
-  const stack = scrubbed(String(error?.stack ?? ''));
-  const message = scrubbed(String(error?.message ?? error ?? 'unknown'));
-  const route = routeFamily(window.location?.hash || window.location?.pathname || '');
-  track('client_error', { kind: String(kind).slice(0, 40), message: message.slice(0, 280), stack: stack.slice(0, 480), route });
-  captureError(kind, message, stack, route); // no-op without a DSN
+  const route = routeFamily(window.location);
+  const reportKind = labelIn(REPORT_KINDS, kind);
+  const failureKind = labelIn(FAILURE_KINDS, error?.constructor?.name);
+  track('client_error', { kind: reportKind, failure_kind: failureKind, route });
+  const stack = scrubbed(String(error?.stack ?? '').replace(`: ${error?.message}`, ''));
+  captureError(reportKind, 'client-error', stack, route, { ...labels, failure_kind: failureKind }); // no-op without a DSN
   flush('beacon');
 }
 
-// Secrets ride in the fragment (#/auth?token=…, #/gym/shared/<token>, #/oauth/authorize?…), so a
-// route is cut to its FAMILY before it leaves the page: the query is dropped whole, and the two
-// segments that ARE capabilities — a shared-workout token and the tree id in a #/t/ link — become `*`.
-// An id the server still guards for its owner (#/app/<treeId>) is kept.
-export function routeFamily(route) {
-  const path = String(route).split('?')[0].slice(0, 120);
-  return path.replace(/^(#\/gym\/shared)\/.+$/, '$1/*').replace(/^(#\/t)\/.+$/, '$1/*');
+function labelIn(labels, value) {
+  return labels.has(value) ? value : OTHER;
 }
 
-// The same secrets can ride a message or a stack, so every capability routeFamily strips is struck
-// out of the prose too, wherever it appears, plus the `code=` an OAuth error carries.
+// The hash wins when it names an app destination, as it does in the router.
+export function routeFamily({ hash, pathname }) {
+  const address = (hash.startsWith('#/') ? hash : pathname).split('?')[0];
+  const family = ROUTE_FAMILIES.find(([prefix]) => address === prefix || address.startsWith(`${prefix}/`));
+  return family ? family[1] : OTHER;
+}
+
+// A frame's file can be the page's own address, so every address that is a capability is struck out
+// of the stack wherever it appears, with `token=` and `code=` values.
 function scrubbed(text) {
   return text
     .replace(/token=[^&\s'"]+/gi, 'token=*')
     .replace(/code=[^&\s'"]+/gi, 'code=*')
-    .replace(/(\/gym\/shared\/)[^/\s'"]+/gi, '$1*')
-    .replace(/(#\/t\/)[^/\s'"?]+/gi, '$1*');
+    .replace(/(\/gym\/shared(?:-log)?\/)[^/\s'"]+/gi, '$1*')
+    .replace(/(\/t\/)[^/\s'"?]+/gi, '$1*');
 }
 
 function flush(transport) {
