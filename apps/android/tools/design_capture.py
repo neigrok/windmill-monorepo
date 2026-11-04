@@ -268,9 +268,9 @@ class Fixture:
         _, hello = self.request("/v1/sync/hello", token=self.token, headers={"Sync-Schema": str(schema)})
         self.push(rows, hello["schema"])
 
-    # Rows a recipe says another device wrote: `$now` is this run's clock and `$stamp` its write stamp.
+    # Rows a recipe says another device wrote: `$now` is the moment they are planted, so they stand newest in History, and `$stamp` the run's write stamp.
     def sync_recipe_rows(self, rows):
-        written = json.dumps(rows).replace('"$now"', str(self.now)).replace("$stamp", f"{self.now}:0:r_capture00000")
+        written = json.dumps(rows).replace('"$now"', str(int(time.time() * 1000))).replace("$stamp", f"{self.now}:0:r_capture00000")
         self.sync(json.loads(written))
 
     def seed(self, replacement=None):

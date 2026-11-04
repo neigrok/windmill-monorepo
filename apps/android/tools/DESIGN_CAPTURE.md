@@ -170,7 +170,7 @@ running turn dies with its process).
 A response may hold a `{"type": "stop", "reason": "..."}` block, which names the round's stop reason:
 `max_tokens` ends a turn truncated, `refusal` declined, and any other unknown reason failed. A recipe's
 optional `sync` array holds rows pushed through the sync door before its steps, as another device
-wrote them; `$now` is the run's clock and `$stamp` its write stamp.
+wrote them; `$now` is the moment they are planted, so they stand newest in History, and `$stamp` the run's write stamp.
 
 With `--fresh-mode-fixture`, `--scenarios apps/android/tools/capture-recipes/coach-exchange.json` captures the
 signed-in phone turn's states against the seeded account. `coach-exchange-signed-out.json`, with `--capture-only
