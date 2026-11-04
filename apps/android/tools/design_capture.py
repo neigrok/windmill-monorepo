@@ -540,7 +540,7 @@ class Device:
             return ET.Element("unavailable")
 
     def find(self, value, timeout=30, row=False, contains=False):
-        end = time.monotonic() + timeout
+        end = time.monotonic() + timeout * self.patience
         while time.monotonic() < end:
             tree = self.tree()
             for node in tree.iter("node"):
