@@ -66,7 +66,7 @@ composer and History screen.
 :gym:domain  (JVM, deterministic)           gym's abilities on its replica
   works.windmill.gym.domain.coach
   Conversation (entities, OpenTurn, EndTurn, StreamTurnText, WithdrawTurn, KeepPicture, DeleteConversation)
-  AbilityExecutor · AbilityReads · AbilityWrites
+  RunAbility · AbilityReads · AbilityWrites
        |
        v
 :domain-kit  (JVM, deterministic)           product-neutral: what an ability is
@@ -221,7 +221,7 @@ W0 to W4 add no visible change and need no board. **W6 cannot start until the de
 
 ### W2 · The replica executor (`:gym:domain`) · ~750
 
-- `AbilityExecutor`, `RunAbility`, `AbilityRun`, the gate (§5 on the phone), the three-code refusal rule.
+- `RunAbility`, `AbilityRun`, the gate (§5 on the phone), the three-code refusal rule.
 - `AbilityReads`: new ability documents. The existing `TrainingHistory` reads are **not** reusable as they
   stand: shape and order differ (default page 50 vs 20; `createdAt` on the proposal head; extra `id` and
   `updatedAt` on notes; session and last-time tie order inverted; no collation). The derived rules

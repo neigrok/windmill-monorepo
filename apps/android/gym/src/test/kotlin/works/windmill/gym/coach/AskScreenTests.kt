@@ -70,7 +70,6 @@ import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.coach.turn.TurnPhone
 import works.windmill.gym.domain.coach.AbilityCall
-import works.windmill.gym.domain.coach.AbilityExecutor
 import works.windmill.gym.domain.coach.AbilityRefusal
 import works.windmill.gym.domain.coach.AbilityRequest
 import works.windmill.gym.domain.coach.CoachMessage
@@ -78,6 +77,7 @@ import works.windmill.gym.domain.coach.EndTurn
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.domain.coach.ReadTally
+import works.windmill.gym.domain.coach.RunAbility
 import works.windmill.gym.presentation.ChangeKind
 import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalChange
@@ -514,7 +514,7 @@ class AskScreenTests {
         val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
         val turn = (runner.run(OpenTurn(null, "Question")) as Outcome.Committed).result
         val note = AbilityRequest("call-note", "save_note", Json.parse("""{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}"""))
-        check(AbilityExecutor(runner, TurnPhone.catalog(), "https://windmill.works").run(note, turn.coach, Seat.bound) is Outcome.Committed)
+        check(runner.run(RunAbility(note, turn.coach, Seat.bound, TurnPhone.catalog(), "https://windmill.works")) is Outcome.Committed)
         check(runner.run(EndTurn(turn.coach, MessageState.completed, "An answer")) is Outcome.Committed)
         val conversations = room.store.conversations
         conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())

@@ -38,9 +38,9 @@ import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.coach.turn.contextCallPrefix
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.coach.turn.TurnPhone
-import works.windmill.gym.domain.coach.AbilityExecutor
 import works.windmill.gym.domain.coach.AbilityOutcome
 import works.windmill.gym.domain.coach.AbilityRequest
+import works.windmill.gym.domain.coach.RunAbility
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.CoachTurnBounds
@@ -235,9 +235,8 @@ class CoachConversationsTests {
     private fun EngineRoomFixture.turn(thread: Id<CoachThread>?, vararg calls: Pair<String, String>, phoneReads: List<String> = emptyList()): OpenTurn.Turn {
         val runner = ActionRunner(engine, engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
         val turn = (runner.run(OpenTurn(thread, "Question")) as Outcome.Committed).result
-        val executor = AbilityExecutor(runner, TurnPhone.catalog(), "https://windmill.works")
         fun ran(id: String, name: String, input: String) {
-            val outcome = executor.run(AbilityRequest(id, name, Json.parse(input)), turn.coach, Seat.bound)
+            val outcome = runner.run(RunAbility(AbilityRequest(id, name, Json.parse(input)), turn.coach, Seat.bound, TurnPhone.catalog(), "https://windmill.works"))
             assertTrue("$name ran: $outcome", (outcome as Outcome.Committed).result is AbilityOutcome.Result)
         }
         phoneReads.forEach { name -> ran(contextCallPrefix + name, name, "{}") }
@@ -389,9 +388,8 @@ class CoachConversationsTests {
             val session = room.workout()
             val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
             val turn = (runner.run(OpenTurn(null, "Question")) as Outcome.Committed).result
-            val executor = AbilityExecutor(runner, TurnPhone.catalog(), "https://windmill.works")
-            fun ran(name: String, input: String) {
-                val outcome = executor.run(AbilityRequest("call-$name", name, Json.parse(input)), turn.coach, Seat.bound)
+                fun ran(name: String, input: String) {
+                val outcome = runner.run(RunAbility(AbilityRequest("call-$name", name, Json.parse(input)), turn.coach, Seat.bound, TurnPhone.catalog(), "https://windmill.works"))
                 val answered = (outcome as Outcome.Committed).result
                 assertTrue("$name ran: $answered", answered is AbilityOutcome.Result)
             }

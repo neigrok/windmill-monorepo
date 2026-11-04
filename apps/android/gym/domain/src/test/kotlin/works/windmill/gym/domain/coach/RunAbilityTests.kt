@@ -41,13 +41,13 @@ import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.testing.SteppedEngine
 
 // The replica executor on the real engine, over a model server shared by every phone: what the ability corpus cannot hold, a call's record on the Coach message in the gesture that commits its writes (Coach §4.3 step 2) and the server's orders beyond the corpus's cases. CorpusTests holds every ability case.
-class AbilityExecutorTests {
-    private class Phone(val engine: SteppedEngine, context: ActionContext, catalog: Catalog) {
+class RunAbilityTests {
+    private class Phone(val engine: SteppedEngine, context: ActionContext, private val catalog: Catalog) {
         val runner = ActionRunner(engine.replica, SyncSchema.registry, FixedZone(0), context)
-        val executor = AbilityExecutor(runner, catalog, "https://windmill.works")
+        fun run(request: AbilityRequest, on: Id<CoachMessage>, seat: Seat) = runner.run(RunAbility(request, on, seat, catalog, "https://windmill.works"))
 
         fun open(question: String = "How heavy today?"): OpenTurn.Turn = (runner.run(OpenTurn(question = question)) as Outcome.Committed).result
-        fun call(turn: OpenTurn.Turn, name: String, input: String, callId: String = "call-1", seat: Seat = Seat.bound) = executor.run(AbilityRequest(callId, name, Json.parse(input)), turn.coach, seat)
+        fun call(turn: OpenTurn.Turn, name: String, input: String, callId: String = "call-1", seat: Seat = Seat.bound) = run(AbilityRequest(callId, name, Json.parse(input)), turn.coach, seat)
         fun message(id: Id<CoachMessage>): CoachMessage = runner.read(CoachMessage.scope) { it.repository(CoachMessage).find(id, ViewMode.stored)!! }
         fun calls(turn: OpenTurn.Turn): List<AbilityCall> = message(turn.coach).calls
         fun <E : Entity<E>> stored(type: EntityType<E>): List<E> = runner.read(type.scope) { it.repository(type).all(ViewMode.stored) }
@@ -342,9 +342,9 @@ class AbilityExecutorTests {
     @Test fun aCallOnAMessageNotRunningIsRefusedAndRecordsNothing() = phones { a, b ->
         val turn = a.open()
         val absent = Id("turnAAAAAAAAAAA1", CoachMessage)
-        fun refusal(on: Id<CoachMessage>, phone: Phone = a) = (phone.executor.run(AbilityRequest("call-1", "list_notes", Json.objectOf()), on, Seat.bound) as Outcome.Refused).refusal
+        fun refusal(on: Id<CoachMessage>, phone: Phone = a) = (phone.run(AbilityRequest("call-1", "list_notes", Json.objectOf()), on, Seat.bound) as Outcome.Refused).refusal
         fun refusalOfANote(on: Id<CoachMessage>) =
-            (a.executor.run(AbilityRequest("call-2", "save_note", Json.parse("""{"id":"tn7Qm2Kx9Lp4Wz8R-4","title":"Tone","body":"Blunt."}""")), on, Seat.bound) as Outcome.Refused).refusal
+            (a.run(AbilityRequest("call-2", "save_note", Json.parse("""{"id":"tn7Qm2Kx9Lp4Wz8R-4","title":"Tone","body":"Blunt."}""")), on, Seat.bound) as Outcome.Refused).refusal
         val before = a.engine.engine.snapshot()
         assertEquals(GymRefusal.Gone(absent.ref, Refused.Path.predicted), refusal(absent))
         assertEquals(GymRefusal.Gone(turn.lifter.ref, Refused.Path.predicted), refusal(turn.lifter))

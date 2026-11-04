@@ -23,7 +23,6 @@ import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.Catalog
 import works.windmill.domain.kit.Outcome
 import works.windmill.domain.kit.Seat
-import works.windmill.gym.domain.coach.AbilityExecutor
 import works.windmill.gym.domain.coach.AbilityOutcome
 import works.windmill.gym.domain.coach.AbilityRequest
 import works.windmill.gym.domain.coach.CoachMessage
@@ -34,6 +33,7 @@ import works.windmill.gym.domain.coach.EndTurn
 import works.windmill.gym.domain.coach.ForgetRunningTurn
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
+import works.windmill.gym.domain.coach.RunAbility
 import works.windmill.gym.domain.coach.StreamTurnText
 import works.windmill.gym.domain.coach.WithdrawTurn
 import works.windmill.gym.domain.coach.contextPictures
@@ -128,7 +128,7 @@ class GymTurnHost(
     }
 
     private suspend fun ability(call: ToolCall): AbilityOutcome = onReplica { runner ->
-        AbilityExecutor(runner, catalog, appBaseUrl).run(AbilityRequest(call.callId, call.name, call.input), turn.coach, if (anonymous) Seat.anon else Seat.bound).answered()
+        runner.run(RunAbility(AbilityRequest(call.callId, call.name, call.input), turn.coach, if (pin.anonymous) Seat.anon else Seat.bound, catalog, appBaseUrl)).answered()
     }
 
     private fun tool(call: ToolCall, outcome: AbilityOutcome): ToolOutcome = when (outcome) {

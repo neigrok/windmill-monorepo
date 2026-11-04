@@ -37,17 +37,6 @@ sealed interface AbilityOutcome {
     data class Refused(val code: AbilityRefusal) : AbilityOutcome
 }
 
-class AbilityExecutor(private val runner: ActionRunner, private val catalog: Catalog, private val appBaseUrl: String) {
-    // The call's outcome, committed with its record on the Coach message; a refusal here means the message is not a running Coach message of this replica, so nothing was recorded and the turn is over.
-    fun run(request: AbilityRequest, on: Id<CoachMessage>, seat: Seat): Outcome<AbilityOutcome, GymRefusal> =
-        runner.run(RunAbility(request, on, seat, catalog, appBaseUrl))
-
-    companion object {
-        // Shares are server records; a phone turn's gate runs them on the server executor and never sends them here.
-        val serverRun = setOf("share_session", "share_log", "revoke_share")
-    }
-}
-
 // Any ability as a decider the run composes, erased to its load, which answers the decision left to make over what it loaded.
 class AbilityRun<L>(private val decider: Decider<L, AbilityAnswer, GymRefusal>) {
     fun load(read: Reader): (IDSource) -> Decision<AbilityAnswer, GymRefusal> {
@@ -56,6 +45,7 @@ class AbilityRun<L>(private val decider: Decider<L, AbilityAnswer, GymRefusal>) 
     }
 }
 
+// The call's outcome, committed with its record on the Coach message. A refusal of the action itself means the message is not a running Coach message of this replica, so nothing was recorded and the turn is over.
 class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, seat: Seat, catalog: Catalog, appBaseUrl: String) : Action<RunAbility.Loaded, AbilityOutcome, GymRefusal> {
     data class Loaded(val message: CoachMessage?, val deciding: ((IDSource) -> Decision<AbilityAnswer, GymRefusal>)?, val moment: Moment, val replica: String)
 
@@ -105,8 +95,7 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
         return recording(call, AbilityOutcome.Result(bytes), plan, coach, moment)
     }
 
-    // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the message's calls hold (`CoachMessage.recorded`): refused `coach-turn-volume`, writes dropped, when only a bare record fits the bound; and refused unrecorded, as the message's own bound, when not even that fits. Calls hold no U+0000, so an input that does records without itself.
-    // A call re-run under a `callId` the message already holds keeps one record, in its place: this run's, which is what the model will read, holding every id either run created. A first record that answered stands only when this run was refused.
+    // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the message's calls hold (`CoachMessage.recorded`): refused `coach-turn-volume`, writes dropped, when only a bare record fits the bound; and refused unrecorded, as the message's own bound, when not even that fits. Calls hold no U+0000, so an input that does records without itself. A call re-run under a `callId` the message already holds keeps one record, in its place: this run's, which is what the model will read, holding every id either run created. A first record that answered stands only when this run was refused.
     private fun recording(call: AbilityCall, outcome: AbilityOutcome, plan: Plan, coach: CoachMessage, moment: Moment): Decision<AbilityOutcome, GymRefusal> {
         val first = coach.calls.indexOfFirst { it.callId == call.callId }
         val prior = coach.calls.getOrNull(first)
@@ -126,11 +115,14 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
         return Decision.Write(written, if (fits) outcome else AbilityOutcome.Refused(AbilityRefusal.volume))
     }
 
-    private companion object {
+    companion object {
+        // Shares are server records; a phone turn's gate runs them on the server executor and never sends them here.
+        val serverRun = setOf("share_session", "share_log", "revoke_share")
+
         // Coach §5 on the phone: G-1 offered, G-2 the seat, the server's own abilities, G-3 the shape at every depth, then the ability's decider from its input. The server's own codes for a call its input sinks: the gate's G-3 shape check refuses `invalid-input`; an input past a bound the schema does not state, which the server's tool refuses as malformed, is `invalid-arguments`; what a rule refuses in deciding is `refused`, or `load-floor` for a target below its movement's floor. An input nested past `maxInputDepth` never reaches a record: past what the store reads back, it would stop the app opening.
-        fun gate(request: AbilityRequest, seat: Seat, catalog: Catalog, appBaseUrl: String): Gate {
+        private fun gate(request: AbilityRequest, seat: Seat, catalog: Catalog, appBaseUrl: String): Gate {
             val ability = catalog.ability(request.name)
-            if (ability == null || ability.agent == AgentRule.withheld || !ability.declared || request.name in AbilityExecutor.serverRun) return Gate.Refuse(AbilityRefusal.notOffered)
+            if (ability == null || ability.agent == AgentRule.withheld || !ability.declared || request.name in serverRun) return Gate.Refuse(AbilityRefusal.notOffered)
             if (!ability.admits(seat)) return Gate.Refuse(AbilityRefusal.seatRequired)
             if (JsonSchema(ability.input).fault(request.input) != null) return Gate.Refuse(AbilityRefusal.invalidInput)
             if (request.input.depth > CoachRules.maxInputDepth) return Gate.Refuse(AbilityRefusal.invalidArguments)
@@ -139,7 +131,7 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
             catch (_: JsonError) { Gate.Refuse(AbilityRefusal.invalidArguments) }
         }
 
-        fun decider(request: AbilityRequest, appBaseUrl: String): AbilityRun<*> {
+        private fun decider(request: AbilityRequest, appBaseUrl: String): AbilityRun<*> {
             val f = Fields(request.input)
             return when (request.name) {
                 "list_routines" -> AbilityRun(ProgramRead(f.optionalRef("routineId", Routine)))
@@ -183,7 +175,7 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
         }
 
         // Coach G-7, kit §4 "given": the id the turn minted for the call's new record, in the shape the registry admits.
-        fun <E : Entity<E>> given(field: String, f: Fields, type: EntityType<E>): Id<E> {
+        private fun <E : Entity<E>> given(field: String, f: Fields, type: EntityType<E>): Id<E> {
             val id = f.string(field)
             if (SyncSchema.registry.type(type.type)?.idPattern?.matches(id) != true) throw DecodeError(type.type, field, "not an id the registry admits")
             return Id(id, type)

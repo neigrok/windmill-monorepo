@@ -60,8 +60,8 @@ class CorpusTests {
         }
         failures.forEach(::println)
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
-        val shares = abilityCases.count { it.call in AbilityExecutor.serverRun }
-        val refused = abilityCases.count { it.call !in AbilityExecutor.serverRun && it.expect["refused"] != null }
+        val shares = abilityCases.count { it.call in RunAbility.serverRun }
+        val refused = abilityCases.count { it.call !in RunAbility.serverRun && it.expect["refused"] != null }
         println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${abilityCases.size} ability cases (${abilityCases.size - shares - refused} results byte-equal, $refused refused alike, $shares shares refused on the phone), ${replayedByTheTurnTests.size} replayed by the turn tests, no pending case, no unclaimed file")
     }
 
@@ -88,7 +88,7 @@ class CorpusTests {
     // What the corpus says of a case on this phone. Shares are server records, so the phone refuses one that reaches it. The corpus is the server tool's golden, and on the phone the gate's G-3 stands before the tool, so an input the schema refuses answers `invalid-input` where the tool answered `invalid-arguments`.
     fun abilityExpected(case: AbilityCase): Json {
         fun refused(code: AbilityRefusal) = Json.objectOf("refused" to Json.of(code.code), "writes" to Json.Arr(emptyList()))
-        if (case.call in AbilityExecutor.serverRun) return refused(AbilityRefusal.notOffered)
+        if (case.call in RunAbility.serverRun) return refused(AbilityRefusal.notOffered)
         val code = case.expect["refused"]?.str() ?: return case.expect
         val gated = code == AbilityRefusal.invalidArguments.code && JsonSchema(catalog.ability(case.call)!!.input).fault(case.input) != null
         return refused(if (gated) AbilityRefusal.invalidInput else AbilityRefusal.entries.single { it.code == code })
