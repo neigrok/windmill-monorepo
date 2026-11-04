@@ -321,4 +321,4 @@ captures the approved 01.1/01.2 greeting in both appearances. This mode accepts 
 empty exercises/routines/history fixture, enables anonymous Coach on its disposable local backend,
 and waits for the greeting after account sign-in. It retains runtime logs and first-party events;
 `performanceAccepted` is null because it runs no cold-workout or idle profile. Normal fixture runs
-retain their existing Push A performance gate. Native setup acceptance is pending.
+retain their existing Push A performance gate.

@@ -28,10 +28,9 @@ pair of dumbbells, plain "kg" for one, "kg added" (or "assisted" for a negative 
 bodyweight and "kg total" for barbells, shows targets in the lifter's display unit, and names a
 movement it has not synced yet "New movement" with no basis. Retry keeps the thread, request and
 operation identities. Stream and history merges preserve saved state and receipts against older
-snapshots. Android retains confirmation receipts under their account and clears them with the
-conversation. Late responses never publish across an account change.
+snapshots. Late responses never publish across an account change.
 
 Load interpretation lives in each surface's gym domain, and the same typed generation carries partial
 replies, routine drafts and saved receipts; no screen writes a routine by another path. Confirmation
-emits `gym_coach_routine_confirm` with a bounded outcome on web, iOS and Android, with static failure
+emits `gym_coach_routine_confirm` with a bounded outcome on the web, with static failure
 operations and no conversation or training content.
