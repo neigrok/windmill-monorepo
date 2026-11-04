@@ -347,6 +347,27 @@ class WorkoutProposalsStoreTests {
         }
     }
 
+    // A workout gone by its empty finish and its discard takes the offer with it: the card says so instead of waiting for good, and a late tap answers that it is gone.
+    @Test
+    fun aProposalWhoseWorkoutIsGoneIsNoLongerAnOffer() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            open(room, server)
+            coachProposes(room, swapped)
+            room.store.refreshEngine()
+            val finished = room.store.workout.finish() as FinishOutcome.Closed
+            room.store.refreshEngine()
+            assertTrue(room.store.workout.discardWorkout(finished.detail.session.id) == null)
+            room.store.refreshEngine()
+
+            val gone = room.store.workoutProposals.held.getValue("wp000000000000001")
+            assertEquals(ProposalState.Pending, gone.state)
+            assertEquals("This workout changed after this suggestion. Nothing was applied.", gone.outOfDate)
+            assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"), room.store.workoutProposals.apply("wp000000000000001"))
+            finishing()
+        }
+    }
+
     @Test
     fun anotherSeatReadsNoneOfThem() = runTest {
         val server = EngineRoomFixture.server()

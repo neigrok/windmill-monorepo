@@ -194,12 +194,13 @@ public struct WorkoutProposalState: Sendable {
   }
 
   // Null for a pending proposal that still applies and for one the lifter decided; otherwise the first reason of a newer
-  // proposal replacing it, its workout closing, its plan changing past the revision it read, or a movement it changes
-  // gaining a logged set.
+  // proposal replacing it, its workout going, its workout closing, its plan changing past the revision it read, or a
+  // movement it changes gaining a logged set.
   public var outOfDate: OutOfDate? {
     guard let proposal else { return nil }
     if proposal.state == "superseded" { return OutOfDate(proposal.supersededBy == nil ? .workoutChanged : .replaced) }
-    guard proposal.state == "pending", let workout, let session = workout.session else { return nil }
+    guard proposal.state == "pending" else { return nil }
+    guard let workout, let session = workout.session else { return OutOfDate(.workoutChanged) }
     if workout.isClosed { return OutOfDate(.workoutFinished) }
     if let base = proposal.baseRevision, base != session.planRevision ?? 1 { return OutOfDate(.workoutChanged) }
     // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the
@@ -213,14 +214,13 @@ public struct WorkoutProposalState: Sendable {
 
   public func refusal(for id: ID<WorkoutProposal>, applying: Bool) -> GymRefusal? {
     guard let proposal else { return GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted)) }
+    if proposal.state == "pending", applying, !(workout.map { $0.session != nil && $0.visible } ?? false) {
+      return GymRefusal(Refused(.unknownRecord, subject: proposal.sessionId.ref, path: .predicted))
+    }
     if let outOfDate, proposal.state == "superseded" || applying {
       return GymRefusal(Refused(Gym.Codes.proposalSuperseded, subject: id.ref, detail: ["reason": .string(outOfDate.reason.rawValue)], path: .predicted))
     }
-    if proposal.state == "pending" {
-      if !applying { return nil }
-      let inSight = workout.map { $0.session != nil && $0.visible } ?? false
-      return inSight ? nil : GymRefusal(Refused(.unknownRecord, subject: proposal.sessionId.ref, path: .predicted))
-    }
+    if proposal.state == "pending" { return nil }
     if proposal.state == (applying ? "applied" : "dismissed") { return nil }
     return GymRefusal(Refused(Gym.Codes.proposalSettled, subject: id.ref, detail: ["state": .string(proposal.state)], path: .predicted))
   }

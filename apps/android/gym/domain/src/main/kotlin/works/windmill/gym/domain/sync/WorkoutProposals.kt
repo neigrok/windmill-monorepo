@@ -77,8 +77,8 @@ class ProposeWorkout(val id: Id<WorkoutProposal>, val sessionId: Id<Session>, va
 }
 
 // A workout proposal with its workout as this phone stores it. Out of date, it can no longer be applied, by the first that
-// holds: a newer proposal replaced it, its workout closed, the plan changed since it was made, or a movement it changes
-// was logged since.
+// holds: a newer proposal replaced it, its workout is gone, its workout closed, the plan changed since it was made, or a
+// movement it changes was logged since.
 data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: OpenWorkout?, val moment: Moment) {
     data class OutOfDate(val reason: String, val exerciseId: Id<Exercise>? = null) {
         val json: Json get() = Json.Obj(listOfNotNull("reason" to Json.of(reason), exerciseId?.let { "exerciseId" to it.json }))
@@ -90,8 +90,8 @@ data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: Ope
     val outOfDate: OutOfDate? get() {
         val value = proposal ?: return null
         if (value.state == "superseded") return OutOfDate(if (value.supersededBy != null) "replaced" else "workout-changed")
-        val session = workout?.session
-        if (value.state != "pending" || session == null) return null
+        if (value.state != "pending") return null
+        val session = workout?.session ?: return OutOfDate("workout-changed")
         if (workout.isClosed) return OutOfDate("workout-finished")
         if (value.baseRevision != null && (session.planRevision ?: 1) != value.baseRevision) return OutOfDate("workout-changed")
         // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the
