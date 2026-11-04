@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
@@ -52,7 +54,7 @@ object Threads {
     const val title = "History"
     const val open = "New chat"
     const val conversation = "Conversation"
-    const val none = "No conversations"
+    const val none = "No conversations yet.\nWhat you ask Coach on this phone is listed here."
 }
 
 // What the conversation list draws. `reading` holds the empty line back until the first read of the engine has landed.
@@ -122,14 +124,17 @@ fun ThreadsScreen(
 
     GymScreen(title = Threads.title, onBack = onBack, backTo = backTo) {
         Box(Modifier.fillMaxSize()) {
+            val held = state.threads.filterNot { it.id in deleting }
+            if (!state.reading && held.isEmpty() && failure == null) Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
+                LaunchedEffect(Unit) { telemetry.event("gym_action", mapOf("screen" to "threads", "action" to "empty", "outcome" to "shown")) }
+                Icon(painterResource(R.drawable.gym_coach_forum), null, Modifier.size(40.dp), tint = colors.onSurfaceVariant)
+                Text(Threads.none, style = GymType.coachAccessNote, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
+            }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
                 failure?.let { line -> item("failure") {
                     Text(line, style = GymType.coachLine, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                 } }
-                val held = state.threads.filterNot { it.id in deleting }
-                if (!state.reading && held.isEmpty() && failure == null) item("none") {
-                    Text(Threads.none, style = GymType.coachNone, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
-                }
                 items(held, key = { it.id }) { thread ->
                     DeleteSwipeRow(actionLabel = "Delete conversation", onDelete = { requestDelete(thread.id); false }) {
                         val draft = state.draft(thread.id)

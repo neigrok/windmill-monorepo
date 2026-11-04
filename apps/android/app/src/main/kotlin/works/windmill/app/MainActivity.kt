@@ -319,7 +319,7 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
     }
     session.decision?.let { decision ->
         var discardDecision by rememberSaveable { mutableStateOf<String?>(null) }
-        val copy = works.windmill.gym.ui.PhoneSignInCopy(decision.decisions.associate { it.product to it.count })
+        val copy = works.windmill.gym.ui.PhoneSignInCopy(session.decisionCounts)
         fun cancelDiscard() {
             if (session.decisionBusy) return
             telemetry.event("gym_sign_in_decision", mapOf("action" to "cancel", "state" to "discard_confirmation"))

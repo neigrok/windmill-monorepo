@@ -196,7 +196,6 @@ object GymType {
     val coachStrong = nunito(14, FontWeight.Bold, leading = 20)
     val coachAction = nunito(14, FontWeight.Bold, leading = 20, tracking = .1)
     val coachLine = nunito(14)
-    val coachNone = nunito(15)
     val coachNote = nunito(12)
     val coachBubbleLabel = nunito(12, FontWeight.Bold, leading = 16)
     val coachCode = WindmillFont.mono(15)

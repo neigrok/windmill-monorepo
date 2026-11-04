@@ -28,6 +28,7 @@ import works.windmill.sync.engine.SignOutChoice
 import works.windmill.sync.engine.SignOutSession
 import works.windmill.sync.engine.SyncRuntime
 import works.windmill.sync.engine.discardDormant
+import works.windmill.sync.schema.Gym
 
 class GymEngineSession(
     val engine: Engine,
@@ -48,6 +49,9 @@ class GymEngineSession(
         private set
     var decisionBusy by mutableStateOf(false)
         private set
+    // What the sign-in question names, by room and kind. The engine counts every record with unsent work, a conversation deleted since among them, so the conversations are read off the replica.
+    var decisionCounts: Map<String, Map<String, Int>> by mutableStateOf(emptyMap())
+        private set
     private var answer: CompletableDeferred<Unit>? = null
 
     override suspend fun signedIn(user: User, token: String, restoring: Boolean) {
@@ -64,6 +68,10 @@ class GymEngineSession(
             while (!session.isComplete) {
                 val completion = CompletableDeferred<Unit>()
                 decisionRevision += 1
+                val conversations = engine.read(ScopeRef.product("gym")) { it.drawn(Gym.Types.thread).size }
+                decisionCounts = session.decisions.associate { held ->
+                    held.product to if (held.product == "gym" && Gym.Types.thread in held.count) held.count + (Gym.Types.thread to conversations) else held.count
+                }
                 decision = session
                 decisionFailure = null
                 answer = completion

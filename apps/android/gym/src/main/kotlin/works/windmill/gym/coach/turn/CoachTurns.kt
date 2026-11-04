@@ -150,6 +150,7 @@ class CoachTurns(
             admitting.withLock {
                 interruptNamed()
                 sweepPictures()
+                accountSettled()
             }
         }
     }
@@ -323,6 +324,14 @@ class CoachTurns(
             if (left != null) interruptLeft(left, previous)
             interruptNamed()
             sweepPictures()
+            accountSettled()
+        }
+    }
+
+    // The account's change a send met is over once the seat in hand may write again, and its sentence goes with it.
+    private suspend fun accountSettled() {
+        attempted(Unit) {
+            if (faulted.value == CoachTurnFault.accountChanging && training.mayWriteOn(engine.activeReplica(), training.anonymous)) faulted.value = null
         }
     }
 
