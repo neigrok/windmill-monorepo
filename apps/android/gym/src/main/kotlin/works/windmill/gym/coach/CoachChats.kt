@@ -83,7 +83,7 @@ class CoachChats internal constructor(
         private set
     var fault by mutableStateOf<CoachTurnFault?>(null)
         private set
-    // A send the account's change stopped, drawn apart from the band. Send waits only while the seat has not settled, so a seat already settled never strands the question it kept.
+    // A send the account's change stopped, drawn apart from the band. Send waits only while the seat in hand may not write, so a seat that already may never strands the question it kept.
     var accountChanging by mutableStateOf(false)
         private set
     val sendHeld: Boolean get() = accountChanging && !seatReady()

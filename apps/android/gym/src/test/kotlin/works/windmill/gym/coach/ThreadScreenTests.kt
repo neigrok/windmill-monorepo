@@ -351,7 +351,7 @@ class ThreadScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val telling = TellingRecorder()
         var writable = true
-        val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telling, workoutAuthority = { writable }, writeAuthority = { writable }, coachServer = ScriptedTurns(emptyList())).also { rooms += it }
+        val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telling, writeAuthority = { writable }, coachServer = ScriptedTurns(emptyList())).also { rooms += it }
         runBlocking { room.select("account-1") }
         room.sync(EngineRoomFixture.server())
         val coach = room.store.coach
@@ -384,6 +384,8 @@ class ThreadScreenTests {
         coach.saveDraft(chat, CoachDraft("What should Thursday look like?"))
         writable = false
         assertTrue(coach.send(chat, "What should Thursday look like?"))
+        compose.waitUntil(5_000) { compose.runOnIdle { coach.accountChanging } }
+        writable = true
         val ask = AskBinding(room.store)
         compose.setContent { ThreadScreen(ask, ask, chat, emptyList(), emptySet(), "History", {}, {}, {}) }
         read("Your account is changing. Your question is kept here.").assertIsDisplayed()
