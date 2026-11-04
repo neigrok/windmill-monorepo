@@ -1259,7 +1259,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Checklist: round kind-hued checkboxes on a single/double-click grammar ---- */
+/* ---- Subtasks: round kind-hued checkboxes on a single/double-click grammar ---- */
 .st-check-head {
   display: flex;
   align-items: center;

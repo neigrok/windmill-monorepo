@@ -570,9 +570,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · a locked step's unmet needs.** The phone's locked page (01.07 183:1795) marks each unmet
   prerequisite on a sunken row with its column (*Up next*); the desktop locked modal (03.07 379:18290)
   lists it plainly. The build follows each drawing. Choose one.
-- **Board · two names for the checklist.** The Board's step workspace says *Subtasks* and *Add subtask*
-  (07.01, 03.08); the Graph's step panel (`graph/StepPanel.jsx` through `graph/tree/Checklist.jsx`) says
-  *Checklist* and *Add a sub-task*, and its add menu *Sub-task*. Choose one name for both views.
 - **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
   **Retry** (phone 25.01–25.02, desktop 15.01–15.02).

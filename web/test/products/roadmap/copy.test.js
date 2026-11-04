@@ -338,6 +338,7 @@ test('copy — the tablet draft context uses lowercase for without a roadmap cou
 test('copy — edit and workspace labels match the wave 5 contract', () => {
   assert.deepEqual(EDIT_STEP, { title: 'Edit step', save: 'Save' });
   assert.deepEqual(WORKSPACE, {
+    subtask: 'Subtask',
     subtasks: 'Subtasks',
     addSubtask: 'Add subtask',
     note: 'Note',

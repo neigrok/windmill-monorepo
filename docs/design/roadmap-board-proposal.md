@@ -199,7 +199,7 @@ One string per event.
 | Create | *Reefing basics added · Locked* · **Undo**; when a filter clears: *Reefing basics added · filter cleared* · **Undo** |
 | Delete (held) | *Rig the boat deleted* · **Undo**; the confirm's cost line carries the resplice count |
 | Bulk | *3 steps recolored* · **Undo** / *3 steps deleted* · **Undo** |
-| Checklist item | *Try a small turn checked* · **Undo** |
+| Subtask | *Try a small turn checked* · **Undo** |
 | Copy link | *Link copied* |
 | Not-done precondition | *Read the wind isn't done* |
 | Empty roadmap | **Your first step** / *Give your roadmap a place to start.* / **New step** |

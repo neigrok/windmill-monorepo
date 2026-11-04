@@ -3,8 +3,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
-
-const LABELS = { heading: 'Checklist', add: 'Add a sub-task' };
+import { WORKSPACE, subtaskTally } from '../../copy.js';
 
 export function Checklist({ items, hue, autoStartAdd = false, onToggle, onEdit, onDelete, onAdd, onClose }) {
   const [editingId, setEditingId] = useState(null);
@@ -60,8 +59,8 @@ export function Checklist({ items, hue, autoStartAdd = false, onToggle, onEdit, 
   return (
     <div>
       <div className="st-check-head">
-        <span className="st-step-heading">{LABELS.heading}</span>
-        <span className="st-check-count">{done} of {items.length}</span>
+        <span className="st-step-heading">{WORKSPACE.subtasks}</span>
+        <span className="st-check-count">{subtaskTally({ done, total: items.length })}</span>
       </div>
       <div className="st-check-list" style={chkVars}>
         {items.map((item) => {
@@ -100,7 +99,7 @@ export function Checklist({ items, hue, autoStartAdd = false, onToggle, onEdit, 
                   <button
                     type="button"
                     className="st-check-del"
-                    aria-label="Delete sub-task"
+                    aria-label={WORKSPACE.removeSubtask}
                     onClick={(event) => { event.stopPropagation(); onDelete(item.id); }}
                   >
                     <Icon name="x" size={13} />
@@ -118,7 +117,7 @@ export function Checklist({ items, hue, autoStartAdd = false, onToggle, onEdit, 
               autoFocus
               className="st-check-input"
               value={addDraft}
-              placeholder="Sub-task"
+              placeholder={WORKSPACE.addSubtask}
               onChange={(event) => setAddDraft(event.target.value)}
               onBlur={blurAdd}
               onKeyDown={(event) => {
@@ -131,7 +130,7 @@ export function Checklist({ items, hue, autoStartAdd = false, onToggle, onEdit, 
         ) : (
           <button type="button" className="st-check-add" onClick={beginAdd}>
             <Icon name="plus" size={13} />
-            {LABELS.add}
+            {WORKSPACE.addSubtask}
           </button>
         )}
       </div>

@@ -21,7 +21,7 @@ createRoot(document.getElementById('root')).render(React.createElement('div', { 
   node: { id: 'wind', label: 'Read the wind', color: 'sky' }, state: 'available', prerequisites: [],
   legend: [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }, { id: 'milestone', hue: 'gold', label: 'Milestone' }],
   onRename: call('rename'), onPreviewKind: call('preview'), onRestoreKind: call('restore'), onSetKind: call('set'), onOpenLegend: call('legend'),
-  onMarkComplete: call('complete'), onReset: call('reset'), onDelete: call('delete'), onPreviewDeleteCost: call('previewDelete'), onClearDeleteCost: call('clearDelete'), onClose: call('close'),
+  onAddSubtask: call('addSubtask'), onMarkComplete: call('complete'), onReset: call('reset'), onDelete: call('delete'), onPreviewDeleteCost: call('previewDelete'), onClearDeleteCost: call('clearDelete'), onClose: call('close'),
 })));
 `;
 
@@ -137,6 +137,24 @@ test('Chromium: Manage kinds opens the legend', async () => {
     await withBrowserErrors(page, async () => {
       await page.getByRole('button', { name: 'Manage kinds', exact: true }).click();
       assert.deepEqual(await page.evaluate(() => window.calls), [['legend']]);
+    });
+  } finally {
+    await page.close();
+  }
+});
+
+test('Chromium: the add menu says Subtask, and its row asks for one by the drawn name', async () => {
+  const page = await openPanel();
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('button', { name: 'Add to this step', exact: true }).click();
+      assert.deepEqual(await page.getByRole('menuitem').allInnerTexts(), ['Subtask', 'Note', 'Link']);
+      await page.getByRole('menuitem', { name: 'Subtask', exact: true }).click();
+      assert.equal(await page.locator('.st-check-head').innerText(), 'SUBTASKS\n0 of 0');
+      const row = page.getByPlaceholder('Add subtask', { exact: true });
+      await row.fill('Identify the halyard');
+      await page.keyboard.press('Enter');
+      assert.deepEqual(await page.evaluate(() => window.calls), [['addSubtask', 'wind', 'Identify the halyard']]);
     });
   } finally {
     await page.close();

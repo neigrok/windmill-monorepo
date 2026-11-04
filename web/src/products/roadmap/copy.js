@@ -95,6 +95,7 @@ export const PICKER = {
   nowComesAfter: 'Now comes after this step',
 };
 export const WORKSPACE = {
+  subtask: 'Subtask',
   subtasks: 'Subtasks',
   addSubtask: 'Add subtask',
   note: 'Note',
