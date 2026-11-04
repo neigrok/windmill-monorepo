@@ -960,7 +960,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             entry.restSeconds ?: old?.entries?.firstOrNull { it.exerciseId.text == entry.exerciseId }?.restSeconds) }, old?.revision)
     private fun proposalCreatedAt(proposal: EngineProposal, reader: Reader): Long = reader.repository(EngineProposal).record(proposal.id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0
     private fun EngineProposal.ui(reader: Reader): Proposal = Proposal(id.text, routineId.text, ProposalIntent.parse(intent), ProposalState.parse(state), summary,
-        changeCount ?: changes.count { it.kind != "kept" }, proposalCreatedAt(this, reader), settledAt?.ms, ProposalSource(door, connection, agent, threadId), baseRevision, baseName.orEmpty(), proposedName,
+        changeCount ?: changes.count { it.kind != "kept" }, proposalCreatedAt(this, reader), settledAt?.ms, ProposalSource(door, connection, agent, threadId), baseRevision,
+        // The log stamps the name it read; a proposal this phone's own turn just minted is still addressed by its routine.
+        baseName ?: reader.repository(EngineRoutine).find(routineId, ViewMode.drawn)?.name.orEmpty(), proposedName,
         changes.ui { TrainingLog(reader).sets.count { set -> set.exerciseId == it } })
     private fun List<RoutineChange>.ui(logged: (Id<EngineExercise>) -> Int): List<ProposalChange> = mapIndexed { index, change ->
         ProposalChange(index + 1, ChangeKind.parse(change.kind), change.exerciseId.text,

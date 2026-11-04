@@ -294,11 +294,11 @@ class ProposalTests {
 
         val gone = ProposalChange(position = 4, kind = ChangeKind.Removed, exerciseId = "cable-fly",
             before = targets(3, 12, 22.5), loggedSets = 41)
-        assertEquals("removed from the routine · 41 logged sets kept", gone.removedLine)
-        assertEquals("removed from the routine · 1 logged set kept", gone.copy(loggedSets = 1).removedLine)
-        assertEquals("removed from the routine · never logged", gone.copy(loggedSets = 0).removedLine)
+        assertEquals("removed from the routine · 41 logged sets kept", gone.removedLine())
+        assertEquals("removed from the routine · 1 logged set kept", gone.copy(loggedSets = 1).removedLine())
+        assertEquals("removed from the routine · never logged", gone.copy(loggedSets = 0).removedLine())
         assertEquals("a count the log did not send is not a zero", "removed from the routine",
-            gone.copy(loggedSets = null).removedLine)
+            gone.copy(loggedSets = null).removedLine())
     }
 
     @Test
@@ -411,5 +411,65 @@ class ProposalTests {
         assertEquals(ProposalIntent.Remove, whole.intent)
         assertEquals("Push B", whole.routineName)
         assertTrue(whole.summary.isEmpty())
+    }
+
+    private fun workoutProposal(changes: List<ProposalChange>, state: ProposalState = ProposalState.Pending) = Proposal(
+        id = "wp_1", routineId = "session_1", state = state, changeCount = changes.count { it.kind != ChangeKind.Kept },
+        baseName = Proposal.workoutWord, changes = changes, target = ProposalTarget.Workout)
+
+    private val swap = listOf(
+        ProposalChange(1, ChangeKind.Kept, "bench-press", targets(3, 5), targets(3, 5)),
+        ProposalChange(2, ChangeKind.Added, "floor-press", after = targets(3, 10, 20.0)),
+        ProposalChange(3, ChangeKind.Kept, "fly", targets(3, 12), targets(3, 12)),
+        ProposalChange(4, ChangeKind.Removed, "incline-press", before = targets(3, 8), loggedSets = 0),
+    )
+
+    @Test
+    fun aWorkoutProposalIsAddressedToThisWorkoutInEveryLine() {
+        val proposal = workoutProposal(swap)
+        assertEquals("This workout", proposal.subject)
+        assertEquals("2 changes to this workout.", proposal.summaryLine(proposal.routineName))
+        assertEquals("Apply all 2", proposal.applyLabel)
+        assertEquals("All two or none. Nothing is applied until you tap.", proposal.atomicLine)
+        assertEquals("removed from this workout · never logged", swap[3].removedLine(proposal.within))
+        assertEquals("Applied · this workout · 2 changes", workoutProposal(swap, ProposalState.Applied).receipt)
+        assertEquals("Turned down · nothing changed.", workoutProposal(swap, ProposalState.Dismissed).receipt)
+    }
+
+    @Test
+    fun aRoutineProposalStillSpeaksOfTheRoutine() {
+        val routine = proposal(swap)
+        assertEquals("Push A", routine.subject)
+        assertEquals("removed from the routine · never logged", swap[3].removedLine(routine.within))
+        assertEquals("− removed from the routine · never logged", swap[3].compactLine)
+    }
+
+    @Test
+    fun aMovementLoggedSinceSaysItsSetsStayRatherThanNeverLogged() {
+        assertEquals("removed from this workout · 2 logged sets kept", swap[3].copy(loggedSets = 2).removedLine(Proposal.workoutWord))
+    }
+
+    @Test
+    fun aWorkoutsSheetReadsWhatChangesFirstThenOneCountOfWhatStands() {
+        val retargeted = ProposalChange(5, ChangeKind.Retargeted, "dip", targets(3, 8), targets(3, 6))
+        assertEquals(listOf(
+            DocumentRow.Changed(retargeted), DocumentRow.Changed(swap[3]), DocumentRow.Changed(swap[1]),
+            DocumentRow.Unchanged(listOf(swap[0], swap[2])),
+        ), workoutProposal(swap + retargeted).changesFirst)
+        assertEquals("and 2 lines unchanged", (workoutProposal(swap).changesFirst.last() as DocumentRow.Unchanged).label)
+    }
+
+    @Test
+    fun aChangeThatKeepsNothingEndsOnItsChanges() {
+        assertEquals(listOf(DocumentRow.Changed(swap[3]), DocumentRow.Changed(swap[1])), workoutProposal(listOf(swap[1], swap[3])).changesFirst)
+    }
+
+    @Test
+    fun whyAProposalIsOutOfDateSaysOneCauseThenThatNothingWasApplied() {
+        assertEquals("A newer suggestion replaced this one. Nothing was applied.", Proposal.outOfDateLine("replaced", null))
+        assertEquals("This workout changed after this suggestion. Nothing was applied.", Proposal.outOfDateLine("workout-changed", null))
+        assertEquals("This workout has finished. Nothing was applied.", Proposal.outOfDateLine("workout-finished", null))
+        assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", Proposal.outOfDateLine("workout-moved", "Incline Dumbbell Press"))
+        assertEquals("You logged a movement since this suggestion. Nothing was applied.", Proposal.outOfDateLine("workout-moved", null))
     }
 }
