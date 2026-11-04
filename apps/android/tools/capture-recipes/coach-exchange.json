@@ -432,6 +432,14 @@
           "name": "list_notes",
           "input": {}
         }
+      ],
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_routines",
+          "name": "list_routines",
+          "input": {}
+        }
       ]
     ],
     "steps": [
