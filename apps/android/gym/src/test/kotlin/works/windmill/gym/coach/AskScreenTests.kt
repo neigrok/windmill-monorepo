@@ -20,6 +20,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
@@ -334,7 +335,7 @@ class AskScreenTests {
                 onAsk = { _, _ -> }, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onReview = {}, conversationId = "thread-a")
         }
-        compose.onNodeWithText("Interrupted. What arrived is kept.").assertIsDisplayed()
+        compose.onNodeWithTag("coach-ending").assertTextEquals("Interrupted.")
         compose.onNodeWithText("Try again").assertDoesNotExist()
         scope.cancel()
     }

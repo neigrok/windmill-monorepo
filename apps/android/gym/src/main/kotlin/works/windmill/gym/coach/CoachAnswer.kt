@@ -89,7 +89,7 @@ internal fun CoachAnswer(
     val colors = MaterialTheme.colorScheme
     val copyMenu = remember { CoachCopyMenu() }
     val ended = reply.state.isTerminal
-    val ending = Ask.ending(reply.state, reply.truncated)
+    val ending = Ask.ending(reply.state, reply.truncated, wordsArrived = reply.text.isNotBlank())
     val seatDoor = onSignIn.takeIf { ended && reply.calls.any { it.seatRefused } }
     val readLine = reply.readLine.takeIf { ended && saysWhatItRead }
     val wrote = routineDrafts.isNotEmpty() || reply.routines.isNotEmpty() || reply.savedNotes.isNotEmpty() || reply.madeMovements.isNotEmpty()

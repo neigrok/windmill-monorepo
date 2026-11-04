@@ -401,6 +401,16 @@ class CoachAnswerTests {
         }
     }
 
+    @Test fun anInterruptionSaysWhatArrivedIsKeptOnlyOverWordsThatArrived() {
+        val reply = mutableStateOf(coachReply("Thursday is still a Push day.", MessageState.interrupted))
+        compose.setContent { GymMaterial { CoachAnswer(reply.value.text, reply.value, emptyList()) } }
+        compose.onNodeWithTag("coach-ending").assertTextEquals("Interrupted. What arrived is kept.")
+        compose.runOnIdle { reply.value = coachReply("", MessageState.interrupted) }
+        compose.onNodeWithTag("coach-ending").assertTextEquals("Interrupted.")
+        compose.runOnIdle { reply.value = coachReply(" \n", MessageState.interrupted) }
+        compose.onNodeWithTag("coach-ending").assertTextEquals("Interrupted.")
+    }
+
     // The tree reads what stands uncovered through a real Region, which only native graphics has.
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE) fun theLineOverWhatItReadStaysInTheAccessibilityTreeUnderItsTouch() {
         lateinit var view: View

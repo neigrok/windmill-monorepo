@@ -1397,7 +1397,8 @@ iOS. It and the product differ in these places.
   set as *1*, a ladder of −5, −2.5, +2.5, +5 and the movement in Nunito, where the shipped rack draws *Set 1*, −2.5, −1,
   +2.5, +5 and a sans name, and the rack stays as today (D5). No board draws `stopping`; a Stop refused for another
   reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
-  already ended.
+  already ended. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
+  *Interrupted.*
 
 ### Native and web differences
 
