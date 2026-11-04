@@ -34,7 +34,7 @@ import works.windmill.platform.telemetry.LocalTelemetry
 // What an ended answer read, under it: a door to What Coach read while the turn ran anything to list (08.36).
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (Int?) -> Unit) {
+internal fun CoachReadSources(line: String, rows: List<CoachCall>, withDetails: suspend (List<CoachCall>) -> List<CoachCall>, onSheetTop: (Int?) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val telemetry = LocalTelemetry.current
     if (rows.isEmpty()) {
@@ -63,6 +63,8 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (
     }
     if (!expanded) return
     DisposableEffect(Unit) { onDispose { onSheetTop(null) } }
+    // The sheet reads its rows' details as it opens, and again only for calls that changed. A row draws its title alone until they land.
+    val shown by produceState(rows, rows) { value = withDetails(rows) }
     WindmillSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
         containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -82,7 +84,7 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (
             Text(Ask.sourcesTitle, style = GymType.coachSourcesTitle, color = colors.onSurface)
             Text(Ask.sourcesLead, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                rows.forEach { row ->
+                shown.forEach { row ->
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(row.title.orEmpty(), style = GymType.coachSourceTitle, color = colors.onSurface)
                         row.detail?.let { Text(it, style = GymType.coachSourceLine, color = colors.onSurfaceVariant) }

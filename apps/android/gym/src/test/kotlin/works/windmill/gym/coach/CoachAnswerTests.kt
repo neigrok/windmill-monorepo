@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.ViewCompat
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -272,6 +273,44 @@ class CoachAnswerTests {
         compose.onNodeWithText("Close").performScrollTo().performClick()
         compose.onNodeWithText("What Coach read").assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf("gym_action" to mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok")), events) }
+    }
+
+    // The sheet reads as it opens, not for a revision of the answer and not again until it opens again. Until the read lands a row is its title, and what lands moves nothing beyond what its line takes.
+    @Test
+    fun whatCoachReadReadsOnceAsItOpensAndADetailOnlyAddsItsLine() {
+        var reads = 0
+        val landing = CompletableDeferred<Unit>()
+        val calls = listOf(coachCall("list_notes", "read your notes"), coachCall("list_routines", "read your program"))
+        val reply = mutableStateOf(coachReply("Prose.", calls = calls))
+        compose.setContent { GymMaterial { CoachAnswer(reply.value.text, reply.value, emptyList(), withDetails = { rows ->
+            reads++
+            landing.await()
+            rows.map { row -> if (row.name == "list_notes") row.copy(detail = "2 notes") else row }
+        }) } }
+        fun gaps() = listOf("What Coach read", "What Coach used, in order", "Read your notes", "Read your program", "A workout read twice counts once.", "Close")
+            .map { compose.onNodeWithText(it).getUnclippedBoundsInRoot().top.value }.zipWithNext { above, below -> below - above }
+        compose.waitForIdle()
+        assertEquals("a closed sheet reads nothing", 0, reads)
+        compose.onNodeWithTag("coach-read-sources").performClick()
+        compose.onNodeWithText("Read your notes").assertIsDisplayed()
+        compose.onNodeWithText("2 notes").assertDoesNotExist()
+        val titlesAlone = gaps()
+        compose.runOnIdle { reply.value = coachReply("Prose, and more of it.", calls = calls) }
+        compose.waitForIdle()
+        assertEquals("a revision of the answer asks nothing", 1, reads)
+        landing.complete(Unit)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("2 notes").fetchSemanticsNodes().isNotEmpty() }
+        val line = compose.onNodeWithText("2 notes").getUnclippedBoundsInRoot()
+        assertEquals(titlesAlone.mapIndexed { at, gap -> if (at == 2) gap + (line.bottom - line.top).value + 2f else gap }, gaps())
+        compose.runOnIdle { reply.value = coachReply("Prose, and still more of it.", calls = calls) }
+        compose.onNodeWithText("2 notes").assertIsDisplayed()
+        assertEquals(1, reads)
+        compose.onNodeWithText("Close").performClick()
+        compose.waitForIdle()
+        assertEquals("closing reads nothing", 1, reads)
+        compose.onNodeWithTag("coach-read-sources").performClick()
+        compose.onNodeWithText("2 notes").assertIsDisplayed()
+        assertEquals("opening again reads again", 2, reads)
     }
 
     @Test

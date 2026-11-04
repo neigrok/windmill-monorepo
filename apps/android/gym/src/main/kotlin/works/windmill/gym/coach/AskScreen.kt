@@ -416,7 +416,8 @@ private fun Answer(
         CoachAnswer(text, answer, state.catalog, onOpenRoutine,
             routineDrafts = retained?.drafts.orEmpty(),
             onSaveDrafts = if (canSave && retained != null) { { state.coach.saveRetainedDrafts(chat, retained.requestId) } } else null,
-            onSignIn = onSignIn, onKeep = onKeep, saysWhatItRead = retained == null || answer.routines.isNotEmpty(), onSourcesTop = onSourcesTop)
+            onSignIn = onSignIn, onKeep = onKeep, saysWhatItRead = retained == null || answer.routines.isNotEmpty(),
+            withDetails = { rows -> state.coach.conversations?.withDetails(answer.id, rows) ?: rows }, onSourcesTop = onSourcesTop)
         // Drawn from the LOG's own copy and never from what the model said about it.
         AnswerProposals(answer, minted, state, nowMs, lookedAt, overWorkout, gone, onReview)
     }

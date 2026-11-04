@@ -28,7 +28,7 @@ internal fun coachReply(text: String = "", state: MessageState = MessageState.co
 
 internal fun coachCall(name: String, phrase: String? = name, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok,
     read: RecordedRead = RecordedRead.Ids(ReadServed.none), created: List<RecordRef> = emptyList(), detail: String? = null) =
-    CoachCall(name, phrase, outcome, read, created, TurnPhone.catalog().ability(name)?.kind == AbilityClass.read, name, CoachCallDetails(listOfNotNull(detail?.let { name to it }).toMap()))
+    CoachCall(name, phrase, outcome, read, created, TurnPhone.catalog().ability(name)?.kind == AbilityClass.read, name, detail)
 
 // A conversation the engine holds, as a turn that ended whole left it: its thread's id.
 internal fun EngineRoomFixture.heldConversation(question: String, answer: String = "An answer"): String {

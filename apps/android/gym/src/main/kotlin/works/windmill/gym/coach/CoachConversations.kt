@@ -3,8 +3,6 @@ package works.windmill.gym.coach
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -60,30 +58,9 @@ import works.windmill.sync.schema.Gym
 // A picture on a message. `onThisPhone` says this phone holds its file: a picture stays on the phone that sent it (Coach §9.3).
 data class SentPicture(val photo: CoachAttachment, val onThisPhone: Boolean)
 
-// What the rows of one answer's What Coach read say beyond their titles. Each reads the records its call names, so no revision pays for them: the first row the sheet draws starts one read off the main thread, and the rows fill in when it lands. An answer holds one of these across every read of it, so a sheet left open keeps what it read.
-class CoachCallDetails private constructor(private val scope: CoroutineScope?, private val read: (suspend () -> Map<String, String>?)?, said: Map<String, String>) {
-    internal constructor(scope: CoroutineScope, read: suspend () -> Map<String, String>?) : this(scope, read, emptyMap())
-    internal constructor(said: Map<String, String>) : this(null, null, said)
-
-    private var asked = false
-    private var said by mutableStateOf(said)
-
-    fun of(callId: String): String? {
-        if (read != null && !asked) {
-            asked = true
-            scope?.launch {
-                val answered = read.invoke()
-                if (answered != null) said = answered else asked = false
-            }
-        }
-        return said[callId]
-    }
-}
-
-// One ability call as the room says it: `phrase` is the catalog's, absent for a name this build's catalog does not hold, and `reads` says the catalog holds it as a read. `detail` is what the call served or wrote, read from the records when What Coach read first draws it.
+// One ability call as the room says it: `phrase` is the catalog's, absent for a name this build's catalog does not hold, and `reads` says the catalog holds it as a read. `detail` is what the call served or wrote: a transcript's calls hold none, and What Coach read's rows take theirs from `CoachConversations.withDetails`.
 data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead, val created: List<RecordRef>,
-    val reads: Boolean = false, private val callId: String = name, private val details: CoachCallDetails? = null) {
-    val detail: String? get() = details?.of(callId)
+    val reads: Boolean = false, val callId: String = name, val detail: String? = null) {
     val ran: Boolean get() = outcome == AbilityCall.Outcome.Ok
     val seatRefused: Boolean get() = (outcome as? AbilityCall.Outcome.Refused)?.code == AbilityRefusal.seatRequired
     // Its row in What Coach read: a read that served workouts says how many, every other call its phrase.
@@ -185,7 +162,6 @@ class CoachConversations(
     private val training: EngineTraining,
     private val telemetry: Telemetry,
     private val turns: CoachTurns?,
-    private val scope: CoroutineScope,
 ) {
     private data class Watched(val chat: String? = null, val thread: String? = null, val retained: List<CoachOnboardingRecord> = emptyList(), val screens: Int = 0, val history: Boolean = false) {
         val shown: Boolean get() = screens > 0 || history
@@ -198,7 +174,6 @@ class CoachConversations(
     private var open by mutableStateOf<Transcript?>(null)
     private var undecodedReported = false
     private var live by mutableStateOf<LiveAnswer?>(null)
-    private val details = ConcurrentHashMap<Pair<String, Int>, CoachCallDetails>()
 
     // Whether this phone's turn has lost its stream and is finding it again.
     var reconnecting by mutableStateOf(false)
@@ -234,7 +209,6 @@ class CoachConversations(
     fun forgetSeat() {
         live = null
         reconnecting = false
-        details.clear()
         open = null
         threads = emptyList()
         rows = null
@@ -268,6 +242,12 @@ class CoachConversations(
     suspend fun holds(thread: String): Boolean = seat.tried("gym.readConversation") {
         seat.readTraining { training.reading { reader -> reader.repository(CoachThread).record(Id(thread, CoachThread), ViewMode.drawn)?.isVisible == true } }
     } == true
+
+    // What Coach read's rows of one answer, each with what its call served or wrote, read from the records now and off the main thread. Only an opening sheet asks, so no revision pays for it; a read that fails, or an answer the records do not hold, leaves the rows as they came.
+    suspend fun withDetails(answer: String, rows: List<CoachCall>): List<CoachCall> {
+        val said = seat.tried("gym.readConversation") { seat.readTraining { training.reading { reader -> Named(reader).details(answer) } } } ?: return rows
+        return rows.map { row -> row.copy(detail = said[row.callId]) }
+    }
 
     private fun reading(reader: Reader, wanted: Watched): Reading {
         val threads = decoded(CoachThread, reader.source.drawn(CoachThread.type))
@@ -309,18 +289,12 @@ class CoachConversations(
         return exchanges
     }
 
-    // An answer holds its details for as long as its calls stand as they are.
-    private fun details(message: CoachMessage, id: String): CoachCallDetails = details.getOrPut(id to message.calls.size) {
-        CoachCallDetails(scope) { seat.tried("gym.readConversation") { seat.readTraining { training.reading { reader -> Named(reader).details(message) } } } }
-    }
-
     private fun reply(message: CoachMessage, id: String, replica: String, named: Named): CoachReply {
         val receipt = CoachReceipt(message.calls)
         val routines = receipt.created.mapNotNull { ref -> named.routine(ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
         val notes = receipt.created.mapNotNull { ref -> named.note(ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
         val movements = receipt.created.mapNotNull { ref -> named.movement(ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, Readout.equipment(it.equipment, it.loadCount), it.stepKg) } }
-        val rows = details(message, id)
-        val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, call.created, reads(call.name), call.callId, rows) }
+        val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, call.created, reads(call.name), call.callId) }
         return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements)
     }
 
@@ -339,8 +313,9 @@ class CoachConversations(
             return reader.source.drawn(type.type, ref.id)?.let { decoded(type, listOf(it)).singleOrNull() }
         }
 
-        // What each call of this message says, by its id.
-        fun details(message: CoachMessage): Map<String, String> {
+        // What each call of this answer says, by its id; absent when the records hold no such answer.
+        fun details(answer: String): Map<String, String>? {
+            val message = held(CoachMessage, RecordRef(CoachMessage.type, RecordID(answer))) ?: return null
             val born = reader.source.drawn(CoachMessage.type, message.id.record)?.born
             return message.calls.withIndex().mapNotNull { (at, call) ->
                 detail(call, born, message.calls.take(at).flatMap { it.created })?.let { call.callId to it }

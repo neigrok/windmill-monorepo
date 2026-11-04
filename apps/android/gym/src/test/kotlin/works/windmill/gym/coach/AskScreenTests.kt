@@ -59,14 +59,24 @@ import kotlinx.coroutines.launch
 import works.windmill.agent.TurnConnectionLost
 import works.windmill.agent.TurnSeat
 import works.windmill.agent.TurnTransport
+import works.windmill.domain.kit.ActionContext
+import works.windmill.domain.kit.ActionRunner
+import works.windmill.domain.kit.FixedZone
+import works.windmill.domain.kit.Outcome
 import works.windmill.domain.kit.Repository
+import works.windmill.domain.kit.Seat
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.coach.turn.TellingRecorder
+import works.windmill.gym.coach.turn.TurnPhone
 import works.windmill.gym.domain.coach.AbilityCall
+import works.windmill.gym.domain.coach.AbilityExecutor
 import works.windmill.gym.domain.coach.AbilityRefusal
+import works.windmill.gym.domain.coach.AbilityRequest
 import works.windmill.gym.domain.coach.CoachMessage
+import works.windmill.gym.domain.coach.EndTurn
 import works.windmill.gym.domain.coach.MessageState
+import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.presentation.ChangeKind
 import works.windmill.gym.presentation.ProposalIntent
@@ -493,6 +503,37 @@ class AskScreenTests {
         compose.onNodeWithText("summon_lightning", substring = true).assertDoesNotExist()
         compose.onNodeWithText("get_stats", substring = true).assertDoesNotExist()
         compose.onNodeWithText("list_notes", substring = true).assertDoesNotExist()
+        scope.cancel()
+    }
+
+    // The room hands its sheet the records: a row says what its call wrote once the sheet has read it. With an engine that cannot answer, the titles stand and the read reports once.
+    @Test fun theRoomsSheetSaysWhatTheRecordsHoldAndAFailedReadLeavesItsTitles() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telling = TellingRecorder()
+        val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telling, coachServer = ScriptedTurns(emptyList())).also { rooms += it; runBlocking { it.select("u1") } }
+        val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+        val turn = (runner.run(OpenTurn(null, "Question")) as Outcome.Committed).result
+        val note = AbilityRequest("call-note", "save_note", Json.parse("""{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}"""))
+        check(AbilityExecutor(runner, TurnPhone.catalog(), "https://windmill.works").run(note, turn.coach, Seat.bound) is Outcome.Committed)
+        check(runner.run(EndTurn(turn.coach, MessageState.completed, "An answer")) is Outcome.Committed)
+        val conversations = room.store.conversations
+        conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
+        runBlocking { conversations.read() }
+        room(room.store, thread = conversations.exchanges("chat"), refusal = null, doors = mutableListOf())
+        compose.onNodeWithTag("coach-read-sources").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Shoulder").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Shoulder").assertIsDisplayed()
+        assertEquals(emptyList<Map<String, String>>(), telling.failures)
+        compose.onNodeWithText("Close").performScrollTo().performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("What Coach read").fetchSemanticsNodes().isEmpty() }
+        room.engine.close()
+        compose.onNodeWithTag("coach-read-sources").performClick()
+        compose.onNodeWithText("What Coach read").assertIsDisplayed()
+        compose.waitUntil(5_000) { telling.failures.isNotEmpty() }
+        compose.waitForIdle()
+        compose.onNodeWithText("Shoulder").assertDoesNotExist()
+        compose.onAllNodesWithText("Saved a note").assertCountEquals(2)
+        assertEquals(listOf(mapOf("operation" to "gym.readConversation")), telling.failures)
         scope.cancel()
     }
 
