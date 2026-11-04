@@ -169,7 +169,10 @@ The Kotlin modules `:sync-core`, `:sync-api`, `:sync-schema`, `:sync-model-serve
 above does, with `:sync-testing` for `SyncEngine` and `SyncTesting`; `:sync-engine`,
 `:sync-model-server`, `:platform` and `:agent`, with no twin above, follow §2.2. `:agent` holds the
 product-neutral turn of [the phone Coach](mobile/gym_coach.md) (§4): it depends on `:sync-core` and
-kotlinx-coroutines-core, so it is neither kit nor domain and §2.3's class rules do not read it. A
+kotlinx-coroutines-core, so it is neither kit nor domain and §2.3's class rules do not read it. The
+conversation's records, its receipts and context reads, and every screen stay gym's. `:gym:domain` holds the
+actions of a turn's records (`StreamTurnText`, `WithdrawTurn`, `KeepPicture`, `DeleteConversation`), which Swift
+keeps in the app target (`Gym/Coach/Turn/CoachTurnRecords.swift`). A
 Kotlin module `:a:b` lives at `apps/android/a/b`. `settings.gradle.kts` includes exactly these modules
 and no other build. A `jvm` module applies exactly the plugin set `{org.jetbrains.kotlin.jvm}`.
 
@@ -382,7 +385,9 @@ interface TimestampedType<E : Writable<E>> : DraftType<E> { val timestampField: 
 Kotlin follows every Swift signature in this spec by these conventions: static requirements are
 members of the entity's companion object; a typed `throws(Violation)` is a thrown `Violation`; an
 optional is a nullable type, and an overload that differs from another only in that carries its own
-`@JvmName`; `inout` is a returned copy.
+`@JvmName`; `inout` is a returned copy. `Plan` is a value in Swift and mutable in Kotlin, so a decider that
+may refuse after building one leaves the plan a refusal path reuses untouched. `Decider.decision` turns only a
+`Violation` into a refusal, so a decider reading untrusted JSON turns `DecodeError` and `JsonError` into its own.
 
 **The developer declares** per entity: its type and scope, its stored properties, its constructor
 from `Fields`, and when written, `fields` and `checks`.

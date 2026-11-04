@@ -61,6 +61,10 @@ coach/        the phone Coach's turn wire (docs/foundation/mobile/gym_coach.md):
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 
+`coach/` stays under gym while gym is the one product with abilities. A second product's ability list is what
+moves `Turn`, `TurnService`, `TurnApi` and `PhoneToolHost` to `platform/`; `TurnGate` and `AbilityCatalog` hold
+gym's rules (G-4, G-5) and stay. The wire's events carry no gym nouns, so that move changes no client.
+
 Ports are cut by **aggregate**: the log, the catalog, the program (routines and the ledger
 together), Coach's threads, the settings row, the notes, the weigh-ins. The split is not table
 ownership — the log's reads join the catalog for a movement name. Each Pg adapter's preamble says
