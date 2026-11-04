@@ -294,7 +294,7 @@ class TrainingStoreTests {
             turns.refuseOpen = TurnRefusal(500, TurnRefusal.vendorError, null)
             assertTrue(coach.send(chat, "what's stalled?"))
             advanceUntilIdle()
-            assertEquals(CoachTurnRefusal.Said(TurnRefusal.vendorError), coach.refusal(chat))
+            assertEquals(CoachTurnRefusal.Unanswered, coach.refusal(chat))
             assertNull("a quiet server is that chat's to ask again", coach.refusal(other))
             assertEquals(CoachDraft("what's stalled?"), coach.draft(chat))
             assertFalse(coach.absent)

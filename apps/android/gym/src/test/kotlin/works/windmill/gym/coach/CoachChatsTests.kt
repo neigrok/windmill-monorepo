@@ -437,7 +437,7 @@ class CoachChatsTests {
             val first = coach.freshChat()
             assertTrue(coach.send(first, "Question"))
             advanceUntilIdle()
-            val said = CoachTurnRefusal.Said("coach-busy")
+            val said = CoachTurnRefusal.Unanswered
             assertEquals(said, coach.refusal(first))
 
             val second = coach.freshChat()

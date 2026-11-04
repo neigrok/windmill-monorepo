@@ -27,7 +27,8 @@ sealed interface CoachTurnRefusal {
     data object Absent : CoachTurnRefusal
     data class Installation(val installation: String) : CoachTurnRefusal
     data object SessionLapsed : CoachTurnRefusal
-    data class Said(val said: String) : CoachTurnRefusal
+    // Any other refusal the server answered.
+    data object Unanswered : CoachTurnRefusal
 
     val sentence: String get() = when (this) {
         Offline -> "No connection. Your question is kept here."
@@ -43,11 +44,11 @@ sealed interface CoachTurnRefusal {
         is FreeMonthExhausted -> "Coach is paused for everyone this month."
         RateLimited -> "You can ask again later."
         UpdateRequired -> "This version can’t ask Coach any more. Update Windmill to continue."
-        Absent -> "This Windmill does not have Coach. You can still read your log."
+        Absent -> Ask.notHere
         is Installation -> if (installation == "invalid_installation") "This phone can’t ask Coach signed out any more. Sign in to continue."
             else "This phone is linked to an account. Sign in to ask Coach."
         SessionLapsed -> Ask.accessNeedsSignIn
-        is Said -> "Coach didn’t answer. Try again in a moment"
+        Unanswered -> CoachTurnFault.noAnswer.sentence
     }
 
     // The words the notice draws: the sentence, when a paused pool comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
@@ -68,7 +69,7 @@ sealed interface CoachTurnRefusal {
     // The one door the notice offers: sign-in where the phone's own AI access is spent or belongs to an account, the lifter's own agent where Coach's shared capacity is paused, the update, or Send again. Signed in, a spent allowance offers nothing while paid plans are closed.
     fun recovery(anonymous: Boolean): CoachRecovery? = when (this) {
         Offline -> CoachRecovery.tryAgain
-        LogArriving, is TooLong, Absent, is Said -> null
+        LogArriving, is TooLong, Absent, Unanswered -> null
         is Allowance -> when {
             allowance == "free_day_exhausted" -> CoachRecovery.ownAgent
             anonymous && allowance == "subject_exhausted" -> CoachRecovery.signIn
@@ -86,7 +87,7 @@ sealed interface CoachTurnRefusal {
         is Allowance, is FreeMonthExhausted -> "capped" to "allowance"
         RateLimited -> "capped" to "daily"
         Absent -> "absent" to null
-        LogArriving, is TooLong, UpdateRequired, is Installation, SessionLapsed, is Said -> "refused" to null
+        LogArriving, is TooLong, UpdateRequired, is Installation, SessionLapsed, Unanswered -> "refused" to null
     }
 
     companion object {
@@ -99,7 +100,7 @@ sealed interface CoachTurnRefusal {
             code == "coach-update-required" || code == "client-update-required" -> UpdateRequired
             status == 401 -> SessionLapsed
             status == 404 -> Absent
-            else -> Said(code)
+            else -> Unanswered
         }
 
         private fun count(value: Int): String = "%,d".format(Locale.US, value)

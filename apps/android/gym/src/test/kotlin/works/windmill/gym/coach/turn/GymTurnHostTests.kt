@@ -119,7 +119,7 @@ class GymTurnHostTests(private val name: String) {
             val silent = vector["phone"]?.str() == "silent"
             val code = end["code"]?.str() ?: if (silent) "coach-turn-order" else null
             val refused = if (state == "failed") code?.let { CoachTurnRefusal.of(it, resetsAtMs = events.last()["data"]?.get("budgetResetsAtMs")?.long()) } else null
-            assertEquals(refused.takeUnless { it is CoachTurnRefusal.Said }, phone.turns.refusal.value)
+            assertEquals(refused.takeUnless { it == CoachTurnRefusal.Unanswered }, phone.turns.refusal.value)
             assertNull(phone.turns.fault.value)
             assertNull(phone.turns.withdrawn.value)
 

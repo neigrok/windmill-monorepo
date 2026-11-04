@@ -262,7 +262,7 @@ class CoachTurnsTests {
     @Test fun aSeatTheServerRefusesIsSaidAndKeepsNothing() = runTest {
         for ((failure, said) in listOf(
             WindmillApiException.Refused(401, Refusal(code = "invalid_installation")) to CoachTurnRefusal.Installation("invalid_installation"),
-            WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable")) to CoachTurnRefusal.Said("anonymous_ai_unavailable"),
+            WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable")) to CoachTurnRefusal.Unanswered,
             WindmillApiException.Offline to CoachTurnRefusal.Offline,
         )) {
             TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->

@@ -300,7 +300,7 @@ class CoachTurns(
                 val code = end.code
                 if (code != null) installationAnswered(code)
                 val answer = if (end.state == TurnState.failed) code?.let { CoachTurnRefusal.of(it, resetsAtMs = end.budgetResetsAtMs) } else null
-                refused.value = answer.takeUnless { it is CoachTurnRefusal.Said }
+                refused.value = answer.takeUnless { it == CoachTurnRefusal.Unanswered }
                 faulted.value = null
             }
             TurnExit.withdrawn -> {
