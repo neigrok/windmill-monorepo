@@ -38,7 +38,7 @@ for (const width of everyWidth) {
       await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
       await page.getByRole('textbox', { name: COMPOSER.name, exact: true }).fill('Read gusts');
       await page.getByRole('textbox', { name: COMPOSER.description }).fill('Watch the water.');
-      await page.getByRole('radio', { name: 'Sky', exact: true }).click();
+      await page.getByRole('dialog', { name: EDIT_STEP.title, exact: true }).getByRole('radio', { name: 'Sky', exact: true }).click();
       await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
       await page.getByRole('dialog', { name: 'Read gusts', exact: true }).waitFor();
       assert.deepEqual(await savedStep(page, 'wind'), { label: 'Read gusts', description: 'Watch the water.', color: 'sky', prerequisites: ['course'] });

@@ -653,6 +653,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
   *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
   index rows in the 🚀 pass.
+- **Board · loading strip.** 02.09 (374:5067) draws five sunken chip placeholders between the identity row and the columns. The build
+  draws none, so its columns start higher.
+- **Board · modal and the Shell.** The step modal frames (03.01 184:1693, 03.07 379:18290, 05.06 399:37361) draw the scrim over the Shared
+  Shell and centre the modal on the whole viewport, 80px from the top. The build leaves the Shell clear and centres the modal beneath it,
+  106px from the top.
+- **Board · a reader's step modal.** 04.05 (376:13291) draws Overview and History sections, a Copy link icon and *View branch* for a
+  reader. The build gives a reader the overview alone, the ⋯ menu and no *View branch*.
+- **Graph · dock header.** 08.11 (523:32253) and Web 04.01 (33:105) draw a centred title and *Not started*. `graph/StepPanel.jsx` draws
+  the title at the start and says *Up next*, the Board's word.
 - **Board · Shell from 744.** Every role's frames from 744 ([04.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12955),
   [04.06](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12775), 04.09 · 744) draw the Shared Shell's
   room links from the left edge, with no mark and no fill on the active room. The built head keeps the mark, fills the
