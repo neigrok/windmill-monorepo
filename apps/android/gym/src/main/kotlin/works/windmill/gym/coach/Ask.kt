@@ -63,11 +63,6 @@ object Ask {
         return (standing ?: "") != saved
     }
 
-    fun sendable(typed: String): Boolean {
-        val asked = typed.trim()
-        return asked.isNotEmpty() && asked.encodeToByteArray().size <= maxQuestionBytes
-    }
-
     fun receipt(read: ReadTally): String {
         val parts = buildList {
             if (read.sets > 0) add(Readout.setCount(read.sets))

@@ -130,8 +130,7 @@ fun ThreadsScreen(
                 LaunchedEffect(Unit) { telemetry.event("gym_action", mapOf("screen" to "threads", "action" to "empty", "outcome" to "shown")) }
                 Icon(painterResource(R.drawable.gym_coach_forum), null, Modifier.size(40.dp), tint = colors.onSurfaceVariant)
                 Text(Threads.none, style = GymType.coachAccessNote, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
-            }
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
+            } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
                 failure?.let { line -> item("failure") {
                     Text(line, style = GymType.coachLine, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                 } }

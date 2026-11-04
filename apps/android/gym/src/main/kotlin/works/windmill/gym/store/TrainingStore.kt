@@ -181,6 +181,8 @@ class TrainingStore(
             workout.reconcileWorkoutTime()
             workout.drawFromControls()
             seat.isLoading = false
+            // The seat forgot what Coach had read, and nothing but a new revision would read it again.
+            conversations.read()
 
             val owner = seat.owner
             history.shelved = seat.tried("gym.loadLog") { history.refusedImports() } ?: return

@@ -386,8 +386,8 @@ class CoachChatsTests {
             val chat = coach.freshChat()
             assertFalse(coach.send(chat, "é".repeat(4_001)))
             assertFalse(coach.send(chat, "   "))
-            assertTrue(Ask.sendable("é".repeat(4_000)))
-            assertFalse(Ask.sendable("é".repeat(4_001)))
+            assertNull(CoachTurnRefusal.TooLong.of("é".repeat(4_000)))
+            assertEquals(CoachTurnRefusal.TooLong(2), CoachTurnRefusal.TooLong.of("é".repeat(4_001)))
             advanceUntilIdle()
             assertEquals(emptyList<CoachMessage>(), room.messages())
         }

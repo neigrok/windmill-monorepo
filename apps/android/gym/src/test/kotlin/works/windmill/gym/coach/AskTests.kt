@@ -3,8 +3,10 @@ package works.windmill.gym.coach
 import works.windmill.gym.coach.turn.CoachTurnFault
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.TurnPhone
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.AbilityRefusal
@@ -32,12 +34,12 @@ class AskTests {
     @Test
     fun theDoorIsShutOnABlankQuestionAndOnOneOverTheCeiling() {
         assertEquals(8000, Ask.maxQuestionBytes)
-        assertFalse(Ask.sendable("   "))
-        assertTrue(Ask.sendable("what’s stalled?"))
-        assertTrue(Ask.sendable("x".repeat(Ask.maxQuestionBytes)))
-        assertFalse(Ask.sendable("x".repeat(Ask.maxQuestionBytes + 1)))
+        assertEquals("", asked("   "))
+        assertEquals("what’s stalled?", asked("  what’s stalled? "))
+        assertNull(CoachTurnRefusal.TooLong.of("x".repeat(Ask.maxQuestionBytes)))
+        assertEquals(CoachTurnRefusal.TooLong(1), CoachTurnRefusal.TooLong.of("x".repeat(Ask.maxQuestionBytes + 1)))
         assertEquals("the ceiling is bytes, not characters",
-            false, Ask.sendable("é".repeat(Ask.maxQuestionBytes / 2 + 1)))
+            CoachTurnRefusal.TooLong(2), CoachTurnRefusal.TooLong.of("é".repeat(Ask.maxQuestionBytes / 2 + 1)))
     }
 
     @Test

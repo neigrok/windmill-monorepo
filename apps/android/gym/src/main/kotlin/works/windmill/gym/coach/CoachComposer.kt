@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
+import works.windmill.gym.coach.turn.CoachTurnRefusal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +84,7 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
         }
     }
     var preparing by remember(account, key) { mutableStateOf(false) }
-    fun canSend(next: CoachDraft) = asked(next.text).let { question -> question.encodeToByteArray().size <= Ask.maxQuestionBytes && (question.isNotEmpty() || next.photo != null) }
+    fun canSend(next: CoachDraft) = CoachTurnRefusal.TooLong.of(next.text) == null && (asked(next.text).isNotEmpty() || next.photo != null)
     var pickerOwner by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerChat by rememberSaveable { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -116,7 +117,7 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "${CoachPhotos.whereItGoes} ${CoachPhotos.keptHere}",
-                    style = WindmillType.caption, color = colors.onSurfaceVariant,
+                    style = GymType.coachNote, color = colors.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
                     CoachPhoto(store, photo, Modifier.offset(y = 12.dp).size(72.dp))

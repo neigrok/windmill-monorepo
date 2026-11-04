@@ -90,7 +90,7 @@ internal fun CoachRefusalNotice(refusal: CoachTurnRefusal, anonymous: Boolean = 
     val telemetry = LocalTelemetry.current
     val update = LocalClientUpdateDestination.current
     val uri = LocalUriHandler.current
-    var updateFailure by rememberSaveable { mutableStateOf<String?>(null) }
+    var updateFailure by rememberSaveable(refusal) { mutableStateOf<String?>(null) }
     if (refusal is CoachTurnRefusal.TooLong) LaunchedEffect(Unit) {
         telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "too_long", "outcome" to "shown"))
     }
@@ -143,7 +143,7 @@ internal fun AnswerInProgress(pending: ConversationRow, onOpenChat: ((String) ->
             Text("Answer in progress", style = GymType.coachTitle, color = colors.onSurface)
             Text(pending.title, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
         }
-        TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("View chat") }
+        onOpenChat?.let { open -> NoticeDoor("View chat") { open(pending.id) } }
     }
 }
 
